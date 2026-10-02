@@ -16,6 +16,7 @@ const persisted = z.object({
     }),
   ),
 });
+
 for (const profile of [undefined, "org-teams"] as const satisfies readonly (
   | FixtureProfile
   | undefined
@@ -34,10 +35,12 @@ for (const profile of [undefined, "org-teams"] as const satisfies readonly (
           }),
         };
       }
-      const owner = actor("metadata-owner"),
-        outsider = actor("metadata-outsider"),
-        otherSession = actor("metadata-outsider-other"),
-        guest = actor("metadata-guest");
+
+      const owner = actor("metadata-owner");
+      const outsider = actor("metadata-outsider");
+      const otherSession = actor("metadata-outsider-other");
+      const guest = actor("metadata-guest");
+
       const ownerSignup = await owner.client.signUp.email({
         email: ctx.uniqueEmail("metadata-owner"),
         password: "password123",
@@ -51,14 +54,19 @@ for (const profile of [undefined, "org-teams"] as const satisfies readonly (
       });
       expect(ownerSignup.error).toBeNull();
       expect(outsiderSignup.error).toBeNull();
-      if (!ownerSignup.data || !outsiderSignup.data)
+      if (!ownerSignup.data || !outsiderSignup.data) {
         throw new Error("real principals must be created");
+      }
+      const ownerId = ownerSignup.data.user.id;
+      const outsiderId = outsiderSignup.data.user.id;
+
       const noSelection = await owner.org.organization.getOrganization();
       expect(noSelection).toMatchObject({ data: null, error: null });
       const guestDenied = await guest.org.organization.getOrganization({
         query: { organizationId: "missing" },
       });
       expect(guestDenied.error).toMatchObject({ status: 401 });
+
       const first = await owner.org.organization.create({
         name: "Metadata Alpha",
         slug: ctx.uniqueToken("metadata-alpha"),
@@ -75,7 +83,12 @@ for (const profile of [undefined, "org-teams"] as const satisfies readonly (
       });
       expect(first.error).toBeNull();
       expect(second.error).toBeNull();
-      if (!first.data || !second.data) throw new Error("owned organizations must persist");
+      if (!first.data || !second.data) {
+        throw new Error("owned organizations must persist");
+      }
+      const firstId = first.data.id;
+      const secondId = second.data.id;
+
       const empty = await owner.org.organization.create({
         name: "Metadata Empty",
         slug: ctx.uniqueToken("metadata-empty"),
@@ -83,32 +96,39 @@ for (const profile of [undefined, "org-teams"] as const satisfies readonly (
         keepCurrentActiveOrganization: true,
       });
       expect(empty.error).toBeNull();
-      if (!empty.data) throw new Error("explicit empty metadata must persist");
+      if (!empty.data) {
+        throw new Error("explicit empty metadata must persist");
+      }
+      const emptyId = empty.data.id;
       expect(empty.data.metadata).toEqual({});
       const emptyMetadata = await owner.org.organization.getOrganization({
-        query: { organizationId: empty.data.id },
+        query: { organizationId: emptyId },
       });
       expect(emptyMetadata.data?.metadata).toBe("{}");
+
+      // Renames leave absent, empty and populated metadata as they were stored.
       const updatedAbsent = await owner.org.organization.update({
-        organizationId: second.data.id,
+        organizationId: secondId,
         data: { name: "Metadata Beta Renamed" },
       });
       expect(updatedAbsent.error).toBeNull();
       expect(updatedAbsent.data?.name).toBe("Metadata Beta Renamed");
       expect(updatedAbsent.data).not.toHaveProperty("metadata");
+
       const updatedEmpty = await owner.org.organization.update({
-        organizationId: empty.data.id,
+        organizationId: emptyId,
         data: { name: "Metadata Empty Renamed" },
       });
       expect(updatedEmpty.error).toBeNull();
       expect(updatedEmpty.data?.metadata).toEqual({});
       const updatedEmptyStored = await owner.org.organization.getOrganization({
-        query: { organizationId: empty.data.id },
+        query: { organizationId: emptyId },
       });
       expect(updatedEmptyStored.data?.name).toBe("Metadata Empty Renamed");
       expect(updatedEmptyStored.data?.metadata).toBe("{}");
+
       const updatedPresent = await owner.org.organization.update({
-        organizationId: first.data.id,
+        organizationId: firstId,
         data: { name: "Metadata Alpha Renamed" },
       });
       expect(updatedPresent.error).toBeNull();
@@ -118,19 +138,21 @@ for (const profile of [undefined, "org-teams"] as const satisfies readonly (
         tiny: 3.8730639354761726e-71,
         nested: { "2": "two", "10": "ten" },
       });
+
+      // The active selection, an explicit id, and a slug (which wins over the id) each resolve.
       const active = await owner.org.organization.getOrganization();
       expect(active.data?.metadata).toBeNull();
       expect(active.data?.name).toBe("Metadata Beta Renamed");
       const byId = await owner.org.organization.getOrganization({
-        query: { organizationId: first.data.id },
+        query: { organizationId: firstId },
       });
       expect(byId.data?.name).toBe("Metadata Alpha Renamed");
       const bySlug = await owner.org.organization.getOrganization({
-        query: { organizationId: first.data.id, organizationSlug: second.data.slug },
+        query: { organizationId: firstId, organizationSlug: second.data.slug },
       });
-      expect(active.data?.id).toBe(second.data.id);
-      expect(byId.data?.id).toBe(first.data.id);
-      expect(bySlug.data?.id).toBe(second.data.id);
+      expect(active.data?.id).toBe(secondId);
+      expect(byId.data?.id).toBe(firstId);
+      expect(bySlug.data?.id).toBe(secondId);
       expect(byId.data?.metadata).toBe(
         '{"tier":"gold","fixed":100000000000000000000,"tiny":3.8730639354761726e-71,"nested":{"2":"two","10":"ten"}}',
       );
@@ -140,26 +162,26 @@ for (const profile of [undefined, "org-teams"] as const satisfies readonly (
         expect(result.data).not.toHaveProperty("invitations");
         expect(result.data).not.toHaveProperty("teams");
       }
+
       const full = await owner.org.organization.getFullOrganization({
-        query: { organizationId: first.data.id },
+        query: { organizationId: firstId },
       });
       expect(full.error).toBeNull();
       expect(full.data?.metadata).toBe(
         '{"tier":"gold","fixed":100000000000000000000,"tiny":3.8730639354761726e-71,"nested":{"2":"two","10":"ten"}}',
       );
-      expect(full.data?.members.some((member) => member.userId === ownerSignup.data!.user.id)).toBe(
-        true,
-      );
+      expect(full.data?.members.some((member) => member.userId === ownerId)).toBe(true);
+
       const emptySelectors = await owner.org.organization.getOrganization({
         query: { organizationSlug: "" },
       });
-      expect(emptySelectors.data?.id).toBe(second.data.id);
-      const beforeMissing = persisted.parse(
-        await ctx.readUserState({ userId: ownerSignup.data.user.id }),
-      );
+      expect(emptySelectors.data?.id).toBe(secondId);
+
+      // Lookups of organizations that do not exist leave the owner's sessions untouched.
+      const beforeMissing = persisted.parse(await ctx.readUserState({ userId: ownerId }));
       const missingSlug = await owner.org.organization.getOrganization({
         query: {
-          organizationId: first.data.id,
+          organizationId: firstId,
           organizationSlug: ctx.uniqueToken("metadata-absent-slug"),
         },
       });
@@ -172,39 +194,43 @@ for (const profile of [undefined, "org-teams"] as const satisfies readonly (
         query: { organizationId: ctx.uniqueToken("metadata-full-absent") },
       });
       expect(missingFull.error).toMatchObject({ status: 400, code: "ORGANIZATION_NOT_FOUND" });
-      const afterMissing = persisted.parse(
-        await ctx.readUserState({ userId: ownerSignup.data.user.id }),
-      );
+      const afterMissing = persisted.parse(await ctx.readUserState({ userId: ownerId }));
       expect(afterMissing).toEqual(beforeMissing);
       const preserved = await owner.org.organization.getOrganization();
-      expect(preserved.data?.id).toBe(second.data.id);
+      expect(preserved.data?.id).toBe(secondId);
+
+      // The outsider has two sessions, both with their own organization selected.
       const own = await outsider.org.organization.create({
         name: "Other Principal",
         slug: ctx.uniqueToken("metadata-other"),
       });
       expect(own.error).toBeNull();
-      if (!own.data) throw new Error("unrelated active organization must exist");
+      if (!own.data) {
+        throw new Error("unrelated active organization must exist");
+      }
+      const ownId = own.data.id;
       const extraSignin = await otherSession.client.signIn.email({
         email: outsiderEmail,
         password: "password123",
       });
       expect(extraSignin.error).toBeNull();
       const selected = await otherSession.org.organization.setActive({
-        organizationId: own.data.id,
+        organizationId: ownId,
       });
       expect(selected.error).toBeNull();
-      const current = await outsider.client.getSession(),
-        other = await otherSession.client.getSession();
-      expect(current.data?.session.token).toBeString();
-      expect(other.data?.session.token).toBeString();
-      expect(current.data?.session.token).not.toBe(other.data?.session.token);
-      const before = persisted.parse(
-        await ctx.readUserState({ userId: outsiderSignup.data.user.id }),
-      );
+      const current = await outsider.client.getSession();
+      const other = await otherSession.client.getSession();
+      const currentToken = current.data?.session.token;
+      const otherToken = other.data?.session.token;
+      expect(currentToken).toBeString();
+      expect(otherToken).toBeString();
+      expect(currentToken).not.toBe(otherToken);
+
+      const before = persisted.parse(await ctx.readUserState({ userId: outsiderId }));
       expect(before.sessions).toHaveLength(2);
-      expect(
-        before.sessions.every((session) => session.activeOrganizationId === own.data!.id),
-      ).toBe(true);
+      expect(before.sessions.every((session) => session.activeOrganizationId === ownId)).toBe(true);
+
+      // A denied lookup clears the selection on the requesting session only.
       const denied = await outsider.org.organization.getOrganization({
         query: { organizationSlug: first.data.slug },
       });
@@ -212,43 +238,38 @@ for (const profile of [undefined, "org-teams"] as const satisfies readonly (
         status: 403,
         code: "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
       });
-      const after = persisted.parse(
-        await ctx.readUserState({ userId: outsiderSignup.data.user.id }),
-      );
+      const after = persisted.parse(await ctx.readUserState({ userId: outsiderId }));
       expect(after.sessions).toHaveLength(2);
       expect(
-        after.sessions.find((session) => session.token === current.data?.session.token)
-          ?.activeOrganizationId,
+        after.sessions.find((session) => session.token === currentToken)?.activeOrganizationId,
       ).toBeNull();
-      expect(after.sessions.find((session) => session.token === other.data?.session.token)).toEqual(
-        before.sessions.find((session) => session.token === other.data?.session.token),
+      expect(after.sessions.find((session) => session.token === otherToken)).toEqual(
+        before.sessions.find((session) => session.token === otherToken),
       );
       const cleared = await outsider.org.organization.getOrganization();
       expect(cleared).toMatchObject({ data: null, error: null });
       const unaffected = await otherSession.org.organization.getOrganization();
-      expect(unaffected.data?.id).toBe(own.data.id);
-      const restored = await outsider.org.organization.setActive({ organizationId: own.data.id });
+      expect(unaffected.data?.id).toBe(ownId);
+
+      // The same holds for a denied full-organization lookup after reselecting.
+      const restored = await outsider.org.organization.setActive({ organizationId: ownId });
       expect(restored.error).toBeNull();
-      const beforeFull = persisted.parse(
-        await ctx.readUserState({ userId: outsiderSignup.data.user.id }),
-      );
+      const beforeFull = persisted.parse(await ctx.readUserState({ userId: outsiderId }));
       const deniedFull = await outsider.org.organization.getFullOrganization({
-        query: { organizationId: first.data.id },
+        query: { organizationId: firstId },
       });
       expect(deniedFull.error).toMatchObject({
         status: 403,
         code: "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
       });
-      const afterFull = persisted.parse(
-        await ctx.readUserState({ userId: outsiderSignup.data.user.id }),
-      );
+      const afterFull = persisted.parse(await ctx.readUserState({ userId: outsiderId }));
       expect(
-        afterFull.sessions.find((session) => session.token === current.data?.session.token)
-          ?.activeOrganizationId,
+        afterFull.sessions.find((session) => session.token === currentToken)?.activeOrganizationId,
       ).toBeNull();
-      expect(
-        afterFull.sessions.find((session) => session.token === other.data?.session.token),
-      ).toEqual(beforeFull.sessions.find((session) => session.token === other.data?.session.token));
+      expect(afterFull.sessions.find((session) => session.token === otherToken)).toEqual(
+        beforeFull.sessions.find((session) => session.token === otherToken),
+      );
+
       return ctx.snapshot({
         ownerSignup,
         outsiderSignup,

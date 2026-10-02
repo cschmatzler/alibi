@@ -3,33 +3,36 @@ import { z } from "zod";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const row = z.object({ id: z.string() }).passthrough();
+
 const snapshot = z.object({
   organizations: z.array(row),
   members: z.array(row),
   users: z.array(row),
   sessions: z.array(row),
 });
+
 async function state(ctx: ScenarioContext) {
   const response = await ctx.rawRequest({ path: "/__test/organization-update-hooks-state" });
   expect(response.status).toBe(200);
   return snapshot.parse(z.object({ snapshot }).parse(response.body).snapshot);
 }
+
 async function storage(ctx: ScenarioContext, organizationId: string, mode: string) {
-  expect(
-    (
-      await ctx.rawRequest({
-        path: "/__test/organization-update-storage",
-        method: "POST",
-        json: { organizationId, mode },
-      })
-    ).status,
-  ).toBe(200);
+  const response = await ctx.rawRequest({
+    path: "/__test/organization-update-storage",
+    method: "POST",
+    json: { organizationId, mode },
+  });
+  expect(response.status).toBe(200);
 }
+
 async function setup(ctx: ScenarioContext) {
-  const owner = ctx.actor("owner"),
-    foreign = ctx.actor("foreign"),
-    sibling = ctx.actor("sibling");
+  const owner = ctx.actor("owner");
+  const foreign = ctx.actor("foreign");
+  const sibling = ctx.actor("sibling");
   const email = ctx.uniqueEmail("owner");
+
+  // The sibling actor is a second session for the owner's user.
   expect(
     (await owner.client.signUp.email({ name: "Owner", email, password: "password123" })).error,
   ).toBeNull();
@@ -43,6 +46,7 @@ async function setup(ctx: ScenarioContext) {
       })
     ).error,
   ).toBeNull();
+
   async function create(actor: typeof owner, label: string) {
     const result = await actor.client.$fetch("/organization/create", {
       method: "POST",
@@ -56,9 +60,11 @@ async function setup(ctx: ScenarioContext) {
     expect(result.error).toBeNull();
     return z.object({ id: z.string(), slug: z.string() }).parse(result.data);
   }
-  const target = await create(owner, "target"),
-    other = await create(owner, "sibling"),
-    foreignOrg = await create(foreign, "foreign");
+
+  const target = await create(owner, "target");
+  const other = await create(owner, "sibling");
+  const foreignOrg = await create(foreign, "foreign");
+
   expect(
     (
       await sibling.client.$fetch("/organization/set-active", {
@@ -67,9 +73,12 @@ async function setup(ctx: ScenarioContext) {
       })
     ).error,
   ).toBeNull();
+
   return { owner, sibling, foreign, target, other, foreignOrg };
 }
+
 type Wire = { status?: number; body?: string; contentType?: string | null };
+
 function update(
   actor: ReturnType<ScenarioContext["actor"]>,
   organizationId: string,
@@ -80,15 +89,17 @@ function update(
     method: "POST",
     body: { organizationId, data },
     onResponse: async ({ response }) => {
-      if (wire)
+      if (wire) {
         Object.assign(wire, {
           status: response.status,
           body: await response.clone().text(),
           contentType: response.headers.get("content-type"),
         });
+      }
     },
   });
 }
+
 function preserved(
   before: z.infer<typeof snapshot>,
   after: z.infer<typeof snapshot>,
@@ -97,8 +108,9 @@ function preserved(
   expect(after.organizations.filter((row) => row.id !== target)).toEqual(
     before.organizations.filter((row) => row.id !== target),
   );
-  for (const key of ["members", "users", "sessions"] as const)
+  for (const key of ["members", "users", "sessions"] as const) {
     expect(after[key]).toEqual(before[key]);
+  }
 }
 
 compatScenario(
@@ -106,8 +118,9 @@ compatScenario(
   async (ctx) => {
     const { owner, sibling, foreign, target, other } = await setup(ctx);
     await storage(ctx, target.id, "none");
-    const member = ctx.actor("member"),
-      memberEmail = ctx.uniqueEmail("member");
+
+    const member = ctx.actor("member");
+    const memberEmail = ctx.uniqueEmail("member");
     expect(
       (
         await member.client.signUp.email({
@@ -131,26 +144,34 @@ compatScenario(
         })
       ).error,
     ).toBeNull();
+
     const before = await state(ctx);
+
     const memberDenied = await update(member, target.id, {});
     expect(memberDenied.error?.status).toBe(403);
+
     const guest = await ctx.rawRequest({
       path: "/api/auth/organization/update",
       method: "POST",
       json: { organizationId: target.id, data: {} },
     });
     expect(guest.status).toBe(401);
+
     const emptyWire: Wire = {};
     const empty = await update(owner, target.id, {}, emptyWire);
     expect(emptyWire).toEqual({ status: 500, body: "", contentType: null });
     expect(empty.error?.status).toBe(500);
     const afterEmpty = await state(ctx);
     expect(afterEmpty).toEqual(before);
+
     const foreignDenied = await update(foreign, target.id, {});
     expect(foreignDenied.error?.status).toBe(400);
+
     const duplicate = await update(owner, target.id, { slug: other.slug });
     expect(duplicate.error?.status).toBe(400);
     expect(await state(ctx)).toEqual(before);
+
+    // An empty organization id falls back to the sibling session's active organization.
     const retry = await update(sibling, "", { name: "Recovered", logo: null });
     expect(retry.error).toBeNull();
     expect(
@@ -163,11 +184,13 @@ compatScenario(
       name: "Recovered",
       logo: null,
     });
+
     await storage(ctx, target.id, "veto");
     const veto = await update(owner, target.id, { name: "Vetoed" });
     expect(veto.error?.status).toBe(500);
     expect(await state(ctx)).toEqual(afterRetry);
     await storage(ctx, target.id, "none");
+
     return {
       before,
       emptyWire,
@@ -190,6 +213,7 @@ compatScenario(
   async (ctx) => {
     const { owner, target } = await setup(ctx);
     const before = await state(ctx);
+
     await storage(ctx, target.id, "ignore");
     const ignoredWire: Wire = {};
     const ignored = await update(owner, target.id, { name: "Ignored" }, ignoredWire);
@@ -197,12 +221,14 @@ compatScenario(
     expect(ignored.error).toBeNull();
     expect(ignored.data).toBeNull();
     expect(await state(ctx)).toEqual(before);
+
     await storage(ctx, target.id, "delete");
     const vanishedWire: Wire = {};
     const vanished = await update(owner, target.id, { name: "Gone" }, vanishedWire);
     expect(vanishedWire).toEqual({ status: 200, body: "null", contentType: "application/json" });
     expect(vanished.error).toBeNull();
     expect(vanished.data).toBeNull();
+
     const after = await state(ctx);
     expect(after.organizations.some((row) => row.id === target.id)).toBe(false);
     expect(after.organizations).toEqual(before.organizations.filter((row) => row.id !== target.id));
@@ -213,6 +239,7 @@ compatScenario(
     expect(after.users).toEqual(before.users);
     expect(after.sessions).toEqual(before.sessions);
     await storage(ctx, target.id, "none");
+
     return {
       before,
       ignoredWire,

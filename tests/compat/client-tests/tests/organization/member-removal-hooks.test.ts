@@ -4,6 +4,7 @@ import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
 
 const row = z.object({ id: z.string() }).passthrough();
+
 const snapshot = z.object({
   organizations: z.array(row),
   members: z.array(row),
@@ -12,6 +13,7 @@ const snapshot = z.object({
   teams: z.array(row),
   teamMembers: z.array(row),
 });
+
 const member = z
   .object({
     id: z.string(),
@@ -22,6 +24,7 @@ const member = z
     user: z.record(z.string(), z.unknown()).optional(),
   })
   .passthrough();
+
 const receipt = z.object({
   phase: z.string(),
   organization: z.record(z.string(), z.unknown()),
@@ -29,22 +32,22 @@ const receipt = z.object({
   user: z.record(z.string(), z.unknown()),
   snapshot,
 });
+
 const stateSchema = z.object({ receipts: z.array(receipt), snapshot });
+
 async function configure(
   ctx: ScenarioContext,
   mode: string,
   guard?: { memberId: string; userId: string; organizationId: string },
 ) {
-  expect(
-    (
-      await ctx.rawRequest({
-        path: "/__test/organization-member-removal-hooks-configure",
-        method: "POST",
-        json: { mode, ...guard },
-      })
-    ).status,
-  ).toBe(200);
+  const response = await ctx.rawRequest({
+    path: "/__test/organization-member-removal-hooks-configure",
+    method: "POST",
+    json: { mode, ...guard },
+  });
+  expect(response.status).toBe(200);
 }
+
 async function state(ctx: ScenarioContext, waitFor?: string) {
   const result = await ctx.rawRequest({
     path:
@@ -53,10 +56,11 @@ async function state(ctx: ScenarioContext, waitFor?: string) {
   expect(result.status).toBe(200);
   return stateSchema.parse(result.body);
 }
+
 async function signup(ctx: ScenarioContext, name: string) {
-  const actor = ctx.actor(name, "org-member-removal-hooks"),
-    email = ctx.uniqueEmail(name),
-    result = await actor.client.signUp.email({ name, email, password: "password123" });
+  const actor = ctx.actor(name, "org-member-removal-hooks");
+  const email = ctx.uniqueEmail(name);
+  const result = await actor.client.signUp.email({ name, email, password: "password123" });
   expect(result.error).toBeNull();
   return {
     ...actor,
@@ -66,30 +70,28 @@ async function signup(ctx: ScenarioContext, name: string) {
       .user,
   };
 }
+
 type Actor = Awaited<ReturnType<typeof signup>>;
+
 async function select(actor: Actor, organizationId: string, teamId: string) {
-  expect(
-    (
-      await actor.client.$fetch("/organization/set-active", {
-        method: "POST",
-        body: { organizationId },
-      })
-    ).error,
-  ).toBeNull();
-  expect(
-    (
-      await actor.client.$fetch("/organization/set-active-team", {
-        method: "POST",
-        body: { teamId },
-      })
-    ).error,
-  ).toBeNull();
+  const activeOrganization = await actor.client.$fetch("/organization/set-active", {
+    method: "POST",
+    body: { organizationId },
+  });
+  expect(activeOrganization.error).toBeNull();
+  const activeTeam = await actor.client.$fetch("/organization/set-active-team", {
+    method: "POST",
+    body: { teamId },
+  });
+  expect(activeTeam.error).toBeNull();
 }
+
 async function setup(ctx: ScenarioContext, name: string) {
   await configure(ctx, "record");
-  const owner = await signup(ctx, `${name}-owner`),
-    target = await signup(ctx, `${name}-target`),
-    foreign = await signup(ctx, `${name}-foreign`);
+  const owner = await signup(ctx, `${name}-owner`);
+  const target = await signup(ctx, `${name}-target`);
+  const foreign = await signup(ctx, `${name}-foreign`);
+
   async function create(actor: Actor, label: string) {
     const result = await actor.client.$fetch("/organization/create", {
       method: "POST",
@@ -103,8 +105,10 @@ async function setup(ctx: ScenarioContext, name: string) {
     expect(result.error).toBeNull();
     return row.parse(result.data);
   }
-  const org = await create(owner, `${name}-org`),
-    other = await create(foreign, `${name}-other`);
+
+  const org = await create(owner, `${name}-org`);
+  const other = await create(foreign, `${name}-other`);
+
   async function invite(actor: Actor, organizationId: string) {
     const invited = await actor.client.$fetch("/organization/invite-member", {
       method: "POST",
@@ -118,8 +122,10 @@ async function setup(ctx: ScenarioContext, name: string) {
     expect(accepted.error).toBeNull();
     return member.parse(z.object({ member }).parse(ctx.snapshot(accepted.data)).member);
   }
+
   const original = await invite(owner, org.id);
   await invite(foreign, other.id);
+
   async function team(actor: Actor, organizationId: string, label: string) {
     const created = await actor.client.$fetch("/organization/create-team", {
       method: "POST",
@@ -127,25 +133,28 @@ async function setup(ctx: ScenarioContext, name: string) {
     });
     expect(created.error).toBeNull();
     const team = row.parse(created.data);
-    expect(
-      (
-        await actor.client.$fetch("/organization/add-team-member", {
-          method: "POST",
-          body: { organizationId, teamId: team.id, userId: target.userId },
-        })
-      ).error,
-    ).toBeNull();
+    const added = await actor.client.$fetch("/organization/add-team-member", {
+      method: "POST",
+      body: { organizationId, teamId: team.id, userId: target.userId },
+    });
+    expect(added.error).toBeNull();
     return team;
   }
-  const ownTeam = await team(owner, org.id, `${name}-team-first`),
-    otherTeam = await team(foreign, other.id, `${name}-team-foreign`);
+
+  const ownTeam = await team(owner, org.id, `${name}-team-first`);
+  const otherTeam = await team(foreign, other.id, `${name}-team-foreign`);
+
+  // A second session for the target, selecting the same organization and team.
   const siblingBase = ctx.actor(`${name}-sibling`, "org-member-removal-hooks");
-  expect(
-    (await siblingBase.client.signIn.email({ email: target.email, password: "password123" })).error,
-  ).toBeNull();
+  const siblingSignIn = await siblingBase.client.signIn.email({
+    email: target.email,
+    password: "password123",
+  });
+  expect(siblingSignIn.error).toBeNull();
   const sibling = { ...siblingBase, email: target.email, userId: target.userId, user: target.user };
   await select(target, org.id, ownTeam.id);
   await select(sibling, org.id, ownTeam.id);
+
   const users = async () => {
     const values = [];
     for (const actor of [owner, target, foreign]) {
@@ -157,10 +166,12 @@ async function setup(ctx: ScenarioContext, name: string) {
     }
     return values;
   };
+
   const raw = await owner.client.$fetch("/organization/get-organization", {
     query: { organizationId: org.id },
   });
   expect(raw.error).toBeNull();
+
   return {
     owner,
     target,
@@ -177,12 +188,14 @@ async function setup(ctx: ScenarioContext, name: string) {
     rawOrg: z.record(z.string(), z.unknown()).parse(ctx.snapshot(raw.data)),
   };
 }
+
 function remove(actor: Actor, organizationId: string, memberIdOrEmail: string) {
   return actor.client.$fetch("/organization/remove-member", {
     method: "POST",
     body: { organizationId, memberIdOrEmail },
   });
 }
+
 function removed(
   before: z.infer<typeof snapshot>,
   memberId: string,
@@ -205,6 +218,7 @@ function removed(
     })),
   };
 }
+
 function phases(
   after: z.infer<typeof stateSchema>,
   original: z.infer<typeof member>,
@@ -226,21 +240,23 @@ function phases(
   }
   return after.receipts;
 }
+
 compatScenario(
   "organization removal callbacks preserve ID and email snapshots across committed team cleanup",
   async (ctx) => {
     const observations = [];
     for (const email of [false, true]) {
       const { owner, target, org, original, ownTeam, users, rawOrg } = await setup(
-          ctx,
-          email ? "remove-email" : "remove-id",
-        ),
-        before = await state(ctx),
-        usersBefore = await users(),
-        result = await remove(owner, org.id, email ? target.email.toUpperCase() : original.id);
+        ctx,
+        email ? "remove-email" : "remove-id",
+      );
+      const before = await state(ctx);
+      const usersBefore = await users();
+      const result = await remove(owner, org.id, email ? target.email.toUpperCase() : original.id);
       expect(result.error).toBeNull();
-      const after = await state(ctx),
-        notes = phases(after, original, target.user, rawOrg, email);
+
+      const after = await state(ctx);
+      const notes = phases(after, original, target.user, rawOrg, email);
       expect(notes[0]!.snapshot).toEqual(before.snapshot);
       expect(after.snapshot).toEqual(
         removed(before.snapshot, original.id, target.userId, [ownTeam.id]),
@@ -250,6 +266,7 @@ compatScenario(
       expect(z.object({ member }).parse(ctx.snapshot(result.data)).member).toEqual(
         notes[0]!.member,
       );
+
       observations.push({
         before,
         usersBefore,
@@ -262,6 +279,7 @@ compatScenario(
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization removal callbacks reject at the actual before and after persistence phases",
   async (ctx) => {
@@ -272,14 +290,15 @@ compatScenario(
         mode,
       );
       await configure(ctx, mode);
-      const before = await state(ctx),
-        usersBefore = await users(),
-        result = await remove(owner, org.id, original.id);
+      const before = await state(ctx);
+      const usersBefore = await users();
+      const result = await remove(owner, org.id, original.id);
       expect(result.error).toMatchObject({
         status: 400,
         code: "MEMBER_REMOVAL_HOOK_REJECTED",
         message: `Rejected ${mode.slice(7)}`,
       });
+
       const after = await state(ctx);
       expect(after.receipts.map((row) => row.phase)).toEqual(
         mode === "reject-before-remove" ? ["before-remove"] : ["before-remove", "after-remove"],
@@ -292,6 +311,9 @@ compatScenario(
       expect(after.receipts[0]!.snapshot).toEqual(before.snapshot);
       const usersAfter = await users();
       expect(usersAfter).toEqual(usersBefore);
+
+      // An after-hook rejection has already committed the removal, so the
+      // target must be re-invited before a recorded retry.
       await configure(ctx, "record");
       let retryMember = original;
       let missing: unknown = null;
@@ -307,12 +329,14 @@ compatScenario(
         expect(retryMember.id).not.toBe(original.id);
         expect(retryMember.userId).toBe(target.userId);
       }
+
       const retryBefore = await state(ctx);
       expect(retryBefore.receipts).toEqual([]);
       const retry = await remove(owner, org.id, retryMember.id);
       expect(retry.error).toBeNull();
-      const final = await state(ctx),
-        notes = phases(final, retryMember, target.user, rawOrg);
+
+      const final = await state(ctx);
+      const notes = phases(final, retryMember, target.user, rawOrg);
       expect(notes[0]!.snapshot).toEqual(retryBefore.snapshot);
       expect(final.snapshot).toEqual(
         removed(retryBefore.snapshot, retryMember.id, target.userId, [ownTeam.id]),
@@ -324,6 +348,7 @@ compatScenario(
         expect(final.snapshot.teams).toEqual(after.snapshot.teams);
         expect(final.snapshot.teamMembers).toEqual(after.snapshot.teamMembers);
       }
+
       observations.push({
         mode,
         before,
@@ -344,6 +369,7 @@ compatScenario(
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization removal keeps original callback snapshots after independent target mutation or member deletion",
   async (ctx) => {
@@ -351,45 +377,50 @@ compatScenario(
     for (const mode of ["mutate-target", "delete-row"]) {
       const { owner, target, org, original, ownTeam, rawOrg, users } = await setup(ctx, mode);
       await configure(ctx, mode);
-      const before = await state(ctx),
-        usersBefore = await users(),
-        result = await remove(owner, org.id, original.id);
+      const before = await state(ctx);
+      const usersBefore = await users();
+      const result = await remove(owner, org.id, original.id);
       expect(result.error).toBeNull();
-      const after = await state(ctx),
-        notes = phases(after, original, target.user, rawOrg);
+
+      const after = await state(ctx);
+      const notes = phases(after, original, target.user, rawOrg);
       expect(notes[0]!.snapshot).toEqual(before.snapshot);
       const expected = removed(before.snapshot, original.id, target.userId, [ownTeam.id]);
-      if (mode === "mutate-target")
+      if (mode === "mutate-target") {
         expected.users = expected.users.map((row) =>
           row.id === target.userId ? { ...row, name: "Stored Removal Target" } : row,
         );
+      }
       expect(after.snapshot).toEqual(expected);
       expect(notes[1]!.snapshot).toEqual(after.snapshot);
       const usersAfter = await users();
       expect(usersAfter).toEqual(usersBefore);
+
       observations.push({ before, usersBefore, result: ctx.snapshot(result), after, usersAfter });
     }
     return observations;
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization removal guards and body validation prevent configured callbacks and permit a legitimate retry",
   async (ctx) => {
-    const { owner, target, foreign, org, original, users } = await setup(ctx, "remove-guards"),
-      before = await state(ctx),
-      usersBefore = await users(),
-      observations = [];
+    const { owner, target, foreign, org, original, users } = await setup(ctx, "remove-guards");
+    const before = await state(ctx);
+    const usersBefore = await users();
+    const observations = [];
     const ownerMember = row.parse(
-        before.snapshot.members.find(
-          (row) => row.userId === owner.userId && row.organizationId === org.id,
-        ),
+      before.snapshot.members.find(
+        (row) => row.userId === owner.userId && row.organizationId === org.id,
       ),
-      foreignTarget = row.parse(
-        before.snapshot.members.find(
-          (row) => row.userId === target.userId && row.organizationId !== org.id,
-        ),
-      );
+    );
+    const foreignTarget = row.parse(
+      before.snapshot.members.find(
+        (row) => row.userId === target.userId && row.organizationId !== org.id,
+      ),
+    );
+
     for (const [actor, selector, status, code] of [
       [target, original.id, 401, "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER"],
       [owner, ownerMember.id, 400, "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER"],
@@ -403,6 +434,7 @@ compatScenario(
       expect(await users()).toEqual(usersBefore);
       observations.push(ctx.snapshot(result));
     }
+
     const invalid = await owner.fetch(
       "/__test/profiles/org-member-removal-hooks/api/auth/organization/remove-member",
       {
@@ -418,12 +450,14 @@ compatScenario(
       message: "[body.memberIdOrEmail] Invalid input: expected string, received null",
     });
     expect(await state(ctx)).toEqual(before);
+
     const retry = await remove(owner, org.id, original.id);
     expect(retry.error).toBeNull();
     expect((await state(ctx)).receipts.map((row) => row.phase)).toEqual([
       "before-remove",
       "after-remove",
     ]);
+
     return {
       before,
       usersBefore,
@@ -436,6 +470,7 @@ compatScenario(
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization self removal clears only the current organization before after-hook rejection",
   async (ctx) => {
@@ -451,21 +486,25 @@ compatScenario(
       });
       expect(promoted.error).toBeNull();
       const current = member.parse(ctx.snapshot(promoted.data));
+
       await configure(ctx, rejection ? "reject-after-remove" : "record");
-      const before = await state(ctx),
-        currentSession = await target.client.getSession(),
-        siblingSession = await sibling.client.getSession();
+      const before = await state(ctx);
+      const currentSession = await target.client.getSession();
+      const siblingSession = await sibling.client.getSession();
       expect(currentSession.error).toBeNull();
       expect(siblingSession.error).toBeNull();
-      const currentId = z.object({ session: row }).parse(currentSession.data).session.id,
-        siblingId = z.object({ session: row }).parse(siblingSession.data).session.id,
-        result = await remove(target, org.id, original.id);
-      if (rejection)
+      const currentId = z.object({ session: row }).parse(currentSession.data).session.id;
+      const siblingId = z.object({ session: row }).parse(siblingSession.data).session.id;
+      const result = await remove(target, org.id, original.id);
+      if (rejection) {
         expect(result.error).toMatchObject({ status: 400, code: "MEMBER_REMOVAL_HOOK_REJECTED" });
-      else expect(result.error).toBeNull();
-      const after = await state(ctx),
-        notes = phases(after, current, target.user, rawOrg),
-        expected = removed(before.snapshot, original.id, target.userId, [ownTeam.id]);
+      } else {
+        expect(result.error).toBeNull();
+      }
+
+      const after = await state(ctx);
+      const notes = phases(after, current, target.user, rawOrg);
+      const expected = removed(before.snapshot, original.id, target.userId, [ownTeam.id]);
       expected.sessions = expected.sessions.map((row) =>
         row.id === currentId ? { ...row, activeOrganizationId: null } : row,
       );
@@ -480,6 +519,7 @@ compatScenario(
         activeOrganizationId: org.id,
         activeTeamId: ownTeam.id,
       });
+
       observations.push({
         before,
         currentSession: ctx.snapshot(currentSession),
@@ -492,6 +532,7 @@ compatScenario(
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization removal honors disabled team cleanup and the actual default team page",
   async (ctx) => {
@@ -500,18 +541,21 @@ compatScenario(
       "org-member-removal-hooks-teams-disabled",
       "org-member-removal-hooks-team-page-one",
     ] as const) {
-      const { owner, target, org, original, ownTeam, team, users } = await setup(ctx, profile),
-        second = await team(owner, org.id, `${profile}-team-second`),
-        configured = ctx.actor(`${profile}-configured`, profile);
-      expect(
-        (await configured.client.signIn.email({ email: owner.email, password: "password123" }))
-          .error,
-      ).toBeNull();
+      const { owner, target, org, original, ownTeam, team, users } = await setup(ctx, profile);
+      const second = await team(owner, org.id, `${profile}-team-second`);
+      const configured = ctx.actor(`${profile}-configured`, profile);
+      const signedIn = await configured.client.signIn.email({
+        email: owner.email,
+        password: "password123",
+      });
+      expect(signedIn.error).toBeNull();
+
       await configure(ctx, "record");
-      const before = await state(ctx),
-        usersBefore = await users(),
-        result = await remove({ ...owner, ...configured }, org.id, original.id);
+      const before = await state(ctx);
+      const usersBefore = await users();
+      const result = await remove({ ...owner, ...configured }, org.id, original.id);
       expect(result.error).toBeNull();
+
       const after = await state(ctx);
       expect(after.snapshot).toEqual(
         removed(
@@ -528,6 +572,7 @@ compatScenario(
       ).toBe(true);
       expect(await users()).toEqual(usersBefore);
       expect(after.receipts.map((row) => row.phase)).toEqual(["before-remove", "after-remove"]);
+
       observations.push({
         profile,
         before,
@@ -541,41 +586,44 @@ compatScenario(
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization last owner checks its configured raw page before callbacks",
   async (ctx) => {
     const { owner, target, org, original, users } = await setup(ctx, "remove-owner-page");
-    expect(
-      (
-        await owner.client.$fetch("/organization/update-member-role", {
-          method: "POST",
-          body: { organizationId: org.id, memberId: original.id, role: "owner" },
-        })
-      ).error,
-    ).toBeNull();
+    const promoted = await owner.client.$fetch("/organization/update-member-role", {
+      method: "POST",
+      body: { organizationId: org.id, memberId: original.id, role: "owner" },
+    });
+    expect(promoted.error).toBeNull();
     const configured = ctx.actor(
       "remove-owner-page-configured",
       "org-member-removal-hooks-page-one",
     );
-    expect(
-      (await configured.client.signIn.email({ email: owner.email, password: "password123" })).error,
-    ).toBeNull();
+    const signedIn = await configured.client.signIn.email({
+      email: owner.email,
+      password: "password123",
+    });
+    expect(signedIn.error).toBeNull();
+
     await configure(ctx, "record");
-    const before = await state(ctx),
-      usersBefore = await users(),
-      result = await remove({ ...owner, ...configured }, org.id, original.id);
+    const before = await state(ctx);
+    const usersBefore = await users();
+    const result = await remove({ ...owner, ...configured }, org.id, original.id);
     expect(result.error).toMatchObject({
       status: 400,
       code: "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER",
     });
     expect(await state(ctx)).toEqual(before);
     expect(await users()).toEqual(usersBefore);
+
     const retry = await remove(owner, org.id, original.id);
     expect(retry.error).toBeNull();
     expect((await state(ctx)).receipts.map((row) => row.phase)).toEqual([
       "before-remove",
       "after-remove",
     ]);
+
     return {
       before,
       usersBefore,
@@ -587,17 +635,20 @@ compatScenario(
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization removal awaits its actual before callback before member and team writes",
   async (ctx) => {
     const { owner, target, org, original, ownTeam } = await setup(ctx, "remove-await");
     await configure(ctx, "pause-before");
     const before = await state(ctx);
+
     let completed = false;
     const pending = remove(owner, org.id, original.id).then((result) => {
       completed = true;
       return result;
     });
+
     let during: Awaited<ReturnType<typeof state>> | undefined;
     const trace: TraceEntry[] = [];
     try {
@@ -606,14 +657,14 @@ compatScenario(
       expect(completed).toBe(false);
       expect(during.snapshot).toEqual(before.snapshot);
     } finally {
-      const release = await createTracingFetch(
-        ctx.baseURL,
-        "member-removal-release",
-        trace,
-      )("/__test/organization-member-removal-hooks-release", { method: "POST" });
+      const tracedFetch = createTracingFetch(ctx.baseURL, "member-removal-release", trace);
+      const release = await tracedFetch("/__test/organization-member-removal-hooks-release", {
+        method: "POST",
+      });
       expect(release.status).toBe(200);
       expect(await release.json()).toEqual({ released: true });
     }
+
     const result = await pending;
     ctx.recordTransport(trace);
     expect(result.error).toBeNull();
@@ -622,21 +673,24 @@ compatScenario(
     expect(after.snapshot).toEqual(
       removed(before.snapshot, original.id, target.userId, [ownTeam.id]),
     );
+
     return { before, during, result: ctx.snapshot(result), after };
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization trusted header removal authenticates real cookie authority and delivers target snapshots",
   async (ctx) => {
     const { owner, target, foreign, org, original, ownTeam, rawOrg, users } = await setup(
-        ctx,
-        "remove-server",
-      ),
-      before = await state(ctx),
-      usersBefore = await users(),
-      guest = ctx.actor("remove-server-guest"),
-      failures = [];
+      ctx,
+      "remove-server",
+    );
+    const before = await state(ctx);
+    const usersBefore = await users();
+    const guest = ctx.actor("remove-server-guest");
+    const failures = [];
+
     for (const actor of [guest, foreign]) {
       const result = await actor.fetch("/__test/organization-member-removal-hooks-server", {
         method: "POST",
@@ -654,61 +708,67 @@ compatScenario(
       expect(await users()).toEqual(usersBefore);
       failures.push({ status: result.status, body });
     }
+
     const response = await owner.fetch("/__test/organization-member-removal-hooks-server", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ organizationId: org.id, memberIdOrEmail: target.email.toUpperCase() }),
     });
     expect(response.status).toBe(200);
-    const result = await response.json(),
-      after = await state(ctx),
-      notes = phases(after, original, target.user, rawOrg, true);
+    const result = await response.json();
+    const after = await state(ctx);
+    const notes = phases(after, original, target.user, rawOrg, true);
     expect(result).toEqual({ member: notes[0]!.member });
     expect(after.snapshot).toEqual(
       removed(before.snapshot, original.id, target.userId, [ownTeam.id]),
     );
     expect(await users()).toEqual(usersBefore);
+
     return { before, usersBefore, failures, result, after, usersAfter: await users() };
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization trusted member removal cleans an actually expired session without callbacks or sibling mutation",
   async (ctx) => {
     const { owner, target, org, original, ownTeam, users } = await setup(
-        ctx,
-        "remove-server-expired",
-      ),
-      sibling = ctx.actor("remove-server-expired-owner-sibling", "org-member-removal-hooks");
-    expect(
-      (await sibling.client.signIn.email({ email: owner.email, password: "password123" })).error,
-    ).toBeNull();
+      ctx,
+      "remove-server-expired",
+    );
+    const sibling = ctx.actor("remove-server-expired-owner-sibling", "org-member-removal-hooks");
+    const siblingSignIn = await sibling.client.signIn.email({
+      email: owner.email,
+      password: "password123",
+    });
+    expect(siblingSignIn.error).toBeNull();
+
     const session = await owner.client.getSession();
     expect(session.error).toBeNull();
     const current = z
       .object({ session: z.object({ id: z.string(), token: z.string() }) })
       .parse(session.data).session;
-    expect(
-      (
-        await ctx.rawRequest({
-          path: "/__test/expire-session",
-          method: "POST",
-          json: { token: current.token, expiresAt: "2000-01-01T00:00:00.000Z" },
-        })
-      ).status,
-    ).toBe(200);
+    const expiredSession = await ctx.rawRequest({
+      path: "/__test/expire-session",
+      method: "POST",
+      json: { token: current.token, expiresAt: "2000-01-01T00:00:00.000Z" },
+    });
+    expect(expiredSession.status).toBe(200);
+
     await configure(ctx, "record");
-    const before = await state(ctx),
-      usersBefore = await users(),
-      response = await owner.fetch("/__test/organization-member-removal-hooks-server", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ organizationId: org.id, memberIdOrEmail: original.id }),
-      });
+    const before = await state(ctx);
+    const usersBefore = await users();
+    const response = await owner.fetch("/__test/organization-member-removal-hooks-server", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ organizationId: org.id, memberIdOrEmail: original.id }),
+    });
     expect(response.status).toBe(401);
     const body = await response.json();
     expect(body).toEqual({ code: "UNAUTHORIZED", message: "Unauthorized" });
     expect(response.headers.getSetCookie()).toEqual([]);
+
+    // Only the expired session row is cleaned up; no callbacks run.
     const after = await state(ctx);
     expect(after.receipts).toEqual([]);
     expect(after.snapshot).toEqual({
@@ -719,13 +779,14 @@ compatScenario(
     expect(usersAfter[1]).toEqual(usersBefore[1]);
     expect(usersAfter[2]).toEqual(usersBefore[2]);
     const userState = z
-        .object({ sessions: z.array(z.object({ id: z.string() }).passthrough()) })
-        .passthrough(),
-      previous = userState.parse(usersBefore[0]);
+      .object({ sessions: z.array(z.object({ id: z.string() }).passthrough()) })
+      .passthrough();
+    const previous = userState.parse(usersBefore[0]);
     expect(userState.parse(usersAfter[0])).toEqual({
       ...previous,
       sessions: previous.sessions.filter((row) => row.id !== current.id),
     });
+
     const retry = await remove({ ...owner, ...sibling }, org.id, original.id);
     expect(retry.error).toBeNull();
     const final = await state(ctx);
@@ -733,6 +794,7 @@ compatScenario(
     expect(final.snapshot).toEqual(
       removed(after.snapshot, original.id, target.userId, [ownTeam.id]),
     );
+
     return {
       before,
       usersBefore,
@@ -746,6 +808,7 @@ compatScenario(
   },
   ["POST /organization/remove-member"],
 );
+
 async function rawRemove(actor: Actor, organizationId: string, memberIdOrEmail: string) {
   const response = await actor.fetch("/api/auth/organization/remove-member", {
     method: "POST",
@@ -759,9 +822,11 @@ async function rawRemove(actor: Actor, organizationId: string, memberIdOrEmail: 
     cookies: response.headers.getSetCookie(),
   };
 }
+
 function emptyDatabaseFailure(result: Awaited<ReturnType<typeof rawRemove>>) {
   expect(result).toEqual({ status: 500, text: "", contentType: null, cookies: [] });
 }
+
 async function withSqlGuard<T>(ctx: ScenarioContext, operation: () => Promise<T>): Promise<T> {
   try {
     return await operation();
@@ -769,36 +834,36 @@ async function withSqlGuard<T>(ctx: ScenarioContext, operation: () => Promise<T>
     await configure(ctx, "record");
   }
 }
+
 compatScenario(
   "organization removal without callbacks returns real SQL veto empty 500 after permission and rolls back all scoped writes",
   async (ctx) =>
     withSqlGuard(ctx, async () => {
       const observations = [];
       for (const mode of ["sql-member-abort", "sql-team-abort"]) {
-        const { owner, target, foreign, org, original, ownTeam, users } = await setup(ctx, mode),
-          configured = ctx.actor(`${mode}-no-hooks`, "org-member-removal-no-hooks"),
-          foreignConfigured = ctx.actor(`${mode}-foreign`, "org-member-removal-no-hooks"),
-          guest = ctx.actor(`${mode}-guest`, "org-member-removal-no-hooks");
-        expect(
-          (await configured.client.signIn.email({ email: owner.email, password: "password123" }))
-            .error,
-        ).toBeNull();
-        expect(
-          (
-            await foreignConfigured.client.signIn.email({
-              email: foreign.email,
-              password: "password123",
-            })
-          ).error,
-        ).toBeNull();
+        const { owner, target, foreign, org, original, ownTeam, users } = await setup(ctx, mode);
+        const configured = ctx.actor(`${mode}-no-hooks`, "org-member-removal-no-hooks");
+        const foreignConfigured = ctx.actor(`${mode}-foreign`, "org-member-removal-no-hooks");
+        const guest = ctx.actor(`${mode}-guest`, "org-member-removal-no-hooks");
+        const ownerSignIn = await configured.client.signIn.email({
+          email: owner.email,
+          password: "password123",
+        });
+        expect(ownerSignIn.error).toBeNull();
+        const foreignSignIn = await foreignConfigured.client.signIn.email({
+          email: foreign.email,
+          password: "password123",
+        });
+        expect(foreignSignIn.error).toBeNull();
+
         await configure(ctx, mode, {
           memberId: original.id,
           userId: target.userId,
           organizationId: org.id,
         });
-        const before = await state(ctx),
-          usersBefore = await users(),
-          denials = [];
+        const before = await state(ctx);
+        const usersBefore = await users();
+        const denials = [];
         for (const [actor, status, code] of [
           [guest, 401, "UNAUTHORIZED"],
           [foreignConfigured, 400, "MEMBER_NOT_FOUND"],
@@ -809,11 +874,13 @@ compatScenario(
           expect(await users()).toEqual(usersBefore);
           denials.push(ctx.snapshot(result));
         }
+
         const result = await rawRemove({ ...owner, ...configured }, org.id, original.id);
         emptyDatabaseFailure(result);
         const after = await state(ctx);
         expect(after).toEqual(before);
         expect(await users()).toEqual(usersBefore);
+
         await configure(ctx, "record");
         const retry = await remove({ ...owner, ...configured }, org.id, original.id);
         expect(retry.error).toBeNull();
@@ -823,6 +890,7 @@ compatScenario(
           removed(before.snapshot, original.id, target.userId, [ownTeam.id]),
         );
         expect(await users()).toEqual(usersBefore);
+
         observations.push({
           mode,
           before,
@@ -839,14 +907,15 @@ compatScenario(
     }),
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization real SQL errors in removal callbacks retain before and self after persistence phases",
   async (ctx) =>
     withSqlGuard(ctx, async () => {
       const observations = [];
       for (const mode of ["sql-before-error", "sql-after-error"]) {
-        const data = await setup(ctx, mode),
-          { owner, target, sibling, org, original, ownTeam, rawOrg, users, invite } = data;
+        const { owner, target, sibling, org, original, ownTeam, otherTeam, rawOrg, users, invite } =
+          await setup(ctx, mode);
         let current = original;
         if (mode === "sql-after-error") {
           const promoted = await owner.client.$fetch("/organization/update-member-role", {
@@ -859,19 +928,21 @@ compatScenario(
         const session = await target.client.getSession();
         expect(session.error).toBeNull();
         const currentId = z.object({ session: row }).parse(session.data).session.id;
+
         await configure(ctx, mode, {
           memberId: original.id,
           userId: target.userId,
           organizationId: org.id,
         });
-        const before = await state(ctx),
-          usersBefore = await users(),
-          result = await rawRemove(
-            mode === "sql-after-error" ? target : owner,
-            org.id,
-            original.id,
-          );
+        const before = await state(ctx);
+        const usersBefore = await users();
+        const result = await rawRemove(
+          mode === "sql-after-error" ? target : owner,
+          org.id,
+          original.id,
+        );
         emptyDatabaseFailure(result);
+
         const after = await state(ctx);
         expect(after.receipts.map((row) => row.phase)).toEqual(
           mode === "sql-before-error" ? ["before-remove"] : ["before-remove", "after-remove"],
@@ -886,19 +957,22 @@ compatScenario(
           mode === "sql-before-error"
             ? before.snapshot
             : removed(before.snapshot, original.id, target.userId, [ownTeam.id]);
-        if (mode === "sql-after-error")
+        if (mode === "sql-after-error") {
           expected.sessions = expected.sessions.map((row) =>
             row.id === currentId ? { ...row, activeOrganizationId: null } : row,
           );
+        }
         expect(after.snapshot).toEqual(expected);
+
         const usersAfter = await users();
-        if (mode === "sql-before-error") expect(usersAfter).toEqual(usersBefore);
-        else {
+        if (mode === "sql-before-error") {
+          expect(usersAfter).toEqual(usersBefore);
+        } else {
           expect(after.receipts[1]!.snapshot).toEqual(after.snapshot);
           expect(usersAfter[0]).toEqual(usersBefore[0]);
           expect(usersAfter[2]).toEqual(usersBefore[2]);
-          const shape = z.object({ sessions: z.array(row) }).passthrough(),
-            previous = shape.parse(usersBefore[1]);
+          const shape = z.object({ sessions: z.array(row) }).passthrough();
+          const previous = shape.parse(usersBefore[1]);
           expect(shape.parse(usersAfter[1])).toEqual({
             ...previous,
             sessions: previous.sessions.map((row) =>
@@ -912,6 +986,7 @@ compatScenario(
               .session,
           ).toMatchObject({ activeOrganizationId: org.id, activeTeamId: ownTeam.id });
         }
+
         await configure(ctx, "record");
         let restored = original;
         if (mode === "sql-after-error") {
@@ -920,6 +995,7 @@ compatScenario(
           expect((await state(ctx)).receipts).toEqual([]);
           restored = await invite(owner, org.id);
         }
+
         const retry = await remove(owner, org.id, restored.id);
         expect(retry.error).toBeNull();
         const final = await state(ctx);
@@ -929,9 +1005,10 @@ compatScenario(
         expect(final.snapshot.organizations).toEqual(before.snapshot.organizations);
         expect(
           final.snapshot.teamMembers.some(
-            (row) => row.teamId === data.otherTeam.id && row.userId === target.userId,
+            (row) => row.teamId === otherTeam.id && row.userId === target.userId,
           ),
         ).toBe(true);
+
         observations.push({
           mode,
           before,
@@ -949,6 +1026,7 @@ compatScenario(
     }),
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization removal distinguishes actual SQL IGNORE success from database errors and retries without double releasing seats",
   async (ctx) =>
@@ -962,10 +1040,12 @@ compatScenario(
         userId: target.userId,
         organizationId: org.id,
       });
-      const before = await state(ctx),
-        usersBefore = await users(),
-        result = await remove(owner, org.id, original.id);
+      const before = await state(ctx);
+      const usersBefore = await users();
+      const result = await remove(owner, org.id, original.id);
       expect(result.error).toBeNull();
+
+      // The ignored member delete leaves the member row while team cleanup commits.
       const after = await state(ctx);
       phases(after, original, target.user, rawOrg);
       expect(after.snapshot).toEqual({
@@ -975,6 +1055,7 @@ compatScenario(
       expect(after.receipts[0]!.snapshot).toEqual(before.snapshot);
       expect(after.receipts[1]!.snapshot).toEqual(after.snapshot);
       expect(await users()).toEqual(usersBefore);
+
       await configure(ctx, "record");
       const retry = await remove(owner, org.id, original.id);
       expect(retry.error).toBeNull();
@@ -985,6 +1066,7 @@ compatScenario(
       });
       expect(final.receipts.map((row) => row.phase)).toEqual(["before-remove", "after-remove"]);
       expect(await users()).toEqual(usersBefore);
+
       return {
         before,
         usersBefore,
@@ -997,6 +1079,7 @@ compatScenario(
     }),
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization removal preserves explicit public callback 500 JSON rather than classifying it as a database failure",
   async (ctx) => {
@@ -1007,9 +1090,9 @@ compatScenario(
         `public-500-${phase}`,
       );
       await configure(ctx, `public-500-${phase}`);
-      const before = await state(ctx),
-        usersBefore = await users(),
-        result = await rawRemove(owner, org.id, original.id);
+      const before = await state(ctx);
+      const usersBefore = await users();
+      const result = await rawRemove(owner, org.id, original.id);
       expect(result).toEqual({
         status: 500,
         text: JSON.stringify({
@@ -1019,6 +1102,7 @@ compatScenario(
         contentType: "application/json",
         cookies: [],
       });
+
       const after = await state(ctx);
       expect(after.receipts.map((row) => row.phase)).toEqual(
         phase === "before-remove" ? ["before-remove"] : ["before-remove", "after-remove"],
@@ -1029,6 +1113,7 @@ compatScenario(
           : removed(before.snapshot, original.id, target.userId, [ownTeam.id]),
       );
       expect(await users()).toEqual(usersBefore);
+
       observations.push({ phase, before, usersBefore, result, after, usersAfter: await users() });
     }
     return observations;

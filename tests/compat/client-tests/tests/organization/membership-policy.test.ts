@@ -5,7 +5,9 @@ import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
 const root = "/__test/organization-membership-policy";
+
 const row = z.object({ id: z.string() }).passthrough();
+
 const stateSchema = z.object({
   receipts: z.array(z.record(z.string(), z.unknown())),
   snapshot: z.object({
@@ -15,22 +17,25 @@ const stateSchema = z.object({
     teams: z.array(row),
   }),
 });
+
 async function state(ctx: ScenarioContext) {
   const response = await ctx.rawRequest({ path: `${root}/state` });
   expect(response.status).toBe(200);
   return stateSchema.parse(response.body);
 }
+
 async function reset(ctx: ScenarioContext) {
-  expect(
-    (await ctx.rawRequest({ path: `${root}/configure`, method: "POST", json: {} })).status,
-  ).toBe(200);
+  const response = await ctx.rawRequest({ path: `${root}/configure`, method: "POST", json: {} });
+  expect(response.status).toBe(200);
 }
+
 async function signup(ctx: ScenarioContext, name: string) {
-  const actor = ctx.actor(name, "org-membership-default"),
-    email = ctx.uniqueEmail(name);
+  const actor = ctx.actor(name, "org-membership-default");
+  const email = ctx.uniqueEmail(name);
   const created = await actor.client.signUp.email({ email, name, password: "password123" });
   expect(created.error).toBeNull();
   const user = row.parse(z.object({ user: row }).parse(ctx.snapshot(created.data)).user);
+
   const session = await actor.client.getSession();
   expect(session.error).toBeNull();
   const issued = z
@@ -39,6 +44,7 @@ async function signup(ctx: ScenarioContext, name: string) {
   expect(issued.user.id).toBe(user.id);
   expect(issued.session.userId).toBe(user.id);
   expect(issued.session.token).toBe(z.string().parse(created.data!.token));
+
   const stored = z
     .object({ sessions: z.array(row) })
     .parse(await ctx.readUserState({ userId: user.id }));
@@ -50,13 +56,16 @@ async function signup(ctx: ScenarioContext, name: string) {
   });
   return { ...actor, user, email, created, session: ctx.snapshot(session) };
 }
+
 type Actor = Awaited<ReturnType<typeof signup>>;
+
 function client(ctx: ScenarioContext, actor: Actor, profile: FixtureProfile) {
   return createAuthClient({
     baseURL: `${ctx.baseURL}/__test/profiles/${profile}/api/auth`,
     fetchOptions: { customFetchImpl: actor.fetch },
   });
 }
+
 async function org(ctx: ScenarioContext, actor: Actor, name: string) {
   const response = await actor.client.$fetch("/organization/create", {
     method: "POST",
@@ -70,6 +79,7 @@ async function org(ctx: ScenarioContext, actor: Actor, name: string) {
   expect(response.error).toBeNull();
   return row.parse(response.data);
 }
+
 async function add(
   ctx: ScenarioContext,
   profile: FixtureProfile,
@@ -83,11 +93,13 @@ async function add(
     json: { profile, body: { organizationId, userId, role: "member", ...fields } },
   });
 }
+
 async function actors(ctx: ScenarioContext, names: string[]) {
   const result = [];
   for (const name of names) result.push(await signup(ctx, name));
   return result;
 }
+
 async function owned(ctx: ScenarioContext, values: Actor[]) {
   return Promise.all(values.map((actor) => ctx.readUserState({ userId: actor.user.id })));
 }
@@ -105,6 +117,7 @@ compatScenario(
     await org(ctx, foreign!, "fixed-other");
     expect((await add(ctx, "org-membership-default", own.id, existing!.user.id)).status).toBe(200);
     const observations = [];
+
     for (const [suffix, allowed] of [
       ["default", true],
       ["none", true],
@@ -117,15 +130,16 @@ compatScenario(
     ] as const) {
       const candidate = await signup(ctx, `fixed-${suffix}`);
       await reset(ctx);
-      const before = await state(ctx),
-        usersBefore = await owned(ctx, [owner!, existing!, foreign!, candidate]);
+      const before = await state(ctx);
+      const usersBefore = await owned(ctx, [owner!, existing!, foreign!, candidate]);
       const response = await add(
-          ctx,
-          `org-membership-${suffix}` as FixtureProfile,
-          own.id,
-          candidate.user.id,
-        ),
-        after = await state(ctx);
+        ctx,
+        `org-membership-${suffix}` as FixtureProfile,
+        own.id,
+        candidate.user.id,
+      );
+      const after = await state(ctx);
+
       if (allowed) {
         expect(response.status).toBe(200);
         const created = row.parse(response.body);
@@ -140,6 +154,7 @@ compatScenario(
         expect(response.body).toHaveProperty("code", "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED");
         expect(after.snapshot).toEqual(before.snapshot);
       }
+
       const usersAfter = await owned(ctx, [owner!, existing!, foreign!, candidate]);
       expect(after.receipts).toEqual([]);
       expect(after.snapshot.organizations).toEqual(before.snapshot.organizations);
@@ -157,6 +172,7 @@ compatScenario(
         usersAfter,
       });
     }
+
     return {
       owner: owner!.created,
       ownerSession: owner!.session,
@@ -175,17 +191,18 @@ compatScenario(
   async (ctx) => {
     const [owner, foreign] = await actors(ctx, ["fractional-owner", "fractional-foreign"]);
     await org(ctx, foreign!, "fractional-foreign");
-    const fractionalOrganization = await org(ctx, owner!, "fixed-fractional-boundary"),
-      fractionalTarget = await signup(ctx, "fractional-first"),
-      fractionalDeniedTarget = await signup(ctx, "fractional-second");
+    const fractionalOrganization = await org(ctx, owner!, "fixed-fractional-boundary");
+    const fractionalTarget = await signup(ctx, "fractional-first");
+    const fractionalDeniedTarget = await signup(ctx, "fractional-second");
     await reset(ctx);
-    const fractionalBefore = await state(ctx),
-      fractionalUsers = await owned(ctx, [
-        owner!,
-        foreign!,
-        fractionalTarget,
-        fractionalDeniedTarget,
-      ]);
+    const fractionalBefore = await state(ctx);
+    const fractionalUsers = await owned(ctx, [
+      owner!,
+      foreign!,
+      fractionalTarget,
+      fractionalDeniedTarget,
+    ]);
+
     const fractionalAllowed = await add(
       ctx,
       "org-membership-fractional",
@@ -198,6 +215,7 @@ compatScenario(
       ...fractionalBefore.snapshot.members,
       row.parse(fractionalAllowed.body),
     ]);
+
     const fractionalDenied = await add(
       ctx,
       "org-membership-fractional",
@@ -209,6 +227,7 @@ compatScenario(
     expect(await owned(ctx, [owner!, foreign!, fractionalTarget, fractionalDeniedTarget])).toEqual(
       fractionalUsers,
     );
+
     return {
       owner: owner!.created,
       foreign: foreign!.created,
@@ -239,13 +258,15 @@ compatScenario(
     });
     expect(raw.error).toBeNull();
     const observations = [];
+
     for (const suffix of ["zero", "fractional", "error", "nan"] as const) {
       const target = await signup(ctx, `resolver-${suffix}`);
       await reset(ctx);
-      const before = await state(ctx),
-        beforeUsers = await owned(ctx, [owner!, existing!, foreign!, target]);
-      const response = await add(ctx, `org-membership-resolver-${suffix}`, own.id, target.user.id),
-        after = await state(ctx);
+      const before = await state(ctx);
+      const beforeUsers = await owned(ctx, [owner!, existing!, foreign!, target]);
+      const response = await add(ctx, `org-membership-resolver-${suffix}`, own.id, target.user.id);
+      const after = await state(ctx);
+
       expect(after.receipts).toHaveLength(1);
       expect(after.receipts[0]).toEqual({
         phase: "membership-limit",
@@ -273,8 +294,10 @@ compatScenario(
       expect(await owned(ctx, [owner!, existing!, foreign!, target])).toEqual(beforeUsers);
       observations.push({ suffix, target: target.created, before, beforeUsers, response, after });
     }
-    const fractionalOrganization = await org(ctx, owner!, "resolver-fractional-boundary"),
-      fractionalTarget = await signup(ctx, "resolver-fractional-first");
+
+    // On a fresh organization the fractional resolver limit admits one more member.
+    const fractionalOrganization = await org(ctx, owner!, "resolver-fractional-boundary");
+    const fractionalTarget = await signup(ctx, "resolver-fractional-first");
     const fractionalRaw = await owner!.client.$fetch("/organization/get-organization", {
       query: { organizationId: fractionalOrganization.id },
     });
@@ -302,22 +325,24 @@ compatScenario(
       ...fractionalBefore.snapshot.members,
       row.parse(fractionalAllowed.body),
     ]);
+
+    // Target, organization and duplicate checks reject before the resolver runs.
     const candidate = await signup(ctx, "resolver-guard-target");
     await reset(ctx);
     const before = await state(ctx);
     const missingTarget = await add(
-        ctx,
-        "org-membership-resolver-nan",
-        own.id,
-        "missing-policy-target",
-      ),
-      missingOrganization = await add(
-        ctx,
-        "org-membership-resolver-nan",
-        "missing-policy-organization",
-        candidate.user.id,
-      ),
-      duplicate = await add(ctx, "org-membership-resolver-nan", own.id, existing!.user.id);
+      ctx,
+      "org-membership-resolver-nan",
+      own.id,
+      "missing-policy-target",
+    );
+    const missingOrganization = await add(
+      ctx,
+      "org-membership-resolver-nan",
+      "missing-policy-organization",
+      candidate.user.id,
+    );
+    const duplicate = await add(ctx, "org-membership-resolver-nan", own.id, existing!.user.id);
     expect(missingTarget.status).toBe(400);
     expect(missingTarget.body).toHaveProperty("code", "USER_NOT_FOUND");
     expect(missingOrganization.status).toBe(400);
@@ -325,6 +350,7 @@ compatScenario(
     expect(duplicate.status).toBe(400);
     expect(duplicate.body).toHaveProperty("code", "USER_IS_ALREADY_A_MEMBER_OF_THIS_ORGANIZATION");
     expect(await state(ctx)).toEqual(before);
+
     const room = await owner!.client.$fetch("/organization/create-team", {
       method: "POST",
       body: { organizationId: own.id, name: "Policy team" },
@@ -343,6 +369,7 @@ compatScenario(
     const teamAfter = await state(ctx);
     expect(teamAfter.receipts.map((value) => value.phase)).toEqual(["membership-limit"]);
     expect(teamAfter.snapshot).toEqual(teamBefore.snapshot);
+
     return {
       observations,
       fractionalBefore,
@@ -374,16 +401,18 @@ compatScenario(
     await org(ctx, foreign!, "invite-policy-foreign");
     expect((await add(ctx, "org-membership-default", own.id, existing!.user.id)).status).toBe(200);
     await reset(ctx);
-    const before = await state(ctx),
-      beforeUsers = await owned(ctx, [owner!, existing!, target!, foreign!]);
+    const before = await state(ctx);
+    const beforeUsers = await owned(ctx, [owner!, existing!, target!, foreign!]);
+
     const invitation = await client(ctx, owner!, "org-membership-pending-one").$fetch(
       "/organization/invite-member",
       { method: "POST", body: { organizationId: own.id, email: target!.email, role: "member" } },
     );
     expect(invitation.error).toBeNull();
-    const invited = row.parse(ctx.snapshot(invitation.data)),
-      pending = await state(ctx);
+    const invited = row.parse(ctx.snapshot(invitation.data));
+    const pending = await state(ctx);
     expect(pending.snapshot.invitations).toEqual([...before.snapshot.invitations, invited]);
+
     const pendingCap = await client(ctx, owner!, "org-membership-pending-one").$fetch(
       "/organization/invite-member",
       {
@@ -401,6 +430,7 @@ compatScenario(
       message: "Invitation limit reached",
     });
     expect(await state(ctx)).toEqual(pending);
+
     const wrong = await client(ctx, foreign!, "org-membership-resolver-zero").$fetch(
       "/organization/accept-invitation",
       { method: "POST", body: { invitationId: invited.id } },
@@ -416,6 +446,7 @@ compatScenario(
     expect(unverified.error?.status).toBe(403);
     expect((await state(ctx)).receipts).toEqual([]);
     expect((await state(ctx)).snapshot).toEqual(pending.snapshot);
+
     const sent = await target!.client.sendVerificationEmail({ email: target!.email });
     expect(sent.error).toBeNull();
     const proof = z
@@ -425,8 +456,9 @@ compatScenario(
     expect(verified.error).toBeNull();
     const targetSession = await target!.client.getSession();
     expect(targetSession.data?.user.emailVerified).toBe(true);
-    const verifiedBefore = await state(ctx),
-      verifiedUsers = await owned(ctx, [owner!, existing!, target!, foreign!]);
+
+    const verifiedBefore = await state(ctx);
+    const verifiedUsers = await owned(ctx, [owner!, existing!, target!, foreign!]);
     const fixed = await client(ctx, target!, "org-membership-one").$fetch(
       "/organization/accept-invitation",
       { method: "POST", body: { invitationId: invited.id } },
@@ -436,6 +468,7 @@ compatScenario(
       code: "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
     });
     expect(await state(ctx)).toEqual(verifiedBefore);
+
     const resolved = await client(ctx, target!, "org-membership-resolver-zero").$fetch(
       "/organization/accept-invitation",
       { method: "POST", body: { invitationId: invited.id } },
@@ -450,6 +483,7 @@ compatScenario(
     expect(denied.receipts[0]!.user).toEqual(ctx.snapshot(targetSession.data!.user));
     expect(denied.receipts[0]!.snapshot).toEqual(verifiedBefore.snapshot);
     expect(await owned(ctx, [owner!, existing!, target!, foreign!])).toEqual(verifiedUsers);
+
     const accepted = await client(ctx, target!, "org-membership-resolver-nan").$fetch(
       "/organization/accept-invitation",
       { method: "POST", body: { invitationId: invited.id } },
@@ -465,6 +499,7 @@ compatScenario(
       ),
     ).toHaveLength(1);
     expect(await ctx.readUserState({ userId: foreign!.user.id })).toEqual(beforeUsers[3]);
+
     return {
       before,
       beforeUsers,
@@ -501,15 +536,16 @@ compatScenario(
     await org(ctx, foreign!, "page-policy-foreign");
     expect((await add(ctx, "org-membership-default", own.id, target!.user.id)).status).toBe(200);
     await reset(ctx);
-    const before = await state(ctx),
-      beforeUsers = await owned(ctx, [owner!, target!, foreign!]);
+    const before = await state(ctx);
+    const beforeUsers = await owned(ctx, [owner!, target!, foreign!]);
+
     const guest = createAuthClient({
-        baseURL: `${ctx.baseURL}/__test/profiles/org-membership-one/api/auth`,
-        fetchOptions: {
-          customFetchImpl: ctx.actor("page-policy-guest", "org-membership-one").fetch,
-        },
-      }),
-      guestReads = [];
+      baseURL: `${ctx.baseURL}/__test/profiles/org-membership-one/api/auth`,
+      fetchOptions: {
+        customFetchImpl: ctx.actor("page-policy-guest", "org-membership-one").fetch,
+      },
+    });
+    const guestReads = [];
     for (const path of ["/organization/list-members", "/organization/get-full-organization"]) {
       const result = await guest.$fetch(path, { query: { organizationId: own.id } });
       expect(result.error).toMatchObject({
@@ -521,6 +557,7 @@ compatScenario(
       expect(await owned(ctx, [owner!, target!, foreign!])).toEqual(beforeUsers);
       guestReads.push({ path, result: ctx.snapshot(result) });
     }
+
     const observations = [];
     for (const [suffix, expected] of [
       ["one", 1],
@@ -541,8 +578,9 @@ compatScenario(
       const full = await selected.$fetch("/organization/get-full-organization", {
         query: { organizationId: own.id },
       });
-      if (suffix === "one") expect(full.error?.status).toBe(500);
-      else {
+      if (suffix === "one") {
+        expect(full.error?.status).toBe(500);
+      } else {
         expect(full.error).toBeNull();
         expect(z.object({ members: z.array(row) }).parse(full.data).members).toHaveLength(
           suffix === "page-one" ? 1 : suffix === "page-zero" ? 0 : 2,
@@ -550,14 +588,16 @@ compatScenario(
       }
       observations.push({ suffix, listed: ctx.snapshot(listed), full: ctx.snapshot(full) });
     }
-    const selected = client(ctx, owner!, "org-membership-one"),
-      queries = [];
+
+    const selected = client(ctx, owner!, "org-membership-one");
+    const queries = [];
     for (const limit of ["0", "not-number", "0x1", "1.5", "-1", "Infinity"]) {
       const listed = await selected.$fetch("/organization/list-members", {
         query: { organizationId: own.id, limit },
       });
-      if (limit === "1.5" || limit === "Infinity") expect(listed.error?.status).toBe(500);
-      else {
+      if (limit === "1.5" || limit === "Infinity") {
+        expect(listed.error?.status).toBe(500);
+      } else {
         expect(listed.error).toBeNull();
         expect(z.object({ members: z.array(row) }).parse(listed.data).members).toHaveLength(
           limit === "-1" ? 2 : 1,
@@ -565,6 +605,7 @@ compatScenario(
       }
       queries.push({ limit, listed: ctx.snapshot(listed) });
     }
+
     const fullQueries = [];
     for (const membersLimit of ["1", "1.5", "1suffix", "0x1"]) {
       const full = await selected.$fetch("/organization/get-full-organization", {
@@ -574,8 +615,10 @@ compatScenario(
       expect(z.object({ members: z.array(row) }).parse(full.data).members).toHaveLength(1);
       fullQueries.push({ membersLimit, full: ctx.snapshot(full) });
     }
+
     expect(await state(ctx)).toEqual(before);
     expect(await owned(ctx, [owner!, target!, foreign!])).toEqual(beforeUsers);
+
     const foreignView = await client(ctx, foreign!, "org-membership-one").$fetch(
       "/organization/get-full-organization",
       { query: { organizationId: own.id } },
@@ -583,6 +626,7 @@ compatScenario(
     expect(foreignView.error?.status).toBe(500);
     expect(await owned(ctx, [owner!, target!, foreign!])).toEqual(beforeUsers);
     expect((await state(ctx)).receipts).toEqual([]);
+
     const originalTarget = before.snapshot.members.find(
       (member) => member.organizationId === own.id && member.userId === target!.user.id,
     )!;
@@ -602,6 +646,7 @@ compatScenario(
       code: "YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER",
     });
     expect(await state(ctx)).toEqual(removalBefore);
+
     const removed = await client(ctx, owner!, "org-membership-resolver-error").$fetch(
       "/organization/remove-member",
       { method: "POST", body: { organizationId: own.id, memberIdOrEmail: originalTarget.id } },
@@ -614,6 +659,7 @@ compatScenario(
       members: removalBefore.snapshot.members.filter((member) => member.id !== originalTarget.id),
     });
     expect(await owned(ctx, [owner!, target!, foreign!])).toEqual(beforeUsers);
+
     return {
       before,
       beforeUsers,

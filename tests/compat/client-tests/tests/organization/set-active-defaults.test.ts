@@ -28,6 +28,7 @@ const stateSchema = z.object({
     z.object({ operation: z.string(), userId: z.string(), email: z.string(), name: z.string() }),
   ),
 });
+
 async function state(ctx: ScenarioContext, email: string) {
   const response = await ctx.rawRequest({
     path: `/__test/organization-creation-state?email=${encodeURIComponent(email)}&includeMetadata=true&includeLogo=true`,
@@ -35,6 +36,8 @@ async function state(ctx: ScenarioContext, email: string) {
   expect(response.status).toBe(200);
   return stateSchema.parse(response.body);
 }
+
+/** One user with two sessions, each having created and selected its own organization. */
 async function setup(ctx: ScenarioContext) {
   const owner = ctx.actor("selector-owner", "org-creation-empty-role");
   const email = ctx.uniqueEmail("selector-owner");
@@ -47,6 +50,7 @@ async function setup(ctx: ScenarioContext) {
   const { token, user } = z
     .object({ token: z.string(), user: z.object({ id: z.string() }) })
     .parse(signedUp.data);
+
   const firstSlug = ctx.uniqueToken("selector-first");
   const firstCreated = await owner.client.$fetch("/organization/create", {
     method: "POST",
@@ -54,6 +58,7 @@ async function setup(ctx: ScenarioContext) {
   });
   expect(firstCreated.error).toBeNull();
   const firstId = z.object({ id: z.string() }).parse(firstCreated.data).id;
+
   const other = ctx.actor("selector-other-token", "org-creation-empty-role");
   const signedIn = await other.client.signIn.email({ email, password: "password123" });
   expect(signedIn.error).toBeNull();
@@ -65,11 +70,13 @@ async function setup(ctx: ScenarioContext) {
   });
   expect(secondCreated.error).toBeNull();
   const secondId = z.object({ id: z.string() }).parse(secondCreated.data).id;
+
   const before = await state(ctx, email);
   expect(before.sessions.find((row) => row.token === token)?.activeOrganizationId).toBe(firstId);
   expect(before.sessions.find((row) => row.token === otherToken)?.activeOrganizationId).toBe(
     secondId,
   );
+
   return {
     owner,
     email,
@@ -83,6 +90,8 @@ async function setup(ctx: ScenarioContext) {
     before,
   };
 }
+
+/** Posts to set-active through the fixture profile and reports whether a cookie was written. */
 async function set(
   ctx: ScenarioContext,
   actor: ReturnType<ScenarioContext["actor"]>,
@@ -110,11 +119,13 @@ compatScenario(
   async (ctx) => {
     const { owner, email, token, firstId, firstSlug, secondId, secondSlug, otherToken, before } =
       await setup(ctx);
+
     const blank = await set(ctx, owner, { organizationId: "", organizationSlug: "" });
     expect(blank.status).toBe(200);
     expect(blank.hasCookie).toBeTrue();
     expect(z.object({ id: z.string() }).parse(blank.body).id).toBe(firstId);
     expect(await state(ctx, email)).toEqual(before);
+
     const slug = await set(ctx, owner, { organizationId: "", organizationSlug: secondSlug });
     expect(slug.status).toBe(200);
     expect(z.object({ id: z.string() }).parse(slug.body).id).toBe(secondId);
@@ -126,10 +137,12 @@ compatScenario(
     expect(afterSlug.sessions.find((row) => row.token === otherToken)).toEqual(
       before.sessions.find((row) => row.token === otherToken),
     );
+
     const idWins = await set(ctx, owner, { organizationId: firstId, organizationSlug: secondSlug });
     expect(idWins.status).toBe(200);
     expect(z.object({ id: z.string() }).parse(idWins.body).id).toBe(firstId);
     expect(await state(ctx, email)).toEqual(before);
+
     const missingSlug = await set(ctx, owner, {
       organizationSlug: ctx.uniqueToken("missing-slug"),
     });
@@ -139,6 +152,8 @@ compatScenario(
       hasCookie: false,
     });
     expect(await state(ctx, email)).toEqual(before);
+
+    // An explicit null id takes precedence over the slug and clears the selection.
     const nullWins = await set(ctx, owner, { organizationId: null, organizationSlug: secondSlug });
     expect(nullWins).toEqual({ status: 200, body: null, hasCookie: true });
     const cleared = await state(ctx, email);
@@ -148,6 +163,8 @@ compatScenario(
       ),
     );
     expect(cleared.organizations).toEqual(before.organizations);
+
+    // With nothing selected, an empty selector is a no-op that writes no cookie.
     const unselected = [];
     for (const body of [
       { organizationId: null },
@@ -159,11 +176,13 @@ compatScenario(
       expect(await state(ctx, email)).toEqual(cleared);
       unselected.push(result);
     }
+
     const retried = await set(ctx, owner, { organizationSlug: firstSlug });
     expect(retried.status).toBe(200);
     expect(retried.hasCookie).toBeTrue();
     expect(z.object({ id: z.string() }).parse(retried.body).id).toBe(firstId);
     expect(await state(ctx, email)).toEqual(before);
+
     return {
       before,
       blank,
@@ -184,6 +203,7 @@ compatScenario(
   "organization set-active clears only the denied current token and validates guest bodies before authentication",
   async (ctx) => {
     const { owner, email, token, firstId, firstSlug, otherToken, before } = await setup(ctx);
+
     const foreign = ctx.actor("selector-foreign-owner", "org-creation-empty-role");
     const foreignEmail = ctx.uniqueEmail("selector-foreign");
     expect(
@@ -206,6 +226,7 @@ compatScenario(
     expect(foreignCreated.error).toBeNull();
     const foreignId = z.object({ id: z.string() }).parse(foreignCreated.data).id;
     const foreignBefore = await state(ctx, foreignEmail);
+
     const denied = await set(ctx, owner, {
       organizationId: foreignId,
       organizationSlug: firstSlug,
@@ -218,6 +239,7 @@ compatScenario(
       },
       hasCookie: false,
     });
+
     const cleared = await state(ctx, email);
     expect(cleared.sessions).toEqual(
       before.sessions.map((row) =>
@@ -229,6 +251,7 @@ compatScenario(
     );
     expect(cleared.organizations).toEqual(before.organizations);
     expect(await state(ctx, foreignEmail)).toEqual(foreignBefore);
+
     const guest = ctx.actor("selector-guest", "org-creation-empty-role");
     const invalid = await set(ctx, guest, { organizationId: 1, organizationSlug: null });
     expect(invalid).toEqual({
@@ -240,12 +263,14 @@ compatScenario(
       },
       hasCookie: false,
     });
+
     const validGuest = await set(ctx, guest, {});
     expect(validGuest).toEqual({
       status: 401,
       body: { code: "UNAUTHORIZED", message: "Unauthorized" },
       hasCookie: false,
     });
+
     const badMedia = await set(ctx, guest, "{invalid", "text/plain");
     expect(badMedia).toEqual({
       status: 415,
@@ -255,12 +280,15 @@ compatScenario(
       },
       hasCookie: false,
     });
+
     expect(await state(ctx, email)).toEqual(cleared);
     expect(await state(ctx, foreignEmail)).toEqual(foreignBefore);
+
     const retry = await set(ctx, owner, { organizationId: firstId });
     expect(retry.status).toBe(200);
     expect(retry.hasCookie).toBeTrue();
     expect(await state(ctx, email)).toEqual(before);
+
     const missingId = await set(ctx, owner, {
       organizationId: ctx.uniqueToken("missing-organization"),
     });
@@ -274,6 +302,7 @@ compatScenario(
     });
     expect(await state(ctx, email)).toEqual(cleared);
     expect(await state(ctx, foreignEmail)).toEqual(foreignBefore);
+
     return {
       before,
       foreignBefore,

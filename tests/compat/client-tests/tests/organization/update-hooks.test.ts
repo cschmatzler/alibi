@@ -4,12 +4,14 @@ import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
 
 const row = z.object({ id: z.string() }).passthrough();
+
 const snapshot = z.object({
   organizations: z.array(row),
   members: z.array(row),
   users: z.array(row),
   sessions: z.array(row),
 });
+
 const receipt = z.object({
   phase: z.string(),
   organization: z.record(z.string(), z.unknown()).nullable(),
@@ -22,7 +24,9 @@ const receipt = z.object({
   }),
   snapshot,
 });
+
 const stateSchema = z.object({ receipts: z.array(receipt), snapshot });
+
 const organization = z
   .object({
     id: z.string(),
@@ -32,6 +36,7 @@ const organization = z
     metadata: z.unknown().optional(),
   })
   .passthrough();
+
 async function configure(ctx: ScenarioContext, mode: string) {
   expect(
     (
@@ -43,6 +48,7 @@ async function configure(ctx: ScenarioContext, mode: string) {
     ).status,
   ).toBe(200);
 }
+
 async function state(ctx: ScenarioContext, waitFor?: string) {
   const result = await ctx.rawRequest({
     path: "/__test/organization-update-hooks-state" + (waitFor ? `?waitFor=${waitFor}` : ""),
@@ -50,9 +56,10 @@ async function state(ctx: ScenarioContext, waitFor?: string) {
   expect(result.status).toBe(200);
   return stateSchema.parse(result.body);
 }
+
 async function signup(ctx: ScenarioContext, name: string) {
-  const actor = ctx.actor(name, "org-update-hooks"),
-    email = ctx.uniqueEmail(name);
+  const actor = ctx.actor(name, "org-update-hooks");
+  const email = ctx.uniqueEmail(name);
   const result = await actor.client.signUp.email({
     name,
     email,
@@ -65,7 +72,9 @@ async function signup(ctx: ScenarioContext, name: string) {
     userId: z.object({ user: z.object({ id: z.string() }) }).parse(result.data).user.id,
   };
 }
+
 type Actor = Awaited<ReturnType<typeof signup>>;
+
 async function create(ctx: ScenarioContext, actor: Actor, name: string) {
   const result = await actor.client.$fetch("/organization/create", {
     method: "POST",
@@ -79,12 +88,15 @@ async function create(ctx: ScenarioContext, actor: Actor, name: string) {
   expect(result.error).toBeNull();
   return organization.parse(result.data);
 }
+
 function update(actor: Actor, organizationId: string, data: Record<string, unknown>) {
   return actor.client.$fetch("/organization/update", {
     method: "POST",
     body: { organizationId, data },
   });
 }
+
+/** Asserts that nothing outside the target organization row changed. */
 function unchanged(
   before: z.infer<typeof stateSchema>,
   after: z.infer<typeof stateSchema>,
@@ -93,22 +105,25 @@ function unchanged(
   expect(after.snapshot.organizations.filter((r) => r.id !== target)).toEqual(
     before.snapshot.organizations.filter((r) => r.id !== target),
   );
-  for (const key of ["members", "users", "sessions"] as const)
+  for (const key of ["members", "users", "sessions"] as const) {
     expect(after.snapshot[key]).toEqual(before.snapshot[key]);
+  }
 }
+
 async function setup(ctx: ScenarioContext, name: string) {
-  const owner = await signup(ctx, `${name}-owner`),
-    foreign = await signup(ctx, `${name}-foreign`),
-    target = await create(ctx, owner, `${name}-target`),
-    other = await create(ctx, foreign, `${name}-other`);
+  const owner = await signup(ctx, `${name}-owner`);
+  const foreign = await signup(ctx, `${name}-foreign`);
+  const target = await create(ctx, owner, `${name}-target`);
+  const other = await create(ctx, foreign, `${name}-other`);
   return { owner, foreign, target, other };
 }
 
 compatScenario(
   "organization update hooks merge null empty and absent patches with parsed adapter output",
   async (ctx) => {
-    const { owner, target } = await setup(ctx, "update-patch"),
-      observations = [];
+    const { owner, target } = await setup(ctx, "update-patch");
+    const observations = [];
+
     for (const mode of [
       "patch",
       "null-metadata",
@@ -117,32 +132,36 @@ compatScenario(
       "empty-name",
     ]) {
       await configure(ctx, mode);
-      const before = await state(ctx),
-        input = {
-          name: "HTTP Update",
-          logo: "https://example.test/http.png",
-          metadata: { supplied: mode },
-        },
-        result = await update(owner, target.id, input);
+      const before = await state(ctx);
+      const input = {
+        name: "HTTP Update",
+        logo: "https://example.test/http.png",
+        metadata: { supplied: mode },
+      };
+      const result = await update(owner, target.id, input);
       expect(result.error).toBeNull();
-      const parsed = organization.parse(result.data),
-        after = await state(ctx);
+      const parsed = organization.parse(result.data);
+      const after = await state(ctx);
+
       expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
-      expect(after.receipts[0]!.organization).toEqual(input);
-      expect(after.receipts[0]!.organization).not.toHaveProperty("id");
-      expect(after.receipts[0]!.member).toMatchObject({
+      const beforeReceipt = after.receipts[0]!;
+      const afterReceipt = after.receipts[1]!;
+      expect(beforeReceipt.organization).toEqual(input);
+      expect(beforeReceipt.organization).not.toHaveProperty("id");
+      expect(beforeReceipt.member).toMatchObject({
         organizationId: target.id,
         userId: owner.userId,
         role: "owner",
       });
-      expect(after.receipts[0]!.user).toEqual({
+      expect(beforeReceipt.user).toEqual({
         id: owner.userId,
         email: owner.email,
         name: "update-patch-owner",
       });
-      expect(after.receipts[0]!.snapshot).toEqual(before.snapshot);
-      expect(after.receipts[1]!.organization).toEqual(organization.parse(ctx.snapshot(parsed)));
-      expect(after.receipts[1]!.snapshot).toEqual(after.snapshot);
+      expect(beforeReceipt.snapshot).toEqual(before.snapshot);
+      expect(afterReceipt.organization).toEqual(organization.parse(ctx.snapshot(parsed)));
+      expect(afterReceipt.snapshot).toEqual(after.snapshot);
+
       const stored = after.snapshot.organizations.find((r) => r.id === target.id)!;
       if (mode === "patch") {
         expect(parsed).toMatchObject({
@@ -171,8 +190,10 @@ compatScenario(
         expect(stored.name).toBe("");
       }
       unchanged(before, after, target.id);
+
       observations.push({ mode, before, result: ctx.snapshot(result), after });
     }
+
     return observations;
   },
   ["POST /organization/update"],
@@ -189,31 +210,37 @@ compatScenario(
           .client.signIn.email({ email: owner.email, password: "password123" })
       ).error,
     ).toBeNull();
+
     const observations = [];
     for (const mode of ["reject-before-update", "reject-after-update"]) {
       await configure(ctx, mode);
-      const before = await state(ctx),
-        data = { name: mode, metadata: { rejection: mode } },
-        result = await update(owner, target.id, data);
+      const before = await state(ctx);
+      const data = { name: mode, metadata: { rejection: mode } };
+      const result = await update(owner, target.id, data);
       expect(result.error).toMatchObject({
         status: 400,
         code: "UPDATE_HOOK_REJECTED",
         message: `Rejected ${mode.slice(7)}`,
       });
+
       const after = await state(ctx);
       expect(after.receipts.map((r) => r.phase)).toEqual(
         mode === "reject-before-update" ? ["before-update"] : ["before-update", "after-update"],
       );
-      if (mode === "reject-before-update") expect(after.snapshot).toEqual(before.snapshot);
-      else {
+      if (mode === "reject-before-update") {
+        expect(after.snapshot).toEqual(before.snapshot);
+      } else {
+        // The after hook rejects only once the write has already been persisted.
         expect(after.snapshot.organizations.find((r) => r.id === target.id)).toMatchObject({
           name: mode,
           metadata: JSON.stringify(data.metadata),
         });
         unchanged(before, after, target.id);
       }
+
       observations.push({ mode, before, result: ctx.snapshot(result), after });
     }
+
     return observations;
   },
   ["POST /organization/update"],
@@ -225,22 +252,26 @@ compatScenario(
     const { owner, foreign, target, other } = await setup(ctx, "update-guards");
     await configure(ctx, "reject-before-update");
     const before = await state(ctx);
+
     const wrongOwner = await update(foreign, target.id, { name: "Forbidden" });
     expect(wrongOwner.error).toMatchObject({
       status: 400,
       code: "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
     });
+
     const duplicate = await update(owner, target.id, { slug: other.slug });
     expect(duplicate.error).toMatchObject({
       status: 400,
       code: "ORGANIZATION_SLUG_ALREADY_TAKEN",
       message: "Organization slug already taken",
     });
+
     const invalid = await update(owner, target.id, { name: 42 });
     expect(invalid.error).toMatchObject({
       status: 400,
       code: "VALIDATION_ERROR",
     });
+
     const unauthenticated = await ctx
       .actor("update-guards-guest", "org-update-hooks")
       .client.$fetch("/organization/update", {
@@ -251,8 +282,10 @@ compatScenario(
       status: 401,
       message: "User not found",
     });
+
     const after = await state(ctx);
     expect(after).toEqual(before);
+
     return {
       before,
       wrongOwner: ctx.snapshot(wrongOwner),
@@ -270,27 +303,33 @@ compatScenario(
   async (ctx) => {
     const { owner, target } = await setup(ctx, "update-authority");
     await configure(ctx, "mutate-authority");
-    const before = await state(ctx),
-      result = await update(owner, target.id, {
-        name: "Authorized Before Hook",
-      });
+    const before = await state(ctx);
+    const result = await update(owner, target.id, {
+      name: "Authorized Before Hook",
+    });
     expect(result.error).toBeNull();
+
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
-    expect(after.receipts[1]!.user).toEqual(after.receipts[0]!.user);
-    expect(after.receipts[1]!.member).toEqual(after.receipts[0]!.member);
-    expect(after.receipts[1]!.user.name).toBe("update-authority-owner");
-    expect(after.receipts[1]!.member.role).toBe("owner");
+    const beforeReceipt = after.receipts[0]!;
+    const afterReceipt = after.receipts[1]!;
+    expect(afterReceipt.user).toEqual(beforeReceipt.user);
+    expect(afterReceipt.member).toEqual(beforeReceipt.member);
+    expect(afterReceipt.user.name).toBe("update-authority-owner");
+    expect(afterReceipt.member.role).toBe("owner");
+
+    // The hook's independent writes are persisted even though the receipts kept the originals.
     expect(after.snapshot.users.find((r) => r.id === owner.userId)).toMatchObject({
       name: "Stored New Name",
     });
-    expect(after.snapshot.members.find((r) => r.id === after.receipts[0]!.member.id)).toMatchObject(
-      { role: "member" },
-    );
+    expect(after.snapshot.members.find((r) => r.id === beforeReceipt.member.id)).toMatchObject({
+      role: "member",
+    });
     expect(after.snapshot.sessions).toEqual(before.snapshot.sessions);
     expect(after.snapshot.organizations.filter((r) => r.id !== target.id)).toEqual(
       before.snapshot.organizations.filter((r) => r.id !== target.id),
     );
+
     await configure(ctx, "reject-before-update");
     const denied = await update(owner, target.id, {
       name: "Must Recheck Current Membership",
@@ -299,9 +338,11 @@ compatScenario(
       status: 403,
       code: "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION",
     });
+
     const deniedState = await state(ctx);
     expect(deniedState.receipts).toEqual([]);
     expect(deniedState.snapshot).toEqual(after.snapshot);
+
     return {
       before,
       result: ctx.snapshot(result),
@@ -324,11 +365,13 @@ compatScenario(
           .client.signIn.email({ email: owner.email, password: "password123" })
       ).error,
     ).toBeNull();
+
     await configure(ctx, "delete-row");
-    const before = await state(ctx),
-      result = await update(owner, target.id, { name: "Missing At Write" });
+    const before = await state(ctx);
+    const result = await update(owner, target.id, { name: "Missing At Write" });
     expect(result.error).toBeNull();
     expect(result.data).toBeNull();
+
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
     expect(after.receipts[1]!.organization).toBeNull();
@@ -341,6 +384,7 @@ compatScenario(
     );
     expect(after.snapshot.sessions).toEqual(before.snapshot.sessions);
     expect(after.snapshot.users).toEqual(before.snapshot.users);
+
     return { before, result: ctx.snapshot(result), after };
   },
   ["POST /organization/update"],
@@ -349,10 +393,11 @@ compatScenario(
 compatScenario(
   "organization update awaits its real async before hook before executing the adapter",
   async (ctx) => {
-    const owner = await signup(ctx, "update-await-owner"),
-      target = await create(ctx, owner, "update-await-target");
+    const owner = await signup(ctx, "update-await-owner");
+    const target = await create(ctx, owner, "update-await-target");
     await configure(ctx, "pause-before");
     const before = await state(ctx);
+
     let completed = false;
     const pending = update(owner, target.id, {
       name: "Awaited Adapter Write",
@@ -360,6 +405,7 @@ compatScenario(
       completed = true;
       return result;
     });
+
     let paused: Awaited<ReturnType<typeof state>> | undefined;
     const releaseTrace: TraceEntry[] = [];
     try {
@@ -376,15 +422,18 @@ compatScenario(
       expect(released.status).toBe(200);
       expect(await released.json()).toEqual({ released: true });
     }
+
     const result = await pending;
     ctx.recordTransport(releaseTrace);
     expect(result.error).toBeNull();
+
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
     expect(after.snapshot.organizations.find((r) => r.id === target.id)).toMatchObject({
       name: "Awaited Adapter Write",
     });
     expect(after.snapshot.sessions).toEqual(before.snapshot.sessions);
+
     return { before, paused, result: ctx.snapshot(result), after };
   },
   ["POST /organization/update"],
@@ -395,6 +444,7 @@ compatScenario(
   async (ctx) => {
     const { owner, target } = await setup(ctx, "update-raw-metadata");
     const observations = [];
+
     for (const [raw, numberClass, serialized, negativeZero] of [
       ["1e999", "positive-infinity", "null", false],
       ["-1e999", "negative-infinity", "null", false],
@@ -402,6 +452,8 @@ compatScenario(
     ] as const) {
       await configure(ctx, "raw-metadata");
       const before = await state(ctx);
+
+      // Sent as a raw string so the nonfinite literals reach the server unnormalized.
       const result = await owner.client.$fetch("/organization/update", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -415,6 +467,7 @@ compatScenario(
         patched: serialized === "null" ? null : 0,
         negativeZero,
       });
+
       const after = await state(ctx);
       expect(after.receipts.map((r) => r.phase)).toEqual(["before-update", "after-update"]);
       expect(after.receipts[1]!.organization).toEqual(organization.parse(ctx.snapshot(parsed)));
@@ -423,8 +476,10 @@ compatScenario(
         metadata: `{"original":${serialized},"patched":${serialized},"negativeZero":${negativeZero}}`,
       });
       unchanged(before, after, target.id);
+
       observations.push({ raw, before, result: ctx.snapshot(result), after });
     }
+
     return observations;
   },
   ["POST /organization/update"],

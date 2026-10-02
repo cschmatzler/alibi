@@ -28,6 +28,7 @@ const storedSchema = z.object({
     z.object({ operation: z.string(), userId: z.string(), email: z.string(), name: z.string() }),
   ),
 });
+
 async function state(ctx: ScenarioContext, email: string) {
   const response = await ctx.rawRequest({
     path: `/__test/organization-creation-state?email=${encodeURIComponent(email)}&includeMetadata=true&includeLogo=true`,
@@ -35,6 +36,7 @@ async function state(ctx: ScenarioContext, email: string) {
   expect(response.status).toBe(200);
   return storedSchema.parse(response.body);
 }
+
 async function signup(ctx: ScenarioContext, name: string) {
   const actor = ctx.actor(name, "org-creation-empty-role");
   const email = ctx.uniqueEmail(name);
@@ -43,6 +45,7 @@ async function signup(ctx: ScenarioContext, name: string) {
   const userId = z.object({ user: z.object({ id: z.string() }) }).parse(response.data).user.id;
   return { ...actor, email, userId };
 }
+
 async function create(
   ctx: ScenarioContext,
   actor: Awaited<ReturnType<typeof signup>>,
@@ -58,9 +61,12 @@ async function create(
   const id = z.object({ id: z.string() }).parse(response.data).id;
   return { id, logo, metadata };
 }
+
 async function setup(ctx: ScenarioContext) {
   const owner = await signup(ctx, "patch-owner");
   const second = await create(ctx, owner, "second");
+
+  // A second session for the same owner selects the first organization.
   const otherToken = ctx.actor("other-owner-token", "org-creation-empty-role");
   expect(
     (await otherToken.client.signIn.email({ email: owner.email, password: "password123" })).error,
@@ -70,8 +76,10 @@ async function setup(ctx: ScenarioContext) {
     { ...otherToken, email: owner.email, userId: owner.userId },
     "first",
   );
+
   const foreign = await signup(ctx, "foreign-owner");
   const foreignOrganization = await create(ctx, foreign, "foreign");
+
   const before = await state(ctx, owner.email);
   const foreignBefore = await state(ctx, foreign.email);
   expect(before.sessions.map((row) => row.activeOrganizationId).sort()).toEqual(
@@ -86,6 +94,7 @@ compatScenario(
   async (ctx) => {
     const data = await setup(ctx);
     const { owner, first, second, foreign, before, foreignBefore } = data;
+
     const omitted = await owner.client.$fetch("/organization/update", {
       method: "POST",
       body: { organizationId: first.id, data: { name: "Omitted Logo" } },
@@ -102,6 +111,7 @@ compatScenario(
       before.organizations.find((row) => row.id === second.id),
     );
     expect(afterOmitted.sessions).toEqual(before.sessions);
+
     const cleared = await owner.client.$fetch("/organization/update", {
       method: "POST",
       body: { organizationId: first.id, data: { logo: null } },
@@ -117,6 +127,7 @@ compatScenario(
       metadata: JSON.stringify(first.metadata),
     });
     expect(afterClear.sessions).toEqual(before.sessions);
+
     const blank = await owner.client.$fetch("/organization/update", {
       method: "POST",
       body: { organizationId: first.id, data: { logo: "" } },
@@ -126,11 +137,14 @@ compatScenario(
     expect(
       (await state(ctx, owner.email)).organizations.find((row) => row.id === first.id)?.logo,
     ).toBe("");
+
     const replaced = await owner.client.$fetch("/organization/update", {
       method: "POST",
       body: { organizationId: first.id, data: { logo: "https://fixture.test/replaced.png" } },
     });
     expect(replaced.error).toBeNull();
+
+    // Foreign and unauthenticated callers cannot clear the logo.
     const protectedState = await state(ctx, owner.email);
     const denied = await foreign.client.$fetch("/organization/update", {
       method: "POST",
@@ -150,17 +164,20 @@ compatScenario(
     expect(guest.body).toEqual({ message: "User not found" });
     expect(await state(ctx, owner.email)).toEqual(protectedState);
     expect(await state(ctx, foreign.email)).toEqual(foreignBefore);
+
     const retry = await owner.client.$fetch("/organization/update", {
       method: "POST",
       body: { organizationId: first.id, data: { logo: null } },
     });
     expect(retry.error).toBeNull();
+
     const final = await state(ctx, owner.email);
     expect(final.organizations.find((row) => row.id === first.id)?.logo).toBeNull();
     expect(final.organizations.find((row) => row.id === second.id)).toEqual(
       before.organizations.find((row) => row.id === second.id),
     );
     expect(final.sessions).toEqual(before.sessions);
+
     return {
       before,
       foreignBefore,
@@ -193,6 +210,7 @@ compatScenario(
       before,
       foreignBefore,
     } = await setup(ctx);
+
     const selected = await owner.client.$fetch("/organization/update", {
       method: "POST",
       body: { organizationId: "", data: { name: "Current Token Selected", logo: null } },
@@ -211,6 +229,7 @@ compatScenario(
       metadata: JSON.stringify(second.metadata),
     });
     expect(afterCurrent.sessions).toEqual(before.sessions);
+
     const other = await otherToken.client.$fetch("/organization/update", {
       method: "POST",
       body: { organizationId: "", data: { name: "Other Token Selected" } },
@@ -227,6 +246,8 @@ compatScenario(
       afterCurrent.organizations.find((row) => row.id === second.id),
     );
     expect(afterOther.sessions).toEqual(before.sessions);
+
+    // A fresh foreign session has no active organization to fall back to.
     const noSelection = ctx.actor("foreign-unselected", "org-creation-empty-role");
     expect(
       (await noSelection.client.signIn.email({ email: foreign.email, password: "password123" }))
@@ -243,6 +264,7 @@ compatScenario(
       message: "Organization not found",
     });
     expect(await state(ctx, foreign.email)).toEqual(foreignWithOtherToken);
+
     const foreignSelected = await foreign.client.$fetch("/organization/update", {
       method: "POST",
       body: { organizationId: "", data: { name: "Foreign Selected", logo: null } },
@@ -259,6 +281,7 @@ compatScenario(
       metadata: JSON.stringify(foreignOrganization.metadata),
     });
     expect(foreignAfter.sessions).toEqual(foreignWithOtherToken.sessions);
+
     return {
       before,
       foreignBefore,

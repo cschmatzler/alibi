@@ -8,6 +8,7 @@ import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { createTracingFetch, type TraceEntry } from "../../support/trace";
 
 const row = z.object({ id: z.string() }).passthrough();
+
 const snapshotSchema = z.object({
   invitations: z.array(row),
   members: z.array(row),
@@ -16,6 +17,7 @@ const snapshotSchema = z.object({
   sessions: z.array(row),
   organizations: z.array(row),
 });
+
 const stateSchema = z.object({
   receipts: z.array(
     z
@@ -39,23 +41,26 @@ const stateSchema = z.object({
           receipt.phase === "team-limit"
             ? receipt.invitationStatus === undefined || receipt.snapshot !== undefined
             : receipt.snapshot === undefined || receipt.invitationStatus !== undefined
-        )
+        ) {
           context.addIssue({
             code: "custom",
             message: "Callback observation must match its actual storage boundary",
           });
+        }
       }),
   ),
   snapshot: snapshotSchema,
   waiting: z.number(),
 });
+
 function protectKeys<T extends z.infer<typeof stateSchema>>(state: T) {
   const snapshots = [
     state.snapshot,
     ...state.receipts.flatMap((receipt) => (receipt.snapshot ? [receipt.snapshot] : [])),
   ];
-  for (const snapshot of snapshots)
-    for (const member of snapshot.teamMembers)
+
+  for (const snapshot of snapshots) {
+    for (const member of snapshot.teamMembers) {
       if (typeof member.membershipKey === "string") {
         expect(member.membershipKey).toBe(
           new Bun.CryptoHasher("sha256")
@@ -70,8 +75,12 @@ function protectKeys<T extends z.infer<typeof stateSchema>>(state: T) {
           },
         };
       }
+    }
+  }
+
   return state;
 }
+
 async function state(ctx: ScenarioContext, waitFor?: number) {
   const result = await ctx.rawRequest({
     path:
@@ -81,6 +90,7 @@ async function state(ctx: ScenarioContext, waitFor?: number) {
   expect(result.status).toBe(200);
   return protectKeys(stateSchema.parse(result.body));
 }
+
 async function configure(
   ctx: ScenarioContext,
   mode: string,
@@ -96,15 +106,17 @@ async function configure(
   expect(response.body).toEqual({ configured: true });
   return response;
 }
+
 async function signup(
   ctx: ScenarioContext,
   name: string,
   profile: FixtureProfile,
   rememberMe?: boolean,
 ) {
-  const actor = ctx.actor(name, profile),
-    cookies: string[][] = [],
-    wire: { status: number; contentType: string | null; text: string }[] = [];
+  const actor = ctx.actor(name, profile);
+  const cookies: string[][] = [];
+  const wire: { status: number; contentType: string | null; text: string }[] = [];
+
   const fetchImpl = async (input: string | URL | Request, init?: RequestInit) => {
     const response = await actor.fetch(input, init);
     cookies.push(response.headers.getSetCookie());
@@ -120,14 +132,16 @@ async function signup(
     plugins: [organizationClient({ teams: { enabled: true } })],
     fetchOptions: { customFetchImpl: fetchImpl },
   });
-  const email = ctx.uniqueEmail(name),
-    signup = await client.signUp.email({
-      name,
-      email,
-      password: "password123",
-      ...(rememberMe === undefined ? {} : { rememberMe }),
-    });
+
+  const email = ctx.uniqueEmail(name);
+  const signup = await client.signUp.email({
+    name,
+    email,
+    password: "password123",
+    ...(rememberMe === undefined ? {} : { rememberMe }),
+  });
   expect(signup.error).toBeNull();
+
   if (rememberMe === false) {
     expect(cookies.at(-1)!.map((raw) => Cookie.parse(raw)!.key)).toEqual([
       "better-auth.session_token",
@@ -135,20 +149,23 @@ async function signup(
     ]);
     for (const raw of cookies.at(-1)!) expect(Cookie.parse(raw)!.maxAge).toBeNull();
   }
+
   const user = z
     .object({ id: z.string(), email: z.string(), name: z.string() })
     .passthrough()
     .parse(signup.data!.user);
   return { client, cookies, wire, user, email, signup: ctx.snapshot(signup) };
 }
+
 async function setup(
   ctx: ScenarioContext,
   profile: FixtureProfile = "org-invitation-stage",
   rememberMe?: boolean,
 ) {
-  const owner = await signup(ctx, "stage-owner", profile),
-    target = await signup(ctx, "stage-target", profile, rememberMe),
-    foreign = await signup(ctx, "stage-foreign", profile);
+  const owner = await signup(ctx, "stage-owner", profile);
+  const target = await signup(ctx, "stage-target", profile, rememberMe);
+  const foreign = await signup(ctx, "stage-foreign", profile);
+
   const created = await owner.client.organization.create({
     name: "Staged invitation organization",
     slug: ctx.uniqueToken("stage-org"),
@@ -156,12 +173,14 @@ async function setup(
   });
   expect(created.error).toBeNull();
   const org = row.parse(created.data);
+
   const other = await foreign.client.organization.create({
     name: "Foreign organization",
     slug: ctx.uniqueToken("stage-foreign-org"),
     metadata: { foreign: true },
   });
   expect(other.error).toBeNull();
+
   let team: z.infer<typeof row> | undefined;
   if (!profile.endsWith("no-team")) {
     const result = await owner.client.organization.createTeam({
@@ -171,6 +190,7 @@ async function setup(
     expect(result.error).toBeNull();
     team = row.parse(result.data);
   }
+
   const result = await owner.client.organization.inviteMember({
     organizationId: org.id,
     email: target.email,
@@ -179,13 +199,17 @@ async function setup(
   });
   expect(result.error).toBeNull();
   const invitation = row.parse(result.data);
+
+  // A second session for the recipient, used to check acceptance only touches its own session.
   const sibling = ctx.actor("stage-target-sibling", profile);
   const signed = await sibling.client.signIn.email({
     email: target.email,
     password: "password123",
   });
   expect(signed.error).toBeNull();
+
   const foreignBefore = await ctx.readUserState({ userId: foreign.user.id });
+
   return {
     owner,
     target,
@@ -199,7 +223,9 @@ async function setup(
     profile,
   };
 }
+
 type Setup = Awaited<ReturnType<typeof setup>>;
+
 async function denied(ctx: ScenarioContext, s: Setup, before: Awaited<ReturnType<typeof state>>) {
   const guest = createAuthClient({
     baseURL: `${ctx.baseURL}${authProfilePath(s.profile)}`,
@@ -208,10 +234,12 @@ async function denied(ctx: ScenarioContext, s: Setup, before: Awaited<ReturnType
       customFetchImpl: ctx.actor("stage-guest", s.profile).fetch,
     },
   });
+
   const noSession = await guest.organization.acceptInvitation({
     invitationId: s.invitation.id,
   });
   expect(noSession.error?.status).toBe(401);
+
   const wrong = await s.foreign.client.organization.acceptInvitation({
     invitationId: s.invitation.id,
   });
@@ -219,12 +247,15 @@ async function denied(ctx: ScenarioContext, s: Setup, before: Awaited<ReturnType
     status: 403,
     code: "YOU_ARE_NOT_THE_RECIPIENT_OF_THE_INVITATION",
   });
+
   expect(await state(ctx)).toEqual(before);
   return { noSession: ctx.snapshot(noSession), wrong: ctx.snapshot(wrong) };
 }
+
 function phases(result: Awaited<ReturnType<typeof state>>) {
   return result.receipts.map((receipt) => receipt.phase);
 }
+
 function unchangedPeers(
   s: Setup,
   before: Awaited<ReturnType<typeof state>>,
@@ -232,12 +263,14 @@ function unchangedPeers(
   selected: boolean,
 ) {
   expect(after.snapshot.organizations).toEqual(before.snapshot.organizations);
+
   const ownSession = before.snapshot.sessions.find(
     (session) => session.userId === s.target.user.id,
   )!;
   expect(after.snapshot.sessions.filter((session) => session.id !== ownSession.id)).toEqual(
     before.snapshot.sessions.filter((session) => session.id !== ownSession.id),
   );
+
   const current = after.snapshot.sessions.find((session) => session.id === ownSession.id)!;
   if (selected) {
     expect(current).toMatchObject({
@@ -247,8 +280,11 @@ function unchangedPeers(
       updatedAt: current.updatedAt,
     });
     expect(current.token).toBe(ownSession.token);
-  } else expect(current).toEqual(ownSession);
+  } else {
+    expect(current).toEqual(ownSession);
+  }
 }
+
 function accepted(
   s: Setup,
   before: Awaited<ReturnType<typeof state>>,
@@ -259,6 +295,7 @@ function accepted(
       row.id === s.invitation.id ? { ...row, status: "accepted" } : row,
     ),
   );
+
   expect(after.snapshot.members).toHaveLength(before.snapshot.members.length + 1);
   const member = after.snapshot.members.at(-1)!;
   expect(member).toMatchObject({
@@ -268,6 +305,7 @@ function accepted(
   });
   expect(before.snapshot.members.some((row) => row.id === member.id)).toBe(false);
   expect(after.snapshot.members.slice(0, -1)).toEqual(before.snapshot.members);
+
   if (s.team) {
     expect(after.snapshot.teamMembers).toHaveLength(before.snapshot.teamMembers.length + 1);
     expect(after.snapshot.teamMembers.at(-1)).toMatchObject({
@@ -283,8 +321,10 @@ function accepted(
     expect(after.snapshot.teamMembers).toEqual(before.snapshot.teamMembers);
     expect(after.snapshot.teams).toEqual(before.snapshot.teams);
   }
+
   unchangedPeers(s, before, after, true);
 }
+
 function cookiePolicy(cookies: string[], expected: boolean) {
   expect(cookies).toHaveLength(expected ? 1 : 0);
   if (expected) {
@@ -298,6 +338,7 @@ function cookiePolicy(cookies: string[], expected: boolean) {
       maxAge: 604800,
     });
   }
+
   return cookies.map((raw) => {
     const cookie = Cookie.parse(raw)!;
     return {
@@ -310,6 +351,7 @@ function cookiePolicy(cookies: string[], expected: boolean) {
     };
   });
 }
+
 for (const mode of [
   "before-accept-error",
   "before-accept-internal",
@@ -331,6 +373,7 @@ for (const mode of [
     `organization invitation staged acceptance ${mode} preserves exact phase state and authority`,
     async (ctx) => {
       const s = await setup(ctx);
+
       if (mode === "team-full") {
         const add = await s.owner.client.organization.addTeamMember({
           teamId: s.team!.id,
@@ -339,30 +382,36 @@ for (const mode of [
         });
         expect(add.error).toBeNull();
       }
+
       await configure(ctx, mode, s.invitation.id, s.target.user.id);
-      const before = await state(ctx),
-        guards = await denied(ctx, s, before);
+      const before = await state(ctx);
+      const guards = await denied(ctx, s, before);
+
       const result = await s.target.client.organization.acceptInvitation({
-          invitationId: s.invitation.id,
-        }),
-        cookies = s.target.cookies.at(-1)!;
+        invitationId: s.invitation.id,
+      });
+      const cookies = s.target.cookies.at(-1)!;
       const transport = s.target.wire.at(-1)!;
-      const after = await state(ctx),
-        early = mode.startsWith("before"),
-        late = mode.startsWith("after"),
-        resetVeto = mode === "sql-reset" || mode === "sql-reset-api";
+      const after = await state(ctx);
+
+      const early = mode.startsWith("before");
+      const late = mode.startsWith("after");
+      const resetVeto = mode === "sql-reset" || mode === "sql-reset-api";
+      const failingPhase = early ? "before-accept" : late ? "after-accept" : "team-limit";
       const status = mode.endsWith("error") || mode === "team-full" ? 403 : 500;
       expect(result.error?.status).toBe(status);
-      if (mode.endsWith("error"))
+      if (mode.endsWith("error")) {
         expect(result.error).toMatchObject({
           code: "INVITATION_APPLICATION_REJECTED",
-          message: `Rejected ${early ? "before-accept" : late ? "after-accept" : "team-limit"}`,
+          message: `Rejected ${failingPhase}`,
         });
-      if (mode.endsWith("public500"))
+      }
+      if (mode.endsWith("public500")) {
         expect(result.error).toMatchObject({
           code: "PUBLIC_INVITATION_500",
-          message: `Explicit ${early ? "before-accept" : late ? "after-accept" : "team-limit"} error`,
+          message: `Explicit ${failingPhase} error`,
         });
+      }
       if (mode.endsWith("internal") || mode.startsWith("sql-")) {
         expect(transport.text).toBe("");
         expect(transport.contentType).toBeNull();
@@ -373,6 +422,7 @@ for (const mode of [
         });
       }
       const policies = cookiePolicy(cookies, late && mode !== "after-accept-internal");
+
       expect(phases(after)).toEqual(
         early
           ? ["before-accept"]
@@ -390,6 +440,7 @@ for (const mode of [
         },
       });
       expect(after.receipts[0]!.snapshot).toEqual(before.snapshot);
+
       if (!early) {
         const receipt = after.receipts[1]!;
         expect(receipt.context).toMatchObject({
@@ -407,6 +458,7 @@ for (const mode of [
         expect(receipt.snapshot).toBeUndefined();
         expect(receipt.invitationStatus).toEqual([{ id: s.invitation.id, status: "accepted" }]);
       }
+
       if (late) {
         accepted(s, before, after);
         expect(after.receipts[2]!.snapshot).toEqual(after.snapshot);
@@ -427,11 +479,12 @@ for (const mode of [
         unchangedPeers(s, before, after, false);
       }
       expect(await ctx.readUserState({ userId: s.foreign.user.id })).toEqual(s.foreignBefore);
+
       await configure(ctx, "record");
-      const retryBefore = await state(ctx),
-        retry = await s.target.client.organization.acceptInvitation({
-          invitationId: s.invitation.id,
-        });
+      const retryBefore = await state(ctx);
+      const retry = await s.target.client.organization.acceptInvitation({
+        invitationId: s.invitation.id,
+      });
       if (late || resetVeto) {
         expect(retry.error).toMatchObject({
           status: 400,
@@ -439,12 +492,14 @@ for (const mode of [
         });
         expect(await state(ctx)).toEqual(retryBefore);
       } else if (mode === "team-full") {
-        /* The genuine callback configuration raised capacity before retry. */ expect(
-          retry.error,
-        ).toBeNull();
-      } else expect(retry.error).toBeNull();
+        // The genuine callback configuration raised capacity before retry.
+        expect(retry.error).toBeNull();
+      } else {
+        expect(retry.error).toBeNull();
+      }
       const final = await state(ctx);
       if (!late && !resetVeto) accepted(s, retryBefore, final);
+
       const current = await s.target.client.getSession();
       expect(current.data!.user.id).toBe(s.target.user.id);
       expect(current.data!.session.token).toBe(
@@ -453,12 +508,14 @@ for (const mode of [
           .parse(before.snapshot.sessions.find((row) => row.userId === s.target.user.id)!.token),
       );
       expect(current.data!.session.activeOrganizationId).toBe(late || !resetVeto ? s.org.id : null);
+
       const sibling = await s.sibling.client.getSession();
       expect(
         z
           .object({ activeOrganizationId: z.null(), activeTeamId: z.null() })
           .parse(sibling.data!.session),
       ).toEqual({ activeOrganizationId: null, activeTeamId: null });
+
       return {
         signup: [s.owner.signup, s.target.signup, s.foreign.signup],
         before,
@@ -482,11 +539,14 @@ for (const mode of [
     ["POST /organization/accept-invitation"],
   );
 }
-for (const profile of ["org-invitation-stage", "org-invitation-stage-no-team"] as const)
+
+for (const profile of ["org-invitation-stage", "org-invitation-stage-no-team"] as const) {
   compatScenario(
     `organization invitation ${profile} accepts a real existing membership as a distinct row`,
     async (ctx) => {
       const s = await setup(ctx, profile);
+
+      // Pre-existing membership for the recipient, added through the server-only API.
       const addition = await ctx.rawRequest({
         path: "/__test/organization-member-addition/server",
         method: "POST",
@@ -501,13 +561,16 @@ for (const profile of ["org-invitation-stage", "org-invitation-stage-no-team"] a
       });
       expect(addition.status).toBe(200);
       const original = row.parse(addition.body);
+
       await configure(ctx, "record");
-      const before = await state(ctx),
-        guards = await denied(ctx, s, before),
-        result = await s.target.client.organization.acceptInvitation({
-          invitationId: s.invitation.id,
-        });
+      const before = await state(ctx);
+      const guards = await denied(ctx, s, before);
+
+      const result = await s.target.client.organization.acceptInvitation({
+        invitationId: s.invitation.id,
+      });
       expect(result.error).toBeNull();
+
       const after = await state(ctx);
       accepted(s, before, after);
       expect(
@@ -521,25 +584,29 @@ for (const profile of ["org-invitation-stage", "org-invitation-stage-no-team"] a
           ? ["before-accept", "team-limit", "after-accept"]
           : ["before-accept", "after-accept"],
       );
-      if (s.team)
+      if (s.team) {
         expect(after.receipts[1]!.invitationStatus).toEqual([
           { id: s.invitation.id, status: "accepted" },
         ]);
+      }
       expect(after.receipts.at(-1)!.context).toMatchObject({
         invitation: ctx.snapshot({ ...s.invitation, status: "accepted" }),
         member: after.snapshot.members.at(-1),
         user: ctx.snapshot(s.target.user),
       });
       const policies = cookiePolicy(s.target.cookies.at(-1)!, Boolean(s.team));
+
       const current = await s.target.client.getSession();
       expect(current.data!.session.activeOrganizationId).toBe(s.org.id);
       expect(current.data!.session.activeTeamId).toBe(s.team?.id);
+
       const replay = await s.target.client.organization.acceptInvitation({
         invitationId: s.invitation.id,
       });
       expect(replay.error?.status).toBe(400);
       expect(await state(ctx)).toEqual(after);
       expect(await ctx.readUserState({ userId: s.foreign.user.id })).toEqual(s.foreignBefore);
+
       return {
         addition,
         before,
@@ -555,14 +622,16 @@ for (const profile of ["org-invitation-stage", "org-invitation-stage-no-team"] a
     },
     ["POST /organization/accept-invitation"],
   );
+}
 
 // Both requests complete genuine membership admission before the application
 // barrier releases them. Serial release observes status CAS and keeps full traces.
-for (const differentRecipients of [false, true])
+for (const differentRecipients of [false, true]) {
   compatScenario(
     `organization invitation staged concurrent ${differentRecipients ? "different recipients retain prior capacity admission" : "same invitation has one status claimant"}`,
     async (ctx) => {
       const s = await setup(ctx, "org-invitation-stage-limit-two");
+
       const secondTarget = differentRecipients
         ? await signup(ctx, "stage-second-target", s.profile)
         : s.target;
@@ -577,9 +646,11 @@ for (const differentRecipients of [false, true])
         expect(issued.error).toBeNull();
         secondInvitation = row.parse(issued.data);
       }
+
       await configure(ctx, "pause-before");
-      const before = await state(ctx),
-        guards = await denied(ctx, s, before);
+      const before = await state(ctx);
+      const guards = await denied(ctx, s, before);
+
       const releaseTraces: TraceEntry[] = [];
       async function release(name: string) {
         const response = await createTracingFetch(
@@ -590,9 +661,14 @@ for (const differentRecipients of [false, true])
         expect(response.status).toBe(200);
         expect(await response.json()).toEqual({ released: true });
       }
+
       let first: ReturnType<typeof s.target.client.organization.acceptInvitation> | undefined;
       let second: ReturnType<typeof s.target.client.organization.acceptInvitation> | undefined;
-      let firstResult, secondResult, one, held, firstState;
+      let firstResult;
+      let secondResult;
+      let one;
+      let held;
+      let firstState;
       try {
         first = s.target.client.organization.acceptInvitation({
           invitationId: s.invitation.id,
@@ -601,6 +677,7 @@ for (const differentRecipients of [false, true])
         expect(one.waiting).toBe(1);
         expect(phases(one)).toEqual(["before-accept"]);
         expect(one.snapshot).toEqual(before.snapshot);
+
         second = secondTarget.client.organization.acceptInvitation({
           invitationId: secondInvitation.id,
         });
@@ -616,6 +693,7 @@ for (const differentRecipients of [false, true])
             organization: one.receipts[0]!.context.organization,
           },
         ]);
+
         await release("invitation-release-first");
         firstResult = await first;
         expect(firstResult.error).toBeNull();
@@ -623,15 +701,18 @@ for (const differentRecipients of [false, true])
         firstState = await state(ctx);
         expect(firstState.waiting).toBe(1);
         accepted(s, before, firstState);
+
         await release("invitation-release-second");
         secondResult = await second;
         ctx.recordTransport(releaseTraces.splice(0));
-        if (differentRecipients) expect(secondResult.error).toBeNull();
-        else
+        if (differentRecipients) {
+          expect(secondResult.error).toBeNull();
+        } else {
           expect(secondResult.error).toMatchObject({
             status: 400,
             code: "INVITATION_NOT_FOUND",
           });
+        }
       } finally {
         if (!firstResult || !secondResult) {
           await configure(ctx, "off");
@@ -639,6 +720,7 @@ for (const differentRecipients of [false, true])
           ctx.recordTransport(releaseTraces.splice(0));
         }
       }
+
       const after = await state(ctx);
       expect(after.waiting).toBe(0);
       if (differentRecipients) {
@@ -672,6 +754,7 @@ for (const differentRecipients of [false, true])
         ]);
         cookiePolicy(s.target.cookies.at(-1)!, false);
       }
+
       const claimedIds = differentRecipients
         ? [s.invitation.id, secondInvitation.id]
         : [s.invitation.id];
@@ -685,19 +768,23 @@ for (const differentRecipients of [false, true])
           .filter((receipt) => receipt.phase === "after-accept")
           .map((receipt) => receipt.context.member),
       ).toEqual(after.snapshot.members.slice(before.snapshot.members.length));
+
       const firstPolicies = cookiePolicy(
         differentRecipients ? s.target.cookies.at(-1)! : s.target.cookies.at(-2)!,
         true,
       );
+
       const current = await s.target.client.getSession();
       expect(current.data!.session.activeOrganizationId).toBe(s.org.id);
       expect(current.data!.session.activeTeamId).toBe(s.team!.id);
+
       const replay = await secondTarget.client.organization.acceptInvitation({
         invitationId: secondInvitation.id,
       });
       expect(replay.error?.status).toBe(400);
       expect(await state(ctx)).toEqual(after);
       expect(await ctx.readUserState({ userId: s.foreign.user.id })).toEqual(s.foreignBefore);
+
       return {
         before,
         guards,
@@ -716,11 +803,13 @@ for (const differentRecipients of [false, true])
     },
     ["POST /organization/accept-invitation"],
   );
+}
 
 compatScenario(
   "organization invitation staged expiry denies before hooks without any acceptance side effect",
   async (ctx) => {
     const s = await setup(ctx);
+
     await ctx.expireInvitation({
       invitationId: s.invitation.id,
       expiresAt: "2000-01-01T00:00:00.000Z",
@@ -736,6 +825,7 @@ compatScenario(
     const principalsBefore = await Promise.all(
       [s.owner, s.target, s.foreign].map(({ user }) => ctx.readUserState({ userId: user.id })),
     );
+
     const guest = createAuthClient({
       baseURL: `${ctx.baseURL}${authProfilePath(s.profile)}`,
       plugins: [organizationClient()],
@@ -748,6 +838,7 @@ compatScenario(
     });
     expect(unauthenticated.error?.status).toBe(401);
     expect(await state(ctx)).toEqual(before);
+
     const result = await s.target.client.organization.acceptInvitation({
       invitationId: s.invitation.id,
     });
@@ -755,6 +846,7 @@ compatScenario(
       status: 400,
       code: "INVITATION_NOT_FOUND",
     });
+
     const foreign = await s.foreign.client.organization.acceptInvitation({
       invitationId: s.invitation.id,
     });
@@ -762,6 +854,7 @@ compatScenario(
       status: 400,
       code: "INVITATION_NOT_FOUND",
     });
+
     const after = await state(ctx);
     expect(after).toEqual(before);
     expect(after.receipts).toEqual([]);
@@ -771,6 +864,7 @@ compatScenario(
     expect(principalsAfter).toEqual(principalsBefore);
     cookiePolicy(s.target.cookies.at(-1)!, false);
     expect(await ctx.readUserState({ userId: s.foreign.user.id })).toEqual(s.foreignBefore);
+
     return {
       before,
       principalsBefore,
@@ -786,28 +880,33 @@ compatScenario(
   ["POST /organization/accept-invitation"],
 );
 
-for (const mode of ["record", "after-accept-internal", "after-accept-public500"] as const)
+for (const mode of ["record", "after-accept-internal", "after-accept-public500"] as const) {
   compatScenario(
     `organization invitation staged ${mode} preserves browser-session preference and both owned cookie stages`,
     async (ctx) => {
       const s = await setup(ctx, "org-invitation-stage", false);
+
       await configure(ctx, mode);
-      const before = await state(ctx),
-        guards = await denied(ctx, s, before);
+      const before = await state(ctx);
+      const guards = await denied(ctx, s, before);
+
       const result = await s.target.client.organization.acceptInvitation({
-          invitationId: s.invitation.id,
-        }),
-        cookies = s.target.cookies.at(-1)!,
-        transport = s.target.wire.at(-1)!;
-      if (mode === "record") expect(result.error).toBeNull();
-      else {
+        invitationId: s.invitation.id,
+      });
+      const cookies = s.target.cookies.at(-1)!;
+      const transport = s.target.wire.at(-1)!;
+      if (mode === "record") {
+        expect(result.error).toBeNull();
+      } else {
         expect(result.error?.status).toBe(500);
-        if (mode === "after-accept-public500")
+        if (mode === "after-accept-public500") {
           expect(result.error).toMatchObject({
             code: "PUBLIC_INVITATION_500",
             message: "Explicit after-accept error",
           });
+        }
       }
+
       expect(cookies).toHaveLength(mode === "after-accept-internal" ? 0 : 2);
       const policies = cookies.map((raw) => {
         const cookie = Cookie.parse(raw)!;
@@ -848,6 +947,7 @@ for (const mode of ["record", "after-accept-internal", "after-accept-public500"]
         expect(transport.text).toBe("");
         expect(transport.contentType).toBeNull();
       }
+
       const after = await state(ctx);
       accepted(s, before, after);
       expect(phases(after)).toEqual(["before-accept", "team-limit", "after-accept"]);
@@ -855,6 +955,7 @@ for (const mode of ["record", "after-accept-internal", "after-accept-public500"]
         { id: s.invitation.id, status: "accepted" },
       ]);
       expect(after.receipts[2]!.snapshot).toEqual(after.snapshot);
+
       const current = await s.target.client.getSession();
       expect(current.data!.user.id).toBe(s.target.user.id);
       expect(current.data!.session.token).toBe(
@@ -864,12 +965,14 @@ for (const mode of ["record", "after-accept-internal", "after-accept-public500"]
       );
       expect(current.data!.session.activeOrganizationId).toBe(s.org.id);
       expect(current.data!.session.activeTeamId).toBe(s.team!.id);
+
       const replay = await s.target.client.organization.acceptInvitation({
         invitationId: s.invitation.id,
       });
       expect(replay.error?.status).toBe(400);
       expect(await state(ctx)).toEqual(after);
       expect(await ctx.readUserState({ userId: s.foreign.user.id })).toEqual(s.foreignBefore);
+
       return {
         signup: s.target.signup,
         before,
@@ -893,3 +996,4 @@ for (const mode of ["record", "after-accept-internal", "after-accept-public500"]
     },
     ["POST /organization/accept-invitation"],
   );
+}

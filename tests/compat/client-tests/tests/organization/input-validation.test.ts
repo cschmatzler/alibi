@@ -27,6 +27,7 @@ const storedSchema = z.object({
     z.object({ operation: z.string(), userId: z.string(), email: z.string(), name: z.string() }),
   ),
 });
+
 async function state(ctx: ScenarioContext, email: string) {
   const response = await ctx.rawRequest({
     path: `/__test/organization-creation-state?email=${encodeURIComponent(email)}&includeMetadata=true`,
@@ -34,6 +35,8 @@ async function state(ctx: ScenarioContext, email: string) {
   expect(response.status).toBe(200);
   return storedSchema.parse(response.body);
 }
+
+/** Signs up the owner and creates a sentinel organization whose stored row must never change. */
 async function owner(ctx: ScenarioContext) {
   const actor = ctx.actor("owner", "org-creation-callback");
   const email = ctx.uniqueEmail("input-owner");
@@ -55,6 +58,7 @@ async function owner(ctx: ScenarioContext) {
   const id = z.object({ id: z.string() }).parse(created.data).id;
   return { ...actor, email, id, signup, created };
 }
+
 async function authenticatedRaw(
   ctx: ScenarioContext,
   actor: ReturnType<ScenarioContext["actor"]>,
@@ -73,6 +77,7 @@ async function authenticatedRaw(
   const text = await response.text();
   return { status: response.status, body: text ? JSON.parse(text) : null };
 }
+
 function expected(path: string, kind: string) {
   return {
     status: 400,
@@ -87,6 +92,7 @@ compatScenario(
     const actor = await owner(ctx);
     const before = await state(ctx, actor.email);
     expect(before.organizations[0]?.metadata).toBe('{"guard":"persisted"}');
+
     const observations = [];
     for (const [kind, metadata] of [
       ["null", null],
@@ -108,6 +114,8 @@ compatScenario(
       expect(await state(ctx, actor.email)).toEqual(before);
       observations.push({ kind, created: ctx.snapshot(created), updated: ctx.snapshot(updated) });
     }
+
+    // 1e400 overflows to Infinity, so it has to be sent as raw JSON text.
     for (const route of ["create", "update"] as const) {
       const body =
         route === "create"
@@ -123,6 +131,7 @@ compatScenario(
       expect(await state(ctx, actor.email)).toEqual(before);
       observations.push({ route, rejected });
     }
+
     const record = { guard: "updated", nested: [null, true, { type: "application-value" }] };
     const valid = await actor.client.$fetch("/organization/update", {
       method: "POST",
@@ -134,6 +143,7 @@ compatScenario(
     expect(after.organizations[0]?.metadata).toBe(JSON.stringify(record));
     expect(after.receipts).toEqual(before.receipts);
     expect(after.sessions).toEqual(before.sessions);
+
     const empty = await actor.client.$fetch("/organization/update", {
       method: "POST",
       body: { organizationId: actor.id, data: { metadata: {} } },
@@ -141,6 +151,7 @@ compatScenario(
     expect(empty.error).toBeNull();
     expect(z.object({ metadata: z.unknown() }).parse(empty.data).metadata).toEqual({});
     expect((await state(ctx, actor.email)).organizations[0]?.metadata).toBe("{}");
+
     return {
       signup: ctx.snapshot(actor.signup),
       created: ctx.snapshot(actor.created),
@@ -161,6 +172,7 @@ compatScenario(
     const actor = await owner(ctx);
     const before = await state(ctx, actor.email);
     const observations = [];
+
     for (const [path, body, message] of [
       [
         "create",
@@ -194,6 +206,7 @@ compatScenario(
       expect(await state(ctx, actor.email)).toEqual(before);
       observations.push({ path, rejected });
     }
+
     for (const data of [{ name: "" }, { slug: "" }, { name: null }, { slug: null }] as const) {
       const rejected = await actor.client.$fetch("/organization/update", {
         method: "POST",
@@ -203,6 +216,7 @@ compatScenario(
       expect(await state(ctx, actor.email)).toEqual(before);
       observations.push({ data, rejected: ctx.snapshot(rejected) });
     }
+
     for (const route of ["create", "update"] as const) {
       const malformed = await ctx.rawRequest({
         path: `/__test/profiles/org-creation-callback/api/auth/organization/${route}`,
@@ -217,6 +231,8 @@ compatScenario(
       });
       observations.push({ route, malformed });
     }
+
+    // A schema-valid body without a session is only then rejected by authentication.
     const validGuest = await ctx.rawRequest({
       path: "/__test/profiles/org-creation-callback/api/auth/organization/update",
       method: "POST",
@@ -225,6 +241,7 @@ compatScenario(
     expect(validGuest.status).toBe(401);
     expect(validGuest.body).toEqual({ message: "User not found" });
     expect(await state(ctx, actor.email)).toEqual(before);
+
     const corrected = await actor.client.$fetch("/organization/update", {
       method: "POST",
       body: {
@@ -233,10 +250,12 @@ compatScenario(
       },
     });
     expect(corrected.error).toBeNull();
+
     const after = await state(ctx, actor.email);
     expect(after.organizations[0]?.name).toBe("Corrected Name");
     expect(after.organizations[0]?.metadata).toBe(before.organizations[0]?.metadata);
     expect(after.sessions).toEqual(before.sessions);
+
     return { before, observations, validGuest, corrected: ctx.snapshot(corrected), after };
   },
   ["POST /organization/create", "POST /organization/update"],
@@ -248,6 +267,7 @@ compatScenario(
     const actor = await owner(ctx);
     const before = await state(ctx, actor.email);
     const observations = [];
+
     for (const media of ["text/plain", "application/x-www-form-urlencoded"]) {
       for (const route of ["create", "update"] as const) {
         const rejected = await authenticatedRaw(ctx, actor, route, "{invalid", media);
@@ -260,6 +280,7 @@ compatScenario(
         observations.push({ media, route, rejected });
       }
     }
+
     const retried = await authenticatedRaw(
       ctx,
       actor,
@@ -269,15 +290,18 @@ compatScenario(
     );
     expect(retried.status).toBe(200);
     expect(z.object({ name: z.string() }).parse(retried.body).name).toBe("Uppercase JSON");
+
     const afterRetry = await state(ctx, actor.email);
     expect(afterRetry.organizations[0]?.name).toBe("Uppercase JSON");
     expect(afterRetry.receipts).toEqual(before.receipts);
+
     const longActor = ctx.actor("long-owner", "org-creation-empty-role");
     const email = ctx.uniqueEmail("long-slug");
     expect(
       (await longActor.client.signUp.email({ name: "Long Slug", email, password: "password123" }))
         .error,
     ).toBeNull();
+
     const slug = `${ctx.uniqueToken("long")}-${"a".repeat(101)}`;
     const longCreated = await longActor.client.$fetch("/organization/create", {
       method: "POST",
@@ -285,8 +309,10 @@ compatScenario(
     });
     expect(longCreated.error).toBeNull();
     expect(z.object({ slug: z.string() }).parse(longCreated.data).slug).toBe(slug);
+
     const longAfter = await state(ctx, email);
     expect(longAfter.organizations[0]?.slug).toBe(slug);
+
     return {
       before,
       observations,
@@ -312,6 +338,8 @@ compatScenario(
     expect(signup.error).toBeNull();
     const userId = z.object({ user: z.object({ id: z.string() }) }).parse(signup.data).user.id;
     const before = await state(ctx, email);
+
+    // Input validation fires before the (nonexistent) user is looked up.
     const missing = ctx.uniqueToken("missing-user");
     const invalid = await ctx.rawRequest({
       path: "/__test/organization-create",
@@ -324,6 +352,7 @@ compatScenario(
       message:
         "[body.name] Too small: expected string to have >=1 characters; [body.slug] Too small: expected string to have >=1 characters",
     });
+
     const observations = [];
     for (const [kind, metadata] of [
       ["null", null],
@@ -347,6 +376,8 @@ compatScenario(
       expect(await state(ctx, email)).toEqual(before);
       observations.push({ kind, rejected });
     }
+
+    // The trusted server path bypasses the profile's deny policy once input is valid.
     const valid = await ctx.rawRequest({
       path: "/__test/organization-create",
       method: "POST",
@@ -368,6 +399,7 @@ compatScenario(
       .parse(valid.body);
     expect(organization.members[0]).toMatchObject({ userId, role: "owner" });
     expect(organization.metadata).toEqual({ trusted: "record" });
+
     const after = await state(ctx, email);
     expect(after.organizations).toHaveLength(1);
     expect(after.organizations[0]).toMatchObject({
@@ -377,6 +409,7 @@ compatScenario(
     });
     expect(after.orphanOrganizations).toEqual(before.orphanOrganizations);
     expect(after.sessions).toEqual(before.sessions);
+
     return { signup: ctx.snapshot(signup), before, invalid, observations, valid, after };
   },
 );

@@ -6,9 +6,11 @@ import { compatScenario, type ScenarioContext } from "../../support/scenario";
 const member = z
   .object({ id: z.string(), userId: z.string(), organizationId: z.string(), role: z.string() })
   .passthrough();
+
 const organization = z
   .object({ id: z.string(), name: z.string(), slug: z.string(), members: z.array(member) })
   .passthrough();
+
 const stateSchema = z.object({
   orphanOrganizations: z.array(z.object({ id: z.string(), name: z.string(), slug: z.string() })),
   organizations: z.array(
@@ -33,16 +35,19 @@ const stateSchema = z.object({
     z.object({ operation: z.string(), userId: z.string(), email: z.string(), name: z.string() }),
   ),
 });
+
 const limitError = {
   status: 403,
   code: "YOU_HAVE_REACHED_THE_MAXIMUM_NUMBER_OF_ORGANIZATIONS",
   message: "You have reached the maximum number of organizations",
 };
+
 const allowError = {
   status: 403,
   code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION",
   message: "You are not allowed to create a new organization",
 };
+
 async function signup(
   ctx: ScenarioContext,
   profile: FixtureProfile,
@@ -56,6 +61,7 @@ async function signup(
   const user = z.object({ user: z.object({ id: z.string() }) }).parse(result.data).user;
   return { ...actor, email, userId: user.id, result };
 }
+
 async function state(ctx: ScenarioContext, email: string) {
   const response = await ctx.rawRequest({
     path: `/__test/organization-creation-state?email=${encodeURIComponent(email)}`,
@@ -63,6 +69,7 @@ async function state(ctx: ScenarioContext, email: string) {
   expect(response.status).toBe(200);
   return stateSchema.parse(response.body);
 }
+
 async function create(
   ctx: ScenarioContext,
   actor: Awaited<ReturnType<typeof signup>>,
@@ -74,6 +81,7 @@ async function create(
     body: { name: suffix, slug: ctx.uniqueToken(suffix), ...extra },
   });
 }
+
 async function server(
   ctx: ScenarioContext,
   profile: FixtureProfile,
@@ -96,6 +104,7 @@ compatScenario(
       const foreign = await signup(ctx, profile, "foreign", "Foreign");
       const before = await state(ctx, owner.email);
       const foreignBefore = await state(ctx, foreign.email);
+
       const guest = await ctx.rawRequest({
         path: `/__test/profiles/${profile}/api/auth/organization/create`,
         method: "POST",
@@ -103,12 +112,14 @@ compatScenario(
       });
       expect(guest.status).toBe(401);
       expect(guest.body).toBeNull();
+
       const denied = await create(ctx, owner, `denied-${profile}`, { userId: foreign.userId });
       expect(denied.error).toMatchObject(
         profile === "org-creation-denied" ? allowError : limitError,
       );
       expect(await state(ctx, owner.email)).toEqual(before);
       expect(await state(ctx, foreign.email)).toEqual(foreignBefore);
+
       const trusted = await server(ctx, profile, foreign.userId, `trusted-${profile}`);
       if (profile === "org-creation-denied") {
         expect(trusted.status).toBe(200);
@@ -127,6 +138,7 @@ compatScenario(
         expect(trusted.body).toMatchObject({ code: limitError.code, message: limitError.message });
         expect(await state(ctx, foreign.email)).toEqual(foreignBefore);
       }
+
       const unknown = await server(
         ctx,
         profile,
@@ -136,6 +148,7 @@ compatScenario(
       expect(unknown.status).toBe(401);
       expect(unknown.body).toBeNull();
       expect(await state(ctx, owner.email)).toEqual(before);
+
       observations.push({
         profile,
         owner: ctx.snapshot(owner.result),
@@ -149,6 +162,7 @@ compatScenario(
         foreignAfter: await state(ctx, foreign.email),
       });
     }
+
     return observations;
   },
   ["POST /organization/create"],
@@ -162,14 +176,17 @@ compatScenario(
     const one = await create(ctx, owner, "fractional-one");
     expect(one.error).toBeNull();
     const first = organization.parse(one.data);
+
     const secondToken = ctx.actor("second-token", profile).client;
     expect(
       (await secondToken.signIn.email({ email: owner.email, password: "password123" })).error,
     ).toBeNull();
+
     const beforeSecond = await state(ctx, owner.email);
     const two = await create(ctx, owner, "fractional-two");
     expect(two.error).toBeNull();
     const second = organization.parse(two.data);
+
     const ownerBefore = await state(ctx, owner.email);
     expect(ownerBefore.organizations).toHaveLength(2);
     expect(
@@ -178,9 +195,11 @@ compatScenario(
     expect(ownerBefore.sessions.find((row) => row.activeOrganizationId === null)).toEqual(
       beforeSecond.sessions.find((row) => row.activeOrganizationId === null),
     );
+
     const another = await signup(ctx, profile, "joined-member", "Joined");
     const own = await create(ctx, another, "member-own");
     expect(own.error).toBeNull();
+
     const invitation = await owner.client.$fetch("/organization/invite-member", {
       method: "POST",
       body: { organizationId: first.id, email: another.email, role: "member" },
@@ -192,8 +211,10 @@ compatScenario(
       body: { invitationId },
     });
     expect(accepted.error).toBeNull();
+
     const anotherBefore = await state(ctx, another.email);
     expect(anotherBefore.organizations.map((row) => row.role).sort()).toEqual(["member", "owner"]);
+
     const denied = await create(ctx, another, "limit-before-slug-check", {
       slug: first.slug,
       userId: owner.userId,
@@ -203,6 +224,7 @@ compatScenario(
     expect(deniedOwner.error).toMatchObject(limitError);
     expect(await state(ctx, another.email)).toEqual(anotherBefore);
     expect(await state(ctx, owner.email)).toEqual(ownerBefore);
+
     return {
       one: ctx.snapshot(one),
       two: ctx.snapshot(two),
@@ -228,13 +250,16 @@ compatScenario(
       const two = await create(ctx, owner, `${profile}-two`);
       expect(one.error).toBeNull();
       expect(two.error).toBeNull();
+
       const rows = await state(ctx, owner.email);
       expect(rows.organizations).toHaveLength(2);
       expect(
         rows.organizations.every((row) => row.userId === owner.userId && row.role === "owner"),
       ).toBe(true);
+
       observations.push({ profile, one: ctx.snapshot(one), two: ctx.snapshot(two), rows });
     }
+
     return observations;
   },
   ["POST /organization/create"],
@@ -246,21 +271,26 @@ compatScenario(
     const profile = "org-creation-callback";
     const paid = await signup(ctx, profile, "paid", "Paid Current");
     const free = await signup(ctx, profile, "free", "Free Current");
+
     const forged = await create(ctx, free, "free-forged-principal", { userId: paid.userId });
     expect(forged.error).toMatchObject(allowError);
+
     const freeDenied = await state(ctx, free.email);
     expect(freeDenied.organizations).toEqual([]);
     expect(freeDenied.receipts).toEqual([
       { operation: "allow", userId: free.userId, email: free.email, name: "Free Current" },
     ]);
     expect((await state(ctx, paid.email)).receipts).toEqual([]);
+
     const first = await create(ctx, paid, "paid-allowed", { userId: free.userId });
     expect(first.error).toBeNull();
     const created = organization.parse(first.data);
     expect(created.members[0]?.userId).toBe(paid.userId);
+
     const paidBefore = await state(ctx, paid.email);
     const denied = await create(ctx, paid, "paid-at-limit");
     expect(denied.error).toMatchObject(limitError);
+
     const paidAfter = await state(ctx, paid.email);
     expect(paidAfter.organizations).toEqual(paidBefore.organizations);
     expect(paidAfter.sessions).toEqual(paidBefore.sessions);
@@ -273,17 +303,21 @@ compatScenario(
     expect(
       paidAfter.receipts.every((row) => row.userId === paid.userId && row.email === paid.email),
     ).toBe(true);
+
     const trusted = await server(ctx, profile, free.userId, "trusted-free-allowed");
     expect(trusted.status).toBe(200);
     expect(organization.parse(trusted.body).members[0]?.userId).toBe(free.userId);
+
     const freeBefore = await state(ctx, free.email);
     expect(freeBefore.sessions).toEqual(freeDenied.sessions);
+
     const trustedDenied = await server(ctx, profile, free.userId, "trusted-free-at-limit");
     expect(trustedDenied.status).toBe(403);
     expect(trustedDenied.body).toMatchObject({
       code: limitError.code,
       message: limitError.message,
     });
+
     const freeAfter = await state(ctx, free.email);
     expect(freeAfter.organizations).toEqual(freeBefore.organizations);
     expect(freeAfter.sessions).toEqual(freeBefore.sessions);
@@ -294,6 +328,7 @@ compatScenario(
       "allow",
       "limit",
     ]);
+
     return {
       forged: ctx.snapshot(forged),
       freeDenied,
@@ -320,6 +355,7 @@ compatScenario(
     expect(created.error).toBeNull();
     const org = organization.parse(created.data);
     expect(org.members[0]?.role).toBe("founder");
+
     const before = await state(ctx, founder.email);
     const denied = await founder.client.$fetch("/organization/update", {
       method: "POST",
@@ -330,11 +366,13 @@ compatScenario(
       code: "YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_ORGANIZATION",
     });
     expect(await state(ctx, founder.email)).toEqual(before);
+
     const assigned = await founder.client.$fetch("/organization/update-member-role", {
       method: "POST",
       body: { organizationId: org.id, memberId: org.members[0]!.id, role: ["founder", "editor"] },
     });
     expect(assigned.error).toBeNull();
+
     const updated = await founder.client.$fetch("/organization/update", {
       method: "POST",
       body: { organizationId: org.id, data: { name: "explicit-grant" } },
@@ -344,11 +382,13 @@ compatScenario(
       name: "explicit-grant",
       role: "founder,editor",
     });
+
     const empty = await signup(ctx, "org-creation-empty-role", "empty", "Effective Owner");
     const defaulted = await create(ctx, empty, "empty-creator");
     expect(defaulted.error).toBeNull();
     const ownerOrg = organization.parse(defaulted.data);
     expect(ownerOrg.members[0]?.role).toBe("owner");
+
     const ownerBefore = await state(ctx, empty.email);
     const demotion = await empty.client.$fetch("/organization/update-member-role", {
       method: "POST",
@@ -359,6 +399,7 @@ compatScenario(
       code: "YOU_CANNOT_LEAVE_THE_ORGANIZATION_WITHOUT_AN_OWNER",
     });
     expect(await state(ctx, empty.email)).toEqual(ownerBefore);
+
     return {
       created: ctx.snapshot(created),
       before,
@@ -400,13 +441,16 @@ compatScenario(
     ] as const) {
       const actor = await signup(ctx, "org-creation-callback", actorName, name);
       const before = await state(ctx, actor.email);
+
       const rejected = await create(ctx, actor, `${actorName}-public`);
       expect(rejected.error).toMatchObject({ status: 403, code, message });
+
       const afterPublic = await state(ctx, actor.email);
       expect(afterPublic.organizations).toEqual(before.organizations);
       expect(afterPublic.orphanOrganizations).toEqual(before.orphanOrganizations);
       expect(afterPublic.sessions).toEqual(before.sessions);
       expect(afterPublic.receipts.map((row) => row.operation)).toEqual([...operations]);
+
       const trusted = await server(
         ctx,
         "org-creation-callback",
@@ -415,6 +459,7 @@ compatScenario(
       );
       expect(trusted.status).toBe(403);
       expect(trusted.body).toEqual({ code, message });
+
       const afterTrusted = await state(ctx, actor.email);
       expect(afterTrusted.organizations).toEqual(before.organizations);
       expect(afterTrusted.orphanOrganizations).toEqual(before.orphanOrganizations);
@@ -423,6 +468,7 @@ compatScenario(
         ...operations,
         ...operations,
       ]);
+
       observations.push({
         rejected: ctx.snapshot(rejected),
         trusted,
@@ -431,6 +477,7 @@ compatScenario(
         afterTrusted,
       });
     }
+
     return observations;
   },
   ["POST /organization/create"],

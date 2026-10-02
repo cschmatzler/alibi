@@ -4,6 +4,7 @@ import { expect } from "bun:test";
 import { connect } from "node:net";
 import type { FixtureProfile } from "../../support/profiles";
 import type { ScenarioContext } from "../../support/scenario";
+
 export async function disconnectedRequest(
   ctx: ScenarioContext,
   actor: string,
@@ -19,6 +20,7 @@ export async function disconnectedRequest(
     method: "POST",
   });
   expect(reset.status).toBe(200);
+
   const signin = await ctx
     .actor(actor, profile)
     .fetch(`/__test/profiles/${profile}/api/auth/sign-in/email`, {
@@ -33,7 +35,9 @@ export async function disconnectedRequest(
     .map((raw) => raw.split(";")[0])
     .join("; ");
   expect(cookie).toContain("session_token=");
+
   if (beforeSend) await beforeSend();
+
   const origin = new URL(ctx.baseURL);
   const wirePath = `/__test/profiles/${profile}/api/auth${path}`;
   const payload = JSON.stringify(body);
@@ -42,14 +46,17 @@ export async function disconnectedRequest(
     socket.once("connect", resolve);
     socket.once("error", reject);
   });
+
   let responseBytes = 0;
   socket.on("data", (bytes) => {
     responseBytes += bytes.length;
   });
   const closed = new Promise<void>((resolve) => socket.once("close", () => resolve()));
+
   socket.write(
     `POST ${wirePath} HTTP/1.1\r\nHost: ${origin.host}\r\nOrigin: ${origin.origin}\r\nCookie: ${cookie}\r\nX-Continuation-Marker: ${marker}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(payload)}\r\n\r\n${payload}`,
   );
+
   return {
     signin: { status: signin.status, body: signinBody },
     request: {
@@ -66,6 +73,7 @@ export async function disconnectedRequest(
       socket.destroy();
       await closed;
       expect(responseBytes).toBe(0);
+
       const receipt = await ctx.rawRequest({
         path: `/__test/organization-transport-state?marker=${encodeURIComponent(marker)}`,
       });

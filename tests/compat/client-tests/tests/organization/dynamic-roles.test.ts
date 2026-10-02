@@ -13,6 +13,7 @@ import {
 } from "./helpers";
 
 type Context = Parameters<Parameters<typeof compatScenario>[1]>[0];
+
 const profile = "org-teams-dynamic";
 
 async function raw(
@@ -53,6 +54,7 @@ compatScenario(
     const owner = await signUp(ctx, "role-owner");
     const member = await signUp(ctx, "role-member");
     const foreign = await signUp(ctx, "foreign-owner");
+
     const created = await owner.client.organization.create({
       name: "Role Org",
       slug: ctx.uniqueToken("role-org"),
@@ -63,6 +65,7 @@ compatScenario(
       slug: ctx.uniqueToken("other-role-org"),
     });
     const foreignOrg = data(foreignCreated);
+
     const invitation = await owner.client.organization.inviteMember({
       email: member.email,
       role: "member",
@@ -71,6 +74,7 @@ compatScenario(
       invitationId: data(invitation).id,
     });
     const memberId = data(accepted).member.id;
+
     const denied = await member.client.organization.createRole({
       role: "denied",
       permission: { team: ["create"] },
@@ -79,6 +83,7 @@ compatScenario(
       status: 403,
       code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE",
     });
+
     const permission = { team: ["create", "update"], member: ["update"] };
     const role = await owner.client.organization.createRole({ role: "TeamEditor", permission });
     const roleData = data(role).roleData;
@@ -90,6 +95,7 @@ compatScenario(
     });
     const persisted = await state(ctx, org.id);
     expect(persisted.parsed.roles[0]?.permission).toBe(JSON.stringify(permission));
+
     const wrongScope = await foreign.client.organization.getRole({
       query: { roleId: roleData.id, organizationId: foreignOrg.id },
     });
@@ -104,6 +110,7 @@ compatScenario(
       permission: {},
     });
     expect(predefined.error).toMatchObject({ status: 400, code: "ROLE_NAME_IS_ALREADY_TAKEN" });
+
     const assigned = await owner.client.organization.updateMemberRole({
       memberId,
       role: "teameditor",
@@ -115,6 +122,7 @@ compatScenario(
     expect(data(hasPermission).success).toBe(true);
     const team = await member.client.organization.createTeam({ name: "Delegated" });
     data(team);
+
     const assignedDelete = await owner.client.organization.deleteRole({ roleId: roleData.id });
     expect(assignedDelete.error).toMatchObject({
       status: 400,
@@ -129,6 +137,7 @@ compatScenario(
       code: "ROLE_NOT_FOUND",
       message: "ROLE_NOT_FOUND: missing",
     });
+
     const updated = await owner.client.organization.updateRole({
       roleId: roleData.id,
       data: { permission: { team: ["update"] } },
@@ -137,19 +146,23 @@ compatScenario(
     const read = await owner.client.organization.getRole({ query: { roleName: "teameditor" } });
     expect(data(read).updatedAt).not.toBeNull();
     expect(data(read).permission).toEqual({ team: ["update"] });
+
     const revoked = await member.client.organization.createTeam({ name: "Revoked" });
     expect(revoked.error).toMatchObject({
       status: 403,
       code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_TEAMS_IN_THIS_ORGANIZATION",
     });
+
     const list = await owner.client.organization.listRoles();
     expect(data(list)).toHaveLength(1);
+
     const reset = await owner.client.organization.updateMemberRole({ memberId, role: "member" });
     data(reset);
     const deleted = await owner.client.organization.deleteRole({ roleName: "teameditor" });
     expect(data(deleted).success).toBe(true);
     const afterDelete = await state(ctx, org.id);
     expect(afterDelete.parsed.roles).toEqual([]);
+
     return {
       created,
       foreignCreated,
@@ -199,12 +212,14 @@ compatScenario(
       expect(response.status).toBe(404);
       disabled.push(response);
     }
+
     const limited = await teamSignUp(ctx, "limited-role-owner", "org-roles-limited");
     const created = await limited.client.organization.create({
       name: "Limited roles",
       slug: ctx.uniqueToken("limited-roles"),
     });
     const organizationId = data(created).id;
+
     const first = await limited.client.organization.createRole({
       role: "First",
       permission: { team: ["create"] },
@@ -215,9 +230,11 @@ compatScenario(
       permission: { invented: ["read"] },
     });
     expect(overflow.error).toMatchObject({ status: 400, code: "TOO_MANY_ROLES" });
+
     const before = await teamState(ctx, organizationId, "org-roles-limited");
     expect(before.parsed.roles).toHaveLength(1);
     expect(before.parsed.roles[0]?.id).toBe(roleId);
+
     const deleted = await limited.client.organization.deleteRole({ roleId });
     data(deleted);
     const replacement = await limited.client.organization.createRole({
@@ -237,11 +254,13 @@ compatScenario(
       status: 501,
       code: "MISSING_AC_INSTANCE",
     });
+
     const noAcCreated = await noAc.client.organization.create({
       name: "Missing access control",
       slug: ctx.uniqueToken("missing-ac"),
     });
     const noAcId = data(noAcCreated).id;
+
     const seed = await serverOperation(
       ctx,
       {
@@ -254,8 +273,10 @@ compatScenario(
     );
     expect(seed.status).toBe(200);
     const legacy = seededRole.parse(seed.body);
+
     const read = await noAc.client.organization.getRole({ query: { roleId: legacy.roleId } });
     expect(data(read).permission).toEqual({ team: ["create"] });
+
     const update = await noAc.client.organization.updateRole({
       roleId: legacy.roleId,
       data: { permission: {} },
@@ -264,12 +285,15 @@ compatScenario(
     const unchanged = await teamState(ctx, noAcId, "org-roles-no-ac");
     expect(unchanged.parsed.roles[0]?.permission).toBe('{"team":["create"]}');
     expect(unchanged.parsed.roles[0]?.updatedAt).toBeNull();
+
     const list = await noAc.client.organization.listRoles();
     expect(data(list)).toHaveLength(1);
+
     const removed = await noAc.client.organization.deleteRole({ roleId: legacy.roleId });
     data(removed);
     const removedState = await teamState(ctx, noAcId, "org-roles-no-ac");
     expect(removedState.parsed.roles).toEqual([]);
+
     return {
       disabled,
       created,
@@ -297,6 +321,7 @@ compatScenario(
   async (ctx) => {
     const selected = "org-roles-callback";
     const owner = await teamSignUp(ctx, "callback-role-owner", selected);
+
     const one = await owner.client.organization.create({
       name: "One role budget",
       slug: ctx.uniqueToken("one-role-budget"),
@@ -307,6 +332,7 @@ compatScenario(
     });
     const oneId = data(one).id;
     const twoId = data(two).id;
+
     const created = [];
     for (const [organizationId, names] of [
       [oneId, ["one"]],
@@ -322,8 +348,9 @@ compatScenario(
         created.push(response);
       }
     }
-    const lists = [],
-      rejected = [];
+
+    const lists = [];
+    const rejected = [];
     for (const organizationId of [oneId, twoId]) {
       const response = await owner.client.organization.listRoles({ query: { organizationId } });
       expect(data(response)).toHaveLength(1);
@@ -336,10 +363,12 @@ compatScenario(
       expect(overflow.error).toMatchObject({ status: 400, code: "TOO_MANY_ROLES" });
       rejected.push(overflow);
     }
-    const oneState = await teamState(ctx, oneId, selected),
-      twoState = await teamState(ctx, twoId, selected);
+
+    const oneState = await teamState(ctx, oneId, selected);
+    const twoState = await teamState(ctx, twoId, selected);
     expect(oneState.parsed.roles).toHaveLength(1);
     expect(twoState.parsed.roles).toHaveLength(2);
+
     const deleted = await owner.client.organization.deleteRole({
       organizationId: twoId,
       roleName: "two",
@@ -353,6 +382,7 @@ compatScenario(
     data(replacement);
     const after = await teamState(ctx, twoId, selected);
     expect(after.parsed.roles.map((role) => role.role)).toEqual(["one", "replacement"]);
+
     return {
       one,
       two,
@@ -374,6 +404,7 @@ compatScenario(
     const selected = "org-roles-callback";
     const owner = await teamSignUp(ctx, "cache-owner", selected);
     const member = await teamSignUp(ctx, "cache-member", selected);
+
     const created = await owner.client.organization.create({
       name: "Two role budget",
       slug: ctx.uniqueToken("pending-role-cache"),
@@ -382,14 +413,16 @@ compatScenario(
       name: "One role budget",
       slug: ctx.uniqueToken("other-role-cache"),
     });
-    const organizationId = data(created).id,
-      otherId = data(other).id;
+    const organizationId = data(created).id;
+    const otherId = data(other).id;
+
     const manager = await owner.client.organization.createRole({
       organizationId,
       role: "manager",
       permission: { ac: ["create"], team: ["create"] },
     });
     const managerId = data(manager).roleData.id;
+
     const invitation = await owner.client.organization.inviteMember({
       organizationId,
       email: member.email,
@@ -404,9 +437,11 @@ compatScenario(
       role: "manager",
     });
     data(assignment);
+
     const alternate = orgActor(ctx, "cache-alternate-owner", "org-roles-no-ac");
     const signedIn = await alternate.signIn.email({ email: owner.email, password: "password123" });
     expect(data(signedIn).user.id).toBe(owner.user.id);
+
     const rounds = [];
     for (const mode of ["none", "other", "same", "other-profile", "other", "same"] as const) {
       const restored = await owner.client.organization.updateRole({
@@ -415,12 +450,16 @@ compatScenario(
         data: { permission: { ac: ["create"], team: ["create"] } },
       });
       data(restored);
+
       const arm = await serverOperation(
         ctx,
         { operation: "role-policy", organizationId, stage: "arm" },
         selected,
       );
       expect(arm).toEqual({ status: 200, body: { organizationId, stage: "arm" } });
+
+      // Deliberately not awaited: the armed barrier holds this request inside the
+      // role-limit callback until the release stage below.
       const pending = member.client.organization.createRole({
         organizationId,
         role: "delegated",
@@ -432,26 +471,33 @@ compatScenario(
         selected,
       );
       expect(entered).toEqual({ status: 200, body: { organizationId, stage: "wait" } });
+
       const revoked = await owner.client.organization.updateRole({
         organizationId,
         roleId: managerId,
         data: { permission: { ac: ["create"] } },
       });
       data(revoked);
+
+      // Optionally reload the permission cache mid-flight: for another
+      // organization, for this one, or for this one through another profile.
+      const reloadClient = mode === "other-profile" ? alternate : owner.client;
       const reload =
         mode === "none"
           ? null
-          : await (mode === "other-profile" ? alternate : owner.client).organization.hasPermission({
+          : await reloadClient.organization.hasPermission({
               organizationId: mode === "other" ? otherId : organizationId,
               permissions: { team: ["create"] },
             });
       if (reload) expect(data(reload).success).toBe(true);
+
       const released = await serverOperation(
         ctx,
         { operation: "role-policy", organizationId, stage: "release" },
         selected,
       );
       expect(released).toEqual({ status: 200, body: { organizationId, stage: "release" } });
+
       const result = await pending;
       const rejected = mode === "same" || mode === "other-profile";
       if (rejected) {
@@ -460,16 +506,21 @@ compatScenario(
           code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE",
           missingPermissions: ["team:create"],
         });
-      } else expect(data(result).statements).toEqual({ team: ["create"] });
+      } else {
+        expect(data(result).statements).toEqual({ team: ["create"] });
+      }
+
       const persisted = await teamState(ctx, organizationId, selected);
       expect(persisted.parsed.roles.map((role) => role.role)).toEqual(
         rejected ? ["manager"] : ["manager", "delegated"],
       );
       expect(persisted.parsed.roles[0]?.permission).toBe('{"ac":["create"]}');
+
       const cleanup = rejected
         ? null
         : await owner.client.organization.deleteRole({ organizationId, roleName: "delegated" });
       if (cleanup) expect(data(cleanup).success).toBe(true);
+
       rounds.push({
         mode,
         restored,
@@ -483,8 +534,10 @@ compatScenario(
         cleanup,
       });
     }
+
     const unchanged = await teamState(ctx, otherId, selected);
     expect(unchanged.parsed.roles).toEqual([]);
+
     return {
       created,
       other,
@@ -506,11 +559,13 @@ compatScenario(
     const owner = await teamSignUp(ctx, "delegating-owner", selected);
     const member = await teamSignUp(ctx, "delegating-member", selected);
     const outsider = await teamSignUp(ctx, "delegating-outsider", selected);
+
     const created = await owner.client.organization.create({
       name: "Delegation",
       slug: ctx.uniqueToken("delegation"),
     });
     const organizationId = data(created).id;
+
     const invitation = await owner.client.organization.inviteMember({
       email: member.email,
       role: ["delegator", "auditor"],
@@ -519,6 +574,7 @@ compatScenario(
       invitationId: data(invitation).id,
     });
     const memberId = data(accepted).member.id;
+
     const combinedPermission = await member.client.organization.hasPermission({
       permissions: { team: ["create"], member: ["update"] },
     });
@@ -531,6 +587,7 @@ compatScenario(
     });
     expect(data(teamPermission).success).toBe(true);
     expect(data(memberPermission).success).toBe(true);
+
     const denied = await member.client.organization.createRole({
       role: "escalated",
       permission: { team: ["delete", "delete"], apiKey: ["create"] },
@@ -540,11 +597,13 @@ compatScenario(
       code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE",
       missingPermissions: ["team:delete", "team:delete", "apiKey:create"],
     });
+
     const delegated = await member.client.organization.createRole({
       role: "combined",
       permission: { team: ["create"], member: ["update"] },
     });
     expect(data(delegated).statements).toEqual({ team: ["create"], member: ["update"] });
+
     const keyRole = await owner.client.organization.createRole({
       role: "key-editor",
       permission: { apiKey: ["create", "read"] },
@@ -555,15 +614,17 @@ compatScenario(
       role: "key-editor",
     });
     data(assigned);
+
     const keys = (actor: string) =>
       createAuthClient({
         baseURL: ctx.baseURL,
         plugins: [apiKeyClient()],
         fetchOptions: { customFetchImpl: ctx.actor(actor, selected).fetch },
       });
-    const ownerKeys = keys("delegating-owner"),
-      memberKeys = keys("delegating-member"),
-      outsiderKeys = keys("delegating-outsider");
+    const ownerKeys = keys("delegating-owner");
+    const memberKeys = keys("delegating-member");
+    const outsiderKeys = keys("delegating-outsider");
+
     const key = await memberKeys.apiKey.create({
       configId: "organization",
       organizationId,
@@ -571,10 +632,12 @@ compatScenario(
     });
     const keyData = data(key);
     expect(keyData.referenceId).toBe(organizationId);
+
     const read = await memberKeys.apiKey.get({
       query: { configId: "organization", id: keyData.id },
     });
     expect(data(read).id).toBe(keyData.id);
+
     const deleteDenied = await memberKeys.apiKey.delete({
       configId: "organization",
       keyId: keyData.id,
@@ -583,15 +646,18 @@ compatScenario(
       status: 403,
       code: "INSUFFICIENT_API_KEY_PERMISSIONS",
     });
+
     const outsiderDenied = await outsiderKeys.apiKey.get({
       query: { configId: "organization", id: keyData.id },
     });
     expect(outsiderDenied.error).toMatchObject({ status: 403 });
+
     const revoked = await owner.client.organization.updateRole({
       roleId: keyRoleId,
       data: { permission: { apiKey: [] } },
     });
     data(revoked);
+
     const readRevoked = await memberKeys.apiKey.get({
       query: { configId: "organization", id: keyData.id },
     });
@@ -608,15 +674,19 @@ compatScenario(
       status: 403,
       code: "INSUFFICIENT_API_KEY_PERMISSIONS",
     });
+
     const retained = await ownerKeys.apiKey.get({
       query: { configId: "organization", id: keyData.id },
     });
     expect(data(retained).id).toBe(keyData.id);
+
     const deleted = await ownerKeys.apiKey.delete({ configId: "organization", keyId: keyData.id });
     expect(data(deleted).success).toBe(true);
+
     const finalState = await teamState(ctx, organizationId, selected);
     expect(finalState.parsed.roles.map((role) => role.role)).toEqual(["combined", "key-editor"]);
     expect(finalState.parsed.roles[1]?.permission).toBe('{"apiKey":[]}');
+
     return {
       created,
       invitation,
@@ -645,8 +715,9 @@ compatScenario(
 compatScenario(
   "organization role name selectors update and delete every legacy duplicate within the selected tenant",
   async (ctx) => {
-    const owner = await signUp(ctx, "legacy-role-owner"),
-      foreign = await signUp(ctx, "legacy-role-foreign");
+    const owner = await signUp(ctx, "legacy-role-owner");
+    const foreign = await signUp(ctx, "legacy-role-foreign");
+
     const created = await owner.client.organization.create({
       name: "Legacy roles",
       slug: ctx.uniqueToken("legacy-roles"),
@@ -655,8 +726,9 @@ compatScenario(
       name: "Foreign legacy roles",
       slug: ctx.uniqueToken("foreign-legacy-roles"),
     });
-    const organizationId = data(created).id,
-      otherId = data(other).id;
+    const organizationId = data(created).id;
+    const otherId = data(other).id;
+
     const seeds = [];
     for (const orgId of [organizationId, organizationId, otherId]) {
       const seed = await serverOperation(
@@ -672,8 +744,10 @@ compatScenario(
       expect(seed.status).toBe(200);
       seeds.push(seed);
     }
-    const first = seededRole.parse(seeds[0]?.body),
-      second = seededRole.parse(seeds[1]?.body);
+
+    const first = seededRole.parse(seeds[0]?.body);
+    const second = seededRole.parse(seeds[1]?.body);
+
     const wrongScope = await foreign.client.organization.updateRole({
       organizationId,
       roleId: first.roleId,
@@ -683,6 +757,7 @@ compatScenario(
       status: 403,
       code: "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
     });
+
     const byId = await owner.client.organization.updateRole({
       roleId: first.roleId,
       data: { permission: { team: ["update"] } },
@@ -693,6 +768,7 @@ compatScenario(
       '{"team":["update"]}',
       '{"team":["create"]}',
     ]);
+
     const byName = await owner.client.organization.updateRole({
       roleName: "legacy-editor",
       data: { permission: { member: ["update"] } },
@@ -705,17 +781,21 @@ compatScenario(
     ]);
     expect(afterName.parsed.roles[0]?.updatedAt).not.toBeNull();
     expect(afterName.parsed.roles[0]?.updatedAt).toBe(afterName.parsed.roles[1]?.updatedAt);
+
     const foreignState = await state(ctx, otherId);
     expect(foreignState.parsed.roles[0]?.permission).toBe('{"team":["create"]}');
     expect(foreignState.parsed.roles[0]?.updatedAt).toBeNull();
+
     const removed = await owner.client.organization.deleteRole({ roleName: "legacy-editor" });
     data(removed);
     const removedState = await state(ctx, organizationId);
     expect(removedState.parsed.roles).toEqual([]);
+
     const replay = await owner.client.organization.deleteRole({ roleId: second.roleId });
     expect(replay.error).toMatchObject({ status: 400, code: "ROLE_NOT_FOUND" });
     const foreignAfter = await state(ctx, otherId);
     expect(foreignAfter.parsed.roles).toHaveLength(1);
+
     return {
       created,
       other,
@@ -737,18 +817,21 @@ compatScenario(
 compatScenario(
   "organization role validation and permission request unions retain authentication precedence and persisted state",
   async (ctx) => {
-    const owner = await signUp(ctx, "role-validation-owner"),
-      outsider = await signUp(ctx, "role-validation-outsider");
+    const owner = await signUp(ctx, "role-validation-owner");
+    const outsider = await signUp(ctx, "role-validation-outsider");
+
     const created = await owner.client.organization.create({
       name: "Validation",
       slug: ctx.uniqueToken("role-validation"),
     });
     const organizationId = data(created).id;
+
     const role = await owner.client.organization.createRole({
       role: "editor",
       permission: { team: ["create"] },
     });
     const roleId = data(role).roleData.id;
+
     const invalid = [];
     for (const [json, message] of [
       [
@@ -785,6 +868,7 @@ compatScenario(
       expect(response).toMatchObject({ status: 400, body: { code: "VALIDATION_ERROR", message } });
       invalid.push(response);
     }
+
     const invalidCreates = [];
     for (const text of ["", "{malformed"]) {
       const response = await raw(
@@ -808,9 +892,11 @@ compatScenario(
       });
       invalidCreates.push(response);
     }
+
     const noBody = await raw(ctx, "role-validation-owner", profile, "/organization/create-role");
     expect(noBody.status).toBe(400);
     invalidCreates.push(noBody);
+
     const integerResources = await raw(
       ctx,
       "role-validation-owner",
@@ -829,6 +915,7 @@ compatScenario(
       },
     });
     invalidCreates.push(integerResources);
+
     for (const [json, message] of [
       [
         { role: "extra", permission: {}, additionalFields: null },
@@ -861,15 +948,18 @@ compatScenario(
       expect(response).toMatchObject({ status: 400, body: { code: "VALIDATION_ERROR", message } });
       invalidCreates.push(response);
     }
+
     const unchanged = await state(ctx, organizationId);
     expect(unchanged.parsed.roles[0]?.permission).toBe('{"team":["create"]}');
     expect(unchanged.parsed.roles[0]?.updatedAt).toBeNull();
+
     const selected = await raw(ctx, "role-validation-owner", profile, "/organization/update-role", {
       roleName: null,
       roleId,
       data: { permission: { team: ["update"] } },
     });
     expect(selected.status).toBe(200);
+
     const permissions = [];
     for (const [json, success] of [
       [{ permissions: {} }, false],
@@ -890,6 +980,7 @@ compatScenario(
       expect(response).toEqual({ status: 200, body: { error: null, success } });
       permissions.push(response);
     }
+
     const both = await raw(ctx, "role-validation-owner", profile, "/organization/has-permission", {
       permissions: { team: ["create"] },
       permission: { team: ["create"] },
@@ -901,6 +992,7 @@ compatScenario(
         message: "[body] Invalid input: more than one option matched",
       },
     });
+
     const allInvalidPermissions = await raw(
       ctx,
       "role-validation-owner",
@@ -916,6 +1008,7 @@ compatScenario(
           "[body.organizationId] Invalid input: expected string, received null; [body] Invalid input",
       },
     });
+
     const outsiderDenied = await raw(
       ctx,
       "role-validation-outsider",
@@ -927,6 +1020,7 @@ compatScenario(
       status: 401,
       body: { code: "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION" },
     });
+
     const malformedWithoutSession = await raw(
       ctx,
       "unsigned-role-actor",
@@ -941,6 +1035,7 @@ compatScenario(
         message: "[body.role] Invalid input: expected string, received number",
       },
     });
+
     const unauthorized = await raw(
       ctx,
       "unsigned-role-actor",
@@ -949,6 +1044,7 @@ compatScenario(
       { role: "unsigned", permission: {} },
     );
     expect(unauthorized).toMatchObject({ status: 401, body: { code: "UNAUTHORIZED" } });
+
     const unsigned = orgActor(ctx, "unsigned-role-actor", profile);
     const unsignedRead = await unsigned.organization.getRole({ query: { organizationId, roleId } });
     const unsignedList = await unsigned.organization.listRoles({ query: { organizationId } });
@@ -961,6 +1057,7 @@ compatScenario(
     for (const response of [unsignedRead, unsignedList, unsignedUpdate, unsignedDelete]) {
       expect(response.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
     }
+
     const outsiderRead = await outsider.client.organization.getRole({
       query: { organizationId, roleId },
     });
@@ -973,6 +1070,7 @@ compatScenario(
         code: "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
       });
     }
+
     const outsiderExisting = await outsider.client.organization.createRole({
       organizationId,
       role: "editor",
@@ -982,6 +1080,7 @@ compatScenario(
       status: 403,
       code: "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
     });
+
     const outsiderPredefined = await outsider.client.organization.createRole({
       organizationId,
       role: "OWNER",
@@ -991,11 +1090,13 @@ compatScenario(
       status: 400,
       code: "ROLE_NAME_IS_ALREADY_TAKEN",
     });
+
     const invalidExisting = await owner.client.organization.createRole({
       role: "editor",
       permission: { invented: ["read"] },
     });
     expect(invalidExisting.error).toMatchObject({ status: 400, code: "INVALID_RESOURCE" });
+
     const unicodeRole = await raw(
       ctx,
       "role-validation-owner",
@@ -1007,6 +1108,7 @@ compatScenario(
       status: 200,
       body: { roleData: { role: "ος", permission: {} } },
     });
+
     const unicodeDuplicate = await owner.client.organization.createRole({
       role: "ος",
       permission: {},
@@ -1015,11 +1117,14 @@ compatScenario(
       status: 400,
       code: "ROLE_NAME_IS_ALREADY_TAKEN",
     });
+
     const unicodeRemoved = await owner.client.organization.deleteRole({ roleName: "ος" });
     data(unicodeRemoved);
+
     const finalState = await state(ctx, organizationId);
     expect(finalState.parsed.roles).toHaveLength(1);
     expect(finalState.parsed.roles[0]?.permission).toBe('{"team":["update"]}');
+
     return {
       created,
       role,
@@ -1055,13 +1160,15 @@ compatScenario(
   async (ctx) => {
     const selected = "org-roles-callback";
     const owner = await teamSignUp(ctx, "page-role-owner", selected);
-    const prefix = await teamSignUp(ctx, "page-role-prefix", selected),
-      assigned = await teamSignUp(ctx, "page-role-assigned", selected);
+    const prefix = await teamSignUp(ctx, "page-role-prefix", selected);
+    const assigned = await teamSignUp(ctx, "page-role-assigned", selected);
+
     const created = await owner.client.organization.create({
       name: "Two role budget",
       slug: ctx.uniqueToken("page-role-budget"),
     });
     const organizationId = data(created).id;
+
     const editor = await owner.client.organization.createRole({
       role: "editor",
       permission: { team: ["create"] },
@@ -1072,6 +1179,7 @@ compatScenario(
     });
     const editorId = data(editor).roleData.id;
     data(prefixRole);
+
     const prefixInvitation = await owner.client.organization.inviteMember({
       email: prefix.email,
       role: "member",
@@ -1080,6 +1188,7 @@ compatScenario(
       invitationId: data(prefixInvitation).id,
     });
     const prefixMemberId = data(prefixAccepted).member.id;
+
     // Reproduce a stored legacy assignment beyond the configured role lookup page.
     const legacyPrefix = await serverOperation(
       ctx,
@@ -1095,6 +1204,7 @@ compatScenario(
       status: 200,
       body: { memberId: prefixMemberId, organizationId, role: "prefixeditor" },
     });
+
     const assignedInvitation = await owner.client.organization.inviteMember({
       email: assigned.email,
       role: "editor",
@@ -1103,16 +1213,19 @@ compatScenario(
       invitationId: data(assignedInvitation).id,
     });
     data(assignedAccepted);
+
     const before = await teamState(ctx, organizationId, selected);
     expect(before.parsed.members.map((member) => member.role)).toEqual([
       "owner",
       "prefixeditor",
       "editor",
     ]);
+
     const beforePermission = await assigned.client.organization.hasPermission({
       permissions: { team: ["create"] },
     });
     expect(data(beforePermission).success).toBe(true);
+
     const deleted = await owner.client.organization.deleteRole({ roleId: editorId });
     expect(data(deleted).success).toBe(true);
     const after = await teamState(ctx, organizationId, selected);
@@ -1122,13 +1235,16 @@ compatScenario(
       "prefixeditor",
       "editor",
     ]);
+
     const revoked = await assigned.client.organization.createTeam({ name: "Deleted role grant" });
     expect(revoked.error).toMatchObject({
       status: 403,
       code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_TEAMS_IN_THIS_ORGANIZATION",
     });
+
     const finalState = await teamState(ctx, organizationId, selected);
     expect(finalState.parsed.teams).toHaveLength(1);
+
     return {
       created,
       editor,

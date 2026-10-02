@@ -1,7 +1,22 @@
 import { expect } from "bun:test";
 import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
-import { organizationActor, signUpUser } from "./helpers";
+import {
+  type CompatContext,
+  data,
+  orgActor,
+  organizationActor,
+  serverOperation,
+  signUp,
+  signUpUser,
+  state,
+} from "./helpers";
+
+const verificationEmail = z.object({ token: z.string().min(1) });
+
+async function readVerificationToken(ctx: CompatContext, email: string) {
+  return verificationEmail.parse(await ctx.readVerificationEmail({ email })).token;
+}
 
 compatScenario(
   "organization invitation happy path covers list and accept flows",
@@ -14,47 +29,53 @@ compatScenario(
       name: "Invite Org",
       slug,
     });
+    const organizationId = organization.data?.id;
     const invitation = await owner.orgClient.organization.inviteMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId: organizationId ?? "",
       email: invitee.email,
       role: "member",
     });
+    const invitationId = invitation.data?.id;
     const getInvitation = await invitee.orgClient.organization.getInvitation({
       query: {
-        id: invitation.data?.id ?? "",
+        id: invitationId ?? "",
       },
     });
     const listInvitations = await owner.orgClient.organization.listInvitations({
       query: {
-        organizationId: organization.data?.id,
+        organizationId,
       },
     });
+
+    // The invitee cannot list their own invitations until their email is verified.
     const listUserInvitations = await invitee.orgClient.organization.listUserInvitations();
     expect(listUserInvitations.error).toMatchObject({
       status: 403,
       code: "EMAIL_VERIFICATION_REQUIRED_FOR_INVITATION",
     });
+
     await invitee.client.sendVerificationEmail({ email: invitee.email });
-    const verification = z
-      .object({ token: z.string().min(1) })
-      .parse(await ctx.readVerificationEmail({ email: invitee.email }));
-    const verifyEmail = await invitee.client.verifyEmail({ query: { token: verification.token } });
+    const verificationToken = await readVerificationToken(ctx, invitee.email);
+    const verifyEmail = await invitee.client.verifyEmail({ query: { token: verificationToken } });
     expect(verifyEmail.error).toBeNull();
+
     const verifiedListUserInvitations = await invitee.orgClient.organization.listUserInvitations();
     expect(verifiedListUserInvitations.error).toBeNull();
     expect(verifiedListUserInvitations.data).toHaveLength(1);
     expect(verifiedListUserInvitations.data?.[0]).toMatchObject({
-      id: invitation.data?.id,
+      id: invitationId,
       email: invitee.email,
-      organizationId: organization.data?.id,
+      organizationId,
       organizationName: "Invite Org",
       status: "pending",
     });
+
     const acceptInvitation = await invitee.orgClient.organization.acceptInvitation({
-      invitationId: invitation.data?.id ?? "",
+      invitationId: invitationId ?? "",
     });
     const fullOrganizationAfterAccept = await invitee.orgClient.organization.getFullOrganization();
     expect(acceptInvitation.error).toBeNull();
+
     const invitationsAfterAccept = await invitee.orgClient.organization.listUserInvitations();
     expect(invitationsAfterAccept.data).toEqual([]);
 
@@ -85,6 +106,7 @@ compatScenario(
       status: 400,
       message: "Missing session headers, or email query parameter.",
     });
+
     const user = await signUpUser(ctx, "user", "organization-list-user-guard", "Invitation User");
     const selectingAnother = await ctx.rawRequest({
       actor: "user",
@@ -94,11 +116,13 @@ compatScenario(
     expect(selectingAnother.body).toEqual({
       message: "User email cannot be passed for client side API calls.",
     });
+
     const ownUnverified = await user.orgClient.organization.listUserInvitations();
     expect(ownUnverified.error).toMatchObject({
       status: 403,
       code: "EMAIL_VERIFICATION_REQUIRED_FOR_INVITATION",
     });
+
     return {
       anonymous: ctx.snapshot(anonymous),
       selectingAnother: ctx.snapshot(selectingAnother),
@@ -118,10 +142,9 @@ compatScenario(
       "Invitee",
     );
     await invitee.client.sendVerificationEmail({ email: invitee.email });
-    const verification = z
-      .object({ token: z.string().min(1) })
-      .parse(await ctx.readVerificationEmail({ email: invitee.email }));
-    await invitee.client.verifyEmail({ query: { token: verification.token } });
+    const verificationToken = await readVerificationToken(ctx, invitee.email);
+    await invitee.client.verifyEmail({ query: { token: verificationToken } });
+
     const firstOrg = await owner.orgClient.organization.create({
       name: "Expired Org",
       slug: ctx.uniqueToken("organization-list-expired"),
@@ -132,11 +155,15 @@ compatScenario(
       role: "member",
     });
     expect(expiredInvitation.error).toBeNull();
-    if (!expiredInvitation.data) throw new Error("an expirable invitation must be created");
+    if (!expiredInvitation.data) {
+      throw new Error("an expirable invitation must be created");
+    }
+    const expiredInvitationId = expiredInvitation.data.id;
     await ctx.expireInvitation({
-      invitationId: expiredInvitation.data.id,
+      invitationId: expiredInvitationId,
       expiresAt: "2000-01-01T00:00:00.000Z",
     });
+
     const secondOrg = await owner.orgClient.organization.create({
       name: "Active Org",
       slug: ctx.uniqueToken("organization-list-active"),
@@ -147,11 +174,12 @@ compatScenario(
       role: "member",
     });
     expect(activeInvitation.error).toBeNull();
+
     const listed = await invitee.orgClient.organization.listUserInvitations();
     expect(listed.error).toBeNull();
     expect(listed.data).toHaveLength(2);
     expect(listed.data?.[0]).toMatchObject({
-      id: expiredInvitation.data.id,
+      id: expiredInvitationId,
       organizationName: "Expired Org",
       status: "pending",
     });
@@ -159,17 +187,21 @@ compatScenario(
       z.object({ expiresAt: z.coerce.date() }).parse(listed.data?.[0]).expiresAt.toISOString(),
     ).toBe("2000-01-01T00:00:00.000Z");
     expect(listed.data?.[1]?.id).toBe(activeInvitation.data?.id);
+
     const expiredAcceptance = await invitee.orgClient.organization.acceptInvitation({
-      invitationId: expiredInvitation.data.id,
+      invitationId: expiredInvitationId,
     });
     expect(expiredAcceptance.error).not.toBeNull();
     const accepted = await invitee.orgClient.organization.acceptInvitation({
       invitationId: activeInvitation.data?.id ?? "",
     });
     expect(accepted.error).toBeNull();
+
     const afterAcceptance = await invitee.orgClient.organization.listUserInvitations();
     expect(afterAcceptance.data).toHaveLength(1);
-    expect(afterAcceptance.data?.[0]?.id).toBe(expiredInvitation.data.id);
+    expect(afterAcceptance.data?.[0]?.id).toBe(expiredInvitationId);
+
+    // A different verified user sees none of these invitations.
     const other = await signUpUser(
       ctx,
       "other",
@@ -177,12 +209,11 @@ compatScenario(
       "Other Invitee",
     );
     await other.client.sendVerificationEmail({ email: other.email });
-    const otherVerification = z
-      .object({ token: z.string().min(1) })
-      .parse(await ctx.readVerificationEmail({ email: other.email }));
-    await other.client.verifyEmail({ query: { token: otherVerification.token } });
+    const otherVerificationToken = await readVerificationToken(ctx, other.email);
+    await other.client.verifyEmail({ query: { token: otherVerificationToken } });
     const otherInvitations = await other.orgClient.organization.listUserInvitations();
     expect(otherInvitations.data).toEqual([]);
+
     return {
       listed: ctx.snapshot(listed),
       expiredAcceptance: ctx.snapshot(expiredAcceptance),
@@ -217,9 +248,10 @@ compatScenario(
       name: "Validation Org",
       slug,
     });
+    const organizationId = organization.data?.id ?? "";
 
     const adminInvitation = await owner.orgClient.organization.inviteMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId,
       email: admin.email,
       role: "admin",
     });
@@ -227,18 +259,18 @@ compatScenario(
       invitationId: adminInvitation.data?.id ?? "",
     });
     const adminInvitingOwner = await admin.orgClient.organization.inviteMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId,
       email: ctx.uniqueEmail("organization-owner-role"),
       role: "owner",
     });
     const invalidRoleInvitation = await owner.orgClient.organization.inviteMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId,
       email: ctx.uniqueEmail("organization-invalid-role"),
       role: "super-invalid-role-123" as never,
     });
 
     const rejectInvitation = await owner.orgClient.organization.inviteMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId,
       email: rejectUser.email,
       role: "member",
     });
@@ -247,7 +279,7 @@ compatScenario(
     });
 
     const cancelInvitation = await owner.orgClient.organization.inviteMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId,
       email: cancelUser.email,
       role: "member",
     });
@@ -272,10 +304,10 @@ compatScenario(
 compatScenario(
   "organization server invitation listing scopes email and applies configured page limits before status filtering",
   async (ctx) => {
-    const { data, orgActor, signUp, serverOperation, state } = await import("./helpers");
     const profile = "org-roles-callback" as const;
     const owner = await signUp(ctx, "list-page-owner", profile);
     const invitee = await signUp(ctx, "list-page-invitee", profile);
+
     const firstOrg = data(
       await owner.client.organization.create({
         name: "Processed Invitation Org",
@@ -289,6 +321,8 @@ compatScenario(
         role: "member",
       }),
     );
+
+    // The server API matches the invitee email case-insensitively and skips the verification gate.
     const unverifiedServer = await serverOperation(
       ctx,
       { operation: "list-user-invitations", email: invitee.email.toUpperCase() },
@@ -303,6 +337,7 @@ compatScenario(
       status: 403,
       code: "EMAIL_VERIFICATION_REQUIRED_FOR_INVITATION",
     });
+
     data(await owner.client.organization.cancelInvitation({ invitationId: first.id }));
     const secondOrg = data(
       await owner.client.organization.create({
@@ -317,10 +352,14 @@ compatScenario(
         role: "member",
       }),
     );
+
     const firstState = await state(ctx, firstOrg.id, profile);
     const secondState = await state(ctx, secondOrg.id, profile);
     expect(firstState.parsed.invitations[0]).toMatchObject({ id: first.id, status: "canceled" });
     expect(secondState.parsed.invitations[0]).toMatchObject({ id: second.id, status: "pending" });
+
+    // This profile's find-many limit of 1 applies before status filtering, so the canceled
+    // invitation fills the page and the pending one is never seen.
     const limitedServer = await serverOperation(
       ctx,
       { operation: "list-user-invitations", email: invitee.email },
@@ -336,6 +375,7 @@ compatScenario(
     expect(normalServer.body).toMatchObject([
       { id: second.id, email: invitee.email, organizationName: secondOrg.name, status: "pending" },
     ]);
+
     const foreignServer = await serverOperation(
       ctx,
       { operation: "list-user-invitations", email: owner.email },
@@ -351,14 +391,15 @@ compatScenario(
       status: 400,
       body: { message: "Missing session headers, or email query parameter." },
     });
+
     data(await invitee.client.sendVerificationEmail({ email: invitee.email }));
-    const proof = z
-      .object({ token: z.string().min(1) })
-      .parse(await ctx.readVerificationEmail({ email: invitee.email }));
-    data(await invitee.client.verifyEmail({ query: { token: proof.token } }));
+    const proofToken = await readVerificationToken(ctx, invitee.email);
+    data(await invitee.client.verifyEmail({ query: { token: proofToken } }));
+
     const limitedHttp = await invitee.client.organization.listUserInvitations();
     expect(limitedHttp.error).toBeNull();
     expect(limitedHttp.data).toEqual([]);
+
     const normalClient = orgActor(ctx, "list-page-invitee", "org-teams");
     const normalSignIn = await normalClient.signIn.email({
       email: invitee.email,
@@ -370,8 +411,11 @@ compatScenario(
     expect(normalHttp.data).toMatchObject([
       { id: second.id, email: invitee.email, status: "pending" },
     ]);
+
+    // Listing is read-only: neither organization's stored state changed.
     expect(await state(ctx, firstOrg.id, profile)).toEqual(firstState);
     expect(await state(ctx, secondOrg.id, profile)).toEqual(secondState);
+
     return {
       unverifiedServer,
       unverifiedHttp,

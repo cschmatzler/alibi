@@ -1,40 +1,40 @@
 import { expect } from "bun:test";
 import { z } from "zod";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
-import { asArray, asRecord, signUpUser } from "./helpers";
+import { signUpUser } from "./helpers";
 
 async function removalSetup(ctx: ScenarioContext, name: string) {
-  expect(
-    (
-      await ctx.rawRequest({
-        path: "/__test/organization-member-role-hooks-configure",
-        method: "POST",
-        json: { mode: "record" },
-      })
-    ).status,
-  ).toBe(200);
-  const owner = await signUpUser(ctx, `${name}-owner`, `${name}-owner`, "Owner"),
-    target = await signUpUser(ctx, `${name}-target`, `${name}-target`, "Target"),
-    foreign = await signUpUser(ctx, `${name}-foreign`, `${name}-foreign`, "Foreign");
+  const configured = await ctx.rawRequest({
+    path: "/__test/organization-member-role-hooks-configure",
+    method: "POST",
+    json: { mode: "record" },
+  });
+  expect(configured.status).toBe(200);
+
+  const owner = await signUpUser(ctx, `${name}-owner`, `${name}-owner`, "Owner");
+  const target = await signUpUser(ctx, `${name}-target`, `${name}-target`, "Target");
+  const foreign = await signUpUser(ctx, `${name}-foreign`, `${name}-foreign`, "Foreign");
   for (const actor of [owner, target, foreign]) expect(actor.signup.error).toBeNull();
+
   const created = await owner.orgClient.organization.create({
-      name: "Removal",
-      slug: ctx.uniqueToken(`${name}-org`),
-      metadata: { owned: true },
-    }),
-    other = await foreign.orgClient.organization.create({
-      name: "Foreign",
-      slug: ctx.uniqueToken(`${name}-foreign-org`),
-      metadata: { foreign: true },
-    });
+    name: "Removal",
+    slug: ctx.uniqueToken(`${name}-org`),
+    metadata: { owned: true },
+  });
+  const other = await foreign.orgClient.organization.create({
+    name: "Foreign",
+    slug: ctx.uniqueToken(`${name}-foreign-org`),
+    metadata: { foreign: true },
+  });
   expect(created.error).toBeNull();
   expect(other.error).toBeNull();
-  const organizationId = z.string().parse(created.data?.id),
-    invited = await owner.orgClient.organization.inviteMember({
-      organizationId,
-      email: target.email,
-      role: "member",
-    });
+
+  const organizationId = z.string().parse(created.data?.id);
+  const invited = await owner.orgClient.organization.inviteMember({
+    organizationId,
+    email: target.email,
+    role: "member",
+  });
   expect(invited.error).toBeNull();
   const accepted = await target.orgClient.organization.acceptInvitation({
     invitationId: z.string().parse(invited.data?.id),
@@ -42,6 +42,7 @@ async function removalSetup(ctx: ScenarioContext, name: string) {
   expect(accepted.error).toBeNull();
   const memberId = z.string().parse(accepted.data?.member.id);
   expect((await target.orgClient.organization.setActive({ organizationId })).error).toBeNull();
+
   const actors = [owner, target, foreign];
   async function state() {
     const response = await ctx.rawRequest({ path: "/__test/organization-member-role-hooks-state" });
@@ -54,6 +55,7 @@ async function removalSetup(ctx: ScenarioContext, name: string) {
       expect(observed.status).toBe(200);
       users.push(observed.body);
     }
+
     return {
       hooks: z
         .object({
@@ -69,14 +71,16 @@ async function removalSetup(ctx: ScenarioContext, name: string) {
       users,
     };
   }
+
   return { owner, target, foreign, created, other, organizationId, memberId, state };
 }
 
 compatScenario(
   "organization ID removal omits the email join and preserves the target and foreign selected sessions",
   async (ctx) => {
-    const { owner, target, organizationId, memberId, state } = await removalSetup(ctx, "remove-id"),
-      before = await state();
+    const { owner, target, organizationId, memberId, state } = await removalSetup(ctx, "remove-id");
+    const before = await state();
+
     const result = await owner.orgClient.organization.removeMember({
       organizationId,
       memberIdOrEmail: memberId,
@@ -85,6 +89,7 @@ compatScenario(
     expect(result.data?.member).toHaveProperty("id", memberId);
     expect(result.data?.member).toHaveProperty("userId", target.signup.data?.user.id);
     expect(result.data?.member).not.toHaveProperty("user");
+
     const after = await state();
     expect(after.hooks.receipts).toEqual([]);
     expect(after.hooks.snapshot).toEqual({
@@ -92,34 +97,37 @@ compatScenario(
       members: before.hooks.snapshot.members.filter((member) => member.id !== memberId),
     });
     expect(after.users).toEqual(before.users);
+
     return { before, result: ctx.snapshot(result), after };
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization removal permission and last-owner guards reject without mutation and preserve foreign authority",
   async (ctx) => {
     const { owner, target, foreign, organizationId, memberId, state } = await removalSetup(
-        ctx,
-        "remove-guards",
-      ),
-      before = await state();
+      ctx,
+      "remove-guards",
+    );
+    const before = await state();
     const ownerMember = z
-        .record(z.string(), z.unknown())
-        .parse(
-          before.hooks.snapshot.members.find(
-            (member) =>
-              member.userId === owner.signup.data?.user.id &&
-              member.organizationId === organizationId,
-          ),
+      .record(z.string(), z.unknown())
+      .parse(
+        before.hooks.snapshot.members.find(
+          (member) =>
+            member.userId === owner.signup.data?.user.id &&
+            member.organizationId === organizationId,
         ),
-      foreignMember = z
-        .record(z.string(), z.unknown())
-        .parse(
-          before.hooks.snapshot.members.find(
-            (member) => member.userId === foreign.signup.data?.user.id,
-          ),
-        );
+      );
+    const foreignMember = z
+      .record(z.string(), z.unknown())
+      .parse(
+        before.hooks.snapshot.members.find(
+          (member) => member.userId === foreign.signup.data?.user.id,
+        ),
+      );
+
     const observations = [];
     for (const [actor, selector, status, code] of [
       [target, memberId, 401, "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_MEMBER"],
@@ -146,6 +154,7 @@ compatScenario(
       expect(await state()).toEqual(before);
       observations.push(ctx.snapshot(result));
     }
+
     const retry = await owner.orgClient.organization.removeMember({
       organizationId,
       memberIdOrEmail: target.email.toUpperCase(),
@@ -157,6 +166,7 @@ compatScenario(
       email: target.email,
       image: null,
     });
+
     const after = await state();
     expect(after.hooks.snapshot).toEqual({
       ...before.hooks.snapshot,
@@ -164,20 +174,23 @@ compatScenario(
     });
     expect(after.users).toEqual(before.users);
     expect(after.hooks.receipts).toEqual([]);
+
     return { before, observations, retry: ctx.snapshot(retry), after };
   },
   ["POST /organization/remove-member"],
 );
+
 compatScenario(
   "organization removal validates ordered string fields and media before guest authentication",
   async (ctx) => {
     const { owner, target, foreign, organizationId, memberId, state } = await removalSetup(
-        ctx,
-        "remove-input",
-      ),
-      before = await state(),
-      guest = ctx.actor("remove-input-guest"),
-      observations = [];
+      ctx,
+      "remove-input",
+    );
+    const before = await state();
+    const guest = ctx.actor("remove-input-guest");
+
+    const observations = [];
     for (const [body, media, status, error] of [
       [
         "{}",
@@ -231,6 +244,7 @@ compatScenario(
       expect(await state()).toEqual(before);
       observations.push({ status: response.status, body: value });
     }
+
     for (const [organization, selector] of [
       [organizationId, ""],
       [" ", memberId],
@@ -243,17 +257,20 @@ compatScenario(
       expect(await state()).toEqual(before);
       observations.push(ctx.snapshot(result));
     }
+
     const retry = await owner.orgClient.organization.removeMember({
       organizationId: "",
       memberIdOrEmail: memberId,
     });
     expect(retry.error).toBeNull();
+
     const after = await state();
     expect(after.hooks.snapshot).toEqual({
       ...before.hooks.snapshot,
       members: before.hooks.snapshot.members.filter((member) => member.id !== memberId),
     });
     expect(after.users).toEqual(before.users);
+
     return { before, observations, retry: ctx.snapshot(retry), after };
   },
   ["POST /organization/remove-member"],
@@ -276,13 +293,14 @@ compatScenario(
       name: "Members Org",
       slug,
     });
+    const organizationId = organization.data?.id;
 
     const addMember = await ctx.rawRequest({
       actor: "owner",
       path: "/api/auth/organization/add-member",
       method: "POST",
       json: {
-        organizationId: organization.data?.id,
+        organizationId,
         userId: member.signup.data?.user.id,
         role: "member",
       },
@@ -292,14 +310,14 @@ compatScenario(
       path: "/api/auth/organization/add-member",
       method: "POST",
       json: {
-        organizationId: organization.data?.id,
+        organizationId,
         userId: multiRoleMember.signup.data?.user.id,
         role: ["admin", "member"],
       },
     });
 
     const invitedMember = await owner.orgClient.organization.inviteMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId: organizationId ?? "",
       email: member.email,
       role: "member",
     });
@@ -307,7 +325,7 @@ compatScenario(
       invitationId: invitedMember.data?.id ?? "",
     });
     const invitedMultiRoleMember = await owner.orgClient.organization.inviteMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId: organizationId ?? "",
       email: multiRoleMember.email,
       role: ["admin", "member"] as never,
     });
@@ -317,7 +335,7 @@ compatScenario(
 
     const listMembers = await owner.orgClient.organization.listMembers({
       query: {
-        organizationId: organization.data?.id,
+        organizationId,
         limit: 1,
         offset: 1,
       },
@@ -326,7 +344,7 @@ compatScenario(
     const getActiveMemberRole = await owner.orgClient.organization.getActiveMemberRole();
     const getOtherMemberRole = await owner.orgClient.organization.getActiveMemberRole({
       query: {
-        organizationId: organization.data?.id,
+        organizationId,
         userId: member.signup.data?.user.id,
       },
     });
@@ -357,9 +375,10 @@ compatScenario("organization list members supports sort and filter queries", asy
     name: "List Org",
     slug,
   });
+  const organizationId = organization.data?.id;
 
   const invitedMember = await owner.orgClient.organization.inviteMember({
-    organizationId: organization.data?.id ?? "",
+    organizationId: organizationId ?? "",
     email: member.email,
     role: "member",
   });
@@ -368,7 +387,7 @@ compatScenario("organization list members supports sort and filter queries", asy
   });
 
   const invitedAdmin = await owner.orgClient.organization.inviteMember({
-    organizationId: organization.data?.id ?? "",
+    organizationId: organizationId ?? "",
     email: admin.email,
     role: "admin",
   });
@@ -378,7 +397,7 @@ compatScenario("organization list members supports sort and filter queries", asy
 
   const filteredMembers = await owner.orgClient.organization.listMembers({
     query: {
-      organizationId: organization.data?.id,
+      organizationId,
       filterField: "role",
       filterOperator: "ne",
       filterValue: "owner",
@@ -386,7 +405,7 @@ compatScenario("organization list members supports sort and filter queries", asy
   });
   const sortedMembers = await owner.orgClient.organization.listMembers({
     query: {
-      organizationId: organization.data?.id,
+      organizationId,
       sortBy: "createdAt",
       sortDirection: "desc",
     },
@@ -416,9 +435,10 @@ compatScenario(
       name: "Mutation Org",
       slug,
     });
+    const organizationId = organization.data?.id;
 
     const invitedMember = await owner.orgClient.organization.inviteMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId: organizationId ?? "",
       email: member.email,
       role: "member",
     });
@@ -426,7 +446,7 @@ compatScenario(
       invitationId: invitedMember.data?.id ?? "",
     });
     const invitedRemovable = await owner.orgClient.organization.inviteMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId: organizationId ?? "",
       email: removable.email,
       role: "member",
     });
@@ -435,7 +455,7 @@ compatScenario(
     });
 
     const ownerPermissions = await owner.orgClient.organization.hasPermission({
-      organizationId: organization.data?.id,
+      organizationId,
       permissions: {
         invitation: ["create"],
         member: ["update"],
@@ -443,7 +463,7 @@ compatScenario(
     });
 
     const memberSetActive = await member.orgClient.organization.setActive({
-      organizationId: organization.data?.id ?? "",
+      organizationId: organizationId ?? "",
     });
     const memberPermissionsBeforeRoleUpdate = await member.orgClient.organization.hasPermission({
       permissions: {
@@ -452,16 +472,16 @@ compatScenario(
     });
 
     const updateMemberRole = await owner.orgClient.organization.updateMemberRole({
-      organizationId: organization.data?.id ?? "",
+      organizationId: organizationId ?? "",
       memberId: acceptedMember.data?.member.id ?? "",
       role: ["admin", "member"],
     });
     const removeMember = await owner.orgClient.organization.removeMember({
-      organizationId: organization.data?.id ?? "",
+      organizationId: organizationId ?? "",
       memberIdOrEmail: removable.email,
     });
     const leaveOrganization = await member.orgClient.organization.leave({
-      organizationId: organization.data?.id ?? "",
+      organizationId: organizationId ?? "",
     });
 
     return {
@@ -491,6 +511,7 @@ compatScenario(
     });
     expect(created.error).toBeNull();
     const organizationId = z.object({ id: z.string() }).parse(created.data).id;
+
     const invited = await owner.orgClient.organization.inviteMember({
       organizationId,
       email: target.email,
@@ -502,6 +523,7 @@ compatScenario(
     expect(accepted.error).toBeNull();
     const memberId = z.object({ member: z.object({ id: z.string() }) }).parse(accepted.data)
       .member.id;
+
     const observations = [];
     for (const [role, expected] of [
       ["  admin , member, ,admin  ", "admin,member,admin"],
@@ -515,6 +537,7 @@ compatScenario(
       });
       expect(result.error).toBeNull();
       expect(result.data).toHaveProperty("role", expected);
+
       const stored = await ctx.rawRequest({
         path: `/__test/organization-creation-state?email=${encodeURIComponent(target.email)}`,
       });
@@ -529,6 +552,7 @@ compatScenario(
       ).toHaveProperty("role", expected);
       observations.push({ result: ctx.snapshot(result), stored });
     }
+
     return {
       created: ctx.snapshot(created),
       invited: ctx.snapshot(invited),

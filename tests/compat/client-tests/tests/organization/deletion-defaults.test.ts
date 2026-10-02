@@ -20,16 +20,19 @@ const userState = z
     ),
   })
   .passthrough();
+
 async function persisted(ctx: ScenarioContext, userId: string) {
   return userState.parse(await ctx.readUserState({ userId }));
 }
+
 const profile = "org-roles-delegated" as const;
 
 compatScenario(
   "organization deletion retains extension rows and valid keys while clearing only its current selected token",
   async (ctx) => {
-    const owner = await signUp(ctx, "delete-owner", profile),
-      foreign = await signUp(ctx, "delete-foreign", profile);
+    const owner = await signUp(ctx, "delete-owner", profile);
+    const foreign = await signUp(ctx, "delete-foreign", profile);
+
     const created = await owner.client.organization.create({
       name: "Delete target",
       slug: ctx.uniqueToken("delete-target"),
@@ -42,6 +45,8 @@ compatScenario(
       metadata: { guard: "unrelated" },
     });
     const otherId = data(other).id;
+
+    // A sibling session for the owner keeps the target selected; deletion must not clear it.
     const sibling = orgActor(ctx, "delete-sibling", profile);
     data(
       await sibling.signIn.email({
@@ -50,6 +55,7 @@ compatScenario(
       }),
     );
     data(await sibling.organization.setActive({ organizationId: org.id }));
+
     const invitation = await owner.client.organization.inviteMember({
       organizationId: org.id,
       email: ctx.uniqueEmail("pending-delete"),
@@ -62,6 +68,7 @@ compatScenario(
       permission: { team: ["create"] },
     });
     data(role);
+
     const keys = createAuthClient({
       baseURL: ctx.baseURL,
       plugins: [apiKeyClient()],
@@ -86,38 +93,46 @@ compatScenario(
       valid: true,
       key: { id: keyData.id, referenceId: org.id },
     });
-    const before = await organizationState(ctx, org.id, profile),
-      foreignBefore = await organizationState(ctx, otherId, profile);
-    const ownerBefore = await persisted(ctx, owner.user.id),
-      foreignUserBefore = await persisted(ctx, foreign.user.id);
+
+    const before = await organizationState(ctx, org.id, profile);
+    const foreignBefore = await organizationState(ctx, otherId, profile);
+    const ownerBefore = await persisted(ctx, owner.user.id);
+    const foreignUserBefore = await persisted(ctx, foreign.user.id);
     const selectedBefore = data(await owner.client.getSession());
+    const selectedSessionId = selectedBefore.session.id;
+
     const deleted = await owner.client.organization.delete({
       organizationId: org.id,
     });
     const response = data(deleted);
     expect(response.id).toBe(org.id);
     expect(response.metadata).toBe('{"guard":"delete","large":100000000000000000000}');
+
     const after = await organizationState(ctx, org.id, profile);
     expect(after.parsed.members).toEqual([]);
     expect(after.parsed.invitations).toEqual([]);
     expect(after.parsed.teams).toEqual(before.parsed.teams);
     expect(after.parsed.teamMembers).toEqual(before.parsed.teamMembers);
     expect(after.parsed.roles).toEqual(before.parsed.roles);
+
     const ownerAfter = await persisted(ctx, owner.user.id);
     expect(ownerAfter.sessions).toHaveLength(2);
     expect(ownerAfter.sessions.filter((r) => r.activeOrganizationId === null)).toHaveLength(1);
-    expect(ownerAfter.sessions.find((r) => r.id !== selectedBefore.session.id)).toEqual(
-      ownerBefore.sessions.find((r) => r.id !== selectedBefore.session.id),
+    expect(ownerAfter.sessions.find((r) => r.id !== selectedSessionId)).toEqual(
+      ownerBefore.sessions.find((r) => r.id !== selectedSessionId),
     );
-    expect(ownerAfter.sessions.find((r) => r.id === selectedBefore.session.id)).toMatchObject({
+    expect(ownerAfter.sessions.find((r) => r.id === selectedSessionId)).toMatchObject({
       activeOrganizationId: null,
     });
+
     const selectedAfter = data(await owner.client.getSession());
     expect(selectedAfter.session.activeOrganizationId).toBeNull();
     expect(selectedAfter.session.activeTeamId).toBe(selectedBefore.session.activeTeamId);
     expect(data(await sibling.getSession()).session.activeOrganizationId).toBe(org.id);
     expect(await persisted(ctx, foreign.user.id)).toEqual(foreignUserBefore);
     expect(await organizationState(ctx, otherId, profile)).toEqual(foreignBefore);
+
+    // The organization key still verifies, but its owner can no longer read it.
     const verifiedAfter = await verify();
     expect(verifiedAfter.status).toBe(200);
     expect(verifiedAfter.body).toMatchObject({
@@ -128,6 +143,7 @@ compatScenario(
       query: { configId: "organization", id: keyData.id },
     });
     expect(deniedRead.error?.status).toBe(403);
+
     return {
       created,
       other,
@@ -153,9 +169,10 @@ compatScenario(
 compatScenario(
   "organization deletion rejects other tenants and member roles before changing any selection or record",
   async (ctx) => {
-    const owner = await signUp(ctx, "permission-owner", profile),
-      member = await signUp(ctx, "permission-member", profile),
-      foreign = await signUp(ctx, "permission-foreign", profile);
+    const owner = await signUp(ctx, "permission-owner", profile);
+    const member = await signUp(ctx, "permission-member", profile);
+    const foreign = await signUp(ctx, "permission-foreign", profile);
+
     const created = await owner.client.organization.create({
       name: "Authorized",
       slug: ctx.uniqueToken("authorized"),
@@ -174,11 +191,13 @@ compatScenario(
     const invitationId = data(invitation).id;
     data(await member.client.organization.acceptInvitation({ invitationId }));
     data(await member.client.organization.setActive({ organizationId: id }));
-    const before = await organizationState(ctx, id, profile),
-      foreignBefore = await organizationState(ctx, foreignId, profile);
-    const ownerBefore = await persisted(ctx, owner.user.id),
-      memberBefore = await persisted(ctx, member.user.id),
-      foreignUserBefore = await persisted(ctx, foreign.user.id);
+
+    const before = await organizationState(ctx, id, profile);
+    const foreignBefore = await organizationState(ctx, foreignId, profile);
+    const ownerBefore = await persisted(ctx, owner.user.id);
+    const memberBefore = await persisted(ctx, member.user.id);
+    const foreignUserBefore = await persisted(ctx, foreign.user.id);
+
     const memberDenied = await member.client.organization.delete({
       organizationId: id,
     });
@@ -186,6 +205,7 @@ compatScenario(
       status: 403,
       code: "YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_ORGANIZATION",
     });
+
     const foreignDenied = await foreign.client.organization.delete({
       organizationId: id,
     });
@@ -193,6 +213,7 @@ compatScenario(
       status: 400,
       code: "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
     });
+
     const missing = await owner.client.organization.delete({
       organizationId: ctx.uniqueToken("missing"),
     });
@@ -200,6 +221,7 @@ compatScenario(
       status: 400,
       code: "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
     });
+
     const blank = await owner.client.organization.delete({
       organizationId: "",
     });
@@ -207,11 +229,13 @@ compatScenario(
       status: 400,
       code: "ORGANIZATION_NOT_FOUND",
     });
+
     expect(await organizationState(ctx, id, profile)).toEqual(before);
     expect(await organizationState(ctx, foreignId, profile)).toEqual(foreignBefore);
     expect(await persisted(ctx, owner.user.id)).toEqual(ownerBefore);
     expect(await persisted(ctx, member.user.id)).toEqual(memberBefore);
     expect(await persisted(ctx, foreign.user.id)).toEqual(foreignUserBefore);
+
     return {
       created,
       unrelated,
@@ -233,6 +257,7 @@ compatScenario(
   "organization deletion body and media validation precede disabled configuration and session authentication",
   async (ctx) => {
     const observations = [];
+
     for (const selected of ["org-deletion-disabled", "org-teams"] as const) {
       const owner = await signUp(ctx, `validation-${selected}`, selected);
       const created = await owner.client.organization.create({
@@ -242,12 +267,14 @@ compatScenario(
       const id = data(created).id;
       const before = await organizationState(ctx, id, selected);
       const principalBefore = await persisted(ctx, owner.user.id);
+
       const raw = async (body: unknown) =>
         ctx.rawRequest({
           path: `/__test/profiles/${selected}/api/auth/organization/delete`,
           method: "POST",
           json: body,
         });
+
       const invalid = await raw({ organizationId: 7 });
       expect(invalid.status).toBe(400);
       expect(invalid.body).toMatchObject({
@@ -257,6 +284,7 @@ compatScenario(
       const missing = await raw({});
       expect(missing.status).toBe(400);
       expect(missing.body).toMatchObject({ code: "VALIDATION_ERROR" });
+
       const media = await ctx.rawRequest({
         path: `/__test/profiles/${selected}/api/auth/organization/delete`,
         method: "POST",
@@ -265,6 +293,8 @@ compatScenario(
       });
       expect(media.status).toBe(415);
       expect(media.body).toMatchObject({ code: "UNSUPPORTED_MEDIA_TYPE" });
+
+      // A well-formed request only then reaches the disabled configuration or session check.
       const guest = await raw({ organizationId: id });
       if (selected === "org-deletion-disabled") {
         expect(guest.status).toBe(404);
@@ -283,8 +313,10 @@ compatScenario(
         expect(guest.status).toBe(401);
         expect(guest.body).toBeNull();
       }
+
       expect(await organizationState(ctx, id, selected)).toEqual(before);
       expect(await persisted(ctx, owner.user.id)).toEqual(principalBefore);
+
       observations.push({
         selected,
         created,
@@ -295,6 +327,7 @@ compatScenario(
         guest,
       });
     }
+
     return observations;
   },
   ["POST /organization/delete"],
@@ -309,6 +342,7 @@ compatScenario(
       slug: ctx.uniqueToken("legacy-orphan"),
     });
     const id = data(created).id;
+
     const sibling = orgActor(ctx, "orphan-sibling", profile);
     data(
       await sibling.signIn.email({
@@ -318,6 +352,8 @@ compatScenario(
     );
     data(await sibling.organization.setActive({ organizationId: id }));
     const active = data(await owner.client.getSession());
+    const activeSessionId = active.session.id;
+
     const before = await organizationState(ctx, id, profile);
     const orphan = await serverOperation(
       ctx,
@@ -326,22 +362,26 @@ compatScenario(
     );
     expect(orphan.status).toBe(200);
     expect(await organizationState(ctx, id, profile)).toEqual(before);
+
     const sessionsBefore = await persisted(ctx, owner.user.id);
     const rejected = await owner.client.$fetch("/organization/delete", {
       method: "POST",
       body: { organizationId: id },
     });
     expect(rejected.error?.status).toBe(400);
+
+    // The rejection still cleared the selection on the authenticated token only.
     const after = await persisted(ctx, owner.user.id);
-    expect(after.sessions.find((r) => r.id === active.session.id)).toMatchObject({
+    expect(after.sessions.find((r) => r.id === activeSessionId)).toMatchObject({
       activeOrganizationId: null,
     });
-    expect(after.sessions.find((r) => r.id !== active.session.id)).toEqual(
-      sessionsBefore.sessions.find((r) => r.id !== active.session.id),
+    expect(after.sessions.find((r) => r.id !== activeSessionId)).toEqual(
+      sessionsBefore.sessions.find((r) => r.id !== activeSessionId),
     );
     expect(await organizationState(ctx, id, profile)).toEqual(before);
     const selectedAfter = data(await owner.client.getSession());
     expect(selectedAfter.session.activeTeamId).toBe(active.session.activeTeamId);
+
     return {
       created,
       active,
@@ -371,17 +411,21 @@ compatScenario(
       slug: ctx.uniqueToken("selected"),
     });
     const otherId = data(second).id;
+
     const before = await persisted(ctx, owner.user.id);
     const otherBefore = await organizationState(ctx, otherId, selected);
     const active = data(await owner.client.getSession());
+
     const deleted = await owner.client.organization.delete({
       organizationId: id,
     });
     expect(data(deleted).id).toBe(id);
+
     expect(await persisted(ctx, owner.user.id)).toEqual(before);
     expect(data(await owner.client.getSession()).session).toEqual(active.session);
     expect(await organizationState(ctx, otherId, selected)).toEqual(otherBefore);
     expect((await organizationState(ctx, id, selected)).parsed.members).toEqual([]);
+
     return { first, second, before, active, otherBefore, deleted };
   },
   ["POST /organization/delete"],

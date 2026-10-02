@@ -69,6 +69,7 @@ export function orgActor(ctx: CompatContext, name: string, profile: FixtureProfi
 
 export function data<T>(response: { data: T | null; error: unknown }): T {
   expect(response.error).toBeNull();
+
   if (response.data === null) throw new Error("Successful organization operation must return data");
   return response.data;
 }
@@ -128,15 +129,19 @@ export async function state(
   const url = new URL("/__test/organization-state", ctx.baseURL);
   url.searchParams.set("organizationId", organizationId);
   url.searchParams.set("profile", profile);
+
   const response = await fetch(url);
   expect(response.status).toBe(200);
+
   const raw: unknown = await response.json();
   const parsed = stateSchema.parse(raw);
+
   for (const team of parsed.teams) {
     expect(team.memberCount).toBe(
       parsed.teamMembers.filter((member) => member.teamId === team.id).length,
     );
   }
+
   return { raw, parsed };
 }
 
@@ -149,6 +154,7 @@ export async function signUp(
   const email = ctx.uniqueEmail(`org-extension-${name}`);
   const signup = await client.signUp.email({ email, password: "password123", name });
   const user = data(signup).user;
+
   return { client, email, signup, user };
 }
 
@@ -164,5 +170,6 @@ export async function serverOperation(
     body: JSON.stringify({ ...body, profile }),
   });
   const result: unknown = await response.json();
+
   return { status: response.status, body: result };
 }

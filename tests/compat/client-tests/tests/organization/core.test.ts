@@ -25,6 +25,7 @@ compatScenario("organization core lifecycle matches TS", async (ctx) => {
   });
 
   const listedOrganizations = await owner.orgClient.organization.list();
+
   const updateFirst = await owner.orgClient.organization.update({
     organizationId: firstOrganization.data?.id ?? "",
     data: {
@@ -34,6 +35,7 @@ compatScenario("organization core lifecycle matches TS", async (ctx) => {
       },
     },
   });
+
   const activeSecondBySlug = await owner.orgClient.organization.setActive({
     organizationSlug: secondSlug,
   });
@@ -43,6 +45,7 @@ compatScenario("organization core lifecycle matches TS", async (ctx) => {
       organizationSlug: secondSlug,
     },
   });
+
   const clearActiveOrganization = await owner.orgClient.organization.setActive({
     organizationId: null,
   });
@@ -72,6 +75,7 @@ compatScenario(
       name: "Delete Me",
       slug,
     });
+
     const deleted = await owner.orgClient.organization.delete({
       organizationId: created.data?.id ?? "",
     });
@@ -98,6 +102,7 @@ compatScenario(
       slug: firstSlug,
     });
     const initialSession = await owner.client.getSession();
+
     const secondOrganization = await owner.orgClient.organization.create({
       name: "Keep Active Second",
       slug: secondSlug,
@@ -113,6 +118,7 @@ compatScenario(
     const acceptedInvitation = await member.orgClient.organization.acceptInvitation({
       invitationId: invitation.data?.id ?? "",
     });
+
     const limitedOrganization = await owner.orgClient.organization.getFullOrganization({
       query: {
         organizationId: firstOrganization.data?.id,

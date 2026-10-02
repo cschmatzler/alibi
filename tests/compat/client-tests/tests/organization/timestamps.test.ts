@@ -7,6 +7,7 @@ compatScenario(
   async (ctx) => {
     const owner = await signUpUser(ctx, "owner", "organization-timestamp-owner", "Timestamp Owner");
     expect(owner.signup.error).toBeNull();
+
     const created = await owner.orgClient.organization.create({
       name: "Timestamp Organization",
       slug: ctx.uniqueToken("timestamp-org"),
@@ -43,15 +44,17 @@ compatScenario(
     expect(full.data!.createdAt).toBeInstanceOf(Date);
     expect(full.data!.createdAt.toISOString()).toBe(expectedTimestamp);
     expect(full.data!.members).toHaveLength(1);
-    expect(full.data!.members[0]!).toMatchObject({
+    const fullMember = full.data!.members[0]!;
+    expect(fullMember).toMatchObject({
       id: memberId,
       organizationId,
       userId,
       role: "owner",
       user: { id: userId, email: owner.email },
     });
-    expect(full.data!.members[0]!.createdAt).toBeInstanceOf(Date);
-    expect(full.data!.members[0]!.createdAt.toISOString()).toBe(expectedTimestamp);
+    expect(fullMember.createdAt).toBeInstanceOf(Date);
+    expect(fullMember.createdAt.toISOString()).toBe(expectedTimestamp);
+
     const active = await owner.orgClient.organization.getActiveMember();
     expect(active.error).toBeNull();
     expect(active.data!).toMatchObject({ id: memberId, organizationId, userId, role: "owner" });

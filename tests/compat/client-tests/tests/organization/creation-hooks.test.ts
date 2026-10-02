@@ -5,6 +5,7 @@ import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { disconnectedRequest } from "./disconnect";
 
 const row = z.object({ id: z.string() }).passthrough();
+
 const snapshot = z.object({
   organizations: z.array(row),
   members: z.array(row),
@@ -13,6 +14,7 @@ const snapshot = z.object({
   sessions: z.array(row),
   users: z.array(row),
 });
+
 const receipt = z.object({
   phase: z.string(),
   user: z.object({ id: z.string(), email: z.string(), name: z.string() }),
@@ -21,7 +23,9 @@ const receipt = z.object({
   team: z.record(z.string(), z.unknown()).optional(),
   snapshot,
 });
+
 const stateSchema = z.object({ receipts: z.array(receipt), snapshot });
+
 const organization = z
   .object({
     id: z.string(),
@@ -41,6 +45,7 @@ const organization = z
     ),
   })
   .passthrough();
+
 const phases = [
   "before-org",
   "before-member",
@@ -49,17 +54,16 @@ const phases = [
   "after-team",
   "after-org",
 ];
+
 async function configure(ctx: ScenarioContext, mode: string, extra: Record<string, unknown> = {}) {
-  expect(
-    (
-      await ctx.rawRequest({
-        path: "/__test/organization-hooks-configure",
-        method: "POST",
-        json: { mode, ...extra },
-      })
-    ).status,
-  ).toBe(200);
+  const response = await ctx.rawRequest({
+    path: "/__test/organization-hooks-configure",
+    method: "POST",
+    json: { mode, ...extra },
+  });
+  expect(response.status).toBe(200);
 }
+
 async function state(ctx: ScenarioContext, waitFor?: string) {
   const response = await ctx.rawRequest({
     path: "/__test/organization-hooks-state" + (waitFor ? `?waitFor=${waitFor}` : ""),
@@ -67,6 +71,7 @@ async function state(ctx: ScenarioContext, waitFor?: string) {
   expect(response.status).toBe(200);
   return stateSchema.parse(response.body);
 }
+
 async function signup(
   ctx: ScenarioContext,
   name: string,
@@ -82,6 +87,7 @@ async function signup(
     userId: z.object({ user: z.object({ id: z.string() }) }).parse(result.data).user.id,
   };
 }
+
 function create(
   ctx: ScenarioContext,
   actor: Awaited<ReturnType<typeof signup>>,
@@ -105,8 +111,10 @@ compatScenario(
   async (ctx) => {
     const owner = await signup(ctx, "hook-owner");
     const foreign = await signup(ctx, "hook-foreign");
+
     await configure(ctx, "record");
     const initial = await state(ctx);
+
     const chosenId = ctx.uniqueToken("hook-chosen-id");
     await configure(ctx, "patch", { id: chosenId });
     const result = await create(ctx, owner, "patched", {
@@ -124,6 +132,7 @@ compatScenario(
       metadata: { guard: "hooked" },
     });
     expect(org.members[0]).toMatchObject({ userId: owner.userId, role: "member" });
+
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(phases);
     expect(
@@ -149,6 +158,7 @@ compatScenario(
         (r) => JSON.stringify(r.snapshot.sessions) === JSON.stringify(initial.snapshot.sessions),
       ),
     ).toBe(true);
+
     expect(after.snapshot.organizations[0]).toMatchObject({
       id: chosenId,
       logo: null,
@@ -166,6 +176,7 @@ compatScenario(
     expect(after.snapshot.sessions.find((r) => r.userId === foreign.userId)).toEqual(
       initial.snapshot.sessions.find((r) => r.userId === foreign.userId),
     );
+
     return { result: ctx.snapshot(result), initial, after };
   },
   ["POST /organization/create"],
@@ -175,6 +186,7 @@ compatScenario(
   "organization creation hook null empty and absent patches preserve source merge and no revalidation",
   async (ctx) => {
     const owner = await signup(ctx, "patch-owner", "org-creation-hooks-no-team");
+
     const observations = [];
     for (const mode of [
       "clear-metadata",
@@ -195,6 +207,7 @@ compatScenario(
         "after-member",
         "after-org",
       ]);
+
       if (mode === "clear-metadata") {
         expect(result.data).not.toHaveProperty("metadata");
         expect(org.logo).toBeNull();
@@ -214,10 +227,12 @@ compatScenario(
         expect(stored.name).toBe("");
       }
       if (mode === "empty-member") {
-        expect(org.members[0]!.role).toBe("");
-        expect(org.members[0]!.id).not.toBe("ignored-member-id");
-        expect(after.snapshot.members.find((r) => r.id === org.members[0]!.id)!.role).toBe("");
+        const member = org.members[0]!;
+        expect(member.role).toBe("");
+        expect(member.id).not.toBe("ignored-member-id");
+        expect(after.snapshot.members.find((r) => r.id === member.id)!.role).toBe("");
       }
+
       expect(after.snapshot.teams).toEqual([]);
       observations.push({ mode, result: ctx.snapshot(result), after });
     }
@@ -233,10 +248,12 @@ compatScenario(
     await configure(ctx, "record");
     const seed = await create(ctx, owner, "prior-selection");
     expect(seed.error).toBeNull();
+
     const sibling = ctx.actor("reject-sibling", "org-creation-hooks");
     expect(
       (await sibling.client.signIn.email({ email: owner.email, password: "password123" })).error,
     ).toBeNull();
+
     const observations = [];
     for (const [phase, counts] of [
       ["before-org", [0, 0, 0, 0]],
@@ -254,6 +271,7 @@ compatScenario(
         code: "CREATION_HOOK_REJECTED",
         message: `Rejected ${phase}`,
       });
+
       const after = await state(ctx);
       expect(after.receipts.map((r) => r.phase)).toEqual(
         phases.slice(0, phases.indexOf(phase) + 1),
@@ -262,11 +280,13 @@ compatScenario(
         ["organizations", "members", "teams", "teamMembers"] as const
       ).entries()) {
         expect(after.snapshot[key].length - before.snapshot[key].length).toBe(counts[index]!);
-        for (const old of before.snapshot[key])
+        for (const old of before.snapshot[key]) {
           expect(after.snapshot[key].find((r) => r.id === old.id)).toEqual(old);
+        }
       }
       expect(after.snapshot.sessions).toEqual(before.snapshot.sessions);
       expect(after.snapshot.users).toEqual(before.snapshot.users);
+
       observations.push({ phase, before, rejected: ctx.snapshot(rejected), after });
     }
     return observations;
@@ -278,6 +298,7 @@ compatScenario(
   "organization creation policies and duplicate checks precede hooks while trusted creation has no request selection",
   async (ctx) => {
     const owner = await signup(ctx, "trusted-owner", "org-creation-hooks-denied");
+
     await configure(ctx, "reject-before-org");
     const before = await state(ctx);
     const denied = await create(ctx, owner, "policy-denied");
@@ -286,6 +307,7 @@ compatScenario(
       code: "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_NEW_ORGANIZATION",
     });
     expect(await state(ctx)).toEqual(before);
+
     const rejected = await ctx.rawRequest({
       path: "/__test/organization-hooks-create",
       method: "POST",
@@ -299,6 +321,7 @@ compatScenario(
     expect(rejected.status).toBe(400);
     expect(rejected.body).toMatchObject({ code: "CREATION_HOOK_REJECTED" });
     expect((await state(ctx)).snapshot).toEqual(before.snapshot);
+
     await configure(ctx, "record");
     const trusted = await ctx.rawRequest({
       path: "/__test/organization-hooks-create",
@@ -313,6 +336,7 @@ compatScenario(
     });
     expect(trusted.status).toBe(200);
     const org = organization.parse(trusted.body);
+
     const after = await state(ctx);
     expect(after.receipts.map((r) => r.phase)).toEqual(phases);
     expect(after.snapshot.sessions).toEqual(before.snapshot.sessions);
@@ -320,11 +344,13 @@ compatScenario(
       organizationId: org.id,
       userId: owner.userId,
     });
+
     const publicOwner = ctx.actor("allowed-duplicate", "org-creation-hooks");
     expect(
       (await publicOwner.client.signIn.email({ email: owner.email, password: "password123" }))
         .error,
     ).toBeNull();
+
     await configure(ctx, "reject-before-org");
     const duplicateBefore = await state(ctx);
     const duplicate = await publicOwner.client.$fetch("/organization/create", {
@@ -337,6 +363,7 @@ compatScenario(
       message: "Organization already exists",
     });
     expect(await state(ctx)).toEqual(duplicateBefore);
+
     return {
       denied: ctx.snapshot(denied),
       rejected,
@@ -353,20 +380,23 @@ compatScenario(
   "organization creation after hooks retain immutable member snapshots after independent database mutation",
   async (ctx) => {
     const owner = await signup(ctx, "mutation-owner");
+
     await configure(ctx, "stored-member");
     const result = await create(ctx, owner, "stored-member");
     expect(result.error).toBeNull();
     const org = organization.parse(result.data);
+    const member = org.members[0]!;
     const after = await state(ctx);
-    expect(org.members[0]!.role).toBe("owner");
+    expect(member.role).toBe("owner");
     expect(after.receipts.find((r) => r.phase === "after-member")!.member!.role).toBe("owner");
     expect(after.receipts.find((r) => r.phase === "after-org")!.member!.role).toBe("owner");
     expect(
       after.receipts
         .find((r) => r.phase === "after-org")!
-        .snapshot.members.find((r) => r.id === org.members[0]!.id)!.role,
+        .snapshot.members.find((r) => r.id === member.id)!.role,
     ).toBe("admin");
-    expect(after.snapshot.members.find((r) => r.id === org.members[0]!.id)!.role).toBe("admin");
+    expect(after.snapshot.members.find((r) => r.id === member.id)!.role).toBe("admin");
+
     return { result: ctx.snapshot(result), after };
   },
   ["POST /organization/create"],
@@ -376,38 +406,39 @@ compatScenario(
   "organization creation awaits async member hooks before team writes and session selection",
   async (ctx) => {
     const owner = await signup(ctx, "await-owner");
+
     await configure(ctx, "pause-after-member");
     const before = await state(ctx);
+
     let completed = false;
     const pending = create(ctx, owner, "awaited-creation").then((result) => {
       completed = true;
       return result;
     });
+
     let paused: Awaited<ReturnType<typeof state>> | undefined;
     try {
       paused = await state(ctx, "after-member");
       expect(paused.receipts.some((r) => r.phase === "after-member")).toBe(true);
       expect(completed).toBe(false);
-      expect(paused!.receipts.map((r) => r.phase)).toEqual([
+      expect(paused.receipts.map((r) => r.phase)).toEqual([
         "before-org",
         "before-member",
         "after-member",
       ]);
-      expect(paused!.snapshot.organizations).toHaveLength(1);
-      expect(paused!.snapshot.members).toHaveLength(1);
-      expect(paused!.snapshot.teams).toEqual([]);
-      expect(paused!.snapshot.teamMembers).toEqual([]);
-      expect(paused!.snapshot.sessions).toEqual(before.snapshot.sessions);
+      expect(paused.snapshot.organizations).toHaveLength(1);
+      expect(paused.snapshot.members).toHaveLength(1);
+      expect(paused.snapshot.teams).toEqual([]);
+      expect(paused.snapshot.teamMembers).toEqual([]);
+      expect(paused.snapshot.sessions).toEqual(before.snapshot.sessions);
     } finally {
-      expect(
-        (
-          await ctx.rawRequest({
-            path: "/__test/organization-hooks-release",
-            method: "POST",
-          })
-        ).status,
-      ).toBe(200);
+      const released = await ctx.rawRequest({
+        path: "/__test/organization-hooks-release",
+        method: "POST",
+      });
+      expect(released.status).toBe(200);
     }
+
     const result = await pending;
     expect(result.error).toBeNull();
     const after = await state(ctx);
@@ -417,6 +448,7 @@ compatScenario(
       activeOrganizationId: organization.parse(result.data).id,
       activeTeamId: after.snapshot.teams[0]!.id,
     });
+
     // The private waiter observes real callback delivery; all requests remain traced.
     const abortName = "disconnected-creation";
     const marker = ctx.uniqueToken(abortName);
@@ -438,6 +470,7 @@ compatScenario(
         abortBefore = await state(ctx);
       },
     );
+
     let dropped: unknown;
     let abortPaused: Awaited<ReturnType<typeof state>> | undefined;
     try {
@@ -451,15 +484,13 @@ compatScenario(
       dropped = await wire.close();
     } finally {
       wire.dispose();
-      expect(
-        (
-          await ctx.rawRequest({
-            path: "/__test/organization-hooks-release",
-            method: "POST",
-          })
-        ).status,
-      ).toBe(200);
+      const released = await ctx.rawRequest({
+        path: "/__test/organization-hooks-release",
+        method: "POST",
+      });
+      expect(released.status).toBe(200);
     }
+
     const continued = await state(ctx, "after-org");
     expect(continued.receipts.map((r) => r.phase)).toEqual(phases);
     const stored = continued.snapshot.organizations.find(
@@ -473,23 +504,27 @@ compatScenario(
       userId: owner.userId,
       role: "owner",
     });
+
     const team = continued.snapshot.teams.find((r) => r.organizationId === stored.id)!;
     expect(team).toMatchObject({ name: abortName });
     expect(continued.snapshot.teamMembers.find((r) => r.teamId === team.id)).toMatchObject({
       userId: owner.userId,
     });
+
     // after-org precedes selection; the genuine after-dispatch receipt precedes this single session read.
     const completion = await ctx.rawRequest({
       path: `/__test/organization-transport-completion?marker=${encodeURIComponent(marker)}`,
     });
     expect(completion.status).toBe(200);
     expect(completion.body).toEqual({ marker, completed: true });
+
     const current = await owner.client.getSession();
     expect(current.data?.session).toMatchObject({
       userId: owner.userId,
       activeOrganizationId: stored.id,
       activeTeamId: team.id,
     });
+
     return {
       before,
       paused,
@@ -512,21 +547,25 @@ compatScenario(
   async (ctx) => {
     const owner = await signup(ctx, "authority-owner");
     const foreign = await signup(ctx, "authority-foreign");
+
     await configure(ctx, "record");
     const prior = await create(ctx, owner, "authority-prior");
     expect(prior.error).toBeNull();
     const existing = organization.parse(prior.data);
+
     const before = await state(ctx);
     await configure(ctx, "member-authority", {
       organizationId: existing.id,
       userId: foreign.userId,
     });
+
     const result = await create(ctx, owner, "authority-new", {
       userId: foreign.userId,
       organizationId: existing.id,
     });
     expect(result.error).toBeNull();
     const org = organization.parse(result.data);
+
     const after = await state(ctx);
     expect(org.id).not.toBe(existing.id);
     expect(org.members[0]).toMatchObject({
@@ -546,6 +585,7 @@ compatScenario(
       userId: foreign.userId,
       role: "member",
     });
+
     const newTeam = after.snapshot.teams.find((r) => r.organizationId === org.id)!;
     expect(after.snapshot.teamMembers.find((r) => r.teamId === newTeam.id)).toMatchObject({
       userId: owner.userId,
@@ -557,10 +597,14 @@ compatScenario(
     expect(after.snapshot.sessions.find((r) => r.userId === foreign.userId)).toEqual(
       before.snapshot.sessions.find((r) => r.userId === foreign.userId),
     );
-    for (const row of before.snapshot.members)
+
+    for (const row of before.snapshot.members) {
       expect(after.snapshot.members.find((r) => r.id === row.id)).toEqual(row);
-    for (const row of before.snapshot.organizations)
+    }
+    for (const row of before.snapshot.organizations) {
       expect(after.snapshot.organizations.find((r) => r.id === row.id)).toEqual(row);
+    }
+
     return { prior: ctx.snapshot(prior), before, result: ctx.snapshot(result), after };
   },
   ["POST /organization/create"],
