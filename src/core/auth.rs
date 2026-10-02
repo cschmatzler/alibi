@@ -232,6 +232,9 @@ impl<S: AuthSchema> AuthBuilder<S> {
                 plugin.routes(),
                 plugin.openapi_metadata(&init_context),
             );
+            openapi.register_fields("User", &plugin.user_fields());
+            openapi.register_fields("Session", &plugin.session_fields());
+            openapi.register_fields("Account", &plugin.account_fields());
         }
         init_context.extensions.insert(openapi);
         let openapi_2 = init_context

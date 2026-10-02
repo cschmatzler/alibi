@@ -11,18 +11,42 @@ pub struct OpenApiField {
     pub required: bool,
     pub input: bool,
     pub returned: bool,
+    /// Includes callable defaults without evaluating them for documentation.
+    pub has_default: bool,
 }
 impl OpenApiField {
     #[must_use]
     pub fn new(name: impl Into<String>, schema: Value, required: bool) -> Self {
         Self {
             name: name.into(),
+            has_default: schema.get("default").is_some(),
             schema,
             required,
             input: true,
             returned: true,
         }
     }
+    fn from_policy(name: &str, policy: &crate::field_policy::FieldConfig) -> Self {
+        let mut schema = policy.schema.clone();
+        if let Some(object) = schema.as_object_mut() {
+            drop(object.remove("default"));
+            if let Some(crate::field_policy::FieldDefault::Value(value)) = &policy.default {
+                drop(object.insert(
+                    "default".into(),
+                    value.to_json_value().unwrap_or(Value::Null),
+                ));
+            }
+        }
+        Self {
+            name: name.into(),
+            schema,
+            required: policy.required,
+            input: policy.input,
+            returned: policy.returned,
+            has_default: policy.default.is_some(),
+        }
+    }
+
     #[must_use]
     pub const fn read_only(mut self) -> Self {
         self.input = false;
@@ -140,34 +164,20 @@ impl OpenApiRegistry {
     /// its own source-distinct immutable field registry.
     #[must_use]
     pub fn configured(mut models: Vec<OpenApiModel>, config: &crate::AuthConfig) -> Self {
-        if let Some(session) = models.iter_mut().find(|model| model.name == "Session") {
-            for (name, policy) in &config.session.additional_fields {
-                let mut schema = policy.schema.clone();
-                if let Some(object) = schema.as_object_mut() {
-                    // Function defaults are metadata only and must not be evaluated.
-                    drop(object.remove("default"));
-                    if let Some(crate::field_policy::FieldDefault::Value(value)) = &policy.default {
-                        drop(object.insert(
-                            "default".into(),
-                            value.to_json_value().unwrap_or(Value::Null),
-                        ));
+        for (model_name, fields) in [
+            ("User", &config.user.additional_fields),
+            ("Session", &config.session.additional_fields),
+            ("Account", &config.account.additional_fields),
+        ] {
+            if let Some(model) = models.iter_mut().find(|model| model.name == model_name) {
+                for (name, policy) in fields {
+                    let field = OpenApiField::from_policy(name, policy);
+                    if let Some(current) = model.fields.iter_mut().find(|field| field.name == *name)
+                    {
+                        *current = field;
+                    } else {
+                        model.fields.push(field);
                     }
-                }
-                let field = OpenApiField {
-                    name: name.clone(),
-                    schema,
-                    required: policy.required,
-                    input: policy.input,
-                    returned: policy.returned,
-                };
-                if let Some(current) = session
-                    .fields
-                    .iter_mut()
-                    .find(|field_2| field_2.name == *name)
-                {
-                    *current = field;
-                } else {
-                    session.fields.push(field);
                 }
             }
         }
@@ -246,6 +256,28 @@ impl OpenApiRegistry {
             self.merge_model(model);
         }
     }
+    /// Register the actual plugin field policies alongside its route annotations.
+    /// Configured model overlays remain distinct from plugin-wins user input.
+    pub fn register_fields(
+        &mut self,
+        model_name: &str,
+        fields: &crate::field_policy::FieldConfigs,
+    ) {
+        let fields = fields
+            .iter()
+            .map(|(name, policy)| OpenApiField::from_policy(name, policy))
+            .collect::<Vec<_>>();
+        if model_name == "User" {
+            for field in &fields {
+                drop(
+                    self.user_input_fields
+                        .insert(field.name.clone(), field.clone()),
+                );
+            }
+        }
+        self.merge_model(OpenApiModel::new(model_name, fields));
+    }
+
     fn merge_model(&mut self, model: OpenApiModel) {
         if let Some(existing) = self.models.get_mut(&model.name) {
             for field in model.fields {

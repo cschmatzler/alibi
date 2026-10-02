@@ -265,3 +265,34 @@ compatScenario("additional plugin input and public policy retain distinct config
   for(const key of ["users","accounts","sessions"] as const) expect(actual[key].filter(row=>row[key==="users"?"id":"userId"]===foreignId)).toEqual(original[key]);
   return {foreignSignup:ctx.snapshot(foreignSignup),before:await observedState(before.body),signup:ctx.snapshot(signup),read:ctx.snapshot(read),rejected:ctx.snapshot(rejected),after:await observedState(after.body)};
 },["POST /sign-up/email","GET /get-session","POST /update-user"]);
+
+compatScenario("additional field documentation preserves logical model policies and callable defaults without executing adapter callbacks or revealing physical columns", async ctx => {
+  const observations=[];
+  for(const mode of ["normal","output","policy","async-validation","cached","plugin"] as const) {
+    const profile=mode==="normal" ? "additional-fields" : `additional-${mode}-fields` as const;
+    const actor=ctx.actor(`docs-${mode}`,profile);
+    const before=await ctx.rawRequest({path:`/__test/additional-fields/state?profile=${mode}`}); expect(before.status).toBe(200);
+    const response=await actor.client.$fetch("/open-api/generate-schema",{method:"GET"}); expect(response.error).toBeNull();
+    const document=z.object({components:z.object({schemas:z.record(z.string(),z.object({properties:z.record(z.string(),z.unknown()),required:z.array(z.string())}))}),paths:z.record(z.string(),z.unknown())}).passthrough().parse(response.data);
+    for(const entity of ["User","Session","Account"] as const) {
+      const model=document.components.schemas[entity]!;
+      expect(model.properties).toHaveProperty("label.type","string"); expect(model.properties).toHaveProperty("hidden.type","string");
+      for(const physical of ["private_column","display_name","user_label"]) expect(model.properties).not.toHaveProperty(physical);
+      expect(model.required).not.toContain("hidden");
+      if(mode==="normal") {expect(model.properties.label).not.toHaveProperty("default");expect(model.required).toContain("label");}
+      if(mode==="plugin") expect(model.properties.label).toEqual({type:"string",default:`${entity.toLowerCase()}-initial`});
+    }
+    const writable=z.object({post:z.object({requestBody:z.object({content:z.object({"application/json":z.object({schema:z.object({properties:z.record(z.string(),z.unknown()),required:z.array(z.string()).optional()})})})})})}).parse(document.paths["/sign-up/email"]).post.requestBody.content["application/json"].schema;
+    if(mode==="normal") expect(writable.required??[]).not.toContain("label");
+    if(mode==="policy") {expect(writable.required).toContain("label");expect(writable.properties).not.toHaveProperty("readonly");expect(writable.properties).not.toHaveProperty("hidden");}
+    if(mode==="output"||mode==="cached") expect(writable.properties).not.toHaveProperty("readonly");
+    if(mode==="plugin") {expect(writable.properties.label).toEqual({type:"string",default:"plugin-user"});expect(writable.properties).not.toHaveProperty("role");expect(document.components.schemas.User!.properties.role).toEqual({type:"string",default:"plugin-role",readOnly:true});}
+    const after=await ctx.rawRequest({path:`/__test/additional-fields/state?profile=${mode}`}); expect(after.status).toBe(200);
+    const original=stateSchema.parse(before.body),actual=stateSchema.parse(after.body);
+    for(const key of ["users","accounts","sessions","verifications"] as const) expect(actual[key]).toEqual(original[key]);
+    expect(actual.events.filter(event=>event.phase!=="completed")).toEqual(original.events.filter(event=>event.phase!=="completed"));
+    expect(actual.events.filter(event=>event.phase==="completed")).toEqual(mode==="cached" ? [{phase:"completed",path:"/open-api/generate-schema",record:null,userOmittedPresent:null,userOmittedUndefined:null,sessionOmittedPresent:null,sessionOmittedUndefined:null}] : []);
+    observations.push({mode,document:ctx.snapshot(response),before:await observedState(before.body),after:await observedState(after.body)});
+  }
+  return observations;
+},["GET /open-api/generate-schema"]);

@@ -294,3 +294,28 @@ was removed; all projections consume the single immutable adapter snapshot.
 Optional strict checks, fixture build, client types and all six SDK owners passed
 984 assertions (`/tmp/issue184-account-after-owner.log`, terminal 0). Schema and
 mapped-profile projection proofs remain outstanding.
+
+The schema owner reads complete real application OpenAPI documents for all six
+policies, including plugin/config precedence and required callable defaults. It
+also observes full SQLite/callback state before and after generation, so invoking
+a default or transform while documenting fields is a credible detectable bug.
+It independently protects logical names versus renamed/private physical columns;
+existing session-only metadata owners do not cover user/account/plugin fields.
+The normal creation owner now observes actual callable defaults, and transformed
+profiles declare throwing output validators to prove they remain metadata. No
+production-only test seam or copied generated document is introduced.
+
+The complete-document schema owner completed Source then failed on Native's
+missing logical User label metadata (`/tmp/issue184-schema-before-ready-owner.log`,
+terminal 1, 183 assertions). The initial Source-side expectation of no completed
+request hook was corrected to retain its actual null-session documentation receipt;
+that earlier failed diagnostic is preserved and is not parity proof. The first
+post-repair full capture retained six passing lifecycle owners and a schema route
+inventory failure: the Native application had not installed the actual OAuth and
+email-verification plugins, while Source advertised the built-in endpoints.
+Equivalent real plugins/base user settings were configured in both applications.
+The final fixture/type gate and all seven real SDK owners passed 1,344 assertions
+(`/tmp/issue184-schema-route-ready-owner.log`, terminal 0). Generation captures
+complete documents, all physical rows and completed receipts; no default or
+adapter callback is evaluated. Throwing declared output validators remained
+metadata while the genuine lifecycle transforms completed successfully.

@@ -11,8 +11,8 @@ use better_auth::field_policy::{FieldConfig, FieldConfigs};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{
-    AccountManagementPlugin, EmailPasswordPlugin, OpenApiPlugin, PasswordManagementPlugin,
-    SessionManagementPlugin, UserManagementPlugin,
+    AccountManagementPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin,
+    OpenApiPlugin, PasswordManagementPlugin, SessionManagementPlugin, UserManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::{
@@ -84,6 +84,24 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
             )));
         } else if output {
             field = field.default_value(json!("drop"));
+        }
+        if mode == "normal" && name == "label" {
+            let events = events.clone();
+            field.required = true;
+            field = field.default_callback(move || {
+                events
+                    .lock()
+                    .expect("application receipts")
+                    .push(json!({"phase":"default","entity":entity,"field":"label"}));
+                JsValue::from(json!(format!("{entity}-initial")))
+            });
+        }
+        if output && name == "label" {
+            let events = events.clone();
+            field = field.validate_output(move |value| {
+                events.lock().expect("application receipts").push(json!({"phase":"output-validation","entity":entity,"field":"label","value":value}));
+                Err("Output validation must remain metadata".into())
+            });
         }
         if mode == "cached" && entity == "session" && name == "label" {
             let events = events.clone();
@@ -438,7 +456,13 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
         .plugin(SessionManagementPlugin::new())
         .plugin(AccountManagementPlugin::new())
         .plugin(PasswordManagementPlugin::new())
-        .plugin(UserManagementPlugin::new())
+        .plugin(
+            UserManagementPlugin::new()
+                .change_email_enabled(true)
+                .delete_user_enabled(true),
+        )
+        .plugin(EmailVerificationPlugin::new())
+        .plugin(OAuthPlugin::new())
         .plugin(OpenApiPlugin::new());
     if mode != "normal" {
         builder = builder.plugin(application.clone());
