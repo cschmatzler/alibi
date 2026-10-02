@@ -117,9 +117,48 @@ application-data locations remain strict.
   owner. This does not delete any existing #205 owner or fix/claim its separate
   unfinished cache-response observation. No numeric metadata rule changes here.
 
-Full canonical, final composition and independent downstream gate results will
-be added only after they finish. This comparator-only change makes no new native
-clean coverage claim. OpenClaw/Crabbox/autoreview and repository PR helper tools
-are unavailable; the actual strict owner/full repository gates and independent
-parent review are used. The canonical command is
+## Composed frozen gate and independent review
+
+The exact composed head `2489710afd951f8d52b3808a188ef75d01461c6d` is based
+on actual main `c7fc2aa9029f4bef50baa718517676c02a79bbbe`, including #291's
+organization fixture repair. Its complete capability ledger is byte-identical
+to that parent. The comparer/owner delta is unchanged. The actual canonical
+command completed with exit 100 in `/tmp/issue295-canonical-2489710a.log`.
+Strict workspace/optional/no-default builds, default native 793, optional native
+845, SQLite fixture 2, composed complete harness 76/1,126, Axum 36, endpoint
+checks 3 and inventory checks 2 all passed. Main's original 75 harness owners
+and 961 assertions remain, plus this primary 165-assertion owner.
+
+The full SDK run passed 1,424 of 1,426 tests with 91,854 assertions. Its two
+failures are retained, with their exact observed differences:
+
+- Organization addition's trusted-role patch owner: only observation 5's
+  `usersBefore` and `usersAfter` session `expiresAt` values differed, for foreign
+  session 0, owner sessions 0/1 and target sessions 0/1 (ten aliases). No member,
+  callback body, admission, raw header or non-time stored field differed.
+- The existing expired-reset/OTP compromised-password owner: only
+  `observation.observations.0.proof.length`, the existing #174 verification
+  storage/lifecycle gap.
+
+Both unchanged owners ran against the exact composed actual Source/native
+programs in `/tmp/issue295-failed-owner-focused.log`: organization passed;
+the same #174 proof-length field still failed (1 pass/1 fail, 576 assertions).
+The expiry differences did not reproduce in that focused control. Earlier
+organization full-gate timing observations remain in the signed-header and
+entity-selector prerequisite audits. A focused pass does not turn this failed
+full canonical green, and no general clock rule was changed. This PR changes
+neither native issuance/storage nor comparison of these expiry/proof fields.
+
+The stopped canonical did not reach its later documentation/browser/coverage
+stages. Independent strict rustdoc and the actual Chromium wrapper both passed
+on the frozen head: `/tmp/issue295-docs-2489710a.log` and
+`/tmp/issue295-browser-2489710a.log` (two browser tests, 22 assertions). T3 preview
+explicitly reported no automation host and no retry; the repository wrapper
+provided the actual browser proof. This comparator-only change makes no new
+native clean coverage claim or floor change.
+
+Independent parent review of the exact 51-line comparer delta and real Source
+owner/negative controls found no blocker. OpenClaw/Crabbox/autoreview and
+repository PR helper tools are unavailable; the actual strict owner/full
+repository gates and independent review are used. The canonical command is
 `devenv shell -- bash scripts/check.sh`; `devenv test` is a no-op.
