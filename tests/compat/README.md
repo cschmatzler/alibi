@@ -10,17 +10,26 @@ on `/__health`, which every scenario run verifies before comparing anything.
 
 ## Layout
 
-Integration tests, fixtures and the compatibility harness live under `tests/`:
+Parity with upstream is established by one mechanism: the differential SDK
+suite under `tests/compat`, which runs the official client against both servers
+and compares everything they return and store. The Rust crates under `tests/`
+check the Rust implementation on its own terms and do not claim parity.
 
 | Path | Contents |
 | --- | --- |
-| `tests/*.rs` | Cargo integration tests for the `better-auth` crate, including `account_oauth_tests` |
-| `tests/support/compat/` | Shared Rust helpers: OpenAPI schema loading, shape validation, in-process fixtures |
+| `tests/*.rs` | Cargo integration tests, one crate per feature (`session_refresh_tests`, `phone_number_tests`, ...) |
+| `tests/openapi_contract_tests.rs` | In-process response-shape checks against upstream's generated OpenAPI contract; fast drift detection, not parity |
+| `tests/route_inventory_tests.rs` | Fails when the Rust router's routes differ from `capabilities.json` |
+| `tests/client_compat_tests.rs` | Starts both fixture servers and runs the SDK suite; one runner per scenario directory |
+| `tests/support/openapi_contract/` | Shared Rust helpers: OpenAPI schema loading, shape validation, in-process auth setup |
 | `tests/fixtures/` | Pinned vectors consumed by Rust unit tests and both fixture servers: SIWE EIP-191 signature, encrypted upstream JWK, encrypted account-cookie vectors, One Tap keys |
-| `tests/compat/reference-server/` | The pinned TypeScript runtime with test-only control routes and configuration profiles |
-| `tests/compat/rust-server/` | The excluded Rust fixture package exposing the same control routes and profiles |
-| `tests/compat/client-tests/` | Official-client scenarios, the trace comparator, harness negative controls and Chromium checks |
-| `tests/compat/audits/` | Per-capability implementation audits |
+| `tests/compat/client-tests/tests/core/<area>/` | SDK scenarios for upstream's core API routes (session, user, account, password, social, ...) |
+| `tests/compat/client-tests/tests/plugins/<plugin>/` | SDK scenarios per upstream plugin, named as upstream names it |
+| `tests/compat/client-tests/{support,harness}/` | The trace comparator and scenario runtime, and their negative controls |
+| `tests/compat/reference-server/` | The pinned TypeScript runtime; `fixtures/` holds one configuration module per capability |
+| `tests/compat/rust-server/` | The Rust fixture package; `src/fixtures/` mirrors the reference server's fixtures |
+| `tests/compat/audits/{core,plugins}/` | Implementation audits under the same keys as the scenarios; `harness/` audits the comparator itself |
+| `tests/compat/capabilities.json` | Every upstream route with the scenarios that prove each evidence category, or why there are none |
 
 Unit tests live in inline `#[cfg(test)] mod tests { ... }` blocks at the end of
 their owning Rust modules. Integration test files keep their test modules inline
@@ -262,12 +271,27 @@ normalized to `{}`. Device authorization is included in the Rust fixture.
 Server-only functions and plugins outside that profile are not HTTP inventory
 entries. The file explicitly marks routes absent from Rust and missing evidence.
 
-Evidence is recorded only after a dual-server scenario passes. A category accepts a scenario name or a nonempty array of names; every named scenario is required. Regeneration preserves existing requirements and refuses missing scenarios, removed routes, and duplicate route declarations. New configuration evidence is added explicitly without replacing earlier flows. Each route can
-require named scenarios for successful responses, rejection, authorization and
-state transitions. A state entry requires an explicit scenario declaration and
-assertions of the resulting state. CI fails if a declared route or existing
-required evidence disappears. A successful HTTP response alone proves neither
-all edge cases nor complete parity.
+Each route has four evidence categories: success, rejection, authorization
+(a 401/403 or ownership denial) and state (a scenario that declares the
+transition and asserts the stored result). Every category holds one of:
+
+- scenario names, all of which must pass against both servers and produce that
+  evidence;
+- `{ "notApplicable": "<reason>" }`, when the route cannot exhibit it, such as
+  authorization on a public route;
+- `{ "knownGap": "<reason>" }`, when evidence is missing. The gate prints every
+  known gap, and regeneration replaces a gap once a scenario produces the evidence.
+
+An empty category fails the gate, so absence is always either explained or
+listed. Regeneration preserves existing requirements and refuses missing
+scenarios, removed routes and duplicate declarations.
+
+What this proves: every upstream HTTP route exists in Rust and has passing
+differential evidence for each applicable category. What it does not prove:
+configuration options, server-only APIs, hooks and plugin combinations are not
+in this denominator. They are covered only where a scenario exercises them,
+and by the assurance runner below, which is not part of the gate. The open
+work is tracked in [PARITY-BACKLOG.md](PARITY-BACKLOG.md).
 
 To update the inventory deliberately after adding routes or tests:
 
