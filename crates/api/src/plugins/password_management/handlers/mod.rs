@@ -80,9 +80,11 @@ pub(in crate::plugins) async fn request_password_reset_core(
 
     let user_value = password_utils::serialize_to_value(&ctx.user_view(&user))?;
     let sender = std::sync::Arc::clone(sender);
-    crate::plugins::authentication_helpers::run_owned_notification(ctx, async move {
-        sender.send(&user_value, &reset_url, &reset_token).await
-    })
+    crate::plugins::authentication_helpers::run_owned_notification(
+        ctx,
+        async move { sender.send(&user_value, &reset_url, &reset_token).await },
+        ctx.config.awaited_notification_errors,
+    )
     .await?;
 
     Ok(success)

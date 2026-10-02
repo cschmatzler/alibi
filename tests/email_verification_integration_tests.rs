@@ -1,5 +1,5 @@
 #![cfg(test)]
-//! The pinned runtime treats notification failures differently from direct delivery failures.
+//! Awaited notification policy and direct delivery at the HTTP boundary.
 #![expect(
     unused_crate_dependencies,
     reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
@@ -22,6 +22,7 @@ use better_auth_core::{
 };
 use better_auth_seaorm::{Database, SeaOrmStore};
 use serde_json::{Value, json};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -35,7 +36,7 @@ const PASSWORD: &str = "notification-contract-password123";
 #[derive(Default)]
 struct Sender {
     calls: Mutex<Vec<(UserView, String)>>,
-    fail: bool,
+    fail: AtomicBool,
 }
 
 #[async_trait]
@@ -45,7 +46,7 @@ impl SendVerificationEmail for Sender {
             .lock()
             .unwrap()
             .push((user.clone(), token.to_owned()));
-        if self.fail {
+        if self.fail.load(Ordering::SeqCst) {
             Err(AuthError::bad_request("fixture delivery failed"))
         } else {
             Ok(())
@@ -79,15 +80,19 @@ async fn auth(
     required: bool,
     send_on_signup: Option<bool>,
     fail: bool,
+    policy: better_auth::AwaitedNotificationErrorPolicy,
 ) -> (BetterAuth<Schema>, Arc<Sender>) {
-    let config =
+    let mut config =
         AuthConfig::new("verification-fixture-secret-minimum-32-characters").base_url(ORIGIN);
+    if policy == better_auth::AwaitedNotificationErrorPolicy::LogAndContinue {
+        config = config.awaited_notification_errors(policy);
+    }
     let db = Database::connect("sqlite::memory:").await.unwrap();
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
         .await
         .unwrap();
     let sender = Arc::new(Sender {
-        fail,
+        fail: AtomicBool::new(fail),
         ..Default::default()
     });
     let auth = AuthBuilder::new(config.clone())

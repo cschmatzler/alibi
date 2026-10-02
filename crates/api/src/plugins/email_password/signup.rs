@@ -33,10 +33,14 @@ pub(super) async fn notify_existing(
         return Ok(());
     };
     let request = request.clone();
-    super::super::authentication_helpers::run_owned_notification(context, async move {
-        super::super::authentication_helpers::run_notification(callback(user, request)).await;
-        Ok(())
-    })
+    super::super::authentication_helpers::run_owned_notification(
+        context,
+        async move {
+            super::super::authentication_helpers::run_notification(callback(user, request)).await;
+            Ok(())
+        },
+        context.config.awaited_notification_errors,
+    )
     .await
 }
 

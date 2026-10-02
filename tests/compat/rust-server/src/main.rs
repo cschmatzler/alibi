@@ -733,7 +733,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or(3200);
 
     let secret = "compat-test-only-key-not-real-minimum-32chars";
+    // The pinned reference awaits lifecycle mail and logs delivery errors.
+    // Default native propagation is independently owned by HTTP integration tests.
     let config = AuthConfig::new(secret)
+        .awaited_notification_errors(better_auth::AwaitedNotificationErrorPolicy::LogAndContinue)
         .base_url(format!("http://localhost:{port}"))
         .password_min_length(8);
 

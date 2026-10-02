@@ -113,6 +113,17 @@ use chrono::Duration;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Response policy for awaited lifecycle notifications. Explicit verification
+/// delivery retains its direct error contract; deferred work logs its errors.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AwaitedNotificationErrorPolicy {
+    /// Propagate the callback error after retaining any committed auth writes.
+    #[default]
+    Propagate,
+    /// Log delivery failure and continue the authentication response.
+    LogAndContinue,
+}
+
 /// Main configuration for `BetterAuth`
 #[derive(Clone)]
 pub struct AuthConfig {
@@ -171,6 +182,8 @@ pub struct AuthConfig {
     /// Observe already running deferred operations. Ignoring their completion
     /// does not cancel them; applications may retain completions for shutdown.
     pub background_tasks: Option<Arc<dyn crate::BackgroundTaskHandler>>,
+    /// Error handling when the request awaits a lifecycle notification.
+    pub awaited_notification_errors: AwaitedNotificationErrorPolicy,
 
     /// Validate fresh identity data before its creation hooks or provider
     /// account/session writes. Returning non-provider sign-ins are unchanged.
@@ -588,6 +601,7 @@ impl Default for AuthConfig {
             account: AccountConfig::default(),
             email_provider: None,
             background_tasks: None,
+            awaited_notification_errors: AwaitedNotificationErrorPolicy::default(),
             user_validation: None,
             advanced: AdvancedConfig::default(),
         }
@@ -663,6 +677,16 @@ impl Default for PasswordConfig {
 }
 
 impl AuthConfig {
+    /// Choose whether awaited lifecycle email delivery failures fail the request.
+    #[must_use]
+    pub const fn awaited_notification_errors(
+        mut self,
+        policy: AwaitedNotificationErrorPolicy,
+    ) -> Self {
+        self.awaited_notification_errors = policy;
+        self
+    }
+
     /// Integrate deferred task completions with the application executor.
     #[must_use]
     pub fn background_tasks(mut self, handler: Arc<dyn crate::BackgroundTaskHandler>) -> Self {
