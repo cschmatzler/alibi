@@ -20,7 +20,8 @@ interface or comparison allowance is introduced.
 
 ## Native contract
 
-CognitoOptions requires domain, region and user pool; its factory strips a
+CognitoOptions accepts domain, region and user pool; its factory rejects empty
+values, strips a
 lowercase http/https prefix and constructs HTTPS authorize/token/userinfo.
 Authorization requires a primary client ID, optionally a client secret. Base
 scopes are openid/profile/email, followed by configured and requested scopes,
@@ -42,38 +43,70 @@ ID admission uses real RS256/JWKS, exact kid and the JWK-declared algorithm,
 fixed region/pool issuer, all configured client audiences, one-hour maximum age
 and exact nonce. Decoded ID profiles enrich name using name/given_name/username
 truthiness before an application mapper. Decode/mapper failure can fall back to
-access-token userinfo; malformed raw subject is an admission failure after the
-mapper and email guard. HTTP userinfo passes the original unenriched profile to
+access-token userinfo; malformed raw subject is an admission failure after the mapper. Direct ID sign-in/link
+validate email first; browser callbacks resolve the raw subject before the
+email guard. HTTP userinfo passes the original unenriched profile to
 the mapper. Mapped IDs and getUserInfo user IDs cannot replace the original
 profile's subject. The native general provider interface therefore exposes an
-optional raw account_subject resolver; other factories retain their existing
-semantics. The raw data stays intact for identity validation.
+optional raw account_subject resolver at the three actual identity-admission
+boundaries; existing account-info retrieval retains mapped user data without
+re-admitting a new subject. Other factories retain their existing semantics.
+The raw data stays intact for identity validation. Existing whole provider
+struct literals explicitly preserve or set this optional resolver to None.
 
-## Initial measured proof and remaining publication
+## Measured proof and remaining publication
 
-The first real 46-owner run passed 44 and failed two assertions on Source's actual
-apostrophe escaping. Correcting those expectations to the measured %27 output
-changed no Source, production or comparator behavior. The next expanded runs
-passed 53/56 and failed the three new owners at their Source assertions: missing
-response scope is empty, and refresh leaves it unchanged. Those expectations
-were corrected to the actual published operation; original logs remain.
+The current program passes **79 actual Source/native owners / 2,248 assertions**
+(`/tmp/issue142-79-owners-admission-order-fixed.log`, terminal exit 0). It covers
+ordered configured authorization and duplicate reserved-query replacement,
+reserved caller rejection, signed claim/profile positives and negatives,
+removed/algorithm-mismatched/duplicate-first JWKS rejection and genuine key
+restoration, exact nonce, every configured client audience, required credentials,
+real secret-post/public exchanges and complete PKCE digest, configured redirect
+URI at both authorization and exchange, full HTTP/decoded profile mapping
+receipts, malformed-token fallback, actual replay, foreign refresh denial before
+provider HTTP, owner rotation, and local logout. Browser cases retain actual
+wrong-state/provider, remote token/userinfo HTTP errors, invalid raw subjects and
+both signup-disable policies, including explicit requestSignUp under disableSignUp.
 
-The current working program passes **60 actual Source/native owners / 1,640
-assertions** (`/tmp/issue142-60-owners.log`): ordered configured authorization,
-reserved-key rejection, signed profile/claim positives and negatives, real
-client-secret/public exchange and original PKCE digest, full HTTP vs decoded
-profile/mapping receipts, malformed-token fallback, physical callback replay,
-foreign refresh denial before token requests, genuine owner rotation and local
-logout. An application getUserInfo owner proves valid raw identity and
-missing/null/blank raw subjects after the actual callback, retaining foreign
-physical rows. All observations and traces are retained.
+The isolated actual-main generic provider configured with genuine Cognito
+endpoints failed the default authorization owner for the intended missing
+factory behavior: Native forwarded login_hint, while Source's factory omits it
+(29 assertions, `/tmp/issue142-generic-observed-before-owner.log`). Only the
+Native application fixture adapted its unavailable new public constructor to
+an existing generic provider literal; no old production implementation changed.
+Real token/userinfo request observation endpoints remain present in that proof.
 
-TypeScript passes for this measured working tree. Earlier strict workspace and
-fixture checks passed before the subsequent account-subject addition; those are
-not claimed as current strict results. Main rebase, additional configuration,
-JWKS retirement/restore, intended missing-factory before proof, independent
-review, capability measurement, final strict/canonical/docs/browser and clean
-coverage remain pending. This draft is not a completed-issue or green-gate claim.
+Further independently observed failures preceded the owning repairs: configured
+URL queries appended a second stale response_type (28 assertions,
+`/tmp/issue142-existing-query-before.log`), and central raw-subject validation
+incorrectly rejected existing account-info retrieval after the provider omitted
+sub (22 assertions, `/tmp/issue142-accountinfo-before.log`). The expanded browser
+matrix passed 77/79 but Native returned 404 before valid state processing for an
+unknown provider and prioritized missing email over missing raw subject
+(`/tmp/issue142-browser-boundaries-before.log`). The callback now resolves the
+provider after state/code processing and resolves its raw subject before email;
+the direct ID flows retain their independently owned email-first guards.
+
+Historical oracle-side expectation failures are retained: Source's WHATWG URL
+escapes apostrophe as %27 (initial 44/46), missing token scope persists as an empty
+string, and refresh retains it (53/56 runs). Those expectations were corrected
+to actual published behavior; Source and comparators were unchanged. A later
+67-owner run had two genuine Native configuration-error body differences and
+one Source-side state assertion omitting the observer's actual receipt property.
+The former were fixed at the authorization HTTP error boundary; the latter now
+retains and compares the complete observed before/after state.
+
+All-target strict workspace/fixture Clippy and formatting passed after fixing
+three pre-existing whole OAuthProvider test constructors and the shared helper
+(`/tmp/issue142-current-strict-whole-literals.log`). The subsequent browser
+production repair still requires final strict/canonical proof. Capability
+requirements are appended only from actual passing, recorded public Cognito
+route/category cells, excluding foreign signup setup and callback denial traces
+that the unchanged collector cannot classify as rejection. All 3,433 parent
+requirements remain intact in their original order. Final parent rebase,
+independent review, canonical/docs/browser and clean coverage remain pending;
+this draft does not claim a completed issue or a complete green gate.
 
 The typed native profile uses strings and booleans plus supported scalar
 coercions; complex user fields and arbitrary malformed callback results are not

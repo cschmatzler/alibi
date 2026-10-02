@@ -4,6 +4,7 @@ use axum::{
     Json, Router,
     extract::State,
     http::HeaderMap,
+    response::IntoResponse,
     routing::{get, post},
 };
 use better_auth::integrations::axum::AxumIntegration;
@@ -56,6 +57,7 @@ pub(super) async fn router(
         "http-domain",
         "encrypted",
         "userinfo-override",
+        "query-overrides",
     ] {
         let path = format!("/__test/profiles/social-cognito-{mode}/api/auth");
         let mut settings = config.clone().base_path(&path);
@@ -95,6 +97,9 @@ pub(super) async fn router(
             options.authorization_endpoint =
                 Some("https://alternate-cognito.example.invalid/authorize?retained=value".into());
             options.redirect_uri = Some("https://client.example.invalid/cognito-return".into());
+        }
+        if mode == "query-overrides" {
+            options.authorization_endpoint=Some("https://alternate-cognito.example.invalid/authorize?response_type=stale&client_id=stale&state=stale&state=stale2&scope=stale&redirect_uri=stale&code_challenge=stale&code_challenge_method=stale&identity_provider=stale&custom=stale&retained=value".into());
         }
         if mode == "mapped" {
             options.map_profile_to_user = Some(|profile| {
@@ -227,15 +232,20 @@ async fn keys(State(fixture): State<Fixture>, headers: HeaderMap) -> Json<Value>
             }),
     )
 }
-async fn profile(State(fixture): State<Fixture>, headers: HeaderMap) -> Json<Value> {
+async fn profile(State(fixture): State<Fixture>, headers: HeaderMap) -> impl IntoResponse {
     fixture
         .receipts
         .lock()
         .await
         .push(receipt("/userinfo", "GET", &headers, None));
-    Json(fixture.control.lock().await.get("profile").cloned().unwrap_or_else(||json!({"sub":"fixture-cognito-subject","name":"Cognito User","email":"cognito@example.invalid","email_verified":true,"picture":"https://images.example.invalid/cognito.png"})))
+    let control = fixture.control.lock().await;
+    (endpoint_status(&control, "userInfoStatus"), Json(control.get("profile").cloned().unwrap_or_else(||json!({"sub":"fixture-cognito-subject","name":"Cognito User","email":"cognito@example.invalid","email_verified":true,"picture":"https://images.example.invalid/cognito.png"}))))
 }
-async fn token(State(fixture): State<Fixture>, headers: HeaderMap, body: String) -> Json<Value> {
+async fn token(
+    State(fixture): State<Fixture>,
+    headers: HeaderMap,
+    body: String,
+) -> impl IntoResponse {
     let fields: std::collections::BTreeMap<String, String> =
         url::form_urlencoded::parse(body.as_bytes())
             .into_owned()
@@ -246,9 +256,17 @@ async fn token(State(fixture): State<Fixture>, headers: HeaderMap, body: String)
         .await
         .push(receipt("/token", "POST", &headers, Some(json!(fields))));
     let control = fixture.control.lock().await;
-    Json(control.get("tokenResponse").cloned().unwrap_or_else(||{
+    (endpoint_status(&control, "tokenStatus"), Json(control.get("tokenResponse").cloned().unwrap_or_else(||{
         let mut value = json!({"access_token":"fixture-cognito-access","refresh_token":"fixture-cognito-refresh","token_type":"Bearer","expires_in":3600});
         if let Some(token)=control.get("idToken").filter(|value|!value.is_null()) {value["id_token"]=token.clone();}
         value
-    }))
+    })))
+}
+fn endpoint_status(control: &Value, key: &str) -> axum::http::StatusCode {
+    control
+        .get(key)
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .and_then(|value| axum::http::StatusCode::from_u16(value).ok())
+        .unwrap_or(axum::http::StatusCode::OK)
 }

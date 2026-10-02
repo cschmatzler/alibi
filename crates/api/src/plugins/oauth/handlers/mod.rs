@@ -248,21 +248,21 @@ fn build_authorization_url(
 
     let mut url = url::Url::parse(&provider.auth_url)
         .map_err(|error| AuthError::internal(format!("Invalid auth URL: {error}")))?;
-    _ = url
-        .query_pairs_mut()
-        .append_pair(
-            "response_type",
-            provider
-                .authorization
-                .as_ref()
-                .map_or("code", |policy| policy.response_type.as_str()),
-        )
-        .append_pair("client_id", &provider.client_id)
-        .append_pair("state", state);
+    set_authorization_param(
+        &mut url,
+        "response_type",
+        provider
+            .authorization
+            .as_ref()
+            .map_or("code", |policy| policy.response_type.as_str()),
+    );
+    set_authorization_param(&mut url, "client_id", &provider.client_id);
+    set_authorization_param(&mut url, "state", state);
     if provider.authorization.is_none() || !effective_scopes.is_empty() {
-        _ = url.query_pairs_mut().append_pair("scope", &scope_str);
+        set_authorization_param(&mut url, "scope", &scope_str);
     }
-    _ = url.query_pairs_mut().append_pair(
+    set_authorization_param(
+        &mut url,
         "redirect_uri",
         provider
             .authorization
@@ -276,10 +276,8 @@ fn build_authorization_url(
         .as_ref()
         .is_none_or(|policy| policy.pkce)
     {
-        _ = url
-            .query_pairs_mut()
-            .append_pair("code_challenge_method", "S256")
-            .append_pair("code_challenge", code_challenge);
+        set_authorization_param(&mut url, "code_challenge_method", "S256");
+        set_authorization_param(&mut url, "code_challenge", code_challenge);
     }
     if let Some(policy) = &provider.authorization {
         if let Some(mode) = policy
@@ -287,7 +285,7 @@ fn build_authorization_url(
             .as_deref()
             .filter(|mode| !mode.is_empty())
         {
-            _ = url.query_pairs_mut().append_pair("response_mode", mode);
+            set_authorization_param(&mut url, "response_mode", mode);
         }
         if let Some(prompt) = policy
             .prompt
@@ -295,7 +293,7 @@ fn build_authorization_url(
             .filter(|prompt| !prompt.is_empty())
             .or(policy.default_prompt.as_deref())
         {
-            _ = url.query_pairs_mut().append_pair("prompt", prompt);
+            set_authorization_param(&mut url, "prompt", prompt);
         }
         if effective_scopes.contains(&"bot")
             && let Some(permissions) = policy.discord_permissions
@@ -311,7 +309,7 @@ fn build_authorization_url(
                     .ok_or_else(|| AuthError::internal("Invalid Discord permissions number"))?;
                 better_auth_core::utils::json::number_to_string(&number)?
             };
-            _ = url.query_pairs_mut().append_pair("permissions", &value);
+            set_authorization_param(&mut url, "permissions", &value);
         }
     }
     if let Some(login_hint) = login_hint.filter(|_| {
@@ -320,23 +318,14 @@ fn build_authorization_url(
             .as_ref()
             .is_none_or(|policy| policy.login_hint)
     }) {
-        _ = url.query_pairs_mut().append_pair("login_hint", login_hint);
+        set_authorization_param(&mut url, "login_hint", login_hint);
     }
     for (key, value) in &provider.authorization_params {
-        _ = url.query_pairs_mut().append_pair(key, value);
+        set_authorization_param(&mut url, key, value);
     }
     if let Some(params) = additional_params {
         for (key, value) in params {
-            let existing: Vec<_> = url
-                .query_pairs()
-                .filter(|(name, _)| name != key)
-                .map(|(name, value)| (name.into_owned(), value.into_owned()))
-                .collect();
-            _ = url
-                .query_pairs_mut()
-                .clear()
-                .extend_pairs(existing)
-                .append_pair(key, value);
+            set_authorization_param(&mut url, key, value);
         }
     }
     if provider.authorization.as_ref().is_some_and(|policy| {
@@ -371,6 +360,27 @@ fn build_authorization_url(
         url.set_query(Some(&query));
     }
     Ok(url.to_string())
+}
+
+// URLSearchParams.set replaces duplicate values at the first occurrence;
+// unrelated application-owned endpoint parameters retain their order.
+fn set_authorization_param(url: &mut url::Url, key: &str, value: &str) {
+    let mut replaced = false;
+    let mut pairs = Vec::new();
+    for (name, previous) in url.query_pairs() {
+        if name == key {
+            if !replaced {
+                pairs.push((key.to_owned(), value.to_owned()));
+                replaced = true;
+            }
+        } else {
+            pairs.push((name.into_owned(), previous.into_owned()));
+        }
+    }
+    if !replaced {
+        pairs.push((key.to_owned(), value.to_owned()));
+    }
+    _ = url.query_pairs_mut().clear().extend_pairs(pairs);
 }
 
 fn validate_authorization_params(
@@ -620,11 +630,10 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
     request: OAuthUserInfoRequest,
 ) -> AuthResult<OAuthUserInfoResponse> {
     if let Some(handler) = &provider.get_user_info {
-        let mut response = handler
+        let response = handler
             .get_user_info(request)
             .await
             .map_err(AuthError::internal)?;
-        resolve_account_subject(provider, &mut response)?;
         return Ok(response);
     }
 
@@ -654,11 +663,10 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
             .map_user_info
             .ok_or_else(|| AuthError::internal("Missing user-info mapper"))?;
         let user = mapper(profile.clone()).map_err(AuthError::internal)?;
-        let mut response = OAuthUserInfoResponse {
+        let response = OAuthUserInfoResponse {
             user,
             data: profile,
         };
-        resolve_account_subject(provider, &mut response)?;
         return Ok(response);
     }
 
@@ -701,11 +709,10 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
     let user = mapper(user_info_json.clone())
         .map_err(|e| AuthError::internal(format!("Failed to map user info: {e}")))?;
 
-    let mut response = OAuthUserInfoResponse {
+    let response = OAuthUserInfoResponse {
         user,
         data: user_info_json,
     };
-    resolve_account_subject(provider, &mut response)?;
     Ok(response)
 }
 
@@ -713,10 +720,7 @@ fn resolve_account_subject(
     provider: &OAuthProvider,
     response: &mut OAuthUserInfoResponse,
 ) -> AuthResult<()> {
-    // Source rejects a missing email before resolving the provider account key.
-    if !response.user.email.is_empty()
-        && let Some(subject) = provider.account_subject
-    {
+    if let Some(subject) = provider.account_subject {
         response.user.id = subject(&response.data).map_err(AuthError::internal)?;
     }
     Ok(())
@@ -1498,7 +1502,7 @@ async fn sign_in_with_id_token_core(
         });
     }
 
-    let user_info = fetch_user_info_from_provider(
+    let mut user_info = fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
             access_token: id_token.access_token.clone(),
@@ -1526,6 +1530,12 @@ async fn sign_in_with_id_token_core(
             message: "User email not found",
         });
     }
+
+    resolve_account_subject(provider, &mut user_info).map_err(|_error| AuthError::Upstream {
+        status: 401,
+        code: "FAILED_TO_GET_USER_INFO",
+        message: "Failed to get user info",
+    })?;
 
     let outcome = process_oauth_sign_in(
         OAuthIdentity {
@@ -1608,7 +1618,7 @@ async fn link_with_id_token_core(
         });
     }
 
-    let response = fetch_user_info_from_provider(
+    let mut response = fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
             access_token: id_token.access_token.clone(),
@@ -1636,6 +1646,12 @@ async fn link_with_id_token_core(
             message: "User email not found",
         });
     }
+
+    resolve_account_subject(provider, &mut response).map_err(|_error| AuthError::Upstream {
+        status: 401,
+        code: "FAILED_TO_GET_USER_INFO",
+        message: "Failed to get user info",
+    })?;
 
     let linked_account = ctx
         .database
@@ -1967,7 +1983,13 @@ pub(super) async fn handle_social_sign_in(
         return Ok(auth_response);
     }
 
-    let flow = social_sign_in_core(&body, config, ctx).await?;
+    let flow = match social_sign_in_core(&body, config, ctx).await {
+        Err(error @ AuthError::Config(_)) => {
+            tracing::error!(%error, "OAuth authorization configuration failed");
+            return Ok(AuthResponse::new(500));
+        }
+        result => result?,
+    };
     let response = flow.response;
     let mut auth_response = AuthResponse::json(200, &response).map_err(AuthError::from)?;
 
@@ -2017,10 +2039,6 @@ pub(super) async fn handle_callback(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let provider = config
-        .providers
-        .get(provider_name)
-        .ok_or_else(|| AuthError::not_found("Provider not found"))?;
     let default_error_url = format!("{}/error", auth_base_url(ctx));
     let meta = better_auth_core::RequestMeta::from_request(req);
 
@@ -2185,6 +2203,9 @@ pub(super) async fn handle_callback(
     let Some(code) = merged_2.get("code").cloned() else {
         return Ok(redirect_on_error("no_code", None));
     };
+    let Some(provider) = config.providers.get(provider_name) else {
+        return Ok(redirect_on_error("oauth_provider_not_found", None));
+    };
 
     let Ok(tokens) = validate_authorization_code_via_provider(
         provider,
@@ -2202,7 +2223,7 @@ pub(super) async fn handle_callback(
         return Ok(redirect_on_error("invalid_code", None));
     };
 
-    let Ok(user_info) = fetch_user_info_from_provider(
+    let Ok(mut user_info) = fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
             token_type: tokens.token_type.clone(),
@@ -2220,6 +2241,10 @@ pub(super) async fn handle_callback(
     else {
         return Ok(redirect_on_error("unable_to_get_user_info", None));
     };
+
+    if resolve_account_subject(provider, &mut user_info).is_err() {
+        return Ok(redirect_on_error("unable_to_get_user_info", None));
+    }
 
     if let Some(link) = payload.link.as_ref() {
         if let Err(error_3) = complete_link_social(
@@ -2383,7 +2408,13 @@ pub(super) async fn handle_link_social(
         return AuthResponse::json(200, &response).map_err(AuthError::from);
     }
 
-    let flow = link_social_core(&body, &session, config, ctx).await?;
+    let flow = match link_social_core(&body, &session, config, ctx).await {
+        Err(error @ AuthError::Config(_)) => {
+            tracing::error!(%error, "OAuth linking authorization configuration failed");
+            return Ok(AuthResponse::new(500));
+        }
+        result => result?,
+    };
     let response = flow.response;
     let mut auth_response = AuthResponse::json(200, &response).map_err(AuthError::from)?;
 

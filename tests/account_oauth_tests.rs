@@ -377,6 +377,7 @@ fn make_test_provider(mock_url: &str) -> OAuthProvider {
         user_info_url: Some(format!("{mock_url}/userinfo")),
         scopes: vec!["email".to_owned()],
         authorization: None,
+        account_subject: None,
         authorization_params: Vec::new(),
         map_user_info: Some(|v| {
             Ok(OAuthUserInfo {

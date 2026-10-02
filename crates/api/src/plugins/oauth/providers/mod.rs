@@ -81,6 +81,9 @@ pub struct OAuthUserInfoResponse {
     pub data: Value,
 }
 
+/// Resolve a provider's stable account identity from its original profile.
+pub type OAuthAccountSubject = fn(&Value) -> Result<String, String>;
+
 #[async_trait]
 pub trait OAuthUserInfoHandler: Send + Sync {
     async fn get_user_info(
@@ -256,7 +259,7 @@ pub struct OAuthProvider {
     pub authorization: Option<OAuthAuthorizationPolicy>,
     pub authorization_params: Vec<(String, String)>,
     /// Selects the factory account subject from the original provider profile.
-    pub account_subject: Option<fn(&Value) -> Result<String, String>>,
+    pub account_subject: Option<OAuthAccountSubject>,
     pub map_user_info: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
     pub get_user_info: Option<Arc<dyn OAuthUserInfoHandler>>,
     pub refresh_access_token: Option<Arc<dyn OAuthRefreshTokenHandler>>,

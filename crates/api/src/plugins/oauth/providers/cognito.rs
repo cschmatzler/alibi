@@ -259,7 +259,7 @@ fn finish_profile(
     mapped: Option<OAuthUserInfo>,
 ) -> Result<OAuthUserInfoResponse, String> {
     let id = scalar(profile.get("sub"))?.unwrap_or_default();
-    let mut user = match mapped {
+    let user = match mapped {
         Some(user) => user,
         None => OAuthUserInfo {
             id: id.clone(),
@@ -276,7 +276,6 @@ fn finish_profile(
                 .unwrap_or(false),
         },
     };
-    user.id = id;
     Ok(OAuthUserInfoResponse {
         user,
         data: profile,

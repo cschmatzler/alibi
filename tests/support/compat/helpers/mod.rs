@@ -447,6 +447,7 @@ fn mock_oauth_plugin() -> OAuthPlugin {
     OAuthPlugin::new().add_provider(
         "mock",
         OAuthProvider {
+            account_subject: None,
             client_id: "mock-client-id".to_owned(),
             additional_client_ids: Vec::new(),
             hosted_domain: None,
