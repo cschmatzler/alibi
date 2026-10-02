@@ -112,6 +112,8 @@ compatScenario(
     };
   },
   ["POST /sign-up/email", "GET /verify-email", "POST /sign-in/email"],
+  30_000,
+  { oracle: { unroutedRequests: "asserts the username plugin route is absent from this profile" } },
 );
 
 compatScenario(

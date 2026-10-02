@@ -3,7 +3,7 @@
 The published TypeScript `better-auth@1.7.6` runtime is the behavioral reference.
 The client, reference server, passkey plugin and API-key plugin are pinned to
 that version with committed Bun lockfiles. `capabilities.json` carries the single
-committed `upstreamVersion`; `tests/upstream_pin_tests.rs` fails when any
+committed `upstreamVersion`; `tests/compat/upstream_pin.rs` fails when any
 manifest, lockfile, document, harness schema or fixture server restates a
 different release, and both fixture servers report the release they reproduce
 on `/__health`, which every scenario run verifies before comparing anything.
@@ -11,34 +11,28 @@ on `/__health`, which every scenario run verifies before comparing anything.
 ## Layout
 
 Parity with upstream is established by one mechanism: the differential SDK
-suite under `tests/compat`, which runs the official client against both servers
-and compares everything they return and store. The Rust crates under `tests/`
-check the Rust implementation on its own terms and do not claim parity.
+suite, which runs the official client against both servers and compares
+everything they return and store. Unit and integration tests check the Rust
+implementation on its own terms and do not claim parity; see
+[../README.md](../README.md) for the tiers.
 
 | Path | Contents |
 | --- | --- |
-| `tests/*.rs` | Cargo integration tests, one crate per feature (`session_refresh_tests`, `phone_number_tests`, ...) |
-| `tests/openapi_contract_tests.rs` | In-process response-shape checks against upstream's generated OpenAPI contract; fast drift detection, not parity |
-| `tests/route_inventory_tests.rs` | Fails when the Rust router's routes differ from `capabilities.json` |
-| `tests/client_compat_tests.rs` | Starts both fixture servers and runs the SDK suite; one runner per scenario directory |
-| `tests/support/openapi_contract/` | Shared Rust helpers: OpenAPI schema loading, shape validation, in-process auth setup |
-| `tests/fixtures/` | Pinned vectors consumed by Rust unit tests and both fixture servers: SIWE EIP-191 signature, encrypted upstream JWK, encrypted account-cookie vectors, One Tap keys |
-| `tests/compat/client-tests/tests/core/<area>/` | SDK scenarios for upstream's core API routes (session, user, account, password, social, ...) |
-| `tests/compat/client-tests/tests/plugins/<plugin>/` | SDK scenarios per upstream plugin, named as upstream names it |
-| `tests/compat/client-tests/{support,harness}/` | The trace comparator and scenario runtime, and their negative controls |
-| `tests/compat/reference-server/` | The pinned TypeScript runtime; `fixtures/` holds one configuration module per capability |
-| `tests/compat/rust-server/` | The Rust fixture package; `src/fixtures/` mirrors the reference server's fixtures |
-| `tests/compat/audits/{core,plugins}/` | Implementation audits under the same keys as the scenarios; `harness/` audits the comparator itself |
-| `tests/compat/capabilities.json` | Every upstream route with the scenarios that prove each evidence category, or why there are none |
-
-Unit tests live in inline `#[cfg(test)] mod tests { ... }` blocks at the end of
-their owning Rust modules. Integration test files keep their test modules inline
-too, without separate `tests.rs` companions. Shared fixture data stays under
-`tests/fixtures/` and is loaded with `include_str!`.
-
-Keep inline unit modules inside `LCOV_EXCL_START` / `LCOV_EXCL_STOP` comments.
-LCOV uses these exact source boundaries to exclude test bodies from the
-production line-coverage floor; the tests still execute normally.
+| `main.rs` | Cargo target `compat`: the Rust side of this tier |
+| `sdk.rs` | Starts both fixture servers and runs the SDK suite; one runner per scenario directory |
+| `route_inventory.rs` | Fails when the Rust router's routes differ from `capabilities.json` |
+| `upstream_pin.rs` | Fails when any manifest, lockfile or fixture names a different upstream release |
+| `openapi_contract/` | In-process response-shape checks against upstream's generated OpenAPI contract; fast drift detection, not parity |
+| `client-tests/tests/core/<area>/` | SDK scenarios for upstream's core API routes (session, user, account, password, social, ...) |
+| `client-tests/tests/plugins/<plugin>/` | SDK scenarios per upstream plugin, named as upstream names it |
+| `client-tests/tests/generated/` | Model-based lifecycle sequences |
+| `client-tests/{environment,browser}/` | Process-environment pairs and Chromium checks |
+| `client-tests/support/` | The scenario runtime, trace recorder and comparator |
+| `client-tests/harness/` | Negative controls proving the comparator and gates detect drift |
+| `reference-server/` | The pinned TypeScript runtime; `fixtures/` holds one configuration module per capability |
+| `rust-server/` | The Rust fixture package; `src/fixtures/` mirrors the reference server's fixtures |
+| `audits/{core,plugins}/` | Implementation audits under the same keys as the scenarios; `harness/` audits the comparator itself |
+| `capabilities.json` | Every upstream route with the scenarios that prove each evidence category, or why there are none |
 
 Keep tests focused on observable behavior and independent contracts. Comparator
 negative controls belong in the harness because they catch false passing results;
@@ -140,6 +134,29 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
   fails the scenario; there is no exception filter. Negative controls use the
   comparator's actual trace paths, including cookie scopes, status codes and
   redirect locations.
+- Agreement only counts when the reference served the scenario.
+  `support/oracle.ts` fails a passing comparison when the TypeScript run made
+  no request, hit an unrouted auth path (better-call's empty 404: a mistyped
+  path 404s identically on both servers), or got a fixture control's generic
+  `{"message":"Internal server error"}` (any thrown error collapses to it, so
+  agreement says nothing about which error). Scenarios that do this on purpose
+  declare it next to the call:
+  `{ oracle: { unroutedRequests | collapsedFixtureErrors: "<reason>" } }`.
+  The evidence gate fails on a declaration its scenario no longer needs.
+  Upstream's own 5xx responses are not exempted: they are behavior Rust must
+  reproduce, and the comparator already checks their bodies.
+- Every scenario starts from empty storage. After `/__test/reset-state` the
+  runner reads `/__test/residue` (row counts of every non-empty table in the
+  fixture's primary SQLite database) on both servers and refuses to run on
+  leftovers. This caught `twoFactor` rows surviving the TypeScript reset and
+  hook receipts surviving the Rust one. Secondary in-memory stores and
+  per-fixture receipts are still each fixture's own `reset()`.
+- Read controls distinguish "absent" (a JSON 404 from the fixture) from "not
+  served" (an empty 404): a control route missing on one server throws instead
+  of reading as `null` on both.
+- `harness/registration.test.ts` requires every file under `tests/` to register
+  through `compatScenario`; files that compare the runtimes directly are listed
+  there with the reason, and `.skip`/`.only`/`.todo` are rejected.
 - `support/profiles.ts` is the runtime registry of configuration profiles. The
   `core/profiles` scenario requests `/ok` under every registered profile on both
   servers, so a profile served by one runtime only, or a typo in a profile name,
@@ -298,8 +315,8 @@ To update the inventory deliberately after adding routes or tests:
 ```bash
 mkdir -p coverage
 bun tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
-BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test route_inventory_tests
-BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test client_compat_tests full_client_compat --run-ignored only --no-capture
+BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test compat route_inventory::
+BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test compat sdk::tests::full_client_compat --run-ignored only --no-capture
 ```
 
 Review the resulting `capabilities.json` diff, especially removed requirements.
@@ -323,11 +340,11 @@ bun test --cwd tests/compat/client-tests harness
 tests/compat/client-tests/run-against-both.sh plugins/passkey
 tests/compat/client-tests/run-against-both.sh browser
 tests/compat/client-tests/run-against-both.sh tests/plugins/organization/teams.test.ts
-./scripts/alignment-check.sh
+./scripts/compat.sh
 ```
 
 Every scenario directory (`core/<area>`, `plugins/<plugin>`, `generated`) has a `<group>_<area>_client_compat`
-runner in `tests/client_compat_tests.rs`, and a guard test keeps that list in
+runner in `tests/compat/sdk.rs`, and a guard test keeps that list in
 sync. File-level runs go through `selected_client_compat`, which reads the
 space-separated paths in `BETTER_AUTH_COMPAT_PATHS`.
 
@@ -337,7 +354,7 @@ and Rust servers; configure `AUTH_BASE_URL_TS` and `AUTH_BASE_URL_RUST`.
 
 ## One-time tokens
 
-`devenv shell -- cargo nextest run --test client_compat_tests plugins_one_time_token_client_compat --run-ignored only --no-capture` runs the official client against the pinned TypeScript and Rust fixtures. Four explicit profiles exercise plain and hashed storage, no-cookie consumption, server-only issuance and response headers. The scenarios assert stored session ownership, expiry, revocation, replay and newest-generation invalidation.
+`devenv shell -- cargo nextest run --test compat sdk::tests::plugins_one_time_token_client_compat --run-ignored only --no-capture` runs the official client against the pinned TypeScript and Rust fixtures. Four explicit profiles exercise plain and hashed storage, no-cookie consumption, server-only issuance and response headers. The scenarios assert stored session ownership, expiry, revocation, replay and newest-generation invalidation.
 
 This database-backed integration uses persisted sessions and verification records. Secondary-storage-only sessions remain a separate integration boundary.
 
@@ -379,7 +396,7 @@ SIWE checks use the official `siweClient`, independent signed EIP-191 messages,
 and a local ERC-1271 JSON-RPC provider. They compare wallet/account/session
 ownership, nonce expiry and single use, email reservation, callback context,
 ENS behavior, bans, and overlapping verification. Run
-`devenv shell -- cargo nextest run --test client_compat_tests plugins_siwe_client_compat --run-ignored only --no-capture`.
+`devenv shell -- cargo nextest run --test compat sdk::tests::plugins_siwe_client_compat --run-ignored only --no-capture`.
 The [SIWE implementation audit](audits/plugins/siwe/README.md) records the pinned runtime's
 global nonce contract and remaining storage/schema/provider boundaries.
 OpenAPI/reference whole-document proof and remaining configuration branches are tracked in [the OpenAPI audit](audits/plugins/open-api/README.md).

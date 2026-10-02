@@ -76,7 +76,7 @@ only missing JSON Content-Type on Rust proxy redirects
 (`/tmp/oauth-proxy-sdk-first-atom.log`); the route-local redirect header repair
 produces the final green result.
 
-`tests/oauth_proxy_lifecycle_tests.rs` owns the distinct actual native storage
+`tests/integration/plugins/oauth_proxy.rs` owns the distinct actual native storage
 boundary: complete physical rows, exact internal identifier and JSON state,
 production nonmutation, consumption/deletion/replay, foreign principal isolation
 and expiry after genuine row modification. `/tmp/oauth-proxy-native-final.log`:

@@ -183,6 +183,9 @@ compatScenario(
       publicRoute: ctx.snapshot(publicRoute),
     };
   },
+  [],
+  30_000,
+  { oracle: { unroutedRequests: "asserts view-backup-codes is not exposed over HTTP" } },
 );
 
 function enrollmentUri(value: unknown): string {

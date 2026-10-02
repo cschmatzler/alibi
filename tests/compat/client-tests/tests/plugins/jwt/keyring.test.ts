@@ -692,6 +692,13 @@ compatScenario(
     };
   },
   ["GET /jwks", "GET /token", "POST /sign-up/email"],
+  30_000,
+  {
+    oracle: {
+      collapsedFixtureErrors:
+        "the keyring control reports corrupt-key signing failures as a generic 500",
+    },
+  },
 );
 
 compatScenario(
@@ -849,6 +856,13 @@ compatScenario(
     return { jwks, original, observations, rejected, after: await state(ctx) };
   },
   ["GET /jwks"],
+  30_000,
+  {
+    oracle: {
+      collapsedFixtureErrors:
+        "the keyring control reports nonfinite-option signing failures as a generic 500",
+    },
+  },
 );
 
 compatScenario(
@@ -1087,6 +1101,8 @@ compatScenario(
     return { cleared, before, keysBefore, responses, after: await state(ctx) };
   },
   ["GET /jwks"],
+  30_000,
+  { oracle: { unroutedRequests: "asserts remote-signing profiles serve no local JWKS route" } },
 );
 
 compatScenario(

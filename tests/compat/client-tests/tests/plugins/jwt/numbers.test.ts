@@ -125,4 +125,12 @@ compatScenario(
       falsyPayload,
     };
   },
+  [],
+  30_000,
+  {
+    oracle: {
+      collapsedFixtureErrors:
+        "the trusted signing control reports rejected claims as a generic 500",
+    },
+  },
 );

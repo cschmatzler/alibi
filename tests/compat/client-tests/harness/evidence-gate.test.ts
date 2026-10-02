@@ -17,7 +17,7 @@ test("capability gate requires every committed scenario and regeneration preserv
       mkdir(join(root, "tests/compat/reference-server"), { recursive: true }),
     ]);
 
-    for (const name of ["coverage.ts", "check-coverage.ts"]) {
+    for (const name of ["coverage.ts", "check-coverage.ts", "oracle.ts"]) {
       await copyFile(new URL(`../support/${name}`, import.meta.url), join(support, name));
     }
 

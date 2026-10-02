@@ -40,6 +40,7 @@ import {
   promoteAdmin,
   readChangeEmailConfirmation,
   readDeviceState,
+  readResidue,
   readTwoFactorOtp,
   readUserState,
   readVerificationEmail,
@@ -55,6 +56,7 @@ import {
   setSocialProfile,
 } from "./controls";
 import { normalizeClientValue } from "./normalize";
+import { ORACLE_RECEIPTS, type OracleExpectations, oracleFindings } from "./oracle";
 import { createTracingFetch, requestWindow, type TraceEntry } from "./trace";
 
 type ScenarioServerContext = {
@@ -155,6 +157,11 @@ async function runScenario(
   setAssurancePhase(scenarioName, label);
   const health = await requireHealthy(baseURL, label);
   await resetServerState(baseURL);
+  const residue = await readResidue(baseURL);
+
+  if (Object.keys(residue).length) {
+    throw new Error(`${label} reset left rows behind: ${JSON.stringify(residue)}`);
+  }
 
   const startedAt = Date.now();
   const traces: TraceEntry[] = [];
@@ -348,9 +355,14 @@ export function compatScenario(
   scenario: (ctx: ScenarioServerContext) => Promise<unknown>,
   stateTransitions: readonly string[] = [],
   timeoutMs = 30_000,
-  comparisonOptions: { readonly oauthProxyProfileSecret?: string } = {},
+  options: {
+    readonly oauthProxyProfileSecret?: string;
+    /** Deliberate unrouted or failing reference requests; see `support/oracle.ts`. */
+    readonly oracle?: OracleExpectations;
+  } = {},
   reproduction?: unknown,
 ) {
+  const { oracle, ...comparisonOptions } = options;
   assuranceEvent({ event: "registered", name: scenarioName });
   test.serial(
     scenarioName,
@@ -430,6 +442,29 @@ export function compatScenario(
 
         if (rawDiffs.length) {
           throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
+        }
+
+        // Agreement only counts when the reference actually served the scenario.
+        failure = "scenario";
+        const oracleProblems = oracleFindings(ts.traces, oracle);
+
+        if (oracle) {
+          await Bun.write(
+            new URL(`${Bun.hash(scenarioName)}.json`, ORACLE_RECEIPTS),
+            JSON.stringify({
+              scenario: scenarioName,
+              needed: oracleFindings(ts.traces).length > 0,
+            }),
+          );
+        }
+
+        if (oracleProblems.length) {
+          throw new Error(
+            [
+              `The reference server did not exercise ${scenarioName}:`,
+              ...oracleProblems.map((problem) => `- ${problem}`),
+            ].join("\n"),
+          );
         }
 
         failure = "infrastructure";

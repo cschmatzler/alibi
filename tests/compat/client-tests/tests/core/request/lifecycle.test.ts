@@ -157,4 +157,6 @@ compatScenario(
     return { stopped, prevented, unknown, wrongMethod, absent, ok, observed };
   },
   ["POST /sign-up/email"],
+  30_000,
+  { oracle: { unroutedRequests: "asserts unknown routes and methods are not routed" } },
 );

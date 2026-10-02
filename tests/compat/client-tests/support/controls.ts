@@ -58,6 +58,12 @@ async function getControl(baseURL: string, path: string, params: Record<string, 
   });
 
   if (response.status === 404) {
+    // Fixtures report an absent record as a JSON 404. An empty 404 means the
+    // control route itself is missing, which must not read as "absent".
+    const text = await response.text();
+    if (!text) {
+      throw new Error(`${path} is not served by ${baseURL}`);
+    }
     return null;
   }
 
@@ -75,6 +81,17 @@ export async function readUserState(baseURL: string, args: { userId: string }): 
 
 export async function resetServerState(baseURL: string) {
   return postControl(baseURL, "/__test/reset-state", {});
+}
+
+/** Non-empty tables in the fixture's primary database. */
+export async function readResidue(baseURL: string): Promise<Record<string, number>> {
+  const response = await fetch(new URL("/__test/residue", baseURL), {
+    headers: { connection: "close" },
+  });
+  if (!response.ok) {
+    throw new Error(`/__test/residue failed for ${baseURL}: ${response.status}`);
+  }
+  return (await response.json()) as Record<string, number>;
 }
 
 export async function setResetPasswordMode(baseURL: string, mode: ResetPasswordMode) {

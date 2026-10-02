@@ -833,6 +833,13 @@ compatScenario(
     await unchanged(ctx, other);
     return { foreign: other, observations };
   },
+  [],
+  30_000,
+  {
+    oracle: {
+      unroutedRequests: "asserts the server-only set-password endpoint is not exposed over HTTP",
+    },
+  },
 );
 
 compatScenario(

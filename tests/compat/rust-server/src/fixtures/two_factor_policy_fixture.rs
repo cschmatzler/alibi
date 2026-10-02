@@ -14,7 +14,7 @@ use better_auth::{
     wire::UserView,
 };
 use better_auth_core::{
-    store::{TwoFactorStore, VerificationStore},
+    store::TwoFactorStore,
     utils::json::{self, JsValue},
 };
 use better_auth_seaorm::{
@@ -391,22 +391,27 @@ async fn control(
         } else {
             database.query_one_raw(Statement::from_sql_and_values(DatabaseBackend::Sqlite,"SELECT identifier FROM verifications WHERE value=? AND identifier LIKE '2fa-%'",[user_id.into()])).await.map_err(|_|())?.map(|row|row.try_get::<String>("","identifier").map_err(|_|())).transpose()?
         };
+        // Raw rows, as the reference reads them: an expired row that was never
+        // deleted must stay visible, or a missed deletion would read as one.
+        let record = |identifier: String| {
+            let database = database.clone();
+            async move {
+                database
+                    .query_one_raw(Statement::from_sql_and_values(
+                        DatabaseBackend::Sqlite,
+                        "SELECT value FROM verifications WHERE identifier=?",
+                        [identifier.into()],
+                    ))
+                    .await
+                    .map_err(|_| ())?
+                    .map(|row| row.try_get::<String>("", "value").map_err(|_| ()))
+                    .transpose()
+            }
+        };
         let (challenge, attempts, otp_exists) = if let Some(key) = key.as_ref() {
-            let challenge = store
-                .get_verification_by_identifier(key)
-                .await
-                .map_err(|_|())?
-                .is_some();
-            let attempts = store
-                .get_verification_by_identifier(&format!("2fa-attempts-{key}"))
-                .await
-                .map_err(|_|())?
-                .map(|row| row.value);
-            let otp = store
-                .get_verification_by_identifier(&format!("2fa-otp-{key}"))
-                .await
-                .map_err(|_|())?
-                .is_some();
+            let challenge = record(key.clone()).await?.is_some();
+            let attempts = record(format!("2fa-attempts-{key}")).await?;
+            let otp = record(format!("2fa-otp-{key}")).await?.is_some();
             (challenge, attempts, otp)
         } else {
             (false, None, false)

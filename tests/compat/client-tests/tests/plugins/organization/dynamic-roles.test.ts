@@ -328,6 +328,9 @@ compatScenario(
       removedState: removedState.raw,
     };
   },
+  [],
+  30_000,
+  { oracle: { unroutedRequests: "asserts role routes are absent without dynamic access control" } },
 );
 
 compatScenario(

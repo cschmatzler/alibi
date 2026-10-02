@@ -225,6 +225,12 @@ compatScenario(
     };
   },
   ["POST /sign-in/email", "GET /get-session"],
+  30_000,
+  {
+    oracle: {
+      unroutedRequests: "asserts the server-only set-password endpoint is not exposed over HTTP",
+    },
+  },
 );
 
 compatScenario(
@@ -459,6 +465,14 @@ for (const mode of ["hash-error", "create-error", "update-error"] as const) {
           userId: s.other.data!.user.id,
         }),
       };
+    },
+    [],
+    30_000,
+    {
+      oracle: {
+        collapsedFixtureErrors:
+          "the set-password control reports the injected hash/create/update failure as a generic 500; the scenario asserts the stored principals instead",
+      },
     },
   );
 }
@@ -782,5 +796,13 @@ compatScenario(
       foreignBefore: s.foreignBefore,
       foreignAfter: await ctx.readUserState({ userId: s.other.data!.user.id }),
     };
+  },
+  [],
+  30_000,
+  {
+    oracle: {
+      collapsedFixtureErrors:
+        "the set-password control reports the denial as a generic 500; the scenario asserts hash invocation and stored principals",
+    },
   },
 );

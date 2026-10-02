@@ -11,8 +11,8 @@ cargo llvm-cov clean --workspace
 # Both runs contribute real native execution to one unchanged production floor.
 cargo llvm-cov nextest --workspace --locked --features axum,seaorm2,redis-cache --no-report
 cargo llvm-cov nextest --workspace --locked --features axum,seaorm2,redis-cache \
-  --no-report --test client_compat_tests --run-ignored only --test-threads 1 \
-  -E 'test(=tests::core_client_compat) | test(=tests::plugins_jwt_client_compat) | test(=tests::plugins_captcha_client_compat) | test(=tests::plugins_anonymous_client_compat) | test(=tests::plugins_bearer_client_compat) | test(=tests::plugins_oauth_proxy_client_compat) | test(=tests::plugins_have_i_been_pwned_client_compat)'
+  --no-report --test compat --run-ignored only --test-threads 1 \
+  -E 'test(=sdk::tests::core_client_compat) | test(=sdk::tests::plugins_jwt_client_compat) | test(=sdk::tests::plugins_captcha_client_compat) | test(=sdk::tests::plugins_anonymous_client_compat) | test(=sdk::tests::plugins_bearer_client_compat) | test(=sdk::tests::plugins_oauth_proxy_client_compat) | test(=sdk::tests::plugins_have_i_been_pwned_client_compat)'
 export LLVM_COV_FLAGS="${LLVM_COV_FLAGS:+$LLVM_COV_FLAGS }-object=coverage/target/debug/compat-rust-server"
 cargo llvm-cov report --locked --package '*' \
   --ignore-filename-regex '(tests/|scripts/|target/)' \

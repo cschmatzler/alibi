@@ -114,7 +114,7 @@ refreshes adapters and invokes configured cleanup/statistics callbacks. These
 are real test-harness effects when invoked, not authentication startup effects.
 Native store owners (`crates/seaorm/src/store/sessions/mod.rs`), migration
 owner (`crates/seaorm/src/store/migrator/mod.rs`) and
-`tests/oauth_account_transaction_tests.rs` own their Rust counterparts;
+`tests/integration/core/oauth_account_transaction.rs` own their Rust counterparts;
 TS/Vitest suite registration, JS ID generators and cleanup embedding are not
 native library APIs. Custom adapter backend semantics remain #192. SCIM is an
 explicitly excluded target and is not reopened here.

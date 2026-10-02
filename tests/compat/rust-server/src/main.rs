@@ -299,8 +299,55 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     account::Entity::delete_many().exec(database).await?;
     session::Entity::delete_many().exec(database).await?;
     user::Entity::delete_many().exec(database).await?;
+    // Fixture-owned tables: session-fields hook receipts and the application
+    // keys of the custom-adapter JWT keyring profiles.
+    {
+        use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+        for table in ["session_model_events", "fixtureJwtKeyring"] {
+            let _ = database
+                .execute_raw(Statement::from_string(
+                    DbBackend::Sqlite,
+                    format!("DELETE FROM {table}"),
+                ))
+                .await?;
+        }
+    }
 
     Ok(())
+}
+
+/// Row counts of every non-empty table. The scenario runner requires an empty
+/// result after `/__test/reset-state`, so state cannot leak between scenarios.
+async fn database_residue(
+    database: &DatabaseConnection,
+) -> Result<serde_json::Map<String, serde_json::Value>, DbErr> {
+    use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+    let tables = database
+        .query_all_raw(Statement::from_string(
+            DbBackend::Sqlite,
+            // Migration bookkeeping is schema, not scenario state.
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'better_auth_migrations' ORDER BY name",
+        ))
+        .await?;
+    let mut residue = serde_json::Map::new();
+    for table in tables {
+        let name: String = table.try_get("", "name")?;
+        let count: i64 = database
+            .query_one_raw(Statement::from_string(
+                DbBackend::Sqlite,
+                format!(
+                    "SELECT count(*) AS n FROM \"{}\"",
+                    name.replace('"', "\"\"")
+                ),
+            ))
+            .await?
+            .ok_or_else(|| DbErr::RecordNotFound(name.clone()))?
+            .try_get("", "n")?;
+        if count > 0 {
+            let _ = residue.insert(name, count.into());
+        }
+    }
+    Ok(residue)
 }
 
 #[async_trait::async_trait]
@@ -1050,6 +1097,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let social_id_token_valid_for_reset = social_id_token_valid.clone();
     let social_id_token_valid_for_set = social_id_token_valid.clone();
     let database_for_reset = reset_database.clone();
+    let database_for_residue = reset_database.clone();
     let auth_for_reset_seed = auth.clone();
     let auth_for_delete_seed = auth.clone();
     let auth_for_remove_credential = auth.clone();
@@ -1283,6 +1331,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             Json(serde_json::json!({
                                 "message": error.to_string(),
                             })),
+                        ),
+                    }
+                }
+            }),
+        )
+        .route(
+            "/__test/residue",
+            get(move || {
+                let database = database_for_residue.clone();
+                async move {
+                    match database_residue(&database).await {
+                        Ok(residue) => (
+                            axum::http::StatusCode::OK,
+                            Json(serde_json::Value::Object(residue)),
+                        ),
+                        Err(error) => (
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({ "message": error.to_string() })),
                         ),
                     }
                 }

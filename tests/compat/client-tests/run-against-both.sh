@@ -36,4 +36,4 @@ else
   test_name="${target//-/_}"
   test_name="${test_name//\//_}_client_compat"
 fi
-cargo nextest run --locked --test client_compat_tests --run-ignored only --no-capture "$test_name"
+cargo nextest run --locked --test compat --run-ignored only --no-capture -E "test(=sdk::tests::$test_name)"

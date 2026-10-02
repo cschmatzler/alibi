@@ -375,6 +375,13 @@ compatScenario(
       getOtherMemberRole: ctx.snapshot(getOtherMemberRole),
     };
   },
+  [],
+  30_000,
+  {
+    oracle: {
+      unroutedRequests: "asserts the server-only add-member endpoint is not exposed over HTTP",
+    },
+  },
 );
 
 compatScenario("organization list members supports sort and filter queries", async (ctx) => {

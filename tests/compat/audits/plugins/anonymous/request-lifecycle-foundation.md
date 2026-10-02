@@ -66,14 +66,14 @@ schemas remain outside the measured slice.
 
 ## Independent native evidence
 
-`tests/anonymous_request_extensions_tests.rs` invokes real public email signup
+`tests/integration/plugins/anonymous/request_extensions.rs` invokes real public email signup
 and signin, database hooks, and persistence. It proves concurrent reused clones
 cannot share/erase dispatch authority, and sequential success/failure/signin
 cannot inherit caller or prior state. An incorrect public reset control fails
 both tests at the caller-state guard:
 `/tmp/anonymous-request-extensions-incorrect-reset.log`.
 
-`tests/anonymous_oauth_context_tests.rs` creates actual anonymous accounts,
+`tests/integration/plugins/anonymous/oauth_context.rs` creates actual anonymous accounts,
 issues real OAuth state using their signed cookies, and uses an independent
 local HTTP token/user-info provider. It tests genuine recovery without the
 anonymous cookie, client context stripping, changed owner, a proof copied from

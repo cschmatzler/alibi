@@ -518,6 +518,13 @@ compatScenario(
 
     return { wrong, consumed, replay, publicAttempt, session };
   },
+  [],
+  30_000,
+  {
+    oracle: {
+      unroutedRequests: "asserts the server-only consume-otp endpoint is not exposed over HTTP",
+    },
+  },
 );
 
 compatScenario(

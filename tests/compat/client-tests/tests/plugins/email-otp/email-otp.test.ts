@@ -477,6 +477,11 @@ compatScenario(
       empty: ctx.snapshot(empty),
     };
   },
+  [],
+  30_000,
+  {
+    oracle: { unroutedRequests: "asserts the server-only OTP endpoints are not exposed over HTTP" },
+  },
 );
 
 compatScenario(

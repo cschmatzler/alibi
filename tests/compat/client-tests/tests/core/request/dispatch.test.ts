@@ -262,6 +262,13 @@ for (const mode of [
       return results;
     },
     ["GET /ok", "POST /sign-in/email"],
+    30_000,
+    {
+      oracle: {
+        unroutedRequests:
+          "asserts trailing slashes, unknown paths and unknown methods are not routed",
+      },
+    },
   );
 }
 
