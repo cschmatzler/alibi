@@ -18,7 +18,7 @@ const secret = "verification-publication-application-secret32";
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const profile = (mode: "cache" | "mixed") => `/__test/profiles/verification-storage-${mode}-default/api/auth`;
 
-async function source(mode: "cache" | "mixed", generators: {otp: string; magic: string; transfer: string}) {
+async function source(mode: "cache" | "mixed", generators: {otp: string; magic: string; transfer: string}, extraEvidence = false) {
   const db = new Database(":memory:"), frames = new AsyncLocalStorage<Row>();
   const publications: Row[] = [], deliveries: Row[] = [], backendEvents: Row[] = [];
   const cache = new Map<string, {rawValue: string; expiresAt: string}>();
@@ -34,6 +34,7 @@ async function source(mode: "cache" | "mixed", generators: {otp: string; magic: 
       }});
     }
     const frame: Row = {request: {method: request.method, path, cookie: request.headers.get("cookie"), body: request.method === "GET" ? null : await request.clone().json(), startedAt: new Date().toISOString()}};
+    if (extraEvidence) frame.request.applicationReceipt = {stage: "request", nested: {kept: true}};
     return frames.run(frame, async () => {
       const response = await handler(request);
       frame.request.finishedAt = new Date().toISOString();
@@ -50,6 +51,7 @@ async function source(mode: "cache" | "mixed", generators: {otp: string; magic: 
         const executedAt = new Date().toISOString(), value = JSON.parse(rawValue), storedAt = Date.now();
         const storageExpiresAt = new Date(storedAt + ttl * 1000).toISOString();
         const event = {operation: "set", key, rawValue, value, ttl, executedAt, storedAt: new Date(storedAt).toISOString(), storageExpiresAt};
+        if (extraEvidence) Object.assign(event, {applicationReceipt: {stage: "set", nested: {kept: true}}});
         backendEvents.push(event); cache.set(key, {rawValue, expiresAt: storageExpiresAt});
         if (key.startsWith("verification:")) {
           const frame = frames.getStore()!;
@@ -65,6 +67,7 @@ async function source(mode: "cache" | "mixed", generators: {otp: string; magic: 
       async before(data) {
         const frame = frames.getStore()!;
         frame.pending = {request: frame.request, before: {snapshot: clone(data), executedAt: new Date().toISOString()}};
+        if (extraEvidence) {frame.pending.applicationReceipt = {stage: "outer", nested: {kept: true}}; frame.pending.before.applicationReceipt = {stage: "before", nested: {kept: true}};}
       },
       async after(data) { frames.getStore()!.pending.snapshot = clone(data); },
     }}},
@@ -82,8 +85,8 @@ async function source(mode: "cache" | "mixed", generators: {otp: string; magic: 
   return {db, server, baseURL, traces, fetch, client};
 }
 
-async function run(mode: "cache" | "mixed", generators: {otp: string; magic: string; transfer: string}, email: string) {
-  const instance = await source(mode, generators), startedAt = Date.now();
+async function run(mode: "cache" | "mixed", generators: {otp: string; magic: string; transfer: string}, email: string, extraEvidence = false) {
+  const instance = await source(mode, generators, extraEvidence), startedAt = Date.now();
   try {
     const foreign = await instance.client.signUp.email({email: `foreign-${email}`, password: "password123", name: "Foreign Owner"});
     expect(foreign.error).toBeNull();
@@ -141,6 +144,16 @@ for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} defa
     leftRequestWindows: a.traces.map(t => t[requestWindow]), rightRequestWindows: b.traces.map(t => t[requestWindow])};
   const differences = compareValues(a.root, b.root, context);
   expect(differences).toEqual([]);
+  // Genuine right-side application receipts are captured before HTTP delivery,
+  // so their original private observer digest is valid. They exercise field
+  // presence in every admitted dictionary rather than failing digest integrity.
+  const extra = await run(mode, generators, email, true);
+  const extraContext = {...context, rightBaseURL: extra.baseURL, rightStartedAt: extra.startedAt, rightFinishedAt: extra.finishedAt,
+    rightRequestWindows: extra.traces.map(t => t[requestWindow])};
+  const fields = compareValues(a.root, extra.root, extraContext);
+  for (const path of ["applicationReceipt", "request.applicationReceipt", "before.applicationReceipt", "set.applicationReceipt"])
+    expect(fields.some(d => d.path === `observation.verificationPublications.0.${path}` && d.reason === "field presence differs")).toBe(true);
+  expect(fields.some(d => d.path === "observation.aliases.0.applicationReceipt" && d.reason === "field presence differs")).toBe(true);
   const owning = "observation.verificationPublications.0.set.ttl";
   const original = b.root as Row;
   const controls: ((value: Row) => void)[] = [
@@ -162,10 +175,20 @@ for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} defa
   }
   const missing = {...context, rightRequestWindows: context.rightRequestWindows!.map((w, i) => i === 2 ? undefined : w)};
   expect(compareValues(a.root, b.root, missing).some(d => d.path === owning)).toBe(true);
+  const observerIndex = original.traces.findIndex((t: Row) => t.path === verificationPublicationObserver);
+  for (const digest of [undefined, "0".repeat(64), 123]) {
+    const changed = {...context, rightRequestWindows: context.rightRequestWindows!.map((w, i) => i === observerIndex ? {...w!, verificationObserverDigest: digest as any} : w)};
+    expect(compareValues(a.root, b.root, changed).some(d => d.path === owning)).toBe(true);
+  }
+  for (const endpoints of [{startedAt: NaN}, {finishedAt: Infinity}, {startedAt: "0"}, {finishedAt: -1}]) {
+    const changed = {...context, rightRequestWindows: context.rightRequestWindows!.map((w, i) => i === 2 ? {...w!, ...endpoints} as any : w)};
+    expect(compareValues(a.root, b.root, changed).some(d => d.path === owning)).toBe(true);
+  }
   // Even internally self-consistent forged observer records fail their actual
   // request/deadline floor rather than receiving a general one-second tolerance.
   for (const change of [
     (p: Row) => { p.set.ttl -= 2; },
+    (p: Row) => { p.before.executedAt = p.request.startedAt; p.set.ttl = Math.floor((Date.parse(p.snapshot.expiresAt) - Date.parse(p.before.executedAt)) / 1000); p.set.storageExpiresAt = new Date(Date.parse(p.set.storedAt) + p.set.ttl * 1000).toISOString(); p.applicationReceipt = "consistently changed hook interval"; },
     (p: Row) => { p.set.storageExpiresAt = new Date(Date.parse(p.set.storageExpiresAt) + 1000).toISOString(); },
     (p: Row) => { p.before.executedAt = new Date(Date.parse(p.request.startedAt) - 1).toISOString(); },
     (p: Row) => { delete p.before.executedAt; },

@@ -1,4 +1,5 @@
 import { Cookie, CookieJar } from "tough-cookie";
+import { createHash } from "node:crypto";
 import { jsonShape } from "./normalize";
 import { mutateTransport } from "./assurance/wire";
 export const requestWindow = Symbol("compat-request-window");
@@ -11,6 +12,8 @@ export type RequestWindow = {
   issuedSessionCookie?: string;
   /** Exact input of the three default verification-publication owners. */
   verificationInput?: unknown;
+  /** Integrity of the original complete parsed observer response, separate from compared output. */
+  verificationObserverDigest?: string;
 };
 
 /** Complete response observations, kept in memory; reports contain paths rather than secrets. */
@@ -210,6 +213,11 @@ export function createTracingFetch(
       } catch {
         /* A non-JSON body has no declared clock inputs. */
       }
+      let verificationObserverDigest: string | undefined;
+      if (request.method === "GET" && url.pathname === "/__test/verification-publications") {
+        try { verificationObserverDigest = createHash("sha256").update(JSON.stringify(JSON.parse(responseText))).digest("hex"); }
+        catch { /* A non-JSON response remains literal and has no publication admission. */ }
+      }
       const entry: TraceEntry = {
         [requestWindow]: {
           startedAt,
@@ -217,6 +225,7 @@ export function createTracingFetch(
           inputDates,
           ...(/\/(?:email-otp\/send-verification-otp|sign-in\/magic-link|one-time-token\/generate)$/.test(url.pathname)
             ? { verificationInput: requestText ? verificationInput : null } : {}),
+          ...(verificationObserverDigest ? { verificationObserverDigest } : {}),
           ...(inputOwner ? { inputOwner } : {}),
           ...sessionReceipt(headers, response.headers),
         },

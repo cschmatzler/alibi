@@ -631,8 +631,9 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
             }
           };
           const set = (left: Record<string, unknown>, right: Record<string, unknown>, target: string) => {
-            for (const field of Object.keys(left).sort()) {
+            for (const field of [...new Set([...Object.keys(left), ...Object.keys(right)])].sort()) {
               const child = `${target}.${field}`;
+              if (!Object.hasOwn(left, field) || !Object.hasOwn(right, field)) { fail(child, "field presence differs"); continue; }
               if (["ttl", "executedAt", "storedAt", "storageExpiresAt"].includes(field)) continue;
               if (field === "rawValue") snapshot(JSON.parse(String(left.rawValue)), JSON.parse(String(right.rawValue)), child);
               else if (field === "value") snapshot(left.value as Record<string, unknown>, right.value as Record<string, unknown>, child);
@@ -640,16 +641,20 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
             }
           };
           if (cacheSet) set(a, b, path);
-          else for (const field of Object.keys(a).sort()) {
-            const child = `${path}.${field}`, av = a[field] as Record<string, unknown>, bv = b[field] as Record<string, unknown>;
+          else for (const field of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+            const child = `${path}.${field}`;
+            if (!Object.hasOwn(a, field) || !Object.hasOwn(b, field)) { fail(child, "field presence differs"); continue; }
+            const av = a[field] as Record<string, unknown>, bv = b[field] as Record<string, unknown>;
             if (field === "set") set(av, bv, child);
             else if (field === "snapshot") snapshot(av, bv, child);
-            else if (field === "before") for (const key of Object.keys(av).sort()) {
+            else if (field === "before") for (const key of [...new Set([...Object.keys(av), ...Object.keys(bv)])].sort()) {
+              if (!Object.hasOwn(av, key) || !Object.hasOwn(bv, key)) { fail(`${child}.${key}`, "field presence differs"); continue; }
               if (key === "executedAt") continue;
               if (key === "snapshot") snapshot(av.snapshot as Record<string, unknown>, bv.snapshot as Record<string, unknown>, `${child}.snapshot`);
               else visit(av[key], bv[key], `${child}.${key}`, key);
             }
-            else if (field === "request") for (const key of Object.keys(av).sort()) {
+            else if (field === "request") for (const key of [...new Set([...Object.keys(av), ...Object.keys(bv)])].sort()) {
+              if (!Object.hasOwn(av, key) || !Object.hasOwn(bv, key)) { fail(`${child}.${key}`, "field presence differs"); continue; }
               if (["startedAt", "finishedAt"].includes(key)) continue;
               if (key === "cookie" && typeof av.cookie === "string" && typeof bv.cookie === "string")
                 visit({headers:{cookie:av.cookie}}, {headers:{cookie:bv.cookie}}, child, "");

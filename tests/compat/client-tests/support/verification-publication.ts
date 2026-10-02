@@ -57,7 +57,10 @@ export function verificationPublicationPairs(
     if (expiry! < requestStart! + lifetime || expiry! > requestEnd! + lifetime) return;
     const matching = traces.flatMap((trace, index) => {
       const window = windows?.[index];
-      if (!row(trace) || !window || trace.responseStatus !== 200 || trace.method !== req.method || trace.path !== req.path
+      if (!row(trace) || !window || typeof window.startedAt !== "number" || !Number.isFinite(window.startedAt)
+        || typeof window.finishedAt !== "number" || !Number.isFinite(window.finishedAt)
+        || !Number.isInteger(window.startedAt) || !Number.isInteger(window.finishedAt) || window.startedAt > window.finishedAt
+        || trace.responseStatus !== 200 || trace.method !== req.method || trace.path !== req.path
         || window.startedAt > requestStart! || window.finishedAt < requestEnd!
         || !Object.hasOwn(window, "verificationInput") || !exact(window.verificationInput, req.body)) return [];
       if (kind === "transfer" && (!window.sessionCookie || window.sessionCookie !== cookie(req.cookie))) return [];
@@ -90,6 +93,10 @@ export function verificationPublicationPairs(
       || trace.responseStatus !== 200 || other.responseStatus !== 200 || trace.actor !== other.actor
       || !row(trace.responseBody) || !row(other.responseBody)
       || !Array.isArray(trace.responseBody.publications) || !Array.isArray(other.responseBody.publications)) return;
+    const trusted = (body: unknown, window: RequestWindow | undefined) => typeof window?.verificationObserverDigest === "string"
+      && /^[a-f0-9]{64}$/.test(window.verificationObserverDigest)
+      && window.verificationObserverDigest === createHash("sha256").update(JSON.stringify(body)).digest("hex");
+    const original = trusted(trace.responseBody, leftWindows?.[index]) && trusted(other.responseBody, rightWindows?.[index]);
     const others = other.responseBody.publications;
     trace.responseBody.publications.forEach((a, publicationIndex) => {
       const b = others[publicationIndex];
@@ -98,7 +105,7 @@ export function verificationPublicationPairs(
       const sameProducer = pa && pb && pa.index === pb.index && pa.kind === pb.kind
         && row(lt[pa.index]) && row(rt[pb.index]) && lt[pa.index].actor === rt[pb.index].actor;
       const transfer = sameProducer && pa.kind === "transfer";
-      const valid = !!sameProducer && (!transfer || (!!pa.cookie && !!pb.cookie
+      const valid = original && !!sameProducer && (!transfer || (!!pa.cookie && !!pb.cookie
         && row(a.snapshot) && row(b.snapshot) && typeof a.snapshot.value === "string" && typeof b.snapshot.value === "string"
         && sessionPair(a.snapshot.value, b.snapshot.value, pa.cookie, pb.cookie)));
       result.push({left: a, right: b, producerIndex: pa?.index ?? -1, kind: pa?.kind ?? "otp", valid});

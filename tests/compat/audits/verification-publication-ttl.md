@@ -66,3 +66,32 @@ assertions, with no clock/Source/fixture patch. The complete harness passed
 were added. Its initial 77/78 result was dependency setup (reference
 node_modules absent), repaired by the unchanged frozen-lockfile install.
 Final immutable-head gates are pending. No production-coverage claim is made.
+
+Independent review of44f found a real right-only-field loss in its admitted
+outer/request/before/set dictionaries. Their iteration now uses complete key
+unions with explicit presence checks, matching the snapshot dictionary. The
+actual right-side Source application can add ordinary receipt fields before
+HTTP observation, retaining a valid original response digest. The regression
+asserts the precise extra-field path in every dictionary and the cache alias.
+`/tmp/issue302-presence-before-after.json` records the exact actual Source pair:
+44f misses all five owning fields, while the repair reports all five. Shape
+comparisons also record the extra fields; they are not substituted for the
+missing complete-body checks.
+
+The exact observer's private HTTP RequestWindow now holds SHA256 of its
+complete originally parsed response, separate from mutable compared output.
+Admission first requires that original digest. Consistently changed observer
+and alias clocks/deadlines remain rejected even when their fabricated interval
+would fit inside the request. Missing/different/malformed digests and
+nonfinite, nonnumeric, reversed or absent private request endpoints reject at
+the owning TTL path. All full raw records remain present. This integrity
+binding creates no hashing exemption for other response or application data.
+
+The retained44f canonical terminated100 after1423/1426 SDK owners and91854
+assertions. The failures were the existing174 reset proof length, ten session
+expiry paths in organization addition observation5, and eighteen created/expiry
+keyring aliases across legacy/manual/recovered observations. The latter were
+observed as ~3.3s and ~2.4–2.7s phase offsets; exact new alias reproduction on
+unchanged main is not claimed. Strict/default793/feature845/fixture2/harness78
+and transport36 passed before that terminal SDK failure. Browser, docs and
+coverage were unreached, with no passing claim.
