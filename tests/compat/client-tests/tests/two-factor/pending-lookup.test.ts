@@ -5,7 +5,7 @@ import { Cookie } from "tough-cookie";
 import { z } from "zod";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
-import { generateCurrentTotp } from "./totp-helper";
+import { generateCurrentTotp } from "../../support/totp";
 
 const verification = z.object({
   id: z.string(),

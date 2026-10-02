@@ -1,19 +1,8 @@
 import { expect } from "bun:test";
 import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
-import {
-  CONTRACT,
-  control,
-  EOA,
-  identity,
-  message,
-  nonce,
-  SECOND_EOA,
-  signature,
-  siweActor,
-  state,
-  verify,
-} from "./helpers";
+import { CONTRACT, EOA, message, SECOND_EOA, signature } from "../../support/siwe-wallet";
+import { control, identity, nonce, siweActor, state, verify } from "./helpers";
 
 compatScenario(
   "SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",

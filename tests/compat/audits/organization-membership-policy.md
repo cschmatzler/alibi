@@ -57,7 +57,7 @@ and other native errors retain their original typed/public contracts. Removal's
 last-owner guard uses the configured member read page without invoking a resolver.
 
 Primary SDK owner is
-`tests/organization-extensions/membership-policy.test.ts`. Four connected scenarios
+`tests/organization/membership-policy.test.ts`. Four connected scenarios
 retain whole callbacks, raw organization metadata, all actual organization/member/
 invitation/team rows, user/account/session state, and complete official-client
 transport. The private application fixture calls published `auth.api.addMember`

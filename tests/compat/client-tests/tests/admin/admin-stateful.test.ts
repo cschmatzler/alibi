@@ -3,7 +3,7 @@ import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
-import { adminActor, signUpAndPromoteAdmin } from "../admin/helpers";
+import { adminActor, signUpAndPromoteAdmin } from "./helpers";
 
 const persistedUserState = z.object({
   user: z

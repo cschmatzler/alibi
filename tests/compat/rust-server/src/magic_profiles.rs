@@ -1,6 +1,6 @@
 //! Local magic-link delivery and explicit configuration fixtures.
 use crate::TestSchema;
-use crate::passwordless_numeric_fixture::numeric_setting;
+use crate::fixtures::passwordless_numeric_fixture::numeric_setting;
 use async_trait::async_trait;
 use axum::{Json, Router, extract::Query, routing::get};
 use better_auth::integrations::axum::AxumIntegration;
@@ -36,7 +36,8 @@ impl SendMagicLink for Sender {
         } else {
             delivery.token.clone()
         };
-        let context = crate::passwordless_context::snapshot(_context, &identifier).await?;
+        let context =
+            crate::fixtures::passwordless_context::snapshot(_context, &identifier).await?;
         let serialized = serde_json::to_value(delivery)?;
         let mut value = json!({"url": serialized["url"], "token": serialized["token"], "metadata": serialized["metadata"]});
         if let Some(context) = context {

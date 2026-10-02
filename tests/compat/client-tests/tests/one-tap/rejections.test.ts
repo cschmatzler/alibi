@@ -1,6 +1,7 @@
 import { expect } from "bun:test";
+import { credential, issuedAt, signedRawToken } from "../../support/id-token";
 import { compatScenario } from "../../support/scenario";
-import { credential, issuedAt, oneTap, responseSchema, signedRawToken, state } from "./helpers";
+import { oneTap, responseSchema, state } from "./helpers";
 
 compatScenario(
   "One Tap cryptographic and Google claim rejections leave identities unchanged",

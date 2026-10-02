@@ -49,7 +49,7 @@ No new session-management interface or policy seam is introduced.
 ## Primary owner and meaningful baseline
 
 Five cases extend the existing official-client
-`tests/organization-extensions/member-role-hooks.test.ts` primary owner:
+`tests/organization/member-role-hooks.test.ts` primary owner:
 
 * Authenticated empty strings, arrays and normalized-empty roles reject without
   actual hook receipts or any SQL state change; a legitimate retry persists its

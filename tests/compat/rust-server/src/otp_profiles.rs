@@ -1,5 +1,5 @@
 //! Local delivery, configuration and server-only OTP fixture interfaces.
-use crate::passwordless_numeric_fixture::numeric_setting;
+use crate::fixtures::passwordless_numeric_fixture::numeric_setting;
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use async_trait::async_trait;
 use axum::{
@@ -59,7 +59,8 @@ impl SendEmailOtp for Sender {
         } else {
             format!("{}-otp-{}", delivery.otp_type.as_str(), delivery.email)
         };
-        let context = crate::passwordless_context::snapshot(_context, &identifier).await?;
+        let context =
+            crate::fixtures::passwordless_context::snapshot(_context, &identifier).await?;
         let key = format!("{}:{}", delivery.otp_type.as_str(), delivery.email);
         let generator = self
             .0
@@ -90,7 +91,7 @@ impl better_auth::plugins::email_otp::EmailOtpGenerator for Sender {
         kind: EmailOtpType,
         context: &better_auth_core::CallbackContext,
     ) -> AuthResult<Option<String>> {
-        if let Some(mut snapshot) = crate::passwordless_context::snapshot(
+        if let Some(mut snapshot) = crate::fixtures::passwordless_context::snapshot(
             context,
             &format!("{}-otp-{email}", kind.as_str()),
         )

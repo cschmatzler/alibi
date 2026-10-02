@@ -1,7 +1,7 @@
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { compatScenario } from "../../support/scenario";
-import { generateCurrentTotp } from "./totp-helper";
+import { generateCurrentTotp } from "../../support/totp";
 
 function twoFactorActor(
   ctx: Parameters<Parameters<typeof compatScenario>[1]>[0],

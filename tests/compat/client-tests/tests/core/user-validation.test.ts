@@ -9,10 +9,11 @@ import {
 } from "better-auth/client/plugins";
 import { verifyPassword } from "better-auth/crypto";
 import { decodeJwt } from "jose";
+import { credential } from "../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
-import { credential, oneTap } from "../one-tap/helpers";
-import { EOA, message, SECOND_EOA, signature } from "../siwe/helpers";
+import { EOA, message, SECOND_EOA, signature } from "../../support/siwe-wallet";
+import { oneTap } from "../one-tap/helpers";
 
 type Row = Record<string, any>;
 type State = {

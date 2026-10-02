@@ -1,9 +1,10 @@
 import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 import { decodeJwt, decodeProtectedHeader } from "jose";
+import { credential, issuedAt, signedRawToken } from "../../support/id-token";
 import type { FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
-import { credential, issuedAt, signedRawToken, state } from "../one-tap/helpers";
+import { state } from "../one-tap/helpers";
 
 type Row = Record<string, unknown>;
 type Store = {

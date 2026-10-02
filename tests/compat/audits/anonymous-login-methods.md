@@ -39,7 +39,7 @@ separate snapshot boundaries, not claims of this new producer.
 
 ## Real method and persistence owners
 
-`tests/core/anonymous-methods.test.ts` shares setup but owns one scenario per
+`tests/anonymous/methods.test.ts` shares setup but owns one scenario per
 distinct verified login branch. Actual application delivery callbacks produce
 mailbox URLs/tokens, OTPs and phone codes. Real One Tap RS256 and software ES256
 passkey proofs use the existing local-key/cryptographic factories. The only

@@ -52,7 +52,7 @@ copying, malformed historical context fields, expiry and wrong state cookies.
 
 ## Primary evidence and credible failures
 
-`tests/core/anonymous.test.ts` has five official-client owners for issue/delete,
+`tests/anonymous/anonymous.test.ts` has five official-client owners for issue/delete,
 original snapshot transfer, stage-specific cancellation/configuration effects,
 cookie-less OAuth transfer, and signed preference inheritance/tampering. Each
 retains the actual SDK results, complete canonical transport, real callback

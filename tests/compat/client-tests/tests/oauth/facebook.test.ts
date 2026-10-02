@@ -1,8 +1,8 @@
 import { expect } from "bun:test";
 import { createPublicKey, generateKeyPairSync, sign } from "node:crypto";
+import { credential, issuedAt } from "../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
-import { credential, issuedAt } from "../one-tap/helpers";
 
 type Row = Record<string, unknown>;
 type Stored = {

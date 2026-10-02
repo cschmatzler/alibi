@@ -55,7 +55,7 @@ schema API does not promise replacing the member model with a custom entity.
 
 ## Primary evidence
 
-`tests/organization-extensions/member-role-hooks.test.ts` owns six meaningful
+`tests/organization/member-role-hooks.test.ts` owns six meaningful
 SDK scenarios: normalized callback input/empty and absent patch fallback,
 unregistered nonempty patch and next-request denial; before/after error state;
 foreign membership and role validation before callbacks; original target user

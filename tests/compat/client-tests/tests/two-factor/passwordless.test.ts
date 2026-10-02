@@ -4,8 +4,8 @@ import { twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
+import { generateCurrentTotp } from "../../support/totp";
 import { disableGuestValidation } from "./disable-validation";
-import { generateCurrentTotp } from "./totp-helper";
 
 function clientFor(ctx: ScenarioContext, profile: FixtureProfile, name = "owner") {
   return createAuthClient({

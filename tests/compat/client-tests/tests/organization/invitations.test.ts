@@ -272,9 +272,7 @@ compatScenario(
 compatScenario(
   "organization server invitation listing scopes email and applies configured page limits before status filtering",
   async (ctx) => {
-    const { data, orgActor, signUp, serverOperation, state } = await import(
-      "../organization-extensions/helpers"
-    );
+    const { data, orgActor, signUp, serverOperation, state } = await import("./helpers");
     const profile = "org-roles-callback" as const;
     const owner = await signUp(ctx, "list-page-owner", profile);
     const invitee = await signUp(ctx, "list-page-invitee", profile);

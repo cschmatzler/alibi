@@ -58,7 +58,7 @@ an absent functional-team session to empty 401, matching its actual published
 server-call observations. This private application wrapper is not a new public
 HTTP error contract.
 
-Primary SDK owner: `tests/organization-extensions/member-addition.test.ts`.
+Primary SDK owner: `tests/organization/member-addition.test.ts`.
 It invokes real `auth.api.addMember` through an application-owned `/__test` control
 and the public native helper. Real official-client signup, organization/team/session
 operations set up both runtimes. Actual SQLite state, delivered callback receipts,

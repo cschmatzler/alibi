@@ -145,7 +145,7 @@ The separately reviewable SDK extension is based on master `8c0c8dc1` with the
 frozen storage prerequisite `0d0ba40c` and installed-FK guard `5324954f`.
 It changes only the existing private member-addition application fixtures,
 adds four literal configuration profiles, and adds three primary owners in
-`tests/organization-extensions/member-multiplicity.test.ts`. Existing primary
+`tests/organization/member-multiplicity.test.ts`. Existing primary
 owners, the comparator, default deadlines, production handlers, schemas, main
 fixture registrations, dependencies and inventories remain unchanged.
 

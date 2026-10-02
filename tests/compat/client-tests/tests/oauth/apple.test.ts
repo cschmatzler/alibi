@@ -1,7 +1,7 @@
 import { expect } from "bun:test";
+import { credential, issuedAt } from "../../support/id-token";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
-import { credential, issuedAt } from "../one-tap/helpers";
 
 async function state(ctx: ScenarioContext) {
   const result = await ctx.rawRequest({ path: "/__test/social-provider/state" });

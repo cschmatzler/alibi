@@ -146,7 +146,7 @@ mod tests {
         );
         contains_or_panic(
             "tests/compat/reference-server/port-openapi-annotations.ts",
-            &format!("plugin.version!==\"{version}\""),
+            &format!("plugin.version !== \"{version}\""),
         );
         contains_or_panic(
             "tests/compat/rust-server/src/main.rs",

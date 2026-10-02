@@ -1,6 +1,9 @@
 import { expect } from "bun:test";
+import { decodeJwt, decodeProtectedHeader } from "jose";
+import { credential } from "../../support/id-token";
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
+import { state as googleState } from "../one-tap/helpers";
 
 type Row = Record<string, unknown>;
 type State = {
@@ -398,8 +401,6 @@ compatScenario(
 compatScenario(
   "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
   async (ctx) => {
-    const { credential, state: googleState } = await import("../one-tap/helpers");
-    const { decodeJwt, decodeProtectedHeader } = await import("jose");
     const owner = ctx.actor("owner", "google-id-default"),
       foreign = ctx.actor("foreign", "google-id-default");
     const signup = await foreign.client.signUp.email({

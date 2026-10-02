@@ -22,7 +22,7 @@ uses the configured persistent lifetime when the first preference is invalid.
 It does not modify the persisted expiry itself.
 
 The official-client lifecycle scenario in
-`tests/organization-extensions/set-active-cookies.test.ts` signs in with
+`tests/organization/set-active-cookies.test.ts` signs in with
 `rememberMe:false`, creates a real organization, and observes the same stored
 session through selection, clearing, and an already-unselected no-cookie
 request. Both returned browser-session cookies lack `Max-Age` and `Expires`;

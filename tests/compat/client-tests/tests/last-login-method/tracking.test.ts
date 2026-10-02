@@ -15,7 +15,7 @@ import { z } from "zod";
 import { Authenticator } from "../../support/authenticator";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
-import { message as walletMessage, signature as walletSignature } from "../siwe/helpers";
+import { message as walletMessage, signature as walletSignature } from "../../support/siwe-wallet";
 
 function actor(ctx: ScenarioContext, name: string, profile: FixtureProfile) {
   const cookies: string[][] = [];

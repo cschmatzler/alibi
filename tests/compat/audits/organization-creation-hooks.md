@@ -57,7 +57,7 @@ and persist; these supported patches are not revalidated by the Rust owner.
 
 ## Proof and regression value
 
-`tests/organization-extensions/creation-hooks.test.ts` owns seven real
+`tests/organization/creation-hooks.test.ts` owns seven real
 HTTP/official-client scenarios with private application fixtures:
 
 - Patches affect actual stored organization/member/default-team rows, callback

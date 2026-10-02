@@ -595,7 +595,7 @@ compatScenario(
 compatScenario(
   "server endpoint factor operations execute actual crypto and decrypt real enrolled backup codes",
   async (ctx) => {
-    const { hotpAtCounter } = await import("../two-factor/totp-helper");
+    const { hotpAtCounter } = await import("../../support/totp");
     await call(ctx, { operation: "deleteAllExpiredApiKeys", mode: "reset-app" });
     const signed = await signedSignup(ctx, "factor-owner"),
       issued = await keyFor(ctx, signed.user.id, "factor-dispatch-key");

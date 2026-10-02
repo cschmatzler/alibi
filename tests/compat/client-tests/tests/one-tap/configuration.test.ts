@@ -1,7 +1,8 @@
 import { expect } from "bun:test";
 import { z } from "zod";
+import { credential } from "../../support/id-token";
 import { compatScenario } from "../../support/scenario";
-import { credential, oneTap, responseSchema, state, successful } from "./helpers";
+import { oneTap, responseSchema, state, successful } from "./helpers";
 
 const deliverySchema = z.object({ url: z.string(), token: z.string() });
 compatScenario(

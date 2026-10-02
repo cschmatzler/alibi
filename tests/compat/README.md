@@ -295,12 +295,16 @@ Run these in `devenv shell` after installing both projects with
 bun run --cwd tests/compat/client-tests format:check
 bun run --cwd tests/compat/client-tests typecheck
 bun test --cwd tests/compat/client-tests harness
-cargo nextest run --test client_compat_tests passkey_client_compat --run-ignored only --no-capture
-cargo nextest run --test client_compat_tests browser_client_compat --run-ignored only --no-capture
-cargo nextest run --test client_compat_tests organization_teams_client_compat --run-ignored only --no-capture
-cargo nextest run --test client_compat_tests organization_dynamic_roles_client_compat --run-ignored only --no-capture
+tests/compat/client-tests/run-against-both.sh passkey
+tests/compat/client-tests/run-against-both.sh browser
+tests/compat/client-tests/run-against-both.sh tests/organization/teams.test.ts
 ./scripts/alignment-check.sh
 ```
+
+Every directory under `client-tests/tests` has a `<directory>_client_compat`
+runner in `tests/client_compat_tests.rs`, and a guard test keeps that list in
+sync. File-level runs go through `selected_client_compat`, which reads the
+space-separated paths in `BETTER_AUTH_COMPAT_PATHS`.
 
 The Rust orchestrator starts and checks both servers on allocated ports and
 stops them on completion. Direct Bun scenario runs require running reference

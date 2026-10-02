@@ -3,8 +3,9 @@ import { createAuthClient } from "better-auth/client";
 import { siweClient } from "better-auth/client/plugins";
 import { RUST_BASE_URL, requireHealthy, TS_BASE_URL } from "../../support/config";
 import { resetServerState } from "../../support/controls";
+import { message, SECOND_EOA, signature } from "../../support/siwe-wallet";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../../support/trace";
-import { identity, message, SECOND_EOA, signature, stateSchema } from "./helpers";
+import { identity, stateSchema } from "./helpers";
 
 // This owner intentionally asserts each runtime's literal opaque diagnostic:
 // Bun's enumerable methods have no native transport-object representation.

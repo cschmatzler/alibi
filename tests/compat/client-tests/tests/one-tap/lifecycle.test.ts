@@ -1,14 +1,7 @@
 import { expect } from "bun:test";
+import { credential, issuedAt, signedRawToken } from "../../support/id-token";
 import { compatScenario } from "../../support/scenario";
-import {
-  credential,
-  issuedAt,
-  oneTap,
-  responseSchema,
-  signedRawToken,
-  state,
-  successful,
-} from "./helpers";
+import { oneTap, responseSchema, state, successful } from "./helpers";
 
 compatScenario(
   "One Tap official client binds verified Google accounts and persisted sessions",

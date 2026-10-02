@@ -3,9 +3,10 @@ import { createHmac } from "node:crypto";
 import { createAuthClient } from "better-auth/client";
 import { twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
+import { credential } from "../../support/id-token";
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
-import { credential, oneTap, responseSchema, state, successful } from "./helpers";
+import { oneTap, responseSchema, state, successful } from "./helpers";
 
 function totp(uri: string) {
   const parsed = new URL(uri);

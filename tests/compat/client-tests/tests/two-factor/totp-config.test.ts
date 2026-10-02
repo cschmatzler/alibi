@@ -4,7 +4,7 @@ import { twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
 import { authProfilePath, type FixtureProfile } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
-import { generateCurrentTotp, hotpAtCounter, redactTwoFactorPayload } from "./totp-helper";
+import { generateCurrentTotp, hotpAtCounter, redactTwoFactorPayload } from "../../support/totp";
 
 function clientFor(
   ctx: Parameters<Parameters<typeof compatScenario>[1]>[0],

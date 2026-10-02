@@ -12,7 +12,7 @@ Only the update handler's selection changes. An empty explicit ID falls back to 
 
 ## Evidence and primary ownership
 
-Two official-client differential scenarios in `tests/organization-extensions/update-patches.test.ts` use two organization owners, three organizations, and two tokens belonging to the first owner with distinct active selections. Both selections are established by actual organization creation on each token, avoiding an unrelated set-active response discrepancy. A third unselected token establishes the missing-selection rejection branch.
+Two official-client differential scenarios in `tests/organization/update-patches.test.ts` use two organization owners, three organizations, and two tokens belonging to the first owner with distinct active selections. Both selections are established by actual organization creation on each token, avoiding an unrelated set-active response discrepancy. A third unselected token establishes the missing-selection rejection branch.
 
 The logo scenario verifies omission on a successful name update, SQL null clearing, an accepted empty string, and a replacement string. It observes actual SQLite logo values and exact raw metadata JSON text, retains unrelated organizations/members and both token selections, and rejects a foreign owner's explicit nullable patch plus a guest nullable patch before retrying successfully as the owner. The selector scenario updates the current token's selected organization with a blank ID, then the second token's different organization; the other organization remains unchanged at each step. It rejects an unselected token, allows another owner's own selection, and preserves every unrelated row and token.
 

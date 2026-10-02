@@ -9,7 +9,7 @@ import { twoFactor } from "better-auth/plugins";
 import { z } from "zod";
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
-import { generateCurrentTotp } from "./totp-helper";
+import { generateCurrentTotp } from "../../support/totp";
 
 const secret = ["compat", "test", "only", "key", "not", "real", "minimum", "32chars"].join("-");
 const factorSchema = z.object({

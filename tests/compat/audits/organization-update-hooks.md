@@ -55,7 +55,7 @@ zero-row update are separately exercised, not simulated by a fake adapter.
 
 ## Evidence and test ownership
 
-`tests/organization-extensions/update-hooks.test.ts` is the primary official-
+`tests/organization/update-hooks.test.ts` is the primary official-
 client owner. Seven scenarios observe actual callback receipts and physical SQLite
 rows on both servers: supported patches/parsed output, before/after rejection
 ordering, validation/authentication/foreign membership/duplicate guards before

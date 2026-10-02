@@ -4,7 +4,7 @@ import { twoFactorClient } from "better-auth/client/plugins";
 import { z } from "zod";
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario } from "../../support/scenario";
-import { generateCurrentTotp, redactTwoFactorPayload } from "./totp-helper";
+import { generateCurrentTotp, redactTwoFactorPayload } from "../../support/totp";
 
 const factorSchema = z.object({
   secret: z.string(),

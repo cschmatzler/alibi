@@ -75,7 +75,7 @@ matching Source's ignored callback returns. Existing callers default to no hooks
 ## Primary proof and regression controls
 
 The official-client primary owner is
-`tests/organization-extensions/invitation-staging.test.ts`. Its shared setup uses
+`tests/organization/invitation-staging.test.ts`. Its shared setup uses
 real signup, organization/team/invitation creation, a separate owned sibling
 session and a foreign user/organization. All original owner/peer/member/team/
 invitation/session columns and dates observed by the application are retained.

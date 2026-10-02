@@ -8,7 +8,7 @@ actual update returns no organization. It does not install an update callback
 when the plugin's hook option is absent.
 
 The primary official-client owner is
-`tests/organization-extensions/update-default-storage.test.ts`. Its empty,
+`tests/organization/update-default-storage.test.ts`. Its empty,
 schema-valid patch reaches the real Bun/Kysely prepared query; the reference
 server logs `SQLiteError: near "where": syntax error`. The actual response is
 HTTP 500, body `""`, with no Content-Type. An ordinary retry succeeds. A real

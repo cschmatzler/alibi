@@ -1,7 +1,8 @@
 import { expect } from "bun:test";
 import { makeSignature, symmetricDecodeJWT, symmetricEncodeJWT } from "better-auth/crypto";
+import { credential } from "../../support/id-token";
 import { compatScenario } from "../../support/scenario";
-import { credential, state, successful } from "./helpers";
+import { state, successful } from "./helpers";
 
 const secret = "compat-test-only-key-not-real-minimum-32chars";
 compatScenario(

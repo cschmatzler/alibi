@@ -102,7 +102,7 @@ extra privileged test-utils plugin in production: tests/application embedding us
 existing native public stores, lifecycle hooks, session manager, cookie helpers
 and controlled fixture operations. The stronger existing differential owners are
 `tests/passwordless/email-otp.test.ts`, `tests/server-endpoints/dispatch.test.ts`,
-`tests/organization-extensions/member-addition.test.ts` and the user-lifecycle
+`tests/organization/member-addition.test.ts` and the user-lifecycle
 owners described in [user-lifecycle.md](user-lifecycle.md) and
 [server-endpoint-dispatch.md](server-endpoint-dispatch.md).
 

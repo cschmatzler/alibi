@@ -4,9 +4,9 @@ import { organizationClient, twoFactorClient } from "better-auth/client/plugins"
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
+import { generateCurrentTotp, redactTwoFactorPayload } from "../../support/totp";
 import { organizationActor } from "../organization/helpers";
 import { disableGuestValidation } from "./disable-validation";
-import { generateCurrentTotp, redactTwoFactorPayload } from "./totp-helper";
 
 function twoFactorActor(
   ctx: Parameters<Parameters<typeof compatScenario>[1]>[0],

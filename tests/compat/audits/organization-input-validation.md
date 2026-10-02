@@ -16,7 +16,7 @@ The allowed-media check precedes JSON parsing and retains the original header in
 
 ## Observable proof and primary test ownership
 
-Four official-client differential scenarios in `tests/organization-extensions/input-validation.test.ts` own this boundary:
+Four official-client differential scenarios in `tests/organization/input-validation.test.ts` own this boundary:
 
 - Record-only metadata rejection on create and update at an already-reached asynchronous limit, with raw overflowing Number controls, unchanged policy receipts, and persisted organization/member/session/orphan observations. A valid nested record and `{}` retry establish successful response and exact stored JSON text.
 - Ordered malformed guest input before authentication, rejected authenticated empty/null updates, malformed JSON, the schema-valid guest response, and a successful persisted name/slug retry preserving metadata and session selections.

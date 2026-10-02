@@ -290,9 +290,7 @@ compatScenario(
 compatScenario(
   "raw team member ID coercion selects infinity owners before JSON normalization",
   async (ctx) => {
-    const { data, state, signUp, serverOperation } = await import(
-      "../organization-extensions/helpers"
-    );
+    const { data, state, signUp, serverOperation } = await import("../organization/helpers");
     const owner = await signUp(ctx, "numeric-coercion-owner");
     const actor = ctx.actor("numeric-coercion-owner", "org-teams");
     const org = data(

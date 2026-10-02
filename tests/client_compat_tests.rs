@@ -269,100 +269,85 @@ async fn run_client_compat_in_environment(
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn account_management_client_compat() {
-        run_client_compat(&["tests/account-management"]).await;
+    /// One focused runner per scenario directory under `client-tests/tests`.
+    macro_rules! directory_runners {
+        ($($name:ident => $directory:literal,)+) => {
+            const DIRECTORIES: &[&str] = &[$($directory),+];
+
+            $(
+                #[tokio::test]
+                #[ignore = "starts external TS and Rust servers"]
+                async fn $name() {
+                    run_client_compat(&[concat!("tests/", $directory)]).await;
+                }
+            )+
+        };
     }
 
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn admin_client_compat() {
-        run_client_compat(&["tests/admin"]).await;
+    directory_runners! {
+        account_management_client_compat => "account-management",
+        admin_client_compat => "admin",
+        anonymous_client_compat => "anonymous",
+        api_key_client_compat => "api-key",
+        captcha_client_compat => "captcha",
+        core_client_compat => "core",
+        custom_session_client_compat => "custom-session",
+        device_authorization_client_compat => "device-authorization",
+        email_verification_client_compat => "email-verification",
+        generated_client_compat => "generated",
+        generic_oauth_client_compat => "generic-oauth",
+        jwt_client_compat => "jwt",
+        last_login_method_client_compat => "last-login-method",
+        magic_link_client_compat => "magic-link",
+        multiple_sessions_client_compat => "multiple-sessions",
+        oauth_client_compat => "oauth",
+        one_tap_client_compat => "one-tap",
+        one_time_token_client_compat => "one-time-token",
+        open_api_client_compat => "open-api",
+        organization_client_compat => "organization",
+        passkey_client_compat => "passkey",
+        password_management_client_compat => "password-management",
+        passwordless_client_compat => "passwordless",
+        phone_number_client_compat => "phone-number",
+        server_endpoints_client_compat => "server-endpoints",
+        sessions_client_compat => "sessions",
+        siwe_client_compat => "siwe",
+        two_factor_client_compat => "two-factor",
+        user_management_client_compat => "user-management",
+        username_client_compat => "username",
     }
 
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn api_key_client_compat() {
-        run_client_compat(&["tests/api-key"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn core_client_compat() {
-        run_client_compat(&["tests/core"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn device_authorization_client_compat() {
-        run_client_compat(&["tests/device-authorization"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn email_verification_client_compat() {
-        run_client_compat(&["tests/email-verification"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn generic_oauth_client_compat() {
-        run_client_compat(&["tests/generic-oauth"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn oauth_client_compat() {
-        run_client_compat(&["tests/oauth"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn organization_client_compat() {
-        run_client_compat(&["tests/organization"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn passkey_client_compat() {
-        run_client_compat(&["tests/passkey"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn password_management_client_compat() {
-        run_client_compat(&["tests/password-management"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn sessions_client_compat() {
-        run_client_compat(&["tests/sessions"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
-    async fn siwe_client_compat() {
-        run_client_compat(&["tests/siwe"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn two_factor_client_compat() {
-        run_client_compat(&["tests/two-factor"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn user_management_client_compat() {
-        run_client_compat(&["tests/user-management"]).await;
+    #[test]
+    fn every_scenario_directory_has_a_runner() {
+        let root = project_root().join("tests/compat/client-tests/tests");
+        let mut directories: Vec<String> = std::fs::read_dir(&root)
+            .unwrap_or_else(|error| panic!("failed to read {}: {error}", root.display()))
+            .map(|entry| entry.unwrap_or_else(|error| panic!("failed to read entry: {error}")))
+            .filter(|entry| entry.path().is_dir())
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        directories.sort();
+        assert_eq!(directories, DIRECTORIES);
     }
 
     #[tokio::test]
     #[ignore = "starts external TS and Rust servers"]
     async fn full_client_compat() {
         run_client_compat(&["tests"]).await;
+    }
+
+    /// Runs the space-separated client-test paths in `BETTER_AUTH_COMPAT_PATHS`.
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn selected_client_compat() {
+        let paths = std::env::var("BETTER_AUTH_COMPAT_PATHS")
+            .unwrap_or_else(|_| panic!("BETTER_AUTH_COMPAT_PATHS must name client-test paths"));
+        let paths: Vec<&str> = paths.split_whitespace().collect();
+        assert!(
+            !paths.is_empty(),
+            "BETTER_AUTH_COMPAT_PATHS must name client-test paths"
+        );
+        run_client_compat(&paths).await;
     }
 
     #[tokio::test]
@@ -375,117 +360,5 @@ mod tests {
     #[ignore = "starts external TS and Rust servers and Chromium"]
     async fn browser_client_compat() {
         run_client_compat(&["browser"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn one_time_token_client_compat() {
-        run_client_compat(&["tests/one-time-token"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires local TypeScript/Rust fixture servers"]
-    async fn jwt_client_compat() {
-        run_client_compat(&["tests/jwt"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn server_endpoints_client_compat() {
-        run_client_compat(&["tests/server-endpoints"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn organization_teams_client_compat() {
-        run_client_compat(&["tests/organization-extensions/teams.test.ts"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn organization_dynamic_roles_client_compat() {
-        run_client_compat(&["tests/organization-extensions/dynamic-roles.test.ts"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn json_numbers_client_compat() {
-        run_client_compat(&["tests/core/json-numbers.test.ts"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn phone_number_client_compat() {
-        run_client_compat(&["tests/phone-number"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn two_factor_trust_client_compat() {
-        run_client_compat(&["tests/two-factor/trust-ttl.test.ts"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn username_availability_client_compat() {
-        run_client_compat(&["tests/username"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn multiple_sessions_client_compat() {
-        run_client_compat(&["tests/multiple-sessions"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn two_factor_totp_client_compat() {
-        run_client_compat(&["tests/two-factor/totp-config.test.ts"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires Bun and the compatibility fixtures"]
-    async fn two_factor_lockout_client_compat() {
-        run_client_compat(&["tests/two-factor/lockout.test.ts"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
-    async fn two_factor_skip_order_client_compat() {
-        run_client_compat(&["tests/two-factor/skip-order.test.ts"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
-    async fn two_factor_pending_cancel_client_compat() {
-        run_client_compat(&["tests/two-factor/pending-cancel.test.ts"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
-    async fn two_factor_passwordless_client_compat() {
-        run_client_compat(&["tests/two-factor/passwordless.test.ts"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
-    async fn two_factor_otp_config_client_compat() {
-        run_client_compat(&["tests/two-factor/otp-config.test.ts"]).await;
-    }
-
-    #[tokio::test]
-    #[ignore = "starts external TS and Rust servers"]
-    async fn organization_hooks_client_compat() {
-        run_client_compat(&[
-            "tests/organization-extensions/creation-hooks.test.ts",
-            "tests/organization-extensions/deletion-hooks.test.ts",
-        ])
-        .await;
-    }
-
-    #[tokio::test]
-    #[ignore = "requires the pinned Bun and Rust compatibility servers"]
-    async fn captcha_client_compat() {
-        run_client_compat(&["tests/captcha"]).await;
     }
 }
