@@ -1,6 +1,83 @@
 use super::*;
 
 #[tokio::test]
+async fn direct_initialization_preserves_configured_adapter_output_and_committed_observers() {
+    use better_auth_core::field_policy::FieldConfig;
+    use better_auth_core::utils::json::JsValue;
+
+    let (plain, raw) = store().await;
+    let mut configured = plain.clone();
+    for (fields, name) in [
+        (&mut configured.user.additional_fields, "role"),
+        (&mut configured.account.additional_fields, "scope"),
+    ] {
+        drop(fields.insert(
+            name.into(),
+            FieldConfig::new(serde_json::json!({"type":"string"})).transform_output(
+                |value| async move {
+                    let value = value.map(|value| value.to_json_value()).transpose()?;
+                    Ok(Some(JsValue::from(serde_json::json!({"stored":value}))))
+                },
+            ),
+        ));
+    }
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut init = AuthInitContext::<Schema>::new(Arc::new(configured), raw.clone());
+    init.register_adapter_after_hook(Arc::new(DirectRecordObserver { seen: seen.clone() }));
+    let database = init.database_with_registered_transforms();
+    let mut input = CreateUser::new().with_email("direct-output@transforms.fixture.test");
+    input.role = Some("member".into());
+    let user = database.create_user_record(input).await.unwrap();
+    assert_eq!(user.role(), Some("member"));
+    assert_eq!(
+        user.raw_snapshot().values().get("role"),
+        Some(&serde_json::json!({"stored":"member"}))
+    );
+    let account = database
+        .create_account_record(CreateAccount {
+            user_id: user.id().into_owned(),
+            account_id: "direct-subject".into(),
+            provider_id: "application".into(),
+            scope: Some("read write".into()),
+            additional_fields: Default::default(),
+            access_token: None,
+            refresh_token: None,
+            id_token: None,
+            access_token_expires_at: None,
+            refresh_token_expires_at: None,
+            password: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(account.scope(), Some("read write"));
+    assert_eq!(
+        account.raw_snapshot().values().get("scope"),
+        Some(&serde_json::json!({"stored":"read write"}))
+    );
+    assert_eq!(
+        *seen.lock().unwrap(),
+        vec![
+            serde_json::json!({"entity":"user","id":user.id(),"role":{"stored":"member"}}),
+            serde_json::json!({"entity":"account","id":account.id(),"scope":{"stored":"read write"}}),
+        ]
+    );
+
+    let mut observer_only = AuthInitContext::<Schema>::new(Arc::new(plain), raw.clone());
+    observer_only
+        .register_adapter_after_hook(Arc::new(DirectRecordObserver { seen: seen.clone() }));
+    let untransformed = observer_only
+        .database_with_registered_transforms()
+        .create_user_record(CreateUser::new().with_email("direct-observer@transforms.fixture.test"))
+        .await
+        .unwrap();
+    assert_eq!(
+        seen.lock().unwrap().last(),
+        Some(&serde_json::json!({"entity":"user","id":untransformed.id(),"role":null}))
+    );
+    assert_eq!(raw.get_user_accounts(&user.id()).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn transforms_are_ordered_and_local_to_each_auth_instance() {
     let (config, raw) = store().await;
     let enabled = AuthBuilder::new(config.clone())

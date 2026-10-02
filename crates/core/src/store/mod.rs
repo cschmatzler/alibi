@@ -175,7 +175,14 @@ impl<S: AuthSchema> PluginStore<S> {
             .extensions
             .get::<crate::field_policy::AdapterFieldPolicies>()
             .map(|fields| (*fields).clone())
-            .unwrap_or_default()
+            .unwrap_or_else(|| crate::field_policy::AdapterFieldPolicies {
+                user: crate::field_policy::SessionAdapterFields(Arc::new(
+                    self.config.user.additional_fields.clone(),
+                )),
+                account: crate::field_policy::SessionAdapterFields(Arc::new(
+                    self.config.account.additional_fields.clone(),
+                )),
+            })
     }
 
     async fn user_record(&self, user: S::User) -> AuthResult<crate::AdapterRecord<S::User>> {

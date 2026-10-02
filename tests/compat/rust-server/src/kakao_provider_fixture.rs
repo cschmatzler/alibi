@@ -76,6 +76,7 @@ pub(super) async fn router(
                     .expect("mapper receipt lock")
                     .push(profile);
                 Ok(OAuthUserInfo {
+                    additional_fields: Default::default(),
                     id: "cannot-replace-raw-account".into(),
                     name: Some("Mapped Kakao User".into()),
                     email: "mapped-kakao@example.invalid".into(),

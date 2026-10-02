@@ -7,9 +7,10 @@ import { Database } from "bun:sqlite";
 /** Real application entities isolated from other profiles' physical schemas. */
 export async function additionalFieldsFixture(base: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
+  const mapperReceipts: unknown[] = [];
   const applications = new Map<string, { database: Database; events: Record<string, unknown>[] }>();
-  for (const mode of ["normal", "output", "policy", "async-validation", "cached", "plugin"] as const) {
-    const transformed = mode === "output" || mode === "cached";
+  for (const mode of ["normal", "output", "policy", "async-validation", "cached", "plugin", "provider"] as const) {
+    const transformed = mode === "output" || mode === "cached" || mode === "provider";
     const database = new Database(":memory:");
     const events: Record<string, unknown>[] = [];
     const path = `/__test/profiles/${mode === "normal" ? "additional-fields" : `additional-${mode}-fields`}/api/auth`;
@@ -42,6 +43,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       label: { type: "string" as const, required: false, defaultValue: mode === "normal" ? () => { events.push({phase:"default",entity,field:"label"}); return `${entity}-initial`; } : `${entity}-initial`, ...(mode === "normal" ? {required:true} : {}), ...(mode === "cached" && entity === "session" ? {onUpdate:()=>{events.push({phase:"on-update",entity,field:"label"});return "session-updated";}} : {}), ...(entity === "user" ? { fieldName: "user_label" } : {}), ...(transformed ? { validator:{output:{"~standard":{version:1 as const,vendor:"application",validate:(value:unknown)=>{events.push({phase:"output-validation",entity,field:"label",value});throw new Error("Output validation must remain metadata");}}}}, transform: { output: output(entity, "label") } } : mode === "plugin" ? { transform: { output: async (value: unknown) => { events.push({phase:"configured-output",entity,field:"label",value}); return {configured:value}; } } } : {}) },
       hidden: { type: "string" as const, required: false, returned: false, defaultValue: `${entity}-secret`, ...(transformed ? { transform: { output: output(entity, "hidden") } } : {}) },
       omitted: { type: "string" as const, required: false, ...(transformed ? { defaultValue: "drop", transform: { output: output(entity, "omitted") } } : {}) },
+      ...(mode === "provider" && entity === "user" ? {hidden:{type:"string" as const,required:false,returned:false,input:false,defaultValue:"user-secret",transform:{output:output(entity,"hidden")}}} : {}),
       ...(entity === "user" ? { readonly: { type: "string" as const, required: false, ...(mode === "policy" ? { input: false } : {}), ...(transformed ? { input: false, defaultValue: "initial", onUpdate: () => "updated", transform: { input: (value: unknown) => { events.push({ phase: "input", entity, field: "readonly", value }); return `${value}:bound`; } } } : {}) } } : {}),
       ...((mode === "policy" || mode === "async-validation") && entity === "user" ? {
         label: { type: "string" as const, required: mode === "policy", fieldName: "user_label",
@@ -62,6 +64,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       } } } : {}) },
       account: { ...base.account, modelName: "app_account", additionalFields: {...fields("account"),password:{type:"string",required:false,returned:true},accessToken:{type:"string",required:false,returned:true}} },
       verification: { modelName: "app_verification" },
+      ...(mode === "provider" ? {socialProviders:{atlassian:{clientId:"fixture-social-client",clientSecret:"fixture-social-secret",overrideUserInfoOnSignIn:true,mapProfileToUser:(profile:Record<string,unknown>)=>{mapperReceipts.push(profile);return {id:"mapped-public-id-184",email:profile.email as string,name:`Mapped ${profile.name}`,image:profile.picture as string,emailVerified:true,label:profile.nickname,hidden:"provider-cannot-set-hidden",unknown:"provider-unknown"};}}}} : {}),
       ...(mode === "cached" ? { hooks: { after: createAuthMiddleware(async ctx => {
         const record = ctx.context.newSession;
         events.push({ phase: "completed", path: ctx.path, record: record ?? null,
@@ -81,6 +84,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     applications.set(mode, { database, events });
   }
   return { profiles, reset() {
+    mapperReceipts.length=0;
     for (const { database, events } of applications.values()) {
       events.length = 0;
       for (const table of ["app_session", "app_account", "app_verification", "app_user"]) database.run(`DELETE FROM ${table}`);
@@ -102,6 +106,6 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       if (table === "app_user") { row.name = row.display_name; delete row.display_name; row.label = row.user_label; delete row.user_label; row.emailVerified = row.emailVerified === 1; }
       return row;
     });
-    return Response.json({ users: rows("app_user"), sessions: rows("app_session"), accounts: rows("app_account"), verifications: rows("app_verification"), events });
+    return Response.json({ users: rows("app_user"), sessions: rows("app_session"), accounts: rows("app_account"), verifications: rows("app_verification"), events, ...(url.searchParams.get("profile")==="provider" ? {mapperReceipts} : {}) });
   } };
 }

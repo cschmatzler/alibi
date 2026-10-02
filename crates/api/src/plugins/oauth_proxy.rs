@@ -451,6 +451,7 @@ impl OAuthProxyPlugin {
                 .insert(RecoveredOAuthServerContext(context));
         }
         let user = OAuthUserInfo {
+            additional_fields: Default::default(),
             id: payload.user_info.id,
             email: payload.user_info.email.to_lowercase(),
             name: Some(payload.user_info.name),

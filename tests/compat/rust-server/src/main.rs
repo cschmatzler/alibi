@@ -461,7 +461,9 @@ impl OAuthUserInfoHandler for CompatGoogleUserInfoHandler {
     ) -> Result<OAuthUserInfoResponse, String> {
         let profile = self.profile.lock().await.clone();
         Ok(OAuthUserInfoResponse {
+            user_output: None,
             user: OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: profile.sub.clone(),
                 email: profile.email.clone(),
                 name: Some(profile.name.clone()),
@@ -633,6 +635,7 @@ fn mock_oauth_plugin(
                 account_subject: None,
                 map_user_info: Some(|_value| {
                     Ok(OAuthUserInfo {
+                        additional_fields: Default::default(),
                         id: "mock-account-id".to_string(),
                         email: "mock@example.com".to_string(),
                         name: Some("Mock OAuth User".to_string()),

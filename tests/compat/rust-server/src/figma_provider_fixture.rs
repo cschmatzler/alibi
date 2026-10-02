@@ -80,6 +80,7 @@ pub(super) async fn router(
                     .expect("mapper receipt lock")
                     .push(profile);
                 Ok(OAuthUserInfo {
+                    additional_fields: Default::default(),
                     id: "cannot-replace-raw-account".into(),
                     name: Some("Mapped Figma User".into()),
                     email: "mapped-figma@example.invalid".into(),

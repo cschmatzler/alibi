@@ -159,9 +159,11 @@ impl OAuthUserInfoHandler for DropboxUserInfo {
             .mapper
             .map(|mapper| mapper(profile.clone()))
             .transpose()?;
+        let user_output = mapped.as_ref().map(|user| user.public_profile(true));
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: scalar(profile.get("account_id"))?.unwrap_or_default(),
                 name: scalar(
                     profile
@@ -181,6 +183,7 @@ impl OAuthUserInfoHandler for DropboxUserInfo {
             },
         };
         Ok(OAuthUserInfoResponse {
+            user_output,
             user,
             data: profile,
         })

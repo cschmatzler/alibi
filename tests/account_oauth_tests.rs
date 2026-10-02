@@ -71,6 +71,7 @@ impl OAuthUserInfoHandler for CookieIssuerProfile {
         _: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
         Ok(OAuthUserInfoResponse {
+            user_output: None,
             user: self.0.clone(),
             data: json!({}),
         })
@@ -236,6 +237,7 @@ async fn issue_account_cookie(
         .unwrap();
     let mut provider = make_test_provider(&url);
     provider.get_user_info = Some(Arc::new(CookieIssuerProfile(OAuthUserInfo {
+        additional_fields: Default::default(),
         id: account.account_id().to_owned(),
         email: user.email().unwrap().to_owned(),
         name: user.name().map(str::to_owned),
@@ -382,6 +384,7 @@ fn make_test_provider(mock_url: &str) -> OAuthProvider {
         authorization_params: Vec::new(),
         map_user_info: Some(|v| {
             Ok(OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: (*(v).get("sub").unwrap_or(&serde_json::Value::Null))
                     .as_str()
                     .unwrap_or("mock-user-id-123")

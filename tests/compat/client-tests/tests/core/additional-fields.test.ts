@@ -1,6 +1,7 @@
 import { expect } from "bun:test";
 import { z } from "zod";
 import { compatScenario } from "../../support/scenario";
+import { authProfilePath } from "../../support/profiles";
 import { getCookieCache } from "better-auth/cookies";
 import { createHmac } from "node:crypto";
 import { verifyPassword } from "better-auth/crypto";
@@ -296,3 +297,46 @@ compatScenario("additional field documentation preserves logical model policies 
   }
   return observations;
 },["GET /open-api/generate-schema"]);
+
+compatScenario("additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy", async ctx => {
+  const foreign=ctx.actor("mapped-foreign","additional-provider-fields");
+  const foreignSignup=await foreign.client.signUp.email({email:ctx.uniqueEmail("mapped-foreign"),name:"Foreign mapped fields",password:"Password123!"});expect(foreignSignup.error).toBeNull();
+  const foreignId=z.object({user:z.object({id:z.string()})}).parse(foreignSignup.data).user.id;
+  const before=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=provider"});expect(before.status).toBe(200);
+  const original={account_id:ctx.uniqueToken("mapped-subject"),name:"Provider fields",email:ctx.uniqueEmail("mapped-owner"),picture:"https://images.example.invalid/additional-fields.png",nickname:"from-provider-184",original:{preserved:true}};
+  expect((await ctx.rawRequest({path:"/__test/atlassian/control",method:"POST",json:{profile:original}})).status).toBe(200);
+  const owner=ctx.actor("mapped-owner","additional-provider-fields");
+  const start=await owner.client.signIn.social({provider:"atlassian",callbackURL:"/dashboard"});expect(start.error).toBeNull();
+  const url=new URL(start.data!.url!),path=authProfilePath("additional-provider-fields")+`/callback/atlassian?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`;
+  const response=await owner.fetch(ctx.baseURL+path,{redirect:"manual"});expect(response.status).toBe(302);expect(response.headers.get("location")).toBe("/dashboard");
+  const created=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=provider"});expect(created.status).toBe(200);const createdState=stateSchema.parse(created.body);
+  const account=createdState.accounts.find(row=>row.providerId==="atlassian")!;expect(account).toMatchObject({accountId:original.account_id,providerId:"atlassian"});
+  expect(account.userId).not.toBe("mapped-public-id-184");
+  const info=await owner.client.$fetch("/account-info",{method:"GET",query:{accountId:account.id}});expect(info.error).toBeNull();
+  expect(info.data).toMatchObject({user:{id:"mapped-public-id-184",label:original.nickname,hidden:"provider-cannot-set-hidden",unknown:"provider-unknown"},data:original,account:{id:account.id,accountId:original.account_id,providerId:"atlassian"}});
+  const session=await owner.client.getSession();expect(session.error).toBeNull();expect(session.data?.user).toMatchObject({id:account.userId,label:{stored:original.nickname},name:"Mapped Provider fields"});
+  for(const name of ["hidden","unknown","private_column"]) expect(session.data?.user).not.toHaveProperty(name);
+  const after=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=provider"});expect(after.status).toBe(200);const actual=stateSchema.parse(after.body);
+  expect(actual.users.find(row=>row.id===account.userId)).toMatchObject({label:original.nickname,hidden:"user-secret"});
+  const initial=stateSchema.parse(before.body);for(const key of ["users","accounts","sessions"] as const) expect(actual[key].filter(row=>row[key==="users"?"id":"userId"]===foreignId)).toEqual(initial[key]);
+  const denied=await foreign.client.$fetch("/account-info",{method:"GET",query:{accountId:account.id}});expect(denied.error).not.toBeNull();
+  const replay=await owner.fetch(ctx.baseURL+path,{redirect:"manual"});expect(replay.status).toBe(302);expect(new URL(replay.headers.get("location")!,ctx.baseURL).searchParams.get("error")).toBe("state_mismatch");
+  const afterDenial=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=provider"});expect(afterDenial.status).toBe(200);const deniedState=stateSchema.parse(afterDenial.body);for(const key of ["users","accounts","sessions","verifications"] as const) expect(deniedState[key]).toEqual(actual[key]);expect(deniedState.mapperReceipts).toEqual(actual.mapperReceipts);
+  const changed={...original,name:"Provider updated",nickname:"updated-provider-184"};
+  expect((await ctx.rawRequest({path:"/__test/atlassian/control",method:"POST",json:{profile:changed}})).status).toBe(200);
+  const updateStart=await owner.client.signIn.social({provider:"atlassian",callbackURL:"/updated"});expect(updateStart.error).toBeNull();
+  const updateUrl=new URL(updateStart.data!.url!);
+  const updateCallback=await owner.fetch(ctx.baseURL+authProfilePath("additional-provider-fields")+`/callback/atlassian?code=fixture-code&state=${encodeURIComponent(updateUrl.searchParams.get("state")!)}`,{redirect:"manual"});expect(updateCallback.status).toBe(302);expect(updateCallback.headers.get("location")).toBe("/updated");
+  const updateSession=await owner.client.getSession();expect(updateSession.error).toBeNull();expect(updateSession.data?.user).toMatchObject({id:account.userId,name:"Mapped Provider updated",label:{stored:changed.nickname},readonly:"updated:bound"});
+  for(const name of ["hidden","unknown","private_column"]) expect(updateSession.data?.user).not.toHaveProperty(name);
+  const updated=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=provider"});expect(updated.status).toBe(200);const updatedState=stateSchema.parse(updated.body);
+  expect(updatedState.users.find(row=>row.id===account.userId)).toMatchObject({label:changed.nickname,name:"Mapped Provider updated",hidden:"user-secret",readonly:"updated:bound"});
+  expect(updatedState.accounts.filter(row=>row.userId===account.userId)).toHaveLength(1);expect(updatedState.accounts.find(row=>row.userId===account.userId)).toMatchObject({id:account.id,accountId:original.account_id});
+  expect(updatedState.users.filter(row=>row.id===account.userId)).toHaveLength(1);expect(updatedState.sessions.filter(row=>row.userId===account.userId)).toHaveLength(2);
+  for(const key of ["users","accounts","sessions"] as const) expect(updatedState[key].filter(row=>row[key==="users"?"id":"userId"]===foreignId)).toEqual(initial[key]);
+  expect(updatedState.mapperReceipts).toEqual([original,original,changed]);
+  const receipts=await ctx.rawRequest({path:"/__test/atlassian/receipts"});expect(receipts.status).toBe(200);const exchanges=z.array(z.object({path:z.string(),body:z.record(z.string(),z.string()).nullable()}).passthrough()).parse(receipts.body);
+  for(const [index,authorization] of [[0,url],[3,updateUrl]] as const) {const verifier=exchanges[index]!.body!.code_verifier!;expect(authorization.searchParams.get("code_challenge")).toBe(Buffer.from(await crypto.subtle.digest("SHA-256",new TextEncoder().encode(verifier))).toString("base64url"));}
+  expect(exchanges.map(row=>row.path)).toEqual(["/token","/me","/me","/token","/me"]);
+  return {foreignSignup:ctx.snapshot(foreignSignup),before:await observedState(before.body),start:ctx.snapshot(start),callback:{status:response.status,location:response.headers.get("location")},created:await observedState(created.body),info:ctx.snapshot(info),session:ctx.snapshot(session),after:await observedState(after.body),denied:ctx.snapshot(denied),replay:{status:replay.status,location:replay.headers.get("location")},afterDenial:await observedState(afterDenial.body),updateStart:ctx.snapshot(updateStart),updateCallback:{status:updateCallback.status,location:updateCallback.headers.get("location")},updateSession:ctx.snapshot(updateSession),updated:await observedState(updated.body),receipts:exchanges.map(row=>({...row,body:row.body?.code_verifier?{...row.body,code_verifier:{token:row.body.code_verifier,length:row.body.code_verifier.length}}:row.body}))};
+},["POST /sign-in/social","GET /callback/{}","GET /account-info","GET /get-session"],30_000);

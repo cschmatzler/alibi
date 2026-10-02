@@ -50,11 +50,33 @@ pub struct OAuthTokenSet {
 /// User information extracted from an OAuth provider's user info endpoint.
 #[derive(Debug, Clone)]
 pub struct OAuthUserInfo {
+    /// Trusted mapped application values; writes select initialized declared input fields.
+    pub additional_fields: better_auth_core::field_policy::FieldOutput,
     pub id: String,
     pub email: String,
     pub name: Option<String>,
     pub image: Option<String>,
     pub email_verified: bool,
+}
+
+impl OAuthUserInfo {
+    /// Original mapped public values. This is output, never account authority.
+    #[must_use]
+    pub fn public_profile(&self, include_id: bool) -> better_auth_core::field_policy::FieldOutput {
+        let mut output = self.additional_fields.clone();
+        drop(output.insert("email".into(), Value::String(self.email.clone())));
+        drop(output.insert("emailVerified".into(), Value::Bool(self.email_verified)));
+        if include_id {
+            drop(output.insert("id".into(), Value::String(self.id.clone())));
+        }
+        if let Some(name) = &self.name {
+            drop(output.insert("name".into(), Value::String(name.clone())));
+        }
+        if let Some(image) = &self.image {
+            drop(output.insert("image".into(), Value::String(image.clone())));
+        }
+        output
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -85,6 +107,8 @@ pub struct OAuthUserInfoRequest {
 
 #[derive(Debug, Clone)]
 pub struct OAuthUserInfoResponse {
+    /// Original mapped public profile, captured before raw account-subject resolution.
+    pub user_output: Option<better_auth_core::field_policy::FieldOutput>,
     pub user: OAuthUserInfo,
     pub data: Value,
 }
@@ -223,7 +247,9 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
             .map(String::from);
 
         Ok(OAuthUserInfoResponse {
+            user_output: None,
             user: OAuthUserInfo {
+                additional_fields: Default::default(),
                 id,
                 email: resolved_email,
                 name: profile
@@ -451,6 +477,7 @@ impl OAuthProvider {
             account_subject: None,
             map_user_info: Some(|v| {
                 Ok(OAuthUserInfo {
+                    additional_fields: Default::default(),
                     id: v
                         .get("sub")
                         .and_then(|v| v.as_str())
@@ -620,6 +647,7 @@ fn gitlab_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
         _ => return Err("Missing GitLab account ID".into()),
     };
     Ok(OAuthUserInfo {
+        additional_fields: Default::default(),
         id,
         email: profile
             .get("email")
@@ -699,6 +727,7 @@ fn discord_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
         format!("https://cdn.discordapp.com/avatars/{id}/{avatar}.{format}")
     };
     Ok(OAuthUserInfo {
+        additional_fields: Default::default(),
         id: id.to_owned(),
         email: email.to_owned(),
         name: Some(

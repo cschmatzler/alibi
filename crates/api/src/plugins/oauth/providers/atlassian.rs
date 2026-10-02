@@ -139,6 +139,7 @@ fn atlassian_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
         value => string(value)?.unwrap_or_default(),
     };
     Ok(OAuthUserInfo {
+        additional_fields: Default::default(),
         id: subject(&profile)?,
         name: Some(name),
         email: profile
@@ -173,8 +174,10 @@ impl super::OAuthUserInfoHandler for AtlassianMappedUserInfo {
             .map_err(|error| error.to_string())?;
         let profile: Value = response.json().await.map_err(|error| error.to_string())?;
         let mut user = (self.mapper)(profile.clone())?;
+        let user_output = Some(user.public_profile(true));
         user.id = subject(&profile)?;
         Ok(super::OAuthUserInfoResponse {
+            user_output,
             user,
             data: profile,
         })

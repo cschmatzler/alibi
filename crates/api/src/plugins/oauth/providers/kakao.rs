@@ -145,9 +145,11 @@ impl OAuthUserInfoHandler for KakaoUserInfo {
             .mapper
             .map(|mapper| mapper(profile.clone()))
             .transpose()?;
+        let user_output = mapped.as_ref().map(|user| user.public_profile(true));
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: scalar(profile.get("id"))?.unwrap_or_default(),
                 name: Some(
                     scalar(
@@ -184,6 +186,7 @@ impl OAuthUserInfoHandler for KakaoUserInfo {
             },
         };
         Ok(OAuthUserInfoResponse {
+            user_output,
             user,
             data: profile,
         })

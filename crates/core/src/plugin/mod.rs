@@ -479,6 +479,13 @@ impl<S: AuthSchema> AuthInitContext<S> {
             && transforms.updates.is_empty()
             && session_callbacks.callbacks.is_empty()
             && fields.is_none()
+            && self.config.user.additional_fields.is_empty()
+            && self.config.session.additional_fields.is_empty()
+            && self.config.account.additional_fields.is_empty()
+            && self
+                .extensions
+                .get::<crate::store::AdapterCallbacks<S>>()
+                .is_none_or(|callbacks| callbacks.0.is_empty())
             && self.config.user_validation.is_none()
         {
             return Arc::clone(&self.database);
@@ -488,11 +495,22 @@ impl<S: AuthSchema> AuthInitContext<S> {
             Arc::clone(&self.config),
             transforms,
             session_callbacks,
-            fields.map(|fields| (*fields).clone()).unwrap_or_default(),
+            fields.map_or_else(
+                || {
+                    crate::field_policy::SessionFields(
+                        self.config.session.additional_fields.clone(),
+                    )
+                },
+                |fields| (*fields).clone(),
+            ),
             self.extensions
                 .get::<crate::field_policy::SessionAdapterFields>()
                 .map(|fields_2| (*fields_2).clone())
-                .unwrap_or_default(),
+                .unwrap_or_else(|| {
+                    crate::field_policy::SessionAdapterFields(Arc::new(
+                        self.config.session.additional_fields.clone(),
+                    ))
+                }),
             AuthContext::with_metadata(
                 Arc::clone(&self.config),
                 Arc::clone(&self.database),

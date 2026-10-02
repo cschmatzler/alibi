@@ -30,6 +30,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
 type Events = Arc<Mutex<Vec<Value>>>;
+static MAPPER_RECEIPTS: Mutex<Vec<Value>> = Mutex::new(Vec::new());
 #[derive(Clone)]
 struct Application {
     mode: &'static str,
@@ -42,6 +43,10 @@ pub(super) struct Fixture {
 }
 impl Fixture {
     pub(super) async fn reset(&self) -> AuthResult<()> {
+        MAPPER_RECEIPTS
+            .lock()
+            .expect("application mapper receipts")
+            .clear();
         for application in &self.applications {
             let database = &application.database;
             application_session::Entity::delete_many()
@@ -73,7 +78,7 @@ fn db_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldConfigs {
-    let output = matches!(mode, "output" | "cached");
+    let output = matches!(mode, "output" | "cached" | "provider");
     let mut fields = FieldConfigs::new();
     for name in ["label", "hidden", "omitted"] {
         let mut field = FieldConfig::new(json!({"type":"string"}));
@@ -162,6 +167,11 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
             });
         }
         drop(fields.insert(name.into(), field));
+    }
+    if mode == "provider" && entity == "user" {
+        if let Some(hidden) = fields.get_mut("hidden") {
+            hidden.input = false;
+        }
     }
     if entity == "user" {
         let mut readonly = FieldConfig::new(json!({"type":"string"}));
@@ -462,7 +472,41 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
                 .delete_user_enabled(true),
         )
         .plugin(EmailVerificationPlugin::new())
-        .plugin(OAuthPlugin::new())
+        .plugin(if mode == "provider" {
+            let mut options = better_auth::plugins::oauth::AtlassianOptions::new(
+                "fixture-social-client",
+                "fixture-social-secret",
+            );
+            options.user_info_endpoint = Some(format!("{}/__test/atlassian/me", config.base_url));
+            options.map_profile_to_user = Some(|profile| {
+                MAPPER_RECEIPTS
+                    .lock()
+                    .map_err(|error| error.to_string())?
+                    .push(profile.clone());
+                Ok(better_auth::plugins::oauth::OAuthUserInfo {
+                    additional_fields: serde_json::Map::from_iter([
+                        ("label".into(), profile["nickname"].clone()),
+                        ("hidden".into(), json!("provider-cannot-set-hidden")),
+                        ("unknown".into(), json!("provider-unknown")),
+                    ]),
+                    id: "mapped-public-id-184".into(),
+                    email: profile["email"].as_str().unwrap_or_default().into(),
+                    name: Some(format!(
+                        "Mapped {}",
+                        profile["name"].as_str().unwrap_or_default()
+                    )),
+                    image: profile["picture"].as_str().map(str::to_owned),
+                    email_verified: true,
+                })
+            });
+            let mut provider =
+                better_auth::plugins::oauth::OAuthProvider::atlassian_with_options(options);
+            provider.token_url = format!("{}/__test/atlassian/token", config.base_url);
+            provider.override_user_info_on_sign_in = true;
+            OAuthPlugin::new().add_provider("atlassian", provider)
+        } else {
+            OAuthPlugin::new()
+        })
         .plugin(OpenApiPlugin::new());
     if mode != "normal" {
         builder = builder.plugin(application.clone());
@@ -502,9 +546,16 @@ impl Application {
             .await
             .map_err(db_error)?;
         let events = self.events.lock().expect("application receipts").clone();
-        Ok(
-            json!({"users":users,"sessions":sessions,"accounts":accounts,"verifications":verifications,"events":events}),
-        )
+        let mut state = json!({"users":users,"sessions":sessions,"accounts":accounts,"verifications":verifications,"events":events});
+        if self.mode == "provider" {
+            state["mapperReceipts"] = json!(
+                MAPPER_RECEIPTS
+                    .lock()
+                    .expect("application mapper receipts")
+                    .clone()
+            );
+        }
+        Ok(state)
     }
 }
 pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)> {
@@ -518,6 +569,7 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
         "async-validation",
         "cached",
         "plugin",
+        "provider",
     ] {
         let (application_router, application) = application(config, mode).await?;
         router = router.merge(application_router);

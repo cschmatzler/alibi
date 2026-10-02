@@ -319,3 +319,54 @@ The final fixture/type gate and all seven real SDK owners passed 1,344 assertion
 complete documents, all physical rows and completed receipts; no default or
 adapter callback is evaluated. Throwing declared output validators remained
 metadata while the genuine lifecycle transforms completed successfully.
+
+The shared mapped-field owner uses the unchanged installed Atlassian factory,
+actual authorization code/token/userinfo HTTP, the original mapper receipt and
+application-owned SQLite models. It separates mapped public id from raw physical
+account subject, rejects foreign account access and callback replay, then proves
+declared mapped user input/update and hidden/unknown field handling. Existing
+provider owners lack arbitrary application columns, and the six field owners
+had no mapped profile path. No provider implementation issue is resumed.
+
+## Final shared projection checkpoint
+
+The actual mapped before owner completed Source and failed Native's account-info
+projection: missing original mapper id and three application fields,
+`/tmp/issue184-mapped-before-ready-owner.log`, terminal 1, 68 assertions. The earlier
+Source-side assumption that denial leaves callback receipts unchanged is retained
+as a diagnostic, not parity proof. The first repaired full run passed seven owners
+and failed only the mapped callback ledger (1,458 assertions),
+`/tmp/issue184-mapped-after-complete-owner.log`. Complete actual callback/SQL pairs
+are retained locally in `/tmp/issue184-mapped-callback-raw-pair.json` and their raw
+operator capture; no callback is removed from the differential observation.
+
+Source account-info reads output-bearing physical session/user records, then only
+the authenticated user's accounts. Native now uses those same record stages,
+retaining established virtual authority and physical owner scoping. Configured
+factory mapping captures its original typed mapped profile and JSON application
+fields before raw provider subject normalization; physical account authority
+still uses the original subject. The snapshot does not claim arbitrary JavaScript
+mapper-object or undefined support. Only declared input fields reach user writes.
+The same owner performs a second genuine code login, proving update/onUpdate,
+one unchanged physical user/account, two actual sessions, original mapper receipts,
+both PKCE exchange relationships, foreign denial and callback replay.
+
+Direct initialization has its own distinct public Rust host contract: real SQLite
+rows, configured awaited user/account output, physical getters and committed
+record observers, including an observer-only initialization. Builder SDK owners
+cannot reach this initializer bypass. The initial borrow compile diagnostic is
+retained separately. Its genuine pre-repair run fails String("member") versus
+the configured object output (`/tmp/issue184-direct-init-before-ready.log`,
+terminal 100). The repair preserves registered policy precedence and uses actual
+configuration only as the unregistered fallback; it also keeps observer-only
+stores initialized. No private pointer/predicate mirror or test-only seam is used.
+
+`/tmp/issue184-final-owner-ready.log` is terminal 0: optional strict workspace
+lint, all seven plugin-store host owners, fixture build, client types and all
+eight actual Source/native SDK owners with 1,510 assertions. These eight owners
+newly captured genuine `COMPAT_COVERAGE=1` artifacts. Only their measured
+route/category cells are added; all parent requirements remain. The real existing
+owner is selected for instrumented coverage through its ordinary ignored SDK
+wrapper; native workspace, exclusions, floor 75% and all previous SDK families
+remain unchanged. Full final composition/canonical/docs/browser/coverage results
+remain pending at this checkpoint.

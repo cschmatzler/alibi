@@ -115,17 +115,6 @@ pub(super) struct RefreshTokenResponse {
 }
 
 #[derive(Debug, Serialize)]
-pub(super) struct AccountInfoUser {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
-    pub email: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub image: Option<String>,
-    #[serde(rename = "emailVerified")]
-    pub email_verified: bool,
-}
-
-#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct AccountInfoAccount {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -136,7 +125,7 @@ pub(super) struct AccountInfoAccount {
 
 #[derive(Debug, Serialize)]
 pub(super) struct AccountInfoResponse {
-    pub user: AccountInfoUser,
+    pub user: better_auth_core::field_policy::FieldOutput,
     pub data: serde_json::Value,
     pub account: AccountInfoAccount,
 }

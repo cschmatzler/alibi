@@ -17,7 +17,9 @@ use super::state::{
 use super::types::{
     LinkSocialRequest, OAuthIdTokenRequest, SocialSignInRequest, SocialSignInResponse,
 };
-use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session_record};
+use crate::plugins::helpers::{
+    SessionIssueError, apply_default_role, issue_selected_user_session_record,
+};
 use base64::Engine;
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
 use better_auth_core::user_validation::{
@@ -667,6 +669,7 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
             .ok_or_else(|| AuthError::internal("Missing user-info mapper"))?;
         let user = mapper(profile.clone()).map_err(AuthError::internal)?;
         let response = OAuthUserInfoResponse {
+            user_output: None,
             user,
             data: profile,
         };
@@ -713,6 +716,7 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
         .map_err(|e| AuthError::internal(format!("Failed to map user info: {e}")))?;
 
     let response = OAuthUserInfoResponse {
+        user_output: None,
         user,
         data: user_info_json,
     };
@@ -905,7 +909,7 @@ pub(in crate::plugins) fn ambiguous_account_sign_in_response(
 }
 
 async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
-    user: &S::User,
+    user: &better_auth_core::AdapterRecord<S::User>,
     is_register: bool,
     policy: &OAuthProcessPolicy,
     meta: &better_auth_core::RequestMeta,
@@ -961,14 +965,63 @@ async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
             return Err(OAuthSignInError::EmailNotVerified);
         }
     }
-    issue_user_session_record(
+    issue_selected_user_session_record(
         ctx,
-        &user.id(),
+        user.clone(),
         meta.ip_address.clone(),
         meta.user_agent.clone(),
     )
     .await
     .map_err(OAuthSignInError::from)
+}
+
+fn provider_fields(
+    user_info: &OAuthUserInfo,
+    creation: bool,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> Result<better_auth_core::field_policy::FieldValues, OAuthSignInError> {
+    let registered = ctx
+        .extensions
+        .get::<better_auth_core::field_policy::UserFields>();
+    let fallback =
+        better_auth_core::field_policy::SessionFields(ctx.config.user.additional_fields.clone());
+    let fields = registered.as_ref().map_or(&fallback, |fields| &fields.0);
+    let input = user_info
+        .additional_fields
+        .iter()
+        .filter(|(name, _)| {
+            !matches!(
+                name.as_str(),
+                "id" | "email" | "emailVerified" | "name" | "image"
+            ) && fields.0.get(*name).is_some_and(|field| field.input)
+        })
+        .map(|(name, value)| {
+            (
+                name.clone(),
+                better_auth_core::utils::json::JsValue::from(value.clone()),
+            )
+        })
+        .collect();
+    let result = if creation {
+        fields.parse_create(&input)
+    } else {
+        fields.parse_update(&input)
+    };
+    result.map_err(|error| match error {
+        better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
+            OAuthSignInError::IdentityDenied {
+                code: code.into(),
+                message,
+            }
+        }
+        better_auth_core::field_policy::FieldInputError::Transform(error) => match error {
+            AuthError::Api { .. } | AuthError::Upstream { .. } => {
+                OAuthSignInError::from_identity_denial(error)
+            }
+            _ if creation => OAuthSignInError::Generic("unable to create user".into()),
+            _ => OAuthSignInError::Generic(error.to_string()),
+        },
+    })
 }
 
 fn provider_candidate(user_info: &OAuthUserInfo, user_id: &str) -> CreateUser {
@@ -1031,7 +1084,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
 
     let linked_account = ctx
         .database
-        .get_account(provider_name, &user_info.id)
+        .get_account_record(provider_name, &user_info.id)
         .await
         .map_err(OAuthSignInError::from_account_lookup)?;
 
@@ -1046,7 +1099,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
     if let Some(existing_account) = linked_account {
         let existing_user = ctx
             .database
-            .get_user_by_id(&existing_account.user_id())
+            .get_user_by_id_record(&existing_account.user_id())
             .await
             .map_err(|error| error.to_string())?
             .ok_or_else(|| "user not found".to_owned())?;
@@ -1062,7 +1115,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         if ctx.config.account.update_account_on_sign_in {
             drop(
                 ctx.database
-                    .update_account(
+                    .update_account_record(
                         &existing_account.id(),
                         UpdateAccount {
                             access_token: token_bundle.access_token.clone(),
@@ -1088,7 +1141,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         {
             let updated = ctx
                 .database
-                .update_user(
+                .update_user_record(
                     &user.id(),
                     UpdateUser {
                         email_verified: Some(true),
@@ -1103,14 +1156,16 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         }
 
         if policy.override_user_info {
+            let additional_fields = provider_fields(user_info, false, ctx)?;
             user = ctx
                 .database
-                .update_user(
+                .update_user_record(
                     &user.id(),
                     UpdateUser {
                         name: user_info.name.clone(),
                         image: user_info.image.clone(),
                         email: Some(user_info.email.to_lowercase()),
+                        additional_fields,
                         email_verified: Some(
                             user.email()
                                 .is_some_and(|email| email.eq_ignore_ascii_case(&user_info.email))
@@ -1169,7 +1224,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
 
     let existing_user = ctx
         .database
-        .get_user_by_email(&user_info.email.to_lowercase())
+        .get_user_by_email_record(&user_info.email.to_lowercase())
         .await
         .map_err(|error| error.to_string())?;
 
@@ -1202,7 +1257,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         .await?;
         let created_account = ctx
             .database
-            .create_account(CreateAccount {
+            .create_account_record(CreateAccount {
                 additional_fields: Default::default(),
                 user_id: linked_user.id().to_string(),
                 account_id: user_info.id.clone(),
@@ -1227,7 +1282,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         {
             let updated = ctx
                 .database
-                .update_user(
+                .update_user_record(
                     &linked_user.id(),
                     UpdateUser {
                         email_verified: Some(true),
@@ -1244,7 +1299,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         if linking.update_user_info_on_link {
             match ctx
                 .database
-                .update_user(
+                .update_user_record(
                     &linked_user.id(),
                     UpdateUser {
                         name: user_info.name.clone(),
@@ -1260,14 +1315,16 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         }
 
         if policy.override_user_info {
+            let additional_fields = provider_fields(user_info, false, ctx)?;
             linked_user =
                 ctx.database
-                    .update_user(
+                    .update_user_record(
                         &linked_user.id(),
                         UpdateUser {
                             name: user_info.name.clone(),
                             image: user_info.image.clone(),
                             email: Some(user_info.email.to_lowercase()),
+                            additional_fields,
                             email_verified: Some(
                                 linked_user.email().is_some_and(|email| {
                                     email.eq_ignore_ascii_case(&user_info.email)
@@ -1312,6 +1369,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         );
         apply_default_role(ctx, &mut create_user);
         create_user.image = user_info.image.clone();
+        create_user.additional_fields = provider_fields(user_info, true, ctx)?;
 
         let mut create_account = CreateAccount {
             additional_fields: Default::default(),
@@ -1334,9 +1392,11 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         let (persisted_user, persisted_account) =
             better_auth_core::store::transaction(ctx.database.as_ref(), move |tx| {
                 Box::pin(async move {
-                    let user = tx.create_user_with_source(create_user, source).await?;
+                    let user = tx
+                        .create_user_with_source_record(create_user, source)
+                        .await?;
                     create_account.user_id = user.id().to_string();
-                    let account = tx.create_account(create_account).await?;
+                    let account = tx.create_account_record(create_account).await?;
                     Ok((user, account))
                 })
             })

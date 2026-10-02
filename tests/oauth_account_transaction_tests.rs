@@ -41,7 +41,9 @@ impl OAuthUserInfoHandler for Profile {
         _: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
         Ok(OAuthUserInfoResponse {
+            user_output: None,
             user: OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: "google-transaction-owner".into(),
                 email: "atomic@oauth.fixture.test".into(),
                 name: Some("Atomic OAuth Owner".into()),

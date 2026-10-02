@@ -21,6 +21,7 @@ export const FIXTURE_PROFILES = [
   ...variants("social-figma-",["default","public","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
   "session-cache-guards", "session-cache-interactions",
   "additional-fields",
+  "additional-provider-fields",
   "additional-output-fields",
   "additional-cached-fields",
   "additional-plugin-fields",

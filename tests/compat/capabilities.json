@@ -13,7 +13,8 @@
           "figma existing account info uses real GET without readmitting a changed raw account subject",
           "huggingface existing account info uses real GET without readmitting a changed raw account subject",
           "kakao existing account info uses real GET without readmitting a changed raw account subject",
-          "kick existing account info uses real GET without readmitting a changed raw account subject"
+          "kick existing account info uses real GET without readmitting a changed raw account subject",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy"
         ],
         "rejection": [
           "account info requires an explicit account selector",
@@ -21,7 +22,8 @@
           "figma existing account info uses real GET without readmitting a changed raw account subject",
           "huggingface existing account info uses real GET without readmitting a changed raw account subject",
           "kakao existing account info uses real GET without readmitting a changed raw account subject",
-          "kick existing account info uses real GET without readmitting a changed raw account subject"
+          "kick existing account info uses real GET without readmitting a changed raw account subject",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy"
         ],
         "authorization": null,
         "state": [
@@ -30,7 +32,8 @@
           "figma existing account info uses real GET without readmitting a changed raw account subject",
           "huggingface existing account info uses real GET without readmitting a changed raw account subject",
           "kakao existing account info uses real GET without readmitting a changed raw account subject",
-          "kick existing account info uses real GET without readmitting a changed raw account subject"
+          "kick existing account info uses real GET without readmitting a changed raw account subject",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy"
         ]
       }
     },
@@ -386,7 +389,8 @@
           "kick numeric name first envelope profile retains original raw account and typed persistence",
           "kick numeric subject first envelope profile retains original raw account and typed persistence",
           "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kick zero access expiry follows actual token helper"
+          "kick zero access expiry follows actual token helper",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -513,7 +517,8 @@
           "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped"
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing any principal",
@@ -638,7 +643,8 @@
           "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped"
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -938,7 +944,8 @@
           "kick numeric name first envelope profile retains original raw account and typed persistence",
           "kick numeric subject first envelope profile retains original raw account and typed persistence",
           "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kick zero access expiry follows actual token helper"
+          "kick zero access expiry follows actual token helper",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy"
         ]
       }
     },
@@ -1376,7 +1383,14 @@
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "additional async input validation is invoked and rejected before any credential or session write while absent optional input remains usable",
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots",
+          "additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors",
+          "additional fields preserve application user account defaults and hidden physical storage across public signup and session reads",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy",
+          "additional output transforms await real adapter results retain hidden undefined and changed types before committed after hooks and roll back failed signup",
+          "additional plugin input and public policy retain distinct configured adapter precedence and canonical plugin columns"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -1506,7 +1520,14 @@
           "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner",
           "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP",
           "compact interaction signed-email verification publishes the original authenticated projection through actual multi-session and JWT hooks",
-          "compact sensitive admin admission rejects genuine API-key virtual authority after physical revocation"
+          "compact sensitive admin admission rejects genuine API-key virtual authority after physical revocation",
+          "additional async input validation is invoked and rejected before any credential or session write while absent optional input remains usable",
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots",
+          "additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors",
+          "additional fields preserve application user account defaults and hidden physical storage across public signup and session reads",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy",
+          "additional output transforms await real adapter results retain hidden undefined and changed types before committed after hooks and roll back failed signup",
+          "additional plugin input and public policy retain distinct configured adapter precedence and canonical plugin columns"
         ]
       }
     },
@@ -1556,7 +1577,8 @@
           "github link social creates an account that listAccounts returns",
           "social sign-in preserves previously granted account scopes",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "additional output transforms await real adapter results retain hidden undefined and changed types before committed after hooks and roll back failed signup"
         ],
         "rejection": "social sign-in preserves previously granted account scopes",
         "authorization": "social sign-in preserves previously granted account scopes",
@@ -1564,7 +1586,8 @@
           "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
           "social sign-in preserves previously granted account scopes",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "additional output transforms await real adapter results retain hidden undefined and changed types before committed after hooks and roll back failed signup"
         ]
       }
     },
@@ -1721,11 +1744,14 @@
           "OpenAPI openapi-plugins-configured generates the complete configured document and reference frame",
           "OpenAPI disabling the reference preserves the public schema endpoint",
           "OpenAPI session-fields documents real custom session columns with source-specific config precedence",
-          "OpenAPI session-fields-plugins documents real custom session columns with source-specific config precedence"
+          "OpenAPI session-fields-plugins documents real custom session columns with source-specific config precedence",
+          "additional field documentation preserves logical model policies and callable defaults without executing adapter callbacks or revealing physical columns"
         ],
         "rejection": null,
         "authorization": null,
-        "state": null
+        "state": [
+          "additional field documentation preserves logical model policies and callable defaults without executing adapter callbacks or revealing physical columns"
+        ]
       }
     },
     {
@@ -2861,12 +2887,14 @@
       "evidence": {
         "success": [
           "change password with revokeOtherSessions invalidates the other client",
-          "compromised change password follows authentication but precedes current-password verification without revocation"
+          "compromised change password follows authentication but precedes current-password verification without revocation",
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots"
         ],
         "rejection": [
           "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
           "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows",
-          "compromised change password follows authentication but precedes current-password verification without revocation"
+          "compromised change password follows authentication but precedes current-password verification without revocation",
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots"
         ],
         "authorization": [
           "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
@@ -2876,7 +2904,8 @@
         "state": [
           "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
           "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows",
-          "compromised change password follows authentication but precedes current-password verification without revocation"
+          "compromised change password follows authentication but precedes current-password verification without revocation",
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots"
         ]
       }
     },
@@ -4773,7 +4802,8 @@
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -5028,7 +5058,8 @@
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots"
         ]
       }
     },
@@ -5496,7 +5527,8 @@
           "kick published default authorization retains ordered scopes and required PKCE",
           "kick published disabled-configured authorization retains ordered scopes and required PKCE",
           "kick published disabled-scope authorization retains ordered scopes and required PKCE",
-          "kick zero access expiry follows actual token helper"
+          "kick zero access expiry follows actual token helper",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -6005,7 +6037,8 @@
           "kick published default authorization retains ordered scopes and required PKCE",
           "kick published disabled-configured authorization retains ordered scopes and required PKCE",
           "kick published disabled-scope authorization retains ordered scopes and required PKCE",
-          "kick zero access expiry follows actual token helper"
+          "kick zero access expiry follows actual token helper",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy"
         ]
       }
     },
@@ -6366,7 +6399,14 @@
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "additional async input validation is invoked and rejected before any credential or session write while absent optional input remains usable",
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots",
+          "additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors",
+          "additional fields preserve application user account defaults and hidden physical storage across public signup and session reads",
+          "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy",
+          "additional output transforms await real adapter results retain hidden undefined and changed types before committed after hooks and roll back failed signup",
+          "additional plugin input and public policy retain distinct configured adapter precedence and canonical plugin columns"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -6382,7 +6422,9 @@
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
-          "compromised password signup denies before real hashing and user creation with prefix-only HTTP"
+          "compromised password signup denies before real hashing and user creation with prefix-only HTTP",
+          "additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors",
+          "additional output transforms await real adapter results retain hidden undefined and changed types before committed after hooks and roll back failed signup"
         ],
         "authorization": [
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
@@ -6479,7 +6521,13 @@
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "additional async input validation is invoked and rejected before any credential or session write while absent optional input remains usable",
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots",
+          "additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors",
+          "additional fields preserve application user account defaults and hidden physical storage across public signup and session reads",
+          "additional output transforms await real adapter results retain hidden undefined and changed types before committed after hooks and roll back failed signup",
+          "additional plugin input and public policy retain distinct configured adapter precedence and canonical plugin columns"
         ]
       }
     },
@@ -7248,7 +7296,9 @@
         "success": [
           "update user changes session-visible profile fields",
           "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
-          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows",
+          "additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors",
+          "additional output transforms await real adapter results retain hidden undefined and changed types before committed after hooks and roll back failed signup"
         ],
         "rejection": [
           "update user rejects direct email mutation",
@@ -7265,7 +7315,9 @@
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
           "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes",
           "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
-          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows",
+          "additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors",
+          "additional plugin input and public policy retain distinct configured adapter precedence and canonical plugin columns"
         ],
         "authorization": [
           "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes",
@@ -7286,7 +7338,11 @@
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
           "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes",
           "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
-          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows",
+          "additional async input validation is invoked and rejected before any credential or session write while absent optional input remains usable",
+          "additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors",
+          "additional output transforms await real adapter results retain hidden undefined and changed types before committed after hooks and roll back failed signup",
+          "additional plugin input and public policy retain distinct configured adapter precedence and canonical plugin columns"
         ]
       }
     },

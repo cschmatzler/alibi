@@ -85,6 +85,7 @@ pub(super) async fn router(
                     .map_err(|error| error.to_string())?
                     .push(profile.clone());
                 Ok(better_auth::plugins::oauth::OAuthUserInfo {
+                    additional_fields: Default::default(),
                     id: "cannot-replace-account-subject".into(),
                     name: Some(format!(
                         "Mapped {}",

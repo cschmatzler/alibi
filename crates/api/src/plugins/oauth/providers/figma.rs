@@ -132,9 +132,11 @@ impl OAuthUserInfoHandler for FigmaUserInfo {
             .mapper
             .map(|mapper| mapper(profile.clone()))
             .transpose()?;
+        let user_output = mapped.as_ref().map(|user| user.public_profile(true));
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: scalar(profile.get("id"))?.unwrap_or_default(),
                 name: scalar(profile.get("handle"))?,
                 email: profile
@@ -147,6 +149,7 @@ impl OAuthUserInfoHandler for FigmaUserInfo {
             },
         };
         Ok(OAuthUserInfoResponse {
+            user_output,
             user,
             data: profile,
         })

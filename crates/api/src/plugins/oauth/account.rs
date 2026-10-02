@@ -6,8 +6,7 @@ use super::handlers::{
 use super::providers::{OAuthConfig, OAuthTokenSet, OAuthUserInfoRequest};
 use super::state::AccountCookiePayload;
 use super::types::{
-    AccessTokenResponse, AccountInfoAccount, AccountInfoResponse, AccountInfoUser,
-    RefreshTokenResponse,
+    AccessTokenResponse, AccountInfoAccount, AccountInfoResponse, RefreshTokenResponse,
 };
 use better_auth_core::entity::AuthAccount;
 use better_auth_core::{
@@ -82,7 +81,7 @@ impl AccountSelection {
         let account = match self {
             Self::Id(account_id) => ctx
                 .database
-                .get_user_accounts(user_id)
+                .get_user_accounts_record(user_id)
                 .await?
                 .iter()
                 .find(|account| account.id().as_ref() == account_id.as_str())
@@ -162,8 +161,9 @@ async fn persist_tokens(
         ..Default::default()
     };
     if let Some(id) = account.id.as_deref() {
-        *account =
-            AccountCookiePayload::from_account(&ctx.database.update_account(id, update).await?);
+        *account = AccountCookiePayload::from_account(
+            &ctx.database.update_account_record(id, update).await?,
+        );
     } else {
         account.access_token = update.access_token;
         account.refresh_token = update.refresh_token;
@@ -347,7 +347,15 @@ pub(super) async fn handle_account_info(
         Ok(selection) => selection,
         Err(message) => return invalid_selection("query", &(message)),
     };
-    let (_, session) = ctx.require_session(req).await?;
+    // Source's account helper disables browser cookie-cache reads for stateful
+    // accounts while retaining a genuinely established virtual principal.
+    let mut session_request = req.clone();
+    drop(
+        session_request
+            .query
+            .insert("disableCookieCache".into(), "true".into()),
+    );
+    let (_, session) = ctx.require_cached_session(&session_request).await?;
     let mut account = selection.resolve(req, &session.user_id, ctx).await?;
     let provider = config
         .providers
@@ -374,12 +382,9 @@ pub(super) async fn handle_account_info(
     )
     .await?;
     let response = AccountInfoResponse {
-        user: AccountInfoUser {
-            name: info.user.name,
-            email: info.user.email,
-            image: info.user.image,
-            email_verified: info.user.email_verified,
-        },
+        user: info
+            .user_output
+            .unwrap_or_else(|| info.user.public_profile(false)),
         data: info.data,
         account: AccountInfoAccount {
             id: account.id.clone(),
