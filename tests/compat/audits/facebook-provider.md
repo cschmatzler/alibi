@@ -81,6 +81,35 @@ It compiles, then fails for the intended native authorization drift: an unexpect
 PKCE code challenge, while the Source default owner passes
 (`/tmp/issue144-generic-before-owner.log`, 25 assertions, terminal exit 1).
 No 404, unavailable constructor or fabricated receipt is used as before evidence.
-Broad canonical, docs/browser and clean coverage gates remain pending on the
-final composed immutable head. No Source edit, comparator allowance, hook bypass
+On frozen d19a4d271f8f7c3c7054789861569a4c1ebffb4d composed on actual main
+fa8837ec, the canonical `scripts/check.sh` run passes both strict default and
+optional-feature workspace all-target Clippy matrices, Rustls checking, both
+formatting checks, 794 default native tests, 845 optional native tests, two fixture
+tests, TypeScript, all 71 harness checks (754 assertions), 36 Axum checks, three
+endpoint checks and two inventory checks. Full SDK execution passes 1,203/1,209
+owners, 80,762 assertions, including all 89 Facebook owners
+(`/tmp/issue144-current-final-canonical.log`, terminal exit 100). Six remaining
+failures are two organization owners with eight timestamp aliases, configured
+remote JWT finalReceipts.events1/2/3.payload.exp, and the three generated
+seed12648430 snapshot22 Unauthorized code/message comparisons owned by #221.
+The configured signer exact exp aliases were already observed in the independent
+main Source/Source1000 capture; no claim is made that that counterfactual proves
+every organization timing alias. The full canonical gate is not claimed green.
+
+Separately, documentation with warnings denied and both actual browser owners
+pass (`/tmp/issue144-current-docs-browser.log`, terminal exit 0, 22 browser
+assertions). Clean real instrumented execution passes all 845 native tests and
+all five SDK groups, retaining unchanged assertions and exclusions. Complete
+fixture/native production line coverage is 31,204/40,435 = 77.170768%, above the
+unchanged 75% floor (`/tmp/issue144-current-clean-coverage.log`, terminal exit 0).
+The complete collector adds only --no-fail-fast to collect all existing SDK
+groups; both coverage target environment variables point at this checkout's
+isolated coverage/target. Ordinary gates retain the repository build cache.
+
+All 3,947 actual parent capability requirements remain in their original order;
+338 measured Facebook cells are appended, totaling 4,285. Every added cell is
+present in final actual passing Source/native evidence. Foreign signup/setup
+routes and unclassifiable callback denials are excluded. Final publication edits
+are audit text only; production, fixtures, tests, lockfiles and capability bytes
+remain identical to the frozen measured head. No Source edit, comparator allowance, hook bypass
 or dependency patch is authorized by this audit.
