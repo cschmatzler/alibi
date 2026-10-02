@@ -436,6 +436,36 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       return valid ? exactCacheCopy(normalizeClientValue(parsed.data),value.decoded) : value.decoded === null;
     } catch { return false; }
   }
+  const compactHeaderIssuances = new Map<string, readonly [string, string]>();
+  function observedCompactHeaders(a: unknown, b: unknown, path = "", applicationData = false) {
+    if (applicationData || traceShape(path)) return;
+    if (Array.isArray(a) && Array.isArray(b)) {
+      a.forEach((child,index) => observedCompactHeaders(child,b[index],`${path}.${index}`));
+    } else if (record(a) && record(b)) {
+      if ("exp" in a && "iss" in a && "aud" in a) return;
+      for (const [key,child] of Object.entries(a)) {
+        if (key === "compactSessionCache" && record(child) && record(b[key])) {
+          const other = b[key];
+          if (!authenticatedCompactCache(child,context.leftStartedAt,context.leftFinishedAt)
+            || !authenticatedCompactCache(other,context.rightStartedAt,context.rightFinishedAt)) continue;
+          const leftCookies=compactCookieHeaders(child),rightCookies=compactCookieHeaders(other);
+          const left=child.decoded,right=other.decoded;
+          if (leftCookies?.length!==1 || rightCookies?.length!==1
+            || leftCookies[0]?.name!=="better-auth.session_data" || rightCookies[0]?.name!=="better-auth.session_data"
+            || leftCookies[0].tombstone || rightCookies[0].tombstone
+            || !record(left) || !record(right) || !record(left.user) || !record(right.user)
+            || !record(left.session) || !record(right.session)) continue;
+          const pair=JSON.stringify([left.session.token,right.session.token]),issuance=issuances.get(pair);
+          if (!issuance || !signedCookieIssuances.has(pair)
+            || left.user.id!==left.session.userId || right.user.id!==right.session.userId
+            || issuance.leftUser!==left.user.id || issuance.rightUser!==right.user.id) continue;
+          compactHeaderIssuances.set(JSON.stringify([child.token,other.token]),[String(left.session.token),String(right.session.token)]);
+        } else observedCompactHeaders(child,b[key],`${path}.${key}`,
+          ["metadata","additionalFields","custom","applicationData"].includes(key));
+      }
+    }
+  }
+  observedCompactHeaders(normalizedLeft,normalizedRight);
   function cacheClock(a: number, b: number, path: string) {
     if (a !== b && Math.abs((a-context.leftStartedAt)-(b-context.rightStartedAt)) > 1500) fail(path,"compact cache timestamp differs");
   }
@@ -528,11 +558,24 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     if (!signedCookieIssuances.has(JSON.stringify([ac.token, bc.token]))) {
       fail(path, "signed session cookie does not match corresponding observed issuance"); return true;
     }
-    const scaffold = (raw: string, match: RegExpMatchArray, value: string) => {
-      const start = match.index! + match[0].length - value.length;
-      return `${raw.slice(0, start)}<verified-session-credential>${raw.slice(start + value.length)}`;
+    const cachePattern=setCookie?/(?:^|,\s*)(better-auth\.session_data)=([^;,\s]*)/g
+      :/(?:^|;\s*)(better-auth\.session_data)=([^;\s]*)/g;
+    const leftCache=[...a.matchAll(cachePattern)],rightCache=[...b.matchAll(cachePattern)];
+    if (leftCache.length || rightCache.length) {
+      const pair=leftCache.length===1 && rightCache.length===1
+        ? compactHeaderIssuances.get(JSON.stringify([leftCache[0]![2],rightCache[0]![2]])) : undefined;
+      if (!pair || pair[0]!==ac.token || pair[1]!==bc.token) {
+        fail(path,"compact cookie does not match authenticated corresponding session issuance");return true;
+      }
+    }
+    const scaffold = (raw: string, matches: readonly RegExpMatchArray[]) => {
+      for (const match of [...matches].sort((a,b)=>b.index!-a.index!)) {
+        const value=match[2]!,start=match.index!+match[0].length-value.length;
+        raw=`${raw.slice(0,start)}<verified-${match[1]}>${raw.slice(start+value.length)}`;
+      }
+      return raw;
     };
-    if (scaffold(a, left[0]!, av) !== scaffold(b, right[0]!, bv))
+    if (scaffold(a,[left[0]!,...leftCache]) !== scaffold(b,[right[0]!,...rightCache]))
       fail(path, "signed session cookie header bytes or attributes differ");
     identity(ac.token!, bc.token!, path, "token");
     return true;
