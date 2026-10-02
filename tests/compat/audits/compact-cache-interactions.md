@@ -179,3 +179,18 @@ bd503 production both second readers wrongly succeeded:
 The repaired owner passed `/tmp/issue221-context-after.log`, terminal0. Successful
 reads retain actual configuration/database Arcs and require both instance
 identities before reuse; sensitive clearing still leaves no retained read.
+
+
+The native callback error identity owner
+`configured_backup_callback_errors_preserve_factor_user_and_current_session`
+remains valuable: native 400/403 typed callback errors and unchanged complete
+factor/user/session rows are distinct from the SDK happy-path cipher contract.
+The immutable 5639 canonical stopped there after 556 passes
+(`/tmp/issue221-canonical-final2.log`, exit100); a complete default native audit
+confirmed it was the sole failure (792/793 pass, `/tmp/issue221-native-stale-audit.log`,
+exit100). It reused one request/extensions across enrollment and regeneration
+after changing the physical user's enabled flag. The ordinary retained snapshot
+correctly preserved the previous logical operation, so regeneration never reached
+the callback. The second operation now starts a real fresh AuthRequest with the
+same actual signed cookie/body, while every error, receipt and rollback assertion
+remains intact. No production seam or error-contract adjustment was needed.
