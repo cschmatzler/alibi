@@ -16,13 +16,7 @@ pub(in crate::plugins) fn verification_url(
     callback_url: Option<&str>,
 ) -> String {
     let callback_url = callback_url.filter(|url| !url.is_empty()).unwrap_or("/");
-    let origin = config.base_url.trim_end_matches('/');
-    let path = config.base_path.trim_matches('/');
-    let base_url = if path.is_empty() {
-        origin.to_owned()
-    } else {
-        format!("{origin}/{path}")
-    };
+    let base_url = crate::plugins::helpers::auth_base_url(config);
     format!(
         "{base_url}/verify-email?token={token}&callbackURL={}",
         urlencoding::encode(callback_url),

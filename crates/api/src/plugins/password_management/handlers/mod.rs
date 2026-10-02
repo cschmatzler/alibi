@@ -75,13 +75,7 @@ pub(in crate::plugins) async fn request_password_reset_core(
         .as_deref()
         .map(urlencoding::encode)
         .unwrap_or_default();
-    let origin = ctx.config.base_url.trim_end_matches('/');
-    let path = ctx.config.base_path.trim_matches('/');
-    let auth_url = if path.is_empty() {
-        origin.to_owned()
-    } else {
-        format!("{origin}/{path}")
-    };
+    let auth_url = crate::plugins::helpers::auth_base_url(&ctx.config);
     let reset_url = format!("{auth_url}/reset-password/{reset_token}?callbackURL={callback_url}");
 
     let user_value = password_utils::serialize_to_value(&ctx.user_view(&user))?;

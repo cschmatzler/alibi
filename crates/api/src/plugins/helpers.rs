@@ -5,6 +5,17 @@
 use better_auth_core::entity::{AuthAccount, AuthUser};
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, CreateUser, UpdateUser};
 
+/// Join the configured auth origin and mount path for links sent to users.
+pub(in crate::plugins) fn auth_base_url(config: &better_auth_core::AuthConfig) -> String {
+    let origin = config.base_url.trim_end_matches('/');
+    let path = config.base_path.trim_matches('/');
+    if path.is_empty() {
+        origin.to_owned()
+    } else {
+        format!("{origin}/{path}")
+    }
+}
+
 /// Source ordinary HTTP middleware admits the authenticated cache snapshot.
 /// Only the nested read is caught; subsequent storage and callback errors keep
 /// their own endpoint contract.
