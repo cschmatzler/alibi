@@ -11,6 +11,7 @@ function variants<P extends string, S extends string>(prefix: P, suffixes: reado
  */
 export const FIXTURE_PROFILES = [
   "custom-session", "custom-session-jwt", "custom-session-deferred", "custom-session-core-error",
+  "rate-limit-ordered", "rate-limit-default",
   ...variants("captcha-", ["turnstile", "turnstile-configured", "turnstile-custom", "turnstile-wildcard", "turnstile-globstar", "turnstile-empty", "turnstile-disabled", "turnstile-no-secret", "turnstile-ip-disabled", "turnstile-ip-custom", "google", "google-configured", "google-zero", "hcaptcha", "hcaptcha-sitekey", "captchafox", "captchafox-sitekey", "botid", "botid-denied", "botid-custom", "botid-throw", "botid-validator-throw", "botid-timeout"] as const),
   "server-dispatch", "server-dispatch-cache", "server-dispatch-cache-version",
   ...variants("verification-storage-", ["plain", "hashed", "custom", "ordered", "numeric", "cache", "mixed", "no-cleanup", "limit", "cache-default", "mixed-default"] as const),

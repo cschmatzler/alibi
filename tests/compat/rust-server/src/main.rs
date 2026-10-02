@@ -106,6 +106,7 @@ mod api_key_options_fixture;
 mod apple_provider_fixture;
 mod atlassian_provider_fixture;
 mod client_ip_fixture;
+mod rate_limit_fixture;
 mod cloudflare_provider_fixture;
 mod cognito_provider_fixture;
 mod compromised_password_fixture;
@@ -1041,6 +1042,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jwt_keyring_router = jwt_keyring_fixture::router(&config, reset_database.clone()).await?;
     let jwt_remote_router = jwt_remote_fixture::router(&config, reset_database.clone()).await?;
     let device_profiles = device_fixture::profiles(&config, reset_database.clone()).await?;
+    let rate_limit_router = rate_limit_fixture::router(&config, reset_database.clone(), otp_outbox.clone()).await?;
     let client_ip_router = client_ip_fixture::router(
         &config,
         reset_database.clone(),
@@ -1963,6 +1965,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(jwt_router)
         .merge(device_profiles)
         .merge(client_ip_router)
+        .merge(rate_limit_router)
         .merge(team_router)
         .merge(creation_router)
         .merge(creation_hooks_router)

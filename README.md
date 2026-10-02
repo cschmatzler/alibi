@@ -169,16 +169,48 @@ context until completion, even when its completion observer is dropped. Magic
 link delivery awaits directly; its token generator and the phone validator keep
 their existing scalar inputs.
 
-The in-memory rate limiter defaults to 100 requests per 10 seconds, with tighter
-built-in rules for sign-in, sign-up, identity changes and email delivery.
-`RateLimitConfig::endpoint` supports exact paths and glob overrides; exact paths
-win, then the most specific glob (lexical order breaks ties). Set `max_buckets`
-to bound active client/path entries; the default is 100,000. Expired entries are
-removed automatically, and new buckets receive 429 at capacity rather than
-resetting active quotas. This limiter is per process; multi-instance deployments
-need a shared limiter upstream. Configure trusted IP headers and proxy CIDRs
-through `config.advanced.ip_address`; the limiter uses the same parsed address
-as session metadata. Auth mount paths are handled by `AuthBuilder`.
+Rate limiting is enabled by default: 100 requests per 10 seconds, with tighter
+core and installed email OTP, magic-link, phone, two-factor and device rules.
+`RateLimitConfig::endpoint` inserts ordered exact/wildcard overrides; the first
+match wins, including a wildcard inserted before an exact path. `rule` accepts
+`RateLimitRule::Disabled` or an asynchronous `RateLimitResolver`, which receives
+the real request and inherited core/plugin limit. Returning `None` bypasses that
+request without resetting its quota. `EndpointRateLimit` exposes `f64`
+`window_seconds` and `max_requests`; duration/integer builder methods remain
+available. Zero/NaN global defaults fall back to 10 seconds/100; raw custom rules
+preserve those values. Email OTP and magic-link plugin zero/NaN policy values
+use their respective defaults.
+
+Default memory storage is local to an auth instance and bounds active buckets
+at 100,000 (`max_buckets` configures this). Allowed requests extend inactivity
+expiry; rejected requests do not. At capacity, new buckets fail closed rather
+than evicting active clients. Share an `Arc<MemoryRateLimitStorage>` through
+`RateLimitConfig::storage` for common rolling quotas across instances in one
+process. `CacheRateLimitStorage` uses the existing cache's atomic `increment`
+for fixed windows across processes. `RedisAdapter` implements this with one Lua
+operation and a positive whole-second TTL set only on creation. Fractional or
+invalid Redis TTLs fail closed; cache adapters without atomic increment also
+fail closed. Applications can implement `RateLimitStorage::consume` directly
+for their own atomic backend.
+
+`better_auth_seaorm::SeaOrmRateLimitStorage::new(connection)` supports shared
+SQLite/PostgreSQL rolling quotas. Call `storage.migrate().await?` explicitly
+before installing it; its table and ledger are independent of ordinary auth
+migrations and do not require changes to `AuthSchema`. New/reset buckets prune
+expired rows older than the longest configured/observed window. Each row retains
+its issued expiry, so a shorter-window process cannot prune another instance’s
+live quota. Infinite windows remain nonexpiring. Middleware publishes static and
+plugin windows before requests, and the backend observes dynamic windows.
+Cleanup failures retain the admitted request and retry on a later new/reset
+bucket. Storage failures stop dispatch with a generic error. Exact 429 bodies
+and `X-Retry-After` remain shared with Source; memory/database report remaining
+rolling seconds, while cache storage reports the complete fixed window.
+
+Configure trusted IP headers/proxy CIDRs through `config.advanced.ip_address`;
+rate limits and session metadata use the same normalized client identity.
+Requests without a trusted IP share a bucket per path. Disabling IP tracking
+also disables rate limiting. Auth mount paths are handled by `AuthBuilder`;
+trusted server-only dispatch does not consume HTTP quotas.
 
 Telemetry is disabled by default. To opt in, implement the asynchronous
 `telemetry::TelemetrySink` and configure

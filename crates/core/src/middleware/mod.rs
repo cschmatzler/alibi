@@ -12,7 +12,11 @@ use async_trait::async_trait;
 pub use body_limit::{BodyLimitConfig, BodyLimitMiddleware};
 pub use cors::{CorsConfig, CorsMiddleware};
 pub use csrf::{CsrfConfig, CsrfMiddleware};
-pub use rate_limit::{EndpointRateLimit, RateLimitConfig, RateLimitMiddleware};
+pub use rate_limit::{
+    CacheRateLimitStorage, EndpointRateLimit, MemoryRateLimitStorage, PluginRateLimit,
+    RateLimitConfig, RateLimitDecision, RateLimitMiddleware, RateLimitResolver, RateLimitRule,
+    RateLimitStorage,
+};
 
 /// Middleware trait for request/response processing.
 ///

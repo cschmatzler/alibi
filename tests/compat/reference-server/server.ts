@@ -14,6 +14,7 @@ import { createDispatchFixture } from "./dispatch-fixture";
 import { createCompromisedPasswordFixture } from "./compromised-password-fixture";
 import { createVerificationStorageFixture } from "./verification-storage-fixture";
 import { createSignupPolicyFixture } from "./signup-policy-fixture";
+import { createRateLimitFixture } from "./rate-limit-fixture";
 import { createClientIpFixture } from "./client-ip-fixture";
 import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
 import { createBearerFixture } from "./bearer-fixture";
@@ -467,6 +468,7 @@ const authOptions = {
 const { runMigrations } = await getMigrations(authOptions);
 await runMigrations();
 const sessionFieldsFixture=await createSessionFieldsFixture(database,authOptions,`http://localhost:${PORT}`);
+const rateLimitFixture = createRateLimitFixture(authOptions);
 const clientIpFixture = await createClientIpFixture(authOptions, database);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
 const adminBannedMessageFixture = createAdminBannedMessageFixture(authOptions, database);
@@ -899,6 +901,8 @@ const server = Bun.serve({
     try {
       const url = new URL(request.url);
       organizationTransport.observe(request);
+      const rateLimitResponse = await rateLimitFixture.handle(request);
+      if (rateLimitResponse) return rateLimitResponse;
       const clientIpResponse = await clientIpFixture.handle(request);
       if (clientIpResponse) return clientIpResponse;
       const anonymousControl = await anonymousProfiles.handle(request);
