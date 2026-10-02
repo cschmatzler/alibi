@@ -107,7 +107,8 @@ state and session extractors). Other Rust HTTP hosts can call
 `BetterAuth::handle_request` with an `AuthRequest` and forward the complete
 `AuthResponse`: status, body bytes and all header entries, including repeated
 `Set-Cookie`. This direct future belongs to the caller; cancelling it can leave
-already committed writes. Retain it in an owned task when work must continue
+already committed writes; independently owned background callbacks already
+launched can continue. Retain it in an owned task when dispatch must continue
 after a client disconnect. Axum already supervises accepted, fully buffered
 requests; runtime/process shutdown can still cancel them.
 

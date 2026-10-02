@@ -24,7 +24,9 @@ server abort/drop receipts before releasing the callback and inspect real SQL
 state after the observer is gone. See [the continuation audit](axum-dispatch-continuation.md).
 
 A direct borrowed Rust future has a different ownership boundary from a
-JavaScript Promise: aborting its task cancels unfinished work. The native owner
+JavaScript Promise: aborting its task cancels unfinished dispatch. Independently
+owned background callbacks already launched can continue; cancellation does not
+undo their delivery or committed records. The native owner
 waits for a real initial write, aborts and joins the actual task, and verifies
 that the committed row remains while the later write/completed hook never ran.
 Its detached-observer control drops a real Tokio JoinHandle, releases the same

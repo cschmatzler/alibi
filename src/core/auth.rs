@@ -356,6 +356,7 @@ impl<S: AuthSchema> BetterAuth<S> {
     ///
     /// This future is owned by the caller: dropping or aborting it cancels
     /// unfinished dispatch without rolling back already committed writes.
+    /// Independently owned background callbacks already launched can continue.
     /// Hosts that require continuation after disconnect must retain the future
     /// in an owned task. Dropping a Tokio task's `JoinHandle` does not cancel it.
     /// The Axum integration already supervises fully buffered requests this way.
