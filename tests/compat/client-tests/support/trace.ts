@@ -1,4 +1,5 @@
 import { Cookie, CookieJar } from "tough-cookie";
+import { createHash } from "node:crypto";
 import { jsonShape } from "./normalize";
 import { mutateTransport } from "./assurance/wire";
 export const requestWindow = Symbol("compat-request-window");
@@ -9,6 +10,12 @@ export type RequestWindow = {
   inputOwner?: { field: "id" | "token"; value: string };
   sessionCookie?: string;
   issuedSessionCookie?: string;
+  /** Actual signed database-state cookie from the default OAuth issuing response. */
+  issuedVerificationStateCookie?: string;
+  /** Exact input of the admitted default verification-publication owners. */
+  verificationInput?: unknown;
+  /** Integrity of the original complete parsed observer response, separate from compared output. */
+  verificationObserverDigest?: string;
 };
 
 /** Complete response observations, kept in memory; reports contain paths rather than secrets. */
@@ -171,6 +178,7 @@ export function createTracingFetch(
       const responseText = await response.clone().text();
       const inputDates: Record<string, string> = {};
       let inputOwner: RequestWindow["inputOwner"];
+      let verificationInput: unknown;
       function dates(value: unknown, path = "") {
         if (!value || typeof value !== "object") return;
         for (const [key, child] of Object.entries(value)) {
@@ -196,6 +204,7 @@ export function createTracingFetch(
       }
       try {
         const input = JSON.parse(requestText);
+        verificationInput = input;
         dates(input);
         // Only this fixture operation explicitly supplies a session deadline.
         if (
@@ -206,11 +215,23 @@ export function createTracingFetch(
       } catch {
         /* A non-JSON body has no declared clock inputs. */
       }
+      let verificationObserverDigest: string | undefined;
+      if (request.method === "GET" && url.pathname === "/__test/verification-publications") {
+        try { verificationObserverDigest = createHash("sha256").update(JSON.stringify(JSON.parse(responseText))).digest("hex"); }
+        catch { /* A non-JSON response remains literal and has no publication admission. */ }
+      }
       const entry: TraceEntry = {
         [requestWindow]: {
           startedAt,
           finishedAt: Date.now(),
           inputDates,
+          ...(/\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(url.pathname)
+            ? { verificationInput: requestText ? verificationInput : null } : {}),
+          ...(/\/sign-in\/social$/.test(url.pathname) ? (() => {
+            const cookies = response.headers.getSetCookie().map(value => Cookie.parse(value)).filter(value => value && /^(?:__Secure-)?better-auth\.state$/.test(value.key) && value.maxAge === 300);
+            return cookies.length === 1 ? {issuedVerificationStateCookie: `${cookies[0]!.key}=${cookies[0]!.value}`} : {};
+          })() : {}),
+          ...(verificationObserverDigest ? { verificationObserverDigest } : {}),
           ...(inputOwner ? { inputOwner } : {}),
           ...sessionReceipt(headers, response.headers),
         },
@@ -223,6 +244,7 @@ export function createTracingFetch(
         responseCookies: responseCookies(response),
         responseBodyShape: bodyShape(responseText),
         ...(url.pathname === "/__test/api-key/create" ||
+        (request.method === "GET" && url.pathname === "/__test/verification-publications") ||
         (request.method === "POST" &&
           ["/__test/organization-membership-policy/server", "/__test/organization-member-addition/server"].includes(url.pathname)) ||
         /^\/(?:__test\/profiles\/[^/]+\/)?api\/auth(?:\/|$)/.test(url.pathname)

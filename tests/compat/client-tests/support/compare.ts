@@ -6,6 +6,7 @@ import { Cookie } from "tough-cookie";
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { normalizeClientValue } from "./normalize";
 import type { RequestWindow } from "./trace";
+import { verificationPublicationPairs, samePublication } from "./verification-publication";
 
 /** A safe diagnostic without response secrets. */
 export type Difference = { readonly path: string; readonly reason: string };
@@ -140,6 +141,14 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       collectResponseDates(trace.responseBody, other.responseBody, left, right);
     });
   }
+
+  const verificationPublications = verificationPublicationPairs(normalizedLeft, normalizedRight,
+    context.leftRequestWindows, context.rightRequestWindows, (a, b, leftCookie, rightCookie) => {
+      if (!context.sessionCookieSecret || !signedCookieIssuances.has(JSON.stringify([a, b]))) return false;
+      return signedCookie(leftCookie.slice(leftCookie.indexOf("=") + 1)).token === a
+        && signedCookie(rightCookie.slice(rightCookie.indexOf("=") + 1)).token === b;
+    }, (state, cookie) => !!context.sessionCookieSecret && /^(?:__Secure-)?better-auth\.state=/.test(cookie)
+      && signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token === state);
 
   function traceEndpoint(root: unknown, path: string): string | undefined {
     const index = /^traces\.(\d+)\.responseBody(?:\.|$)/.exec(path)?.[1];
@@ -600,6 +609,93 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   }
 
   function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false, compactCache = false, proxyProviders: readonly [string | undefined, string | undefined] | undefined = undefined, proxyPayload = false, owners: readonly string[] = []) {
+    if (!applicationData && !jwtPayload && !traceShape(path)
+      && !/(?:^|\.)(?:metadata|custom|additionalFields|applicationData)(?:\.|$)/.test(path)
+      && record(a) && record(b)) {
+      const complete = record(a.request) && record(a.before) && record(a.snapshot) && record(a.set)
+        && record(b.request) && record(b.before) && record(b.snapshot) && record(b.set);
+      const cacheSet = a.operation === "set" && b.operation === "set" && typeof a.key === "string" && a.key.startsWith("verification:")
+        && typeof b.key === "string" && b.key.startsWith("verification:") && "rawValue" in a && "rawValue" in b;
+      const otpDelivery = verificationPublications.find(pair => pair.kind === "otp" && pair.valid
+        && samePublication(a, pair.left.delivery) && samePublication(b, pair.right.delivery));
+      if (otpDelivery) {
+        for (const field of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+          const child = `${path}.${field}`;
+          if (!Object.hasOwn(a, field) || !Object.hasOwn(b, field)) fail(child, "field presence differs");
+          else if (field === "otp") identity(String(a.otp), String(b.otp), child, "token");
+          else visit(a[field], b[field], child, field);
+        }
+        return;
+      }
+      const observed = (complete || cacheSet) && verificationPublications.some(pair => samePublication(a, complete ? pair.left : pair.left.set)
+        || samePublication(b, complete ? pair.right : pair.right.set));
+      if (observed) {
+        const receipt = verificationPublications.find(pair => samePublication(a, complete ? pair.left : pair.left.set)
+          && samePublication(b, complete ? pair.right : pair.right.set));
+        if (!receipt?.valid) fail(`${path}.${complete ? "set." : ""}ttl`, "verification TTL lacks its exact issuing-request publication proof");
+        else {
+          const snapshot = (left: Record<string, unknown>, right: Record<string, unknown>, target: string) => {
+            for (const field of [...new Set([...Object.keys(left), ...Object.keys(right)])].sort()) {
+              const child = `${target}.${field}`;
+              if (!Object.hasOwn(left, field) || !Object.hasOwn(right, field)) fail(child, "field presence differs");
+              else if (field === "identifier" && receipt.kind === "oauth") identity(String(left.identifier), String(right.identifier), child, "verification-identifier");
+              else if (field === "value" && receipt.kind === "otp") {
+                const [leftCode, leftCounter] = String(left.value).split(":"), [rightCode, rightCounter] = String(right.value).split(":");
+                identity(leftCode!, rightCode!, `${child}.otp`, "token");
+                visit(leftCounter, rightCounter, `${child}.counter`, "counter");
+              }
+              else if (field === "value" && receipt.kind === "transfer") identity(String(left.value), String(right.value), child, "token");
+              else if (field === "value" && receipt.kind === "oauth") {
+                const a = JSON.parse(String(left.value)), b = JSON.parse(String(right.value));
+                for (const key of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+                  const target = `${child}.${key}`;
+                  if (!Object.hasOwn(a, key) || !Object.hasOwn(b, key)) fail(target, "field presence differs");
+                  else if (key === "expiresAt") continue; // Each exact 600s deadline was independently admitted.
+                  else if (key === "codeVerifier") identity(a[key], b[key], target, "code-verifier");
+                  else if (key === "oauthState") identity(a[key], b[key], target, "state");
+                  else visit(a[key], b[key], target, key);
+                }
+              }
+              else visit(left[field], right[field], child, field, false, false, false, false, undefined, false, false, undefined, false, dateOwners(left, right));
+            }
+          };
+          const set = (left: Record<string, unknown>, right: Record<string, unknown>, target: string) => {
+            for (const field of [...new Set([...Object.keys(left), ...Object.keys(right)])].sort()) {
+              const child = `${target}.${field}`;
+              if (!Object.hasOwn(left, field) || !Object.hasOwn(right, field)) { fail(child, "field presence differs"); continue; }
+              if (["ttl", "executedAt", "storedAt", "storageExpiresAt"].includes(field)) continue;
+              if (field === "key" && receipt.kind === "oauth") identity(String(left.key).slice("verification:".length), String(right.key).slice("verification:".length), child, "verification-identifier");
+              else if (field === "rawValue") snapshot(JSON.parse(String(left.rawValue)), JSON.parse(String(right.rawValue)), child);
+              else if (field === "value") snapshot(left.value as Record<string, unknown>, right.value as Record<string, unknown>, child);
+              else visit(left[field], right[field], child, field);
+            }
+          };
+          if (cacheSet) set(a, b, path);
+          else for (const field of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+            const child = `${path}.${field}`;
+            if (!Object.hasOwn(a, field) || !Object.hasOwn(b, field)) { fail(child, "field presence differs"); continue; }
+            const av = a[field] as Record<string, unknown>, bv = b[field] as Record<string, unknown>;
+            if (field === "set") set(av, bv, child);
+            else if (field === "snapshot") snapshot(av, bv, child);
+            else if (field === "before") for (const key of [...new Set([...Object.keys(av), ...Object.keys(bv)])].sort()) {
+              if (!Object.hasOwn(av, key) || !Object.hasOwn(bv, key)) { fail(`${child}.${key}`, "field presence differs"); continue; }
+              if (key === "executedAt") continue;
+              if (key === "snapshot") snapshot(av.snapshot as Record<string, unknown>, bv.snapshot as Record<string, unknown>, `${child}.snapshot`);
+              else visit(av[key], bv[key], `${child}.${key}`, key);
+            }
+            else if (field === "request") for (const key of [...new Set([...Object.keys(av), ...Object.keys(bv)])].sort()) {
+              if (!Object.hasOwn(av, key) || !Object.hasOwn(bv, key)) { fail(`${child}.${key}`, "field presence differs"); continue; }
+              if (["startedAt", "finishedAt"].includes(key)) continue;
+              if (key === "cookie" && typeof av.cookie === "string" && typeof bv.cookie === "string")
+                visit({headers:{cookie:av.cookie}}, {headers:{cookie:bv.cookie}}, child, "");
+              else visit(av[key], bv[key], `${child}.${key}`, key, false, key === "body");
+            }
+            else visit(a[field], b[field], child, field);
+          }
+          return;
+        }
+      }
+    }
     const leftEndpoint = traceEndpoint(normalizedLeft, path), rightEndpoint = traceEndpoint(normalizedRight, path);
     if (leftEndpoint && leftEndpoint === rightEndpoint && typeof a === "string" && typeof b === "string") {
       if (key === "totpURI" && /^traces\.\d+\.responseBody\.totpURI$/.test(path) && /\/two-factor\/(?:enable|get-totp-uri)$/.test(leftEndpoint)) {
