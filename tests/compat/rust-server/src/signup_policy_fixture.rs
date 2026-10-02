@@ -14,6 +14,9 @@ use better_auth::plugins::email_otp::{
 };
 use better_auth::plugins::email_verification::SendVerificationEmail;
 use better_auth::plugins::password_management::SendResetPassword;
+use better_auth::plugins::phone_number::{
+    PhoneNumberConfig, PhoneNumberPlugin, PhoneOtpDelivery, PhoneSignupIdentity, SendPhoneOtp,
+};
 use better_auth::plugins::{
     EmailPasswordConfig, EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin,
     SessionManagementPlugin,
@@ -151,6 +154,24 @@ impl SendEmailOtp for Application {
         Ok(())
     }
 }
+#[async_trait]
+impl SendPhoneOtp for Application {
+    async fn send(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
+        self.event(
+            json!({"stage":"phone-otp","phoneNumber":delivery.phone_number,"code":delivery.code}),
+        );
+        Ok(())
+    }
+}
+impl PhoneSignupIdentity for Application {
+    fn temporary_email(&self, phone_number: &str) -> String {
+        format!("{phone_number}@phone.fixture.test")
+    }
+}
 fn request_observation() -> Value {
     better_auth_core::hooks::current_request_hook_context().map_or(Value::Null, |request| {
         let path = request.path.rsplit("/api/auth").next().unwrap_or(&request.path);
@@ -265,10 +286,17 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 EmailVerificationPlugin::new().custom_send_verification_email(app.clone())
             })
             .plugin(password_management);
-        if name == "signup-otp" {
+        if name == "signup-otp" || name.starts_with("signup-username-") {
             builder = builder.plugin(EmailOtpPlugin::new(EmailOtpConfig {
                 send_verification_otp: Some(app.clone()),
-                override_default_email_verification: true,
+                override_default_email_verification: name == "signup-otp",
+                ..Default::default()
+            }));
+        }
+        if name.starts_with("signup-username-") {
+            builder = builder.plugin(PhoneNumberPlugin::new(PhoneNumberConfig {
+                send_otp: Some(app.clone()),
+                sign_up_on_verification: Some(app.clone()),
                 ..Default::default()
             }));
         }

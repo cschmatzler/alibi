@@ -95,6 +95,32 @@ SDK scenarios (1,720 assertions), 23 harness tests, two Chromium tests and
 77.59% source coverage (18,043/23,254 lines), with every canonical native,
 feature, lint, browser and documentation check retained.
 
+## Passwordless username input stages
+
+Passwordless creation parses registered username and display-username input
+before username validation and collision lookup. The create hook derives its
+display fallback from that parsed candidate; adapter transforms remain a
+separate storage stage. This matches pinned `parseUserInput` rather than
+lowercasing the final display value. Both callers supply a fresh candidate;
+trusted identity-policy mutations occur afterward and retain physical binding
+authority.
+
+The existing OTP signup owner reproduces the former `Mixed.Owner` fallback
+failure and covers collision proof consumption, failed-proof replay, foreign
+signup retry, and unchanged original-owner state. It also exercises twelve
+configured username profiles through real OTP deliveries and the custom
+post-normalization profile through real phone creation. Callback transcripts
+and counts preserve endpoint, validation, create-hook, and adapter stages.
+Readonly input, Unicode lengths, normalization preservation, display validators,
+disabled display output, and immutable policy remain covered.
+
+The shared fixture database is inspected through a profile registering both
+username columns, independently of the signup profile's public projection.
+A display-disabled Source adapter read omits that physical column; it is not
+used as a complete storage receipt. Public signup and session output still use
+the configured profile. This repair does not expand passwordless request parsing
+to arbitrary application additional fields.
+
 ## Remaining audited boundaries
 
 Plugin-specific default rate limits, versioned secret envelopes, schema

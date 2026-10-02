@@ -2,7 +2,7 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
 import { hashPassword, verifyPassword } from "better-auth/crypto";
-import { emailOTP, username } from "better-auth/plugins";
+import { emailOTP, phoneNumber, username } from "better-auth/plugins";
 import type { Database } from "bun:sqlite";
 
 export function createSignupPolicyFixture(database: Database, shared: BetterAuthOptions) {
@@ -46,8 +46,12 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
           ...(name === "signup-username-immutable" ? {immutableUsername:true} : {}),
           ...(name === "signup-username-display-disabled" ? {displayUsername:false} : {}),
         })].map(plugin=>{if(name === "signup-username-readonly")plugin.schema.user.fields.username.input=false;return plugin;}) : []),
-        ...(name === "signup-otp" ? [emailOTP({ overrideDefaultEmailVerification: true,
+        ...(name === "signup-otp" || name.startsWith("signup-username-") ? [emailOTP({ overrideDefaultEmailVerification: name === "signup-otp",
           async sendVerificationOTP(delivery) { events.push({stage: "otp", ...delivery}); },
+        })] : []),
+        ...(name.startsWith("signup-username-") ? [phoneNumber({
+          async sendOTP(delivery) { events.push({stage: "phone-otp", ...delivery}); },
+          signUpOnVerification: {getTempEmail: (phone: string) => `${phone}@phone.fixture.test`},
         })] : []),
       ],
       advanced: {...shared.advanced, ...(name === "signup-background" ? {
