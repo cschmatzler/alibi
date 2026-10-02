@@ -101,7 +101,17 @@ impl EmailOtpPlugin {
                 return Ok(otp);
             }
         }
-        self.issue_code(ctx, email, otp_type, None).await
+        let (otp, mut data) = self.prepare_code(ctx, email, otp_type, None).await?;
+        // The published delivery resolver retries a failed creation after
+        // invalidating this logical identifier, retaining the same generated
+        // OTP and selecting a fresh expiry for the retry. Server-only direct
+        // creation and change-email issuance retain their separate contracts.
+        if ctx.verifications().create(data.clone()).await.is_err() {
+            ctx.verifications().delete(&key).await?;
+            data.expires_at = Utc::now() + self.config.expires_in;
+            drop(ctx.verifications().create(data).await?);
+        }
+        Ok(otp)
     }
 
     ///

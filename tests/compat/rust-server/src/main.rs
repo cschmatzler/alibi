@@ -146,6 +146,7 @@ mod two_factor_policy_fixture;
 mod two_factor_totp_fixture;
 mod user_validation_fixture;
 mod verification_profiles;
+mod verification_storage_fixture;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
@@ -719,6 +720,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let set_password_router = set_password_fixture::router(&config, database.clone()).await?;
     let captcha_router = captcha_fixture::router(&config, database.clone(), port).await?;
     let reset_database = database.clone();
+    let (verification_storage_router, verification_storage_reset) =
+        verification_storage_fixture::router(&config, database.clone()).await?;
     let signup_policy_router = signup_policy_fixture::router(&config, database.clone()).await?;
     let compromised_password_router =
         compromised_password_fixture::router(&config, database.clone()).await?;
@@ -1254,6 +1257,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/__test/reset-state",
             post(move || {
+                let verification_storage_reset = verification_storage_reset.clone();
                 let user_validation_app = user_validation_app.clone();
                 let registration_receipts = registration_receipts.clone();
                 let passkey_auth_events = passkey_auth_events.clone();
@@ -1306,6 +1310,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     invitation_acceptance_reset.reset().await;
                     anonymous_reset.reset();
                     user_validation_app.reset();
+                    verification_storage_reset.reset();
                     siwe_fixture::reset(&siwe_state).await;
                     multiple_session_counter.store(0, std::sync::atomic::Ordering::SeqCst);
                     registration_receipts.reset();
@@ -1949,6 +1954,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(last_login_router)
         .merge(jwt_keyring_router)
         .merge(jwt_remote_router)
+        .merge(verification_storage_router)
         .merge(signup_policy_router)
         .merge(compromised_password_router)
         .merge(user_validation_router)

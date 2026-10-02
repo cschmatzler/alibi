@@ -133,6 +133,7 @@ impl VerificationCreation {
         VerificationSnapshot {
             data: JsValue::Object(fields),
             expiry: Some(self.expires_at.timestamp_millis()),
+            physical_expiry: None,
             original_model: None,
         }
     }
@@ -145,6 +146,7 @@ impl VerificationCreation {
 pub struct VerificationSnapshot {
     data: JsValue,
     expiry: Option<i64>,
+    physical_expiry: Option<DateTime<Utc>>,
     original_model: Option<Arc<dyn Any + Send + Sync>>,
 }
 impl fmt::Debug for VerificationSnapshot {
@@ -167,6 +169,7 @@ impl VerificationSnapshot {
             updated_at: model.updated_at(),
         };
         let mut snapshot = creation.snapshot();
+        snapshot.physical_expiry = Some(model.expires_at());
         snapshot.original_model = Some(Arc::new(model.clone()));
         snapshot
     }
@@ -196,6 +199,9 @@ impl VerificationSnapshot {
             .ok_or_else(|| AuthError::internal(format!("verification {key} is not a string")))
     }
     pub fn expires_at(&self) -> AuthResult<DateTime<Utc>> {
+        if let Some(expiry) = self.physical_expiry {
+            return Ok(expiry);
+        }
         let millis = self
             .expiry
             .or_else(|| date_value(self.data.get("expiresAt")))
@@ -230,6 +236,7 @@ impl VerificationSnapshot {
         Some(Self {
             data,
             expiry,
+            physical_expiry: None,
             original_model: None,
         })
     }
@@ -476,6 +483,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
             Ok(Some(VerificationSnapshot {
                 data: JsValue::Object(fields),
                 expiry: data.expires_at.map(|date| date.timestamp_millis()),
+                physical_expiry: None,
                 original_model: None,
             }))
         }
@@ -490,7 +498,7 @@ impl<S: AuthSchema> VerificationService<'_, S> {
             .await?;
         if !self.physical() {
             return Err(AuthError::internal(
-                "reserveVerificationValue requires database-backed verification storage",
+                "reserveVerificationValue requires database-backed verification storage. Set verification.storeInDatabase to true for flows that reserve verification values.",
             ));
         }
         let Some(model) = self

@@ -1427,7 +1427,7 @@ async fn verify_otp_core(
         };
         let next_value = format!("{stored_otp}:{next_counter}");
         let expires_at = verification.expires_at()?;
-        let verification_identifier = verification.identifier()?.to_owned();
+        let verification_identifier = otp_verification_identifier(state.key());
         drop(
             ctx.verifications()
                 .create(CreateVerification {

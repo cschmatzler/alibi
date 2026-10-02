@@ -513,7 +513,7 @@ pub(in crate::plugins) async fn revoke_unproven_access<S: AuthSchema>(
         Ok(value) => value,
         Err(AuthError::Internal(message))
             if message
-                == "reserveVerificationValue requires database-backed verification storage" =>
+                == "reserveVerificationValue requires database-backed verification storage. Set verification.storeInDatabase to true for flows that reserve verification values." =>
         {
             true
         }
