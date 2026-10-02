@@ -350,7 +350,7 @@ impl<S: AuthSchema> better_auth_core::store::SessionCreatedHook<S> for LastLogin
                 .resolve(&context)?
                 .filter(|method| !method.is_empty())
             && let Err(error) = database
-                .update_user(
+                .update_user_record(
                     session.user_id().as_ref(),
                     UpdateUser {
                         last_login_method: Some(Some(method)),

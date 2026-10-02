@@ -46,7 +46,7 @@ pub(in crate::plugins) async fn request_password_reset_core(
         message: PASSWORD_RESET_SUCCESS_MESSAGE.to_owned(),
     };
 
-    let Some(user) = ctx.database.get_user_by_email(&body.email).await? else {
+    let Some(user) = ctx.database.get_user_by_email_record(&body.email).await? else {
         drop(better_auth_core::utils::id::generate_id(24));
         drop(ctx.verifications().find("dummy-verification-token").await?);
         tracing::error!(email = %body.email, "Reset Password: User not found");
@@ -129,7 +129,7 @@ pub(in crate::plugins) async fn reset_password_core(
     let user_id = verification.value()?.to_owned();
     let user = ctx
         .database
-        .get_user_by_id(&user_id)
+        .get_user_by_id_record(&user_id)
         .await?
         .ok_or(AuthError::Upstream {
             status: 400,
@@ -146,7 +146,7 @@ pub(in crate::plugins) async fn reset_password_core(
     if let Some(account) = get_credential_account(ctx, &user_id).await? {
         drop(
             ctx.database
-                .update_account(
+                .update_account_record(
                     &account.id(),
                     UpdateAccount {
                         password: Some(password_hash),
@@ -158,7 +158,7 @@ pub(in crate::plugins) async fn reset_password_core(
     } else {
         drop(
             ctx.database
-                .create_account(CreateAccount {
+                .create_account_record(CreateAccount {
                     additional_fields: Default::default(),
                     user_id: user_id.clone(),
                     account_id: user_id.clone(),

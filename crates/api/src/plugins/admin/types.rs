@@ -123,7 +123,7 @@ impl HasPermissionRequest {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Serialize)]
-pub(in crate::plugins) struct AdminUserView {
+pub(in crate::plugins) struct PhysicalAdminUserView {
     pub id: String,
     pub name: Option<String>,
     pub email: Option<String>,
@@ -149,7 +149,7 @@ pub(in crate::plugins) struct AdminUserView {
     pub ban_expires: Option<String>,
 }
 
-impl<T: better_auth_core::entity::AuthUser> From<&T> for AdminUserView {
+impl<T: better_auth_core::entity::AuthUser> From<&T> for PhysicalAdminUserView {
     fn from(user: &T) -> Self {
         Self {
             id: user.id().into_owned(),
@@ -169,6 +169,41 @@ impl<T: better_auth_core::entity::AuthUser> From<&T> for AdminUserView {
                 .ban_expires()
                 .map(|value| value.to_rfc3339_opts(SecondsFormat::Millis, true)),
         }
+    }
+}
+
+#[derive(Debug, Serialize)]
+#[serde(transparent)]
+pub(in crate::plugins) struct AdminUserView(serde_json::Map<String, serde_json::Value>);
+
+impl AdminUserView {
+    pub(in crate::plugins) fn from_output<S: better_auth_core::AuthSchema>(
+        ctx: &better_auth_core::AuthContext<S>,
+        user: &better_auth_core::AdapterRecord<S::User>,
+    ) -> better_auth_core::AuthResult<Self> {
+        let serde_json::Value::Object(mut output) =
+            serde_json::to_value(PhysicalAdminUserView::from(user))?
+        else {
+            return Err(better_auth_core::AuthError::internal(
+                "Admin user output must be an object",
+            ));
+        };
+        let registered = ctx
+            .extensions
+            .get::<better_auth_core::field_policy::UserFields>();
+        let fields = registered
+            .as_ref()
+            .map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
+        for (name, field) in fields {
+            drop(output.remove(name));
+            if field.returned
+                && let Some(value) = user.raw_snapshot().values().get(name)
+            {
+                drop(output.insert(name.clone(), value.clone()));
+            }
+        }
+        output.extend(ctx.user_view(user).extension_fields);
+        Ok(Self(output))
     }
 }
 

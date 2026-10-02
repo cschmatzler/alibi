@@ -563,6 +563,15 @@ impl Application {
             .all(&self.database)
             .await
             .map_err(db_error)?;
+        let verifications: Vec<Value> = verifications
+            .into_iter()
+            .map(|row| {
+                json!({
+                    "id":row.id,"identifier":row.identifier,"value":row.value,
+                    "expiresAt":row.expires_at,"createdAt":row.created_at,"updatedAt":row.updated_at
+                })
+            })
+            .collect();
         let events = self.events.lock().expect("application receipts").clone();
         let mut state = json!({"users":users,"sessions":sessions,"accounts":accounts,"verifications":verifications,"events":events});
         if self.mode == "provider" {

@@ -350,7 +350,7 @@ pub(in crate::plugins) async fn delete_organization_core(
     if session.active_organization_id() == Some(body.organization_id.as_str()) {
         drop(
             ctx.database
-                .update_session_active_organization(session.token(), None)
+                .update_session_active_organization_record(session.token(), None)
                 .await?,
         );
     }
@@ -512,7 +512,7 @@ pub(in crate::plugins) async fn get_full_organization_core(
     {
         drop(
             ctx.database
-                .update_session_active_organization(session.token(), None)
+                .update_session_active_organization_record(session.token(), None)
                 .await?,
         );
         return Err(AuthError::forbidden("User is not a member of the organization").into());
@@ -560,7 +560,7 @@ pub(in crate::plugins) async fn set_active_organization_core(
 
         drop(
             ctx.database
-                .update_session_active_organization(session.token(), None)
+                .update_session_active_organization_record(session.token(), None)
                 .await?,
         );
         return Ok(None);
@@ -600,7 +600,7 @@ pub(in crate::plugins) async fn set_active_organization_core(
     {
         drop(
             ctx.database
-                .update_session_active_organization(session.token(), None)
+                .update_session_active_organization_record(session.token(), None)
                 .await?,
         );
         return Err(super::extension_common::org_error(
@@ -617,7 +617,10 @@ pub(in crate::plugins) async fn set_active_organization_core(
 
     drop(
         ctx.database
-            .update_session_active_organization(session.token(), Some(organization.id().as_ref()))
+            .update_session_active_organization_record(
+                session.token(),
+                Some(organization.id().as_ref()),
+            )
             .await?,
     );
 
@@ -665,7 +668,7 @@ pub(in crate::plugins) async fn leave_organization_core(
     if session.active_organization_id() == Some(&body.organization_id) {
         drop(
             ctx.database
-                .update_session_active_organization(session.token(), None)
+                .update_session_active_organization_record(session.token(), None)
                 .await?,
         );
     }
@@ -703,7 +706,7 @@ pub async fn handle_create_organization(
     if !body.keep_current_active_organization.unwrap_or(false) {
         drop(
             ctx.database
-                .update_session_active_organization(
+                .update_session_active_organization_record(
                     session.token(),
                     Some(response.organization.id.as_str()),
                 )
@@ -712,7 +715,7 @@ pub async fn handle_create_organization(
         if let Some(team_id) = &response.default_team_id {
             drop(
                 ctx.database
-                    .update_session_active_team(session.token(), Some(team_id))
+                    .update_session_active_team_record(session.token(), Some(team_id))
                     .await?,
             );
         }
@@ -865,7 +868,7 @@ pub async fn handle_get_organization(
     {
         drop(
             ctx.database
-                .update_session_active_organization(session.token(), None)
+                .update_session_active_organization_record(session.token(), None)
                 .await?,
         );
         return Err(AuthError::forbidden(

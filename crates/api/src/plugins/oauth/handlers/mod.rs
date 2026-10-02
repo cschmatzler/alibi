@@ -1491,7 +1491,7 @@ pub(in crate::plugins) async fn complete_link_social(
 
         drop(
             ctx.database
-                .update_account(
+                .update_account_record(
                     &existing_account.id(),
                     UpdateAccount {
                         access_token: token_bundle.access_token,
@@ -1521,7 +1521,7 @@ pub(in crate::plugins) async fn complete_link_social(
 
     drop(
         ctx.database
-            .create_account(CreateAccount {
+            .create_account_record(CreateAccount {
                 additional_fields: Default::default(),
                 user_id: link.user_id.clone(),
                 account_id: user_info.id.clone(),
@@ -1779,7 +1779,7 @@ async fn link_with_id_token_core(
     )?;
     drop(
         ctx.database
-            .create_account(CreateAccount {
+            .create_account_record(CreateAccount {
                 additional_fields: Default::default(),
                 user_id: session.user_id().to_string(),
                 provider_id: body.provider.clone(),
@@ -1803,7 +1803,7 @@ async fn link_with_id_token_core(
     if linking.update_user_info_on_link {
         drop(
             ctx.database
-                .update_user(
+                .update_user_record(
                     &session.user_id(),
                     UpdateUser {
                         name: response.user.name.clone(),

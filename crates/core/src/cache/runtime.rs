@@ -55,13 +55,17 @@ impl PublishedSessionSnapshot {
 /// The snapshot whose session cookies completed successfully in this dispatch.
 /// Response hooks may observe it; it never establishes authentication.
 #[must_use]
-pub fn published_session(request: &impl SessionRequest) -> Option<(crate::UserView, crate::SessionView)> {
+pub fn published_session(
+    request: &impl SessionRequest,
+) -> Option<(crate::UserView, crate::SessionView)> {
     published_session_snapshot(request).map(|snapshot| (snapshot.user, snapshot.session))
 }
 
 /// Observe immutable retained output without reconstructing a storage model.
 #[must_use]
-pub fn published_session_snapshot(request: &impl SessionRequest) -> Option<PublishedSessionSnapshot> {
+pub fn published_session_snapshot(
+    request: &impl SessionRequest,
+) -> Option<PublishedSessionSnapshot> {
     request
         .extensions()
         .get::<PublishedSession>()
@@ -81,7 +85,9 @@ pub fn discard_issuance(request: &impl SessionRequest) {
 
 fn record_publication(snapshot: PublishedSessionSnapshot) {
     if let Some(endpoint) = crate::endpoint::current_endpoint_call_context() {
-        endpoint.extensions().insert(PublishedSession(Some(snapshot)));
+        endpoint
+            .extensions()
+            .insert(PublishedSession(Some(snapshot)));
     } else if let Some(request) = crate::hooks::current_request_hook_context() {
         request.extensions.insert(PublishedSession(Some(snapshot)));
     }
@@ -607,7 +613,7 @@ async fn authenticated_inner<S: AuthSchema>(
     request.extensions().insert(SessionHookCache(None));
     if let Some(session) = request.virtual_session(ctx) {
         let user = if let Some(user) = request.authenticated_user::<S>(ctx) {
-            ctx.database.user_record(user).await?
+            ctx.user_adapter_record(user).await?
         } else {
             let Some(user) = ctx.database.get_user_by_id_record(&session.user_id).await? else {
                 return Ok(None);

@@ -14,7 +14,7 @@ mod validation;
 #[cfg(test)]
 mod tests;
 
-use super::helpers::{apply_default_role, issue_user_session_record};
+use super::helpers::{apply_default_role, issue_selected_user_session_record};
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthSession,
     AuthUser, CreateAccount, CreateUser, CreateVerification, CreateWalletAddress, RequestMeta,
@@ -205,7 +205,7 @@ impl SiwePlugin {
         };
         let user = if let Some(wallet) = wallet {
             ctx.database
-                .get_user_by_id(&wallet.user_id)
+                .get_user_by_id_record(&wallet.user_id)
                 .await
                 .map_err(storage_error)?
         } else {
@@ -226,9 +226,10 @@ impl SiwePlugin {
             user_2
         };
         let meta = RequestMeta::from_request(request);
-        let issued = issue_user_session_record(ctx, &user.id(), meta.ip_address, meta.user_agent)
-            .await
-            .map_err(|error| storage_error(error.into_auth_error()))?;
+        let issued =
+            issue_selected_user_session_record(ctx, user, meta.ip_address, meta.user_agent)
+                .await
+                .map_err(|error| storage_error(error.into_auth_error()))?;
         let token = issued.session.token();
         let mut response = AuthResponse::json(200, &json!({"token":token,"success":true,"user":{"id":issued.user.id(),"walletAddress":address,"chainId":chain_id}})).map_err(|error| storage_error(error.into()))?;
         Self::session_cookies(request, ctx, token, &mut response);
@@ -240,7 +241,7 @@ impl SiwePlugin {
         ctx: &AuthContext<S>,
         address: &str,
         email: Option<&str>,
-    ) -> SiweCallbackResult<S::User> {
+    ) -> SiweCallbackResult<better_auth_core::AdapterRecord<S::User>> {
         let normalized_email = email.map(str::to_lowercase);
         let wallet_email = self
             .config
@@ -271,7 +272,7 @@ impl SiwePlugin {
                 claim = Some(identifier);
                 if ctx
                     .database
-                    .get_user_by_email(email_2)
+                    .get_user_by_email_record(email_2)
                     .await
                     .map_err(storage_error)?
                     .is_none()
@@ -293,7 +294,7 @@ impl SiwePlugin {
         apply_default_role(ctx, &mut create);
         let created = ctx
             .database
-            .create_user_with_source(
+            .create_user_with_source_record(
                 create.clone(),
                 better_auth_core::user_validation::UserValidationSource::creation("siwe"),
             )
@@ -302,11 +303,11 @@ impl SiwePlugin {
             Ok(user) => Ok(user),
             Err(error) if Some(&user_email) == normalized_email.as_ref() => {
                 let email_3 = normalized_email.as_deref().unwrap_or_default();
-                match ctx.database.get_user_by_email(email_3).await {
+                match ctx.database.get_user_by_email_record(email_3).await {
                     Ok(Some(_)) => {
                         create.email = Some(wallet_email);
                         ctx.database
-                            .create_user_with_source(
+                            .create_user_with_source_record(
                                 create,
                                 better_auth_core::user_validation::UserValidationSource::creation(
                                     "siwe",
@@ -349,7 +350,7 @@ impl SiwePlugin {
         let mut number = ryu_js::Buffer::new();
         drop(
             ctx.database
-                .create_account(CreateAccount {
+                .create_account_record(CreateAccount {
                     additional_fields: Default::default(),
                     user_id: user_id.to_owned(),
                     account_id: format!("{address}:{}", number.format(chain_id)),

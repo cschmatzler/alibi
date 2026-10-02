@@ -69,7 +69,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
         }
     } else {
         let start = tokio::time::Instant::now();
-        let user = ctx.database.get_user_by_email(&body.email).await?;
+        let user = ctx.database.get_user_by_email_record(&body.email).await?;
         let result: AuthResult<()> = if let Some(user) = user.filter(|user| !user.email_verified())
         {
             async {
@@ -202,7 +202,7 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
 
     let Some(user) = ctx
         .database
-        .get_user_by_email(&claims.email.to_lowercase())
+        .get_user_by_email_record(&claims.email.to_lowercase())
         .await?
     else {
         return verification_error(query, "USER_NOT_FOUND", "User not found");
@@ -268,7 +268,7 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
 
                 let updated_user = ctx
                     .database
-                    .update_user(
+                    .update_user_record(
                         &user.id(),
                         UpdateUser {
                             email: Some(update_to.to_owned()),
@@ -321,7 +321,7 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
                     };
                 let updated_user = ctx
                     .database
-                    .update_user(
+                    .update_user_record(
                         &user.id(),
                         UpdateUser {
                             email: Some(update_to.to_owned()),
@@ -398,7 +398,7 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
 
     let updated_user = ctx
         .database
-        .update_user(
+        .update_user_record(
             &user.id(),
             UpdateUser {
                 email_verified: Some(true),

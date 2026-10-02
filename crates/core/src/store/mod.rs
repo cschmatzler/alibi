@@ -187,17 +187,7 @@ impl<S: AuthSchema> PluginStore<S> {
     }
 
     async fn user_record(&self, user: S::User) -> AuthResult<crate::AdapterRecord<S::User>> {
-        use crate::AuthUser;
-        let output = self
-            .field_policies()
-            .user
-            .record_output(
-                serde_json::to_value(crate::UserView::from(&user))?,
-                user.additional_fields(),
-                serde_json::to_value(self.projection_context.trusted_user_view(&user))?,
-            )
-            .await?;
-        Ok(crate::AdapterRecord::with_output(user, output))
+        self.projection_context.user_adapter_record(user).await
     }
 
     async fn session_record(

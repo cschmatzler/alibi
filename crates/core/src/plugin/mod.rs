@@ -825,6 +825,33 @@ impl<S: AuthSchema> AuthContext<S> {
         view
     }
 
+    /// Retain configured output for an already authenticated physical user.
+    pub(crate) async fn user_adapter_record(
+        &self,
+        user: S::User,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        use crate::AuthUser;
+        let registered = self
+            .extensions
+            .get::<crate::field_policy::AdapterFieldPolicies>();
+        let fields = registered.as_ref().map_or_else(
+            || {
+                crate::field_policy::SessionAdapterFields(Arc::new(
+                    self.config.user.additional_fields.clone(),
+                ))
+            },
+            |fields| fields.user.clone(),
+        );
+        let output = fields
+            .record_output(
+                serde_json::to_value(crate::UserView::from(&user))?,
+                user.additional_fields(),
+                serde_json::to_value(self.trusted_user_view(&user))?,
+            )
+            .await?;
+        Ok(crate::AdapterRecord::with_output(user, output))
+    }
+
     /// Preserve the initialized adapter result's physical authority and declared
     /// undefined presence while applying the public user field policy once.
     #[must_use]

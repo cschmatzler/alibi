@@ -254,7 +254,7 @@ impl MagicLinkPlugin {
 
         let data: LinkData = serde_json::from_str(verification.value()?)?;
         let mut is_new_user = false;
-        let user = match ctx.database.get_user_by_email(&data.email).await? {
+        let user = match ctx.database.get_user_by_email_record(&data.email).await? {
             Some(user) if !user.email_verified() => {
                 match revoke_unproven_access(ctx, &user.id()).await? {
                     Some(user) => user,
@@ -274,7 +274,7 @@ impl MagicLinkPlugin {
                 is_new_user = true;
                 match ctx
                     .database
-                    .create_user_with_source(
+                    .create_user_with_source_record(
                         user,
                         better_auth_core::user_validation::UserValidationSource::creation(
                             "magic-link",
@@ -293,7 +293,7 @@ impl MagicLinkPlugin {
                 }
             }
         };
-        let (payload, mut response) = session_response(ctx, req, &user.id()).await?;
+        let (payload, mut response) = session_response(ctx, req, user).await?;
         if callback.is_none() {
             response.body = serde_json::to_vec(&payload)?;
             return Ok(response);

@@ -956,7 +956,7 @@ async fn enable_core(
         }
         let updated_user = ctx
             .database
-            .update_user(
+            .update_user_record(
                 user.id().as_ref(),
                 UpdateUser {
                     two_factor_enabled: Some(true),
@@ -1013,7 +1013,7 @@ async fn enable_core(
     if config.skip_verification_on_enable {
         let updated_user = ctx
             .database
-            .update_user(
+            .update_user_record(
                 user.id().as_ref(),
                 UpdateUser {
                     two_factor_enabled: Some(true),
@@ -1101,7 +1101,7 @@ async fn disable_core(
 
     let updated_user = ctx
         .database
-        .update_user(
+        .update_user_record(
             user.id().as_ref(),
             UpdateUser {
                 two_factor_enabled: Some(false),
@@ -1883,7 +1883,7 @@ async fn verify_existing_session_factor(
     if enable_two_factor_if_needed && !user.two_factor_enabled() {
         let updated_user = ctx
             .database
-            .update_user(
+            .update_user_record(
                 user.id().as_ref(),
                 UpdateUser {
                     two_factor_enabled: Some(true),
