@@ -54,7 +54,7 @@ fractional expiry, missing response scope as an empty persisted string, and
 existing scope through refresh. The factory does not forward basic/custom token
 authentication; no unsupported Source basic mode is claimed.
 
-## Measured proof and remaining publication
+## Measured proof and validation
 
 The initial 43 owners passed 40/43 (1,598 assertions,
 /tmp/issue143-initial-43-owner.log). The missing-email expectation was corrected
@@ -86,5 +86,30 @@ identified ownership blocker. The capability ledger preserves all 3,761 parent
 requirements in their original order and appends 186 cells from actual passing,
 recorded public Dropbox owners, totaling 3,947. It excludes foreign setup routes
 and callback denials the existing collector cannot classify as rejection.
-Complete canonical/browser proof, clean unchanged-floor coverage and publication
-remain pending. This draft does not claim a green full gate.
+The frozen cc919717 canonical scripts/check.sh run passed both strict Clippy
+matrices, Rustls checking, formatting, 794 default native tests, 845 optional
+native tests, two fixture tests, 71 harness checks / 754 assertions, 36 Axum
+checks, three endpoint checks and two inventory checks. The complete SDK phase
+passed **1,116/1,120 owners / 77,784 assertions**, including all 46 Dropbox owners
+(/tmp/issue143-current-final-canonical.log, terminal exit 100). Its four failures
+are the existing organization membership timing aliases and generated
+seed12648430 default/no-refresh/deferred snapshot22 code/message, the latter
+tracked in #221. All JWT owners passed on this run. The full canonical gate is
+not claimed green; it stops before its later docs/browser/coverage phases.
+
+Separately measured documentation with warnings denied and both actual browser
+owners / 22 assertions pass (/tmp/issue143-main204-strict-docs.log and
+/tmp/issue143-current-browser.log, terminal exit0). Clean local native coverage
+passes all 845 optional native tests and all five existing instrumented SDK
+groups with explicit Cargo and fixture coverage targets; the complete report
+covers **30,943/40,136 lines (77.095376%)**, exceeding the unchanged 75% floor
+(/tmp/issue143-current-clean-coverage.log, terminal exit0). This is actual native
+and fixture execution, not source-presence coverage.
+
+After Cognito merged, this issue's two commits were rebased onto actual main
+3da0bb05. The measured cc919717 program and rebased program differ only in the
+inherited Cognito audit document; all production, fixture, scenario, lockfile and
+capability bytes are identical. The final publication audit changes no program
+input. One Dropbox PR contains only this dedicated provider, its actual boundary
+owners and measured evidence. No Source/comparer change, lint suppression,
+dependency patch or hook bypass was used.
