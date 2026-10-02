@@ -194,3 +194,51 @@ correctly preserved the previous logical operation, so regeneration never reache
 the callback. The second operation now starts a real fresh AuthRequest with the
 same actual signed cookie/body, while every error, receipt and rollback assertion
 remains intact. No production seam or error-contract adjustment was needed.
+
+
+## Full canonical regression classification and bounded repair
+
+Frozen 46d00c6b on fa883 passed both strict matrices, optional feature build,
+793/793 default native,845/845 optional native,2/2 fixture,71/71 harness and
+alignment checks. Full SDK terminated with1119/1136 pass,17 fail,78948 assertions
+(`/tmp/issue221-canonical-final3.log`, exit100). Ten existing organization guest
+owners and three admin guest owners exposed a real regression: generic ordinary
+middleware error normalization ran before route-specific null-session responses.
+Organization common resolution now retains its missing-session error for those
+existing handlers; has-permission still uses its actual Source generic middleware
+response. Admin stop-impersonating retains Source's empty401. Cached authority and
+sensitive physical admission are unchanged. The existing owners are retained
+without changing their Source expectations.
+
+The other four failures were one organization observation7 timestamp/lifetime
+alias, one remote JWT default-expiration observation, one raw API-key metadata
+transport comparison and one raw multiple-session cookie comparison. These
+clock failures are recorded exactly, without claiming a same-count parent rerun.
+All13 original compact owners and15/16 new owners passed; the remaining new
+admin owner passed its admission/SQL/hash controls and failed only metadata type.
+
+Actual byte artifacts are retained at
+`/tmp/issue221-source-raw-observation.json` and
+`/tmp/issue221-native-raw-observation.json`; the real probe passed
+`/tmp/issue221-raw-observation2.log`, exit0. Source's adapter decoded SQL JSON text
+`null` to JSON null while the native physical model retained the original string.
+Both fixtures now retain the actual stored metadata column and its typed JSON
+value, without dropping any other key field or changing production. The Source
+raw read binds the actual issued row ID as a SQL parameter; malformed native JSON
+fails the observation rather than being replaced. The initial probe outside the
+Devenv environment failed to load libssl before either parity half ran
+(`/tmp/issue221-raw-observation.log`); it is not native parity evidence.
+
+The actual invalid-capacity cookie payload and signature bytes matched and were
+independently verified with HMAC-SHA256; both actual follow-up get-session reads
+admitted only the issued owner/token. Raw strings differed only in attribute
+ordering and Native's additional Expires alongside the same Max-Age. The SDK
+capacity owner now independently verifies the HMAC, retains the complete signed
+pair and performs the real follow-up read; all attributes remain in the existing
+unchanged structured transport observer, which follows RFC6265 Max-Age
+precedence. The full raw headers remain in the byte artifacts. Wider cookie
+attribute parity remains171–177; no shared comparator was changed.
+
+Final composition onto Facebook main6803cbef preserves every existing public
+capability/profile. Final affected SDK/host, strict/typecheck, docs/browser and
+clean75% coverage results remain pending on the immutable composed candidate.

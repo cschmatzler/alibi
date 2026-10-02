@@ -41,7 +41,7 @@ pub(in crate::plugins) async fn require_session<S: better_auth_core::AuthSchema>
     better_auth_core::AuthenticatedUser<S>,
     better_auth_core::wire::SessionView,
 )> {
-    crate::plugins::helpers::ordinary_session(req, ctx).await
+    ctx.require_cached_session(req).await
 }
 
 /// Helper function to get organization ID from request or session
@@ -165,7 +165,7 @@ pub async fn handle_has_permission(
         organization_id,
         permissions: permissions.into_iter().collect(),
     };
-    let (user, session) = require_session(req, ctx).await?;
+    let (user, session) = crate::plugins::helpers::ordinary_session(req, ctx).await?;
     let response = has_permission_core(&body, &user, &session, config, ctx).await?;
     Ok(AuthResponse::json(200, &response)?)
 }

@@ -50,7 +50,12 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
     else if(body.action==="revoke"){if(!body.token)return Response.json({error:"Invalid token"},{status:400});await context.internalAdapter.deleteSession(body.token);}
     else if(body.action==="api-key-rows"){
       if(!body.userId)return Response.json({error:"Invalid owner"},{status:400});
-      return Response.json({keys:await context.adapter.findMany({model:"apikey",where:[{field:"referenceId",value:body.userId}]})});
+      const keys=await context.adapter.findMany({model:"apikey",where:[{field:"referenceId",value:body.userId}]});
+      return Response.json({keys:keys.map(key=>{
+        const stored=database.query("SELECT metadata FROM apikey WHERE id = ?").get(key.id as string) as {metadata:string|null}|null;
+        if(!stored)throw new Error("Actual API-key row missing");
+        return {...key,storedMetadata:stored.metadata};
+      })});
     }
     else if(body.action==="rows"){
       if(!body.userId)return Response.json({error:"Invalid owner"},{status:400});

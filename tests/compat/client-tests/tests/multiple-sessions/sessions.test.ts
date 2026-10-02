@@ -2,6 +2,7 @@ import {expect} from "bun:test";
 import {z} from "zod";
 import {createAuthClient} from "better-auth/client";
 import {multiSessionClient} from "better-auth/client/plugins";
+import {createHmac} from "node:crypto";
 import {compatScenario} from "../../support/scenario";
 import {authProfilePath} from "../../support/profiles";
 
@@ -109,13 +110,21 @@ compatScenario("multiple sessions rotate same-user login and honor configured br
   const invalidBody=await invalidSignin.json();
   const invalidCookies=invalidSignin.headers.getSetCookie();
   expect(invalidCookies.some(value=>value.includes("_multi-"))).toBeFalse();
-  expect(invalidCookies.some(value=>value.startsWith("better-auth.session_token="))).toBeTrue();
+  const signedCookie=invalidCookies.find(value=>value.startsWith("better-auth.session_token="))?.split(";")[0];
+  if(!signedCookie)throw new Error("actual session cookie expected");
+  const signed=decodeURIComponent(signedCookie.slice(signedCookie.indexOf("=")+1));
+  const secret=["compat","test","only","key","not","real","minimum","32chars"].join("-");
+  expect(signed).toBe(invalidBody.token+"."+createHmac("sha256",secret).update(invalidBody.token).digest("base64"));
+  const read=await ctx.actor("invalid-capacity","multi-session-limited").fetch(
+    `${ctx.baseURL}${authProfilePath("multi-session-limited")}/get-session`,{credentials:"omit",headers:{cookie:signedCookie}});
+  expect(read.status).toBe(200);const authenticated=await read.json();
+  expect(authenticated.user.id).toBe(first.data.user.id);expect(authenticated.session.token).toBe(invalidBody.token);
   const capacityState=stateSchema.parse(await ctx.readUserState({userId:first.data.user.id}));
   expect(capacityState.sessions).toHaveLength(1);
   expect(capacityState.sessions[0]?.token).toBe(invalidBody.token);
   const foreignAfter=await ctx.readUserState({userId:third.data.user.id});
   expect(foreignAfter).toEqual(foreignBefore);
-  return {first,second,third,list,active,missingCookie,rotated,state,replay,refreshed,signout,after,invalidSignin:{status:invalidSignin.status,body:invalidBody,cookies:invalidCookies},capacityState,foreignBefore,foreignAfter};
+  return {first,second,third,list,active,missingCookie,rotated,state,replay,refreshed,signout,after,invalidSignin:{status:invalidSignin.status,body:invalidBody,signedCookie,cookieNames:invalidCookies.map(value=>value.slice(0,value.indexOf("=")))},authenticated,capacityState,foreignBefore,foreignAfter};
 },["POST /sign-in/email"]);
 
 compatScenario("multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",async ctx=>{

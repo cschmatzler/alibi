@@ -411,6 +411,12 @@ pub(super) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                     "api-key-rows" => {
                         let user_id=control.user_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
                         let keys=auth.store().list_api_keys_by_reference(user_id).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        let keys=keys.iter().map(|key|{
+                            let mut value=serde_json::to_value(key).map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                            value["storedMetadata"]=json!(key.metadata);
+                            value["metadata"]=key.metadata.as_deref().map(serde_json::from_str::<Value>).transpose().map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?.unwrap_or(Value::Null);
+                            Ok(value)
+                        }).collect::<Result<Vec<_>,axum::http::StatusCode>>()?;
                         return Ok(Json(json!({"keys":keys})));
                     }
                     "state" => {}
