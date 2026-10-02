@@ -290,6 +290,36 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   }
   const leftEntities=entityValues(normalizedLeft),rightEntities=entityValues(normalizedRight);
 
+  const leftMemberIds = new Set<string>(), rightMemberIds = new Set<string>();
+  const leftKeyIds = new Set<string>(), rightKeyIds = new Set<string>();
+  const memberReceipt = (value: Record<string, unknown>) => typeof value.id === "string"
+    && typeof value.organizationId === "string" && typeof value.userId === "string"
+    && typeof value.role === "string" && isDate(value.createdAt);
+  function observedSelectors(a: unknown, b: unknown, path = "", applicationData = false) {
+    if (applicationData || traceShape(path)) return;
+    if (Array.isArray(a) && Array.isArray(b)) {
+      a.forEach((child, index) => observedSelectors(child, b[index], path ? `${path}.${index}` : `${index}`));
+    } else if (record(a) && record(b)) {
+      if ("exp" in a && "iss" in a && "aud" in a) return;
+      const leftMember = memberReceipt(a), rightMember = memberReceipt(b);
+      if (leftMember) leftMemberIds.add(String(a.id));
+      if (rightMember) rightMemberIds.add(String(b.id));
+      if (leftMember && rightMember) {
+        identity(String(a.id), String(b.id), `${path}.id`, "entity");
+      }
+      const leftKey = sqliteApiKeyReceipt(a) && sqliteStorage(a, leftSqliteApiKeys);
+      const rightKey = sqliteApiKeyReceipt(b) && sqliteStorage(b, rightSqliteApiKeys);
+      if (leftKey) leftKeyIds.add(String(a.id));
+      if (rightKey) rightKeyIds.add(String(b.id));
+      if (leftKey && rightKey) {
+        identity(String(a.id), String(b.id), `${path}.id`, "entity");
+      }
+      for (const [key, child] of Object.entries(a)) observedSelectors(child, b[key], path ? `${path}.${key}` : key,
+        ["metadata", "additionalFields", "custom", "applicationData"].includes(key));
+    }
+  }
+  observedSelectors(normalizedLeft, normalizedRight);
+
   function compactPart(value: string, whitespace: boolean): Buffer | undefined {
     const encoded = whitespace ? value.replace(/[ \t\n\r\f]/g, "") : value;
     if (!/^[A-Za-z0-9_-]+={0,2}$/.test(encoded)) return;
@@ -564,6 +594,15 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       && !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path)) {
       if (!applicationData && !jwtPayload && /\.headers\.(?:cookie|set-cookie)$/.test(path)
         && sessionHeader(a, b, path, key === "set-cookie")) return;
+      if (!applicationData && !jwtPayload && (key === "keyId" || (key === "memberIdOrEmail" && !a.includes("@") && !b.includes("@")))) {
+        const leftKnown = key === "keyId" ? leftKeyIds : leftMemberIds;
+        const rightKnown = key === "keyId" ? rightKeyIds : rightMemberIds;
+        if (leftKnown.has(a) || rightKnown.has(b)) {
+          if (!leftKnown.has(a) || !rightKnown.has(b)) fail(path, "server selector lacks its observed entity on both sides");
+          else identity(a, b, path, "entity");
+          return;
+        }
+      }
       if (key === "profile" && urlQueryContext === "query" && proxyProviders) {
         const leftPayload = leftProxyProfiles.get(a), rightPayload = rightProxyProfiles.get(b);
         if (!leftPayload || !rightPayload) {
