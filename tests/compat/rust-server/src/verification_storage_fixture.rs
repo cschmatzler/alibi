@@ -11,10 +11,12 @@ use better_auth::plugins::email_otp::{
 use better_auth::plugins::magic_link::{
     MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenGenerator, SendMagicLink,
 };
+use better_auth::plugins::oauth::OAuthPlugin;
 use better_auth::plugins::one_time_token::{
     GenerateOneTimeToken, OneTimeTokenConfig, OneTimeTokenPlugin, OneTimeTokenSession,
 };
 use better_auth::plugins::password_management::{PasswordManagementConfig, SendResetPassword};
+use better_auth::plugins::two_factor::{SendTwoFactorOtp, TwoFactorPlugin};
 use better_auth::plugins::{
     EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
@@ -26,7 +28,7 @@ use better_auth_core::{
         VerificationCreation, VerificationIdentifierHasher, VerificationIdentifierStrategy,
         VerificationSnapshot,
     },
-    wire::{AccountView, VerificationView},
+    wire::{AccountView, UserView, VerificationView},
 };
 use better_auth_seaorm::{
     DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
@@ -41,7 +43,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-const PROFILES: [&str; 9] = [
+const PROFILES: [&str; 11] = [
     "plain",
     "hashed",
     "custom",
@@ -51,6 +53,8 @@ const PROFILES: [&str; 9] = [
     "mixed",
     "no-cleanup",
     "limit",
+    "cache-default",
+    "mixed-default",
 ];
 fn hash(value: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(value.as_bytes()))
@@ -66,9 +70,11 @@ struct Application {
     cache: Mutex<BTreeMap<String, (String, DateTime<Utc>)>>,
     events: Mutex<Vec<Value>>,
     cache_events: Mutex<Vec<Value>>,
+    backend_events: Mutex<Vec<Value>>,
     deliveries: Mutex<Vec<Value>>,
     action: Mutex<Value>,
     fault: Mutex<Value>,
+    stage_calls: Mutex<HashMap<String, usize>>,
 }
 impl Application {
     fn cache_state(&self) -> Value {
@@ -78,9 +84,11 @@ impl Application {
         self.cache.lock().unwrap().clear();
         self.events.lock().unwrap().clear();
         self.cache_events.lock().unwrap().clear();
+        self.backend_events.lock().unwrap().clear();
         self.deliveries.lock().unwrap().clear();
         *self.action.lock().unwrap() = json!({});
         *self.fault.lock().unwrap() = json!({});
+        self.stage_calls.lock().unwrap().clear();
     }
     async fn receipt(
         &self,
@@ -101,7 +109,15 @@ impl Application {
         }
         .map_err(error)?;
         self.events.lock().unwrap().push(json!({"stage":stage,"data":data,"cache":self.cache_state(),"verifications":rows.iter().map(VerificationView::from).collect::<Vec<_>>()}));
-        if self.action.lock().unwrap()[stage] == "throw" {
+        self.backend_events.lock().unwrap().push(json!({"stage":stage,"data":data,"executedAt":Utc::now(),"cache":self.cache_state(),"verifications":rows.iter().map(VerificationView::from).collect::<Vec<_>>()}));
+        let calls = {
+            let mut stages = self.stage_calls.lock().unwrap();
+            let calls = stages.entry(stage.to_owned()).or_default();
+            *calls += 1;
+            *calls
+        };
+        let action = self.action.lock().unwrap()[stage].clone();
+        if action == "throw" || (action == "throw-once" && calls == 1) {
             return Err(AuthError::internal(format!(
                 "verification {stage} rejected"
             )));
@@ -120,7 +136,7 @@ impl Application {
 impl CacheAdapter for Application {
     async fn set(&self, key: &str, value: &str, ttl: Duration) -> AuthResult<()> {
         self.cache_events.lock().unwrap().push(
-            json!({"operation":"set","key":key,"value":decoded(value),"ttl":ttl.num_seconds()}),
+            json!({"operation":"set","key":key,"value":decoded(value),"ttl":ttl.num_seconds(),"executedAt":Utc::now()}),
         );
         if self.fault.lock().unwrap()["set"].as_bool() == Some(true) {
             return Err(AuthError::internal("verification cache set rejected"));
@@ -132,6 +148,9 @@ impl CacheAdapter for Application {
         Ok(())
     }
     async fn get(&self, key: &str) -> AuthResult<Option<String>> {
+        if self.fault.lock().unwrap()["get"].as_bool() == Some(true) {
+            return Err(AuthError::internal("verification cache get rejected"));
+        }
         self.cache_events
             .lock()
             .unwrap()
@@ -302,6 +321,16 @@ impl SeaOrmHooks<TestSchema> for Application {
     }
 }
 #[async_trait]
+impl SendTwoFactorOtp for Application {
+    async fn send(&self, user: &UserView, otp: &str) -> AuthResult<()> {
+        self.deliveries
+            .lock()
+            .unwrap()
+            .push(json!({"type":"two-factor","user":user,"otp":otp}));
+        Ok(())
+    }
+}
+#[async_trait]
 impl SendEmailOtp for Application {
     async fn send(&self, data: &EmailOtpDelivery) -> AuthResult<()> {
         self.deliveries.lock().unwrap().push(
@@ -423,9 +452,10 @@ impl Fixture {
 pub(super) async fn router(
     base: &AuthConfig,
     database: DatabaseConnection,
+    oauth: impl Fn() -> OAuthPlugin,
 ) -> AuthResult<(Router, Fixture)> {
     let app = Arc::new(Application::default());
-    let mut router = Router::new();
+    let mut router = Router::new().route("/__test/verification-storage/oauth/token",post(|| async {Json(json!({"access_token":"google-access-token","refresh_token":"google-refresh-token","id_token":"google-id-token","expires_in":3600,"refresh_token_expires_in":7200,"scope":"openid email profile","token_type":"Bearer"}))}));
     let mut profiles = HashMap::new();
     for mode in PROFILES {
         let name = format!("verification-storage-{mode}");
@@ -435,8 +465,8 @@ pub(super) async fn router(
             config.advanced.database.default_find_many_limit = 2;
         }
         config.verification.disable_cleanup = mode == "no-cleanup";
-        config.verification.store_in_database = mode == "mixed";
-        if ["cache", "mixed"].contains(&mode) {
+        config.verification.store_in_database = mode.starts_with("mixed");
+        if mode.starts_with("cache") || mode.starts_with("mixed") {
             config.verification.secondary_storage = Some(app.clone());
         }
         config.verification.store_identifier.default = match mode {
@@ -476,6 +506,8 @@ pub(super) async fn router(
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())
+                .plugin(oauth())
+                .plugin(TwoFactorPlugin::new().custom_send_otp(app.clone()))
                 .plugin(PasswordManagementPlugin::with_config(
                     PasswordManagementConfig {
                         send_reset_password: Some(app.clone()),
@@ -483,15 +515,30 @@ pub(super) async fn router(
                     },
                 ))
                 .plugin(EmailOtpPlugin::new(EmailOtpConfig {
+                    expires_in: Duration::milliseconds(if mode.ends_with("-default") {
+                        300000
+                    } else {
+                        300500
+                    }),
                     send_verification_otp: Some(app.clone()),
                     ..Default::default()
                 }))
                 .plugin(MagicLinkPlugin::new(MagicLinkConfig {
+                    expires_in: Duration::milliseconds(if mode.ends_with("-default") {
+                        300000
+                    } else {
+                        300500
+                    }),
                     send_magic_link: Some(app.clone()),
                     generate_token: Some(app.clone()),
                     ..Default::default()
                 }))
                 .plugin(OneTimeTokenPlugin::with_config(OneTimeTokenConfig {
+                    expires_in: Duration::milliseconds(if mode.ends_with("-default") {
+                        180000
+                    } else {
+                        180500
+                    }),
                     generator: Some(app.clone()),
                     ..Default::default()
                 }))
@@ -525,6 +572,8 @@ pub(super) async fn router(
                                 body.get("action").cloned().unwrap_or(json!({}));
                             *app.fault.lock().unwrap() =
                                 body.get("fault").cloned().unwrap_or(json!({}));
+                            app.backend_events.lock().unwrap().clear();
+                            app.stage_calls.lock().unwrap().clear();
                             app.events.lock().unwrap().clear();
                             app.cache_events.lock().unwrap().clear();
                             app.deliveries.lock().unwrap().clear();
@@ -534,11 +583,12 @@ pub(super) async fn router(
                             app.clear().await?;
                             return Ok(json!({"status":true}));
                         }
+                        "backend-state" => {return Ok(json!({"cache":app.cache_state(),"cacheEvents":*app.cache_events.lock().unwrap(),"events":*app.backend_events.lock().unwrap()}));}
                         "state" => {
                             let mut value = sql_state(auth, &database).await?;
                             value["cache"] = app.cache_state();
                             value["events"] = json!(*app.events.lock().unwrap());
-                            value["cacheEvents"] = json!(*app.cache_events.lock().unwrap());
+                            value["cacheEvents"] = json!(app.cache_events.lock().unwrap().iter().map(|row| {let mut row=row.clone();row.as_object_mut().unwrap().remove("executedAt");row}).collect::<Vec<_>>());
                             value["deliveries"] = json!(*app.deliveries.lock().unwrap());
                             return Ok(value);
                         }

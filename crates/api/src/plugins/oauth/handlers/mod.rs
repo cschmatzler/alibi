@@ -1868,7 +1868,18 @@ async fn initiate_oauth_flow_core(
     request: FlowStartRequest<'_>,
 ) -> AuthResult<InitiatedOAuthFlow> {
     let (code_verifier, code_challenge) = generate_pkce();
-    let state = better_auth_core::utils::id::generate_id(32);
+    let state: String = {
+        let alphabet = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
+        let mut random = thread_rng();
+        (0..32)
+            .filter_map(|_| {
+                alphabet
+                    .get(random.gen_range(0..alphabet.len()))
+                    .copied()
+                    .map(char::from)
+            })
+            .collect()
+    };
 
     let proxy = better_auth_core::hooks::current_request_hook_context().and_then(|req| {
         req.extensions
@@ -2115,10 +2126,18 @@ pub(super) async fn handle_callback(
     };
     let payload = match ctx.config.account.store_state_strategy {
         better_auth_core::OAuthStateStrategy::Database => {
-            let Some(verification) = ctx.verifications().find(&state_param).await? else {
-                return Ok(redirect_response(&format!(
-                    "{default_error_url}?error=state_mismatch"
-                )));
+            let verification = match ctx.verifications().find(&state_param).await {
+                Ok(Some(verification)) => verification,
+                Ok(None) => {
+                    return Ok(redirect_response(&format!(
+                        "{default_error_url}?error=state_mismatch"
+                    )));
+                }
+                Err(_) => {
+                    return Ok(redirect_response(&format!(
+                        "{default_error_url}?error=internal_server_error"
+                    )));
+                }
             };
 
             let payload: OAuthStatePayload = match verification.value().and_then(|value| {

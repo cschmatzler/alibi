@@ -610,6 +610,21 @@ fn mock_oauth_plugin(
     social_id_token_valid: Arc<Mutex<bool>>,
     oauth_refresh_mode: Arc<Mutex<OAuthRefreshMode>>,
 ) -> OAuthPlugin {
+    mock_oauth_plugin_at(
+        port,
+        social_profile,
+        social_id_token_valid,
+        oauth_refresh_mode,
+        None,
+    )
+}
+fn mock_oauth_plugin_at(
+    port: u16,
+    social_profile: Arc<Mutex<SocialProfile>>,
+    social_id_token_valid: Arc<Mutex<bool>>,
+    oauth_refresh_mode: Arc<Mutex<OAuthRefreshMode>>,
+    google_token_url: Option<String>,
+) -> OAuthPlugin {
     OAuthPlugin::new()
         .add_provider(
             "mock",
@@ -669,7 +684,8 @@ fn mock_oauth_plugin(
                 require_email_verification: false,
                 client_secret: "google-client-secret".to_string(),
                 auth_url: format!("http://127.0.0.1:{port}/oauth/authorize"),
-                token_url: format!("http://127.0.0.1:{port}/__test/oauth/token"),
+                token_url: google_token_url
+                    .unwrap_or_else(|| format!("http://127.0.0.1:{port}/__test/oauth/token")),
                 user_info_url: None,
                 scopes: vec![
                     "email".to_string(),
@@ -720,8 +736,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let set_password_router = set_password_fixture::router(&config, database.clone()).await?;
     let captcha_router = captcha_fixture::router(&config, database.clone(), port).await?;
     let reset_database = database.clone();
-    let (verification_storage_router, verification_storage_reset) =
-        verification_storage_fixture::router(&config, database.clone()).await?;
     let signup_policy_router = signup_policy_fixture::router(&config, database.clone()).await?;
     let compromised_password_router =
         compromised_password_fixture::router(&config, database.clone()).await?;
@@ -778,6 +792,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let social_profile = Arc::new(Mutex::new(default_social_profile()));
     let github_profile = Arc::new(Mutex::new(default_github_profile()));
     let social_id_token_valid = Arc::new(Mutex::new(true));
+    let (verification_storage_router, verification_storage_reset) =
+        verification_storage_fixture::router(&config, database.clone(), || {
+            mock_oauth_plugin_at(
+                port,
+                social_profile.clone(),
+                social_id_token_valid.clone(),
+                oauth_refresh_mode.clone(),
+                Some(format!(
+                    "http://127.0.0.1:{port}/__test/verification-storage/oauth/token"
+                )),
+            )
+        })
+        .await?;
 
     let verification_profile_router =
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())

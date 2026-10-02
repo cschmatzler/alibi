@@ -208,7 +208,11 @@ impl EmailOtpPlugin {
         if body.otp_type == EmailOtpType::ChangeEmail {
             return Err(AuthError::bad_request("Invalid OTP type"));
         }
-        let otp = self.resolve_code(ctx, &email, body.otp_type).await?;
+        let otp = match self.resolve_code(ctx, &email, body.otp_type).await {
+            Ok(otp) => otp,
+            Err(AuthError::Internal(_)) => return Ok(AuthResponse::new(500)),
+            Err(error) => return Err(error),
+        };
         let should_send = body.otp_type == EmailOtpType::SignIn && !self.config.disable_sign_up;
         if ctx.database.get_user_by_email(&email).await?.is_none() && !should_send {
             ctx.verifications()

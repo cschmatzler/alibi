@@ -2,24 +2,26 @@
 import {betterAuth, type BetterAuthOptions} from "better-auth";
 import {getMigrations} from "better-auth/db/migration";
 import {runWithTransaction} from "@better-auth/core/context";
-import {emailOTP, magicLink, oneTimeToken} from "better-auth/plugins";
+import {emailOTP, magicLink, oneTimeToken, twoFactor} from "better-auth/plugins";
 import type {Database} from "bun:sqlite";
 import {createHash} from "node:crypto";
 
 type Row=Record<string,unknown>;
 const hash=(value:string)=>createHash("sha256").update(value).digest("base64url");
-export const VERIFICATION_PROFILES=["verification-storage-plain","verification-storage-hashed","verification-storage-custom","verification-storage-ordered","verification-storage-numeric","verification-storage-cache","verification-storage-mixed","verification-storage-no-cleanup","verification-storage-limit"] as const;
+export const VERIFICATION_PROFILES=["verification-storage-plain","verification-storage-hashed","verification-storage-custom","verification-storage-ordered","verification-storage-numeric","verification-storage-cache","verification-storage-mixed","verification-storage-no-cleanup","verification-storage-limit","verification-storage-cache-default","verification-storage-mixed-default"] as const;
 export async function createVerificationStorageFixture(database:Database,shared:BetterAuthOptions) {
-  const events:Row[]=[],cacheEvents:Row[]=[],deliveries:Row[]=[];
+  const events:Row[]=[],cacheEvents:Row[]=[],deliveries:Row[]=[],backendEvents:Row[]=[];
   const cache=new Map<string,{value:string;expiresAt:Date}>();
   let action:Row={},fault:Row={};
+  const stageCalls=new Map<string,number>();
   const secondaryStorage={
     async set(key:string,value:string,ttl:number) {
-      cacheEvents.push({operation:"set",key,value:JSON.parse(value),ttl});
+      cacheEvents.push({operation:"set",key,value:JSON.parse(value),ttl,executedAt:new Date()});
       if(fault.set)throw new Error("verification cache set rejected");
       cache.set(key,{value,expiresAt:new Date(Date.now()+ttl*1000)});
     },
     async get(key:string) {
+      if(fault.get)throw new Error("verification cache get rejected");
       cacheEvents.push({operation:"get",key});const entry=cache.get(key);
       if(!entry)return null;if(entry.expiresAt.getTime()<=Date.now()){cache.delete(key);return null;}return entry.value;
     },
@@ -33,7 +35,9 @@ export async function createVerificationStorageFixture(database:Database,shared:
   };
   const profiles=new Map<string,ReturnType<typeof betterAuth>>();
   const decoded=(raw:string)=>{try{return JSON.parse(raw);}catch{return {raw};}};
-  const cacheState=()=>[...cache].sort(([left],[right])=>left<right?-1:left>right?1:0).map(([key,entry])=>({key,value:decoded(entry.value),expiresAt:entry.expiresAt}));
+  const rawCacheState=()=>[...cache].sort(([left],[right])=>left<right?-1:left>right?1:0).map(([key,entry])=>({key,value:decoded(entry.value),expiresAt:entry.expiresAt}));
+  const cacheState=()=>rawCacheState().filter(row=>row.key.startsWith("verification:"));
+  const verificationCacheEvents=()=>cacheEvents.filter(row=>String(row.key).startsWith("verification:")).map(({executedAt,...row})=>row);
   // The actual shared SQLite connection also exposes transaction-local rows.
   // A cache-only instance deliberately has no verification adapter schema.
   const verificationRows=()=>database.query("SELECT * FROM verification ORDER BY createdAt ASC").all().map(value=>{
@@ -46,8 +50,10 @@ export async function createVerificationStorageFixture(database:Database,shared:
   };
   const before=async(stage:string,data:Row)=> {
     events.push({stage,data:{...data},cache:cacheState(),verifications:verificationRows()});
+    backendEvents.push({stage,data:{...data},executedAt:new Date(),cache:rawCacheState(),verifications:verificationRows()});
+    const calls=(stageCalls.get(stage)??0)+1;stageCalls.set(stage,calls);
     if(action[stage]==="cancel")return false;
-    if(action[stage]==="throw")throw new Error(`verification ${stage} rejected`);
+    if(action[stage]==="throw"||(action[stage]==="throw-once"&&calls===1))throw new Error(`verification ${stage} rejected`);
     if(stage==="create-before"&&action.mutation) {
       const mutation={...action.mutation as Row};
       for(const key of ["createdAt","updatedAt","expiresAt"] as const)if(typeof mutation[key]==="string")mutation[key]=new Date(mutation[key]);
@@ -57,29 +63,32 @@ export async function createVerificationStorageFixture(database:Database,shared:
   };
   const after=async(stage:string,data:Row|null)=> {
     events.push({stage,data,cache:cacheState(),verifications:verificationRows()});
+    backendEvents.push({stage,data,cache:rawCacheState(),verifications:verificationRows()});
     if(action[stage]==="throw")throw new Error(`verification ${stage} rejected`);
   };
   for(const name of VERIFICATION_PROFILES) {
-    const useCache=name==="verification-storage-cache"||name==="verification-storage-mixed";
+    const useCache=name.startsWith("verification-storage-cache")||name.startsWith("verification-storage-mixed");
+    const defaultDuration=name.endsWith("-default");
     const identifier=name==="verification-storage-custom"?{hash:async(value:string)=>"custom:"+hash(value)}:
       name==="verification-storage-ordered"?{default:"hashed" as const,overrides:{"email-":"plain" as const,"email-verification-":"hashed" as const}}:
       name==="verification-storage-numeric"?{default:"plain" as const,overrides:{"12":"hashed" as const,"1":"plain" as const}}:
       name==="verification-storage-plain"||name==="verification-storage-no-cleanup"||name==="verification-storage-limit"?"plain" as const:"hashed" as const;
     const options={...shared,database,basePath:`/__test/profiles/${name}/api/auth`,
       advanced:{...shared.advanced,database:{...shared.advanced?.database,defaultFindManyLimit:name==="verification-storage-limit"?2:100}},
-      verification:{storeIdentifier:identifier,storeInDatabase:name==="verification-storage-mixed",disableCleanup:name==="verification-storage-no-cleanup"},
+      verification:{storeIdentifier:identifier,storeInDatabase:name.startsWith("verification-storage-mixed"),disableCleanup:name==="verification-storage-no-cleanup"},
       ...useCache?{secondaryStorage}:{},session:{...shared.session,storeSessionInDatabase:true},
       databaseHooks:{verification:{create:{before:async data=>before("create-before",data),after:async data=>after("create-after",data)},
         update:{before:async data=>before("update-before",data),after:async data=>after("update-after",data)},
         delete:{before:async data=>before("delete-before",data),after:async data=>after("delete-after",data)}}},
       emailAndPassword:{...shared.emailAndPassword,enabled:true,async sendResetPassword(delivery){deliveries.push({type:"reset",...delivery});}},
-      plugins:[emailOTP({async sendVerificationOTP(delivery){deliveries.push({type:"otp",...delivery});}}),
-        magicLink({async sendMagicLink(delivery){deliveries.push({type:"magic",...delivery});},generateToken:async email=>"magic-proof:"+hash(email)}),
-        oneTimeToken({generateToken:async session=>"ott-proof:"+hash(session.user.email??session.user.id)})],
+      plugins:[emailOTP({expiresIn:defaultDuration?300:300.5,async sendVerificationOTP(delivery){deliveries.push({type:"otp",...delivery});}}),
+        magicLink({expiresIn:defaultDuration?300:300.5,async sendMagicLink(delivery){deliveries.push({type:"magic",...delivery});},generateToken:async email=>"magic-proof:"+hash(email)}),
+        oneTimeToken({expiresIn:defaultDuration?3:180.5/60,generateToken:async session=>"ott-proof:"+hash(session.user.email??session.user.id)}),
+        twoFactor({otpOptions:{async sendOTP(delivery){deliveries.push({type:"two-factor",...delivery});}}})],
     } satisfies BetterAuthOptions;
     await(await getMigrations(options)).runMigrations();profiles.set(name,betterAuth(options));
   }
-  return {profiles,reset(){cache.clear();events.length=0;cacheEvents.length=0;deliveries.length=0;action={};fault={};},
+  return {profiles,reset(){cache.clear();events.length=0;backendEvents.length=0;cacheEvents.length=0;deliveries.length=0;action={};fault={};stageCalls.clear();},
     async handle(request:Request):Promise<Response|undefined> {
       const url=new URL(request.url);
       if(url.pathname!=="/__test/server-api/verification-storage"||request.method!=="POST")return;
@@ -92,9 +101,10 @@ export async function createVerificationStorageFixture(database:Database,shared:
       try {
         let result:unknown;
         switch(body.operation) {
-          case "configure":action=body.action as Row??{};fault=body.fault as Row??{};events.length=0;cacheEvents.length=0;deliveries.length=0;result={status:true};break;
+          case "configure":action=body.action as Row??{};fault=body.fault as Row??{};stageCalls.clear();events.length=0;backendEvents.length=0;cacheEvents.length=0;deliveries.length=0;result={status:true};break;
           case "clear-cache":cache.clear();result={status:true};break;
-          case "state":result={...await sqlState(),cache:cacheState(),events,cacheEvents,deliveries};break;
+          case "state":result={...await sqlState(),cache:cacheState(),events,cacheEvents:verificationCacheEvents(),deliveries};break;
+          case "backend-state":result={cache:rawCacheState(),cacheEvents,events:backendEvents};break;
           case "create":result=await adapter.createVerificationValue(data() as Parameters<typeof adapter.createVerificationValue>[0]);break;
           case "find":result=await adapter.findVerificationValue(identifier);break;
           case "consume":result=await adapter.consumeVerificationValue(identifier);break;

@@ -434,8 +434,23 @@ impl<S: AuthSchema> VerificationService<'_, S> {
             if consumed.is_some()
                 && let Some(cache) = &self.config.secondary_storage
             {
-                for stored in &identifiers {
-                    cache.delete(&key(stored)).await?;
+                match identifiers.as_slice() {
+                    [stored, plain] => {
+                        let stored_key = key(stored);
+                        let plain_key = key(plain);
+                        // Both invalidations start even when one backend call
+                        // fails, matching the independent cache publication.
+                        let (stored_result, plain_result) =
+                            tokio::join!(cache.delete(&stored_key), cache.delete(&plain_key));
+                        stored_result?;
+                        plain_result?;
+                    }
+                    [stored] => cache.delete(&key(stored)).await?,
+                    _ => {
+                        return Err(AuthError::internal(
+                            "Invalid verification identifier candidate count",
+                        ));
+                    }
                 }
             }
         }

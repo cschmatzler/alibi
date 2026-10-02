@@ -478,6 +478,12 @@ where
         }
         let mut query = <S::Verification as SeaOrmVerificationModel>::Entity::update_many()
             .filter(S::Verification::identifier_column().eq(identifier));
+        let updated_at = S::Verification::updated_at_column().ok_or_else(|| {
+            AuthError::NotImplemented(
+                "Verification update snapshots require an updatedAt column".into(),
+            )
+        })?;
+        query = query.col_expr(updated_at, sea_orm::sea_query::Expr::value(Utc::now()));
         if let Some(value) = admitted.value {
             query = query.col_expr(
                 S::Verification::value_column(),

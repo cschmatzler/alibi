@@ -732,6 +732,7 @@ impl VerificationStore<BundledSchema> for MemoryStore {
         let mut found = None;
         for model in state.verifications.values_mut() {
             if model.identifier == identifier {
+                model.updated_at = Utc::now();
                 if let Some(value) = &data.value {
                     model.value.clone_from(value);
                 }
