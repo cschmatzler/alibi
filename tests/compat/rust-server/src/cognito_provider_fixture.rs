@@ -58,6 +58,7 @@ pub(super) async fn router(
         "encrypted",
         "userinfo-override",
         "query-overrides",
+        "client-key",
     ] {
         let path = format!("/__test/profiles/social-cognito-{mode}/api/auth");
         let mut settings = config.clone().base_path(&path);
@@ -74,6 +75,9 @@ pub(super) async fn router(
             "fixture-pool",
         );
         options.require_client_secret = mode == "required";
+        if mode == "client-key" {
+            options.client_key = Some("fixture-cognito-client-key".into());
+        }
         options.jwks_source = Some(Arc::new(HttpOAuthJwksSource::new(format!(
             "{}/__test/cognito/keys",
             config.base_url

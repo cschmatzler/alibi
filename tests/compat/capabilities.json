@@ -210,7 +210,11 @@
           "cognito default real exchange refresh replay and logout retain account and foreign authority",
           "cognito zero expiry follows actual shared token response semantics",
           "cognito absent expiry follows actual shared token response semantics",
-          "cognito malformed-idtoken code exchange uses original ID profile or actual access-token fallback"
+          "cognito malformed-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito number-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito array-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito null-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -263,7 +267,8 @@
           "cognito default real exchange refresh replay and logout retain account and foreign authority",
           "cognito browser blank-subject denies without changing owned or foreign identity",
           "cognito browser null-subject denies without changing owned or foreign identity",
-          "cognito browser wrong-state denies without changing owned or foreign identity"
+          "cognito browser wrong-state denies without changing owned or foreign identity",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing any principal",
@@ -314,7 +319,8 @@
           "cognito default real exchange refresh replay and logout retain account and foreign authority",
           "cognito browser blank-subject denies without changing owned or foreign identity",
           "cognito browser null-subject denies without changing owned or foreign identity",
-          "cognito browser wrong-state denies without changing owned or foreign identity"
+          "cognito browser wrong-state denies without changing owned or foreign identity",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -407,7 +413,11 @@
           "cognito browser wrong-provider denies without changing owned or foreign identity",
           "cognito browser wrong-state denies without changing owned or foreign identity",
           "cognito absent expiry follows actual shared token response semantics",
-          "cognito malformed-idtoken code exchange uses original ID profile or actual access-token fallback"
+          "cognito malformed-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito number-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito array-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito null-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ]
       }
     },
@@ -3471,7 +3481,8 @@
           "cognito mapped real exchange refresh replay and logout retain account and foreign authority",
           "cognito configured-endpoint real exchange refresh replay and logout retain account and foreign authority",
           "cognito public real exchange refresh replay and logout retain account and foreign authority",
-          "cognito default real exchange refresh replay and logout retain account and foreign authority"
+          "cognito default real exchange refresh replay and logout retain account and foreign authority",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
@@ -3490,7 +3501,8 @@
           "cognito mapped real exchange refresh replay and logout retain account and foreign authority",
           "cognito configured-endpoint real exchange refresh replay and logout retain account and foreign authority",
           "cognito public real exchange refresh replay and logout retain account and foreign authority",
-          "cognito default real exchange refresh replay and logout retain account and foreign authority"
+          "cognito default real exchange refresh replay and logout retain account and foreign authority",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -3515,7 +3527,8 @@
           "cognito mapped real exchange refresh replay and logout retain account and foreign authority",
           "cognito configured-endpoint real exchange refresh replay and logout retain account and foreign authority",
           "cognito public real exchange refresh replay and logout retain account and foreign authority",
-          "cognito default real exchange refresh replay and logout retain account and foreign authority"
+          "cognito default real exchange refresh replay and logout retain account and foreign authority",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ]
       }
     },
@@ -4089,7 +4102,11 @@
           "cognito browser wrong-state denies without changing owned or foreign identity",
           "cognito absent expiry follows actual shared token response semantics",
           "cognito published configured authorization preserves ordered scopes PKCE and encoded query",
-          "cognito malformed-idtoken code exchange uses original ID profile or actual access-token fallback"
+          "cognito malformed-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito number-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito array-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito null-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -4335,7 +4352,11 @@
           "cognito configured exact-nonce uses genuine signed proof",
           "cognito absent expiry follows actual shared token response semantics",
           "cognito published configured authorization preserves ordered scopes PKCE and encoded query",
-          "cognito malformed-idtoken code exchange uses original ID profile or actual access-token fallback"
+          "cognito malformed-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito number-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito array-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito null-idtoken code exchange uses original ID profile or actual access-token fallback",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ]
       }
     },
@@ -4430,7 +4451,8 @@
           "cognito mapped real exchange refresh replay and logout retain account and foreign authority",
           "cognito configured-endpoint real exchange refresh replay and logout retain account and foreign authority",
           "cognito public real exchange refresh replay and logout retain account and foreign authority",
-          "cognito default real exchange refresh replay and logout retain account and foreign authority"
+          "cognito default real exchange refresh replay and logout retain account and foreign authority",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ],
         "rejection": null,
         "authorization": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
@@ -4480,7 +4502,8 @@
           "cognito mapped real exchange refresh replay and logout retain account and foreign authority",
           "cognito configured-endpoint real exchange refresh replay and logout retain account and foreign authority",
           "cognito public real exchange refresh replay and logout retain account and foreign authority",
-          "cognito default real exchange refresh replay and logout retain account and foreign authority"
+          "cognito default real exchange refresh replay and logout retain account and foreign authority",
+          "cognito client-key real exchange refresh replay and logout retain account and foreign authority"
         ]
       }
     },

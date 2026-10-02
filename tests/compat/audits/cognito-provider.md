@@ -31,6 +31,10 @@ replace the eight reserved OAuth keys; a nonreserved request parameter can
 replace an application parameter. Scope uses the published URI-component form,
 including WHATWG's final apostrophe escaping and its placement after other keys.
 
+The optional client key is sent in the authorization-code form only. The pinned
+refresh helper accepts that option but ignores it; the configured owner retains
+complete exchange and refresh forms to establish both behaviors.
+
 Actual token helpers use client-secret post or public none; the factory does
 not forward a basic-auth option, so no invented Source basic mode is claimed.
 Absent/zero access expiry remains null; fractional expiry is retained. Missing
@@ -56,8 +60,8 @@ struct literals explicitly preserve or set this optional resolver to None.
 
 ## Measured proof and remaining publication
 
-The current program passes **79 actual Source/native owners / 2,248 assertions**
-(`/tmp/issue142-79-owners-admission-order-fixed.log`, terminal exit 0). It covers
+The current program passes **83 actual Source/native owners / 2,446 assertions**
+(`/tmp/issue142-83-owners-decoder-clientkey.log`, terminal exit 0). It covers
 ordered configured authorization and duplicate reserved-query replacement,
 reserved caller rejection, signed claim/profile positives and negatives,
 removed/algorithm-mismatched/duplicate-first JWKS rejection and genuine key
@@ -97,14 +101,31 @@ one Source-side state assertion omitting the observer's actual receipt property.
 The former were fixed at the authorization HTTP error boundary; the latter now
 retains and compares the complete observed before/after state.
 
+Three additional real RSA-signed JWS payloads contain array, null and numeric
+JSON instead of a JWT claims object. The unchanged JOSE decoder rejects them and
+the real Source factory falls back to access-token userinfo. On the frozen cc6
+Native production all three owners failed at the actual browser callback
+(60 assertions, `/tmp/issue142-decode-before-owner.log`); the object check now
+selects the same fallback. Their signatures do not make them valid claims sets.
+
 All-target strict workspace/fixture Clippy and formatting passed after fixing
 three pre-existing whole OAuthProvider test constructors and the shared helper
-(`/tmp/issue142-current-strict-whole-literals.log`). The subsequent browser
-production repair still requires final strict/canonical proof. Capability
+(`/tmp/issue142-current-strict-whole-literals.log`). The frozen cc6 canonical run passed strict default/optional Clippy, the
+Rustls matrix, 794 default and 845 optional native tests, two fixture tests,
+71 harness checks (754 assertions), 36 Axum checks, three endpoint checks and
+two inventory checks. Its SDK phase passed 1,005/1,010 owners with 68,292
+assertions (`/tmp/issue142-rebased-canonical.log`, terminal exit 100). The five
+failures are the API-key validator ten content-type paths, organization fixed
+membership four independently timed member/session aliases, and generated
+seed12648430 default/no-refresh/deferred owners at snapshots21/22/29 code and
+message. Separate parent proof establishes the two member-created aliases;
+earlier main-equivalent proof independently established session expiry timing.
+The cc6 run precedes the decoder/client-key repair and does not verify it. Capability
 requirements are appended only from actual passing, recorded public Cognito
 route/category cells, excluding foreign signup setup and callback denial traces
 that the unchanged collector cannot classify as rejection. All 3,433 parent
-requirements remain intact in their original order. Final parent rebase,
+requirements remain intact in their original order; 239 measured Cognito cells
+bring this pre-rebase ledger to 3,672. Final parent rebase,
 independent review, canonical/docs/browser and clean coverage remain pending;
 this draft does not claim a completed issue or a complete green gate.
 

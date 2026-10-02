@@ -591,6 +591,14 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
         ("code", code),
         ("redirect_uri", redirect_uri),
     ];
+    if let Some(client_key) = provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.authorization_code_client_key.as_deref())
+        .filter(|value| !value.is_empty())
+    {
+        form.push(("client_key", client_key));
+    }
     if let Some(code_verifier) = code_verifier {
         form.push(("code_verifier", code_verifier));
     }

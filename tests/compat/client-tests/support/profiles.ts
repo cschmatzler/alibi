@@ -12,7 +12,7 @@ function variants<P extends string, S extends string>(prefix: P, suffixes: reado
 export const FIXTURE_PROFILES = [
   ...variants("user-lifecycle-", ["default", "required", "delivery", "auto", "change", "promotion", "promotion-no-mail", "verification-expired", "no-mail", "delete", "delete-mail", "delete-zero", "delete-expired", "delete-policy", "delete-no-freshness"] as const),
   "validation", "validation-no-auto", "validation-required", "validation-disabled", "validation-no-policy",
-  ...variants("social-cognito-",["default","configured","disabled-scope","disabled-configured","public","required","client-array","empty-clients","mapped","disabled-idtoken","implicit-disabled","signup-disabled","configured-endpoint","http-domain","encrypted","userinfo-override","query-overrides"] as const),
+  ...variants("social-cognito-",["default","configured","disabled-scope","disabled-configured","public","required","client-array","empty-clients","mapped","disabled-idtoken","implicit-disabled","signup-disabled","configured-endpoint","http-domain","encrypted","userinfo-override","query-overrides","client-key"] as const),
   ...variants("social-cloudflare-",["default","configured","disabled-scope","disabled-configured","public","post","encoded","mapped","implicit-disabled","signup-disabled","required","configured-endpoint"] as const),
   ...variants("social-atlassian-",["default","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","required","configured-endpoint"] as const),
   "signup-standard", "signup-disabled", "signup-password-disabled", "signup-no-auto", "signup-required", "signup-custom", "signup-policy", "signup-zero-policy", "signup-username", "signup-otp", "signup-background",

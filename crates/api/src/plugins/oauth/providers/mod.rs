@@ -308,6 +308,8 @@ pub struct OAuthAuthorizationPolicy {
     pub require_client_id: bool,
     /// `None` preserves the existing generic provider credential transport.
     pub token_endpoint_auth: Option<OAuthTokenEndpointAuth>,
+    /// Optional application client key sent in authorization-code forms only.
+    pub authorization_code_client_key: Option<String>,
     pub response_type: String,
     /// Application callback URI overrides the generated provider callback.
     pub redirect_uri: Option<String>,
@@ -332,6 +334,7 @@ impl Default for OAuthAuthorizationPolicy {
             deduplicate_scopes: false,
             require_client_id: false,
             token_endpoint_auth: None,
+            authorization_code_client_key: None,
             response_type: "code".into(),
             redirect_uri: None,
             response_mode: None,

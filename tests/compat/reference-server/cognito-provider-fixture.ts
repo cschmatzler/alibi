@@ -24,13 +24,14 @@ export function cognitoProviderFixture(base: BetterAuthOptions) {
     return previousFetch(input,init);
   }) as typeof fetch;
   const profiles=new Map<string,ReturnType<typeof betterAuth>>();
-  for(const mode of ["default","configured","disabled-scope","disabled-configured","public","required","client-array","empty-clients","mapped","disabled-idtoken","implicit-disabled","signup-disabled","configured-endpoint","http-domain","encrypted","userinfo-override","query-overrides"] as const){
+  for(const mode of ["default","configured","disabled-scope","disabled-configured","public","required","client-array","empty-clients","mapped","disabled-idtoken","implicit-disabled","signup-disabled","configured-endpoint","http-domain","encrypted","userinfo-override","query-overrides","client-key"] as const){
     const path=`/__test/profiles/social-cognito-${mode}/api/auth`;
     profiles.set(path,betterAuth({...base,basePath:path,plugins:[],...(mode === "encrypted" ? {account:{...base.account,encryptOAuthTokens:true}} : {}),socialProviders:{cognito:{
       clientId:mode === "empty-clients" ? [] : mode === "client-array" ? ["fixture-social-client","fixture-cognito-secondary"] : "fixture-social-client",
       ...(mode !== "public" && mode !== "required" ? {clientSecret:"fixture-social-secret"} : {}),
       domain:mode === "http-domain" ? "http://fixture-cognito.example.invalid" : "https://fixture-cognito.example.invalid",region:"fixture-region",userPoolId:"fixture-pool",
       requireClientSecret:mode === "required",
+      ...(mode === "client-key"?{clientKey:"fixture-cognito-client-key"}:{}),
       ...(["configured","disabled-configured"].includes(mode) ? {scope:["configured-scope","openid","punctuation-!~*'()"],prompt:"login",identityProvider:"ConfiguredIdentity"} : {}),
       ...(mode === "disabled-scope" || mode === "disabled-configured" ? {disableDefaultScope:true} : {}),
       ...(mode === "query-overrides" ? {authorizationEndpoint:"https://alternate-cognito.example.invalid/authorize?response_type=stale&client_id=stale&state=stale&state=stale2&scope=stale&redirect_uri=stale&code_challenge=stale&code_challenge_method=stale&identity_provider=stale&custom=stale&retained=value"} : {}),

@@ -18,6 +18,9 @@ use std::sync::Arc;
 pub struct CognitoOptions {
     pub client_ids: Vec<String>,
     pub client_secret: Option<String>,
+    /// Forwarded only during authorization-code exchange, as the pinned helper
+    /// ignores this option during refresh.
+    pub client_key: Option<String>,
     pub domain: String,
     pub region: String,
     pub user_pool_id: String,
@@ -48,6 +51,7 @@ impl CognitoOptions {
         Self {
             client_ids: vec![client_id.into()],
             client_secret,
+            client_key: None,
             domain: domain.into(),
             region: region.into(),
             user_pool_id: user_pool_id.into(),
@@ -143,6 +147,7 @@ impl OAuthProvider {
                 require_client_id: true,
                 require_client_secret: options.require_client_secret,
                 token_endpoint_auth: Some(token_endpoint_auth),
+                authorization_code_client_key: options.client_key,
                 prompt: options.prompt,
                 redirect_uri: options.redirect_uri,
                 login_hint: false,
@@ -225,7 +230,12 @@ fn decode_profile(token: &str) -> Result<Value, String> {
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(payload)
         .map_err(|error| error.to_string())?;
-    better_auth_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())
+    let profile: Value =
+        better_auth_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    if !profile.is_object() {
+        return Err("Invalid Cognito ID-token claims set".into());
+    }
+    Ok(profile)
 }
 fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
