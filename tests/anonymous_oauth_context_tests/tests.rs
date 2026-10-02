@@ -190,11 +190,7 @@ async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the
                     .headers
                     .get("location")
                     .unwrap()
-                    .contains(if mode == "wrong-cookie" {
-                        "state_mismatch"
-                    } else {
-                        "please_restart_the_process"
-                    }),
+                    .contains("state_mismatch"),
                 "{mode}: {:?}",
                 response.headers
             );

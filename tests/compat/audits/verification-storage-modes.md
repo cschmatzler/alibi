@@ -63,3 +63,21 @@ The actual shared secondary backend is retained in `/tmp/issue174-backend-*.json
 Additional configured consumer profiles use public fractional OTP/magic lifetimes300.5s and OTT180.5s. Separate cache-default/mixed-default profiles keep literal default300s/300s/180s diagnostics. Every default publication is checked against its real admitted expiry and actual before-create/backend.set execution interval; raw TTL differences remain visible. No clock, Source package, comparer, threshold or exclusion has been changed. The initial broad consumer logs contain fixture entropy projection corrections, default-floor timing observations and startup health failures; none is presented as a passing final gate.
 
 An actual unchanged Source-versus-Source default-duration counterfactual is retained in `/tmp/issue174-default-source-counterfactual-30.log`: attempt1 fails both default owners solely at six TTL aliases while all128 independent publication-floor assertions pass. The two prior Source-versus-Source owners passed once; this bounded counterfactual stops at the first reproduced failure rather than retrying until green. Root assigned a separate, narrowly bound producer-publication comparer prerequisite; this issue does not change the comparer.
+
+The immutable bd7 feature-native run stopped after143 passes because the
+existing anonymous OAuth context owner still expected the pre-repair
+`please_restart_the_process` for an expired embedded state payload. Installed
+Source `state.mjs`141–143 emits `state_mismatch` after clearing and retiring the
+state. The existing four global OAuth owners now execute that real expired
+payload branch with future physical expiry, genuine issued state/cookie, full
+retirement and unchanged users/accounts/sessions/foreign rows. The actual
+Source/native run passed hashed/custom/mixed; cache completed all behavior
+assertions but retained seven literal600-second TTL aliases. Across the four
+owners1106 assertions executed. A separate actual Source-source run retained
+three mixed600-second aliases at expiredAfter/expiryBefore/expiryIssued
+cacheEvents.6.ttl; those are not claimed to reproduce the distinct seven
+Source/native alias paths. Both logs are retained as
+`/tmp/issue174-embedded-expiry-owner-real.log` and
+`/tmp/issue174-source-source-oauth600.log`. The sibling assertion correction
+changes only the exact Source-backed error text. The paused845 run leaves701
+unreached tests; no broad pass claim is made.
