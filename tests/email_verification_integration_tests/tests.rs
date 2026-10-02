@@ -248,7 +248,11 @@ async fn notification_error_policy_controls_signup_commit_and_preserves_direct_d
                 .len(),
             0
         );
-        assert_eq!(sender.calls.lock().unwrap().len(), signup_deliveries);
+        let token = {
+            let calls = sender.calls.lock().unwrap();
+            assert_eq!(calls.len(), signup_deliveries);
+            calls.last().expect("signup must deliver a proof").1.clone()
+        };
 
         let (denied, denied_body) = post(
             &auth,
@@ -294,9 +298,6 @@ async fn notification_error_policy_controls_signup_commit_and_preserves_direct_d
                 .email_verified()
         );
 
-        let token = sender.calls.lock().unwrap()[signup_deliveries - 1]
-            .1
-            .clone();
         let mut proof = AuthRequest::new(HttpMethod::Get, "/api/auth/verify-email");
         drop(proof.query.insert("token".into(), token));
         let verified = auth.handle_request(proof).await.unwrap();
