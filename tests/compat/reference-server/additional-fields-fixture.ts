@@ -19,7 +19,13 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     const output = (entity: string, field: string) => async (value: unknown) => {
       events.push({ phase: "output", entity, field, value });
       await Promise.resolve();
-      if(entity === "session" && field === "label" && value === "collection-slow"){await new Promise(resolve=>setTimeout(resolve,200));events.push({phase:"settled",entity,field,value,requestScoped:tryGetCurrentAuthEndpointContext()?.path==="/change-password"});}
+      if (entity === "session" && field === "label" && (value === "collection-slow" || value === "collection-slower")) {
+        await new Promise(resolve => setTimeout(resolve, value === "collection-slower" ? 400 : 200));
+        const requestPath = tryGetCurrentAuthEndpointContext()?.path;
+        events.push({ phase: "settled", entity, field, value,
+          requestScoped: requestPath === "/change-password",
+          ...(requestPath === "/list-sessions" ? { requestPath } : {}) });
+      }
       if (field === "label" && (value === "throw" || value === "collection-reject")) throw new Error("application output failed");
       return field === "hidden" ? String(value).toUpperCase() : field === "omitted" ? undefined : { stored: value };
     };

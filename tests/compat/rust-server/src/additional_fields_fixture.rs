@@ -151,9 +151,15 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
                         .expect("application receipts")
                         .push(json!({"phase":"output","entity":entity,"field":name,"value":value}));
                     tokio::task::yield_now().await;
-                    if entity == "session" && name == "label" && value.as_ref().and_then(Value::as_str) == Some("collection-slow") {
-                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-                        events.lock().expect("application receipts").push(json!({"phase":"settled","entity":entity,"field":name,"value":value,"requestScoped":better_auth_core::hooks::current_request_hook_context().is_some_and(|context| context.path.ends_with("/change-password"))}));
+                    if entity == "session" && name == "label" && matches!(value.as_ref().and_then(Value::as_str), Some("collection-slow" | "collection-slower")) {
+                        let delay = if value.as_ref().and_then(Value::as_str) == Some("collection-slower") { 400 } else { 200 };
+                        tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                        let request = better_auth_core::hooks::current_request_hook_context();
+                        let mut receipt = json!({"phase":"settled","entity":entity,"field":name,"value":value,"requestScoped":request.as_ref().is_some_and(|context| context.path.ends_with("/change-password"))});
+                        if request.as_ref().is_some_and(|context| context.path.ends_with("/list-sessions")) {
+                            receipt["requestPath"] = json!(request.as_ref().map(|context| context.path.rsplit("/api/auth").next().unwrap_or(&context.path)));
+                        }
+                        events.lock().expect("application receipts").push(receipt);
                     }
                     if name == "label" && matches!(value.as_ref().and_then(Value::as_str),Some("throw"|"collection-reject")) {
                         return Err(AuthError::internal("application output failed"));

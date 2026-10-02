@@ -347,7 +347,13 @@ impl SessionManagementPlugin {
                 message: "Session is not fresh",
             });
         }
-        let mut sessions = list_sessions_core(user.id(), ctx).await?;
+        let mut sessions = match list_sessions_core(user.id(), ctx).await {
+            Ok(sessions) => sessions,
+            Err(_) => {
+                tracing::error!("Session listing failed");
+                return Ok(AuthResponse::new(500).with_header("content-type", "application/json"));
+            }
+        };
         if admin_plugin_enabled(ctx) {
             sessions.retain(|session_2| session_2.impersonated_by.is_none());
         }
@@ -428,9 +434,14 @@ pub(in crate::plugins) async fn list_sessions_core(
     user_id: impl AsRef<str>,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Vec<SessionView>> {
-    let sessions = ctx.session_manager().list_user_sessions(user_id).await?;
+    let sessions = ctx
+        .database
+        .get_active_user_sessions_record(user_id.as_ref())
+        .await?;
+    let now = chrono::Utc::now();
     Ok(sessions
         .iter()
+        .filter(|session| session.expires_at() > now && session.active())
         .map(|session| ctx.session_view(session))
         .collect())
 }

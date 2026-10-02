@@ -167,3 +167,38 @@ strict production and standalone fixture Clippy, client TypeScript typecheck,
 and formatting of changed Rust files pass. Full-suite/coverage gates were not
 run for this focused change. Unchanged signup fixture formatting remains an
 existing standalone cargo-fmt finding outside this diff.
+
+## Public configured session listing (#328)
+
+The public SDK list owner now runs genuine current, sibling, foreign and expired
+sessions in the existing cached custom-column application. Public listing selects
+physical active/unexpired rows before projecting configured adapter output,
+returns successful projections in physical row order, omits hidden/undefined and
+undeclared columns, and leaves every persisted session unchanged. A foreign
+caller's list remains scoped to its own physical user.
+
+Two baseline failures establish the repair: a live rejecting output transform
+returned Native HTTP200 versus Source HTTP500; an expired rejecting row incorrectly
+ran Native's output callback whereas Source excluded it before projection. Active
+record selection reuses the existing collection projection worker; all-row
+replacement callers keep their existing selection behavior. The route catches
+projection errors into an empty HTTP500 while completed request hooks still run.
+Two already-started delayed row callbacks finish after that response with their
+actual captured `/list-sessions` context. Successful output and physical/cache
+credentials are compared through the SDK, full HTTP traces and SQLite state.
+
+A separate observed scheduling question is tracked in
+[issue #332](https://github.com/cschmatzler/better-auth-rs/issues/332): with one immediately completing
+normal row alongside rejecting and delayed rows, Native and Source placed the
+normal row's remaining output-field observations differently relative to the
+completed HTTP500 hook. The controlled rejection owner uses two genuinely delayed
+callbacks to establish continuation without forcing microtask ordering through
+arbitrary sleeps in production. That fast-row interleaving is not repaired here.
+
+Final focused verification: 23 SDK scenarios / 568 assertions, including the
+existing replacement rejection owner, and 13 native session-management tests
+pass. Strict production and standalone-fixture Clippy, client TypeScript
+checking, changed Rust formatting and `git diff --check` pass. A sibling session
+directory run passed 75 cases and exposed the empty500 content-type difference;
+the final focused run verifies that repaired transport detail. No full repository
+or coverage gate was run for this issue.
