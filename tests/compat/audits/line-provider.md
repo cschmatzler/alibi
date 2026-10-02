@@ -72,3 +72,14 @@ fixture dependency/lock entry is test support, not a patched dependency.
 Preserve all5,189 parent requirements and append257 actual passing trace cells
 from68owners, totaling5,446. The raw captures are retained. Independent review
 and final broad gates remain pending. No Source/comparer edit or hook bypass.
+
+
+Independent factory/fixtures/shared-owner review found no security or admission
+blocker. It confirmed the genuine mapped-ID failure is shared output-presence
+support: blindly adding an ID would regress ordinary LINE, whose published
+getter omits ID until a mapper adds it. A provider-name flag or dropped field is
+not an acceptable repair. The full failing owner remains assigned to184.
+Final frozen code is composed on the tested Kick stack over actual signed-header
+main2bf51a60 (including147/221/135). It preserves all5,339 stack-parent requirements
+plus the257 measured passing LINE cells,5,596total, and all parent fixture
+profiles. The own production/test hunks are unchanged across this composition.
