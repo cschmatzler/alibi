@@ -15,9 +15,11 @@ export type RequestWindow = {
   /** Exact email and signed challenge returned by the real password sign-in. */
   signInEmail?: string;
   issuedTwoFactorCookie?: string;
+  /** Actual outer-signed, user-bound trust proof returned by factor verification. */
+  issuedTrustCookie?: string;
   /** Actual signed database-state cookie from the default OAuth issuing response. */
   issuedVerificationStateCookie?: string;
-  /** Exact input of the admitted default verification-publication owners. */
+  /** Exact input of admitted verification producers and explicit expiry controls. */
   verificationInput?: unknown;
   /** Integrity of the original complete parsed observer response, separate from compared output. */
   verificationObserverDigest?: string;
@@ -103,9 +105,12 @@ function sessionReceipt(request: Headers, response: Headers) {
   };
   const sessionCookie = select((request.get("cookie") ?? "").split(";")),
     issuedSessionCookie = select(response.getSetCookie());
+  const trust = response.getSetCookie().map(raw => Cookie.parse(raw))
+    .filter(cookie => cookie && /^(?:__Secure-)?better-auth\.trust_device$/.test(cookie.key) && cookie.value);
   return {
     ...(sessionCookie ? { sessionCookie } : {}),
     ...(issuedSessionCookie ? { issuedSessionCookie } : {}),
+    ...(trust.length === 1 ? {issuedTrustCookie: `${trust[0]!.key}=${trust[0]!.value}`} : {}),
     issuedMultiSessionCookies: response.getSetCookie().filter(raw =>
       /^(?:__Secure-)?better-auth\.session_token_multi-/.test(raw)),
   };
@@ -248,7 +253,7 @@ export function createTracingFetch(
           ...(request.method === "POST" && url.pathname === "/__test/organization-member-addition/server"
             && typeof memberInput?.body?.organizationId === "string" && typeof memberInput.body.userId === "string"
             ? {memberAdditionOwner: {organizationId: memberInput.body.organizationId, userId: memberInput.body.userId}} : {}),
-          ...(/\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(url.pathname)
+          ...((url.pathname === "/__test/verification-state" || /\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(url.pathname))
             ? { verificationInput: requestText ? verificationInput : null } : {}),
           ...(/\/sign-in\/social$/.test(url.pathname) ? (() => {
             const cookies = response.headers.getSetCookie().map(value => Cookie.parse(value)).filter(value => value && /^(?:__Secure-)?better-auth\.state$/.test(value.key) && value.maxAge === 300);

@@ -506,6 +506,43 @@ test("later session and user clocks require their actual issuance and update rec
     }
   }
 
+  const trust = (side: string, issued: number, updated: number) => ({
+    traces: [
+      {method: "POST", path: "/__test/profiles/two-factor-trust-cleanup-disabled/api/auth/two-factor/verify-otp", responseStatus: 200,
+        responseBody: {token: side, user: {id: `${side}-user`}}},
+      {method: "POST", path: "/__test/verification-state", responseStatus: 200, responseBody: {status: true}},
+    ],
+    observation: {expiryRows: [{id: `${side}-trust-row`, identifier: {token: `trust-device-${side}`}, value: {userId: `${side}-user`},
+      createdAt: iso(issued), updatedAt: iso(updated), expiresAt: "2020-01-01T00:00:00.000Z"}]},
+  });
+  const trustCookie = (side: string, owner = `${side}-user`) => {
+    const identifier = `trust-device-${side}`, inner = createHmac("sha256", secret).update(`${owner}!${identifier}`).digest("base64url");
+    return cookie(`${inner}!${identifier}`).replace("session_token=", "trust_device=");
+  };
+  const trustWindows = (side: string, issued: number, updated: number) => [
+    {startedAt: issued - 10, finishedAt: issued + 10, inputDates: {}, issuedSessionCookie: cookie(side), issuedTrustCookie: trustCookie(side)},
+    {startedAt: updated - 10, finishedAt: updated + 10, inputDates: {}, verificationInput: {action: "expire", identifier: `trust-device-${side}`, expiresAt: "2020-01-01T00:00:00.000Z"}},
+  ];
+  const trustReceipts = (value: ReturnType<typeof trust>) => value.observation.expiryRows.map(row => receipt("verification", row.identifier.token, [{...row, identifier: row.identifier.token, value: row.value.userId}]));
+  const leftTrust = trust("left", 100100, 100900), rightTrust = trust("right", 210100, 210900);
+  const trustContext = {...context, sessionCookieSecret: secret, leftRequestWindows: trustWindows("left", 100100, 100900), rightRequestWindows: trustWindows("right", 210100, 210900),
+    leftPhysicalObservations: trustReceipts(leftTrust), rightPhysicalObservations: trustReceipts(rightTrust)};
+  expect(compareValues(leftTrust, rightTrust, trustContext)).toEqual([]);
+  for (const change of ["foreign-owner", "invalid-signature", "wrong-inner-owner", "failed-issuer", "wrong-expiry-owner", "wrong-expiry", "created-outside-issuer", "updated-outside-mutation", "tampered-control"]) {
+    const altered = structuredClone(rightTrust), clocks = structuredClone(trustContext), row = altered.observation.expiryRows[0]!;
+    if (change === "foreign-owner") row.value.userId = "foreign";
+    if (change === "invalid-signature") clocks.rightRequestWindows[0]!.issuedTrustCookie += "x";
+    if (change === "wrong-inner-owner") clocks.rightRequestWindows[0]!.issuedTrustCookie = trustCookie("right", "foreign");
+    if (change === "failed-issuer") altered.traces[0]!.responseStatus = 400;
+    if (change === "wrong-expiry-owner") clocks.rightRequestWindows[1]!.verificationInput!.identifier = "unrelated";
+    if (change === "wrong-expiry") clocks.rightRequestWindows[1]!.verificationInput!.expiresAt = "2019-01-01T00:00:00.000Z";
+    if (change === "created-outside-issuer") row.createdAt = iso(215100);
+    if (change === "updated-outside-mutation") row.updatedAt = iso(215900);
+    clocks.rightPhysicalObservations = trustReceipts(altered);
+    if (change === "tampered-control") clocks.rightPhysicalObservations[0]!.digest = "invalid";
+    expect(compareValues(leftTrust, altered, clocks).some(diff => /^observation\.expiryRows\.0\.(?:createdAt|updatedAt)$/.test(diff.path))).toBe(true);
+  }
+
 });
 
 test("clock evidence cannot approve another field, entity or a changed lifetime", () => {

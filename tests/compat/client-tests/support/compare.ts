@@ -114,7 +114,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   const signedCookieIssuances = new Set<string>();
   const issuedMultiNames = new Map<string, {right: string; leftToken: string; rightToken: string}>();
   const emailOwners = new Map<string, {leftUser: string; rightUser: string}>();
-  const challenges = new Map<string, ClockReceipt & {lifetime: number}>();
+  const verificationIssuances = new Map<string, ClockReceipt & {lifetime: number; trust?: boolean}>();
   const sessionCookieName = /^(?:__Secure-)?better-auth\.session_token$/;
   function signedCookie(value: string): { token: string; error?: never } | { error: string; token?: never } {
     try {
@@ -192,8 +192,24 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           const profile = /^\/__test\/profiles\/(two-factor-(?:skip-verification|trust-(?:fractional|zero-challenge|negative-challenge|zero|negative|cleanup-disabled)))\/api\/auth$/.exec(issuancePath[1]!);
           if (owner && at && bt && /^2fa-(?:[a-zA-Z0-9_-]{20}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.test(at) && /^2fa-(?:[a-zA-Z0-9_-]{20}|[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/.test(bt) && profile) {
             const lifetime = profile[1]!.endsWith("zero-challenge") ? 0 : profile[1]!.endsWith("negative-challenge") ? -250 : profile[1]!.startsWith("two-factor-trust-") ? 600750 : 600000;
-            challenges.set(JSON.stringify([at, bt]), {...owner, left, right, authPath: issuancePath[1]!, lifetime});
+            verificationIssuances.set(JSON.stringify([at, bt]), {...owner, left, right, authPath: issuancePath[1]!, lifetime});
             identity(at, bt, `traces.${index}.responseBody.twoFactorRedirect`, "token");
+          }
+        }
+        const trustPath = /^(\/__test\/profiles\/(two-factor-(?:skip-verification|trust-(?:fractional|zero-challenge|negative-challenge|zero|negative|cleanup-disabled)))\/api\/auth)\/(?:two-factor\/verify-(?:otp|totp|backup-code)|sign-in\/email)$/.exec(trace.path);
+        if (trustPath && context.sessionCookieSecret && record(a) && record(b) && record(a.user) && record(b.user)
+          && typeof a.user.id === "string" && typeof b.user.id === "string" && typeof a.token === "string" && typeof b.token === "string"
+          && issuedCookie(left.issuedSessionCookie, a.token) && issuedCookie(right.issuedSessionCookie, b.token)) {
+          const identifier = (cookie: string | undefined, userId: string) => {
+            if (!cookie || !/^(?:__Secure-)?better-auth\.trust_device=/.test(cookie)) return;
+            const proof = signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token?.split("!");
+            if (proof?.length !== 2 || !proof[1]?.startsWith("trust-device-")) return;
+            return proof[0] === createHmac("sha256", context.sessionCookieSecret!).update(`${userId}!${proof[1]}`).digest("base64url") ? proof[1] : undefined;
+          };
+          const at = identifier(left.issuedTrustCookie, a.user.id), bt = identifier(right.issuedTrustCookie, b.user.id);
+          if (at && bt) {
+            const profile = trustPath[2]!, lifetime = profile === "two-factor-trust-zero" ? 0 : profile === "two-factor-trust-negative" ? -250 : profile === "two-factor-skip-verification" ? 2592000000 : 1200875;
+            verificationIssuances.set(JSON.stringify([at, bt]), {left, right, leftUser: a.user.id, rightUser: b.user.id, authPath: trustPath[1]!, lifetime, trust: true});
           }
         }
         const owner = left.sessionCookie && right.sessionCookie ? cookieOwners.get(JSON.stringify([left.sessionCookie, right.sessionCookie])) : undefined;
@@ -361,10 +377,9 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   }
   physicalSessions(normalizedLeft, normalizedRight);
 
-  // Challenge and counter rows are physical records projected through the
-  // existing identity wrappers. The cookie authenticates the identifier; the
-  // observed signup and exact sign-in email authenticate its original owner.
-  const challengeRows = new Map<string, {a: Record<string, unknown>; b: Record<string, unknown>; receipt: ClockReceipt & {lifetime: number}}>();
+  // Physical challenge, counter and trust rows use authenticated issuance
+  // receipts and the existing complete verification observer, never a read clock.
+  const issuedVerificationRows = new Map<string, {a: Record<string, unknown>; b: Record<string, unknown>; receipt: ClockReceipt & {lifetime: number; trust?: boolean}}>();
   const verificationRows: {a: Record<string, unknown>; b: Record<string, unknown>}[] = [];
   function collectVerificationRows(a: unknown, b: unknown) {
     if (Array.isArray(a) && Array.isArray(b)) { a.forEach((child, i) => collectVerificationRows(child, b[i])); return; }
@@ -372,8 +387,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     if (typeof a.id === "string" && typeof b.id === "string" && record(a.identifier) && record(b.identifier)
       && typeof a.identifier.token === "string" && typeof b.identifier.token === "string") {
       if (observedPhysical(a, context.leftPhysicalObservations, "verification") && observedPhysical(b, context.rightPhysicalObservations, "verification")) verificationRows.push({a, b});
-      const receipt = challenges.get(JSON.stringify([a.identifier.token, b.identifier.token]));
-      if (receipt && observedPhysical(a, context.leftPhysicalObservations, "verification") && observedPhysical(b, context.rightPhysicalObservations, "verification") && record(a.value) && record(b.value) && a.value.userId === receipt.leftUser && b.value.userId === receipt.rightUser) challengeRows.set(JSON.stringify([a.identifier.token, b.identifier.token]), {a, b, receipt});
+      const receipt = verificationIssuances.get(JSON.stringify([a.identifier.token, b.identifier.token]));
+      if (receipt && observedPhysical(a, context.leftPhysicalObservations, "verification") && observedPhysical(b, context.rightPhysicalObservations, "verification") && record(a.value) && record(b.value) && a.value.userId === receipt.leftUser && b.value.userId === receipt.rightUser) issuedVerificationRows.set(JSON.stringify([a.identifier.token, b.identifier.token]), {a, b, receipt});
     }
     for (const [key, child] of Object.entries(a)) if (!["metadata", "custom", "additionalFields", "applicationData", "requestBodyShape", "responseBodyShape"].includes(key)) collectVerificationRows(child, b[key]);
   }
@@ -381,16 +396,21 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   for (const {a, b} of verificationRows) {
     const at = (a.identifier as {token: string}).token, bt = (b.identifier as {token: string}).token;
     const attempt = at.startsWith("2fa-attempts-") && bt.startsWith("2fa-attempts-");
-    const challenge = challengeRows.get(JSON.stringify(attempt ? [at.slice(13), bt.slice(13)] : [at, bt]));
-    if (!challenge || (attempt ? a.value !== "0" || b.value !== "0" || a.expiresAt !== challenge.a.expiresAt || b.expiresAt !== challenge.b.expiresAt : a !== challenge.a || b !== challenge.b)) continue;
+    const challenge = issuedVerificationRows.get(JSON.stringify(attempt ? [at.slice(13), bt.slice(13)] : [at, bt]));
+    if (!challenge || (attempt ? challenge.receipt.trust || a.value !== "0" || b.value !== "0" || a.expiresAt !== challenge.a.expiresAt || b.expiresAt !== challenge.b.expiresAt : a !== challenge.a || b !== challenge.b)) continue;
     physicalShape(a, b);
     const {receipt} = challenge, owners = [physicalOwner(a, b)];
+    const mutation = receipt.trust ? tracePairs.find(pair => pair.path === "/__test/verification-state" && pair.a.method === "POST" && pair.a.responseStatus === 200 && pair.b.responseStatus === 200
+      && record(pair.left.verificationInput) && record(pair.right.verificationInput) && pair.left.verificationInput.action === "expire" && pair.right.verificationInput.action === "expire"
+      && pair.left.verificationInput.identifier === at && pair.right.verificationInput.identifier === bt
+      && pair.left.verificationInput.expiresAt === a.expiresAt && pair.right.verificationInput.expiresAt === b.expiresAt) : undefined;
     for (const field of ["createdAt", "updatedAt"]) {
       const av = a[field], bv = b[field];
-      if (isDate(av) && isDate(bv) && inWindows(Date.parse(av), Date.parse(bv), receipt.left, receipt.right)) approveDate(owners, field, av, bv);
+      const producer = field === "updatedAt" && mutation ? mutation : receipt;
+      if (isDate(av) && isDate(bv) && inWindows(Date.parse(av), Date.parse(bv), producer.left, producer.right)) approveDate(owners, field, av, bv);
     }
     if (isDate(a.expiresAt) && isDate(b.expiresAt)) {
-      if (inWindows(Date.parse(a.expiresAt) - receipt.lifetime, Date.parse(b.expiresAt) - receipt.lifetime, receipt.left, receipt.right)) approveDate(owners, "expiresAt", a.expiresAt, b.expiresAt);
+      if (mutation || inWindows(Date.parse(a.expiresAt) - receipt.lifetime, Date.parse(b.expiresAt) - receipt.lifetime, receipt.left, receipt.right)) approveDate(owners, "expiresAt", a.expiresAt, b.expiresAt);
       else for (const owner of owners) invalidLifetimes.add(dateKey(owner, "expiresAt", a.expiresAt, b.expiresAt));
     }
   }
