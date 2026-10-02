@@ -186,3 +186,69 @@ coverage claim. The state owner reads all fields of verification/API-key/org/
 member rows and the selected installed session columns; it intentionally omits
 unrelated global SessionFields fixture columns and does not claim full factor,
 user or JWK storage proof until those owners are completed.
+
+## Cached and stored organization completion
+
+Composed on actual main `bb4142faa155e60b745184401c531b2db9dfd34d`, retaining
+all #221/#135/#291 and separate #295 comparer owners. Read-only actual Source
+controls in `/tmp/issue205-cache-source-member-phases.{ts,json,log}` and
+`/tmp/issue205-signed-source-member-phases.{ts,json,log}` retain full ten-table
+SELECT * captures and real SDK/JWT/OTT/API-key observations. Cached and ordinary
+signed organization create/add/remove/delete keep their authenticated session
+inside the handler; completed outer hooks observe null. Trusted direct userId
+create/add do the same. An actual API-key principal established by middleware
+remains visible before and after organization remove/delete. JWT and OTT nested
+completion expose only user/session, while direct cached getSession alone
+retains its original updatedAt number and version string. That separate direct
+cache-metadata observation remains unfinished and is not normalized away.
+
+The uncached Source control initially completed every contract and wrote its
+full JSON, then its diagnostic printer dereferenced a generator event lacking
+current context. The complete initial artifacts remain under `-attempt1`;
+correcting only the diagnostic print produced a terminal successful rerun.
+
+New actual cached/ordinary boundary owners independently verify every compact
+HMAC and published decoder output, signed SDK issuance, real JWT with JWKS,
+OTT consume/restore/replay, scoped organization reads/writes, foreign rejection,
+trusted userId operations, virtual credentials and exact remaining uses. Both
+full callback arguments and exported frames remain recorded. Complete repeated
+Set-Cookie values use the actual Headers.get('set-cookie') combined value and
+matching native header collection; the published cookie splitter restores every
+actual cookie. This corrects Bun Object.fromEntries losing earlier repeated
+values, without constructing an expected runtime receipt.
+
+`/tmp/issue205-cache-before-owner27.log` retains the genuine ordinary Native
+completed-principal failure and cached Native OTT restoration failure after
+both Source branches complete. Removing only organization handler-added
+observations preserves middleware establishment and all authentication checks.
+Registered OTT always queues its canonical token/preference cookies before
+successful cache publication, preserving #221 runtime semantics. The unchanged
+owners then fail at the missing native active-organization store update in
+`/tmp/issue205-cache-intermediate-owner28.log`. The registered organization
+adapter now performs the same post-core scoped token/team update as its HTTP
+owner, honoring keepCurrentActiveOrganization. It never sets the outer principal.
+Actual cached Source deletion can leave the stored active organization ID
+unchanged when the authenticated snapshot is stale; the owners retain that
+relationship to the real created organization and independent stored-session
+HTTP readbacks. Foreign session rows stay unchanged.
+
+Initial setup/representation assumptions are separately retained in
+`/tmp/issue205-cache-before-owner24.log` (ordinary updatedAt write and a combined
+header incorrectly treated as one cookie), owner25 (cached stale active-org
+state), owner26 (the actual later native storage/restoration gaps), owner29
+(native physical nanosecond timestamp versus public millisecond readback), and
+owner30/31 (raw cookie arrays/nonstandard header field compared as literals).
+The final owner32 preserves complete standard response.headers Set-Cookie
+observations and reaches only the existing physical signup cookie serializer
+difference, three signup headers per branch. All actual decision, completion,
+restoration, quota and stored-state checks pass within both runtimes. No comparer
+is changed here. Full raw Source/native signup controls are frozen in
+`/tmp/issue205-signup-header-controls.json`, SHA256
+`6d01e50dbcb66f9c613f8649fb7163b4adda4d85ccf072ca4b3fad45f0e8e2ba`.
+Source uses Max-Age/Path/HttpOnly/SameSite, while the old physical native token
+issuer adds Expires and changes attribute order. That requires a separate
+physical-cookie prerequisite; broader #177 remains open.
+
+Actual locked optional workspace and fixture all-targets strict Clippy plus
+TypeScript pass (`/tmp/issue205-cache-strict33.log`). No full canonical, docs,
+browser or new clean coverage result is claimed for this expanded checkpoint.

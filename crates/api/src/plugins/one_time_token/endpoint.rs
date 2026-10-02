@@ -137,15 +137,9 @@ impl OneTimeTokenPlugin {
                     })
                     .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
                     .is_some_and(|value| !value.is_empty());
-                // Cache publication owns the token and preference headers when
-                // enabled. The ordinary registered endpoint uses the same
-                // canonical serializer without synthesizing an Expires attribute.
-                if !ctx
-                    .config
-                    .session
-                    .cookie_cache
-                    .as_ref()
-                    .is_some_and(|cache| cache.enabled)
+                // The endpoint owns its actual token/preference cookies. Cache
+                // publication adds its own envelope after successful encoding.
+                // Use the canonical serializer without an Expires attribute.
                 {
                     #[expect(
                         clippy::as_conversions,

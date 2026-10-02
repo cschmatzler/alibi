@@ -610,6 +610,8 @@ const signupPolicyFixture = createSignupPolicyFixture(database, authOptions);
 const compromisedPasswordFixture = await createCompromisedPasswordFixture(database, authOptions);
 const serverEndpointFixture = createServerEndpointFixture(database,authOptions);
 verificationProfiles.set(serverEndpointFixture.path,serverEndpointFixture.auth);
+const serverEndpointCacheFixture=createServerEndpointFixture(database,{...authOptions,session:{...authOptions.session,cookieCache:{enabled:true,strategy:"compact",maxAge:300}}},"server-dispatch-cache");
+verificationProfiles.set(serverEndpointCacheFixture.path,serverEndpointCacheFixture.auth);
 const userValidationFixture = await createUserValidationFixture(database, authOptions);
 
 const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
@@ -1135,6 +1137,8 @@ const server = Bun.serve({
       if(physicalCookieControl)return physicalCookieControl;
       const serverEndpointControl = await serverEndpointFixture.control(request);
       if (serverEndpointControl) return serverEndpointControl;
+      const serverEndpointCacheControl = await serverEndpointCacheFixture.control(request);
+      if (serverEndpointCacheControl) return serverEndpointCacheControl;
       const apiKeyHookControl = await apiKeyHookFixture.control(request);
       if (apiKeyHookControl) return apiKeyHookControl;
       if (url.pathname === "/__test/api-key/verify" && request.method === "POST") {

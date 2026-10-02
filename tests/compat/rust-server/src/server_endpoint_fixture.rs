@@ -346,10 +346,22 @@ struct Input {
     #[serde(default)]
     physical_request: bool,
 }
+fn header_snapshot(headers: &better_auth_core::Headers) -> HashMap<String, String> {
+    let mut values: HashMap<_, _> = headers
+        .iter()
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+    let cookies: Vec<_> = headers.get_all("set-cookie").cloned().collect();
+    if !cookies.is_empty() {
+        drop(values.insert("set-cookie".into(), cookies.join(", ")));
+    }
+    values
+}
 fn outcome(result: Result<better_auth::endpoint::EndpointOutput<JsValue>, EndpointError>) -> Value {
     match result {
         Ok(output) => {
-            let mut result = value!({"headers":output.headers().iter().collect::<HashMap<_,_>>(),"response":output.value()});
+            let mut result =
+                value!({"headers":header_snapshot(output.headers()),"response":output.value()});
             if let Some(status) = output.status() {
                 result["status"] = value!(status);
             }
@@ -361,14 +373,27 @@ fn outcome(result: Result<better_auth::endpoint::EndpointOutput<JsValue>, Endpoi
                 AuthError::Internal(message) => message.clone(),
                 error => error.error_payload().2,
             };
-            value!({"ok":false,"name":if api{"APIError"}else{"Error"},"status":if api{Some(error.error.status_code())}else{None},"body":error.body.map_or_else(||if api{error_body(&error.error)}else{Value::Null},|body|serde_json::to_value(body).unwrap()),"message":message,"headers":error.headers.map(|headers|headers.iter().map(|(name,value)|(name.clone(),value.clone())).collect::<HashMap<_,_>>())})
+            value!({"ok":false,"name":if api{"APIError"}else{"Error"},"status":if api{Some(error.error.status_code())}else{None},"body":error.body.map_or_else(||if api{error_body(&error.error)}else{Value::Null},|body|serde_json::to_value(body).unwrap()),"message":message,"headers":error.headers.map(|headers|header_snapshot(&headers))})
         }
     }
 }
 
-pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
-    let path = "/__test/profiles/server-dispatch/api/auth";
-    let configured = base.clone().base_path(path);
+pub(super) async fn router(
+    base: &AuthConfig,
+    database: DatabaseConnection,
+    profile: &str,
+    compact: bool,
+) -> AuthResult<Router> {
+    let path = format!("/__test/profiles/{profile}/api/auth");
+    let control_path = format!("/__test/{profile}");
+    let configured =
+        base.clone()
+            .base_path(&path)
+            .session_cookie_cache(better_auth_core::CookieCacheConfig {
+                enabled: compact,
+                max_age: 300.0,
+                ..Default::default()
+            });
     let app = Application::default();
     let range_app = app.clone();
     let range=Router::new().fallback(move|request:Request|{
@@ -397,7 +422,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let other = Arc::new(
         AuthBuilder::<TestSchema>::new(
             base.clone()
-                .base_path("/__test/server-dispatch/other/api/auth"),
+                .base_path(format!("{control_path}/other/api/auth")),
         )
         .store(SeaOrmStore::new(base.clone(), database.clone()))
         .plugin(SessionManagementPlugin::new())
@@ -468,9 +493,9 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             .await?,
     );
     *app.primary.lock().unwrap() = Some(auth.clone());
-    let mut router = Router::new().nest(path, auth.clone().axum_router().with_state(auth.clone()));
+    let mut router = Router::new().nest(&path, auth.clone().axum_router().with_state(auth.clone()));
     router = router.route(
-        "/__test/server-dispatch/call",
+        &format!("{control_path}/call"),
         post(move |request: Request| {
             let auth = auth.clone();
             let app = app.clone();
@@ -569,7 +594,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             }
         }),
     );
-    router=router.route("/__test/server-dispatch/state",get(move||{let database=database.clone();async move{
+    router=router.route(&format!("{control_path}/state"),get(move||{let database=database.clone();async move{
         let mut state=serde_json::Map::new();
         for (name,sql) in [
             ("verification","SELECT json_object('id',id,'identifier',identifier,'value',value,'expiresAt',expires_at,'createdAt',created_at,'updatedAt',updated_at) AS data FROM verifications ORDER BY identifier,id"),

@@ -3,7 +3,7 @@ import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { authProfilePath } from "../../support/profiles";
 
 function record(value:unknown):Record<string,any>{expect(value).not.toBeNull();expect(typeof value).toBe("object");return value as Record<string,any>;}
-async function call(ctx:ScenarioContext,input:Record<string,unknown>){const response=await ctx.rawRequest({path:input.physicalRequest?"/__test/server-dispatch/call?actual=query":"/__test/server-dispatch/call",method:"POST",json:input,...(input.physicalRequest?{headers:{host:"dispatch-owner.example.test",origin:"http://dispatch-owner.example.test"}}:{})});expect(response.status).toBe(200);return record(response.body);}
+async function call(ctx:ScenarioContext,input:Record<string,unknown>,profile="server-dispatch"){const response=await ctx.rawRequest({path:`/__test/${profile}/call${input.physicalRequest?"?actual=query":""}`,method:"POST",json:input,...(input.physicalRequest?{headers:{host:"dispatch-owner.example.test",origin:"http://dispatch-owner.example.test"}}:{})});expect(response.status).toBe(200);return record(response.body);}
 async function state(ctx:ScenarioContext){const response=await ctx.rawRequest({path:"/__test/server-dispatch/state"});expect(response.status).toBe(200);return record(response.body);}
 async function signup(ctx:ScenarioContext,name="owner") {const {client}=ctx.actor(name,"server-dispatch");const response=await client.signUp.email({name,email:ctx.uniqueEmail(name),password:"Correct-Horse-Password-205"});expect(response.error).toBeNull();return record(response.data).user;}
 
@@ -189,4 +189,64 @@ for(const [mode,physicalRequest] of [["hash-phase",true],["hash-phase",false],["
   const after=await state(ctx);expect(after.verification.length-before.verification.length).toBe(mode==="hash-phase-deny"?0:1);
   expect(after.apikey).toEqual(before.apikey);expect(after.member).toEqual(before.member);expect(after.organization).toEqual(before.organization);expect(after.session).toEqual(before.session);
   return {before,observed,after};
+});
+
+
+const dispatchSecret="compat-test-only-key-not-real-minimum-32chars";
+async function cacheReceipt(headers:Headers){
+  const {createHmac}=await import("node:crypto"),{getCookieCache}=await import("better-auth/cookies");
+  const rawCookies=headers.getSetCookie().filter(raw=>raw.startsWith("better-auth.session_data="));expect(rawCookies).toHaveLength(1);
+  const token=decodeURIComponent(rawCookies[0]!.split(";")[0]!.slice("better-auth.session_data=".length));
+  const envelope=JSON.parse(Buffer.from(token,"base64url").toString()),observedAt=Date.now();
+  expect(envelope.signature).toBe(createHmac("sha256",dispatchSecret).update(JSON.stringify({...envelope.session,expiresAt:envelope.expiresAt})).digest("base64url"));
+  const decoded=await getCookieCache(new Headers({cookie:rawCookies[0]!.split(";")[0]!}),{secret:dispatchSecret,strategy:"compact"});expect(decoded).not.toBeNull();
+  return {compactSessionCache:{token,envelope,decoded,observedAt,effectiveMaxAgeSeconds:300,rawCookies}};
+}
+for(const compact of [false,true])compatScenario(`server endpoint ${compact?"cached":"ordinary"} signed organization handler keeps session local while actual API key middleware shares principal`,async ctx=>{
+  const {createHmac}=await import("node:crypto"),{createLocalJWKSet,jwtVerify}=await import("jose");
+  const profile=compact?"server-dispatch-cache":"server-dispatch";
+  const invoke=(input:Record<string,unknown>)=>call(ctx,input,profile);
+  const read=async()=>{const result=await ctx.rawRequest({path:`/__test/${profile}/state`});expect(result.status).toBe(200);return record(result.body);};
+  await invoke({operation:"deleteAllExpiredApiKeys",mode:"reset-app"});
+  async function issue(name:string){
+    let headers:Headers|undefined;
+    const response=await ctx.actor(name,profile).client.signUp.email({name,email:ctx.uniqueEmail(name),password:"Correct-Horse-Password-205",fetchOptions:{onSuccess({response}){headers=new Headers(response.headers);}}});expect(response.error).toBeNull();expect(headers).toBeDefined();
+    const result=record(response.data),rawCookies=headers!.getSetCookie(),cookie=rawCookies.map(raw=>raw.split(";")[0]).join("; ");
+    const signed=decodeURIComponent(rawCookies.find(raw=>raw.startsWith("better-auth.session_token="))!.split(";")[0]!.slice("better-auth.session_token=".length));
+    expect(signed).toBe(`${result.token}.${createHmac("sha256",dispatchSecret).update(result.token).digest("base64")}`);
+    const issued=compact?await cacheReceipt(headers!):null;
+    if(issued){expect(issued.compactSessionCache.decoded!.user.id).toBe(result.user.id);expect(issued.compactSessionCache.decoded!.session.token).toBe(result.token);}
+    return {result,response:{headers:{"set-cookie":headers!.get("set-cookie")}},headers:{cookie},issued};
+  }
+  const owner=await issue("composed-owner"),target=await issue("composed-target"),foreign=await issue("composed-foreign");
+  const before=await read();
+  const token=await invoke({operation:"getToken",headers:owner.headers});expect(token.result.ok).toBe(true);
+  const jwks=await invoke({operation:"getJwks"});expect(jwks.result.ok).toBe(true);
+  const verified=await jwtVerify(token.result.value.response.token,createLocalJWKSet(jwks.result.value.response));expect(verified.payload.sub).toBe(owner.result.user.id);expect(verified.payload.email).toBe(owner.result.user.email);
+  const generated=await invoke({operation:"generateOneTimeToken",headers:owner.headers});expect(generated.result.ok).toBe(true);
+  const consumed=await invoke({operation:"verifyOneTimeToken",body:{token:generated.result.value.response.token}});expect(consumed.result.ok).toBe(true);expect(consumed.result.value.response.user.id).toBe(owner.result.user.id);
+  const {splitSetCookieHeader}=await import("better-auth/cookies");
+  const restoredHeaders=new Headers();for(const raw of splitSetCookieHeader(consumed.result.value.headers["set-cookie"]))restoredHeaders.append("set-cookie",raw);
+  const restoredCookies=restoredHeaders.getSetCookie(),restoredCache=compact?await cacheReceipt(restoredHeaders):null;
+  const restored=await ctx.rawRequest({path:`${authProfilePath(profile)}/get-session`,actor:"actual-restored-owner",headers:{cookie:restoredCookies.map(raw=>raw.split(";")[0]).join("; ")}});expect(restored.status).toBe(200);expect(record(restored.body).session.token).toBe(owner.result.token);
+  const consumedState=await read(),replay=await invoke({operation:"verifyOneTimeToken",body:{token:generated.result.value.response.token}});expect(replay.result.status).toBe(400);expect(await read()).toEqual(consumedState);
+  for(const operation of [token,generated])for(const stage of ["user-after","first-after","second-after"]){const event=operation.events.find((event:Record<string,any>)=>event.stage===stage);expect(Object.keys(event.session).sort()).toEqual(["session","user"]);expect(Object.keys(event.current.session).sort()).toEqual(["session","user"]);expect(event.session.user.id).toBe(owner.result.user.id);expect(event.session.session.token).toBe(owner.result.token);expect(event.session.updatedAt).toBeUndefined();expect(event.session.version).toBeUndefined();}
+  const created=await invoke({operation:"createOrganization",headers:owner.headers,body:{name:"Actual scoped composed organization",slug:"actual-composed-signed-org"}});expect(created.result.ok).toBe(true);const organization=created.result.value.response;
+  for(const stage of ["user-before","first-before","second-before","user-after","first-after","second-after"]){const event=created.events.find((event:Record<string,any>)=>event.stage===stage);expect(event.session).toBeNull();expect(event.current.session).toBeNull();}
+  const createdSession=await ctx.rawRequest({path:`${authProfilePath(profile)}/get-session?disableCookieCache=true&disableRefresh=true`,actor:"actual-created-session",headers:owner.headers});expect(createdSession.status).toBe(200);expect(record(createdSession.body).session.activeOrganizationId).toBe(organization.id);
+  const added=await invoke({operation:"addMember",headers:owner.headers,body:{organizationId:organization.id,userId:target.result.user.id,role:"member"}});expect(added.result.ok).toBe(true);
+  const protectedBefore=await read(),denied=await invoke({operation:"removeMember",headers:foreign.headers,body:{organizationId:organization.id,memberIdOrEmail:added.result.value.response.id}});expect(denied.result.ok).toBe(false);expect(denied.result.status).toBe(400);const protectedAfter=await read();expect(protectedAfter).toEqual(protectedBefore);
+  const removed=await invoke({operation:"removeMember",headers:owner.headers,body:{organizationId:organization.id,memberIdOrEmail:added.result.value.response.id}});expect(removed.result.ok).toBe(true);
+  const deleted=await invoke({operation:"deleteOrganization",headers:owner.headers,body:{organizationId:organization.id}});expect(deleted.result.ok).toBe(true);
+  const deletedSession=await ctx.rawRequest({path:`${authProfilePath(profile)}/get-session?disableCookieCache=true&disableRefresh=true`,actor:"actual-deleted-session",headers:owner.headers});expect(deletedSession.status).toBe(200);expect(record(deletedSession.body).session.activeOrganizationId).toBe(compact?organization.id:null);
+  const trustedCreated=await invoke({operation:"createOrganization",body:{name:"Actual supplied composed organization",slug:"actual-composed-supplied-org",userId:owner.result.user.id}});expect(trustedCreated.result.ok).toBe(true);
+  const trustedAdded=await invoke({operation:"addMember",body:{organizationId:trustedCreated.result.value.response.id,userId:target.result.user.id,role:"member"}});expect(trustedAdded.result.ok).toBe(true);
+  for(const operation of [added,removed,deleted,trustedCreated,trustedAdded])for(const stage of ["user-before","first-before","second-before","user-after","first-after","second-after"]){const event=operation.events.find((event:Record<string,any>)=>event.stage===stage);expect(event.session).toBeNull();expect(event.current.session).toBeNull();}
+  const key=await invoke({operation:"createApiKey",body:{configId:"dispatch",userId:owner.result.user.id,name:"composed-virtual-owner",remaining:30,rateLimitEnabled:false}});expect(key.result.ok).toBe(true);
+  const virtualHeaders={"x-api-key":key.result.value.response.key};
+  const virtualRemoved=await invoke({operation:"removeMember",headers:virtualHeaders,body:{organizationId:trustedCreated.result.value.response.id,memberIdOrEmail:trustedAdded.result.value.response.id}});expect(virtualRemoved.result.ok).toBe(true);
+  const virtualDeleted=await invoke({operation:"deleteOrganization",headers:virtualHeaders,body:{organizationId:trustedCreated.result.value.response.id}});expect(virtualDeleted.result.ok).toBe(true);
+  for(const operation of [virtualRemoved,virtualDeleted]){expect(operation.events.find((event:Record<string,any>)=>event.stage==="first-before").session).toBeNull();for(const stage of ["second-before","user-after","first-after","second-after"]){const event=operation.events.find((event:Record<string,any>)=>event.stage===stage);expect(event.session.user.id).toBe(owner.result.user.id);expect(event.session.session.token).toBe(key.result.value.response.key);expect(event.session).toEqual(event.current.session);expect(event.session.session.ipAddress).toBeNull();expect(event.session.session.userAgent).toBeNull();}}
+  const after=await read();for(const session of after.session){const original=before.session.find((row:Record<string,any>)=>row.id===session.id);expect(original).toBeDefined();expect(session).toEqual({...original,updatedAt:session.userId===owner.result.user.id?session.updatedAt:original.updatedAt,activeOrganizationId:session.userId===owner.result.user.id&&compact?organization.id:original.activeOrganizationId});if(session.userId===owner.result.user.id){expect(Date.parse(session.updatedAt)).toBe(Date.parse(record(deletedSession.body).session.updatedAt));expect(Date.parse(session.updatedAt)).toBeGreaterThanOrEqual(Date.parse(original.updatedAt));}}expect(after.organization).toEqual([]);expect(after.member).toEqual([]);expect(after.verification).toEqual([]);expect(after.apikey).toHaveLength(1);expect(after.apikey[0].remaining).toBe(28);
+  return {compact,owner,target,foreign,before,token,jwks,verified,generated,consumed,restoredCache,restored,consumedState,replay,created,createdSession,added,protectedBefore,denied,protectedAfter,removed,deleted,deletedSession,trustedCreated,trustedAdded,key,virtualRemoved,virtualDeleted,after};
 });

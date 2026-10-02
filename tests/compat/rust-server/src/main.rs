@@ -795,7 +795,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let multiple_session_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let physical_cookie_router = physical_cookie_fixture::router(&config, database.clone()).await?;
     let dispatch_router = dispatch_fixture::router(&config, database.clone()).await?;
-    let server_endpoint_router = server_endpoint_fixture::router(&config, database.clone()).await?;
+    let server_endpoint_router =
+        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch", false)
+            .await?;
+    let server_endpoint_cache_router =
+        server_endpoint_fixture::router(&config, database.clone(), "server-dispatch-cache", true)
+            .await?;
     let bearer_router =
         bearer_fixture::router(&config, database.clone(), multiple_session_counter.clone()).await?;
     let multiple_session_router = multiple_session_fixture::router(
@@ -1931,6 +1936,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(dispatch_router)
         .merge(physical_cookie_router)
         .merge(server_endpoint_router)
+        .merge(server_endpoint_cache_router)
         .merge(multiple_session_router)
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)

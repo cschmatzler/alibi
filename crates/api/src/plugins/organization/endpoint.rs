@@ -185,9 +185,6 @@ impl OrganizationPlugin {
                 } else {
                     ctx.require_cached_session(call).await.ok()
                 };
-                if let Some((user, session)) = &session {
-                    call.record_authenticated_session(chosen_user(ctx, user), session.clone());
-                }
                 EndpointResponse::json(
                     &handlers::member_addition::add_member_with_session(
                         &body,
@@ -208,7 +205,6 @@ impl OrganizationPlugin {
                         error
                     }
                 })?;
-                call.record_authenticated_session(chosen_user(ctx, &user), session.clone());
                 EndpointResponse::json(
                     &handlers::member::remove_member_core(
                         &body,
@@ -235,7 +231,6 @@ impl OrganizationPlugin {
                         error
                     }
                 })?;
-                call.record_authenticated_session(chosen_user(ctx, &user), session.clone());
                 EndpointResponse::json(
                     &handlers::org::delete_organization_core(
                         &body,
@@ -262,18 +257,33 @@ impl OrganizationPlugin {
                     });
                 }
                 if let Some((user, session)) = session {
-                    call.record_authenticated_session(chosen_user(ctx, &user), session.clone());
-                    EndpointResponse::json(
-                        &handlers::org::create_organization_core(
-                            &body,
-                            &user,
-                            call.request(),
-                            Some(&session),
-                            &self.config,
-                            ctx,
-                        )
-                        .await?,
+                    let response = handlers::org::create_organization_core(
+                        &body,
+                        &user,
+                        call.request(),
+                        Some(&session),
+                        &self.config,
+                        ctx,
                     )
+                    .await?;
+                    if !body.keep_current_active_organization.unwrap_or(false) {
+                        drop(
+                            ctx.database
+                                .update_session_active_organization(
+                                    &session.token,
+                                    Some(response.organization.id.as_str()),
+                                )
+                                .await?,
+                        );
+                        if let Some(team_id) = &response.default_team_id {
+                            drop(
+                                ctx.database
+                                    .update_session_active_team(&session.token, Some(team_id))
+                                    .await?,
+                            );
+                        }
+                    }
+                    EndpointResponse::json(&response)
                 } else {
                     let user_id = call
                         .body()
@@ -309,15 +319,5 @@ impl OrganizationPlugin {
             }
             _ => Err(AuthError::not_found("Unregistered organization operation")),
         }
-    }
-}
-
-fn chosen_user<S: AuthSchema>(
-    ctx: &AuthContext<S>,
-    user: &better_auth_core::AuthenticatedUser<S>,
-) -> better_auth_core::UserView {
-    match user {
-        better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
-        better_auth_core::AuthenticatedUser::Cached(user) => (**user).clone(),
     }
 }
