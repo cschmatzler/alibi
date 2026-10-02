@@ -14,7 +14,7 @@ use super::oauth::{
 use async_trait::async_trait;
 use better_auth_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
-    AuthSchema, AuthSession, AuthVerification, BeforeRequestAction, HttpMethod, OAuthStateStrategy,
+    AuthSchema, AuthSession, BeforeRequestAction, HttpMethod, OAuthStateStrategy,
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -416,15 +416,11 @@ impl OAuthProxyPlugin {
         if age > self.config.max_age_seconds || age < -10.0 {
             return error_redirect(error_url, "payload_expired", None);
         }
-        let Ok(Some(row)) = ctx
-            .database
-            .get_verification_by_identifier(&format!("oauth:{}", payload.state))
-            .await
-        else {
+        let Ok(Some(row)) = ctx.verifications().find(&payload.state).await else {
             return error_redirect(error_url, "state_mismatch", None);
         };
         let state: OAuthStatePayload =
-            match better_auth_core::utils::json::from_slice(row.value().as_bytes()) {
+            match better_auth_core::utils::json::from_slice(row.value()?.as_bytes()) {
                 Ok(state) => state,
                 Err(_) => return error_redirect(error_url, "state_mismatch", None),
             };
@@ -440,7 +436,7 @@ impl OAuthProxyPlugin {
             &ctx.config,
         );
         req.queue_response_header("Set-Cookie", clear);
-        if ctx.database.delete_verification(&row.id()).await.is_err() {
+        if ctx.verifications().delete(&payload.state).await.is_err() {
             return error_redirect(error_url, "state_mismatch", None);
         }
         if state.is_expired() {

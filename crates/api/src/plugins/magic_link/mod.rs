@@ -150,8 +150,8 @@ impl MagicLinkPlugin {
             self.config.expires_in
         };
         drop(
-            ctx.database
-                .create_verification(CreateVerification {
+            ctx.verifications()
+                .create(CreateVerification {
                     identifier: stored,
                     value: serde_json::to_string(&data)?,
                     expires_at: Utc::now() + expires_in,
@@ -209,8 +209,6 @@ impl MagicLinkPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        use better_auth_core::AuthVerification;
-
         let token = req.query.get("token").ok_or(AuthError::Upstream {
             status: 400,
             code: "VALIDATION_ERROR",
@@ -250,15 +248,11 @@ impl MagicLinkPlugin {
             )
             .map_err(|_error| AuthError::bad_request("Invalid newUserCallbackURL"))?;
         let stored = self.store_token(token).await?;
-        let Some(verification) = ctx
-            .database
-            .consume_verification_by_identifier(&stored)
-            .await?
-        else {
+        let Some(verification) = ctx.verifications().consume(&stored).await? else {
             return Ok(error_redirect(error_url, "INVALID_TOKEN", None));
         };
 
-        let data: LinkData = serde_json::from_str(verification.value())?;
+        let data: LinkData = serde_json::from_str(verification.value()?)?;
         let mut is_new_user = false;
         let user = match ctx.database.get_user_by_email(&data.email).await? {
             Some(user) if !user.email_verified() => {

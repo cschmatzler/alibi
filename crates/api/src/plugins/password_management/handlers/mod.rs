@@ -13,12 +13,11 @@ use crate::plugins::helpers::{
 use better_auth_core::utils::password as password_utils;
 use better_auth_core::wire::UserView;
 use better_auth_core::{
-    AuthAccount, AuthContext, AuthError, AuthResult, AuthSession, AuthUser, AuthVerification,
-    CreateAccount, RequestMeta, UpdateAccount,
+    AuthAccount, AuthContext, AuthError, AuthResult, AuthSession, AuthUser, CreateAccount,
+    RequestMeta, UpdateAccount,
 };
 use chrono::{Duration, Utc};
 use url::Url;
-use uuid::Uuid;
 
 const PASSWORD_RESET_SUCCESS_MESSAGE: &str =
     "If this email exists in our system, check your email for the reset link";
@@ -50,17 +49,13 @@ pub(in crate::plugins) async fn request_password_reset_core(
     };
 
     let Some(user) = ctx.database.get_user_by_email(&body.email).await? else {
-        drop(Uuid::new_v4().simple().to_string());
-        drop(
-            ctx.database
-                .get_verification_by_identifier("dummy-verification-token")
-                .await?,
-        );
+        drop(better_auth_core::utils::id::generate_id(24));
+        drop(ctx.verifications().find("dummy-verification-token").await?);
         tracing::error!(email = %body.email, "Reset Password: User not found");
         return Ok(success);
     };
 
-    let reset_token = Uuid::new_v4().simple().to_string();
+    let reset_token = better_auth_core::utils::id::generate_id(24);
     let expires_at = Utc::now()
         + config
             .reset_token_expiry
@@ -68,8 +63,8 @@ pub(in crate::plugins) async fn request_password_reset_core(
             .unwrap_or_else(|| Duration::hours(config.reset_token_expiry_hours));
 
     drop(
-        ctx.database
-            .create_verification(better_auth_core::CreateVerification {
+        ctx.verifications()
+            .create(better_auth_core::CreateVerification {
                 identifier: format!("reset-password:{reset_token}"),
                 value: user.id().to_string(),
                 expires_at,
@@ -129,11 +124,11 @@ pub(in crate::plugins) async fn reset_password_core(
     )?;
 
     let verification = ctx
-        .database
-        .consume_verification_by_identifier(&format!("reset-password:{token}"))
+        .verifications()
+        .consume(&format!("reset-password:{token}"))
         .await?
         .ok_or_else(|| AuthError::bad_request("Invalid token"))?;
-    let user_id = verification.value().to_owned();
+    let user_id = verification.value()?.to_owned();
     let user = ctx
         .database
         .get_user_by_id(&user_id)
@@ -213,13 +208,13 @@ pub(in crate::plugins) async fn reset_password_token_core(
     }
 
     let verification = ctx
-        .database
-        .get_verification_by_identifier(&format!("reset-password:{token}"))
+        .verifications()
+        .find(&format!("reset-password:{token}"))
         .await?;
 
     if verification
         .as_ref()
-        .is_none_or(|verification| verification.expires_at() < Utc::now())
+        .is_none_or(|verification| verification.is_expired())
     {
         return Ok(ResetPasswordTokenResult::Redirect(build_redirect_url(
             &ctx.config.base_url,

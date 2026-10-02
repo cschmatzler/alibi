@@ -202,6 +202,34 @@ pub trait SeaOrmHooks<S: AuthSchema>: Send + Sync {
         Ok(HookControl::Continue)
     }
 
+    /// Observe initialized defaults and transform the actual admitted candidate.
+    /// The legacy domain hook remains available for existing applications.
+    async fn before_create_verification_record(
+        &self,
+        candidate: &mut better_auth_core::verification::VerificationCreation,
+        ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        let mut data = candidate.data();
+        let control = self.before_create_verification(&mut data, ctx).await?;
+        candidate.identifier = data.identifier;
+        candidate.value = data.value;
+        candidate.expires_at = data.expires_at;
+        Ok(control)
+    }
+
+    /// Secondary-only values have no invented model or ID. The legacy model
+    /// callback is invoked only when a real physical model was persisted.
+    async fn after_create_verification_record(
+        &self,
+        snapshot: &better_auth_core::verification::VerificationSnapshot,
+        ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<()> {
+        if let Some(model) = snapshot.original_model::<S::Verification>() {
+            self.after_create_verification(model, ctx).await?;
+        }
+        Ok(())
+    }
+
     async fn after_create_verification(
         &self,
         _verification: &S::Verification,
@@ -232,6 +260,19 @@ pub trait SeaOrmHooks<S: AuthSchema>: Send + Sync {
         _verification: &S::Verification,
         _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
+        Ok(())
+    }
+
+    /// Identifier updates invoke after hooks even when the adapter matched no
+    /// row. Actual physical snapshots bridge the existing model callback.
+    async fn after_update_verification_record(
+        &self,
+        snapshot: Option<&better_auth_core::verification::VerificationSnapshot>,
+        ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<()> {
+        if let Some(model) = snapshot.and_then(|value| value.original_model::<S::Verification>()) {
+            self.after_update_verification(model, ctx).await?;
+        }
         Ok(())
     }
 

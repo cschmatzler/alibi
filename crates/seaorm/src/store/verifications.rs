@@ -9,11 +9,14 @@ use better_auth_core::entity::AuthVerification;
 use better_auth_core::error::{AuthError, AuthResult};
 use better_auth_core::store::{VerificationStore, verification_reservation_key};
 use better_auth_core::types::{CreateVerification, UpdateVerification};
+use better_auth_core::verification::{
+    VerificationCreation, VerificationPublication, VerificationSnapshot,
+};
 use chrono::{DateTime, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, Iterable,
-    QueryFilter, QueryOrder, QuerySelect, QueryTrait, SqliteTransactionMode, TransactionOptions,
-    TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, IdenStatic,
+    Iterable, QueryFilter, QueryOrder, QuerySelect, QueryTrait, SqliteTransactionMode,
+    TransactionOptions, TransactionTrait,
 };
 
 impl<S> SeaOrmStore<S>
@@ -21,6 +24,55 @@ where
     S: AuthSchema,
     S::Verification: SeaOrmVerificationModel,
 {
+    pub(crate) async fn create_verification_record_with_connection<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        tx: Option<&DatabaseTransaction>,
+        mut data: VerificationCreation,
+        publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        let hook_context = self.hook_context(tx);
+        for hook in self.hooks() {
+            if hook
+                .before_create_verification_record(&mut data, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Ok(None);
+            }
+        }
+        let snapshot = if publication.store_in_database {
+            let id = data
+                .id
+                .as_deref()
+                .map(S::Verification::parse_id)
+                .transpose()?;
+            let mut active = S::Verification::new_active(id, data.data(), data.created_at);
+            if let Some(updated) = S::Verification::updated_at_column() {
+                let column = <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
+                    .find(|column| column.as_str() == updated.as_str())
+                    .ok_or_else(|| AuthError::internal("the verification update timestamp binding has no column"))?;
+                active.set(column, data.updated_at.into());
+            } else if data.updated_at != data.created_at {
+                return Err(AuthError::internal(
+                    "the verification schema cannot preserve a distinct update timestamp",
+                ));
+            }
+            let model = active.insert(connection).await.map_err(map_db_err)?;
+            VerificationSnapshot::from_model(&model)
+        } else {
+            data.snapshot()
+        };
+        publication.publish(&snapshot).await?;
+        if tx.is_none() {
+            for hook in self.hooks() {
+                hook.after_create_verification_record(&snapshot, &hook_context)
+                    .await?;
+            }
+        }
+        Ok(Some(snapshot))
+    }
+
     async fn create_verification_with_connection<C: ConnectionTrait>(
         &self,
         connection: &C,
@@ -137,7 +189,7 @@ where
         }
         // Even an expired generation is removed. Older generations cannot
         // become valid again when the newest token expires.
-        Ok(consumed.filter(|model| model.expires_at() >= Utc::now()))
+        Ok(consumed)
     }
 }
 
@@ -147,6 +199,15 @@ where
     S: AuthSchema + Send + Sync,
     S::Verification: SeaOrmVerificationModel,
 {
+    async fn create_verification_record(
+        &self,
+        data: VerificationCreation,
+        publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        self.create_verification_record_with_connection(self.connection(), None, data, publication)
+            .await
+    }
+
     async fn create_verification(
         &self,
         verification: CreateVerification,
@@ -208,8 +269,10 @@ where
         identifier: &str,
         value: &str,
     ) -> AuthResult<Option<S::Verification>> {
-        self.consume_verification_generation(identifier, Some(value))
-            .await
+        Ok(self
+            .consume_verification_generation(identifier, Some(value))
+            .await?
+            .filter(|model| model.expires_at() >= Utc::now()))
     }
 
     async fn get_latest_verification_by_identifier(
@@ -225,6 +288,16 @@ where
     }
 
     async fn consume_verification_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        Ok(self
+            .consume_verification_generation(identifier, None)
+            .await?
+            .filter(|model| model.expires_at() >= Utc::now()))
+    }
+
+    async fn consume_verification_snapshot(
         &self,
         identifier: &str,
     ) -> AuthResult<Option<S::Verification>> {
@@ -343,16 +416,26 @@ where
     }
 
     async fn reserve_verification(&self, verification: CreateVerification) -> AuthResult<bool> {
-        let (encoded, digest) = verification_reservation_key(&verification.identifier);
+        let logical = verification.identifier.clone();
+        Ok(self
+            .reserve_verification_record(&logical, verification)
+            .await?
+            .is_some())
+    }
+
+    async fn reserve_verification_record(
+        &self,
+        logical_identifier: &str,
+        verification: CreateVerification,
+    ) -> AuthResult<Option<S::Verification>> {
+        let (encoded, digest) = verification_reservation_key(logical_identifier);
         let id = S::Verification::parse_reservation_id(&encoded, digest)?;
         let insert = S::Verification::new_active(Some(id.clone()), verification, Utc::now())
             .insert(self.connection())
             .await;
         match insert {
-            Ok(_) => Ok(true),
+            Ok(model) => Ok(Some(model)),
             Err(error) => {
-                // Re-read the deterministic primary key to distinguish an
-                // existing reservation from unrelated database failures.
                 if <S::Verification as SeaOrmVerificationModel>::Entity::find()
                     .filter(S::Verification::id_column().eq(id))
                     .one(self.connection())
@@ -360,12 +443,78 @@ where
                     .map_err(map_db_err)?
                     .is_some()
                 {
-                    Ok(false)
+                    Ok(None)
                 } else {
                     Err(map_db_err(error))
                 }
             }
         }
+    }
+
+    async fn update_verification_by_identifier(
+        &self,
+        identifier: &str,
+        data: UpdateVerification,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        let hook_context = self.hook_context(None);
+        let mut admitted = data.clone();
+        for hook in self.hooks() {
+            // Source gives every before-update hook the original patch, then
+            // merges each returned mutation into the admitted patch.
+            let mut candidate = data.clone();
+            if hook
+                .before_update_verification(identifier, &mut candidate, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Ok(None);
+            }
+            if candidate.value.is_some() {
+                admitted.value = candidate.value;
+            }
+            if candidate.expires_at.is_some() {
+                admitted.expires_at = candidate.expires_at;
+            }
+        }
+        let mut query = <S::Verification as SeaOrmVerificationModel>::Entity::update_many()
+            .filter(S::Verification::identifier_column().eq(identifier));
+        if let Some(value) = admitted.value {
+            query = query.col_expr(
+                S::Verification::value_column(),
+                sea_orm::sea_query::Expr::value(value),
+            );
+        }
+        if let Some(expires) = admitted.expires_at {
+            query = query.col_expr(
+                S::Verification::expires_at_column(),
+                sea_orm::sea_query::Expr::value(expires),
+            );
+        }
+        let backend = self.connection().get_database_backend();
+        if !matches!(
+            backend,
+            sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
+        ) {
+            return Err(AuthError::NotImplemented(
+                "Verification update snapshots require SQLite or PostgreSQL".into(),
+            ));
+        }
+        let returning = sea_orm::sea_query::Query::returning().exprs(
+            <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
+                .map(|column| column.select_as(column.into_returning_expr(backend))),
+        );
+        let _returning = QueryTrait::query(&mut query).returning(returning);
+        let model = <S::Verification as SeaOrmVerificationModel>::Entity::find()
+            .from_raw_sql(query.build(backend))
+            .one(self.connection())
+            .await
+            .map_err(map_db_err)?;
+        let snapshot = model.as_ref().map(VerificationSnapshot::from_model);
+        for hook in self.hooks() {
+            hook.after_update_verification_record(snapshot.as_ref(), &hook_context)
+                .await?;
+        }
+        Ok(snapshot)
     }
 
     async fn delete_verification(&self, id: &str) -> AuthResult<()> {

@@ -186,6 +186,15 @@ struct MemoryTransaction<'a> {
 
 #[async_trait]
 impl AuthTransaction<BundledSchema> for MemoryTransaction<'_> {
+    async fn create_verification_record(
+        &self,
+        data: crate::verification::VerificationCreation,
+        publication: crate::verification::VerificationPublication,
+    ) -> AuthResult<Option<crate::verification::VerificationSnapshot>> {
+        self.store
+            .create_verification_record(data, publication)
+            .await
+    }
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<UserView>> {
         self.store.get_user_by_id(id).await
     }
@@ -668,6 +677,102 @@ impl AccountStore<BundledSchema> for MemoryStore {
 
 #[async_trait]
 impl VerificationStore<BundledSchema> for MemoryStore {
+    async fn create_verification_record(
+        &self,
+        data: crate::verification::VerificationCreation,
+        publication: crate::verification::VerificationPublication,
+    ) -> AuthResult<Option<crate::verification::VerificationSnapshot>> {
+        let snapshot = if publication.store_in_database {
+            let model = VerificationView {
+                id: data.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                identifier: data.identifier,
+                value: data.value,
+                expires_at: data.expires_at,
+                created_at: data.created_at,
+                updated_at: data.updated_at,
+            };
+            let mut state = self.lock();
+            if state.verifications.contains_key(&model.id) {
+                return Err(AuthError::internal("duplicate verification primary ID"));
+            }
+            state.verifications.insert(model.id.clone(), model.clone());
+            drop(state);
+            crate::verification::VerificationSnapshot::from_model(&model)
+        } else {
+            data.snapshot()
+        };
+        publication.publish(&snapshot).await?;
+        Ok(Some(snapshot))
+    }
+
+    async fn consume_verification_snapshot(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<VerificationView>> {
+        let mut state = self.lock();
+        let found = state
+            .verifications
+            .values()
+            .filter(|verification| verification.identifier == identifier)
+            .max_by_key(|verification| verification.created_at)
+            .cloned();
+        state
+            .verifications
+            .retain(|_, sibling| sibling.identifier != identifier);
+        drop(state);
+        Ok(found)
+    }
+
+    async fn update_verification_by_identifier(
+        &self,
+        identifier: &str,
+        data: crate::UpdateVerification,
+    ) -> AuthResult<Option<crate::verification::VerificationSnapshot>> {
+        let mut state = self.lock();
+        let mut found = None;
+        for model in state.verifications.values_mut() {
+            if model.identifier == identifier {
+                if let Some(value) = &data.value {
+                    model.value.clone_from(value);
+                }
+                if let Some(expiry) = data.expires_at {
+                    model.expires_at = expiry;
+                }
+                if found.is_none() {
+                    found = Some(crate::verification::VerificationSnapshot::from_model(model));
+                }
+            }
+        }
+        drop(state);
+        Ok(found)
+    }
+
+    async fn reserve_verification_record(
+        &self,
+        logical_identifier: &str,
+        data: CreateVerification,
+    ) -> AuthResult<Option<VerificationView>> {
+        let (id, _) = crate::store::verification_reservation_key(logical_identifier);
+        let mut state = self.lock();
+        let std::collections::hash_map::Entry::Vacant(entry) =
+            state.verifications.entry(id.clone())
+        else {
+            return Ok(None);
+        };
+        let now = Utc::now();
+        let model = VerificationView {
+            id,
+            identifier: data.identifier,
+            value: data.value,
+            expires_at: data.expires_at,
+            created_at: now,
+            updated_at: now,
+        };
+        entry.insert(model.clone());
+        drop(state);
+        Ok(Some(model))
+    }
+
     async fn create_verification(
         &self,
         verification: CreateVerification,

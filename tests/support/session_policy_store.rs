@@ -57,7 +57,13 @@ forwarding!(AccountStore<Schema> {
 });
 
 forwarding!(VerificationStore<Schema> {
+    fn create_verification_record(data: better_auth_core::verification::VerificationCreation, publication: better_auth_core::verification::VerificationPublication) -> AuthResult<Option<better_auth_core::verification::VerificationSnapshot>>;
+    fn consume_verification_snapshot(identifier: &str) -> AuthResult<Option<<Schema as AuthSchema>::Verification>>;
+    fn update_verification_by_identifier(identifier: &str, data: UpdateVerification) -> AuthResult<Option<better_auth_core::verification::VerificationSnapshot>>;
+    fn reserve_verification_record(logical_identifier: &str, data: CreateVerification) -> AuthResult<Option<<Schema as AuthSchema>::Verification>>;
     fn create_verification(verification: CreateVerification) -> AuthResult<<Schema as AuthSchema>::Verification>;
+    fn get_latest_verification_by_identifier(identifier: &str) -> AuthResult<Option<<Schema as AuthSchema>::Verification>>;
+    fn delete_verifications_by_identifier(identifier: &str) -> AuthResult<()>;
     fn get_verification(identifier: &str, value: &str) -> AuthResult<Option<<Schema as AuthSchema>::Verification>>;
     fn get_verification_by_value(value: &str) -> AuthResult<Option<<Schema as AuthSchema>::Verification>>;
     fn get_verification_by_identifier(identifier: &str) -> AuthResult<Option<<Schema as AuthSchema>::Verification>>;

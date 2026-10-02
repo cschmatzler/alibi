@@ -12,7 +12,7 @@ use crate::plugins::authentication_helpers::{
 };
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
-    AuthVerification, CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
+    CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
 };
 use chrono::Utc;
 use rand::{Rng, rngs::OsRng};
@@ -63,7 +63,7 @@ impl EmailOtpPlugin {
         let (otp, value) = self
             .prepare_code(ctx, email, otp_type, identifier_override)
             .await?;
-        drop(ctx.database.create_verification(value).await?);
+        drop(ctx.verifications().create(value).await?);
         Ok(otp)
     }
 
@@ -76,9 +76,9 @@ impl EmailOtpPlugin {
         let key = identifier(otp_type, email);
         if self.config.resend_strategy == OtpResendStrategy::Reuse
             && let Some(value) = find_verification(ctx, &key).await?
-            && value.expires_at() >= Utc::now()
+            && !value.is_expired()
         {
-            let (stored, attempts) = split_value(value.value());
+            let (stored, attempts) = split_value(value.value()?);
             if attempts < self.allowed_attempts()
                 && let Some(otp) = self
                     .config
@@ -86,16 +86,18 @@ impl EmailOtpPlugin {
                     .reusable(stored, &ctx.config.secret)
                     .await?
                 && !otp.is_empty()
-                && ctx
-                    .database
-                    .compare_and_swap_verification(
-                        &value.id(),
-                        value.value(),
-                        value.value(),
-                        Utc::now() + self.config.expires_in,
-                    )
-                    .await?
             {
+                drop(
+                    ctx.verifications()
+                        .update(
+                            &key,
+                            better_auth_core::UpdateVerification {
+                                expires_at: Some(Utc::now() + self.config.expires_in),
+                                ..Default::default()
+                            },
+                        )
+                        .await?,
+                );
                 return Ok(otp);
             }
         }
@@ -141,17 +143,17 @@ impl EmailOtpPlugin {
         otp: &str,
     ) -> AuthResult<()> {
         if let Some(existing) = find_verification(ctx, key).await?
-            && existing.expires_at() < Utc::now()
+            && existing.is_expired()
         {
-            ctx.database.delete_verifications_by_identifier(key).await?;
+            ctx.verifications().delete(key).await?;
             return Err(expired_otp());
         }
         let value = ctx
-            .database
-            .consume_verification_by_identifier(key)
+            .verifications()
+            .consume(key)
             .await?
             .ok_or_else(invalid_otp)?;
-        let (stored, attempts) = split_value(value.value());
+        let (stored, attempts) = split_value(value.value()?);
         if attempts >= self.allowed_attempts() {
             return Err(too_many_attempts());
         }
@@ -162,11 +164,11 @@ impl EmailOtpPlugin {
             .await?
         {
             drop(
-                ctx.database
-                    .create_verification(CreateVerification {
+                ctx.verifications()
+                    .create(CreateVerification {
                         identifier: key.to_owned(),
                         value: format!("{stored}:{}", attempts + 1),
-                        expires_at: value.expires_at(),
+                        expires_at: value.expires_at()?,
                     })
                     .await?,
             );
@@ -199,8 +201,8 @@ impl EmailOtpPlugin {
         let otp = self.resolve_code(ctx, &email, body.otp_type).await?;
         let should_send = body.otp_type == EmailOtpType::SignIn && !self.config.disable_sign_up;
         if ctx.database.get_user_by_email(&email).await?.is_none() && !should_send {
-            ctx.database
-                .delete_verifications_by_identifier(&identifier(body.otp_type, &email))
+            ctx.verifications()
+                .delete(&identifier(body.otp_type, &email))
                 .await?;
             return AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from);
         }
@@ -222,63 +224,41 @@ impl EmailOtpPlugin {
         };
         let email = parse_email(&body.email)?;
         let key = identifier(body.otp_type, &email);
-        // Compare-and-swap prevents racing invalid checks from losing attempts.
-        // A successful check deliberately does not consume the OTP.
-        loop {
-            let value = find_verification(ctx, &key)
-                .await?
-                .ok_or_else(invalid_otp)?;
-            if value.expires_at() < Utc::now() {
-                ctx.database
-                    .delete_verifications_by_identifier(&key)
-                    .await?;
-                return Err(expired_otp());
-            }
-            let (stored, attempts) = split_value(value.value());
-            if attempts >= self.allowed_attempts() {
-                ctx.database
-                    .delete_verifications_by_identifier(&key)
-                    .await?;
-                return Err(too_many_attempts());
-            }
-            if self
-                .config
-                .storage
-                .verify(stored, &body.otp, &ctx.config.secret)
-                .await?
-            {
-                if ctx.database.get_user_by_email(&email).await?.is_none() {
-                    return Err(user_not_found());
-                }
-                return AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from);
-            }
-            if ctx
-                .database
-                .compare_and_swap_verification(
-                    &value.id(),
-                    value.value(),
-                    &format!("{stored}:{}", attempts + 1),
-                    value.expires_at(),
-                )
-                .await?
-            {
-                return Err(invalid_otp());
-            }
-            // A hook may veto the update without changing the row. Retry only
-            // real contention; repeating that veto would run application hooks
-            // forever and leave the request pending.
-            let current = ctx
-                .database
-                .get_latest_verification_by_identifier(&key)
-                .await?;
-            if current.is_none_or(|current| {
-                current.id() == value.id()
-                    && current.value() == value.value()
-                    && current.expires_at() == value.expires_at()
-            }) {
-                return Err(invalid_otp());
-            }
+        let value = find_verification(ctx, &key)
+            .await?
+            .ok_or_else(invalid_otp)?;
+        if value.is_expired() {
+            ctx.verifications().delete(&key).await?;
+            return Err(expired_otp());
         }
+        let (stored, attempts) = split_value(value.value()?);
+        if attempts >= self.allowed_attempts() {
+            ctx.verifications().delete(&key).await?;
+            return Err(too_many_attempts());
+        }
+        if !self
+            .config
+            .storage
+            .verify(stored, &body.otp, &ctx.config.secret)
+            .await?
+        {
+            drop(
+                ctx.verifications()
+                    .update(
+                        &key,
+                        better_auth_core::UpdateVerification {
+                            value: Some(format!("{stored}:{}", attempts + 1)),
+                            ..Default::default()
+                        },
+                    )
+                    .await?,
+            );
+            return Err(invalid_otp());
+        }
+        if ctx.database.get_user_by_email(&email).await?.is_none() {
+            return Err(user_not_found());
+        }
+        AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
     }
 
     ///
@@ -414,11 +394,8 @@ impl EmailOtpPlugin {
             .resolve_code(ctx, &email, EmailOtpType::ForgetPassword)
             .await?;
         if ctx.database.get_user_by_email(&email).await?.is_none() {
-            ctx.database
-                .delete_verifications_by_identifier(&identifier(
-                    EmailOtpType::ForgetPassword,
-                    &email,
-                ))
+            ctx.verifications()
+                .delete(&identifier(EmailOtpType::ForgetPassword, &email))
                 .await?;
         } else {
             self.deliver(&email, otp, EmailOtpType::ForgetPassword)
@@ -558,9 +535,7 @@ impl EmailOtpPlugin {
             )
             .await?;
         if ctx.database.get_user_by_email(&new_email).await?.is_some() {
-            ctx.database
-                .delete_verifications_by_identifier(&key)
-                .await?;
+            ctx.verifications().delete(&key).await?;
         } else {
             self.deliver(&new_email, otp, EmailOtpType::ChangeEmail)
                 .await?;
