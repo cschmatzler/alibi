@@ -225,7 +225,7 @@ impl SessionManagementPlugin {
             cookie::Cookie::split_parse(header)
                 .flatten()
                 .find(|cookie| cookie.name() == preference)
-                .and_then(|cookie| verify_cookie_value(cookie.value(), &ctx.config.secret))
+                .and_then(|cookie| verify_cookie_value(cookie.value(), ctx.config.current_secret()))
                 .is_some_and(|value_2| !value_2.is_empty())
         });
         let mut response = AuthResponse::json(
@@ -249,7 +249,7 @@ impl SessionManagementPlugin {
                 "Set-Cookie",
                 create_session_like_cookie(
                     &preference,
-                    &sign_cookie_value("true", &ctx.config.secret),
+                    &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
                 ),

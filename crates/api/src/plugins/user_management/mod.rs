@@ -424,7 +424,7 @@ pub(in crate::plugins) fn append_session_cookie(
     };
     let dont_remember =
         super::helpers::get_cookie(req, &related_cookie_name(config, "dont_remember"))
-            .and_then(|value| verify_cookie_value(&value, &config.secret))
+            .and_then(|value| verify_cookie_value(&value, config.current_secret()))
             .is_some_and(|value| !value.is_empty());
     response.headers.append(
         "Set-Cookie",

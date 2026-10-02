@@ -220,7 +220,7 @@ pub(super) async fn accept<S: AuthSchema>(
                 let preference = related_cookie_name(&auth_config, "dont_remember");
                 let dont_remember =
                     crate::plugins::helpers::get_cookie(&tx_transport.request, &preference)
-                        .and_then(|value| verify_cookie_value(&value, &auth_config.secret))
+                        .and_then(|value| verify_cookie_value(&value, auth_config.current_secret()))
                         .is_some_and(|value| !value.is_empty());
                 tx_transport.issue_cookie(create_session_cookie_with_max_age(
                     Some(updated.token()),
@@ -230,7 +230,7 @@ pub(super) async fn accept<S: AuthSchema>(
                 if dont_remember {
                     tx_transport.issue_cookie(create_session_like_cookie(
                         &preference,
-                        &sign_cookie_value("true", &auth_config.secret),
+                        &sign_cookie_value("true", auth_config.current_secret()),
                         None,
                         &auth_config,
                     ));

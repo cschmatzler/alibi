@@ -238,7 +238,7 @@ impl PasswordManagementPlugin {
             };
             let preference = related_cookie_name(&ctx.config, "dont_remember");
             let dont_remember = super::helpers::get_cookie(req, &preference)
-                .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+                .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
                 .is_some_and(|value| !value.is_empty());
             let cookie_header = create_session_cookie_with_max_age(
                 Some(&token),
@@ -251,7 +251,7 @@ impl PasswordManagementPlugin {
                     "Set-Cookie",
                     create_session_like_cookie(
                         &preference,
-                        &sign_cookie_value("true", &ctx.config.secret),
+                        &sign_cookie_value("true", ctx.config.current_secret()),
                         None,
                         &ctx.config,
                     ),

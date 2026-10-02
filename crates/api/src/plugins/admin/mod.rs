@@ -486,12 +486,12 @@ impl AdminPlugin {
             .and_then(|value| {
                 better_auth_core::utils::cookie_utils::verify_cookie_value(
                     &value,
-                    &ctx.config.secret,
+                    ctx.config.current_secret(),
                 )
             })
             .is_some_and(|value| !value.is_empty());
         let admin_cookie = create_admin_session_cookie_value(
-            &ctx.config.secret,
+            ctx.config.current_secret(),
             &AdminSessionCookiePayload {
                 session_token: session.token.clone(),
                 dont_remember,
@@ -523,7 +523,7 @@ impl AdminPlugin {
                 &related_cookie_name(&ctx.config, "dont_remember"),
                 &better_auth_core::utils::cookie_utils::sign_cookie_value(
                     "true",
-                    &ctx.config.secret,
+                    ctx.config.current_secret(),
                 ),
                 None,
                 &ctx.config,
@@ -553,7 +553,7 @@ impl AdminPlugin {
         let admin_cookie_value = get_cookie(req, &admin_cookie_name)
             .ok_or_else(|| AuthError::internal("Failed to find admin session"))?;
         let admin_cookie =
-            decode_admin_session_cookie_value(&ctx.config.secret, &admin_cookie_value)
+            decode_admin_session_cookie_value(ctx.config.current_secret(), &admin_cookie_value)
                 .map_err(|_error| AuthError::internal("Failed to find admin session"))?;
 
         let (response, new_token) = stop_impersonating_core(&session, &admin_cookie, ctx).await?;
@@ -578,7 +578,7 @@ impl AdminPlugin {
                     &related_cookie_name(&ctx.config, "dont_remember"),
                     &better_auth_core::utils::cookie_utils::sign_cookie_value(
                         "true",
-                        &ctx.config.secret,
+                        ctx.config.current_secret(),
                     ),
                     None,
                     &ctx.config,

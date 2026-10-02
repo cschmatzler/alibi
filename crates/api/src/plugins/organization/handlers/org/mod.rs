@@ -950,7 +950,7 @@ pub async fn handle_set_active_organization(
             cookie::Cookie::split_parse(header)
                 .flatten()
                 .find(|cookie| cookie.name() == preference)
-                .and_then(|cookie| verify_cookie_value(cookie.value(), &ctx.config.secret))
+                .and_then(|cookie| verify_cookie_value(cookie.value(), ctx.config.current_secret()))
                 .is_some_and(|value| !value.is_empty())
         });
         response = response.with_appended_header(
@@ -970,7 +970,7 @@ pub async fn handle_set_active_organization(
                 "Set-Cookie",
                 create_session_like_cookie(
                     &preference,
-                    &sign_cookie_value("true", &ctx.config.secret),
+                    &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
                 ),

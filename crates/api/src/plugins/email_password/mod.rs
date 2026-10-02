@@ -829,7 +829,7 @@ fn append_dont_remember_cookie(
             "Set-Cookie",
             create_session_like_cookie(
                 &related_cookie_name(config, "dont_remember"),
-                &sign_cookie_value("true", &config.secret),
+                &sign_cookie_value("true", config.current_secret()),
                 None,
                 config,
             ),

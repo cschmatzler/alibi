@@ -216,7 +216,7 @@ impl AnonymousPlugin {
 
         let preference_name = related_cookie_name(&ctx.config, "dont_remember");
         let dont_remember = get_cookie(req, &preference_name)
-            .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+            .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
             .is_some_and(|value| !value.is_empty());
         response.headers.append(
             "set-cookie",
@@ -235,7 +235,7 @@ impl AnonymousPlugin {
                 "set-cookie",
                 create_session_like_cookie(
                     &preference_name,
-                    &sign_cookie_value("true", &ctx.config.secret),
+                    &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
                 ),

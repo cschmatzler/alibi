@@ -319,7 +319,7 @@ pub(super) fn create_challenge_cookie(
     let signed = encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(auth_config.secret.as_bytes()),
+        &EncodingKey::from_secret(auth_config.current_secret().as_bytes()),
     )?;
     Ok(better_auth_core::utils::cookie_utils::create_cookie(
         &challenge_cookie_name(auth_config),
@@ -340,7 +340,7 @@ pub(super) fn decode_challenge_cookie(
     validation.validate_exp = true;
     Ok(decode::<ChallengeCookieClaims>(
         raw_cookie,
-        &DecodingKey::from_secret(auth_config.secret.as_bytes()),
+        &DecodingKey::from_secret(auth_config.current_secret().as_bytes()),
         &validation,
     )?
     .claims

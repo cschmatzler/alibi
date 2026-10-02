@@ -135,7 +135,7 @@ impl OneTimeTokenPlugin {
                             })
                             .map(|cookie| cookie.value().to_owned())
                     })
-                    .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+                    .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
                     .is_some_and(|value| !value.is_empty());
                 // The endpoint owns its actual token/preference cookies. Cache
                 // publication adds its own envelope after successful encoding.
@@ -154,7 +154,7 @@ impl OneTimeTokenPlugin {
                             &ctx.config.session.cookie_name,
                             &urlencoding::decode(&sign_cookie_value(
                                 &session.session.token,
-                                &ctx.config.secret,
+                                ctx.config.current_secret(),
                             ))
                             .map_err(|error| AuthError::internal(error.to_string()))?,
                             max_age,
@@ -168,7 +168,7 @@ impl OneTimeTokenPlugin {
                                 &related_cookie_name(&ctx.config, "dont_remember"),
                                 &urlencoding::decode(&sign_cookie_value(
                                     "true",
-                                    &ctx.config.secret,
+                                    ctx.config.current_secret(),
                                 ))
                                 .map_err(|error| AuthError::internal(error.to_string()))?,
                                 None,

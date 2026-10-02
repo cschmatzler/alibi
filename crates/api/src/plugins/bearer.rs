@@ -159,7 +159,7 @@ impl<S: AuthSchema> AuthPlugin<S> for BearerPlugin {
         else {
             return Ok(None);
         };
-        let Some(token) = self.signed_token(authorization, &ctx.config.secret) else {
+        let Some(token) = self.signed_token(authorization, ctx.config.current_secret()) else {
             return Ok(None);
         };
         let existing = req

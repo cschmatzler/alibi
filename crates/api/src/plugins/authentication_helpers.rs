@@ -470,7 +470,7 @@ pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
         req,
         &related_cookie_name(&ctx.config, "dont_remember"),
     )
-    .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+    .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
     .is_some_and(|value| !value.is_empty());
     let dont_remember = remember_me.map_or(inherited, |value| !value);
     let mut config = (*ctx.config).clone();
@@ -515,7 +515,7 @@ pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
             "Set-Cookie",
             create_session_like_cookie(
                 &related_cookie_name(&ctx.config, "dont_remember"),
-                &sign_cookie_value("true", &ctx.config.secret),
+                &sign_cookie_value("true", ctx.config.current_secret()),
                 None,
                 &ctx.config,
             ),

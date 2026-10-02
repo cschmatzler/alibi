@@ -38,7 +38,7 @@ pub fn create_session_cookie_with_max_age(
 ) -> String {
     let signed = token
         .filter(|token| !token.is_empty())
-        .map(|token| sign_cookie_value(token, &config.secret));
+        .map(|token| sign_cookie_value(token, config.current_secret()));
     create_session_like_cookie(
         &related_cookie_name(config, "session_token"),
         signed.as_deref().unwrap_or(""),

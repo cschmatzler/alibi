@@ -369,7 +369,7 @@ pub async fn response_session<S: better_auth_core::AuthSchema>(
                 .then(|| {
                     better_auth_core::utils::cookie_utils::verify_cookie_value(
                         cookie.value(),
-                        &ctx.config.secret,
+                        ctx.config.current_secret(),
                     )
                 })
                 .flatten()
