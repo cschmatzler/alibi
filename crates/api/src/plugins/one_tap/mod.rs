@@ -229,10 +229,12 @@ impl OneTapPlugin {
             ..Default::default()
         };
         let result = process_oauth_sign_in(
-            "google",
+            super::oauth::handlers::OAuthIdentity {
+                provider_name: "google",
+                user: &user,
+                profile: &payload.to_json_value()?,
+            },
             &policy,
-            &user,
-            &payload.to_json_value()?,
             &tokens,
             self.config.disable_signup || provider.is_some_and(|provider| provider.disable_sign_up),
             &better_auth_core::RequestMeta::from_request(req),

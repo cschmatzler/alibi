@@ -872,13 +872,6 @@ async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
     .map_err(OAuthSignInError::from)
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep OAuth account matching, linking policy, and signup branches together for review"
-)]
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
 fn provider_candidate(user_info: &OAuthUserInfo, user_id: &str) -> CreateUser {
     let mut candidate = CreateUser::new();
     candidate.id = Some(user_id.to_owned());
@@ -906,16 +899,30 @@ async fn validate_provider_identity(
         .map_err(OAuthSignInError::from_identity_denial)
 }
 
+/// Mapped provider identity together with its original provenance.
+pub(in crate::plugins) struct OAuthIdentity<'a> {
+    pub provider_name: &'a str,
+    pub user: &'a OAuthUserInfo,
+    pub profile: &'a serde_json::Value,
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep OAuth account matching, linking policy, and signup branches together for review"
+)]
 pub(in crate::plugins) async fn process_oauth_sign_in(
-    provider_name: &str,
+    identity: OAuthIdentity<'_>,
     policy: &OAuthProcessPolicy,
-    user_info: &OAuthUserInfo,
-    profile: &serde_json::Value,
     tokens: &OAuthTokenSet,
     disable_sign_up: bool,
     meta: &better_auth_core::RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
+    let OAuthIdentity {
+        provider_name,
+        user: user_info,
+        profile,
+    } = identity;
     if user_info.email.is_empty() {
         return Err(OAuthSignInError::Generic("email not found".to_owned()));
     }
@@ -1426,10 +1433,12 @@ async fn sign_in_with_id_token_core(
     }
 
     let outcome = process_oauth_sign_in(
-        &body.provider,
+        OAuthIdentity {
+            provider_name: &body.provider,
+            user: &user_info.user,
+            profile: &user_info.data,
+        },
         &OAuthProcessPolicy::for_provider(provider, body.callback_url.clone()),
-        &user_info.user,
-        &user_info.data,
         &OAuthTokenSet {
             access_token: id_token.access_token.clone(),
             id_token: Some(id_token.token.clone()),
@@ -2142,10 +2151,12 @@ pub(super) async fn handle_callback(
         && !payload.request_sign_up.unwrap_or(false)
         || provider.disable_sign_up;
     let outcome = match process_oauth_sign_in(
-        provider_name,
+        OAuthIdentity {
+            provider_name,
+            user: &user_info.user,
+            profile: &user_info.data,
+        },
         &OAuthProcessPolicy::for_provider(provider, Some(payload.callback_url.clone())),
-        &user_info.user,
-        &user_info.data,
         &tokens,
         disable_sign_up,
         &meta,
