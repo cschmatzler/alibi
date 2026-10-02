@@ -801,6 +801,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let server_endpoint_cache_router =
         server_endpoint_fixture::router(&config, database.clone(), "server-dispatch-cache", true)
             .await?;
+    let server_endpoint_version_router = server_endpoint_fixture::router(
+        &config,
+        database.clone(),
+        "server-dispatch-cache-version",
+        true,
+    )
+    .await?;
     let bearer_router =
         bearer_fixture::router(&config, database.clone(), multiple_session_counter.clone()).await?;
     let multiple_session_router = multiple_session_fixture::router(
@@ -1937,6 +1944,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(physical_cookie_router)
         .merge(server_endpoint_router)
         .merge(server_endpoint_cache_router)
+        .merge(server_endpoint_version_router)
         .merge(multiple_session_router)
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)

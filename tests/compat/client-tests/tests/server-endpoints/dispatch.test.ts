@@ -202,9 +202,10 @@ async function cacheReceipt(headers:Headers){
   const decoded=await getCookieCache(new Headers({cookie:rawCookies[0]!.split(";")[0]!}),{secret:dispatchSecret,strategy:"compact"});expect(decoded).not.toBeNull();
   return {compactSessionCache:{token,envelope,decoded,observedAt,effectiveMaxAgeSeconds:300,rawCookies}};
 }
-for(const compact of [false,true])compatScenario(`server endpoint ${compact?"cached":"ordinary"} signed organization handler keeps session local while actual API key middleware shares principal`,async ctx=>{
+for(const mode of ["ordinary","cached","cached-version"] as const)compatScenario(`server endpoint ${mode} signed organization handler keeps session local while actual API key middleware shares principal`,async ctx=>{
+  const compact=mode!=="ordinary",versioned=mode==="cached-version";
   const {createHmac}=await import("node:crypto"),{createLocalJWKSet,jwtVerify}=await import("jose");
-  const profile=compact?"server-dispatch-cache":"server-dispatch";
+  const profile=versioned?"server-dispatch-cache-version":compact?"server-dispatch-cache":"server-dispatch";
   const invoke=(input:Record<string,unknown>)=>call(ctx,input,profile);
   const read=async()=>{const result=await ctx.rawRequest({path:`/__test/${profile}/state`});expect(result.status).toBe(200);return record(result.body);};
   await invoke({operation:"deleteAllExpiredApiKeys",mode:"reset-app"});
@@ -248,5 +249,42 @@ for(const compact of [false,true])compatScenario(`server endpoint ${compact?"cac
   const virtualDeleted=await invoke({operation:"deleteOrganization",headers:virtualHeaders,body:{organizationId:trustedCreated.result.value.response.id}});expect(virtualDeleted.result.ok).toBe(true);
   for(const operation of [virtualRemoved,virtualDeleted]){expect(operation.events.find((event:Record<string,any>)=>event.stage==="first-before").session).toBeNull();for(const stage of ["second-before","user-after","first-after","second-after"]){const event=operation.events.find((event:Record<string,any>)=>event.stage===stage);expect(event.session.user.id).toBe(owner.result.user.id);expect(event.session.session.token).toBe(key.result.value.response.key);expect(event.session).toEqual(event.current.session);expect(event.session.session.ipAddress).toBeNull();expect(event.session.session.userAgent).toBeNull();}}
   const after=await read();for(const session of after.session){const original=before.session.find((row:Record<string,any>)=>row.id===session.id);expect(original).toBeDefined();expect(session).toEqual({...original,updatedAt:session.userId===owner.result.user.id?session.updatedAt:original.updatedAt,activeOrganizationId:session.userId===owner.result.user.id&&compact?organization.id:original.activeOrganizationId});if(session.userId===owner.result.user.id){expect(Date.parse(session.updatedAt)).toBe(Date.parse(record(deletedSession.body).session.updatedAt));expect(Date.parse(session.updatedAt)).toBeGreaterThanOrEqual(Date.parse(original.updatedAt));}}expect(after.organization).toEqual([]);expect(after.member).toEqual([]);expect(after.verification).toEqual([]);expect(after.apikey).toHaveLength(1);expect(after.apikey[0].remaining).toBe(28);
-  return {compact,owner,target,foreign,before,token,jwks,verified,generated,consumed,restoredCache,restored,consumedState,replay,created,createdSession,added,protectedBefore,denied,protectedAfter,removed,deleted,deletedSession,trustedCreated,trustedAdded,key,virtualRemoved,virtualDeleted,after};
+  if(versioned){
+    for(const operation of [token,generated,created,added,denied,removed,deleted]){
+      const versions=operation.events.filter((event:Record<string,any>)=>event.stage==="cache-version");expect(versions).toHaveLength(1);
+      const event=versions[0];expect(event.current.method).toBe("GET");expect(event.current.query).toEqual({});expect(event.current.session).toBeNull();
+      expect(event.current.request).toBeNull();
+      expect(event.session.token).toBe(operation===denied?foreign.result.token:owner.result.token);
+      expect(event.user.id).toBe(operation===denied?foreign.result.user.id:owner.result.user.id);
+    }
+    const published=consumed.events.filter((event:Record<string,any>)=>event.stage==="cache-version");expect(published).toHaveLength(1);expect(published[0].current.method).toBe("POST");expect(published[0].current.query).toBeNull();expect(published[0].current.request).toBeNull();
+    for(const operation of [virtualRemoved,virtualDeleted])expect(operation.events.filter((event:Record<string,any>)=>event.stage==="cache-version")).toEqual([]);
+  }
+  return {mode,compact,owner,target,foreign,before,token,jwks,verified,generated,consumed,restoredCache,restored,consumedState,replay,created,createdSession,added,protectedBefore,denied,protectedAfter,removed,deleted,deletedSession,trustedCreated,trustedAdded,key,virtualRemoved,virtualDeleted,after};
+});
+
+
+compatScenario("server endpoint nested getter retains its real incoming POST request and authenticated header owner",async ctx=>{
+  const {createHmac}=await import("node:crypto"),{createLocalJWKSet,jwtVerify}=await import("jose");
+  const profile="server-dispatch-cache-version" as const;
+  async function issue(name:string){
+    let headers:Headers|undefined;const signup=await ctx.actor(name,profile).client.signUp.email({name,email:ctx.uniqueEmail(name),password:"Correct-Horse-Password-205",fetchOptions:{onSuccess({response}){headers=new Headers(response.headers);}}});expect(signup.error).toBeNull();expect(headers).toBeDefined();
+    const result=record(signup.data),rawCookies=headers!.getSetCookie(),signed=decodeURIComponent(rawCookies.find(raw=>raw.startsWith("better-auth.session_token="))!.split(";")[0]!.slice("better-auth.session_token=".length));expect(signed).toBe(`${result.token}.${createHmac("sha256",dispatchSecret).update(result.token).digest("base64")}`);
+    return {signup,result,issued:await cacheReceipt(headers!),headers:{cookie:rawCookies.map(raw=>raw.split(";")[0]).join("; ")}};
+  }
+  const owner=await issue("incoming-owner"),foreign=await issue("incoming-foreign");
+  const read=async()=>record((await ctx.rawRequest({path:`/__test/${profile}/state`})).body),before=await read();
+  const input={operation:"getToken",physicalRequest:true,logicalRequestHeaders:true};
+  async function incoming(name:string,cookie?:string){const response=await ctx.rawRequest({path:`/__test/${profile}/call?actual=query`,method:"POST",actor:name,headers:{host:"dispatch-owner.example.test",origin:"http://dispatch-owner.example.test",...(cookie?{cookie}:{})},json:input});expect(response.status).toBe(200);return record(response.body);}
+  const owned=await incoming("incoming-read",owner.headers.cookie),foreignRead=await incoming("foreign-incoming-read",foreign.headers.cookie);expect(owned.result.ok).toBe(true);expect(foreignRead.result.ok).toBe(true);
+  const jwks=await call(ctx,{operation:"getJwks"},profile);expect(jwks.result.ok).toBe(true);const verifier=createLocalJWKSet(jwks.result.value.response);
+  const ownedVerified=await jwtVerify(owned.result.value.response.token,verifier),foreignVerified=await jwtVerify(foreignRead.result.value.response.token,verifier);expect(ownedVerified.payload.sub).toBe(owner.result.user.id);expect(foreignVerified.payload.sub).toBe(foreign.result.user.id);expect(foreignVerified.payload.sub).not.toBe(owner.result.user.id);
+  for(const [observed,principal] of [[owned,owner],[foreignRead,foreign]] as const){
+    const versions=observed.events.filter((event:Record<string,any>)=>event.stage==="cache-version");expect(versions).toHaveLength(1);const event=versions[0];expect(event.user.id).toBe(principal.result.user.id);expect(event.session.token).toBe(principal.result.token);
+    expect(event.current.method).toBe("GET");expect(event.current.query).toEqual({});expect(event.current.body).toBeNull();expect(event.current.session).toBeNull();expect(event.current.request.method).toBe("POST");expect(event.current.request.query).toEqual({actual:"query"});expect(event.current.request.body).toBe(JSON.stringify(input));expect(event.current.headers).toEqual(event.current.request.headers);expect(event.current.request.headers["content-length"]).toBe(String(Buffer.byteLength(JSON.stringify(input))));
+    for(const stage of ["user-before","user-after"]){const callback=observed.events.find((event:Record<string,any>)=>event.stage===stage);expect(callback.request.body).toBe(JSON.stringify(input));expect(callback.current.request).toEqual(callback.legacyRequest);}
+  }
+  const guest=await incoming("incoming-guest");expect(guest.result.ok).toBe(false);expect(guest.result.status).toBe(401);expect(guest.events.filter((event:Record<string,any>)=>event.stage==="cache-version")).toEqual([]);
+  const after=await read();expect(after).toEqual(before);
+  return {input,owner,foreign,before,owned,foreignRead,jwks,ownedVerified,foreignVerified,guest,after};
 });

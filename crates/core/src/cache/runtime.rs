@@ -508,12 +508,29 @@ pub async fn read<S: AuthSchema>(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
+pub async fn authenticated<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    request: &impl SessionRequest,
+    direct: bool,
+) -> AuthResult<Option<AuthenticatedRead<S>>> {
+    if !direct && let Some(call) = request.endpoint_call() {
+        let nested = call.session_read_context();
+        crate::endpoint::with_endpoint_call_context(
+            nested.clone(),
+            authenticated_inner(ctx, &nested, false),
+        )
+        .await
+    } else {
+        authenticated_inner(ctx, request, direct).await
+    }
+}
+
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
     reason = "Preserve JavaScript Number rounding at the compatibility boundary"
 )]
-pub async fn authenticated<S: AuthSchema>(
+async fn authenticated_inner<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &impl SessionRequest,
     direct: bool,

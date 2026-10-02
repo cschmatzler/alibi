@@ -246,6 +246,30 @@ impl EndpointCall {
         context
     }
 
+    /// The nested session getter preserves caller input and validates its own query.
+    pub(crate) fn session_read_context(&self) -> Self {
+        use crate::session::SessionRequest;
+        let mut context = self.clone();
+        context.phase = EndpointPhase::Handler;
+        if context.path.as_ref().is_none_or(String::is_empty) {
+            context.path = Some("virtual:".into());
+        }
+        context.method = Some(HttpMethod::Get);
+        let mut query = indexmap::IndexMap::new();
+        for name in ["disableCookieCache", "disableRefresh"] {
+            if self
+                .query
+                .as_ref()
+                .and_then(|value| value.get(name))
+                .is_some()
+            {
+                drop(query.insert(name.into(), JsValue::Bool(self.session_query_truthy(name))));
+            }
+        }
+        context.query = Some(JsValue::Object(query));
+        context
+    }
+
     #[must_use]
     pub const fn extensions(&self) -> &RequestExtensions {
         &self.extensions

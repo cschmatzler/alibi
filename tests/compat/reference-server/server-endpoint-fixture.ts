@@ -84,6 +84,12 @@ export function createServerEndpointFixture(database: Database, base: BetterAuth
     }};
   }
   const auth=betterAuth({...base,basePath:path,
+    ...(profile==="server-dispatch-cache-version"?{session:{...base.session,cookieCache:{enabled:true,strategy:"compact" as const,maxAge:300,version:async(session,user)=>{
+      const current=getCurrentAuthEndpointContext() as unknown as Context;
+      events.push({stage:"cache-version",user,session,current:inputSnapshot(current)});
+      await Promise.resolve();
+      return session.expiresAt.getTime()>Date.now()?"1":"expired";
+    }}}}:{}),
     emailAndPassword:{...base.emailAndPassword,password:{hash:async password=>{const hash=await hashPassword(password);if(mode.startsWith("hash-phase")){const current=getCurrentAuthEndpointContext() as unknown as Context;events.push({stage:"original-hash",phase:hashPhase,...inputSnapshot(current),hash:hashReceipt(hash),verified:await verifyPassword({hash,password})});}return hash;},verify:verifyPassword}},
     hooks:{before:createAuthMiddleware(async ctx=>{events.push({stage:"user-before",...snapshot(ctx)});if(mode.startsWith("hash-phase")){hashPhase="before";await ctx.context.password.hash(HASH_PASSWORD);}if(mode==="reset-app")serial=0;if(mode==="before-headers")ctx.setHeader("x-user","before");if((mode==="request-patch"||mode.startsWith("hash-phase"))&&ctx.request){const headers=new Headers(ctx.request.headers);headers.set("x-physical-patch","actual-clone");const patched=new Request(ctx.request,{headers});requestBodies.set(patched,await patched.clone().text());return {context:{request:patched}};}if(mode==="patch"||mode==="patch-existing-headers")return {context:{body:{email:"UserPatch@Example.test",nested:{user:true},actions:["user"]},headers:new Headers({"x-user":"patched"})}};}),after:createAuthMiddleware(async ctx=>{events.push({stage:"user-after",...snapshot(ctx)});if(mode.startsWith("hash-phase")){hashPhase="after";await ctx.context.password.hash(HASH_PASSWORD);}})},
     plugins:[observer("first"),emailOTP({sendVerificationOTP:async()=>{},async generateOTP(input,ctx){events.push({stage:"otp-generator",input,...snapshot(ctx)});if(mode.startsWith("hash-phase")){hashPhase="handler";await ctx.context.password.hash(HASH_PASSWORD);}return "591307";}}),apiKey({configId:"dispatch",enableSessionForAPIKeys:true,rateLimit:{enabled:false},defaultKeyLength:16,enableMetadata:true,customAPIKeyGetter(ctx){events.push({stage:"api-key-getter",...snapshot(ctx)});return ctx.headers?.get("x-api-key")??null;},customAPIKeyValidator({ctx,key}){events.push({stage:"api-key-validator",key,...snapshot(ctx)});return true;},customKeyGenerator(input){events.push({stage:"api-key-generator",input:{length:input.length,prefix:input.prefix??null}});return `server-dispatch-actual-key-${String(++serial).padStart(6,"0")}`;}}),observer("second"),oneTimeToken(),jwt(),organization(),twoFactor({backupCodeOptions:{customBackupCodesGenerate:()=>["application-backup-one","application-backup-two"]}}),haveIBeenPwned({paths:["/","virtual:"]})],
@@ -94,7 +100,7 @@ export function createServerEndpointFixture(database: Database, base: BetterAuth
     if(url.pathname!==controlPath+"/call"||request.method!=="POST")return null;
     const physicalRequest=request.clone();
     requestBodies.set(physicalRequest,await physicalRequest.clone().text());
-    const input=await request.json() as {operation:string;mode?:string;body?:unknown;query?:unknown;headers?:Record<string,string>;physicalRequest?:boolean};
+    const input=await request.json() as {operation:string;mode?:string;body?:unknown;query?:unknown;headers?:Record<string,string>;physicalRequest?:boolean;logicalRequestHeaders?:boolean};
     mode=input.mode??"normal";events.length=0;ranges.length=0;
     const api=auth.api as unknown as Record<string,(args:Record<string,unknown>)=>Promise<unknown>>;
     const endpoint=api[input.operation];
@@ -103,6 +109,7 @@ export function createServerEndpointFixture(database: Database, base: BetterAuth
     if(Object.hasOwn(input,"body"))args.body=input.body;
     if(Object.hasOwn(input,"query"))args.query=input.query;
     if(Object.hasOwn(input,"headers"))args.headers=new Headers(input.headers);
+    else if(input.logicalRequestHeaders)args.headers=new Headers(physicalRequest.headers);
     if(input.physicalRequest)args.request=physicalRequest;
     let result:unknown;
     try{const value=await endpoint(args) as {response:unknown;headers:Headers;status?:number};result={ok:true,value:{headers:{...Object.fromEntries(value.headers),...(value.headers.has("set-cookie")?{"set-cookie":value.headers.get("set-cookie")}: {})},response:value.response,...(Object.hasOwn(value,"status")?{status:value.status}: {})}};}

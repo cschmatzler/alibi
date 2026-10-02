@@ -92,6 +92,23 @@ impl Application {
     }
 }
 #[async_trait::async_trait]
+impl better_auth_core::CookieCacheVersionResolver for Application {
+    async fn resolve(&self, input: &better_auth_core::CacheVersionContext) -> AuthResult<String> {
+        self.events.lock().unwrap().push(value!({
+            "stage":"cache-version", "user":input.user(), "session":input.session(),
+            "current":current_endpoint_call_context().as_ref().map_or(Value::Null,input_snapshot)
+        }));
+        tokio::task::yield_now().await;
+        Ok(if input.session().expires_at > chrono::Utc::now() {
+            "1"
+        } else {
+            "expired"
+        }
+        .into())
+    }
+}
+
+#[async_trait::async_trait]
 impl PasswordHasher for Application {
     async fn hash(&self, password: &str) -> AuthResult<String> {
         let hash = ScryptHasher.hash(password).await?;
@@ -345,6 +362,8 @@ struct Input {
     headers: Option<HashMap<String, String>>,
     #[serde(default)]
     physical_request: bool,
+    #[serde(default)]
+    logical_request_headers: bool,
 }
 fn header_snapshot(headers: &better_auth_core::Headers) -> HashMap<String, String> {
     let mut values: HashMap<_, _> = headers
@@ -386,15 +405,22 @@ pub(super) async fn router(
 ) -> AuthResult<Router> {
     let path = format!("/__test/profiles/{profile}/api/auth");
     let control_path = format!("/__test/{profile}");
+    let app = Application::default();
     let configured =
         base.clone()
             .base_path(&path)
             .session_cookie_cache(better_auth_core::CookieCacheConfig {
                 enabled: compact,
                 max_age: 300.0,
+                version: if profile == "server-dispatch-cache-version" {
+                    Some(better_auth_core::CookieCacheVersion::Resolver(Arc::new(
+                        app.clone(),
+                    )))
+                } else {
+                    None
+                },
                 ..Default::default()
             });
-    let app = Application::default();
     let range_app = app.clone();
     let range=Router::new().fallback(move|request:Request|{
         let app=range_app.clone();async move{
@@ -546,6 +572,9 @@ pub(super) async fn router(
                 if let Some(query) = input.query {
                     endpoint = endpoint.with_query_value(query);
                 }
+                let logical_headers = input.headers.or_else(|| {
+                    input.logical_request_headers.then(|| parts.headers.iter().map(|(name,value)| (name.to_string(),value.to_str().unwrap().to_owned())).collect())
+                });
                 let request = if input.physical_request {
                     let actual_host = parts
                         .headers
@@ -583,7 +612,7 @@ pub(super) async fn router(
                     auth.dispatch_endpoint(
                         endpoint,
                         EndpointOptions {
-                            headers: input.headers,
+                            headers: logical_headers,
                             request,
                             ..Default::default()
                         },

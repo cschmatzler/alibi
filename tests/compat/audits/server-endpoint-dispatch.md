@@ -252,3 +252,56 @@ physical-cookie prerequisite; broader #177 remains open.
 Actual locked optional workspace and fixture all-targets strict Clippy plus
 TypeScript pass (`/tmp/issue205-cache-strict33.log`). No full canonical, docs,
 browser or new clean coverage result is claimed for this expanded checkpoint.
+
+## Nested session getter context
+
+The real application cache-version callback exposed an additional dispatch
+boundary. Source `getSessionFromCtx` calls the genuine nested getter with the
+caller's body/path/headers/optional Request, method GET and its own parsed query.
+It retains the real outer logical operation rather than constructing an HTTP
+request. The new cached-version lifecycle extends the existing signed/cached
+organization owner: JWT/OTT and organization reads retain exactly one version
+callback, while a middleware-established API-key virtual principal does not
+invoke a redundant cached read. Callback captures retain full user/session and
+both exported current and legacy physical contexts.
+
+`/tmp/issue205-version-before1.log` retains the pre-fix native query-null versus
+Source query-{} failure after Source completes the whole lifecycle (652
+assertions). An initial AuthContext-only repair still missed the JWT adapter's
+direct shared runtime call, preserved in owner2. The shared authenticated reader
+now scopes only actual EndpointCall nested reads through a cloned GET context
+whose query retains the recognized disableCookieCache/disableRefresh flags.
+Its original body/headers/optional physical Request, shared extensions and
+config/store-bound authority remain intact. Direct reads and physical AuthRequest
+readers retain their existing behavior. Owner3 reaches 704 assertions with all
+real callback, ownership, persistence and lifecycle checks passing within both
+runtimes; only the three separately owned #301 physical signup cookie headers
+remain different. No comparison policy changes here.
+
+The separate real incoming POST owner sends a constant literal JSON RPC body
+and actual authenticated Cookie header to the controlled fixture, then passes
+that actual Request and header collection into the public server invocation.
+Nested callbacks observe logical GET/query-{} while preserving the original
+Request's POST/query/body/all headers. It independently verifies real owner and
+foreign JWS subjects, proves guest401 and a single authenticated version callback,
+and keeps all selected physical SQL rows unchanged. Owner7 passes 1/1 with 148
+assertions (`/tmp/issue205-version-incoming7.log`). Standalone cookie bytes are
+recorded as actual headers.cookie so the existing independent signed-cookie
+proof applies; no bytes are removed. Its unpublished duplicate corrupted-cookie
+subcase was removed because the seven primary #301 lifecycle owners already
+own genuine HMAC corruption and unchanged SQL, and the existing comparator
+deliberately rejects invalid cookie receipts even when both sides are corrupt.
+All previously published #205 negative owners remain.
+
+Initial incoming controls remain preserved: owner4 passed a real Request to an
+unrelated trusted-userId creator without authenticated logical headers and
+received the genuine Source401; owner5 placed independent credentials/IDs inside
+the raw Request body, producing literal request-byte differences; owner6 retained
+full functional proof but recorded standalone valid cookies as literals and
+intentionally invalid cookies under authenticated header receipt checks. These
+are fixture/representation discoveries, not additional production repairs.
+Locked optional workspace and fixture all-targets strict Clippy, actual fixture
+build, formatting and TypeScript pass after the bounded reader change
+(`/tmp/issue205-version-strict8.log`). Full canonical/docs/browser/coverage and
+the separate direct cached metadata observation are still pending; this remains
+a draft and does not close #205.

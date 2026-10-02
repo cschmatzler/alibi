@@ -7,6 +7,10 @@ use std::collections::HashMap;
 /// Input and trusted state used by the shared physical/cache session readers.
 /// Implementations must never populate authenticated state from client data.
 pub trait SessionRequest: Send + Sync {
+    /// Retain a genuine logical endpoint call when this input has one.
+    fn endpoint_call(&self) -> Option<&crate::endpoint::EndpointCall> {
+        None
+    }
     fn session_headers(&self) -> &HashMap<String, String>;
     fn session_method(&self) -> &HttpMethod;
     fn session_query_truthy(&self, name: &str) -> bool;
@@ -57,6 +61,9 @@ impl SessionRequest for AuthRequest {
 }
 
 impl SessionRequest for crate::endpoint::EndpointCall {
+    fn endpoint_call(&self) -> Option<&crate::endpoint::EndpointCall> {
+        Some(self)
+    }
     fn session_headers(&self) -> &HashMap<String, String> {
         static EMPTY: std::sync::LazyLock<HashMap<String, String>> =
             std::sync::LazyLock::new(HashMap::new);
