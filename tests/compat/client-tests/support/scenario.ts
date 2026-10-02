@@ -2,7 +2,8 @@ import { test } from "bun:test";
 import { ZodError } from "zod";
 import { authProfilePath, type FixtureProfile } from "./profiles";
 import { recordCoverage } from "./coverage";
-import { compareValues, type Difference } from "./compare";
+import { createHash } from "node:crypto";
+import { compareValues, type PhysicalObservation, type Difference } from "./compare";
 import { createAuthClient } from "better-auth/client";
 import {
   usernameClient,
@@ -156,6 +157,7 @@ type ScenarioRun = {
   finishedAt: number;
   observation: unknown;
   traces: TraceEntry[];
+  physicalObservations: PhysicalObservation[];
 };
 
 async function runScenario(
@@ -172,6 +174,12 @@ async function runScenario(
 
   const startedAt = Date.now();
   const traces: TraceEntry[] = [];
+  const physicalObservations: PhysicalObservation[] = [];
+  async function physical(kind: PhysicalObservation["kind"], owner: string, read: Promise<unknown>) {
+    const value = await read, body = structuredClone(value);
+    physicalObservations.push({kind, owner, body, digest: createHash("sha256").update(JSON.stringify(body)).digest("hex")});
+    return value;
+  }
   const actors = new Map<
     string,
     {
@@ -260,7 +268,7 @@ async function runScenario(
       return expireDevice(baseURL, args);
     },
     readVerificationState(args) {
-      return readVerificationState(baseURL, args);
+      return physical("verification", args.identifier, readVerificationState(baseURL, args));
     },
     resetServerState() {
       return resetServerState(baseURL);
@@ -284,7 +292,7 @@ async function runScenario(
       return seedOAuthAccount(baseURL, args);
     },
     readUserState(args) {
-      return readUserState(baseURL, args);
+      return physical("session", args.userId, readUserState(baseURL, args));
     },
     expireInvitation(args) {
       return expireInvitation(baseURL, args);
@@ -318,6 +326,7 @@ async function runScenario(
       observation: normalizeClientValue(await scenario(context)),
       finishedAt: Date.now(),
       traces,
+      physicalObservations,
     };
   } finally {
     const coverage = await scenarioCoverage("end", label, scenarioName);
@@ -421,6 +430,8 @@ export function compatScenario(
           rightStartedAt: rust.startedAt,
           leftFinishedAt: ts.finishedAt,
           rightFinishedAt: rust.finishedAt,
+          leftPhysicalObservations: ts.physicalObservations,
+          rightPhysicalObservations: rust.physicalObservations,
           leftRequestWindows: ts.traces.map((trace) => trace[requestWindow]),
           rightRequestWindows: rust.traces.map((trace) => trace[requestWindow]),
           leftOAuthURL: ts.oauthURL,

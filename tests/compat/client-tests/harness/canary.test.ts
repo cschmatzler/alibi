@@ -1,3 +1,4 @@
+import { createHash, createHmac } from "node:crypto";
 import { expect, test } from "bun:test";
 import { createAuthClient } from "better-auth/client";
 import { SignJWT } from "jose";
@@ -252,6 +253,7 @@ test("later session and user clocks require their actual issuance and update rec
       },
     ],
   });
+  // The physical observer can expose the same stored row without an auth read.
   const left = observe("left", 100_100, 105_100),
     right = observe("right", 200_100, 210_100);
   const windows = (side: string, issued: number, updated: number) => [
@@ -278,6 +280,43 @@ test("later session and user clocks require their actual issuance and update rec
     rightRequestWindows: windows("right", 200_000, 210_000),
   };
   expect(compareValues(left, right, context)).toEqual([]);
+  const secret = "lifecycle-secret";
+  const cookie = (token: string) => `better-auth.session_token=${encodeURIComponent(`${token}.${createHmac("sha256", secret).update(token).digest("base64")}`)}`;
+  const physical = (value: typeof left) => ({
+    traces: value.traces.slice(0, 2),
+    observation: { sessions: [value.traces[2]!.responseBody.session!] },
+  });
+  const signed = structuredClone(context);
+  signed.leftRequestWindows[0]!.issuedSessionCookie = cookie("left");
+  signed.rightRequestWindows[0]!.issuedSessionCookie = cookie("right");
+  const receipt = (kind: "session" | "verification", owner: string, body: unknown) => ({kind, owner, body, digest: createHash("sha256").update(JSON.stringify(body)).digest("hex")});
+  const receiptContext = { ...signed, sessionCookieSecret: secret,
+    leftPhysicalObservations: [receipt("session", "left-user", {user: {id: "left-user"}, sessions: physical(left).observation.sessions})],
+    rightPhysicalObservations: [receipt("session", "right-user", {user: {id: "right-user"}, sessions: physical(right).observation.sessions})],
+  };
+  expect(compareValues(physical(left), physical(right), receiptContext)).toEqual([]);
+  for (const change of ["foreign-owner", "unissued-token", "wrong-lifetime", "unrelated-date", "date-shape", "invalid-signature", "failed-issuer", "tampered-control", "copied-application-date"]) {
+    const altered = physical(structuredClone(right)), clocks = structuredClone(receiptContext);
+    const row = altered.observation.sessions[0]!;
+    if (change === "foreign-owner") row.userId = "another-user";
+    if (change === "unissued-token") row.token = "another-token";
+    if (change === "wrong-lifetime") row.expiresAt = iso(250_100);
+    if (change === "unrelated-date") row.createdAt = iso(215_100);
+    if (change === "date-shape") row.expiresAt = row.expiresAt.replace("Z", "+00:00");
+    if (change === "invalid-signature") clocks.rightRequestWindows[0]!.issuedSessionCookie = cookie("wrong");
+    if (change === "failed-issuer") altered.traces[0]!.responseStatus = 401;
+    if (change === "tampered-control") clocks.rightPhysicalObservations[0]!.digest = "invalid";
+    if (change === "copied-application-date") row.updatedAt = iso(215_100);
+    expect(compareValues(physical(left), altered, clocks).some(diff => diff.path.startsWith("observation.sessions"))).toBe(true);
+    // The independent control really returned the wrong row. Exact readback
+    // alone must not substitute for its signed issuer, owner or lifetime.
+    if (["foreign-owner", "unissued-token", "wrong-lifetime", "unrelated-date", "date-shape"].includes(change)) {
+      clocks.rightPhysicalObservations = [receipt("session", row.userId, {user: {id: row.userId}, sessions: [row]})];
+      expect(compareValues(physical(left), altered, clocks).some(diff => diff.path.startsWith("observation.sessions"))).toBe(true);
+    }
+  }
+  const application = {...physical(right), application: {...physical(right).observation.sessions[0]!, expiresAt: iso(251_100)}};
+  expect(compareValues({...physical(left), application: physical(left).observation.sessions[0]}, application, receiptContext).some(diff => diff.path === "application.expiresAt")).toBe(true);
   for (const change of [
     "unknown-cookie",
     "read-endpoint",
@@ -297,6 +336,69 @@ test("later session and user clocks require their actual issuance and update rec
       altered.traces[2]!.responseBody.session!.expiresAt = iso(250_100);
     expect(compareValues(left, altered, clocks).length).toBeGreaterThan(0);
   }
+  const narrowPhysical = (value: typeof left) => {
+    const issued = value.traces[2]!.responseBody.session!;
+    return {traces: [{...value.traces[0]!, path: "/__test/profiles/org-member-addition/api/auth/sign-in/email"}],
+      observation: {sessions: [{id: issued.id, token: issued.token, userId: issued.userId, expiresAt: iso(Date.parse(issued.createdAt) + 604800000)}]}};
+  };
+  const narrowContext = {...receiptContext,
+    leftPhysicalObservations: [receipt("session", "left-user", {user: {id: "left-user"}, sessions: narrowPhysical(left).observation.sessions})],
+    rightPhysicalObservations: [receipt("session", "right-user", {user: {id: "right-user"}, sessions: narrowPhysical(right).observation.sessions})],
+    leftRequestWindows: receiptContext.leftRequestWindows.slice(0, 1), rightRequestWindows: receiptContext.rightRequestWindows.slice(0, 1)};
+  expect(compareValues(narrowPhysical(left), narrowPhysical(right), narrowContext)).toEqual([]);
+  for (const change of ["foreign-owner", "wrong-lifetime", "old-row"]) {
+    const altered = narrowPhysical(right);
+    if (change === "foreign-owner") altered.observation.sessions[0]!.userId = "another-user";
+    if (change === "wrong-lifetime") altered.observation.sessions[0]!.expiresAt = iso(200_100 + 604801000);
+    if (change === "old-row") altered.observation.sessions[0]!.expiresAt = iso(190_100 + 604800000);
+    expect(compareValues(narrowPhysical(left), altered, narrowContext).some(diff => diff.path.endsWith("expiresAt"))).toBe(true);
+    const row = altered.observation.sessions[0]!;
+    const observedWrong = {...narrowContext, rightPhysicalObservations: [receipt("session", row.userId, {user: {id: row.userId}, sessions: [row]})]};
+    expect(compareValues(narrowPhysical(left), altered, observedWrong).some(diff => diff.path.endsWith("expiresAt"))).toBe(true);
+  }
+  const pending = (side: string, issued: number) => ({
+    traces: [
+      {method: "POST", path: "/__test/profiles/two-factor-skip-verification/api/auth/sign-up/email", responseStatus: 200,
+        responseBody: {token: side, user: {id: `${side}-user`, email: "owner@test.com"}}},
+      {method: "POST", path: "/__test/profiles/two-factor-skip-verification/api/auth/sign-in/email", responseStatus: 200,
+        responseBody: {twoFactorRedirect: true}},
+    ],
+    observation: {
+      challenge: {id: `${side}-challenge`, identifier: {token: `2fa-${side.padEnd(20, "x")}`}, value: {userId: `${side}-user`},
+        createdAt: iso(issued), updatedAt: iso(issued), expiresAt: iso(issued + 600_000)},
+      attempts: {id: `${side}-attempt`, identifier: {token: `2fa-attempts-2fa-${side.padEnd(20, "x")}`}, value: "0",
+        createdAt: iso(issued + 1), updatedAt: iso(issued + 1), expiresAt: iso(issued + 600_000)},
+    },
+  });
+  const challengeCookie = (token: string) => cookie(token).replace("session_token=", "two_factor=");
+  const pendingWindows = (side: string, issued: number) => [
+    {startedAt: issued - 2000, finishedAt: issued - 1000, inputDates: {}, issuedSessionCookie: cookie(side)},
+    {startedAt: issued - 10, finishedAt: issued + 10, inputDates: {}, signInEmail: "owner@test.com", issuedTwoFactorCookie: challengeCookie(`2fa-${side.padEnd(20, "x")}`)},
+  ];
+  const pendingReceipt = (value: ReturnType<typeof pending>) => Object.values(value.observation).map(row => receipt("verification", row.identifier.token, [{...row, identifier: row.identifier.token, value: typeof row.value === "string" ? row.value : row.value.userId}]));
+  const pendingContext = {...context, sessionCookieSecret: secret,
+    leftPhysicalObservations: pendingReceipt(pending("left", 100_100)), rightPhysicalObservations: pendingReceipt(pending("right", 210_100)), leftRequestWindows: pendingWindows("left", 100_100), rightRequestWindows: pendingWindows("right", 210_100)};
+  const leftPending = pending("left", 100_100), rightPending = pending("right", 210_100);
+  expect(compareValues(leftPending, rightPending, pendingContext)).toEqual([]);
+  for (const change of ["foreign-owner", "unissued-identifier", "wrong-lifetime", "unrelated-date", "old-cookie", "invalid-signature", "foreign-email", "counter-expiry", "failed-issuer", "tampered-control"]) {
+    const altered = structuredClone(rightPending), clocks = structuredClone(pendingContext);
+    if (change === "foreign-owner") altered.observation.challenge.value.userId = "another-user";
+    if (change === "unissued-identifier") altered.observation.challenge.identifier.token = "2fa-unissuedxxxxxxxxxxxx";
+    if (change === "wrong-lifetime") for (const row of Object.values(altered.observation)) row.expiresAt = iso(809_100);
+    if (change === "unrelated-date") altered.observation.challenge.createdAt = iso(215_100);
+    if (change === "old-cookie") clocks.rightRequestWindows[1]!.issuedTwoFactorCookie = challengeCookie("2fa-oldxxxxxxxxxxxxxxxxx");
+    if (change === "invalid-signature") clocks.rightRequestWindows[1]!.issuedTwoFactorCookie += "x";
+    if (change === "foreign-email") clocks.rightRequestWindows[1]!.signInEmail = "foreign@test.com";
+    if (change === "counter-expiry") altered.observation.attempts.expiresAt = iso(811_100);
+    if (change === "failed-issuer") altered.traces[1]!.responseStatus = 401;
+    if (change === "tampered-control") clocks.rightPhysicalObservations[0]!.digest = "invalid";
+    expect(compareValues(leftPending, altered, clocks).some(diff => diff.path.startsWith("observation"))).toBe(true);
+    if (["foreign-owner", "unissued-identifier", "wrong-lifetime", "unrelated-date", "counter-expiry"].includes(change)) {
+      clocks.rightPhysicalObservations = pendingReceipt(altered);
+      expect(compareValues(leftPending, altered, clocks).some(diff => diff.path.startsWith("observation"))).toBe(true);
+    }
+  }
+
 });
 
 test("clock evidence cannot approve another field, entity or a changed lifetime", () => {
