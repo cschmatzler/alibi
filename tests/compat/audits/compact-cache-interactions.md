@@ -139,8 +139,8 @@ Retained intended wrong-implementation evidence:
   stored session but lacked Source's cache cookie. Repaired combined owners
   passed `/tmp/issue221-final-composition-owner.log` (3/3, 288 assertions).
 
-The broader canonical, strict, docs/browser and clean coverage results will be
-recorded on the final composed immutable head. The 75% floor, production
+The broader canonical, strict, docs/browser and clean coverage results are
+recorded below with their immutable heads. The 75% floor, production
 exclusions, Source package and shared comparator remain unchanged.
 
 
@@ -239,6 +239,83 @@ unchanged structured transport observer, which follows RFC6265 Max-Age
 precedence. The full raw headers remain in the byte artifacts. Wider cookie
 attribute parity remains171–177; no shared comparator was changed.
 
-Final composition onto Facebook main6803cbef preserves every existing public
-capability/profile. Final affected SDK/host, strict/typecheck, docs/browser and
-clean75% coverage results remain pending on the immutable composed candidate.
+## Final immutable validation and capability retention
+
+The complete canonical run on `3cd713008f02d395f88d6fec6af457370b32053a`,
+based on Figma main `ff2cfec8`, terminated with exit 100:
+`/tmp/issue221-final-canonical.log`. Both strict matrices, optional rustls build,
+793/793 default native, 845/845 optional native, 2/2 fixture, 71/71 harness and
+alignment 36/3/2 passed. Full SDK passed 1264/1265 owners with 83,614 assertions.
+All 29 compact owners, all 3 Multi owners, every repaired organization/admin guest
+owner and all 3 generated seed 12648430 profiles passed. The requested generated
+owners also independently passed `/tmp/issue221-generated-guard.log`, exit 0.
+
+The sole full SDK failure was `organization fixed membership policies retain
+falsy defaults and raw Number admission without read callbacks`: observation 6
+before/after session `expiresAt`, observation 7 member/response `createdAt` and
+before/after session `expiresAt`, six timestamp/lifetime aliases. The unchanged
+Facebook parent `83b57b1c` (tree identical to main 6803cbef) reproduced those exact
+six paths in `/tmp/issue221-parent-organization.log`, exit 1,1/2 pass, 600 assertions.
+The other owner, `organization addition trusted role patches are unvalidated and
+before versus after errors retain exact writes`, failed four timestamp aliases
+in the earlier 9b767 affected run but passed both unchanged parent attempts. Its
+unchanged 9b767 focused retry retained only two member timestamp aliases; these
+are not claimed as reproduced parent failures. That owner passed the full 3cd713
+run and both later composed affected runs. Every failed and passing attempt is
+retained; no comparator tolerance or test expectation was changed.
+
+Clean actual coverage on 3cd713 passed `/tmp/issue221-final-clean-coverage.log`,
+exit 0: 31,574/40,756=77.470802%, with all 845 native and all five existing SDK
+coverage groups passing. The report has 210 Source paths and no duplicate logical
+workspace file. Every workspace path belongs to the current checkout. Its six
+inline standard TLS lines (three covered) also appear identically in the Figma
+parent report; there is no added instrumented dependency surface. The genuine
+five HTTP fixture runtime profiles are each1,387,760 bytes; the actual fixture
+object is included in LLVM export. Runtime coverage includes cache/runtime 496/538,
+auth 544/725,Apple 73/92 and Figma 79/100. Saved report:
+`/tmp/issue221-final-clean-lcov.info`. The floor remains 75% with the original
+exclusions and complete workspace selection.
+
+The earlier 9b767 report 32059/41358 is explicitly rejected as clean proof because
+it duplicated three logical files across cached 183/256/current paths. It and
+a real runtime profile remain saved in `/tmp/issue221-9b767-lcov.info` and
+`/tmp/issue221-9b767-runtime.profraw`. The unsupported `MBX_DISABLED` spelling
+was corrected to `MBX_DISABLE=1`, documented by the installed 1.21.0 version's
+[upstream troubleshooting guide](https://github.com/jdx/mr-boxington/blob/v1.21.0/docs/troubleshooting.md#bypass-mbx-for-one-command).
+The first corrected attempt stopped at read-only cached dependency hardlinks
+(`/tmp/issue221-figma-clean-coverage.log`, exit 101); its owned coverage directory
+was archived rather than chmodding shared cache files. The successful clean run
+used a fresh target and both explicit coverage target environment variables.
+
+Real composed 32-owner collection passed 1,914 assertions in
+`/tmp/issue221-composed-evidence.log`, exit 0. Its 16 new owners contribute 113
+measured requirements across 32 relevant routes. Unrelated signup, organization
+creation, device-code and JWKS setup traces were excluded from these additions.
+All 4472 Figma-parent requirements remain; subsequent Hugging Face composition
+retains all 4704 parent requirements plus the same 113, totaling 4817. No route or
+implemented/upstream declaration was removed or altered.
+
+Final composition `cc5aff553a6595e5b74a3314f45b0e102bd61a79` onto actual
+Hugging Face main `4efe6df4` has no own production/test change by range-diff.
+`/tmp/issue221-hf-composed-checks.log` and
+`/tmp/issue221-hf-fixture-build.log` terminated 0: both strict matrices, rustls,
+formatting, TS types, 845/845 native including the public two-context reader
+regression, warning-free docs and Chromium 2/2 passed. Real affected SDK collection
+`/tmp/issue221-hf-focused.log` terminated 1:225/226 pass, 17,620 assertions. All 32
+compact/Multi, all 47 Hugging Face and all repaired guest owners passed. Only the
+same six organization membership timestamp aliases remained. Coverage and the
+full canonical are reported on their earlier exact 3cd713 head, rather than
+misstated as having run on the later composed provider parent.
+
+The standalone strict metadata gate remains red:
+`/tmp/issue221-full-capability-check.log` and
+`/tmp/issue221-hf-capability-check.log`, exit 1. Read-only aggregation of the exact
+Figma-parent 4472 requirements against the full 3cd713 evidence and the merged
+Hugging Face parent's actual full evidence found the identical 115 missing
+requirements in both, with zero final-only or parent-only differences
+(`/tmp/issue221-capability-baseline-comparison.json`). These include inherited
+manual transition/category declarations beyond the two clock-owner cells.
+Every new 113 requirement is supported by actual passing owner evidence. No old
+artifact was injected, valuable test removed, or inherited declaration relaxed
+to conceal this failure. Correcting those inherited classifications/transitions
+will be a separate issue/PR with actual strongest owner traces.
