@@ -21,7 +21,7 @@ use axum::{
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-use better_auth_core::middleware::{BodyLimitConfig, CsrfConfig, RateLimitConfig};
+use better_auth_core::middleware::{BodyLimitConfig, CsrfConfig, Middleware, RateLimitConfig};
 use better_auth_core::store::UserStore;
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, CreateUser,
@@ -52,6 +52,8 @@ struct Observations {
     finished: Notify,
     dropped: Notify,
     calls: AtomicUsize,
+    completions: AtomicUsize,
+    phases: Mutex<Vec<&'static str>>,
     contexts: Mutex<Vec<(String, String, String)>>,
 }
 
@@ -73,6 +75,7 @@ impl AuthPlugin<Schema> for Application {
         req: &AuthRequest,
         ctx: &AuthContext<Schema>,
     ) -> AuthResult<Option<AuthResponse>> {
+        self.0.phases.lock().unwrap().push("handler");
         let _previous = self.0.calls.fetch_add(1, Ordering::SeqCst);
         assert!(req.path() != "/panic", "private application panic detail");
         let body: serde_json::Value = req.body_as_json()?;
@@ -121,8 +124,36 @@ impl AuthPlugin<Schema> for Application {
         _ctx: &AuthContext<Schema>,
         response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
+        self.0.phases.lock().unwrap().push("plugin-after");
+        let _previous = self.0.completions.fetch_add(1, Ordering::SeqCst);
         self.0.finished.notify_one();
         Ok(response.with_header("x-after-hook", "complete"))
+    }
+}
+
+struct OrderedMiddleware {
+    observations: Arc<Observations>,
+    before: &'static str,
+    after: &'static str,
+}
+
+#[async_trait]
+impl Middleware for OrderedMiddleware {
+    fn name(&self) -> &'static str {
+        self.before
+    }
+    async fn before_request(&self, _req: &AuthRequest) -> AuthResult<Option<AuthResponse>> {
+        self.observations.phases.lock().unwrap().push(self.before);
+        Ok(None)
+    }
+    async fn after_request(
+        &self,
+        _req: &AuthRequest,
+        mut response: AuthResponse,
+    ) -> AuthResult<AuthResponse> {
+        self.observations.phases.lock().unwrap().push(self.after);
+        response.headers.append("x-middleware", self.after);
+        Ok(response)
     }
 }
 
@@ -164,6 +195,16 @@ async fn auth_with_database(
         .body_limit(BodyLimitConfig::new().max_bytes(256))
         .csrf(CsrfConfig::new().enabled(false))
         .rate_limit(RateLimitConfig::new().enabled(false))
+        .middleware(OrderedMiddleware {
+            observations: Arc::clone(&observations),
+            before: "first-before",
+            after: "first-after",
+        })
+        .middleware(OrderedMiddleware {
+            observations: Arc::clone(&observations),
+            before: "second-before",
+            after: "second-after",
+        })
         .plugin(Application(observations))
         .build()
         .await

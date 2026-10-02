@@ -173,6 +173,26 @@ async fn live_dispatch_keeps_repeated_headers_context_and_tracing_and_isolates_a
     assert_eq!(
         response
             .headers()
+            .get_all("x-middleware")
+            .iter()
+            .map(|value| value.to_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec!["second-after", "first-after"]
+    );
+    assert_eq!(
+        *observations.phases.lock().unwrap(),
+        vec![
+            "first-before",
+            "second-before",
+            "handler",
+            "plugin-after",
+            "second-after",
+            "first-after"
+        ]
+    );
+    assert_eq!(
+        response
+            .headers()
             .get_all("set-cookie")
             .iter()
             .map(|value| value.to_str().unwrap())
@@ -299,4 +319,109 @@ async fn incomplete_and_over_limit_bodies_never_enter_supervised_dispatch() {
     );
     shutdown.send(()).unwrap();
     server.await.unwrap();
+}
+
+#[tokio::test]
+async fn native_request_cancellation_and_detached_observer_preserve_actual_ownership() {
+    use better_auth_core::HttpMethod;
+
+    for mode in ["cancel", "detach", "connected"] {
+        let observations = Arc::new(Observations::default());
+        let (auth, store) = auth(Arc::clone(&observations)).await;
+        let email = format!("{mode}@example.test");
+        let input = AuthRequest::from_parts(
+            HttpMethod::Post,
+            "/auth/transport".into(),
+            std::collections::HashMap::from([
+                ("content-type".into(), "application/json".into()),
+                ("user-agent".into(), "actual-native-agent".into()),
+            ]),
+            Some(serde_json::json!({"email": email}).to_string().into_bytes()),
+            std::collections::HashMap::from([("pause".into(), "yes".into())]),
+        );
+        let task = tokio::spawn(async move { auth.handle_request(input).await.unwrap() });
+        bounded(&observations.entered).await;
+        assert_eq!(
+            store
+                .get_user_by_email(&email)
+                .await
+                .unwrap()
+                .unwrap()
+                .name
+                .as_deref(),
+            Some("started")
+        );
+        if mode == "cancel" {
+            task.abort();
+            assert!(task.await.unwrap_err().is_cancelled());
+            observations.release.notify_one();
+            assert_eq!(
+                store
+                    .get_user_by_email(&email)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .name
+                    .as_deref(),
+                Some("started")
+            );
+            assert_eq!(observations.completions.load(Ordering::SeqCst), 0);
+            assert!(observations.contexts.lock().unwrap().is_empty());
+            assert_eq!(
+                *observations.phases.lock().unwrap(),
+                vec!["first-before", "second-before", "handler"]
+            );
+        } else {
+            if mode == "detach" {
+                // Dropping a real JoinHandle loses the observer, but retains the owned task.
+                drop(task);
+                observations.release.notify_one();
+            } else {
+                observations.release.notify_one();
+                let response = task.await.unwrap();
+                assert_eq!(response.status, 201);
+                assert_eq!(
+                    response.headers.get("x-after-hook").map(String::as_str),
+                    Some("complete")
+                );
+                assert_eq!(
+                    response.headers.get_all("set-cookie").collect::<Vec<_>>(),
+                    vec![
+                        "first=one; Path=/; HttpOnly",
+                        "second=two; Path=/; HttpOnly"
+                    ]
+                );
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&response.body).unwrap(),
+                    serde_json::json!({"email": email, "name":"completed"})
+                );
+                assert_eq!(
+                    *observations.phases.lock().unwrap(),
+                    vec![
+                        "first-before",
+                        "second-before",
+                        "handler",
+                        "plugin-after",
+                        "second-after",
+                        "first-after"
+                    ]
+                );
+            }
+            bounded(&observations.finished).await;
+            assert_eq!(
+                store
+                    .get_user_by_email(&email)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .name
+                    .as_deref(),
+                Some("completed")
+            );
+            assert_eq!(observations.completions.load(Ordering::SeqCst), 1);
+            let context = observations.contexts.lock().unwrap();
+            assert_eq!(context.first().unwrap().0, "/auth/transport");
+            assert_eq!(context.first().unwrap().1, "actual-native-agent");
+        }
+    }
 }
