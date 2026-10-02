@@ -145,10 +145,33 @@ compatScenario("application JWT keyring pinning resolved keys RSA modulus grace 
   const recovered=await guest.jwks();expect(recovered.error).toBeNull();const recoveredState=await state(ctx,mode);expect(recoveredState.keys).toHaveLength(1);const recovery=await owner.token();expect(recovery.error).toBeNull();const recoveryChecked=await verified(recovery.data!.token,recovered.data!.keys as JWK[],ctx);
   const legacy=await control(ctx,{operation:"legacy",id:recoveredState.keys[0]!.id},mode);const legacyState=await state(ctx,mode);expect(legacyState.keys[0]!.alg).toBeNull();expect(legacyState.keys[0]!.crv).toBeNull();
   const legacyJwks=await guest.jwks();expect(legacyJwks.data!.keys[0]!.alg).toBe("RS256");const legacyIssued=await signed(ctx,payload,{signingKeyId:recoveredState.keys[0]!.id,signingAlgorithm:"RS256"},mode);const legacyChecked=await verified(await token(legacyIssued),legacyJwks.data!.keys as JWK[],ctx);expect(legacyChecked.header.kid).toBe(recoveredState.keys[0]!.id);
-  await control(ctx,{operation:"clear-events"},mode);const manuallyCreated=await control(ctx,{operation:"create"},mode);expect(manuallyCreated.body).toEqual({created:true});const manualState=await state(ctx,mode);expect(manualState.keys).toHaveLength(2);expect(manualState.events.map(event=>event.operation)).toEqual(["create"]);expect(manualState.events[0]!.context).toEqual({path:"/__test/jwt-keyring",method:"POST",marker:"server-marker",hasCookie:false});
+  await control(ctx,{operation:"clear-events"},mode);
+  const createStartedAt=Date.now();
+  const manuallyCreated=await control(ctx,{operation:"create"},mode);
+  const createFinishedAt=Date.now();
+  expect(manuallyCreated.body).toEqual({created:true});
+  const manualState=await state(ctx,mode);
+  expect(manualState.keys).toHaveLength(2);
+  expect(manualState.keys[0]).toEqual(legacyState.keys[0]);
+  expect(manualState.events.map(event=>event.operation)).toEqual(["create"]);
+  expect(manualState.events[0]!.context).toEqual({path:"/__test/jwt-keyring",method:"POST",marker:"server-marker",hasCookie:false});
+  const {id:manualId,createdAt,expiresAt,...manualKey}=manualState.keys[1]!;
+  expect(createdAt).toBe(new Date(createdAt).toISOString());
+  expect(expiresAt).toBe(new Date(expiresAt!).toISOString());
+  expect(Date.parse(createdAt)).toBeGreaterThanOrEqual(createStartedAt);
+  expect(Date.parse(createdAt)).toBeLessThanOrEqual(createFinishedAt);
+  const lifetimeMilliseconds=Date.parse(expiresAt!)-Date.parse(createdAt);
+  expect(lifetimeMilliseconds).toBe(3600000);
+  expect(manualState.events[0]!.key).toEqual({...manualKey,createdAt,expiresAt});
+  // Key generation can take different amounts of time on each server. Check
+  // its actual request clock above, then compare the complete key and lifetime.
+  const manualObservation={
+    keys:[manualState.keys[0],{id:manualId,...manualKey,lifetimeMilliseconds}],
+    events:[{...manualState.events[0],key:{...manualKey,lifetimeMilliseconds}}],
+  };
   const manualJwks=await guest.jwks();expect(manualJwks.data!.keys).toHaveLength(2);const manualIssued=await signed(ctx,payload,{signingKeyId:manualState.keys[1]!.id},mode);const manualChecked=await verified(await token(manualIssued),manualJwks.data!.keys as JWK[],ctx);expect(manualChecked.header.kid).toBe(manualState.keys[1]!.id);expect((await state(ctx,mode)).keys).toEqual(manualState.keys);
   expect(await ctx.readUserState({userId:other.data!.user.id})).toEqual(foreignBefore);expect((await ctx.rawRequest({path:"/__test/jwks-state"})).body).toEqual([]);
-  return {signup:ctx.snapshot(signup),other:ctx.snapshot(other),foreignBefore,jwks,original,primary,primaryChecked,extra,extraState,both,extraChecked,reused,reusedState,reusedChecked,rejected,rotated,withinGrace,rotatedState,rotatedChecked,oldVerified,expiredPinned,afterGrace,privateVerification,brokenPrivate,privateState,brokenPublic,corruptVerification,corruptState,retired,recovered,recoveredState,recovery,recoveryChecked,legacy,legacyState,legacyJwks,legacyIssued,legacyChecked,manuallyCreated,manualState,manualJwks,manualIssued,manualChecked,foreignAfter:await ctx.readUserState({userId:other.data!.user.id})};
+  return {signup:ctx.snapshot(signup),other:ctx.snapshot(other),foreignBefore,jwks,original,primary,primaryChecked,extra,extraState,both,extraChecked,reused,reusedState,reusedChecked,rejected,rotated,withinGrace,rotatedState,rotatedChecked,oldVerified,expiredPinned,afterGrace,privateVerification,brokenPrivate,privateState,brokenPublic,corruptVerification,corruptState,retired,recovered,recoveredState,recovery,recoveryChecked,legacy,legacyState,legacyJwks,legacyIssued,legacyChecked,manuallyCreated,manualState:manualObservation,manualJwks,manualIssued,manualChecked,foreignAfter:await ctx.readUserState({userId:other.data!.user.id})};
 },["GET /jwks","GET /token","POST /sign-up/email"]);
 
 compatScenario("application JWT keyring simultaneous first public requests create and persist both actual signing keys",async ctx=>{
