@@ -169,6 +169,52 @@ Kakao/Kick/password and selector prerequisites, survive the same explicit
 143 route records/flags. Before the receipt extension, its strict/fixture build,
 TypeScript, full harness74/927 and warning-free docs pass at
 `8f63f9acd98140b913b9bb76b506e184183887d8` in
-`/tmp/capability-metadata-composed-checks.log`. The new frozen complete canonical
-and strict inventory collection are pending; their artifacts will be freshly
-captured, with no copied baseline evidence.
+`/tmp/capability-metadata-composed-checks.log`.
+
+## Final frozen collection and bounded inherited control
+
+Exact frozen `01fa5223e93f85acf8d035d7a81dcf93770eafb2` completes the canonical
+command with terminal100 in `/tmp/capability-metadata-receipts-canonical.log`.
+Strict default/optional/rustls/fmt, native793/793 default and845/845 optional,
+fixture2/2, TypeScript, harness75/75 with961 assertions, and alignment36+3+2
+pass. The complete SDK collection is1,424/1,426 with91,854 assertions, including
+all40 composed Kick owners and both original organization owners. Bun reports
+827.96 seconds and the owning nextest test848.912 seconds. All115 original
+contracts have their documented repaired, corrected or retained observations.
+
+The full run retains two failures. The independently owned #174 expired reset
+and OTP proof owner differs at `observation.observations.0.proof.length`.
+The unchanged `two-factor-trust-cleanup-disabled` owner differs at exactly six
+`observation.observations.6` aliases: attempts.0 and challenge.0 each have
+createdAt, expiresAt and updatedAt differences. Challenge creation is Source
+`2026-10-02T05:54:41.640Z` versus native `2026-10-02T05:54:43.951Z`, a2.311-second
+offset; both challenge lifetimes are600.750 seconds. Its initial unchanged strict
+inventory reports the four success/state cells belonging to that failed trust
+owner in `/tmp/capability-metadata-receipts-inventory.log`. The complete failed
+capture is preserved read-only in `/tmp/capability-metadata-01fa-evidence/evidence`
+and `/tmp/capability-metadata-01fa-aggregated-evidence.json`.
+
+One bounded parent-production control runs the same unchanged owner and comparer
+against the4bcd production fixture built in the separate #152 tree. That tree
+adds only the Microsoft before-proof fixture profile; it makes no production,
+comparer or trust-owner changes. `/tmp/capability-metadata-trust-parent.log` is
+terminal1,0/1,318 assertions: the same six aliases differ, with challenge creation
+`2026-10-02T06:03:34.129Z` versus `2026-10-02T06:03:36.557Z`, a2.428-second offset,
+and the same600.750-second challenge lifetime. One exact01fa control is terminal0,
+1/1,318 assertions,3.22 seconds in `/tmp/capability-metadata-trust-final.log`.
+These controls account for an unchanged parent discrepancy; a passing focused
+control does not establish a Source false positive or replace the failed full
+collection. No tolerance, clock, comparator, factor owner or production changes
+are made.
+
+The final control uses genuine `COMPAT_COVERAGE=1` observations to contribute its
+own four previously missing cells. No baseline or earlier positive artifact is
+imported. The unchanged strict inventory then passes terminal0 in
+`/tmp/capability-metadata-receipts-focused-inventory.log`:143 routes, zero
+unimplemented routes and zero implemented routes without successful scenario
+evidence. Every required category/scenario is checked by the same strict gate.
+The canonical command stopped at the two SDK failures, so its later browser,
+docs and native coverage steps did not run at01fa. Warning-free docs passed on
+8f63 above; this issue changes no production or native test code. Independent
+root review covers the bounded declarations, collector, genuine owner extensions
+and complete receipt/privacy/negative controls.
