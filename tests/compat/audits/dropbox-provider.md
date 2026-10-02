@@ -54,7 +54,7 @@ fractional expiry, missing response scope as an empty persisted string, and
 existing scope through refresh. The factory does not forward basic/custom token
 authentication; no unsupported Source basic mode is claimed.
 
-## Measured draft proof
+## Measured proof and remaining publication
 
 The initial 43 owners passed 40/43 (1,598 assertions,
 /tmp/issue143-initial-43-owner.log). The missing-email expectation was corrected
@@ -64,10 +64,11 @@ absent names instead of Source's empty name. The owner fix already belongs to
 #183, whose generic OAuth creation phase supplies an empty name. Dropbox awaits
 that parent instead of altering its profile projection to hide the core bug.
 
-The expanded program passes 44/46 owners (1,758 assertions,
-/tmp/issue143-46-owners-link-info2.log, terminal exit 1), with only those same two
-missing-name failures. All actual POST exchange, refresh, replay, foreign
-authority, explicit linking and changed-profile account-info owners pass.
+After the shared user-validation fix landed on main, the expanded program passes
+**46/46 actual Source/native owners / 1,764 assertions**
+(/tmp/issue143-composed183-46-owner-strict.log, terminal exit 0). This includes the
+previous absent/null-name failures and all actual POST exchange, refresh, replay,
+foreign authority, explicit linking and changed-profile account-info owners.
 Default authorization on an isolated unchanged f112 parent with the real
 generic provider failed for the intended missing-factory contract: Native
 replaced default scopes with requested scopes, whereas Source preserves all
@@ -76,11 +77,14 @@ three ordered scope entries (29 assertions,
 adapted to an existing generic provider literal; parent production is unchanged.
 Both before fixtures retain the actual remote receipt endpoints.
 
-All-target strict native API and fixture Clippy, native formatting and TypeScript
-checks passed. Independently reviewed factory admission and trusted HTTP
-configuration have no identified ownership blocker. Capability additions come
-only from the 44 actually passing recorded public owners, retaining every parent
-requirement and excluding setup routes or unclassifiable callback denials.
-Final #183 integration, complete focused/canonical/docs/browser proof, clean
-unchanged-floor coverage and publication remain pending. This draft does not
-claim a complete issue or a green full gate.
+The current Cognito/Dropbox composition on main a632 passes all-target strict
+default and optional-feature workspace Clippy, Rustls feature checking, fixture
+Clippy, both formatting checks, TypeScript checking and documentation with
+warnings denied (/tmp/issue143-main204-strict-docs.log, terminal exit 0).
+Independently reviewed factory admission and trusted HTTP configuration have no
+identified ownership blocker. The capability ledger preserves all 3,761 parent
+requirements in their original order and appends 186 cells from actual passing,
+recorded public Dropbox owners, totaling 3,947. It excludes foreign setup routes
+and callback denials the existing collector cannot classify as rejection.
+Complete canonical/browser proof, clean unchanged-floor coverage and publication
+remain pending. This draft does not claim a green full gate.

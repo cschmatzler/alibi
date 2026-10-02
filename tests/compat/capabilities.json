@@ -240,7 +240,9 @@
           "dropbox zero access expiry follows actual token helper",
           "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
           "dropbox empty name profile retains original raw account and typed persistence",
-          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority"
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox missing name profile retains original raw account and typed persistence",
+          "dropbox null display name profile retains original raw account and typed persistence"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -498,7 +500,9 @@
           "dropbox browser implicit-disabled denies before any owned or foreign identity write",
           "dropbox public real POST exchange refresh replay and local logout preserve foreign authority",
           "dropbox empty name profile retains original raw account and typed persistence",
-          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority"
+          "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority",
+          "dropbox missing name profile retains original raw account and typed persistence",
+          "dropbox null display name profile retains original raw account and typed persistence"
         ]
       }
     },
@@ -4246,7 +4250,9 @@
           "dropbox published offline authorization retains scopes PKCE and access type",
           "dropbox empty name profile retains original raw account and typed persistence",
           "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority",
-          "dropbox disabled default scope omits an empty scope parameter"
+          "dropbox disabled default scope omits an empty scope parameter",
+          "dropbox missing name profile retains original raw account and typed persistence",
+          "dropbox null display name profile retains original raw account and typed persistence"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -4526,7 +4532,9 @@
           "dropbox published offline authorization retains scopes PKCE and access type",
           "dropbox empty name profile retains original raw account and typed persistence",
           "dropbox configured-endpoint real POST exchange refresh replay and local logout preserve foreign authority",
-          "dropbox disabled default scope omits an empty scope parameter"
+          "dropbox disabled default scope omits an empty scope parameter",
+          "dropbox missing name profile retains original raw account and typed persistence",
+          "dropbox null display name profile retains original raw account and typed persistence"
         ]
       }
     },
