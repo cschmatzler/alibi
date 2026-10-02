@@ -114,6 +114,7 @@ mod jwt_fixture;
 mod jwt_keyring_fixture;
 mod jwt_remote_fixture;
 mod kakao_provider_fixture;
+mod kick_provider_fixture;
 mod last_login_method_fixture;
 mod lifecycle_fixture;
 mod magic_profiles;
@@ -814,6 +815,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         huggingface_provider_fixture::router(&config, database.clone()).await?;
     let (kakao_router, kakao_reset) =
         kakao_provider_fixture::router(&config, database.clone()).await?;
+    let (kick_router, kick_reset) =
+        kick_provider_fixture::router(&config, database.clone()).await?;
     let (cognito_router, cognito_reset) =
         cognito_provider_fixture::router(&config, database.clone()).await?;
     let (atlassian_router, atlassian_reset) =
@@ -1274,6 +1277,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let figma_reset=figma_reset.clone();
                 let huggingface_reset=huggingface_reset.clone();
                 let kakao_reset=kakao_reset.clone();
+                let kick_reset=kick_reset.clone();
                 let atlassian_reset=atlassian_reset.clone();
                 let apple_reset = apple_reset.clone();
                 let social_provider_reset = social_provider_reset.clone();
@@ -1288,6 +1292,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     figma_reset.reset().await;
                     huggingface_reset.reset().await;
                     kakao_reset.reset().await;
+                    kick_reset.reset().await;
                     atlassian_reset.reset().await;
                     apple_reset.reset().await;
                     social_provider_reset.reset().await;
@@ -1905,6 +1910,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(figma_router)
         .merge(huggingface_router)
         .merge(kakao_router)
+        .merge(kick_router)
         .merge(atlassian_router)
         .merge(apple_router)
         .merge(social_provider_router)

@@ -720,5 +720,7 @@ fn discord_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
 
 mod huggingface;
 mod kakao;
+mod kick;
 pub use huggingface::HuggingFaceOptions;
 pub use kakao::KakaoOptions;
+pub use kick::KickOptions;
