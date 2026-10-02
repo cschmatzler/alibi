@@ -290,7 +290,7 @@ pub(super) async fn create_key_for_user(
         )?),
         enabled: true,
     };
-    let api_key = ctx.database.create_api_key(input).await?;
+    let api_key = config.create_stored_key(ctx, input).await?;
     let mut api_key = ApiKeyView::from(&api_key);
     // Upstream returns supplied falsy metadata at creation, but stores null.
     api_key.metadata = body
@@ -380,10 +380,7 @@ pub(in crate::plugins) async fn list_keys_core(
         let _ignored_resolve_configuration = plugin.resolve_configuration(config_id)?;
     }
 
-    let keys = ctx
-        .database
-        .list_api_keys_by_reference(reference_id)
-        .await?;
+    let keys = plugin.list_storage_keys(ctx, reference_id).await?;
     let mut views: Vec<ApiKeyView> = keys
         .iter()
         .filter(|key| {
@@ -562,7 +559,7 @@ pub(super) async fn update_key_for_user(
         expires_at,
         ..Default::default()
     };
-    let updated = ctx.database.update_api_key(&body.key_id, update).await?;
+    let updated = config.update_stored_key(ctx, &body.key_id, update).await?;
     plugin.maybe_delete_expired(ctx).await?;
     Ok(ApiKeyView::from(&updated))
 }
@@ -577,8 +574,9 @@ pub(in crate::plugins) async fn delete_key_core(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<serde_json::Value> {
     let config = plugin.resolve_configuration(body.config_id.as_deref())?;
-    drop(helpers::get_owned_api_key(ctx, config, &body.key_id, user_id.as_ref(), "delete").await?);
-    ctx.database.delete_api_key(&body.key_id).await?;
+    let key =
+        helpers::get_owned_api_key(ctx, config, &body.key_id, user_id.as_ref(), "delete").await?;
+    config.remove_key(ctx, &key).await?;
     plugin.maybe_delete_expired(ctx).await?;
     Ok(serde_json::json!({ "success": true }))
 }

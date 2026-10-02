@@ -58,6 +58,27 @@ until expiry. User snapshot refresh after a committed update is best effort.
 Use the same backend in `config.verification.secondary_storage` when verification
 credentials should also use secondary storage and atomic consumption.
 
+## API-key storage
+
+API keys use the database by default. Set `ApiKeyConfig::storage` to
+`ApiKeyStorageMode::SecondaryStorage` and supply `secondary_storage` with an
+`Arc<dyn CacheAdapter>`, or provide an application `custom_storage` implementing
+`ApiKeyStorage`. Custom storage takes precedence. This setting is independent
+of secondary session and verification storage.
+
+The plugin maintains serialized key/hash indexes with expiry and permanent
+reference lists. Custom storage receives an optional TTL; `None` means no
+expiration. Cache adapters need `set_without_expiry` support for permanent
+keys and lists; the bundled memory and Redis adapters provide it.
+
+Secondary-only quota and rate admission use a read/merge/write operation and
+can admit concurrent requests from the same snapshot. Reference-list mutations
+are serialized within one process. Set `fallback_to_database = true` for durable
+database rows and guarded database admission; successful writes refresh the
+cache from the current database row. Cache failures can leave successful
+prior writes in place. `defer_updates` starts secondary-only usage writes in
+background work observed through the application's background-task handler.
+
 ## Quick Start
 
 ```toml

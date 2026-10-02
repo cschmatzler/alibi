@@ -241,9 +241,8 @@ impl ApiKeyPlugin {
         } else {
             Self::hash_key(input.key)
         };
-        let api_key = ctx
-            .database
-            .get_api_key_by_hash(&hashed)
+        let api_key = lookup_config
+            .read_key(ctx, &hashed, true)
             .await?
             .ok_or(ApiKeyErrorCode::InvalidApiKey)?;
 
@@ -279,7 +278,7 @@ impl ApiKeyPlugin {
                 AuthError::internal(format!("Invalid stored API key expiration: {error}"))
             })?;
             if chrono::Utc::now() > expiration {
-                Self::delete_rejected_key(&api_key.id, config, ctx).await?;
+                Self::delete_rejected_key(&api_key, config, ctx).await?;
                 return Err(ApiKeyErrorCode::KeyExpired.into());
             }
         }
@@ -296,10 +295,14 @@ impl ApiKeyPlugin {
         // Source deletes only an initially observed zero/no-refill row.
         // A positive-snapshot loser of atomic consumption rejects without deletion.
         if api_key.remaining == Some(0.0) && api_key.refill_amount.is_none() {
-            Self::delete_rejected_key(&api_key.id, config, ctx).await?;
+            Self::delete_rejected_key(&api_key, config, ctx).await?;
             return Err(ApiKeyErrorCode::UsageExceeded.into());
         }
 
+        if !config.uses_database() {
+            let updated = Self::consume_secondary_usage(&api_key, config, ctx).await?;
+            return Ok(ApiKeyView::from(&updated));
+        }
         let updated = match ctx
             .database
             .consume_api_key_usage_from_snapshot(&api_key, config.rate_limit.enabled)
@@ -315,21 +318,41 @@ impl ApiKeyPlugin {
                 return Err(ApiKeyErrorCode::UsageExceeded.into());
             }
         };
+        config.cache_key(updated.as_ref()).await?;
         Ok(ApiKeyView::from(updated.as_ref()))
     }
 
     async fn delete_rejected_key(
-        id: &str,
+        key: &better_auth_core::ApiKey,
         config: &ApiKeyConfig,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<()> {
         if !config.defer_updates {
-            return ctx.database.delete_api_key(id).await;
+            return config.remove_key(ctx, key).await;
         }
         let database = std::sync::Arc::clone(&ctx.database);
-        let id = id.to_owned();
+        let key = key.clone();
+        let config = config.clone();
+        let storage = config.secondary();
         let completion = Self::start_background_work(async move {
-            if let Err(error) = database.delete_api_key(&id).await {
+            let deletion = async {
+                if config.storage == super::ApiKeyStorageMode::SecondaryStorage {
+                    let storage = storage
+                        .ok_or_else(|| AuthError::internal("Secondary storage is required"))?;
+                    super::storage::remove_storage(
+                        storage.as_ref(),
+                        &key,
+                        config.fallback_to_database,
+                    )
+                    .await?;
+                }
+                if config.uses_database() {
+                    database.delete_api_key(&key.id).await?;
+                }
+                Ok::<_, AuthError>(())
+            }
+            .await;
+            if let Err(error) = deletion {
                 tracing::error!(%error, "Deferred update failed");
             }
             Ok(())
@@ -490,7 +513,7 @@ impl ApiKeyPlugin {
             }
         };
         if config.defer_updates {
-            let completion = Self::start_expired_cleanup(ctx).await?;
+            let completion = self.start_configured_cleanup(ctx).await?;
             if let Some(handler) = &ctx.config.background_tasks {
                 if let Err(error) = handler.handle(completion) {
                     if error.status_code() >= 500
