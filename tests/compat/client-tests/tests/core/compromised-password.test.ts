@@ -75,6 +75,8 @@ compatScenario("published compromised password helper retains exact first-match 
     ["absent","01234567890123456789012345678901234:bad\n",false],
     ...["","01","+1","-0","-1"," 1","1 ","1\t","1.0","1e0","NaN","Infinity","9007199254740992","1\r"].map(value=>[`invalid-${JSON.stringify(value)}`,`${s}:${value}`,null] as [string,string,null]),
     ["JSON-string",JSON.stringify(`${s}:2\r\n`),true,200,"application/json"],
+    ["JSON-lone-surrogate",`"${s}:\\ud800"`,null,200,"application/json"],
+    ["JSON-unrelated-surrogate",`"${s}:1\\n\\ud800"`,true,200,"application/json"],
     ["JSON-object",'{"matching":"ignored"}',null,200,"application/json"],
     ["JSON-number","1e500",null],["JSON-null","null",null],["binary",`${s}:1`,null,200,"application/octet-stream"],
     ["provider-status",'{"service":"unavailable"}',null,503,"application/json"],
@@ -236,7 +238,7 @@ compatScenario("expired reset and OTP proofs reject before compromised-password 
     const rejected=await reset();if("error" in rejected)expect(rejected.error?.status).toBe(400);else expect(rejected.status).toBe(400);
     const after=await state(ctx);expect(after.users).toEqual(before.users);expect(after.accounts).toEqual(before.accounts);expect(after.sessions).toEqual(before.sessions);expect(after.events).toEqual([]);expect(after.receipts).toEqual([]);
     const replay=await reset();if("error" in replay)expect(replay.error?.status).toBe(400);else expect(replay.status).toBe(400);expect(await state(ctx)).toEqual(after);
-    observations.push({method,signup,requested,delivered:observed(delivered),proof:method==="reset"?proof:{token:proof,length:6},expired,configured,before:observed(before),rejected,after:observed(after),replay});
+    observations.push({method,signup,requested,delivered:observed(delivered),proof:{token:proof,length:proof.length},expired,configured,before:observed(before),rejected,after:observed(after),replay});
   }
   await unchanged(ctx,other);return {foreign:other,observations};
 },["POST /reset-password","POST /email-otp/reset-password","POST /phone-number/reset-password"]);

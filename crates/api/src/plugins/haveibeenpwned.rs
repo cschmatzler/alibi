@@ -99,12 +99,58 @@ impl PwnedPasswordClient {
             return Err(retry_error());
         }
         let text = response.text().await.map_err(|_| retry_error())?;
-        let text = match better_auth_core::utils::json::parse_value(&text) {
-            Ok(better_auth_core::utils::json::JsValue::String(value)) => value,
-            Ok(_) => return Err(retry_error()),
-            Err(_) => text,
-        };
+        let text = response_text(text)?;
         compromise_count(&text, suffix).map(|count| count > 0)
+    }
+}
+
+fn response_text(text: String) -> AuthResult<String> {
+    match better_auth_core::utils::json::parse_value(&text) {
+        Ok(better_auth_core::utils::json::JsValue::String(value)) => Ok(value),
+        Ok(_) => Err(retry_error()),
+        Err(_) if serde_json::from_str::<serde::de::IgnoredAny>(&text).is_ok() => {
+            // JavaScript permits escaped unpaired UTF-16 surrogates in JSON.
+            // They cannot match the ASCII suffix/count grammar, but preceding
+            // valid lines still own the result. Preserve those lines rather
+            // than treating the quoted JSON envelope as a raw range response.
+            let quoted = text.trim_matches([' ', '\t', '\r', '\n']);
+            if !quoted.starts_with('"') {
+                return Err(retry_error());
+            }
+            let mut units = Vec::new();
+            let mut chars = quoted[1..quoted.len() - 1].chars();
+            while let Some(character) = chars.next() {
+                let character = if character == '\\' {
+                    match chars.next().ok_or_else(retry_error)? {
+                        'u' => {
+                            let mut unit = 0u16;
+                            for _ in 0..4 {
+                                let digit = chars
+                                    .next()
+                                    .and_then(|digit| digit.to_digit(16))
+                                    .ok_or_else(retry_error)?;
+                                unit =
+                                    unit * 16 + u16::try_from(digit).map_err(|_| retry_error())?;
+                            }
+                            units.push(unit);
+                            continue;
+                        }
+                        'b' => '\u{8}',
+                        'f' => '\u{c}',
+                        'n' => '\n',
+                        'r' => '\r',
+                        't' => '\t',
+                        character @ ('"' | '\\' | '/') => character,
+                        _ => return Err(retry_error()),
+                    }
+                } else {
+                    character
+                };
+                units.extend(character.encode_utf16(&mut [0; 2]).iter().copied());
+            }
+            Ok(String::from_utf16_lossy(&units))
+        }
+        Err(_) => Ok(text),
     }
 }
 
