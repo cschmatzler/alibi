@@ -164,6 +164,16 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       }
     }
   }
+  function collectFixtureTokenDate(a: Record<string, unknown>, b: Record<string, unknown>, left: RequestWindow, right: RequestWindow) {
+    // The local GitLab token endpoint returns this exact token with expires_in
+    // 3600. Its deadline precedes account creation and belongs to the callback.
+    if (a.providerId !== "gitlab" || b.providerId !== "gitlab" || a.accessToken !== "fixture-gitlab-access" || b.accessToken !== "fixture-gitlab-access"
+      || !isDate(a.accessTokenExpiresAt) || !isDate(b.accessTokenExpiresAt)) return;
+    const owners = dateOwners(a, b);
+    if (inWindows(Date.parse(a.accessTokenExpiresAt) - 3600000, Date.parse(b.accessTokenExpiresAt) - 3600000, left, right))
+      approveDate(owners, "accessTokenExpiresAt", a.accessTokenExpiresAt, b.accessTokenExpiresAt);
+    else for (const owner of owners) invalidLifetimes.add(dateKey(owner, "accessTokenExpiresAt", a.accessTokenExpiresAt, b.accessTokenExpiresAt));
+  }
   if (record(normalizedLeft) && record(normalizedRight) && Array.isArray(normalizedLeft.traces) && Array.isArray(normalizedRight.traces)) {
     const rightTraces = normalizedRight.traces;
     normalizedLeft.traces.forEach((trace, index) => {
@@ -250,7 +260,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       if (!record(a) || !record(b) || !left || !right || a.method !== b.method || typeof a.path !== "string" || typeof b.path !== "string" || a.path.split("?")[0] !== b.path.split("?")[0]) return [];
       return [{a, b, left, right, path: a.path.split("?")[0]!}];
     }) : [];
-  function controlBody(window: RequestWindow, kind: "member-addition" | "social-provider") {
+  function controlBody(window: RequestWindow, kind: "member-addition" | "social-provider" | "user-validation") {
     const observation = window.controlObservation;
     return observation?.kind === kind && record(observation.body)
       && observation.digest === createHash("sha256").update(JSON.stringify(observation.body)).digest("hex") ? observation.body : undefined;
@@ -278,6 +288,42 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           approveDate(dateOwners(am, bm), "createdAt", am.createdAt, bm.createdAt);
       });
     }
+    if (["/__test/user-validation/state", "/__test/social-provider/state"].includes(observer.path) && context.sessionCookieSecret) {
+      const kind = observer.path.includes("user-validation") ? "user-validation" : "social-provider";
+      const a = controlBody(observer.left, kind), b = controlBody(observer.right, kind);
+      if (!a || !b || !Array.isArray(a.accounts) || !Array.isArray(b.accounts) || !Array.isArray(a.users) || !Array.isArray(b.users)) continue;
+      const leftUsers = a.users, rightUsers = b.users;
+      for (const producer of previous) {
+        const callback = /^(\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth))\/callback\/([^/]+)$/.exec(producer.path);
+        if (!callback || producer.a.method !== "GET" || producer.a.responseStatus !== 302 || producer.b.responseStatus !== 302) continue;
+        const token = (window: RequestWindow) => window.sessionCookie && sessionCookieName.test(window.sessionCookie.slice(0, window.sessionCookie.indexOf("=")))
+          ? signedCookie(window.sessionCookie.slice(window.sessionCookie.indexOf("=") + 1)).token : undefined;
+        const at = token(producer.left), bt = token(producer.right), pair = JSON.stringify([at, bt]), owner = issuances.get(pair);
+        if (!at || !bt || !owner || !signedCookieIssuances.has(pair) || owner.authPath !== callback[1]
+          || owner.left.finishedAt > producer.left.startedAt || owner.right.finishedAt > producer.right.startedAt
+          || !previous.slice(previous.indexOf(producer) + 1).some(candidate => candidate.left === owner.left && candidate.right === owner.right)) continue;
+        // Linking returns a redirect with no new session. Its authenticated
+        // request owns only account rows newly observed after this callback.
+        const before = previous.slice(previous.indexOf(producer) + 1).find(candidate => candidate.path === observer.path && candidate.a.method === "GET"
+          && candidate.a.responseStatus === 200 && candidate.b.responseStatus === 200
+          && candidate.left.finishedAt <= producer.left.startedAt && candidate.right.finishedAt <= producer.right.startedAt);
+        const priorLeft = before && controlBody(before.left, kind), priorRight = before && controlBody(before.right, kind);
+        if (!priorLeft || !priorRight || !Array.isArray(priorLeft.accounts) || !Array.isArray(priorRight.accounts)) continue;
+        const leftAccounts = priorLeft.accounts, rightAccounts = priorRight.accounts;
+        a.accounts.forEach((account, accountIndex) => {
+          const other = (b.accounts as unknown[])[accountIndex];
+          if (!record(account) || !record(other) || typeof account.id !== "string" || typeof other.id !== "string" || account.providerId !== callback[2] || other.providerId !== callback[2]
+            || account.userId !== owner.leftUser || other.userId !== owner.rightUser
+            || !isDate(account.createdAt) || !isDate(other.createdAt)
+            || !inWindows(Date.parse(account.createdAt), Date.parse(other.createdAt), producer.left, producer.right)
+            || !leftUsers.some((user: unknown) => record(user) && user.id === account.userId)
+            || !rightUsers.some((user: unknown) => record(user) && user.id === other.userId)
+            || leftAccounts.some(row => record(row) && row.id === account.id) || rightAccounts.some(row => record(row) && row.id === other.id)) return;
+          collectResponseDates(account, other, producer.left, producer.right);
+          collectFixtureTokenDate(account, other, producer.left, producer.right);
+        });
+      }
+    }
     if (observer.path === "/__test/social-provider/state" && context.sessionCookieSecret) {
       const a = controlBody(observer.left, "social-provider"), b = controlBody(observer.right, "social-provider");
       if (!a || !b || !Array.isArray(a.sessions) || !Array.isArray(b.sessions) || !Array.isArray(a.users) || !Array.isArray(b.users) || !Array.isArray(a.accounts) || !Array.isArray(b.accounts)) continue;
@@ -300,7 +346,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         const au = user(a, am.userId), bu = user(b, bm.userId), aa = account(a, am.userId), ba = account(b, bm.userId);
         if (!record(au) || !record(bu) || !record(aa) || !record(ba)) continue;
         collectResponseDates({session: am, user: au, account: aa}, {session: bm, user: bu, account: ba}, producer.left, producer.right);
-        for (const [left, right, field, lifetime] of [[am, bm, "expiresAt", 604800000], [aa, ba, "accessTokenExpiresAt", 3600000]] as const) {
+        collectFixtureTokenDate(aa, ba, producer.left, producer.right);
+        for (const [left, right, field, lifetime] of [[am, bm, "expiresAt", 604800000]] as const) {
           if (isDate(left[field]) && isDate(right[field]) && inWindows(Date.parse(left[field]) - lifetime, Date.parse(right[field]) - lifetime, producer.left, producer.right))
             approveDate(dateOwners(left, right), field, left[field], right[field]);
         }

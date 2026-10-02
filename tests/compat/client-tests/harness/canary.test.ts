@@ -274,15 +274,26 @@ test("request clocks tolerate slower execution while preserving session lifetime
   const secret = "producer-clock-secret";
   async function capture(side: string) {
     let member: Record<string, unknown>, social: Record<string, unknown>;
+    const linkUser = `${side}-link-user`, linkToken = `${side}-link-token`;
+    const linkedAccounts: Record<string, unknown>[] = [];
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
       const path = new URL(request.url).pathname, now = Date.now(), iso = (offset = 0) => new Date(now + offset).toISOString();
+      if (path.endsWith("/sign-up/email")) {
+        const signed = encodeURIComponent(`${linkToken}.${createHmac("sha256", secret).update(linkToken).digest("base64")}`);
+        return Response.json({token: linkToken, user: {id: linkUser}}, {headers: {"set-cookie": `better-auth.session_token=${signed}; Path=/; HttpOnly; Max-Age=604800`}});
+      }
+      if (path === "/__test/profiles/validation/api/auth/callback/gitlab") {
+        linkedAccounts.push({id: `${side}-linked-account`, userId: linkUser, providerId: "gitlab", accountId: "1832", accessToken: "fixture-gitlab-access", accessTokenExpiresAt: iso(3600000), createdAt: iso(), updatedAt: iso()});
+        return new Response(null, {status: 302, headers: {location: "/done"}});
+      }
+      if (path === "/__test/user-validation/state") return Response.json({users: [{id: linkUser}], accounts: linkedAccounts, sessions: []});
       if (path.endsWith("/server")) {
         member = { id: `${side}-member`, organizationId: `${side}-org`, userId: `${side}-user`, role: "member", createdAt: iso() };
         return Response.json({ code: "AFTER_HOOK_REJECTED" }, { status: 500 });
       }
       if (path.endsWith("/callback/gitlab")) {
         const token = `${side}-session`, user = { id: `${side}-user`, createdAt: iso(), updatedAt: iso() };
-        social = { users: [user], accounts: [{ id: `${side}-account`, userId: user.id, providerId: "gitlab", createdAt: iso(), updatedAt: iso(), accessTokenExpiresAt: iso(3600000) }],
+        social = { users: [user], accounts: [{ id: `${side}-account`, userId: user.id, providerId: "gitlab", accessToken: "fixture-gitlab-access", createdAt: iso(), updatedAt: iso(), accessTokenExpiresAt: iso(3600000) }],
           sessions: [{ id: `${side}-session-id`, userId: user.id, token, createdAt: iso(), updatedAt: iso(), expiresAt: iso(604800000) }] };
         const cookie = encodeURIComponent(`${token}.${createHmac("sha256", secret).update(token).digest("base64")}`);
         return new Response(null, { status: 302, headers: { location: "/done", "set-cookie": `better-auth.session_token=${cookie}; Path=/; HttpOnly` } });
@@ -299,7 +310,11 @@ test("request clocks tolerate slower execution while preserving session lifetime
       const addition: unknown = await (await traced("/__test/organization-member-addition/state")).json();
       await traced("/__test/profiles/social-gitlab-issuer-slashes/api/auth/callback/gitlab", {redirect: "manual"});
       const oauth: unknown = await (await traced("/__test/social-provider/state")).json();
-      return { value: {observation: {addition, oauth}, traces}, windows: traces.map(trace => trace[requestWindow]!), baseURL: server.url.origin };
+      await traced("/__test/profiles/validation/api/auth/sign-up/email", {method: "POST"});
+      await traced("/__test/user-validation/state");
+      await traced("/__test/profiles/validation/api/auth/callback/gitlab", {redirect: "manual"});
+      const linked: unknown = await (await traced("/__test/user-validation/state")).json();
+      return { value: {observation: {addition, oauth, linked}, traces}, windows: traces.map(trace => trace[requestWindow]!), baseURL: server.url.origin };
     } finally { server.stop(true); }
   }
   const first = await capture("left");
@@ -309,7 +324,7 @@ test("request clocks tolerate slower execution while preserving session lifetime
     leftStartedAt: first.windows[0]!.startedAt, rightStartedAt: second.windows[0]!.startedAt - 10000,
     leftRequestWindows: first.windows, rightRequestWindows: second.windows };
   expect(compareValues(first.value, second.value, producerClocks)).toEqual([]);
-  for (const mutation of ["member-owner", "missing-member", "member-digest", "callback-signature", "callback-status", "session-owner", "oauth-digest", "session-lifetime"]) {
+  for (const mutation of ["member-owner", "missing-member", "member-digest", "callback-signature", "callback-status", "session-owner", "oauth-digest", "session-lifetime", "link-owner", "link-path", "link-signature", "link-status", "link-date", "link-digest", "preexisting-link", "link-future-issuer", "link-token", "link-lifetime"]) {
     const value = structuredClone(second.value), clocks = structuredClone(producerClocks);
     const memberControl = clocks.rightRequestWindows[1]!.controlObservation!, oauthControl = clocks.rightRequestWindows[3]!.controlObservation!;
     if (mutation === "member-owner") clocks.rightRequestWindows[0]!.memberAdditionOwner!.userId = "foreign";
@@ -320,9 +335,25 @@ test("request clocks tolerate slower execution while preserving session lifetime
     if (mutation === "session-owner") (oauthControl.body as {sessions: {userId: string}[]}).sessions[0]!.userId = "foreign";
     if (mutation === "oauth-digest") oauthControl.digest = "invalid";
     if (mutation === "session-lifetime") (value.observation.oauth as {sessions: {expiresAt: string}[]}).sessions[0]!.expiresAt = new Date(Date.now() + 123456789).toISOString();
-    for (const control of [memberControl, oauthControl]) if (control.digest !== "invalid") control.digest = createHash("sha256").update(JSON.stringify(control.body)).digest("hex");
-    const prefix = mutation.startsWith("member") || mutation === "missing-member" ? "observation.addition.receipts.0.member.createdAt" : "observation.oauth.sessions.0.";
-    expect(compareValues(first.value, value, clocks).some(diff => diff.path.startsWith(prefix))).toBe(true);
+    const linkedControl = clocks.rightRequestWindows[7]!.controlObservation!;
+    const linked = value.observation.linked as {accounts: Record<string, unknown>[]};
+    if (mutation === "link-owner") linked.accounts[0]!.userId = "foreign";
+    if (mutation === "link-path") value.traces[6]!.path = "/__test/profiles/foreign/api/auth/callback/gitlab";
+    if (mutation === "link-signature") clocks.rightRequestWindows[6]!.sessionCookie += "invalid";
+    if (mutation === "link-status") value.traces[6]!.responseStatus = 400;
+    if (mutation === "link-date") linked.accounts[0]!.createdAt = new Date(clocks.rightRequestWindows[6]!.finishedAt + 60000).toISOString();
+    if (["link-owner", "link-date"].includes(mutation)) (linkedControl.body as {accounts: unknown[]}).accounts = structuredClone(linked.accounts);
+    if (mutation === "link-future-issuer") clocks.rightRequestWindows[4]!.finishedAt = clocks.rightRequestWindows[6]!.finishedAt + 1;
+    if (mutation === "link-token") linked.accounts[0]!.accessToken = "unobserved-provider-token";
+    if (mutation === "link-lifetime") linked.accounts[0]!.accessTokenExpiresAt = new Date(Date.parse(String(linked.accounts[0]!.accessTokenExpiresAt)) + 1000).toISOString();
+    if (["link-token", "link-lifetime"].includes(mutation)) (linkedControl.body as {accounts: unknown[]}).accounts = structuredClone(linked.accounts);
+    if (mutation === "link-digest") linkedControl.digest = "invalid";
+    const beforeLink = clocks.rightRequestWindows[5]!.controlObservation!;
+    if (mutation === "preexisting-link") (beforeLink.body as {accounts: unknown[]}).accounts = structuredClone(linked.accounts);
+    for (const control of [memberControl, oauthControl, linkedControl, beforeLink]) if (control.digest !== "invalid") control.digest = createHash("sha256").update(JSON.stringify(control.body)).digest("hex");
+    const prefix = mutation.startsWith("member") || mutation === "missing-member" ? "observation.addition.receipts.0.member.createdAt" : mutation.startsWith("link-") || mutation === "preexisting-link" ? "observation.linked.accounts.0." : "observation.oauth.sessions.0.";
+    expect(compareValues(first.value, value, clocks).some(diff => diff.path.startsWith(prefix)
+      && (!mutation.startsWith("link-") && mutation !== "preexisting-link" || diff.path.endsWith(mutation === "link-token" || mutation === "link-lifetime" ? ".accessTokenExpiresAt" : ".createdAt")))).toBe(true);
   }
 });
 

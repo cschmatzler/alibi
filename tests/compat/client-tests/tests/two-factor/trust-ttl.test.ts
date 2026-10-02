@@ -748,17 +748,26 @@ for (const profile of [
       rotatedCookie,
       profile.endsWith("cleanup-disabled") ? 1200.875 : 2592000,
     );
+    const rotatedSession = await owner.getSession();
+    expect(rotatedSession.error).toBeNull();
+    expect(rotatedSession.data).toMatchObject({
+      session: {token: extra.data?.token, userId}, user: {id: userId},
+    });
+    const publicSessionRow = (result: typeof rotatedSession) => {
+      const session = z.object({id: z.string(), token: z.string(), userId: z.string(), expiresAt: z.date()}).parse(result.data?.session);
+      return {...session, expiresAt: session.expiresAt.toISOString()};
+    };
     const finalState = await ctx.readUserState({ userId });
     expect(
       z
         .object({
           sessions: z.array(
-            z.object({ token: z.string(), userId: z.string() }),
+            z.object({ id: z.string(), token: z.string(), userId: z.string(), expiresAt: z.string() }),
           ),
         })
         .parse(finalState).sessions,
     ).toEqual([
-      expect.objectContaining({ token: extra.data?.token, userId }),
+      publicSessionRow(rotatedSession),
     ]);
     // Better Call's actual atob accepts unused trailing Base64 bits while
     // requiring the outer signature's exact 44-character padded shape.
@@ -801,18 +810,23 @@ for (const profile of [
       aliasCookie,
       profile.endsWith("cleanup-disabled") ? 1200.875 : 2592000,
     );
+    const aliasSession = await owner.getSession();
+    expect(aliasSession.error).toBeNull();
+    expect(aliasSession.data).toMatchObject({
+      session: {token: alias.data?.token, userId}, user: {id: userId},
+    });
     const aliasState = await ctx.readUserState({ userId });
     expect(
       z
         .object({
           sessions: z.array(
-            z.object({ token: z.string(), userId: z.string() }),
+            z.object({ id: z.string(), token: z.string(), userId: z.string(), expiresAt: z.string() }),
           ),
         })
         .parse(aliasState).sessions,
     ).toEqual([
-      expect.objectContaining({ token: extra.data?.token, userId }),
-      expect.objectContaining({ token: alias.data?.token, userId }),
+      publicSessionRow(rotatedSession),
+      publicSessionRow(aliasSession),
     ]);
     const replayStart = history.length;
     const aliasReplay = await owner.signIn.email(
@@ -848,7 +862,9 @@ for (const profile of [
       extra,
       rotation: projectRows(rotation),
       finalState,
+      rotatedSession,
       alias,
+      aliasSession,
       aliasRows: projectRows(aliasRows),
       aliasState,
       aliasReplay,

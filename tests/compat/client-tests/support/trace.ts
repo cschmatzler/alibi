@@ -24,7 +24,7 @@ export type RequestWindow = {
   /** Integrity of the original complete parsed observer response, separate from compared output. */
   verificationObserverDigest?: string;
   /** Original narrow physical controls; their values are not transport output. */
-  controlObservation?: { kind: "member-addition" | "social-provider"; body: unknown; digest: string };
+  controlObservation?: { kind: "member-addition" | "social-provider" | "user-validation"; body: unknown; digest: string };
   memberAdditionOwner?: { organizationId: string; userId: string };
 };
 
@@ -236,10 +236,10 @@ export function createTracingFetch(
         catch { /* A non-JSON response remains literal and has no publication admission. */ }
       }
       let controlObservation: RequestWindow["controlObservation"];
-      if (request.method === "GET" && ["/__test/organization-member-addition/state", "/__test/social-provider/state"].includes(url.pathname)) {
+      if (request.method === "GET" && ["/__test/organization-member-addition/state", "/__test/social-provider/state", "/__test/user-validation/state"].includes(url.pathname)) {
         try {
           const body: unknown = JSON.parse(responseText);
-          controlObservation = { kind: url.pathname.includes("organization-member-addition") ? "member-addition" : "social-provider", body,
+          controlObservation = { kind: url.pathname.includes("organization-member-addition") ? "member-addition" : url.pathname.includes("user-validation") ? "user-validation" : "social-provider", body,
             digest: createHash("sha256").update(JSON.stringify(body)).digest("hex") };
         } catch { /* Non-JSON control responses cannot authorize dates. */ }
       }
