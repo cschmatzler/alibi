@@ -235,3 +235,43 @@ credentials against new and old passwords, old physical-cookie revocation,
 Source callback stages, subsequent sign-in and complete unchanged foreign rows.
 These proofs still precede the SIWE/SQLite-recovery composition and do not claim
 whole-issue completion or a full canonical/coverage result.
+
+
+The cached owner also owns actual refresh: a trusted fixture operator changes
+only the issued session's real SQLite expiry, then the public SDK must refresh
+that still-valid physical session. It protects onUpdate, transformed after-hook
+outputs, filtered-existing-user/raw-updated-session version/newSession stages
+and full foreign rows. No clock, authentication receipt or production flag is
+fabricated; the original actual token and request-owned expiry input are retained.
+Existing codec and plain session refresh owners cannot observe these arbitrary
+application field policies or trusted output callbacks.
+
+The SIWE/SQLite-recovery composition at 8d50f16c completed default 794/794 and
+optional 846/846 native tests, optional strict checks, actual fixture build and
+client type checking, followed by all six real SDK owners with 840 assertions:
+`/tmp/issue184-replacement-composed-native-owner.log`, terminal 0. The later
+cookie/legacy-name parent was composed cleanly at 560e5617; this earlier native
+matrix is not attributed to that later parent.
+
+The refresh before owner completed Source's lifecycle and failed only on Native
+retaining session-initial instead of the actual onUpdate session-updated output:
+`/tmp/issue184-refresh-before-ready-owner.log`, terminal 1, 268 assertions, Rust
+phase recorded in `/tmp/issue184-refresh-before-ready-events.jsonl`. The earlier
+fixture compile diagnostic (`/tmp/issue184-refresh-before-owner.log`) is not a
+parity result. A separate installed-factory Source audit retained real refresh
+before/after/version/newSession receipts in
+`/tmp/issue184-source-refresh-stage-ready-probe.log`; its original incomplete
+cookie-jar diagnostic is retained and supplies no parity evidence.
+
+The single-write refresh operation shares the actual SeaORM field-update
+lifecycle: physical before hooks, pending configured field input/onUpdate
+binding, one active-row write and physical after hooks. Initialized record
+projection and adapter after observation then use that final row. Custom store
+fallbacks retain plain refresh and fail closed when additional writes require
+unsupported binding. The refreshed cache/newSession publication retains the
+filtered existing user and raw updated session without rerunning output
+callbacks. All six real SDK owners passed 928 assertions together with optional
+strict, actual fixture build and client type checking in
+`/tmp/issue184-refresh-after-owner.log`, terminal 0, on the cookie-composed
+checkpoint plus this repair. Account output, schema documentation and complete
+canonical/coverage proofs remain outstanding.

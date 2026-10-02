@@ -2,7 +2,11 @@
 use crate::additional_field_models::{
     ApplicationSchema, application_account, application_session, application_user,
 };
-use axum::{Json, Router, extract::Query, routing::get};
+use axum::{
+    Json, Router,
+    extract::Query,
+    routing::{get, post},
+};
 use better_auth::field_policy::{FieldConfig, FieldConfigs};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -80,6 +84,16 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
             )));
         } else if output {
             field = field.default_value(json!("drop"));
+        }
+        if mode == "cached" && entity == "session" && name == "label" {
+            let events = events.clone();
+            field = field.on_update(move || {
+                events
+                    .lock()
+                    .expect("application receipts")
+                    .push(json!({"phase":"on-update","entity":entity,"field":"label"}));
+                JsValue::String("session-updated".into())
+            });
         }
         if name == "hidden" {
             field = field.hidden();
@@ -428,6 +442,12 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
     ))
 }
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RewindInput {
+    token: String,
+    expires_at: chrono::DateTime<chrono::Utc>,
+}
+#[derive(Deserialize)]
 struct StateQuery {
     profile: Option<String>,
 }
@@ -472,22 +492,51 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
         drop(states.insert(mode, application.clone()));
         applications.push(application);
     }
-    let router = router.route(
-        "/__test/additional-fields/state",
-        get(move |Query(query): Query<StateQuery>| {
-            let application = states
-                .get(query.profile.as_deref().unwrap_or("normal"))
-                .cloned();
-            async move {
-                let Some(application) = application else {
-                    return Ok::<_, AuthError>((
-                        axum::http::StatusCode::NOT_FOUND,
-                        Json(json!({"message":"Unknown application"})),
-                    ));
-                };
-                Ok((axum::http::StatusCode::OK, Json(application.state().await?)))
-            }
-        }),
-    );
+    let operator_states = states.clone();
+    let router = router
+        .route(
+            "/__test/additional-fields/rewind-session",
+            post(
+                move |Query(query): Query<StateQuery>, Json(input): Json<RewindInput>| {
+                    let application = operator_states
+                        .get(query.profile.as_deref().unwrap_or("normal"))
+                        .cloned();
+                    async move {
+                        use better_auth_seaorm::sea_orm::{ColumnTrait, QueryFilter};
+                        let application = application
+                            .ok_or_else(|| AuthError::bad_request("Unknown application"))?;
+                        application_session::Entity::update_many()
+                            .col_expr(
+                                application_session::Column::ExpiresAt,
+                                better_auth_seaorm::sea_orm::sea_query::Expr::value(
+                                    input.expires_at,
+                                ),
+                            )
+                            .filter(application_session::Column::Token.eq(input.token))
+                            .exec(&application.database)
+                            .await
+                            .map_err(db_error)?;
+                        Ok::<_, AuthError>(Json(application.state().await?))
+                    }
+                },
+            ),
+        )
+        .route(
+            "/__test/additional-fields/state",
+            get(move |Query(query): Query<StateQuery>| {
+                let application = states
+                    .get(query.profile.as_deref().unwrap_or("normal"))
+                    .cloned();
+                async move {
+                    let Some(application) = application else {
+                        return Ok::<_, AuthError>((
+                            axum::http::StatusCode::NOT_FOUND,
+                            Json(json!({"message":"Unknown application"})),
+                        ));
+                    };
+                    Ok((axum::http::StatusCode::OK, Json(application.state().await?)))
+                }
+            }),
+        );
     Ok((router, Fixture { applications }))
 }

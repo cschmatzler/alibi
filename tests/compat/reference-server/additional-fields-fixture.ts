@@ -39,7 +39,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       return `bound:${value}`;
     };
     const fields = (entity: string) => ({
-      label: { type: "string" as const, required: false, defaultValue: `${entity}-initial`, ...(entity === "user" ? { fieldName: "user_label" } : {}), ...(transformed ? { transform: { output: output(entity, "label") } } : mode === "plugin" ? { transform: { output: async (value: unknown) => { events.push({phase:"configured-output",entity,field:"label",value}); return {configured:value}; } } } : {}) },
+      label: { type: "string" as const, required: false, defaultValue: `${entity}-initial`, ...(mode === "cached" && entity === "session" ? {onUpdate:()=>{events.push({phase:"on-update",entity,field:"label"});return "session-updated";}} : {}), ...(entity === "user" ? { fieldName: "user_label" } : {}), ...(transformed ? { transform: { output: output(entity, "label") } } : mode === "plugin" ? { transform: { output: async (value: unknown) => { events.push({phase:"configured-output",entity,field:"label",value}); return {configured:value}; } } } : {}) },
       hidden: { type: "string" as const, required: false, returned: false, defaultValue: `${entity}-secret`, ...(transformed ? { transform: { output: output(entity, "hidden") } } : {}) },
       omitted: { type: "string" as const, required: false, ...(transformed ? { defaultValue: "drop", transform: { output: output(entity, "omitted") } } : {}) },
       ...(entity === "user" ? { readonly: { type: "string" as const, required: false, ...(mode === "policy" ? { input: false } : {}), ...(transformed ? { input: false, defaultValue: "initial", onUpdate: () => "updated", transform: { input: (value: unknown) => { events.push({ phase: "input", entity, field: "readonly", value }); return `${value}:bound`; } } } : {}) } } : {}),
@@ -85,12 +85,17 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       events.length = 0;
       for (const table of ["app_session", "app_account", "app_verification", "app_user"]) database.run(`DELETE FROM ${table}`);
     }
-  }, handle(request: Request) {
+  }, async handle(request: Request) {
     const url = new URL(request.url);
-    if (url.pathname !== "/__test/additional-fields/state") return null;
+    if (url.pathname !== "/__test/additional-fields/state" && url.pathname !== "/__test/additional-fields/rewind-session") return null;
     const application = applications.get(url.searchParams.get("profile") ?? "normal");
     if (!application) return Response.json({ message: "Unknown application" }, { status: 404 });
     const { database, events } = application;
+    if(url.pathname === "/__test/additional-fields/rewind-session") {
+      const {token,expiresAt}=await request.json() as {token:string;expiresAt:string};
+      if(request.method!=="POST" || typeof token!=="string" || !Number.isFinite(new Date(expiresAt).getTime())) return Response.json({message:"Invalid operator input"},{status:400});
+      database.run("UPDATE app_session SET expiresAt=? WHERE token=?",[new Date(expiresAt).getTime(),token]);
+    }
     const rows = (table: string) => database.query(`SELECT * FROM ${table}`).all().map(value => {
       const row = value as Record<string, unknown>;
       for (const field of ["createdAt", "updatedAt", "expiresAt", "accessTokenExpiresAt", "refreshTokenExpiresAt"]) if (row[field] !== null && row[field] !== undefined) row[field] = new Date(row[field] as string | number).toISOString();

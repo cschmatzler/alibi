@@ -667,7 +667,10 @@ pub async fn authenticated<S: AuthSchema>(
             )?,
         );
     }
-    if !suppressed {
+    if read.refreshed {
+        let user = ctx.filter_user_record(user.clone());
+        emit_issuance(ctx, &user, &session).await?;
+    } else if !suppressed {
         for header in stored_read_headers(ctx, &user, &session, &request.headers).await? {
             request.queue_response_header("Set-Cookie", header);
         }

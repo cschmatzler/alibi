@@ -112,6 +112,55 @@ where
     S: AuthSchema,
     S::Session: SeaOrmSessionModel,
 {
+    async fn update_session_with_fields(
+        &self,
+        token: &str,
+        expires_at: Option<DateTime<Utc>>,
+        mut fields: better_auth_core::field_policy::FieldValues,
+    ) -> AuthResult<Option<S::Session>> {
+        let hook_context = self.hook_context(None);
+        for hook in self.hooks() {
+            if hook
+                .before_update_session(token, &mut fields, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Ok(None);
+            }
+        }
+        let mut query = <S::Session as SeaOrmSessionModel>::Entity::find()
+            .filter(S::Session::token_column().eq(token));
+        if expires_at.is_some() {
+            query = query.filter(S::Session::active_column().eq(true));
+        }
+        let Some(model) = query.one(self.connection()).await.map_err(map_db_err)? else {
+            return Ok(None);
+        };
+        fields.apply_adapter_transforms_async().await?;
+        let mut active = model.into_active_model();
+        let backend = self.connection().get_database_backend();
+        if !fields.is_empty() {
+            for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
+                let value =
+                    crate::session_fields::prepare_value(self.connection(), &column, value).await?;
+                S::Session::set_additional_field(&mut active, column, value, backend)?;
+            }
+        }
+        if let Some(expires_at) = expires_at {
+            S::Session::set_expires_at(&mut active, expires_at);
+        }
+        S::Session::set_updated_at(&mut active, Utc::now());
+        let session = match active.update(self.connection()).await {
+            Ok(session) => session,
+            Err(sea_orm::DbErr::RecordNotUpdated) => return Ok(None),
+            Err(error) => return Err(map_db_err(error)),
+        };
+        for hook in self.hooks() {
+            hook.after_update_session(&session, &hook_context).await?;
+        }
+        Ok(Some(session))
+    }
+
     pub(super) async fn update_session_scope_with_connection<C: ConnectionTrait>(
         &self,
         connection: &C,
@@ -188,46 +237,9 @@ where
     async fn update_session_fields(
         &self,
         token: &str,
-        mut fields: better_auth_core::field_policy::FieldValues,
+        fields: better_auth_core::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>> {
-        let hook_context = self.hook_context(None);
-        for hook in self.hooks() {
-            if hook
-                .before_update_session(token, &mut fields, &hook_context)
-                .await?
-                .is_cancelled()
-            {
-                return Ok(None);
-            }
-        }
-        let Some(model) = <S::Session as SeaOrmSessionModel>::Entity::find()
-            .filter(S::Session::token_column().eq(token))
-            .one(self.connection())
-            .await
-            .map_err(map_db_err)?
-        else {
-            return Ok(None);
-        };
-        fields.apply_adapter_transforms_async().await?;
-        let mut active = model.into_active_model();
-        let backend = self.connection().get_database_backend();
-        if !fields.is_empty() {
-            for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value =
-                    crate::session_fields::prepare_value(self.connection(), &column, value).await?;
-                S::Session::set_additional_field(&mut active, column, value, backend)?;
-            }
-        }
-        S::Session::set_updated_at(&mut active, Utc::now());
-        let session = match active.update(self.connection()).await {
-            Ok(session) => session,
-            Err(sea_orm::DbErr::RecordNotUpdated) => return Ok(None),
-            Err(error) => return Err(map_db_err(error)),
-        };
-        for hook in self.hooks() {
-            hook.after_update_session(&session, &hook_context).await?;
-        }
-        Ok(Some(session))
+        self.update_session_with_fields(token, None, fields).await
     }
 
     async fn update_session_expiry(
@@ -246,24 +258,18 @@ where
         token: &str,
         expires_at: DateTime<Utc>,
     ) -> AuthResult<Option<S::Session>> {
-        let Some(model) = <S::Session as SeaOrmSessionModel>::Entity::find()
-            .filter(<S::Session as SeaOrmSessionModel>::token_column().eq(token))
-            .filter(<S::Session as SeaOrmSessionModel>::active_column().eq(true))
-            .one(self.connection())
+        self.update_session_with_fields(token, Some(expires_at), Default::default())
             .await
-            .map_err(map_db_err)?
-        else {
-            return Ok(None);
-        };
+    }
 
-        let mut active = model.into_active_model();
-        S::Session::set_expires_at(&mut active, expires_at);
-        S::Session::set_updated_at(&mut active, Utc::now());
-        match active.update(self.connection()).await {
-            Ok(updated) => Ok(Some(updated)),
-            Err(sea_orm::DbErr::RecordNotUpdated) => Ok(None),
-            Err(error) => Err(map_db_err(error)),
-        }
+    async fn refresh_session_with_fields(
+        &self,
+        token: &str,
+        expires_at: DateTime<Utc>,
+        fields: better_auth_core::field_policy::FieldValues,
+    ) -> AuthResult<Option<S::Session>> {
+        self.update_session_with_fields(token, Some(expires_at), fields)
+            .await
     }
 
     async fn delete_session(&self, token: &str) -> AuthResult<()> {

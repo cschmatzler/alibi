@@ -591,7 +591,23 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<Option<S::Session>> {
-        self.inner.refresh_session(token, expires_at).await
+        self.refresh_session_with_fields(
+            token,
+            expires_at,
+            crate::field_policy::FieldValues::default(),
+        )
+        .await
+    }
+    async fn refresh_session_with_fields(
+        &self,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+        mut fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<S::Session>> {
+        self.adapter_fields.attach(&mut fields, false);
+        self.inner
+            .refresh_session_with_fields(token, expires_at, fields)
+            .await
     }
     async fn update_session_expiry(
         &self,
@@ -2076,6 +2092,25 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<()>;
+
+    /// Refresh expiry and configured fields in one physical update. Adapters
+    /// supporting additional values must override this operation so their actual
+    /// before hooks precede binding and their after hooks see the final row.
+    /// The fallback preserves plain refresh and fails closed on additional writes.
+    async fn refresh_session_with_fields(
+        &self,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+        mut fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<S::Session>> {
+        fields.apply_adapter_transforms_async().await?;
+        if !fields.is_empty() {
+            return Err(AuthError::NotImplemented(
+                "The store does not support refresh field updates".into(),
+            ));
+        }
+        self.refresh_session(token, expires_at).await
+    }
 
     /// Refresh the persisted expiry and return the updated snapshot. A session
     /// removed before the update returns `None`, never its old credentials.

@@ -888,7 +888,7 @@ const server = Bun.serve({
       if(kickControl)return kickControl;
       const cognitoControl=await cognitoFixture.handle(request);
       if(cognitoControl)return cognitoControl;
-      const additionalControl = additionalFields.handle(request);
+      const additionalControl = await additionalFields.handle(request);
       if (additionalControl) return additionalControl;
       const atlassianControl=await atlassianFixture.handle(request);
       if(atlassianControl)return atlassianControl;
