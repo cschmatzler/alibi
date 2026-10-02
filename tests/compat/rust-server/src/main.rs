@@ -11,6 +11,7 @@ mod organization_member_role_hooks_fixture;
 mod organization_membership_policy_fixture;
 mod organization_transport_probe;
 mod organization_update_hooks_fixture;
+mod physical_cookie_fixture;
 mod session_cookie_cache_fixture;
 mod team_fixture;
 mod two_factor_pending_lookup_fixture;
@@ -791,6 +792,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key_background_fixture::router(&config, database.clone()).await?;
     let api_key_hook_router = api_key_hook_fixture::router(&config, database.clone()).await?;
     let multiple_session_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let physical_cookie_router = physical_cookie_fixture::router(&config, database.clone()).await?;
     let dispatch_router = dispatch_fixture::router(&config, database.clone()).await?;
     let bearer_router =
         bearer_fixture::router(&config, database.clone(), multiple_session_counter.clone()).await?;
@@ -1925,6 +1927,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(bearer_router)
         .merge(captcha_router)
         .merge(dispatch_router)
+        .merge(physical_cookie_router)
         .merge(multiple_session_router)
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { createCaptchaFixture } from "./captcha-fixture";
+import {physicalCookieProfiles} from "./physical-cookie-fixture";
 import { createJwtKeyringFixture } from "./jwt-keyring-fixture";
 import { createRemoteJwtFixture } from "./jwt-remote-fixture";
 import { createLastLoginMethodFixture } from "./last-login-method-fixture";
@@ -597,6 +598,8 @@ const twoFactorTotpFixture = createTwoFactorTotpFixture(authOptions);
 const twoFactorPolicyFixture = createTwoFactorPolicyFixture(authOptions, database);
 const twoFactorOtpFixture = createTwoFactorOtpFixture(authOptions, database);
 const twoFactorDeliveryFixture = createTwoFactorDeliveryFixture(authOptions, database);
+const physicalCookies=physicalCookieProfiles(authOptions,database);
+for(const [path,auth] of physicalCookies.profiles)verificationProfiles.set(path,auth);
 const auth = betterAuth(authOptions);
 const authContext = await auth.$context;
 const oneTapProfiles = createOneTapProfiles(authOptions);
@@ -1125,6 +1128,8 @@ const server = Bun.serve({
       if (apiKeyGenerationControl) return apiKeyGenerationControl;
       const apiKeyOptionsControl = await apiKeyOptionsFixture.control(request);
       if (apiKeyOptionsControl) return apiKeyOptionsControl;
+      const physicalCookieControl=physicalCookies.control(request);
+      if(physicalCookieControl)return physicalCookieControl;
       const apiKeyHookControl = await apiKeyHookFixture.control(request);
       if (apiKeyHookControl) return apiKeyHookControl;
       if (url.pathname === "/__test/api-key/verify" && request.method === "POST") {

@@ -4,11 +4,11 @@
 //! duplicated across every plugin (`email_password`, `passkey`, `two_factor`,
 //! `admin`, `password_management`, `session_management`, `email_verification`).
 
-use crate::config::AuthConfig;
+use crate::config::{AuthConfig, CookieAttributes, SameSite};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use cookie::{Cookie, SameSite as CookieSameSite};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
+use std::fmt::Write as _;
 
 /// Build a `Set-Cookie` header value for an arbitrary cookie using the auth
 /// config's session cookie attributes for consistency.
@@ -17,8 +17,7 @@ pub fn create_cookie(name: &str, value: &str, max_age_seconds: i64, config: &Aut
     create_session_like_cookie(name, value, Some(max_age_seconds), config)
 }
 
-/// Build a `Set-Cookie` header value for a session token using the `cookie`
-/// crate for correct formatting and escaping.
+/// Build a `Set-Cookie` header value for a signed session token.
 #[must_use]
 pub fn create_session_cookie(token: &str, config: &AuthConfig) -> String {
     create_session_cookie_with_max_age(
@@ -41,7 +40,7 @@ pub fn create_session_cookie_with_max_age(
         .filter(|token| !token.is_empty())
         .map(|token| sign_cookie_value(token, &config.secret));
     create_session_like_cookie(
-        &config.session.cookie_name,
+        &related_cookie_name(config, "session_token"),
         signed.as_deref().unwrap_or(""),
         max_age_seconds,
         config,
@@ -106,38 +105,20 @@ pub fn create_session_like_cookie(
     max_age_seconds: Option<i64>,
     config: &AuthConfig,
 ) -> String {
-    let session_config = &config.session;
-    let same_site = map_same_site(&session_config.cookie_same_site);
-
-    let mut cookie = Cookie::build((name, value))
-        .path("/")
-        .secure(session_config.cookie_secure)
-        .http_only(session_config.cookie_http_only)
-        .same_site(same_site);
-
-    if let Some(max_age_seconds) = max_age_seconds {
-        let expires_offset = cookie::time::OffsetDateTime::now_utc()
-            + cookie::time::Duration::seconds(max_age_seconds);
-        cookie = cookie
-            .expires(expires_offset)
-            .max_age(cookie::time::Duration::seconds(max_age_seconds));
+    let mut attributes = cookie_attributes(name, config);
+    // setSessionCookie explicitly replaces the token's configured Max-Age,
+    // including with undefined for a browser session. Other cookie producers
+    // retain their configured age when they supply no override.
+    if name == related_cookie_name(config, "session_token") || max_age_seconds.is_some() {
+        attributes.max_age = max_age_seconds;
     }
-
-    // SameSite=None requires the Secure attribute per the spec
-    if matches!(
-        session_config.cookie_same_site,
-        crate::config::SameSite::None
-    ) {
-        cookie = cookie.secure(true);
-    }
-
-    cookie.build().to_string()
+    render_encoded_cookie(name, value, &attributes)
 }
 
 /// Build a `Set-Cookie` header value that clears the session cookie.
 #[must_use]
 pub fn create_clear_session_cookie(config: &AuthConfig) -> String {
-    create_clear_cookie(&config.session.cookie_name, config)
+    create_clear_cookie(&related_cookie_name(config, "session_token"), config)
 }
 
 /// Build a `Set-Cookie` header value that clears an arbitrary cookie by name,
@@ -147,25 +128,7 @@ pub fn create_clear_session_cookie(config: &AuthConfig) -> String {
 /// while preserving its attributes, and emits no `Expires`.
 #[must_use]
 pub fn create_clear_cookie(name: &str, config: &AuthConfig) -> String {
-    let session_config = &config.session;
-    let same_site = map_same_site(&session_config.cookie_same_site);
-
-    let mut cookie = Cookie::build((name, ""))
-        .path("/")
-        .max_age(cookie::time::Duration::seconds(0))
-        .http_only(session_config.cookie_http_only)
-        .same_site(same_site);
-
-    if session_config.cookie_secure
-        || matches!(
-            session_config.cookie_same_site,
-            crate::config::SameSite::None
-        )
-    {
-        cookie = cookie.secure(true);
-    }
-
-    cookie.build().to_string()
+    create_session_like_cookie(name, "", Some(0), config)
 }
 
 /// Build a Better Auth related cookie name using the configured session cookie
@@ -173,6 +136,23 @@ pub fn create_clear_cookie(name: &str, config: &AuthConfig) -> String {
 /// `better-auth.session_data`.
 #[must_use]
 pub fn related_cookie_name(config: &AuthConfig, suffix: &str) -> String {
+    if let Some(name) = config
+        .advanced
+        .cookies
+        .get(suffix)
+        .and_then(|entry| entry.name.as_ref())
+        .filter(|name| !name.is_empty())
+    {
+        return name.clone();
+    }
+    if let Some(prefix) = config
+        .advanced
+        .cookie_prefix
+        .as_ref()
+        .filter(|p| !p.is_empty())
+    {
+        return format!("{prefix}.{suffix}");
+    }
     config
         .session
         .cookie_name
@@ -183,12 +163,93 @@ pub fn related_cookie_name(config: &AuthConfig, suffix: &str) -> String {
         )
 }
 
-const fn map_same_site(s: &crate::config::SameSite) -> CookieSameSite {
-    match s {
-        crate::config::SameSite::Strict => CookieSameSite::Strict,
-        crate::config::SameSite::Lax => CookieSameSite::Lax,
-        crate::config::SameSite::None => CookieSameSite::None,
+fn cookie_attributes(name: &str, config: &AuthConfig) -> CookieAttributes {
+    let mut attributes = CookieAttributes {
+        secure: Some(config.session.cookie_secure),
+        http_only: Some(config.session.cookie_http_only),
+        same_site: Some(config.session.cookie_same_site.clone()),
+        path: Some("/".into()),
+        domain: config
+            .advanced
+            .cross_sub_domain_cookies
+            .as_ref()
+            .map(|cross| cross.domain.clone()),
+        max_age: None,
+    };
+    apply_attributes(&mut attributes, &config.advanced.default_cookie_attributes);
+    let logical = if name == related_cookie_name(config, "session_token") {
+        Some("session_token")
+    } else {
+        config.advanced.cookies.keys().find_map(|logical| {
+            (related_cookie_name(config, logical) == name).then_some(logical.as_str())
+        })
+    };
+    if let Some(entry) = logical.and_then(|logical| config.advanced.cookies.get(logical)) {
+        apply_attributes(&mut attributes, &entry.attributes);
     }
+    attributes
+}
+
+fn apply_attributes(target: &mut CookieAttributes, overrides: &CookieAttributes) {
+    if overrides.secure.is_some() {
+        target.secure = overrides.secure;
+    }
+    if overrides.http_only.is_some() {
+        target.http_only = overrides.http_only;
+    }
+    if overrides.same_site.is_some() {
+        target.same_site.clone_from(&overrides.same_site);
+    }
+    if overrides.path.is_some() {
+        target.path.clone_from(&overrides.path);
+    }
+    if overrides.domain.is_some() {
+        target.domain.clone_from(&overrides.domain);
+    }
+    if overrides.max_age.is_some() {
+        target.max_age = overrides.max_age;
+    }
+}
+
+// Values arrive already encoded (including signatures); encoding them again
+// would change the credential. Keep Better Call's attribute order and omit
+// synthetic Expires. The current public helpers have infallible integer ages.
+fn render_encoded_cookie(name: &str, value: &str, attributes: &CookieAttributes) -> String {
+    let host = name.starts_with("__Host-");
+    let mut header = format!("{name}={value}");
+    if let Some(age) = attributes.max_age.filter(|age| *age >= 0) {
+        _ = write!(header, "; Max-Age={age}");
+    }
+    if !host
+        && let Some(domain) = attributes
+            .domain
+            .as_ref()
+            .filter(|domain| !domain.is_empty())
+    {
+        _ = write!(header, "; Domain={domain}");
+    }
+    let path = if host {
+        Some("/")
+    } else {
+        attributes.path.as_deref().filter(|path| !path.is_empty())
+    };
+    if let Some(path) = path {
+        _ = write!(header, "; Path={path}");
+    }
+    if attributes.http_only == Some(true) {
+        header.push_str("; HttpOnly");
+    }
+    if attributes.secure == Some(true) || host || name.starts_with("__Secure-") {
+        header.push_str("; Secure");
+    }
+    if let Some(same_site) = &attributes.same_site {
+        header.push_str(match same_site {
+            SameSite::Lax => "; SameSite=Lax",
+            SameSite::Strict => "; SameSite=Strict",
+            SameSite::None => "; SameSite=None",
+        });
+    }
+    header
 }
 
 /// Clear all cookies associated with the current session.

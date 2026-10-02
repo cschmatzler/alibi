@@ -1,0 +1,122 @@
+# Physical session token and preference cookies
+
+Issue #301 is a separate production prerequisite for #205. It does not close
+the broader cookie policy issue #177. Discovery used actual main
+`bb4142faa155e60b745184401c531b2db9dfd34d` and installed Better Auth 1.7.6.
+No root or scoped AGENTS.md exists. The test-audit authoring gate applies;
+OpenClaw/Crabbox/autoreview helpers are unavailable in this environment, so
+actual repository gates and independent parent review provide the proof.
+
+## Contract and actual regression
+
+The physical producer used cookie::Cookie formatting, synthesized Expires from
+Max-Age, forced Secure for SameSite=None, and ignored the already public
+advanced cookie name/attribute configuration. The authenticated reader used
+the legacy name, even when the public configuration declared a different token
+name. These are observable complete response headers and restoration behavior.
+The two existing #205 ordinary/cached signed organization owners independently
+exposed three signup header suffix differences each; their complete captures
+remain `/tmp/issue205-signup-header-controls.json`, SHA256
+`6d01e50dbcb66f9c613f8649fb7163b4adda4d85ccf072ca4b3fad45f0e8e2ba`.
+
+The new primary table drives five actual installed HTTP/official SDK profiles:
+defaults, declared custom token/preference names and attributes, Secure,
+SameSite=None with explicitly false Secure, and a 60-second durable lifetime.
+Source uses its real advanced configuration; Native uses the existing public
+CookieAttributes/CookieOverride fields. Neither fixture implements cookie
+rendering, signs a credential, supplies a callback receipt, or changes Source.
+
+Each owner checks real signup, browser restoration, a deliberately corrupted
+issued HMAC, rememberMe=false token plus signed preference, rememberMe=true
+rotation, restoration of each new token, and logout with actual clear headers.
+Bound SQLite reads retain every declared core user, account and session column;
+owner and foreign physical rows protect deletion/rotation scope. The actual
+SQLite scrypt bytes are retained, with salt/key encoding metadata and published
+password verification accepting the genuine password and rejecting a foreign
+password. These profiles do not declare extra user/account schema fields.
+
+Full cookie bytes are represented losslessly by literal prefix/name, the actual
+encoded credential, and literal complete attribute suffix. Concatenation must
+equal the raw header. Each live credential independently passes canonical URI
+encoding, base64 length and real HMAC-SHA256 verification, and its plaintext
+must equal the actual SDK session token or preference literal true. Existing
+token identity reconciliation compares independently random real credentials;
+no comparer, allowlist, timestamp rule, package or global parser changes here.
+Every attribute, order, clear value and cookie name remains literal.
+
+The pre-fix owner completed every Source lifecycle and failed 0/5, 1,322
+assertions: `/tmp/issue301-before-owner4.log`. Default and short failed seven
+exact suffix paths (signup, durable signin, both transient cookies and three
+clear cookies); custom attributes failed the actual token name, Secure failed
+the actual flag, and SameSite=None failed its actual policy. The original
+production had not been edited during these measurements.
+
+## Bounded production change and caller audit
+
+Physical shared helpers render already encoded values in Source's order:
+Max-Age, Domain, Path, HttpOnly, Secure, SameSite. They emit no synthetic Expires.
+Legacy session settings remain defaults, then configured cross-subdomain,
+default attributes and logical per-cookie attributes apply. Token publication
+explicitly replaces Max-Age, including with absence for a browser session;
+preference publication preserves a declared 121-second per-cookie lifetime.
+Clearing preserves the configured name and attributes with Max-Age=0. Explicit
+__Host-/__Secure- names retain Source's serializer restrictions. Initialization
+gives authentication the same configured token name; direct public token/clear
+helpers also resolve that name. The old explicit legacy cookie name/prefix
+behavior remains when no advanced name or prefix is configured.
+
+All production callers were read: email/password signup/signin, session refresh,
+email verification, authentication helpers, anonymous, admin impersonation,
+passkey, SIWE, one-tap, one-time-token, MultiSession, two-factor, organization
+invitation/session renewal, OAuth proof cookies, root/core issuance and shared
+session deletion. Signed helper callers already pass encoded values; rendering
+must not encode them a second time. The integer helper API remains unchanged.
+The existing password-change native owner now requires the actual configured
+Max-Age and absence of synthesized Expires, replacing its obsolete expectation.
+
+The separate compact cache renderer/runtime and its authenticated successful
+read memo, publication observation, chunk cleanup and transient-MFA retirement
+are unchanged. OAuth and user-management have legacy local related-name helpers;
+this issue does not claim all configured names for those cookie families.
+Two-factor's floating Max-Age owner appends its own validated age; its broader
+attribute order/configuration is not established by these five physical owners.
+
+## Recorded proof and explicit limits
+
+The first repaired program passes 5/5, 1,710 assertions:
+`/tmp/issue301-after-owner5.log`. Its optional workspace/fixture strict Clippy,
+TypeScript and affected password-change native owner passed:
+`/tmp/issue301-strict6.log`. After the direct-helper name follow-up, the same
+five owners pass unchanged in `/tmp/issue301-final-owner7.log`; final optional
+workspace/fixture strict Clippy, TypeScript and both formatting checks pass in
+`/tmp/issue301-final-strict9.log`.
+
+Independent actual Source/native SDK probes retain ten complete lifecycles,
+70 literal raw Set-Cookie headers, combined headers, full requests/responses,
+real restored sessions and physical SQLite rows in
+`/tmp/issue301-raw-cookie-captures.json`, SHA256
+`5d956ac8e5f0dc454c66d1fca317afa4bb88910530e6a59d075ca51b12d34f10`.
+The probe verifies every live HMAC and each actual restored SDK token:
+`/tmp/issue301-raw-captures8.log`. No raw cookie bytes are removed.
+
+Setup failures are retained separately: initial TS expected-argument typing,
+an import accidentally preceding the Source shebang, and tough-cookie's actual
+absent Max-Age representation being null (before-owner1/2/3 logs). The raw
+probe's first attempt omitted the genuine Origin header after signup and hit
+the actual CSRF guard; owner7 retains that failed diagnostic attempt after its
+successful five owners. Raw attempt8 supplies the real origin, as the SDK
+scenario's existing transport does. None is presented as a product before.
+
+Broader #177 remains open: HTTPS/environment factory secure-prefix inference,
+partitioned/priority/Expires options absent from the current typed config,
+400-day validation through currently infallible helpers, deployment/browser
+constraints, general configured compact/cache/chunk/account/OAuth/2FA policy,
+and every cross-subdomain default-domain inference branch. SameSite=None here
+proves Source's emitted insecure header and actual standards CookieJar behavior;
+it does not claim that every browser accepts that configuration. Advanced
+cookie-prefix selection is traced production behavior, rather than a separate
+measured profile in this owner. The capability owner reran 5/5, 1,710 assertions with actual evidence capture
+(`/tmp/issue301-capability-owner10.log`); all 5,297 parent capability cells
+remain and 35 observed success/state cells are added. Final full canonical, independent docs/browser
+and clean instrumented five-wrapper coverage are still pending at this draft
+checkpoint; there is no full-green or new coverage claim yet.

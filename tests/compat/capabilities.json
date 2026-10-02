@@ -1369,7 +1369,12 @@
           "CAPTCHA captcha-botid-custom actual configured BotID callbacks preserve middleware and principal boundaries",
           "SIWE media validation preserves signed nonce and verifier state before successful JSON retry",
           "SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",
-          "SIWE signed legacy date bounds distinguish parser admission from verifier delivery and preserve a foreign wallet"
+          "SIWE signed legacy date bounds distinguish parser admission from verifier delivery and preserve a foreign wallet",
+          "physical session default preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -4759,7 +4764,12 @@
           "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
-          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal",
+          "physical session default preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -5007,7 +5017,12 @@
           "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
-          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal",
+          "physical session default preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ]
       }
     },
@@ -6111,7 +6126,12 @@
           "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "physical session default preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ],
         "rejection": null,
         "authorization": null,
@@ -6193,7 +6213,12 @@
           "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "physical session default preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ]
       }
     },
@@ -6324,7 +6349,12 @@
           "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
-          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal"
+          "CAPTCHA verifier timeout ends at response headers and slow successful bodies still admit the real principal",
+          "physical session default preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -6430,7 +6460,12 @@
           "CAPTCHA captcha-hcaptcha actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-zero actual verification transport admits only provider-approved authentication",
           "CAPTCHA captcha-google-configured actual verification transport admits only provider-approved authentication",
-          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication"
+          "CAPTCHA captcha-hcaptcha-sitekey actual verification transport admits only provider-approved authentication",
+          "physical session default preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ]
       }
     },

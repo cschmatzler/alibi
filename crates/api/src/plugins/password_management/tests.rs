@@ -396,8 +396,12 @@ async fn test_change_password_sets_cookie_on_session_revocation() {
         "Cookie must contain Path=/"
     );
     assert!(
-        cookie_value.contains("Expires="),
-        "Cookie must contain an expiration"
+        cookie_value.contains("Max-Age=604800"),
+        "Cookie must retain the configured session lifetime"
+    );
+    assert!(
+        !cookie_value.contains("Expires="),
+        "Source does not synthesize Expires from Max-Age"
     );
 }
 
