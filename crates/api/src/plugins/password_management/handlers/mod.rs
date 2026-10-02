@@ -148,7 +148,7 @@ pub(in crate::plugins) async fn reset_password_core(
         .as_ref()
         .and_then(|policy| policy.password_hasher.as_ref())
         .or(config.password_hasher.as_ref());
-    let password_hash = password_utils::hash_password(hasher, &body.new_password).await?;
+    let password_hash = ctx.hash_password(hasher, &body.new_password).await?;
 
     if let Some(account) = get_credential_account(ctx, &user_id).await? {
         drop(
@@ -246,19 +246,15 @@ pub(in crate::plugins) async fn change_password_core(
     meta: &RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(ChangePasswordResponse<UserView>, Option<String>)> {
-    if config.require_current_password {
-        let stored_hash = get_credential_password_hash(ctx, user)
-            .await?
-            .ok_or_else(|| AuthError::bad_request("Credential account not found"))?;
-
-        password_utils::verify_password(
-            config.password_hasher.as_ref(),
-            &body.current_password,
-            &stored_hash,
+    let stored_hash = if config.require_current_password {
+        Some(
+            get_credential_password_hash(ctx, user)
+                .await?
+                .ok_or_else(|| AuthError::bad_request("Credential account not found"))?,
         )
-        .await
-        .map_err(|_error| AuthError::bad_request("Invalid password"))?;
-    }
+    } else {
+        None
+    };
 
     password_utils::validate_password(
         &body.new_password,
@@ -267,8 +263,19 @@ pub(in crate::plugins) async fn change_password_core(
         ctx,
     )?;
 
-    let password_hash =
-        password_utils::hash_password(config.password_hasher.as_ref(), &body.new_password).await?;
+    let password_hash = ctx
+        .hash_password(config.password_hasher.as_ref(), &body.new_password)
+        .await?;
+
+    if let Some(stored_hash) = stored_hash {
+        password_utils::verify_password(
+            config.password_hasher.as_ref(),
+            &body.current_password,
+            &stored_hash,
+        )
+        .await
+        .map_err(|_error| AuthError::bad_request("Invalid password"))?;
+    }
 
     let credential_account = get_credential_account(ctx, user.id())
         .await?

@@ -337,6 +337,21 @@ impl<S: AuthSchema> AuthInitContext<S> {
         drop(self.metadata.insert(key.into(), value));
     }
 
+    /// Decorate the instance's actual password hashing boundary. Later
+    /// registrations run first, matching initialized hash wrappers.
+    pub fn register_password_hash_hook(
+        &mut self,
+        hook: Arc<dyn crate::utils::password::PasswordHashHook>,
+    ) {
+        let mut hooks = self
+            .extensions
+            .get::<crate::utils::password::PasswordHashHooks>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
+        hooks.0.push(hook);
+        self.extensions.insert(hooks);
+    }
+
     #[must_use]
     pub fn get_metadata(&self, key: &str) -> Option<&serde_json::Value> {
         self.metadata.get(key)
@@ -465,6 +480,43 @@ impl<S: AuthSchema> AuthInitContext<S> {
 }
 
 impl<S: AuthSchema> AuthContext<S> {
+    /// Hash through initialized policies at the current actual endpoint.
+    ///
+    /// # Errors
+    /// Propagates policy rejections and original hasher errors.
+    pub async fn hash_password(
+        &self,
+        hasher: Option<&Arc<dyn crate::utils::password::PasswordHasher>>,
+        password: &str,
+    ) -> AuthResult<String> {
+        let context = crate::hooks::current_request_hook_context()
+            .map(crate::utils::password::PasswordHashContext::from_request);
+        self.hash_password_with_context(hasher, password, context.as_ref())
+            .await
+    }
+
+    /// Hash for a trusted endpoint call whose logical context is independent
+    /// of an optional physical request, including server-only APIs.
+    ///
+    /// # Errors
+    /// Propagates policy rejections and original hasher errors.
+    pub async fn hash_password_with_context(
+        &self,
+        hasher: Option<&Arc<dyn crate::utils::password::PasswordHasher>>,
+        password: &str,
+        context: Option<&crate::utils::password::PasswordHashContext>,
+    ) -> AuthResult<String> {
+        if let Some(hooks) = self
+            .extensions
+            .get::<crate::utils::password::PasswordHashHooks>()
+        {
+            for hook in hooks.0.iter().rev() {
+                hook.before_hash(password, context).await?;
+            }
+        }
+        crate::utils::password::hash_password(hasher, password).await
+    }
+
     #[must_use]
     pub fn new(config: Arc<AuthConfig>, database: Arc<dyn AuthStore<S>>) -> Self {
         let email_provider = config.email_provider.clone();

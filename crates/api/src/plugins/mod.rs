@@ -15,6 +15,7 @@ pub mod device_authorization;
 pub mod email_otp;
 
 pub mod email_password;
+pub mod haveibeenpwned;
 
 pub mod email_verification;
 
@@ -228,6 +229,7 @@ pub use email_password::{EmailPasswordConfig, EmailPasswordPlugin};
 pub use email_verification::{
     EmailVerificationConfig, EmailVerificationHook, EmailVerificationPlugin, SendVerificationEmail,
 };
+pub use haveibeenpwned::{HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient};
 pub use magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 pub use organization::{
     OrganizationConfig, OrganizationCreatePatch, OrganizationCreatedContext,

@@ -508,7 +508,7 @@ async fn test_set_user_password_updates_credential_account() {
 }
 
 #[tokio::test]
-async fn test_set_user_password_does_not_create_credential_account() {
+async fn test_set_user_password_creates_canonical_credential_when_missing() {
     let (ctx, _admin, admin_session, _user, _user_session) = create_admin_context().await;
     let plugin = AdminPlugin::new();
 
@@ -543,13 +543,22 @@ async fn test_set_user_password_does_not_create_credential_account() {
     let resp_2 = plugin.on_request(&req_2, &ctx).await.unwrap().unwrap();
     assert_eq!(resp_2.status, 200);
 
-    assert_eq!(
-        ctx.database
-            .get_user_accounts(&user_id)
-            .await
-            .unwrap()
-            .len(),
-        0
+    let accounts = ctx.database.get_user_accounts(&user_id).await.unwrap();
+    assert_eq!(accounts.len(), 1);
+    let account = accounts
+        .first()
+        .expect("password setting creates a credential");
+    assert_eq!(account.user_id(), user_id);
+    assert_eq!(account.account_id(), user_id);
+    assert_eq!(account.provider_id(), "credential");
+    assert!(
+        better_auth_core::PasswordHasher::verify(
+            &better_auth_core::ScryptHasher,
+            account.password().unwrap(),
+            "newpassword456",
+        )
+        .await
+        .unwrap()
     );
 }
 
