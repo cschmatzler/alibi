@@ -305,7 +305,7 @@ pub(super) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                 match body.action.as_str() {
                     "reset" => *app.state.lock().expect("lifecycle reset") = State::default(),
                     "hold" => { let mut state = app.state.lock().expect("deletion hook hold"); state.hold_next = true; state.held = false; },
-                    "release" => app.release.notify_one(),
+                    "release" => {}, // Capture the held snapshot before releasing the request below.
                     "ready" => {
                         let ready = async {
                             while !app.state.lock().expect("deletion hook arrival").held { tokio::time::sleep(std::time::Duration::from_millis(10)).await; }
@@ -324,7 +324,10 @@ pub(super) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                 let proofs = verification::Entity::find().order_by_asc(verification::Column::CreatedAt).all(&db).await.map_err(db_error)?;
                 let accounts = accounts.iter().map(|account| { let mut value = serde_json::to_value(better_auth_core::wire::AccountView::from(account)).unwrap(); value["password"] = json!(account.password); value }).collect::<Vec<_>>();
                 let proofs = proofs.iter().map(|proof| {let mut value = serde_json::to_value(better_auth_core::wire::VerificationView::from(proof)).unwrap(); let identifier = value.as_object_mut().unwrap().remove("identifier").unwrap(); let owner = value.as_object_mut().unwrap().remove("value").unwrap(); if let Some(token) = identifier.as_str().and_then(|identifier|identifier.strip_prefix("delete-account-")) {value["identifierPrefix"] = json!("delete-account-");value["token"] = json!(token);value["userId"] = owner;} else {value["identifier"] = identifier;value["value"] = owner;} value}).collect::<Vec<_>>();
-                Ok(json!({"users":users.iter().map(|user|auth.context().user_view(user)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions.iter().map(|session|auth.context().session_view(session)).collect::<Vec<_>>(),"verifications":proofs,"events":app.state.lock().expect("lifecycle state").events}))
+                let snapshot = json!({"users":users.iter().map(|user|auth.context().user_view(user)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions.iter().map(|session|auth.context().session_view(session)).collect::<Vec<_>>(),"verifications":proofs,"events":app.state.lock().expect("lifecycle state").events});
+                // Own every row and receipt before the blocked deletion can resume.
+                if body.action == "release" { app.release.notify_one(); }
+                Ok(snapshot)
             }.await;
             result.map(Json).map_err(|error|(axum::http::StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"message":error.to_string()}))))
         }
