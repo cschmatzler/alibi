@@ -567,7 +567,13 @@ fn additional_model_fields(
             continue;
         };
         let (camel, column, physical) = additional_field_names(field)?;
-        if !known.iter().any(|known| name == known) {
+        // Nullable username columns must reach configured output transforms as
+        // actual stored values, even though canonical wire DTOs omit None.
+        // Only declared model fields qualify; missing plugin columns stay absent.
+        let physical_output = !known.iter().any(|known| name == known)
+            || matches!(role, EntityRole::User)
+                && (name == "username" || name == "display_username");
+        if physical_output {
             additional_output.push(quote! {
                 if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
                     let _ = fields.insert(#camel.into(), value);
@@ -575,7 +581,7 @@ fn additional_model_fields(
             });
         }
         if let Some(physical) = physical.as_ref().filter(|physical| *physical != &camel) {
-            if !known.iter().any(|known| name == known) {
+            if physical_output {
                 additional_output.push(quote! {
                     if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
                         let _ = fields.insert(#physical.into(), value);

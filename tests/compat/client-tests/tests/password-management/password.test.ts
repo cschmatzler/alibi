@@ -24,6 +24,7 @@ compatScenario(
       redirectTo: "/reset",
     });
     expect(signup.error).toBeNull();
+    expect(signup.data?.user).toMatchObject({ username: null, displayUsername: null });
     expect(requestReset.error).toBeNull();
     const delivery = await ctx.rawRequest({
       path: `/__test/reset-password-token?email=${encodeURIComponent(email)}`,
@@ -46,6 +47,7 @@ compatScenario(
     expect(reset.error).toBeNull();
     expect(signin.error).toBeNull();
     expect(signin.data?.user.id).toBe(signup.data?.user.id);
+    expect(signin.data?.user).toMatchObject({ username: null, displayUsername: null });
     const oldPassword = await ctx
       .actor("old-password")
       .client.signIn.email({ email, password: "password123" });
