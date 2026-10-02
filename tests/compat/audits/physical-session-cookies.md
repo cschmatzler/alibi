@@ -188,3 +188,61 @@ management were unreached and no floor was produced. No timestamp rule changed.
 Final strict, canonical and fresh coverage remain pending on the fixture-only
 corrected checkpoint; the reviewed three-line legacy token production repair
 is unchanged.
+
+## Final frozen gate and main composition
+
+Frozen `e4a08027775bfea81d37b6a734361e2fcdec47ea` passes fixture strict/build
+and all seven actual SDK owners, 7/7 with 2,464 assertions. Its actual canonical
+terminates 100 in `/tmp/issue301-canonical-final15.log`: default 793, optional
+845, fixture 2, both workspace strict gates and no-default check, TypeScript,
+harness 76/1,126, Axum 36, endpoint 3 and inventory 2 pass. Full SDK is
+1,455/1,458 with 98,930 assertions. The complete three failures remain:
+
+- Organization trusted-role patches: only
+  `observation.5.usersBefore/After.owner/target.sessions.1.expiresAt`, four
+  aliases. Source issues at 09:04:52.441/.508 UTC and Native at
+  09:04:55.834/.891 UTC with the same real seven-day lifetime.
+- Remote null signer: only `observation.captured.events.0.payload.exp`,
+  `observation.response.body.token.payload.exp`,
+  `observation.verified.payload.exp`, and
+  `observation.verified.token.payload.exp`.
+- Existing #174 expired-reset/OTP owner:
+  `observation.observations.0.proof.length`.
+
+The full canonical is not green. Its subsequent docs/coverage stages are
+unreached; earlier independent Rustdoc/Chromium results remain attributed above.
+Neither focused retries nor this composition relabel the full gate.
+
+The independent fresh frozen-e4 coverage finishes 0 in
+`/tmp/issue301-clean-coverage-final15.log`: Native 845 and all six actual SDK
+families (account, CAPTCHA, JWT, OAuth, sessions, user management) pass. The
+unchanged 75% floor is 32,316/41,780 (77.348013%); 215 LCOV paths have zero
+duplicates. Earlier failed real clock attempts stay in the record above.
+
+The exact nullable-expiry aliases were previously reproduced against unchanged
+actual Source in `/tmp/issue179-source-null-clock.log` (attempt30). A subsequent
+1,000-pair Source control did not naturally straddle a second and is explicitly
+not a failing reproduction. The bounded genuine next-signing-second control
+retains full nullable input/own-key order, raw response/JWS, independent HS256
+verification, request wall bounds and empty JWKS in
+`/tmp/issue225-jwt-null-next-second-source.json`, SHA256
+`fdb2f1032d1285f49aa1dd3bd447e594ecc7f17457f4e606ab879a7275bc5b54`.
+Only a wait for the next actual signing second advances the default exp by one.
+Configured callback defaults have the analogous complete four-branch control in
+`/tmp/issue225-jwt-configured-next-second-source.json`, SHA256
+`cd04eb43d5bdf7cd54930f4b9d1a70fb0398ba0391071346e44d8daf867f06a9`.
+Fixed iat100/exp160 remains exact and independently signed; actual plaintext
+result and ordinary/API errors retain full receipts with clock-derived exp.
+No clock stub, altered JOSE validation, generic tolerance or comparer change is
+introduced by these diagnostics.
+
+The final code composition `fbb055f02de3c2834ad8fcc81c31b83291c457cb` is based
+on actual main `2da1ce5ab74676fccc92f25fb3daae98a6232c8b` (merged SIWE and
+installed-migrator proof/docs). Its locked optional workspace and fixture
+all-targets strict Clippy, actual fixture build, TypeScript and both formatting
+checks pass; the same actual seven SDK owners pass 7/7 with 2,464 assertions,
+capability capture enabled (`/tmp/issue301-composed-final16.log`). Every parent
+array retains exact order and scalar requirements remain unchanged: all 5,470
+parent capability cells plus 49 observed cookie cells, 5,519 total. No full SDK
+or new coverage floor is claimed after composition. Broader #177 and #205 remain
+open. The final publication changes only this audit from that tested code head.
