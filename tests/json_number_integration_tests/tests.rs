@@ -425,6 +425,7 @@ async fn malformed_json_cannot_issue_magic_link_proofs_or_deliver_notifications(
     let sender = Arc::new(Sender::default());
     let auth = AuthBuilder::new(config.clone())
         .store(SeaOrmStore::<Schema>::new(config, database.clone()))
+        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
         .plugin(MagicLinkPlugin::new(MagicLinkConfig {
             send_magic_link: Some(Arc::<Sender>::clone(&sender)),
             ..Default::default()

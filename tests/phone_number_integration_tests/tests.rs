@@ -100,6 +100,7 @@ async fn signup_phone_fields_require_the_plugin_and_cannot_claim_verification() 
     let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
     let enabled = AuthBuilder::new(config.clone())
         .store_arc(Arc::<SeaOrmStore<Schema>>::clone(&store))
+        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new().enable_username(false))
         .plugin(PhoneNumberPlugin::new(PhoneNumberConfig::default()))
         .build()
@@ -107,6 +108,7 @@ async fn signup_phone_fields_require_the_plugin_and_cannot_claim_verification() 
         .unwrap();
     let disabled = AuthBuilder::new(config)
         .store_arc(store)
+        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new().enable_username(false))
         .build()
         .await
@@ -198,6 +200,7 @@ async fn numeric_phone_signup_uses_actual_adapter_text_coercion() {
         .unwrap();
     let auth = AuthBuilder::new(config.clone())
         .store(SeaOrmStore::<Schema>::new(config, database))
+        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new().enable_username(false))
         .plugin(PhoneNumberPlugin::new(PhoneNumberConfig::default()))
         .build()
