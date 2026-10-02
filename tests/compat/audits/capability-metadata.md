@@ -13,8 +13,8 @@ capability evidence.
 
 `capability-metadata-classification.json` records every original missing tuple
 and its retained or corrected requirement. Of the 115, 61 have a bounded
-collection/annotation/owner repair, 52 were miscategorized, and two are retained
-requirements of the unchanged timing-sensitive membership owner. The inventory
+collection/annotation/owner repair, 52 were miscategorized, and two retain the
+original membership requirements while repairing their actual receipt collection. The inventory
 keeps its route flags, oracle version, strict unknown-field checking and every
 unaffected requirement, including all 113 measured #221 additions.
 
@@ -100,5 +100,75 @@ Logs: `/tmp/capability-metadata-collector-before.log` and
 harness and TypeScript: terminal0, 72/72, 778 assertions in
 `/tmp/capability-metadata-harness.log`.
 
-Final composed genuine owners and the complete strict inventory gate are pending.
-No old artifacts are used to claim their result.
+The first frozen composed head `ce38c9d4e144ef617dd670c6bab6bcff9ef632f7`
+on main `2bf51a600d053ea7d1f48d56af25f5d967ee5dce` preserves the full 5,141
+parent cells except the explicit 52 corrections plus ten measured additions
+(5,099 final cells). `/tmp/capability-metadata-final-canonical.log` is terminal100:
+strict default/optional/rustls/fmt, 793 default native, 845 optional native,
+fixture2, harness73/849, and alignment36+3+2 all pass. The genuine SDK collection
+is 1,383/1,386 with 89,900 assertions. It retains six fixed-membership timestamp
+aliases, two member-addition timestamp aliases, and the independently owned #174
+expired-proof length discrepancy. The independent strict capability check
+`/tmp/capability-metadata-final-inventory.log` reports only the four success/state
+requirements belonging to the two failed organization owners. All other repaired
+original requirements were genuinely measured. Both failed owner captures and
+the complete original collection are preserved as before proof; none are imported
+into final positive evidence.
+
+## Complete application and session clock receipts
+
+The organization failures above arise from missing observations: the existing
+tracer recorded only response shapes for the two application-owned organization
+server bridges, while the membership owner read session expiry only from SQL.
+The unchanged comparer already requires an actual creation/issuance receipt in
+its own request window before reconciling these dates.
+
+`createTracingFetch` now retains complete bodies only for POST
+`/__test/organization-membership-policy/server` and
+`/__test/organization-member-addition/server`, alongside its existing public-auth
+and API-key creation observations. It preserves every literal field, foreign row,
+status and rejection body. GET requests, neighboring paths and unknown fixture
+controls retain their earlier privacy bounds. No response body is filtered or
+changed. The existing membership signup helper additionally calls the actual SDK
+getSession, verifies its user ID and token against the real signup, and verifies
+its session ID/user ID/token against the complete durable session rows. These
+complete SDK receipts remain compared in traces; the fixed-policy owner also
+retains them directly in its returned observation. Both original membership
+success/state requirements remain unchanged.
+
+The new primary transport observer owner serves real HTTP rows and checks exact
+full-body retention, foreign rows, literal application values, status and complete
+rejection bodies. Its before run fails specifically on missing responseBody:
+`/tmp/capability-metadata-trace-before.log`, terminal1, 3/4, ten assertions.
+After the narrowed capture, full harness/typecheck pass75/961 in
+`/tmp/capability-metadata-trace-after-harness.log`. Existing clock/cookie negative
+controls and the new HTTP owner reject out-of-window creation and altered session
+lifetimes, while unknown controls and wrong methods/paths remain private. This
+protects an observation transport risk independent of the real organization
+admission owners and needs no production seam.
+
+The actual two-owner intermediate run
+`/tmp/capability-metadata-trace-org.log` is terminal1, 1/2, 600 assertions: all
+member-createdAt aliases disappear, but four fixed-membership session expiresAt
+aliases remain. After the genuine SDK issuance receipt, the unchanged two owners
+pass2/2, 732 assertions in `/tmp/capability-metadata-session-receipt-org.log`.
+A separate read-only adversarial command captures two fresh actual Source HTTP
+organization/session runs and complete physical/foreign rows. Its unmodified
+comparison passes; changing all matching member creation aliases outside the real
+request window or extending the real session lifetime by 60 seconds produces
+specific creation/lifetime differences. Terminal0:
+`/tmp/capability-metadata-receipt-counter-actual.log`. The earlier module-resolution
+failure is retained in `/tmp/capability-metadata-receipt-counter.log`; it supplied
+no parity evidence. No comparator, tolerance, Source package or positive evidence
+artifact is modified by this probe.
+
+The current candidate composes onto actual main
+`4bcd25c3084ac16b39c96b8dc42804f80dc21900`: all 5,339 parent cells, including
+Kakao/Kick/password and selector prerequisites, survive the same explicit
+52 corrections plus ten measured additions, yielding 5,297 cells and unchanged
+143 route records/flags. Before the receipt extension, its strict/fixture build,
+TypeScript, full harness74/927 and warning-free docs pass at
+`8f63f9acd98140b913b9bb76b506e184183887d8` in
+`/tmp/capability-metadata-composed-checks.log`. The new frozen complete canonical
+and strict inventory collection are pending; their artifacts will be freshly
+captured, with no copied baseline evidence.

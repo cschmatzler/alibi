@@ -278,7 +278,7 @@
       "route": "POST /organization/create",
       "kind": "state",
       "scenario": "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks",
-      "decision": "real owner comparison failed with inherited timestamp/lifetime aliases; no metadata repair",
+      "decision": "retain original requirement; collect complete real application creation and issued SDK session receipts for unchanged request-window comparison",
       "retainedRequirement": {
         "route": "POST /organization/create",
         "kind": "state",
@@ -289,7 +289,7 @@
       "route": "POST /organization/create",
       "kind": "success",
       "scenario": "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks",
-      "decision": "real owner comparison failed with inherited timestamp/lifetime aliases; no metadata repair",
+      "decision": "retain original requirement; collect complete real application creation and issued SDK session receipts for unchanged request-window comparison",
       "retainedRequirement": {
         "route": "POST /organization/create",
         "kind": "success",
