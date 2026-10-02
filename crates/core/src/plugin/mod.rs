@@ -755,6 +755,21 @@ impl<S: AuthSchema> AuthContext<S> {
         view
     }
 
+    /// Preserve the initialized adapter result's physical authority and declared
+    /// undefined presence while applying the public user field policy once.
+    #[must_use]
+    pub fn filter_user_record(
+        &self,
+        record: crate::AdapterRecord<S::User>,
+    ) -> crate::AdapterRecord<S::User> {
+        let registered = self.extensions.get::<crate::field_policy::UserFields>();
+        let fields = registered
+            .as_ref()
+            .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
+        let output = record.raw_snapshot().filter_returned(fields);
+        crate::AdapterRecord::with_output(record.into_stored(), output)
+    }
+
     pub fn session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
         self.project_session_view(session, true)
     }
@@ -944,6 +959,32 @@ impl<S: AuthSchema> AuthContext<S> {
         crate::cache::runtime::clear_established_session::<S>(req);
         let (user, session, _) = self.authenticated_session(req, false).await?;
         Ok((user, session))
+    }
+
+    /// Resolve physical signed-cookie authority while retaining the actual
+    /// initialized adapter output for downstream public and callback projections.
+    ///
+    /// # Errors
+    /// Propagates authentication, storage and output callback failures.
+    pub async fn require_authoritative_session_record(
+        &self,
+        req: &AuthRequest,
+    ) -> AuthResult<(crate::AdapterRecord<S::User>, crate::wire::SessionView)> {
+        crate::cache::runtime::clear_established_session::<S>(req);
+        let mut physical = req.clone();
+        physical.virtual_session = None;
+        drop(
+            physical
+                .query
+                .insert("disableCookieCache".into(), "true".into()),
+        );
+        let read = crate::cache::runtime::authenticated(self, &physical, false)
+            .await?
+            .ok_or(AuthError::Unauthenticated)?;
+        match read.user {
+            crate::AuthenticatedUser::Stored(user) => Ok((user, read.session)),
+            crate::AuthenticatedUser::Cached(_) => Err(AuthError::Unauthenticated),
+        }
     }
 
     async fn authenticated_session(

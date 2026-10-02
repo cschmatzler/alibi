@@ -604,6 +604,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         self.inner.delete_session(token).await
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
+        // Source deleteManyWithHooks observes actual adapter outputs before
+        // deletion and ignores lookup/output failures in that observation phase.
+        drop(self.get_user_sessions_record(user_id).await);
         self.inner.delete_user_sessions(user_id).await
     }
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {
@@ -651,6 +654,24 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
         };
         let record = self.account_record(model).await?;
         Ok(Some(record))
+    }
+
+    async fn get_credential_account_record(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+        use crate::AuthAccount;
+        let model = self
+            .get_user_accounts(user_id)
+            .await?
+            .into_iter()
+            .find(|account| {
+                account.provider_id() == "credential" && account.account_id() == user_id
+            });
+        match model {
+            Some(model) => self.account_record(model).await.map(Some),
+            None => Ok(None),
+        }
     }
 
     async fn get_user_accounts_record(
@@ -2119,6 +2140,23 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
 
     /// Return a retained adapter record. The default is the physical model's
     /// serialized snapshot; initialized stores apply their declared output policy.
+    /// Retain the selected physical credential result. Initialization applies
+    /// output policy only to that selected row, never unrelated linked accounts.
+    async fn get_credential_account_record(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+        use crate::AuthAccount;
+        self.get_user_accounts(user_id)
+            .await?
+            .into_iter()
+            .find(|account| {
+                account.provider_id() == "credential" && account.account_id() == user_id
+            })
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
     async fn get_user_accounts_record(
         &self,
         user_id: &str,

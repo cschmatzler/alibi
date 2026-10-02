@@ -190,3 +190,48 @@ with optional strict, fixture build and client type checking all terminal 0 in
 results on the CAPTCHA-composed parent; replacement, refresh, account output,
 schema metadata and complete canonical/coverage gates remain required before
 this draft can close the issue.
+
+
+The existing cached lifecycle owner also owns password replacement and subsequent
+sign-in publication. It measures the authenticated filtered user with a newly
+created raw session, preserved own-undefined callbacks, actual new/old credential
+hash verification, revoked old physical authority and complete foreign rows.
+A repair that rereads raw user storage during replacement would expose hidden
+values to the version/completed callback; the original signup/cache owner cannot
+reach that stage. The extension uses the public SDK, existing callback profile,
+actual signed cookies and physical SQL only. It adds no production seam and
+retains credential bytes plus independently verified relationships.
+
+Password replacement first reproduced an untransformed public user.label after
+Source completed the full lifecycle (`/tmp/issue184-replacement-before-ready-owner.log`,
+terminal 1, 199 assertions; its run journal explicitly records Rust failure).
+The first repaired run retained the actual complete callback-ledger differences
+and default test-budget exhaustion; `/tmp/issue184-replacement-after-ready-owner.log`
+is not a passing result. The extended owner has a 30-second execution budget
+because it performs both complete SDK lifecycles and independently verifies
+multiple real salted hashes; cookie TTL, timestamps and comparator allowances
+remain unchanged. The subsequent record-aware run retained precise callback
+ledger failures in `/tmp/issue184-replacement-record-ready-owner.log` (terminal 1,
+840 assertions).
+
+The final bounded repair adds an authoritative record reader using the existing
+physical cached-session lifecycle with compact cache bypass, cleared virtual
+principal and cleared request-local memo. The old typed reader remains intact.
+Credential selection now retains only the real selected row's adapter output,
+while sign-in retains the user/account lookup already used for authentication.
+Replacement publishes the filtered middleware-selected user and the new raw
+session, preserving own undefined without a post-write user reread. Password
+hashing still precedes current-password verification, and credentials remain
+physical authority. Source deleteManyWithHooks also invokes output policies on
+its actual pre-deletion session lookup and ignores lookup/output errors in that
+observation phase; initialized session revocation now retains that phase before
+the actual deletion. This does not introduce record-aware deletion hooks or
+claim new inactive-row storage semantics.
+
+Optional strict checks, actual fixture build, client type checking and the full
+six-owner set completed with terminal 0 and 840 assertions in
+`/tmp/issue184-replacement-deletion-owner.log`. The owner verifies replacement
+credentials against new and old passwords, old physical-cookie revocation,
+Source callback stages, subsequent sign-in and complete unchanged foreign rows.
+These proofs still precede the SIWE/SQLite-recovery composition and do not claim
+whole-issue completion or a full canonical/coverage result.

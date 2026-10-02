@@ -5,7 +5,7 @@ use super::{email_verification::EmailVerificationPlugin, two_factor};
 use crate::plugins::authentication_helpers::{
     JsonField, JsonFieldKind, RequestBody, is_valid_email, parse_body,
 };
-use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session_record};
+use crate::plugins::helpers::{SessionIssueError, apply_default_role};
 use async_trait::async_trait;
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
 use better_auth_core::field_policy::FieldValues;
@@ -1088,14 +1088,14 @@ async fn verify_user_password(
 }
 
 /// Shared sign-in finalization logic after user lookup and credential verification.
-async fn finalize_sign_in_with_user_core(
+async fn finalize_sign_in_with_user_core<S: better_auth_core::AuthSchema>(
     req: &AuthRequest,
-    user: impl AuthUser,
+    user: better_auth_core::AdapterRecord<S::User>,
     remember_me: Option<bool>,
     _email_verification: Option<&EmailVerificationPlugin>,
     callback_url: Option<&str>,
     meta: &RequestMeta,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<S>,
 ) -> AuthResult<SignInCoreResult<UserView>> {
     let mut set_cookie_headers = Vec::new();
 
@@ -1110,9 +1110,9 @@ async fn finalize_sign_in_with_user_core(
         metadata: ctx.metadata.clone(),
         extensions: ctx.extensions.clone(),
     };
-    let issued = issue_user_session_record(
+    let issued = super::helpers::issue_selected_user_session_record(
         &issuing_context,
-        &user.id(),
+        user.clone(),
         meta.ip_address.clone(),
         meta.user_agent.clone(),
     )
@@ -1204,7 +1204,7 @@ pub(in crate::plugins) async fn sign_in_core(
     }
     let user = ctx
         .database
-        .get_user_by_email(&body.email.to_lowercase())
+        .get_user_by_email_record(&body.email.to_lowercase())
         .await?;
     let Some(user) = user else {
         drop(
@@ -1213,7 +1213,14 @@ pub(in crate::plugins) async fn sign_in_core(
         );
         return Err(AuthError::InvalidCredentials);
     };
-    let credential = super::helpers::get_credential_account(ctx, &user.id()).await?;
+    let credential = ctx
+        .database
+        .get_user_accounts_record(&user.id())
+        .await?
+        .into_iter()
+        .find(|account| {
+            account.provider_id() == "credential" && account.account_id() == user.id().as_ref()
+        });
     let Some(current_password) = credential
         .as_ref()
         .and_then(AuthAccount::password)
@@ -1274,7 +1281,7 @@ pub(in crate::plugins) async fn sign_in_username_core(
 ) -> Result<SignInCoreResult<UserView>, SignInUsernameFailure> {
     let Some(user) = ctx
         .database
-        .get_user_by_username(normalized_username)
+        .get_user_by_username_record(normalized_username)
         .await
         .map_err(SignInUsernameFailure::Auth)?
     else {

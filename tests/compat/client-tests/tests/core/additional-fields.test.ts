@@ -9,10 +9,12 @@ async function observedCredential(account: Record<string, unknown>) {
   if (account.providerId !== "credential" || typeof account.password !== "string") return account;
   const hash = account.password;
   expect(hash).toMatch(/^[a-f0-9]{32}:[a-f0-9]{128}$/);
-  expect(await verifyPassword({ hash, password: "Password123!" })).toBe(true);
+  const acceptsOriginal = await verifyPassword({ hash, password: "Password123!" });
+  const acceptsReplacement = await verifyPassword({ hash, password: "Replacement184!" });
+  expect(acceptsOriginal !== acceptsReplacement).toBe(true);
   expect(await verifyPassword({ hash, password: "wrong-password-184" })).toBe(false);
   const [salt, derivedKey] = hash.split(":");
-  return { ...account, password: { token: hash, salt: { token: salt, length: salt!.length }, derivedKey: { token: derivedKey, length: derivedKey!.length }, encoding: "hex-lower" } };
+  return { ...account, password: { token: hash, acceptsOriginal, acceptsReplacement, salt: { token: salt, length: salt!.length }, derivedKey: { token: derivedKey, length: derivedKey!.length }, encoding: "hex-lower" } };
 }
 const stateSchema = z.object({ users: z.array(z.record(z.string(), z.unknown())), accounts: z.array(z.record(z.string(), z.unknown())), sessions: z.array(z.record(z.string(), z.unknown())), verifications: z.array(z.record(z.string(), z.unknown())), events: z.array(z.record(z.string(), z.unknown())) }).passthrough();
 async function observedState(value: unknown) {
@@ -210,8 +212,24 @@ compatScenario("additional cached output keeps raw creation and completed callba
   const original=stateSchema.parse(before.body);
   for(const key of ["users","accounts","sessions"] as const) expect(actual[key].filter(row=>row[key==="users"?"id":"userId"]===foreignId)).toEqual(original[key]);
   for(const key of ["users","accounts","sessions","verifications"] as const) expect(actual[key]).toEqual(createdState[key]);
-  return {foreignSignup:ctx.snapshot(foreignSignup),before:await observedState(before.body),signup:ctx.snapshot(signup),signed:{compactSessionCache:{token,envelope,decoded,observedAt,effectiveMaxAgeSeconds:300,rawCookies:[cacheCookie]}},created:await observedState(created.body),cached:ctx.snapshot(cached),cacheRead:await observedState(cacheRead.body),physical:ctx.snapshot(physical),after:await observedState(after.body)};
-},["POST /sign-up/email","GET /get-session"]);
+  const rejected=await owner.client.changePassword({currentPassword:"wrong-password-184",newPassword:"Replacement184!",revokeOtherSessions:true}); expect(rejected.error).toMatchObject({status:400,code:"INVALID_PASSWORD"});
+  const denied=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=cached"}); expect(denied.status).toBe(200); const deniedState=stateSchema.parse(denied.body);
+  for(const key of ["users","accounts","sessions","verifications"] as const) expect(deniedState[key]).toEqual(actual[key]);
+  const replacement=await owner.client.changePassword({currentPassword:"Password123!",newPassword:"Replacement184!",revokeOtherSessions:true}); expect(replacement.error).toBeNull();
+  const replacementData=z.object({token:z.string(),user:z.object({id:z.literal(userId),label:z.object({stored:z.literal("user-initial")})}).passthrough()}).parse(replacement.data); expect(replacementData.token).not.toBe(decoded!.session.token); expect(replacementData.user).not.toHaveProperty("hidden");
+  const replaced=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=cached"}); expect(replaced.status).toBe(200); const replacedState=stateSchema.parse(replaced.body);
+  const credential=replacedState.accounts.find(row=>row.userId===userId&&row.providerId==="credential")!; expect(await verifyPassword({hash:z.string().parse(credential.password),password:"Replacement184!"})).toBe(true); expect(await verifyPassword({hash:z.string().parse(credential.password),password:"Password123!"})).toBe(false);
+  expect(replacedState.sessions.filter(row=>row.userId===userId).map(row=>row.token)).toEqual([replacementData.token]);
+  const replacedVersion=replacedState.events.findLast(event=>event.phase==="version"); expect(replacedVersion?.user).not.toHaveProperty("hidden"); expect(replacedVersion?.session).toMatchObject({hidden:"SESSION-SECRET"});
+  const replacedCompleted=replacedState.events.findLast(event=>event.phase==="completed"&&event.path==="/change-password"); expect(replacedCompleted).toMatchObject({userOmittedPresent:true,userOmittedUndefined:true,sessionOmittedPresent:true,sessionOmittedUndefined:true});
+  const completedRecord=z.object({user:z.record(z.string(),z.unknown()),session:z.record(z.string(),z.unknown())}).parse(replacedCompleted?.record); expect(completedRecord.user).not.toHaveProperty("hidden"); expect(completedRecord.session).toMatchObject({token:replacementData.token,hidden:"SESSION-SECRET"});
+  const revoked=await ctx.rawRequest({path:"/__test/profiles/additional-cached-fields/api/auth/get-session?disableCookieCache=true",headers:{cookie:issuedCookies.find(cookie=>cookie.startsWith("better-auth.session_token="))!.split(";")[0]!}}); expect(revoked.status).toBe(200); expect(revoked.body).toBeNull();
+  const signedIn=ctx.actor("cache-replacement-signin","additional-cached-fields"); const signIn=await signedIn.client.signIn.email({email:z.string().parse(signup.data?.user.email),password:"Replacement184!"}); expect(signIn.error).toBeNull(); expect(signIn.data?.user).toMatchObject({id:userId,label:{stored:"user-initial"}});
+  const final=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=cached"}); expect(final.status).toBe(200); const finalState=stateSchema.parse(final.body);
+  const signInVersion=finalState.events.findLast(event=>event.phase==="version"); expect(signInVersion?.user).toMatchObject({hidden:"USER-SECRET"}); expect(signInVersion?.session).toMatchObject({hidden:"SESSION-SECRET"});
+  for(const key of ["users","accounts","sessions"] as const) expect(finalState[key].filter(row=>row[key==="users"?"id":"userId"]===foreignId)).toEqual(original[key]);
+  return {foreignSignup:ctx.snapshot(foreignSignup),before:await observedState(before.body),signup:ctx.snapshot(signup),signed:{compactSessionCache:{token,envelope,decoded,observedAt,effectiveMaxAgeSeconds:300,rawCookies:[cacheCookie]}},created:await observedState(created.body),cached:ctx.snapshot(cached),cacheRead:await observedState(cacheRead.body),physical:ctx.snapshot(physical),after:await observedState(after.body),rejected:ctx.snapshot(rejected),denied:await observedState(denied.body),replacement:ctx.snapshot(replacement),replaced:await observedState(replaced.body),revoked:ctx.snapshot(revoked),signIn:ctx.snapshot(signIn),final:await observedState(final.body)};
+},["POST /sign-up/email","GET /get-session","POST /change-password","POST /sign-in/email"],30_000);
 
 
 compatScenario("additional plugin input and public policy retain distinct configured adapter precedence and canonical plugin columns",async ctx=>{

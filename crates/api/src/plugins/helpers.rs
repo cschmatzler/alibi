@@ -286,12 +286,9 @@ pub async fn get_credential_account<S: better_auth_core::AuthSchema>(
 ) -> AuthResult<Option<S::Account>> {
     Ok(ctx
         .database
-        .get_user_accounts(user_id.as_ref())
+        .get_credential_account_record(user_id.as_ref())
         .await?
-        .into_iter()
-        .find(|account| {
-            account.provider_id() == "credential" && account.account_id() == user_id.as_ref()
-        }))
+        .map(better_auth_core::AdapterRecord::into_stored))
 }
 
 /// Resolve the user's stored password hash from the credential account.
@@ -533,7 +530,7 @@ pub async fn issue_user_session_record<S: better_auth_core::AuthSchema>(
     ip_address: Option<String>,
     user_agent: Option<String>,
 ) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
-    issue_user_session_inner(ctx, user_id, ip_address, user_agent, None, true).await
+    issue_user_session_inner(ctx, user_id, ip_address, user_agent, None, true, None).await
 }
 
 /// Create a genuine session for an endpoint that publishes it after later
@@ -544,7 +541,7 @@ pub(in crate::plugins) async fn create_user_session_record<S: better_auth_core::
     ip_address: Option<String>,
     user_agent: Option<String>,
 ) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
-    issue_user_session_inner(ctx, user_id, ip_address, user_agent, None, false).await
+    issue_user_session_inner(ctx, user_id, ip_address, user_agent, None, false, None).await
 }
 
 /// Issue a replacement session while preserving trusted session extension fields.
@@ -585,7 +582,30 @@ pub async fn issue_user_session_with_overrides_record<S: better_auth_core::AuthS
         active_organization_id: current_session.active_organization_id().map(str::to_owned),
         active_team_id: current_session.active_team_id().map(str::to_owned),
     };
-    issue_user_session_inner(ctx, user_id, ip_address, user_agent, Some(overrides), true).await
+    issue_user_session_inner(
+        ctx,
+        user_id,
+        ip_address,
+        user_agent,
+        Some(overrides),
+        true,
+        None,
+    )
+    .await
+}
+
+/// Issue from the actual lookup already used to authenticate this user. This
+/// retains its callback snapshot without repeating adapter output callbacks.
+pub(in crate::plugins) async fn issue_selected_user_session_record<
+    S: better_auth_core::AuthSchema,
+>(
+    ctx: &AuthContext<S>,
+    user: better_auth_core::AdapterRecord<S::User>,
+    ip_address: Option<String>,
+    user_agent: Option<String>,
+) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
+    let id = user.id().into_owned();
+    issue_user_session_inner(ctx, &id, ip_address, user_agent, None, true, Some(user)).await
 }
 
 async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
@@ -595,12 +615,16 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
     user_agent: Option<String>,
     overrides: Option<SessionOverrides>,
     publish: bool,
+    selected: Option<better_auth_core::AdapterRecord<S::User>>,
 ) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
-    let user = ctx
-        .database
-        .get_user_by_id_record(user_id)
-        .await?
-        .ok_or(AuthError::UserNotFound)?;
+    let user = match selected {
+        Some(user) => user,
+        None => ctx
+            .database
+            .get_user_by_id_record(user_id)
+            .await?
+            .ok_or(AuthError::UserNotFound)?,
+    };
 
     if admin_plugin_enabled(ctx) && user.banned() {
         if user
