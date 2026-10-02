@@ -19,9 +19,10 @@ exposed three signup header suffix differences each; their complete captures
 remain `/tmp/issue205-signup-header-controls.json`, SHA256
 `6d01e50dbcb66f9c613f8649fb7163b4adda4d85ccf072ca4b3fad45f0e8e2ba`.
 
-The new primary table drives five actual installed HTTP/official SDK profiles:
+The new primary table drives seven actual installed HTTP/official SDK profiles:
 defaults, declared custom token/preference names and attributes, Secure,
-SameSite=None with explicitly false Secure, and a 60-second durable lifetime.
+SameSite=None with explicitly false Secure, a 60-second durable lifetime, and
+two arbitrary exact legacy token names (`customsession` and `some.alias`).
 Source uses its real advanced configuration; Native uses the existing public
 CookieAttributes/CookieOverride fields. Neither fixture implements cookie
 rendering, signs a credential, supplies a callback receipt, or changes Source.
@@ -63,7 +64,11 @@ Clearing preserves the configured name and attributes with Max-Age=0. Explicit
 __Host-/__Secure- names retain Source's serializer restrictions. Initialization
 gives authentication the same configured token name; direct public token/clear
 helpers also resolve that name. The old explicit legacy cookie name/prefix
-behavior remains when no advanced name or prefix is configured.
+behavior remains when no advanced name or prefix is configured. The initial
+direct-helper follow-up regressed arbitrary legacy names; the bounded correction
+returns the exact legacy name specifically for the token family after genuine
+advanced name/prefix selection. Related preference/cache naming retains its
+existing fallback policy.
 
 All production callers were read: email/password signup/signin, session refresh,
 email verification, authentication helpers, anonymous, admin impersonation,
@@ -117,6 +122,28 @@ it does not claim that every browser accepts that configuration. Advanced
 cookie-prefix selection is traced production behavior, rather than a separate
 measured profile in this owner. The capability owner reran 5/5, 1,710 assertions with actual evidence capture
 (`/tmp/issue301-capability-owner10.log`); all 5,297 parent capability cells
-remain and 35 observed success/state cells are added. Final full canonical, independent docs/browser
-and clean instrumented five-wrapper coverage are still pending at this draft
-checkpoint; there is no full-green or new coverage claim yet.
+remain and 35 observed success/state cells are added. The historical 4ba61831 full canonical terminated with exit 100: default 793,
+optional 845, fixture 2, harness 76 (1,126 assertions), Axum 36, endpoint 3 and
+inventory 2 passed. Full SDK was 1,430/1,431 with 93,564 assertions; the only
+failure was the known #174 expired-reset/OTP `observation.observations.0.proof.length`
+(`/tmp/issue301-canonical-4ba61831.log`). Independent strict Rustdoc/browser
+passed (two actual Chromium tests, 22 assertions; wrapper 1/1) in
+`/tmp/issue301-docs-browser-4ba61831.log`. Actual fresh clean coverage, with
+MBX_DISABLE=1 inside devenv and all five SDK wrappers, passed the unchanged 75%
+floor at 32,050/41,491 (77.245668%); 214 LCOV paths had zero duplicates
+(`/tmp/issue301-clean-coverage-4ba61831.log`). These are historical program
+results, not proof of the later legacy-name correction.
+
+The extended unchanged-program before captures retain the review finding:
+`/tmp/issue301-legacy-before11.log` is 5 pass/2 fail (2,128 assertions), with
+genuine Native SDK restoration null for both legacy names after Source
+completed every lifecycle. The clearer producer-boundary run in
+`/tmp/issue301-legacy-before12.log` is 5 pass/2 fail (2,126 assertions): both
+Native token names were literally `better-auth.session_token`, rather than
+`customsession` or `some.alias`. The exact reader still expected each configured
+legacy name. With only the token-family fallback corrected, the same seven
+SDK owners pass 7/7 (2,450 assertions) in `/tmp/issue301-legacy-after13.log`.
+The foreign actor now also restores its own real token in every profile; owner
+and foreign reads and physical rows remain separate. Fourteen observed cells
+are appended for the two legacy owners, preserving all existing parent cells.
+Final composed-program proof is pending; no final green claim yet.

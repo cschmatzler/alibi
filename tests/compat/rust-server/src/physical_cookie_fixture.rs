@@ -21,10 +21,26 @@ struct Storage {
 }
 pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
     let mut router = Router::new();
-    for mode in ["default", "attributes", "secure", "none", "short"] {
+    for mode in [
+        "default",
+        "attributes",
+        "secure",
+        "none",
+        "short",
+        "legacy",
+        "legacy-alias",
+    ] {
         let path = format!("/__test/profiles/physical-cookie-{mode}/api/auth");
         let mut config = base.clone().base_path(&path);
         config.session.expires_in = Duration::seconds(if mode == "short" { 60 } else { 604_800 });
+        if mode == "legacy" || mode == "legacy-alias" {
+            config.session.cookie_name = if mode == "legacy" {
+                "customsession"
+            } else {
+                "some.alias"
+            }
+            .into();
+        }
         config.advanced.default_cookie_attributes = match mode {
             "attributes" => CookieAttributes {
                 http_only: Some(false),

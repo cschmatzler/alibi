@@ -1374,7 +1374,9 @@
           "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -4769,7 +4771,9 @@
           "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -5022,7 +5026,9 @@
           "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ]
       }
     },
@@ -6131,7 +6137,9 @@
           "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ],
         "rejection": null,
         "authorization": null,
@@ -6218,7 +6226,9 @@
           "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ]
       }
     },
@@ -6354,7 +6364,9 @@
           "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -6465,7 +6477,9 @@
           "physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
+          "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
+          "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ]
       }
     },

@@ -153,6 +153,9 @@ pub fn related_cookie_name(config: &AuthConfig, suffix: &str) -> String {
     {
         return format!("{prefix}.{suffix}");
     }
+    if suffix == "session_token" {
+        return config.session.cookie_name.clone();
+    }
     config
         .session
         .cookie_name
