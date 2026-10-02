@@ -109,6 +109,7 @@ mod client_ip_fixture;
 mod cloudflare_provider_fixture;
 mod cognito_provider_fixture;
 mod compromised_password_fixture;
+mod custom_session_fixture;
 mod device_fixture;
 mod dropbox_provider_fixture;
 mod facebook_provider_fixture;
@@ -850,6 +851,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let bearer_router =
         bearer_fixture::router(&config, database.clone(), multiple_session_counter.clone()).await?;
+    let custom_session_router =
+        custom_session_fixture::router(&config, database.clone(), multiple_session_counter.clone())
+            .await?;
     let multiple_session_router = multiple_session_fixture::router(
         &config,
         database.clone(),
@@ -1996,6 +2000,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(server_endpoint_cache_router)
         .merge(server_endpoint_version_router)
         .merge(multiple_session_router)
+        .merge(custom_session_router)
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)
         .merge(api_key_generation_router)

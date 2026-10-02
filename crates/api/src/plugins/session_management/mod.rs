@@ -261,7 +261,7 @@ impl SessionManagementPlugin {
         Ok(response)
     }
 
-    async fn handle_get_session(
+    pub(in crate::plugins) async fn handle_get_session(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,

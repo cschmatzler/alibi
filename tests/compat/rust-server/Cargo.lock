@@ -539,6 +539,7 @@ dependencies = [
  "chrono",
  "cookie",
  "ed25519-dalek",
+ "futures-util",
  "hkdf 0.12.4",
  "hmac 0.12.1",
  "indexmap 2.13.0",

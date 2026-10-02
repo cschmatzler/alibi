@@ -11,6 +11,7 @@ pub use better_auth_api::plugins::api_key::{
 };
 pub use better_auth_api::plugins::bearer::{self, BearerConfig, BearerPlugin};
 pub use better_auth_api::plugins::captcha::{self, CaptchaConfig, CaptchaPlugin, CaptchaProvider};
+pub use better_auth_api::plugins::custom_session::{self, CustomSessionPlugin, SessionTransform};
 pub use better_auth_api::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use better_auth_api::plugins::email_verification::SendVerificationEmail;
 pub use better_auth_api::plugins::haveibeenpwned::{

@@ -6,6 +6,8 @@ pub mod anonymous;
 
 pub mod bearer;
 pub mod captcha;
+pub mod custom_session;
+pub use custom_session::{CustomSessionPlugin, SessionTransform};
 
 pub mod api_key;
 

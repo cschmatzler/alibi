@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { numericModes, numericOptions } from "./passwordless-numeric";
+import { createCustomSessionFixture } from "./custom-session-fixture";
 import { callbackSnapshot, capturePasswordlessRequest } from "./passwordless-context";
 import { createCaptchaFixture } from "./captcha-fixture";
 import {physicalCookieProfiles} from "./physical-cookie-fixture";
@@ -470,6 +471,7 @@ const clientIpFixture = await createClientIpFixture(authOptions, database);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
 const adminBannedMessageFixture = createAdminBannedMessageFixture(authOptions, database);
 const adminPermissionFixture = createAdminPermissionFixture(authOptions, database);
+const customSessionFixture = createCustomSessionFixture(authOptions);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const bearerFixture = createBearerFixture(authOptions);
 const dispatchFixture = createDispatchFixture(authOptions);
@@ -535,6 +537,7 @@ verificationProfiles.set(apiKeyHookFixture.path, apiKeyHookFixture.auth);
 for (const [path, instance] of siweFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of adminBannedMessageFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of adminPermissionFixture.profiles) verificationProfiles.set(path, instance);
+for (const [path, instance] of customSessionFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of multipleSessionFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of bearerFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of dispatchFixture.profiles) verificationProfiles.set(path, instance);
@@ -1256,6 +1259,7 @@ const server = Bun.serve({
         passkeyAuthentication.reset();
         siweFixture.reset();
         multipleSessionFixture.reset();
+        customSessionFixture.reset();
         bearerFixture.reset();
         twoFactorPolicyFixture.reset();
         twoFactorOtpFixture.reset();
