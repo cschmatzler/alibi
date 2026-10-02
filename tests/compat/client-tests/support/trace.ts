@@ -9,6 +9,8 @@ export type RequestWindow = {
   inputOwner?: { field: "id" | "token"; value: string };
   sessionCookie?: string;
   issuedSessionCookie?: string;
+  /** Exact input of the three default verification-publication owners. */
+  verificationInput?: unknown;
 };
 
 /** Complete response observations, kept in memory; reports contain paths rather than secrets. */
@@ -171,6 +173,7 @@ export function createTracingFetch(
       const responseText = await response.clone().text();
       const inputDates: Record<string, string> = {};
       let inputOwner: RequestWindow["inputOwner"];
+      let verificationInput: unknown;
       function dates(value: unknown, path = "") {
         if (!value || typeof value !== "object") return;
         for (const [key, child] of Object.entries(value)) {
@@ -196,6 +199,7 @@ export function createTracingFetch(
       }
       try {
         const input = JSON.parse(requestText);
+        verificationInput = input;
         dates(input);
         // Only this fixture operation explicitly supplies a session deadline.
         if (
@@ -211,6 +215,8 @@ export function createTracingFetch(
           startedAt,
           finishedAt: Date.now(),
           inputDates,
+          ...(/\/(?:email-otp\/send-verification-otp|sign-in\/magic-link|one-time-token\/generate)$/.test(url.pathname)
+            ? { verificationInput: requestText ? verificationInput : null } : {}),
           ...(inputOwner ? { inputOwner } : {}),
           ...sessionReceipt(headers, response.headers),
         },
@@ -223,6 +229,7 @@ export function createTracingFetch(
         responseCookies: responseCookies(response),
         responseBodyShape: bodyShape(responseText),
         ...(url.pathname === "/__test/api-key/create" ||
+        (request.method === "GET" && url.pathname === "/__test/verification-publications") ||
         (request.method === "POST" &&
           ["/__test/organization-membership-policy/server", "/__test/organization-member-addition/server"].includes(url.pathname)) ||
         /^\/(?:__test\/profiles\/[^/]+\/)?api\/auth(?:\/|$)/.test(url.pathname)
