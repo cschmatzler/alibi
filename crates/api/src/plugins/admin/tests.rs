@@ -545,14 +545,17 @@ async fn test_set_user_password_creates_canonical_credential_when_missing() {
 
     let accounts = ctx.database.get_user_accounts(&user_id).await.unwrap();
     assert_eq!(accounts.len(), 1);
-    assert_eq!(accounts[0].user_id(), user_id);
-    assert_eq!(accounts[0].account_id(), user_id);
-    assert_eq!(accounts[0].provider_id(), "credential");
+    let account = accounts
+        .first()
+        .expect("password setting creates a credential");
+    assert_eq!(account.user_id(), user_id);
+    assert_eq!(account.account_id(), user_id);
+    assert_eq!(account.provider_id(), "credential");
     assert!(
         better_auth_core::PasswordHasher::verify(
             &better_auth_core::ScryptHasher,
+            account.password().unwrap(),
             "newpassword456",
-            accounts[0].password().unwrap(),
         )
         .await
         .unwrap()
