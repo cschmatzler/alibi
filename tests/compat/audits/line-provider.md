@@ -83,3 +83,37 @@ Final frozen code is composed on the tested Kick stack over actual signed-header
 main2bf51a60 (including147/221/135). It preserves all5,339 stack-parent requirements
 plus the257 measured passing LINE cells,5,596total, and all parent fixture
 profiles. The own production/test hunks are unchanged across this composition.
+
+Final broad proof was captured on immutable bfab5de67feab7346f0ef5cdcb6481d4b9d8b3bd:
+canonical scripts/check.sh terminates100 at the full SDK alignment stage,
+1,491/1,496 owners and93,772assertions. Both workspace strict Clippy configurations,
+rustls check, both formatting checks, native default793/793 and optional845/845,
+fixture2/2, TypeScript, harness72/825 and alignment inventories36/3/2 pass first.
+The five retained full SDK failures are two existing organization timestamp
+owners, the LINE mapped-ID projection above, four JWT keyring creation/expiry
+aliases, and verification reset proof length24versus32 (#174). No full-pass claim
+is made. The organization role-addition observation4/12 alias combination has
+no claimed exact parent counterproof; the other membership/keyring findings
+have separately recorded exact owner controls. No failing owner was removed.
+
+Fresh scoped MBX_DISABLE=1 clean coverage completes all native845 tests and all
+five SDK groups without fail-fast:639/640 owners,23,504assertions,4/5 groups pass;
+the OAuth group retains the same mapped-ID projection failure and the overall
+coverage script exits100. Its separate unchanged-floor report passes:
+32,091/41,558 lines=77.21978921026036%,215 logical SF records,zero duplicate paths.
+Native fixtures are genuinely included, with unchanged75%floor and exclusions.
+Warning-free workspace documentation and actual Chromium flows pass2/22.
+Logs: /tmp/issue149-final-canonical.log, /tmp/issue149-clean-coverage.log,
+/tmp/issue149-clean-coverage-report.log and /tmp/issue149-docs-browser.log.
+
+After all jobs became terminal, compose the unchanged own production/test
+hunks on actual main4bcd25c3084ac16b39c96b8dc42804f80dc21900.
+Frozen a0903d84ee2c578443ce22bf06f21318de1ff9d2 passes both formatting checks,
+TypeScript, full harness73/903 and rebuilt real LINE owner collection69/70,
+2,450assertions; only the same mapped-ID projection remains.
+/tmp/issue149-main288-composed-checks.log terminates1 honestly.
+All5,339 actual main evidence cells are preserved, plus257 freshly measured
+cells from68passing LINE owners=5,596. Every added cell is independently checked
+against the frozen passing artifacts, and the failing mapper-added-ID owner
+supplies no committed evidence. No Source/comparer edits, compatibility shims,
+timestamp tolerance, dependency patches, policy bypasses or hook bypasses.
