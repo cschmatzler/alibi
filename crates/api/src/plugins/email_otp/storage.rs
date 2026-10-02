@@ -1,4 +1,4 @@
-use crate::plugins::token_crypto::{decrypt, encrypt, hash_token};
+use crate::plugins::token_crypto::{decrypt_with_config, encrypt_with_config, hash_token};
 use async_trait::async_trait;
 use better_auth_core::{AuthError, AuthResult};
 use std::sync::Arc;
@@ -35,11 +35,15 @@ impl EmailOtpStorage {
     ///
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
-    pub(super) async fn store(&self, otp: &str, secret: &str) -> AuthResult<String> {
+    pub(super) async fn store(
+        &self,
+        otp: &str,
+        secret: &better_auth_core::AuthConfig,
+    ) -> AuthResult<String> {
         match self {
             Self::Plain => Ok(otp.to_owned()),
             Self::Hashed => Ok(hash_token(otp)),
-            Self::Encrypted => encrypt(otp, secret),
+            Self::Encrypted => encrypt_with_config(otp, secret),
             Self::Custom(codec) => codec.store(otp).await,
         }
     }
@@ -47,11 +51,19 @@ impl EmailOtpStorage {
     ///
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
-    pub(super) async fn verify(&self, stored: &str, otp: &str, secret: &str) -> AuthResult<bool> {
+    pub(super) async fn verify(
+        &self,
+        stored: &str,
+        otp: &str,
+        secret: &better_auth_core::AuthConfig,
+    ) -> AuthResult<bool> {
         match self {
             Self::Plain => Ok(constant_time_equal(stored, otp)),
             Self::Hashed => Ok(constant_time_equal(stored, &hash_token(otp))),
-            Self::Encrypted => Ok(constant_time_equal(&decrypt(stored, secret)?, otp)),
+            Self::Encrypted => Ok(constant_time_equal(
+                &decrypt_with_config(stored, secret)?,
+                otp,
+            )),
             Self::Custom(codec) => codec.verify(stored, otp).await,
         }
     }
@@ -59,11 +71,15 @@ impl EmailOtpStorage {
     ///
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
-    pub(super) async fn retrieve(&self, stored: &str, secret: &str) -> AuthResult<Option<String>> {
+    pub(super) async fn retrieve(
+        &self,
+        stored: &str,
+        secret: &better_auth_core::AuthConfig,
+    ) -> AuthResult<Option<String>> {
         let plain = match self {
             Self::Plain => Some(stored.to_owned()),
             Self::Hashed => None,
-            Self::Encrypted => Some(decrypt(stored, secret)?),
+            Self::Encrypted => Some(decrypt_with_config(stored, secret)?),
             Self::Custom(codec) => codec.retrieve(stored).await?,
         };
         plain.map(Some).ok_or_else(|| {
@@ -74,7 +90,11 @@ impl EmailOtpStorage {
     ///
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
-    pub(super) async fn reusable(&self, stored: &str, secret: &str) -> AuthResult<Option<String>> {
+    pub(super) async fn reusable(
+        &self,
+        stored: &str,
+        secret: &better_auth_core::AuthConfig,
+    ) -> AuthResult<Option<String>> {
         match self {
             Self::Hashed => Ok(None),
             Self::Custom(codec) => codec.retrieve(stored).await,

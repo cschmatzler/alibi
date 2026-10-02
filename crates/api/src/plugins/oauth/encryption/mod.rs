@@ -1,4 +1,4 @@
-//! AES-256-GCM encryption utilities for OAuth tokens.
+//! Versioned XChaCha20-Poly1305 persistence encryption for OAuth tokens.
 //!
 //! When `AccountConfig::encrypt_oauth_tokens` is `true`, access tokens,
 //! refresh tokens, and ID tokens are encrypted before being persisted and
@@ -19,15 +19,18 @@ impl std::fmt::Debug for EncryptedTokenSet {
     }
 }
 
-/// Encrypt a plaintext string using AES-256-GCM.
+/// Encrypt a plaintext string with the current configured persistence key.
 ///
-/// Returns a base64-encoded string of `nonce || ciphertext`.
+/// Returns hexadecimal nonce/ciphertext, inside a versioned envelope in managed mode.
 ///
 /// # Errors
 ///
 /// Returns an error if token encryption fails.
-pub fn encrypt_token(plaintext: &str, secret: &str) -> Result<String, AuthError> {
-    crate::plugins::token_crypto::encrypt(plaintext, secret)
+pub fn encrypt_token(
+    plaintext: &str,
+    secret: &better_auth_core::AuthConfig,
+) -> Result<String, AuthError> {
+    crate::plugins::token_crypto::encrypt_with_config(plaintext, secret)
 }
 
 /// Source recognizes even-length hexadecimal (and versioned `$ba$` envelopes)
@@ -35,7 +38,10 @@ pub fn encrypt_token(plaintext: &str, secret: &str) -> Result<String, AuthError>
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub fn decrypt_token(stored: &str, secret: &str) -> Result<String, AuthError> {
+pub fn decrypt_token(
+    stored: &str,
+    secret: &better_auth_core::AuthConfig,
+) -> Result<String, AuthError> {
     let likely_encrypted = stored.starts_with("$ba$")
         || (!stored.is_empty()
             && stored.len().is_multiple_of(2)
@@ -43,7 +49,7 @@ pub fn decrypt_token(stored: &str, secret: &str) -> Result<String, AuthError> {
     if !likely_encrypted {
         return Ok(stored.to_owned());
     }
-    crate::plugins::token_crypto::decrypt(stored, secret)
+    crate::plugins::token_crypto::decrypt_with_config(stored, secret)
 }
 
 /// Conditionally encrypt a token value. Returns the original value when
@@ -54,7 +60,7 @@ pub fn decrypt_token(stored: &str, secret: &str) -> Result<String, AuthError> {
 pub fn maybe_encrypt(
     value: Option<String>,
     encrypt: bool,
-    secret: &str,
+    secret: &better_auth_core::AuthConfig,
 ) -> Result<Option<String>, AuthError> {
     match (value, encrypt) {
         (Some(v), true) if !v.is_empty() => Ok(Some(encrypt_token(&v, secret)?)),
@@ -71,7 +77,7 @@ pub fn maybe_encrypt(
 pub fn maybe_decrypt(
     value: Option<&str>,
     encrypt: bool,
-    secret: &str,
+    secret: &better_auth_core::AuthConfig,
 ) -> Result<Option<String>, AuthError> {
     match (value, encrypt) {
         (Some(v), true) => decrypt_token(v, secret).map(Some),
@@ -92,7 +98,7 @@ pub fn encrypt_token_set(
     id_token: Option<String>,
 ) -> Result<EncryptedTokenSet, AuthError> {
     let encrypt = ctx.config.account.encrypt_oauth_tokens;
-    let secret = &ctx.config.secret;
+    let secret = &ctx.config;
     Ok(EncryptedTokenSet {
         access_token: maybe_encrypt(access_token, encrypt, secret)?,
         refresh_token: maybe_encrypt(refresh_token, encrypt, secret)?,
@@ -109,7 +115,7 @@ mod tests {
     // Upstream reference: packages/better-auth/src/api/routes/account.test.ts :: describe("account") and packages/better-auth/src/oauth2/utils.ts; adapted to the Rust OAuth token encryption helpers.
     #[test]
     fn test_encrypt_decrypt_roundtrip() {
-        let secret = "a]vt!MFX8H-e!4igKa5)Tu.{ec:2$z%n";
+        let secret = &better_auth_core::AuthConfig::new("a]vt!MFX8H-e!4igKa5)Tu.{ec:2$z%n");
         let plaintext = "ya29.a0AfH6SMBx-some-access-token";
 
         let encrypted = encrypt_token(plaintext, secret).unwrap();
@@ -122,7 +128,12 @@ mod tests {
     // Upstream reference: packages/better-auth/src/api/routes/account.test.ts :: describe("account") and packages/better-auth/src/oauth2/utils.ts; adapted to the Rust OAuth token encryption helpers.
     #[test]
     fn test_maybe_encrypt_none() {
-        let result = maybe_encrypt(None, true, "secret-key-that-is-32-chars-long").unwrap();
+        let result = maybe_encrypt(
+            None,
+            true,
+            &better_auth_core::AuthConfig::new("secret-key-that-is-32-chars-long"),
+        )
+        .unwrap();
         assert!(result.is_none());
     }
 
@@ -130,14 +141,24 @@ mod tests {
     #[test]
     fn test_maybe_encrypt_disabled() {
         let token = "plain-token".to_owned();
-        let result = maybe_encrypt(Some(token.clone()), false, "secret").unwrap();
+        let result = maybe_encrypt(
+            Some(token.clone()),
+            false,
+            &better_auth_core::AuthConfig::new("secret"),
+        )
+        .unwrap();
         assert_eq!(result, Some(token));
     }
 
     // Upstream reference: packages/better-auth/src/api/routes/account.test.ts :: describe("account") and packages/better-auth/src/oauth2/utils.ts; adapted to the Rust OAuth token encryption helpers.
     #[test]
     fn test_maybe_decrypt_none() {
-        let result = maybe_decrypt(None, true, "secret-key-that-is-32-chars-long").unwrap();
+        let result = maybe_decrypt(
+            None,
+            true,
+            &better_auth_core::AuthConfig::new("secret-key-that-is-32-chars-long"),
+        )
+        .unwrap();
         assert!(result.is_none());
     }
 }

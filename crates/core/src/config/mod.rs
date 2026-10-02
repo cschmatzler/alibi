@@ -141,7 +141,7 @@ pub enum AwaitedNotificationErrorPolicy {
 /// Main configuration for `BetterAuth`
 #[derive(Clone)]
 pub struct AuthConfig {
-    /// Secret key for signing tokens and sessions
+    /// Single-secret input. Managed mode uses `current_secret()` instead.
     pub secret: String,
 
     /// Versioned encryption keys. When present, its current key signs new tokens.

@@ -2,7 +2,7 @@
 
 mod crypto;
 mod endpoint;
-use super::token_crypto::{decrypt, encrypt};
+use super::token_crypto::{decrypt_with_config, encrypt_with_config};
 use async_trait::async_trait;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth_core::wire::{SessionView, UserView};
@@ -479,7 +479,7 @@ impl JwtPlugin {
         let private_key = if self.config.disable_private_key_encryption {
             private
         } else {
-            serde_json::to_string(&encrypt(&private, &ctx.config.secret)?)?
+            serde_json::to_string(&encrypt_with_config(&private, &ctx.config)?)?
         };
         let now = Utc::now();
         let data = CreateJwk {
@@ -620,7 +620,7 @@ impl JwtPlugin {
             key.private_key
         } else {
             let encrypted: String = serde_json::from_str(&key.private_key)?;
-            decrypt(&encrypted, &ctx.config.secret).map_err(|_error| AuthError::config("Failed to decrypt private key. Make sure the secret currently in use is the same as the one used to encrypt the private key. If you are using a different secret, either clean up your JWKS or disable private key encryption."))?
+            decrypt_with_config(&encrypted, &ctx.config).map_err(|_error| AuthError::config("Failed to decrypt private key. Make sure the secret currently in use is the same as the one used to encrypt the private key. If you are using a different secret, either clean up your JWKS or disable private key encryption."))?
         };
         Ok(Some(ResolvedJwtSigningKey {
             algorithm: key
@@ -1510,6 +1510,7 @@ const fn unauthorized() -> AuthError {
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
+    use crate::plugins::token_crypto::{decrypt, encrypt};
     #![allow(
         clippy::unwrap_used,
         clippy::indexing_slicing,

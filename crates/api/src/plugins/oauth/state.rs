@@ -4,7 +4,6 @@ use better_auth_core::utils::cookie_utils::{sign_cookie_value, verify_cookie_val
 use better_auth_core::{AuthConfig, AuthError, AuthRequest, AuthResult, OAuthStateStrategy};
 use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::Sha256;
@@ -158,14 +157,6 @@ impl AccountCookiePayload {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct StatePayloadClaims {
-    #[serde(flatten)]
-    payload: OAuthStatePayload,
-    exp: usize,
-    iat: usize,
-}
-
 fn server_context_mac(secret: &str, state: &str, context: &Value) -> AuthResult<Hmac<Sha256>> {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|_error| AuthError::internal("Invalid OAuth context signing key"))?;
@@ -255,63 +246,47 @@ pub(super) fn decode_database_state_cookie_value(secret: &str, token: &str) -> A
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn create_cookie_state_value(
-    secret: &str,
+    config: &AuthConfig,
     payload: &OAuthStatePayload,
 ) -> AuthResult<String> {
-    let now = Utc::now();
-    let claims = StatePayloadClaims {
-        payload: payload.clone(),
-        exp: usize::try_from((now + Duration::minutes(10)).timestamp()).map_err(|_error| {
-            AuthError::internal("JWT timestamp exceeds the supported integer range")
-        })?,
-        iat: usize::try_from(now.timestamp()).map_err(|_error| {
-            AuthError::internal("JWT timestamp exceeds the supported integer range")
-        })?,
-    };
-    Ok(encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )?)
+    super::super::token_crypto::encrypt_with_config(
+        &better_auth_core::utils::json::to_string(payload)?,
+        config,
+    )
 }
 
-///
 /// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
+/// Rejects unauthenticated or malformed state payloads.
 pub(super) fn decode_cookie_state_value(
-    secret: &str,
+    config: &AuthConfig,
     token: &str,
 ) -> AuthResult<OAuthStatePayload> {
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.validate_exp = true;
-    Ok(decode::<StatePayloadClaims>(
-        token,
-        &DecodingKey::from_secret(secret.as_bytes()),
-        &validation,
-    )?
-    .claims
-    .payload)
+    let plain = super::super::token_crypto::decrypt_with_config(token, config)?;
+    better_auth_core::utils::json::from_slice(plain.as_bytes()).map_err(AuthError::from)
 }
 
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn create_account_cookie_value(
-    secret: &str,
+    config: &AuthConfig,
     payload: &AccountCookiePayload,
     max_age: f64,
 ) -> AuthResult<String> {
-    super::account_cookie::encode(secret, payload, max_age)
+    super::account_cookie::encode(config.current_secret(), payload, max_age)
 }
 
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn decode_account_cookie_value(
-    secret: &str,
+    config: &AuthConfig,
     token: &str,
 ) -> AuthResult<AccountCookiePayload> {
-    super::account_cookie::decode(secret, token)
+    config
+        .verification_secrets()
+        .find_map(|secret| super::account_cookie::decode(secret, token).ok())
+        .ok_or_else(|| AuthError::bad_request("Account not found"))
 }
 
 pub(super) fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {

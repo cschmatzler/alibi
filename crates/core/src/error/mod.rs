@@ -110,6 +110,11 @@ pub enum AuthError {
     #[error("Internal server error: {0}")]
     Internal(String),
 
+    /// Authentication or encoding of encrypted persistence data failed.
+    /// HTTP callers receive an empty 500; private details are logged.
+    #[error("Encrypted authentication data failed: {0}")]
+    Encryption(String),
+
     /// An ordinary application callback failure whose HTTP contract is an empty 500.
     /// The private cause is logged, never sent to the client. Explicit API errors
     /// retain their own response and must not be wrapped in this variant.
@@ -162,6 +167,7 @@ impl AuthError {
             | Self::Serialization(_)
             | Self::Plugin { .. }
             | Self::Internal(_)
+            | Self::Encryption(_)
             | Self::CallbackFailure(_)
             | Self::PasswordHash(_)
             | Self::Jwt(_) => 500,
@@ -218,6 +224,7 @@ impl AuthError {
             | Self::Serialization(_)
             | Self::Plugin { .. }
             | Self::Internal(_)
+            | Self::Encryption(_)
             | Self::CallbackFailure(_)
             | Self::PasswordHash(_)
             | Self::Jwt(_) => {
@@ -242,8 +249,8 @@ impl AuthError {
     /// `IntoResponse::into_response` when the `axum` feature is enabled.
     #[must_use]
     pub fn to_auth_response(self) -> crate::types::AuthResponse {
-        if let Self::CallbackFailure(_) = &self {
-            tracing::error!(error = %self, "Application callback failed");
+        if matches!(&self, Self::CallbackFailure(_) | Self::Encryption(_)) {
+            tracing::error!(error = %self, "Authentication operation failed");
             return crate::types::AuthResponse::new(500);
         }
         let (status, code, message) = self.error_payload();
@@ -355,8 +362,8 @@ pub type AuthResult<T> = Result<T, AuthError>;
 #[cfg(feature = "axum")]
 impl axum::response::IntoResponse for AuthError {
     fn into_response(self) -> axum::response::Response {
-        if let Self::CallbackFailure(_) = &self {
-            tracing::error!(error = %self, "Application callback failed");
+        if matches!(&self, Self::CallbackFailure(_) | Self::Encryption(_)) {
+            tracing::error!(error = %self, "Authentication operation failed");
             return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
         let (status_u16, code, message) = self.error_payload();

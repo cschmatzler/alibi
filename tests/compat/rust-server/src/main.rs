@@ -1,5 +1,6 @@
 mod additional_field_models;
 mod fixtures;
+use fixtures::managed_secrets_fixture;
 mod magic_profiles;
 mod otp_profiles;
 mod parity_controls;
@@ -853,6 +854,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let bearer_router =
         bearer_fixture::router(&config, database.clone(), multiple_session_counter.clone()).await?;
+    let managed_secrets_router = managed_secrets_fixture::router(&config, database.clone()).await?;
     let custom_session_router =
         custom_session_fixture::router(&config, database.clone(), multiple_session_counter.clone())
             .await?;
@@ -2046,6 +2048,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(server_endpoint_version_router)
         .merge(multiple_session_router)
         .merge(custom_session_router)
+        .merge(managed_secrets_router)
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)
         .merge(api_key_generation_router)

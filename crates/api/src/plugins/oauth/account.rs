@@ -87,7 +87,7 @@ impl AccountSelection {
                 .find(|account| account.id().as_ref() == account_id.as_str())
                 .map(AccountCookiePayload::from_account),
             Self::Cookie if ctx.config.account.store_account_cookie => {
-                decode_account_cookie(req, &ctx.config, &ctx.config.secret)?
+                decode_account_cookie(req, &ctx.config)?
                     .filter(|account| account.user_id == user_id)
             }
             Self::Cookie => None,
@@ -195,7 +195,7 @@ async fn valid_access_token(
             .as_deref()
             .filter(|token| !token.is_empty())
     {
-        let refresh_token = maybe_decrypt(Some(stored_refresh), encrypted, &ctx.config.secret)
+        let refresh_token = maybe_decrypt(Some(stored_refresh), encrypted, &ctx.config)
             .map_err(|_error| access_token_failure())?
             .unwrap_or_default();
         let tokens = refresh_tokens_via_provider(provider, &refresh_token)
@@ -211,13 +211,9 @@ async fn valid_access_token(
     Ok((
         AccessTokenResponse {
             access_token: Some(
-                maybe_decrypt(
-                    account.access_token.as_deref(),
-                    encrypted,
-                    &ctx.config.secret,
-                )
-                .map_err(|_error| access_token_failure())?
-                .unwrap_or_default(),
+                maybe_decrypt(account.access_token.as_deref(), encrypted, &ctx.config)
+                    .map_err(|_error| access_token_failure())?
+                    .unwrap_or_default(),
             ),
             access_token_expires_at: account
                 .access_token_expires_at
@@ -239,7 +235,7 @@ fn token_response(
     if set_cookie && ctx.config.account.store_account_cookie {
         response = response.with_appended_header(
             "Set-Cookie",
-            create_account_cookie_header(&ctx.config, &ctx.config.secret, account)?,
+            create_account_cookie_header(&ctx.config, account)?,
         );
     }
     Ok(response)
@@ -303,7 +299,7 @@ pub(super) async fn handle_refresh_token(
     let refresh_token = maybe_decrypt(
         Some(stored_refresh),
         ctx.config.account.encrypt_oauth_tokens,
-        &ctx.config.secret,
+        &ctx.config,
     )
     .map_err(|_error| refresh_token_failure())?
     .unwrap_or_default();

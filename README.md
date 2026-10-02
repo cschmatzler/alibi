@@ -129,6 +129,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+Managed encryption keys select an explicit current version and keep older
+versions as readers:
+
+```rust
+use better_auth::{AuthConfig, ManagedSecrets};
+
+let keys = ManagedSecrets::new(2, "current-random-secret-at-least-32-characters")
+    .retain(0, "previous-random-secret-at-least-32-characters")
+    .legacy("pre-managed-random-secret-at-least-32-characters");
+let config = AuthConfig::default().managed_secrets(keys);
+```
+
+New encrypted records use `$ba$2$<ciphertext>`; reading retained versions does
+not rewrite existing records. Rewritten encrypted values use the current key.
+Remove a retained version (or call `retire(version)`) to reject its ciphertext.
+Bare pre-managed ciphertext requires `legacy(...)`; the single-secret
+`AuthConfig.secret` input is ignored in managed mode. Application callbacks
+should use `current_secret()` for the active key. Signed cookies and signed
+verification JWTs use only the current key, so changing it invalidates existing
+signed cookies even when their encryption key version is retained. Keep readers
+until outstanding encrypted proofs, factor secrets, OAuth credentials and JWKS
+private keys have been migrated or expired; dropping a factor key can lock out
+its users. Omit `legacy(...)` when retiring pre-managed ciphertext.
+
+Versions are nonnegative integers up to JavaScript's safe integer maximum;
+Rust requires a current key of at least 32 bytes and nonempty readers. Keys are
+redacted from `Debug`. The public OAuth encryption helpers now take
+`&AuthConfig` instead of `&str`, so callers pass their actual managed or
+single-secret configuration to `encrypt_token`, `decrypt_token`,
+`maybe_encrypt` and `maybe_decrypt`.
+
 Your app owns the auth entities and migrations — Better Auth adapts to whatever schema you define.
 
 The supported native integration is Axum (`AxumIntegration`, including application

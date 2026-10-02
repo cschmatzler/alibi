@@ -43,11 +43,15 @@ impl TwoFactorOtpStorage {
     ///
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
-    pub(super) async fn store(&self, otp: &str, secret: &str) -> AuthResult<String> {
+    pub(super) async fn store(
+        &self,
+        otp: &str,
+        secret: &better_auth_core::AuthConfig,
+    ) -> AuthResult<String> {
         match self {
             Self::Plain => Ok(otp.to_owned()),
             Self::Hashed => Ok(token_crypto::hash_token(otp)),
-            Self::Encrypted => token_crypto::encrypt(otp, secret),
+            Self::Encrypted => token_crypto::encrypt_with_config(otp, secret),
             Self::CustomHash(callback) => callback.hash(otp).await,
             Self::CustomCipher(callback) => callback.encrypt(otp).await,
         }
@@ -56,11 +60,19 @@ impl TwoFactorOtpStorage {
     ///
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
-    pub(super) async fn verify(&self, stored: &str, input: &str, secret: &str) -> AuthResult<bool> {
+    pub(super) async fn verify(
+        &self,
+        stored: &str,
+        input: &str,
+        secret: &better_auth_core::AuthConfig,
+    ) -> AuthResult<bool> {
         let (left, right) = match self {
             Self::Plain => (stored.to_owned(), input.to_owned()),
             Self::Hashed => (stored.to_owned(), token_crypto::hash_token(input)),
-            Self::Encrypted => (token_crypto::decrypt(stored, secret)?, input.to_owned()),
+            Self::Encrypted => (
+                token_crypto::decrypt_with_config(stored, secret)?,
+                input.to_owned(),
+            ),
             Self::CustomHash(callback) => (stored.to_owned(), callback.hash(input).await?),
             Self::CustomCipher(callback) => (callback.decrypt(stored).await?, input.to_owned()),
         };

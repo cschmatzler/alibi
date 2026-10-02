@@ -270,7 +270,7 @@ impl OneTapPlugin {
 
         let dont_remember_name = related_cookie_name(&ctx.config, "dont_remember");
         let dont_remember = crate::plugins::helpers::get_cookie(req, &dont_remember_name)
-            .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+            .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
             .is_some_and(|value| !value.is_empty());
         let max_age = (!dont_remember).then(|| ctx.config.session.expires_in.num_seconds());
         let mut response = AuthResponse::json(
@@ -286,7 +286,7 @@ impl OneTapPlugin {
                 "Set-Cookie",
                 create_session_like_cookie(
                     &dont_remember_name,
-                    &sign_cookie_value("true", &ctx.config.secret),
+                    &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
                 ),
@@ -295,11 +295,7 @@ impl OneTapPlugin {
         if let Some(cookie) = outcome.account_cookie.as_ref() {
             response = response.with_appended_header(
                 "Set-Cookie",
-                crate::plugins::oauth::create_account_cookie_header(
-                    &ctx.config,
-                    &ctx.config.secret,
-                    cookie,
-                )?,
+                crate::plugins::oauth::create_account_cookie_header(&ctx.config, cookie)?,
             );
         }
         Ok(response)

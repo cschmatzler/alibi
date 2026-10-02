@@ -280,6 +280,7 @@ impl OneTimeTokenPlugin {
                     | AuthError::Plugin { .. }
                     | AuthError::CallbackFailure(_)
                     | AuthError::Internal(_)
+                    | AuthError::Encryption(_)
                     | AuthError::PasswordHash(_)
                     | AuthError::Jwt(_)) => error,
                 })?;

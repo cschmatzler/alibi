@@ -233,10 +233,7 @@ impl EmailOtpPlugin {
             return Ok(None);
         }
         let (stored, _) = types::split_value(value.value()?);
-        self.config
-            .storage
-            .retrieve(stored, &ctx.config.secret)
-            .await
+        self.config.storage.retrieve(stored, &ctx.config).await
     }
 }
 
@@ -1376,31 +1373,49 @@ mod tests {
         let storage = EmailOtpStorage::Encrypted;
         assert_eq!(
             storage
-                .retrieve(fixture, "upstream-otp-codec-fixture-secret")
+                .retrieve(
+                    fixture,
+                    &better_auth_core::AuthConfig::new("upstream-otp-codec-fixture-secret")
+                )
                 .await
                 .unwrap(),
             Some("654321".into())
         );
         let encrypted = storage
-            .store("654321", "upstream-otp-codec-fixture-secret")
+            .store(
+                "654321",
+                &better_auth_core::AuthConfig::new("upstream-otp-codec-fixture-secret"),
+            )
             .await
             .unwrap();
         assert_ne!(encrypted, "654321");
         assert!(
             storage
-                .verify(&encrypted, "654321", "upstream-otp-codec-fixture-secret")
+                .verify(
+                    &encrypted,
+                    "654321",
+                    &better_auth_core::AuthConfig::new("upstream-otp-codec-fixture-secret")
+                )
                 .await
                 .unwrap()
         );
         assert!(
             !storage
-                .verify(&encrypted, "000000", "upstream-otp-codec-fixture-secret")
+                .verify(
+                    &encrypted,
+                    "000000",
+                    &better_auth_core::AuthConfig::new("upstream-otp-codec-fixture-secret")
+                )
                 .await
                 .unwrap()
         );
         assert!(
             storage
-                .verify(&encrypted, "654321", "wrong-secret")
+                .verify(
+                    &encrypted,
+                    "654321",
+                    &better_auth_core::AuthConfig::new("wrong-secret")
+                )
                 .await
                 .is_err()
         );

@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 
+import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
 import { Database } from "bun:sqlite";
 
 import { apiKey } from "@better-auth/api-key";
@@ -542,6 +543,7 @@ const clientIpFixture = await createClientIpFixture(authOptions, database);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
 const adminBannedMessageFixture = createAdminBannedMessageFixture(authOptions, database);
 const adminPermissionFixture = createAdminPermissionFixture(authOptions, database);
+const managedSecretsFixture = createManagedSecretsFixture(authOptions);
 const customSessionFixture = createCustomSessionFixture(authOptions);
 const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const bearerFixture = createBearerFixture(authOptions);
@@ -682,6 +684,7 @@ const apiKeyOptionsFixture = createApiKeyOptionsFixture(database, authOptions);
 verificationProfiles.set(apiKeyOptionsFixture.path, apiKeyOptionsFixture.auth);
 const apiKeyHookFixture = createApiKeyHookFixture(database, authOptions);
 verificationProfiles.set(apiKeyHookFixture.path, apiKeyHookFixture.auth);
+for (const [path, instance] of managedSecretsFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of siweFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
@@ -2331,6 +2334,8 @@ const server = Bun.serve({
       if (url.pathname === "/__test/phone-callbacks" && request.method === "GET") {
         return jsonResponse(phoneFixture.callbacks);
       }
+      const managedSecretsResponse = await managedSecretsFixture.handle(request);
+      if (managedSecretsResponse) return managedSecretsResponse;
       if (url.pathname === "/__test/phone-consume-otp" && request.method === "POST") {
         return phoneFixture.consume(await readJson(request));
       }

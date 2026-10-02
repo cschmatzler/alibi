@@ -1345,6 +1345,7 @@ pub(in crate::plugins) async fn sign_in_username_core(
             | AuthError::Plugin { .. }
             | AuthError::CallbackFailure(_)
             | AuthError::Internal(_)
+            | AuthError::Encryption(_)
             | AuthError::PasswordHash(_)
             | AuthError::Jwt(_)) => SignInUsernameFailure::Auth(other),
         })?;
