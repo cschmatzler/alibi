@@ -50,6 +50,12 @@ compatScenario("SIWE wrong wallet domain chain and signature burn proofs while i
     [{extra:"Expiration Time: 2001-02-30T00:00:00Z"},1,"UNAUTHORIZED_SIWE_MESSAGE_EXPIRED"],
     [{extra:"Expiration Time: Jan 1 2000 00:00:00 GMT"},1,"UNAUTHORIZED_SIWE_MESSAGE_EXPIRED"],
     [{extra:"Not Before: Sep 30 2099 12:00:00 UTC"},1,"UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID"],
+    [{extra:"Not Before: September 30, 2099 12:00:00 GMT"},1,"UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID"],
+    [{extra:"Not Before: January 1 2099"},1,"UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID"],
+    [{extra:"Not Before: Jan 1 2099 00:00:00 PST"},1,"UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID"],
+    [{extra:"Not Before: 2099-01-01T00:00:00+05:30"},1,"UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID"],
+    [{extra:"Not Before: 2099-01-01T00:00:00-0330"},1,"UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID"],
+    [{extra:"Expiration Time: 1999/12/31 23:59:59"},1,"UNAUTHORIZED_SIWE_MESSAGE_EXPIRED"],
     [{extra:"Not Before: 2099-01-01T00:00:00.123456789012Z"},1,"UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID"],
     [{},2,undefined],
   ] as const){
@@ -178,28 +184,36 @@ compatScenario("SIWE nonce aliases reject wallet body fields and strict verifica
 },["POST /siwe/nonce","POST /siwe/get-nonce","POST /siwe/verify"]);
 
 compatScenario("SIWE media validation preserves signed nonce and verifier state before successful JSON retry",async ctx=>{
+ const foreign=siweActor(ctx,"media-foreign");const foreignChallenge=await nonce(foreign);const foreignResult=await verify(foreign,message(foreignChallenge,{address:SECOND_EOA}),{scalar:2});expect(foreignResult.error).toBeNull();const foreignIdentity=identity.parse(foreignResult.data);const foreignSession=await foreign.client.getSession();expect(foreignSession.data?.session.token).toBe(foreignIdentity.token);
  const actor=siweActor(ctx);const challenge=await nonce(actor);const signed=message(challenge);
- const before=await state(ctx);const observations=[];
+ const before=await state(ctx);const observations=[];const rawMediaResponses:unknown[]=[];
+ const retainMedia=async(path:string,media:string,response:Response,body:unknown)=>{rawMediaResponses.push({path,media,status:response.status,headers:Object.fromEntries(response.headers),body});await Bun.write(new URL(`../../artifacts/siwe-media-${new URL(ctx.baseURL).port}.json`,import.meta.url),JSON.stringify(rawMediaResponses,null,2));};
  for(const path of ["/siwe/nonce","/siwe/get-nonce","/siwe/verify"]) {
   for(const media of ["text/plain","application/x-www-form-urlencoded","application/problem+json",""]) {
    const payload=path==="/siwe/verify" ? {message:signed,signature:signature(signed)} : {};
    const response=await actor.fetch(`${ctx.baseURL}/api/auth${path}`,{method:"POST",body:new TextEncoder().encode(JSON.stringify(payload)),headers:media ? {"content-type":media} : {}});
    expect(response.status).toBe(415);
-   const body=await response.json();
+   const body=await response.json();await retainMedia(path,media,response,body);
    expect(body).toEqual({code:"UNSUPPORTED_MEDIA_TYPE",message:media ? `Content-Type "${media}" is not allowed. Allowed types: application/json` : "Content-Type is required. Allowed types: application/json"});
    expect(await state(ctx)).toEqual(before);
    observations.push({path,media,body});
   }
  }
+ for(const path of ["/siwe/nonce","/siwe/get-nonce","/siwe/verify"])for(const media of ["text/plainapplication/json","TEXT/PLAINapplication/json; charset=UTF-8"]) {
+  const response=await actor.fetch(`${ctx.baseURL}/api/auth${path}`,{method:"POST",body:JSON.stringify(path.endsWith("verify")?{message:signed,signature:signature(signed)}:{}),headers:{"content-type":media}});
+  expect(response.status).toBe(400);const headers=Object.fromEntries([...response.headers].filter(([key])=>!["date","content-length","server","connection","keep-alive","transfer-encoding"].includes(key)));const body=await response.json();await retainMedia(path,media,response,body);expect(body).toEqual({code:"VALIDATION_ERROR",message:"[body] Invalid input: expected object, received string"});expect(await state(ctx)).toEqual(before);observations.push({path,media,headers,body});
+ }
+ const arrayRejected=await actor.fetch(`${ctx.baseURL}/api/auth/siwe/verify`,{method:"POST",body:JSON.stringify({message:signed,signature:signature(signed)}),headers:{"content-type":"application/octet-streamapplication/json"}});expect(arrayRejected.status).toBe(400);const arrayBody=await arrayRejected.json();await retainMedia("/siwe/verify","application/octet-streamapplication/json",arrayRejected,arrayBody);expect(arrayBody).toEqual({code:"VALIDATION_ERROR",message:"[body.message] Invalid input: expected string, received undefined; [body.signature] Invalid input: expected string, received undefined"});expect(await state(ctx)).toEqual(before);observations.push({path:"/siwe/verify",media:"application/octet-streamapplication/json",headers:Object.fromEntries([...arrayRejected.headers].filter(([key])=>!["date","content-length","server","connection","keep-alive","transfer-encoding"].includes(key))),body:arrayBody});
  const accepted=await actor.fetch(`${ctx.baseURL}/api/auth/siwe/verify`,{method:"POST",body:JSON.stringify({message:signed,signature:signature(signed)}),headers:{"content-type":"APPLICATION/JSON; charset=UTF-8"}});
  expect(accepted.status).toBe(200);const result=identity.parse(await accepted.json());
- const after=await state(ctx);expect(after.proofs).toEqual([]);expect(after.inputs).toHaveLength(1);expect(after.users).toHaveLength(1);expect(after.wallets[0]?.userId).toBe(result.user.id);
+ const after=await state(ctx);expect(after.proofs).toEqual([]);expect(after.inputs).toHaveLength(2);expect(after.users).toHaveLength(2);expect(after.wallets[1]?.userId).toBe(result.user.id);expect(after.users[0]).toEqual(before.users[0]);expect(after.wallets[0]).toEqual(before.wallets[0]);expect(after.accounts[0]).toEqual(before.accounts[0]);expect(after.sessions[0]).toEqual(before.sessions[0]);
+ const replay=await verify(actor,signed);expect(replay.error).toMatchObject({status:401,code:"UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE"});expect(await state(ctx)).toEqual(after);
  const aliasRetry=await actor.fetch(`${ctx.baseURL}/api/auth/siwe/get-nonce`,{method:"POST",body:"{}",headers:{"content-type":"APPLICATION/JSON; charset=UTF-8"}});
  expect(aliasRetry.status).toBe(200);const aliasNonce=z.object({nonce:z.string()}).parse(await aliasRetry.json());
  const aliasPending=await state(ctx);expect(aliasPending.inputs).toEqual(after.inputs);expect(aliasPending.proofs).toHaveLength(1);
  const aliasVerified=await verify(actor,message(aliasNonce.nonce));expect(aliasVerified.error).toBeNull();expect(identity.parse(aliasVerified.data).user.id).toBe(result.user.id);
- const aliasAfter=await state(ctx);expect(aliasAfter.proofs).toEqual([]);expect(aliasAfter.wallets).toEqual(after.wallets);expect(aliasAfter.accounts).toEqual(after.accounts);expect(aliasAfter.sessions).toHaveLength(2);
- return {before,observations,result,after,aliasNonce,aliasPending,aliasVerified:ctx.snapshot(aliasVerified),aliasAfter};
+ const aliasAfter=await state(ctx);expect(aliasAfter.proofs).toEqual([]);expect(aliasAfter.wallets).toEqual(after.wallets);expect(aliasAfter.accounts).toEqual(after.accounts);expect(aliasAfter.sessions).toHaveLength(3);
+ return {foreignResult:ctx.snapshot(foreignResult),foreignSession:ctx.snapshot(foreignSession),before,observations,result,after,replay:ctx.snapshot(replay),aliasNonce,aliasPending,aliasVerified:ctx.snapshot(aliasVerified),aliasAfter};
 },["POST /siwe/nonce","POST /siwe/get-nonce","POST /siwe/verify"]);
 
 compatScenario("SIWE hour 24 validates every fraction digit before applying date bounds",async ctx=>{
@@ -213,4 +227,18 @@ compatScenario("SIWE hour 24 validates every fraction digit before applying date
   observations.push({fraction,result:ctx.snapshot(result),after});
  }
  return observations;
+},["POST /siwe/nonce","POST /siwe/verify"]);
+
+compatScenario("SIWE signed legacy date bounds distinguish parser admission from verifier delivery and preserve a foreign wallet",async ctx=>{
+ const foreign=siweActor(ctx,"date-foreign");const foreignNonce=await nonce(foreign);const foreignResult=await verify(foreign,message(foreignNonce,{address:SECOND_EOA}),{scalar:2});expect(foreignResult.error).toBeNull();const foreignIdentity=identity.parse(foreignResult.data);const foreignSession=await foreign.client.getSession();expect(foreignSession.data?.session.token).toBe(foreignIdentity.token);
+ const actor=siweActor(ctx,"date-owner");const original=await state(ctx);const observations=[];
+ for(const [date,position] of [["September 30, 2099 12:00:00 GMT","future"],["September 30, 2000 12:00:00 GMT","past"],["January 1 2099","future"],["January 1 2000","past"],["Jan 1 2099 00:00:00 PST","future"],["Jan 1 2000 00:00:00 PST","past"],["2099-01-01T00:00:00.123456789012+05:30","future"],["2000-01-01T00:00:00.123456789012-0330","past"],["invalid legacy timestamp","invalid"],["+275760-09-13T00:00:00.000Z","future"],["+275760-09-13T00:00:00.001Z","invalid"],...["February","March","April","May","June","July","August","October","November","December"].map(month=>[`${month} 1 2099 00:00:00 GMT`,"future"] as const),...["UT","UTC","GMT","EST","EDT","CST","CDT","MST","MDT","PDT"].map(zone=>[`Jan 1 2099 00:00:00 ${zone}`,"future"] as const)] as const)for(const field of ["Not Before","Expiration Time"] as const){
+  const challenge=await nonce(actor);const before=await state(ctx);const signed=message(challenge,{extra:`${field}: ${date}`});const rejected=(field==="Not Before"&&position==="future")||(field==="Expiration Time"&&position==="past");const result=await verify(actor,signed);let session:unknown=null;
+  if(rejected)expect(result.error).toMatchObject({status:401,code:field==="Not Before"?"UNAUTHORIZED_SIWE_MESSAGE_NOT_YET_VALID":"UNAUTHORIZED_SIWE_MESSAGE_EXPIRED"});
+  else {expect(result.error).toBeNull();const principal=identity.parse(result.data);const read=await actor.client.getSession();expect(read.data?.user.id).toBe(principal.user.id);expect(read.data?.session.token).toBe(principal.token);session=ctx.snapshot(read);}
+  const after=await state(ctx);expect(after.proofs).toEqual([]);expect(after.users[0]).toEqual(original.users[0]);expect(after.accounts[0]).toEqual(original.accounts[0]);expect(after.wallets[0]).toEqual(original.wallets[0]);expect(after.sessions[0]).toEqual(original.sessions[0]);
+  if(rejected){expect(after.users).toEqual(before.users);expect(after.accounts).toEqual(before.accounts);expect(after.wallets).toEqual(before.wallets);expect(after.sessions).toEqual(before.sessions);expect(after.inputs).toEqual(before.inputs);}else{expect(after.inputs).toHaveLength(before.inputs.length+1);expect(after.inputs.at(-1)?.message).toBe(signed);expect(after.inputs.at(-1)?.signature).toBe(signature(signed));expect(after.sessions).toHaveLength(before.sessions.length+1);}
+  const replay=await verify(actor,signed);expect(replay.error).toMatchObject({status:401,code:"UNAUTHORIZED_INVALID_OR_EXPIRED_NONCE"});expect(await state(ctx)).toEqual(after);observations.push({field,date,position,before,result:ctx.snapshot(result),session,after,replay:ctx.snapshot(replay)});
+ }
+ return {foreignResult:ctx.snapshot(foreignResult),foreignSession:ctx.snapshot(foreignSession),original,observations};
 },["POST /siwe/nonce","POST /siwe/verify"]);
