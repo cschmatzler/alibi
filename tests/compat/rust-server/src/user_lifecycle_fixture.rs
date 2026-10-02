@@ -314,7 +314,7 @@ pub(super) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                     },
                     "failure" => app.state.lock().expect("lifecycle failure").failure = body.failure.unwrap_or_default(),
                     "rename" => { drop(auth.store().update_user(body.user_id.as_deref().ok_or_else(||AuthError::bad_request("Missing rename"))?,better_auth_core::UpdateUser { name:Some(body.name.ok_or_else(||AuthError::bad_request("Missing rename"))?), ..Default::default() }).await?); },
-                    "session-clock" => { drop(session::Entity::update_many().col_expr(session::Column::CreatedAt,Expr::value(body.created_at.ok_or_else(||AuthError::bad_request("Missing session clock"))?)).col_expr(session::Column::ExpiresAt,Expr::value(body.expires_at.unwrap_or(DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z").unwrap().with_timezone(&Utc)))).filter(session::Column::Token.eq(body.token.ok_or_else(||AuthError::bad_request("Missing session clock"))?)).exec(&db).await.map_err(db_error)?); },
+                    "session-clock" => { _ = session::Entity::update_many().col_expr(session::Column::CreatedAt,Expr::value(body.created_at.ok_or_else(||AuthError::bad_request("Missing session clock"))?)).col_expr(session::Column::ExpiresAt,Expr::value(body.expires_at.unwrap_or(DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z").unwrap().with_timezone(&Utc)))).filter(session::Column::Token.eq(body.token.ok_or_else(||AuthError::bad_request("Missing session clock"))?)).exec(&db).await.map_err(db_error)?; },
                     "state" => {},
                     _ => return Err(AuthError::bad_request("Unknown lifecycle action")),
                 }

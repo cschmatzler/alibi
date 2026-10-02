@@ -156,3 +156,80 @@ artifacts are in `/tmp/issue186-source-cache-authority.json` and
 cache authority/snapshot contract is recorded for the cache/update-user issues
 instead of claiming that #186 implements it. Sensitive change-email and
 deletion remain physically authoritative.
+
+## Final frozen integration ledger
+
+Independent production/security review of immutable
+`6742a20476af9675210a78e5e6c48c657571a20c` found no blocker. Its parent is actual
+main `d8889f8819652bba7ac1d08125fae65552ed660a`; all 3,433 parent requirements
+remain intact and 62 genuine #186 cells are additive. The earlier 9128 native
+failure and original atomic-consumption failure remain in the logs above.
+
+The exact canonical command `devenv shell -- bash scripts/check.sh` ended with
+exit 100 at the complete SDK gate (`/tmp/issue186-6742-canonical.log`). Before
+that failure, formatting, both default/optional all-target workspace Clippy
+variants, the no-default optional check, default native 794/794, fixture 2/2,
+optional native 845/845, TypeScript, all 71 harness tests (754 assertions), Axum 36/36, endpoint
+validation 3/3 and capability inventory 2/2 passed. The full actual SDK run
+passed 966/971 owners with 68,004 assertions, including all 40 #186 owners.
+It is not a complete canonical green result. The five remaining failures are:
+
+* API-key server validators: ten Content-Type header observations differ.
+* Organization fixed membership policy: two member-createdAt observations and
+  two candidate-session expiry observations exceed the existing clock tolerance.
+* Three generated seed-12648430 profiles: only step 22's public change-password
+  unauthenticated code/message differ. Steps 21/29's lifecycle authority shape
+  now matches. The public password guard/error boundary remains #181/#193; this
+  is not a trusted server-only #205 dispatch claim.
+
+The organization failure was reproduced using the unchanged owner, real servers
+and the exact d888 parent in `/tmp/better-auth-issue-186-parent-proof`. That
+parent failed only the two member-createdAt paths, each comparing
+`2026-10-02T00:22:32.795Z` with `2026-10-02T00:22:35.127Z` (204 assertions,
+`/tmp/issue186-parent-membership-owner.log`, exit 1). The frozen final focused
+owner also failed those two paths (`00:23:41.670Z` versus `00:23:44.232Z`) and
+two candidate-session expiry aliases (`2026-10-09T00:23:41.659Z` versus
+`2026-10-09T00:23:44.134Z`), with no other observed value/ownership/row/category
+differences (204 assertions, `/tmp/issue186-final-membership-owner.log`, exit 1).
+This establishes the precise parent subset; it does not claim identical counts
+or infer an identical cause merely from the scenario name or duration. The
+original full-run diagnostics are retained unchanged.
+
+The separately invoked evidence checker ended with exit 1, reporting 115
+missing cells from the parent inventory and zero missing additive #186 cells
+(`/tmp/issue186-6742-capability-evidence.log`). All 62 new cells have real recorded
+evidence; no missing parent requirement was discarded. The recorded aggregate
+is retained in `/tmp/issue186-6742-capability-evidence.json`.
+
+Independent documentation with warnings denied passed
+(`/tmp/issue186-6742-docs.log`, exit 0). Chromium passed 2/2 with 22 assertions
+(`/tmp/issue186-6742-browser.log`, exit 0). Clean coverage used documented
+`MBX_DISABLE=1` to prevent cached source aliases and ran the unchanged coverage
+script: native 845/845 plus all five actual SDK owner suites passed, with
+1,078 genuine runtime profraw files and the real fixture object. The unchanged
+75% gate passed 30,175/39,025 lines (77.322229%,
+`/tmp/issue186-6742-clean-coverage.log`, exit 0). Its 203 workspace source paths
+are unique. The report also retains the same conservative standard-library
+thread-local inline record (3/6) present in the #179 and #256 reports; excluding
+only that non-workspace record for informational arithmetic gives
+30,172/39,019 production lines (77.326431%). Neither floor nor exclusions were
+changed. Relative to the #179 report, this revision adds 353 production lines.
+Actual module hits include email verification 295/383, user management 367/413,
+cache runtime 385/414 and request hook context 29/29.
+
+These final observations leave the broader signed-cache update-user migration
+in #221 and arbitrary custom-user projection in #184. The final publication
+commit retains exactly the frozen 6742 production tree. A separately invoked
+strict all-target fixture Clippy found an unnecessary `drop` of SeaORM
+UpdateResult in the real session-clock control
+(`/tmp/issue186-6742-fixture-strict.log`, exit 101). It was replaced by the
+idiomatic explicit discard `_ = ...await...?;` without altering the actual SQL
+operation or clocks. Strict fixture Clippy then passed
+(`/tmp/issue186-fixture-strict-final.log`, exit 0), as did fixture formatting
+and rebuilding (`/tmp/issue186-fixture-build-final.log`, exit 0). The complete
+actual final family then passed 40/40 owners and 1,960 assertions
+(`/tmp/issue186-final-40-owner-retry.log`, exit 0). Its first attempt was a
+setup-only native bind failure (`/tmp/issue186-final-40-owner.log`, exit 1);
+it provides no Native parity result. The unchanged retry used fresh ports,
+started Native first and verified both owned PIDs during health checks. No
+lint suppression or production/test-only interface was added.
