@@ -1,0 +1,47 @@
+# Verification storage, identifier and cleanup modes (issue #174)
+
+The initial read-only audit completed while issue #135 was frozen. That issue ordinarily merged at `2984354a0433235d69859f50fc73091a9fecc129`, with an exact reviewed-tree match. This isolated issue starts from that real main commit; the following findings/design are discovery, not passing implementation evidence.
+
+Authority is installed Better Auth 1.7.6 `dist/db/internal-adapter.mjs`, `dist/db/verification-token-storage.mjs`, `@better-auth/core/dist/types/init-options.d.mts`, `dist/db/with-hooks.mjs`, `dist/state.mjs`, and the actual OTP, magic-link, one-time-token and password consumers. The issue acceptance additionally covers wrong operation/mailbox/user, replay, concurrent consumers, cancellation and failed writes.
+
+## Existing strongest owners
+
+- SeaORM `verification_tests.rs`: expired latest invalidates live siblings, expected-value mismatch preserves latest, bounded cleanup snapshots versus unrestricted expired deletion with before-hook veto, identifier-wide deletion with one hook snapshot, consume hooks and commit order, expected-generation CAS, independent SQLite pools racing consume/reserve/update, real committed snapshots and UUID schema reservation. Extend only for distinct new risk.
+- SDK `passwordless/email-otp-config.test.ts`: real default/disabled cleanup, plugin hashed/encrypted/reusable OTP configuration. These establish plugin value codecs, not global identifier policy.
+- SDK `passwordless/email-otp.test.ts`: operation/mailbox/attempts/expiry, exact one-winner actual server race, reset/change and replay.
+- SDK magic-link: real issuance, origin guard before consumption, expiry/replay, disabled signup and hashed plugin codec. Native custom generator/hash/concurrent owner already exists.
+- SDK one-time-token: actual persisted original session transfer, expiry/revocation, newest expired generation invalidating older live siblings, hashed plugin codec and server/header generation. Native concurrency owner already exists.
+- SDK OAuth rejection: actual browser callback replay with whole owner/foreign snapshots. It does not establish Source atomic OAuth consumption.
+- Issue 135 full expired-reset owner completes physical/delivery/rejection/replay/hash/callback/foreign observations before comparing raw proof length.
+
+## Authoritative semantics
+
+Global `storeIdentifier` is plain, SHA-256/base64url without padding, or async custom hash. A default/override map chooses the first insertion-ordered matching prefix. This transformation runs after each plugin's own token/OTP representation. Reads and consumes try transformed identifier first, then plain legacy fallback; an existing expired transformed generation remains the winning consumed generation and cannot resurrect a live plain row. Explicit delete/update operate only on the transformed identifier. SQL newest lookup is createdAt descending with limit 1, snapshots before global expiry cleanup, and returns the selected expired snapshot even after cleanup removed it.
+
+Source secondary storage defaults verification to cache-only unless storeInDatabase is true. Read returns truthy safely parsed cache data first without schema hydration, then legacy plain cache, then SQL only when configured. Cache hits and cache-only misses do not invoke global SQL cleanup or backfill SQL. TTL floors remaining seconds and omits writes when nonpositive.
+
+Create ordering is before hooks, optional DB write, cache write, after hooks. Cache failure leaves committed DB data and suppresses after hooks. The cache key comes from the logical identifier transformed before trusted hook mutations; the cached value retains the actual admitted mutation. Secondary-only creation does not invent an adapter-generated primary ID. Update writes cache before DB/update hooks, so a failed DB update can leave an updated cache entry. Delete removes cache before DB/delete hooks, so a DB veto can leave SQL data after cache removal. Database consume commits actual one-row deletion plus unrestricted sibling invalidation before deleting both transformed/plain cache keys. Secondary-only consume uses atomic getAndDelete and bypasses DB delete hooks. Consume hydration rejects parse failures and invalid/nonfinite expiry; it does not validate every remaining field, so missing-field behavior must be measured or explicitly bounded rather than assigned a safe fallback. Reservation remains logical `reserve:` SHA-256 primary-key gate and explicitly rejects cache-only storage.
+
+Source OAuth state uses 32 alphanumeric characters and the raw state as DB identifier. Its actual DB callback reads, parses, checks embedded/state cookie correlation, expires the state cookie, then deletes by identifier; it is not the atomic consume helper. Native currently uses UUID state, an oauth: prefix and selected-row deletion. Measure real concurrency instead of inventing Source atomic behavior; repair identifier-wide deletion at the actual guards.
+
+Source password reset request explicitly calls generateId(24), including missing-user timing simulation. Native currently uses a 32-character simple UUID. The shared Source generateId(size) defaults falsy size to 32 and samples a-z/A-Z/0-9. Keep other callers' actual alphabets: magic link 32 letters, default OTT32, numeric OTP. Do not change database entity primary-ID policy indiscriminately.
+
+## Bounded implementation/evidence design
+
+Keep low-level raw typed SQL adapter contracts. Add a genuine initialized verification service with typed ordered identifier policy and optional secondary backend, preserving every actual consumer's Source operation ordering. Existing VerificationView is a DB projection with mandatory ID; cache-only Source snapshots require honest optional real IDs rather than fabricated S::Verification models. A simple wrapper around hookful create_verification then cache.set is insufficient because it would run after hooks too early. Preserve trusted transaction registration/after-commit behavior and explicit unsupported custom-adapter operations.
+
+Keep secondary sessions outside this lane. Configure actual Source session.storeSessionInDatabase as needed to isolate verification storage, and record any unestablished session-cache interaction honestly.
+
+One primary actual server-API storage-mode/identifier matrix should retain whole SQL/cache observations and actual lifecycle receipts for create/find/update/delete/consume/reserve, plain fallback, TTL, mutation, malformed cache, cancellation and failed writes. Extend existing consumer owners with real configured profiles for scope/mailbox/user/foreign isolation, attempts, issuance replacement, expiry/replay and concurrent consumers. Use genuine SQL/cache primitives and exact full outcomes, not fake admission or 404/compiler-before evidence. Preserve current comparator, Source package, thresholds and exclusions. Reuse the credible existing reset-length before observation.
+
+## Existing issue 135 before artifacts
+
+`/tmp/issue-135-before-length.json` and `/tmp/issue-135-before-length.ts` use old Native a6326641 production unchanged (fixture-only missing-API adaptation) versus actual Source. Both real reset requests succeed; each delivered token equals its physical reset-password: identifier suffix and proof value equals the owned user's ID. Source length24 versus old Native32; both full snapshots contain two actual users/accounts/sessions and one verification. `/tmp/issue-135-frozen-standalone16.log` and `/tmp/issue-135-frozen-composed16.log` preserve the complete final lifecycle with the length comparison performed only at the final observation.
+
+## Authoring gate and concrete adapter risks
+
+The primary server-API owner will protect observable configured identifier/storage behavior, whole verification SQL/cache state and actual hook/publication order. Current native production lacks initialized global modes; the credible before proof must show real wrong physical/cache admission rather than an unavailable route or compiler error. Existing plugin-specific value-codec and atomic physical-storage owners do not exercise global transforms or the secondary-only/mixed publication phases. The new initialized service, genuine raw consumed snapshot and publication phase are needed by real production consumers/custom adapters, without fixture-only hooks or fabricated original models.
+
+An expired transformed row must remain the winning consumed generation and block a live plain fallback. Current raw adapter live-consume filters expiry before returning, so it cannot by itself distinguish an absent generation from a deleted expired winner. A raw atomic consumed-snapshot operation is required; existing live-consume contracts remain available and keep their expiry filter. Independently constructed SeaORM pools remain the race authority.
+
+Creation must retain before-hook mutations, commit its physical row when configured, publish the actual admitted snapshot to cache, then invoke after hooks. A cache failure leaves that committed row and suppresses after hooks. A secondary-only snapshot has no invented adapter ID or physical model. New snapshot lifecycle hooks may bridge the old model callback only when a genuine original model exists. Raw cached find preserves truthy JSON without full hydration; consume performs the separate actual Source expiry hydration. Explicit unsupported custom-store modes must fail closed rather than imitate these phases.
