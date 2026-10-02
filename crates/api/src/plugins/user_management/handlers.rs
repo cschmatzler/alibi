@@ -26,7 +26,6 @@ pub(super) async fn send_email_or_log(
             tracing::warn!(
                 plugin = "user-management",
                 action = action,
-                email = to,
                 error = %error,
                 "Failed to send email"
             );
@@ -35,7 +34,6 @@ pub(super) async fn send_email_or_log(
         tracing::warn!(
             plugin = "user-management",
             action = action,
-            email = to,
             "No email provider configured, skipping email"
         );
     }
