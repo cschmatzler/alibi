@@ -37,4 +37,11 @@ replay/rotation and local logout remain observed.
 
 Independent factory/helpers/production/fixture review found no blocker. Preserve
 all4,991 parent cells and append only actual passing Kick trace constraints.
-Intended generic-parent authorization proof and final broad gates remain pending. No Source/comparer edit or hook bypass.
+The unchanged actual32b702f8 parent, with only the genuine fixture and its old
+public generic constructor, compiles and fails default authorization for the
+intended missing user:read default before requested scopes. Source passes first;
+Native replaces the default (/tmp/issue148-generic-before-owner.log,28assertions,
+exit1). Production and both lockfile diffs are empty. Independent review already
+confirms the actual first-profile boundary and original identity binding.
+Final canonical evidence and broad strict/docs/browser/clean-floor gates remain
+pending on this immutable program. No Source/comparer edit or hook bypass.
