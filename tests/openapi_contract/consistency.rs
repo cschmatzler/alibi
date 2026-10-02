@@ -1,19 +1,11 @@
-#![cfg(test)]
 //! Cross-endpoint consistency tests — verify user/session objects are
 //! identical across different API responses.
-#![expect(
-    unused_crate_dependencies,
-    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
-)]
 #![allow(
     clippy::indexing_slicing,
     reason = "consistency tests use direct JSON indexing to compare response object shapes"
 )]
 
-#[path = "support/compat/mod.rs"]
-mod compat;
-
-use compat::helpers::*;
+use crate::contract::helpers::*;
 
 #[cfg(test)]
 mod tests {

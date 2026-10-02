@@ -1,20 +1,12 @@
-#![cfg(test)]
 //! Field-level checks for the public camelCase response contract.
-#![expect(
-    unused_crate_dependencies,
-    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
-)]
 #![allow(
     clippy::indexing_slicing,
     reason = "field-level compatibility tests use direct JSON indexing for concise response shape assertions"
 )]
 
-#[path = "support/compat/mod.rs"]
-mod compat;
-
+use crate::contract::helpers::*;
+use crate::contract::shapes::check_camel_case_fields;
 use better_auth::prelude::CreateAccount;
-use compat::helpers::*;
-use compat::shapes::check_camel_case_fields;
 
 #[cfg(test)]
 mod tests {

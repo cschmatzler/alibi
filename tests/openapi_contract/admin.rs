@@ -1,4 +1,3 @@
-#![cfg(test)]
 //! Compatibility tests for a subset of Admin plugin endpoints (Admin).
 //!
 //! Endpoints tested:
@@ -10,10 +9,6 @@
 //! - POST /admin/set-user-password
 //! - POST /admin/set-role
 //! - POST /admin/has-permission
-#![expect(
-    unused_crate_dependencies,
-    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
-)]
 #![allow(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -21,11 +16,8 @@
     reason = "admin compatibility tests intentionally use panic-on-failure assertions and direct JSON indexing for endpoint contract checks"
 )]
 
-#[path = "support/compat/mod.rs"]
-mod compat;
-
+use crate::contract::helpers::*;
 use better_auth::prelude::AuthUser;
-use compat::helpers::*;
 use serde_json::json;
 
 // ---------------------------------------------------------------------------

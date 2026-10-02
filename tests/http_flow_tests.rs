@@ -15,13 +15,13 @@
     reason = "integration tests intentionally use panic-on-failure assertions and direct JSON indexing for endpoint behavior checks"
 )]
 
-#[path = "support/compat/mod.rs"]
-mod compat;
+#[path = "support/openapi_contract/mod.rs"]
+mod contract;
 
 use better_auth::BetterAuth;
 use better_auth_core::entity::AuthUser;
 use better_auth_core::store::UserStore;
-use compat::helpers::*;
+use contract::helpers::*;
 use std::sync::Arc;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

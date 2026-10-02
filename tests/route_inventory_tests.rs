@@ -9,10 +9,10 @@
     clippy::indexing_slicing,
     reason = "test fixture validation fails immediately"
 )]
-#[path = "support/compat/mod.rs"]
-mod compat;
+#[path = "support/openapi_contract/mod.rs"]
+mod contract;
 
-use compat::helpers::{TestAuthOptions, create_test_auth_with_options};
+use contract::helpers::{TestAuthOptions, create_test_auth_with_options};
 use serde_json::Value;
 use std::collections::BTreeSet;
 

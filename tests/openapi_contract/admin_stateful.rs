@@ -1,12 +1,7 @@
-#![cfg(test)]
 //! Compatibility tests for admin admin stateful flows.
 //!
 //! Focused on the shared banned-user session gate and admin stateful semantics
 //! that cross route boundaries.
-#![expect(
-    unused_crate_dependencies,
-    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
-)]
 #![allow(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -14,12 +9,9 @@
     reason = "compat contract tests use direct assertions and JSON indexing for endpoint checks"
 )]
 
-#[path = "support/compat/mod.rs"]
-mod compat;
-
+use crate::contract::helpers::*;
 use better_auth::prelude::{AuthUser, UpdateUser};
 use chrono::{Duration, Utc};
-use compat::helpers::*;
 use serde_json::json;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;

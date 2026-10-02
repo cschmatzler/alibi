@@ -1,13 +1,8 @@
-#![cfg(test)]
 //! Compatibility tests that compare our implementation against the
 //! generated upstream `OpenAPI` contract from the pinned Better Auth package.
 //!
 //! These tests ensure route coverage and response shape alignment with
 //! the canonical Better-Auth TypeScript implementation.
-#![expect(
-    unused_crate_dependencies,
-    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
-)]
 #![allow(
     clippy::expect_used,
     clippy::panic,
@@ -16,16 +11,13 @@
     reason = "compatibility tests intentionally use panic-on-failure assertions and direct JSON indexing for contract checks"
 )]
 
-#[path = "support/compat/mod.rs"]
-mod compat;
-
+use crate::contract::helpers::html_text_content;
 use better_auth::{
     AuthBuilder, AuthConfig, BetterAuth,
     plugins::EmailPasswordPlugin,
     prelude::{AuthRequest, HttpMethod},
 };
 use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
-use compat::helpers::html_text_content;
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
@@ -37,8 +29,9 @@ type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_sch
 
 /// Parse the generated upstream `OpenAPI` and return a map of path → set of HTTP methods.
 fn load_reference_spec() -> BTreeMap<String, HashSet<String>> {
-    let spec =
-        compat::schema::load_openapi_spec_with_profile(compat::schema::OpenApiProfile::AllIn);
+    let spec = crate::contract::schema::load_openapi_spec_with_profile(
+        crate::contract::schema::OpenApiProfile::AllIn,
+    );
     let paths = spec.paths.as_ref().expect("generated spec must have paths");
 
     let mut result = BTreeMap::new();

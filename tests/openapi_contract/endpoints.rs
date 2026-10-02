@@ -1,12 +1,7 @@
-#![cfg(test)]
 //! Endpoint validation smoke tests for selected schema-covered endpoints.
 //!
 //! These tests exercise each API endpoint and validate responses against the
 //! `OpenAPI` spec schema.
-#![expect(
-    unused_crate_dependencies,
-    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
-)]
 #![allow(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -14,13 +9,10 @@
     reason = "endpoint smoke tests intentionally use direct JSON assertions against the generated spec"
 )]
 
-#[path = "support/compat/mod.rs"]
-mod compat;
-
+use crate::contract::helpers::*;
+use crate::contract::shapes::check_camel_case_fields;
+use crate::contract::validator::SpecValidator;
 use better_auth::prelude::CreateAccount;
-use compat::helpers::*;
-use compat::shapes::check_camel_case_fields;
-use compat::validator::SpecValidator;
 
 #[cfg(test)]
 mod tests {
@@ -269,7 +261,7 @@ mod tests {
     #[tokio::test]
     async fn test_error_response_shapes_match_spec() {
         let auth = create_test_auth().await;
-        let spec = compat::schema::load_openapi_spec();
+        let spec = crate::contract::schema::load_openapi_spec();
 
         // Collect error scenarios
         let error_scenarios: Vec<(&str, &str, better_auth::prelude::AuthRequest, u16)> = vec![
@@ -339,9 +331,11 @@ mod tests {
                 }
 
                 // Validate against spec error schema
-                let error_schemas = compat::schema::extract_error_schemas(&spec, path, method);
+                let error_schemas =
+                    crate::contract::schema::extract_error_schemas(&spec, path, method);
                 if let Some(error_schema) = error_schemas.get(&status.to_string()) {
-                    let diffs = compat::validation::validate_response(&body, error_schema, "");
+                    let diffs =
+                        crate::contract::validation::validate_response(&body, error_schema, "");
                     if !diffs.is_empty() {
                         drop(writeln!(
                             std::io::stderr().lock(),

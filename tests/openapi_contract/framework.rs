@@ -1,12 +1,7 @@
-#![cfg(test)]
 //! Unit tests for the compatibility framework's internal logic.
 //!
 //! Tests for camelCase detection, rendered-text decoding, and schema resolution
 //! against generated upstream OpenAPI profiles.
-#![expect(
-    unused_crate_dependencies,
-    reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
-)]
 #![allow(
     clippy::expect_used,
     clippy::unwrap_used,
@@ -14,15 +9,12 @@
     reason = "unit tests intentionally use panic-on-failure assertions and direct indexing for compact fixture checks"
 )]
 
-#[path = "support/compat/mod.rs"]
-mod compat;
-
-use compat::helpers::html_text_content;
-use compat::schema::{
+use crate::contract::helpers::html_text_content;
+use crate::contract::schema::{
     OpenApiProfile, extract_success_schema, load_openapi_spec, load_openapi_spec_with_profile,
     resolve_object_schema,
 };
-use compat::shapes::check_camel_case_fields;
+use crate::contract::shapes::check_camel_case_fields;
 
 #[cfg(test)]
 mod tests {

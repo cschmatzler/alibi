@@ -105,7 +105,7 @@ custom numeric-ID schema using `"0001"` to refer to owner `"1"`.
   signed preference/session-lifetime tests.
 - `cargo nextest run -p better-auth-seaorm wallet_`: owner/deletion rollback and
   installed-schema migration/default tests.
-- `cargo nextest run --features seaorm2 --test legacy_schema_integration_tests
+- `cargo nextest run --features seaorm2 --test legacy_schema_tests
   numeric_user_schema_cleans_team`: custom numeric ID regression, observed to
   fail before canonical cleanup and pass after it.
 - `cargo nextest run --test client_compat_tests plugins_siwe_client_compat --run-ignored only

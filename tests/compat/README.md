@@ -274,7 +274,7 @@ To update the inventory deliberately after adding routes or tests:
 ```bash
 mkdir -p coverage
 bun tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
-BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test compat_coverage_tests
+BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test route_inventory_tests
 BETTER_AUTH_UPDATE_CAPABILITIES=1 cargo nextest run --test client_compat_tests full_client_compat --run-ignored only --no-capture
 ```
 
