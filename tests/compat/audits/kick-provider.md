@@ -43,5 +43,40 @@ intended missing user:read default before requested scopes. Source passes first;
 Native replaces the default (/tmp/issue148-generic-before-owner.log,28assertions,
 exit1). Production and both lockfile diffs are empty. Independent review already
 confirms the actual first-profile boundary and original identity binding.
-Final canonical evidence and broad strict/docs/browser/clean-floor gates remain
-pending on this immutable program. No Source/comparer edit or hook bypass.
+No Source/comparer edit or hook bypass.
+
+## Immutable final evidence
+
+Code head4e27416638adbf7f9875fe41975c8083500f8d9c and its documentation-only
+publication40bf31b21f3dbffa06c91626f3dd05d58927c199 share the measured program.
+The complete canonical /tmp/issue148-final-canonical.log terminated100: both
+strict matrices, rustls, formatting,794default/845optional native,2fixture,
+TypeScript,71harness/754assertions and alignment36/3/2 passed. Full SDK passed
+1389/1394 with87,582assertions in797.91seconds. All40 Kick owners passed.
+
+Five unrelated failures remain recorded. Organization trusted-role observation5
+after receipt/result member.createdAt differed by3.342seconds; these two exact
+paths are not claimed as reproduced on an unchanged parent. Membership
+observation6 before/after sessions.3.expiresAt and observation7 member/response
+createdAt plus before/after sessions.3.expiresAt are the six timestamp aliases
+independently reproduced on unchanged83b57b1c by221. The three generated
+seed12648430 profiles retain the known guest guard code/message mismatch assigned
+to221, which subsequently landed separately. This full exit100 is not called
+green, and no clock allowance, comparator tolerance or repeated-until-green run
+was introduced.
+
+Independent warning-free docs and real Chromium browser2/2 (22assertions) passed
+/tmp/issue148-docs-browser.log,exit0. Clean coverage completed all845 native and
+all five existing SDK groups, /tmp/issue148-clean-coverage.log,exit0:
+31,577/40,892=77.220483%, unchanged75% floor/exclusions. Its213Source paths have
+zero duplicate logical workspace files; genuine fixture runtime profiles and
+the actual fixture object contribute to the report. It used a fresh owned
+coverage target and the supported MBX_DISABLE=1 cache setting without modifying
+shared cache artifacts.
+
+All4,991 parent capability requirements remain, plus198 actually measured
+constraints from39Kick owners, totaling5,189. Every addition is present in the
+final canonical passing evidence. This asserts the measured additions and
+retained inventory; it does not claim a green strict gate for the separately
+identified115 inherited missing metadata requirements. Exact-main composition
+after147/221 remains a separate recorded validation step before landing.
