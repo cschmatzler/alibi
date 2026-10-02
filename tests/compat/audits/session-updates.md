@@ -160,3 +160,10 @@ SQL expiry predicates to observe the intended rows.
 
 Public list-sessions projection is separate #328; these update/replacement
 owners do not establish that endpoint's configured output parity.
+
+Final focused validation on main plus #223: 28 SDK scenarios / 2,420 assertions
+(including 17 new operation owners), 19 native session/cache/policy/adapter tests,
+strict production and standalone fixture Clippy, client TypeScript typecheck,
+and formatting of changed Rust files pass. Full-suite/coverage gates were not
+run for this focused change. Unchanged signup fixture formatting remains an
+existing standalone cargo-fmt finding outside this diff.
