@@ -2725,18 +2725,24 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "change password with revokeOtherSessions invalidates the other client",
+        "success": [
+          "change password with revokeOtherSessions invalidates the other client",
+          "compromised change password follows authentication but precedes current-password verification without revocation"
+        ],
         "rejection": [
           "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
-          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows",
+          "compromised change password follows authentication but precedes current-password verification without revocation"
         ],
         "authorization": [
           "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
-          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows",
+          "compromised change password follows authentication but precedes current-password verification without revocation"
         ],
         "state": [
           "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
-          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows",
+          "compromised change password follows authentication but precedes current-password verification without revocation"
         ]
       }
     },
