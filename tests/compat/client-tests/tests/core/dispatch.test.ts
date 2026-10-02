@@ -125,6 +125,7 @@ compatScenario("dispatch media and JSON syntax validation precede origin rejecti
     ["json-parameter", "Application/JSON; charset=UTF-8", JSON.stringify({ email: signup.data!.user.email, password: "password123" }), 200, null],
     ["stream", "application/json", JSON.stringify({ email: signup.data!.user.email, password: "password123" }), 200, null],
     ["stream-malformed", "application/json", "{", 400, "BAD_REQUEST"],
+    ["valid-json-foreign-origin", "application/json", JSON.stringify({ email: signup.data!.user.email, password: "password123" }), 403, "INVALID_ORIGIN"],
   ] as const) {
     const before = await ctx.readUserState({ userId: signup.data!.user.id });
     const requestBody = name.startsWith("stream") ? new ReadableStream<Uint8Array>({ start(controller) {
@@ -134,7 +135,7 @@ compatScenario("dispatch media and JSON syntax validation precede origin rejecti
     const result = await ctx.rawRequest({ actor: `media-${name}`, path: path + "/sign-in/email", method: "POST", body: requestBody, headers: { "content-type": contentType, ...(status !== 200 ? { origin: "https://foreign.fixture.test" } : {}) } });
     expect(result.status).toBe(status);
     const after = await ctx.readUserState({ userId: signup.data!.user.id }), callbacks = await events(ctx);
-    if (status !== 200) { if (code) expect(result.body).toMatchObject({ code }); else expect(result.body).toBeNull(); expect(after).toEqual(before); expect(callbacks).toEqual(name.endsWith("allowed") ? [{ path: "/sign-in/email", method: "POST" }] : []); }
+    if (status !== 200) { if (code) expect(result.body).toMatchObject({ code }); else expect(result.body).toBeNull(); expect(after).toEqual(before); expect(callbacks).toEqual(name.endsWith("allowed") || name === "valid-json-foreign-origin" ? [{ path: "/sign-in/email", method: "POST" }] : []); }
     else { expect(callbacks).toEqual([{ path: "/sign-in/email", method: "POST" }]); expect(result.body).toMatchObject({ user: { id: signup.data!.user.id } }); }
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
     results.push({ name, contentType, body, before, result, after, callbacks });

@@ -25,6 +25,7 @@ async function control(ctx: ScenarioContext, value: Record<string, unknown>) {
 for (const mode of ["default", "configured", "disabled-scope", "disabled-configured"] as const) {
   compatScenario(`apple published ${mode} authorization scopes and form-post PKCE`, async ctx => {
     const actor = ctx.actor("apple", `social-apple-${mode}`);
+    const before = await state(ctx);
     const result = await actor.client.signIn.social({provider: "apple", callbackURL: "/dashboard", scopes: ["requested-scope"], loginHint: "ignored@example.invalid"});
     expect(result.error).toBeNull();
     const url = new URL(result.data!.url!);
@@ -36,8 +37,10 @@ for (const mode of ["default", "configured", "disabled-scope", "disabled-configu
     expect(url.searchParams.get("code_challenge")).toBeTruthy();
     expect(url.searchParams.has("login_hint")).toBeFalse();
     expect(url.searchParams.get("scope")).toBe([...(mode.startsWith("disabled-") ? [] : ["email", "name"]), ...(["configured", "disabled-configured"].includes(mode) ? ["configured-scope"] : []), "requested-scope"].join(" "));
-    return {result:ctx.snapshot(result), persisted:await state(ctx)};
-  });
+    const persisted = await state(ctx);
+    expect(persisted).toEqual(before);
+    return {result:ctx.snapshot(result), before, persisted};
+  }, ["POST /sign-in/social"]);
 }
 
 for (const mapping of ["named", "numeric-name", "zero-name", "missing-name", "null-name", "empty-name", "supplied-name", "js-trim", "numeric", "missing-email", "null-email", "unverified", "false-string"] as const) {
@@ -72,7 +75,7 @@ for (const mapping of ["named", "numeric-name", "zero-name", "missing-name", "nu
       expect(account.accountId).toBe(mapping === "numeric" ? "42" : JSON.parse(Buffer.from(token.split(".")[1]!,"base64url").toString()).sub);
     }
     return {result:ctx.snapshot(result), before, after, receipts:await receipts(ctx), session:ctx.snapshot(await actor.client.getSession())};
-  });
+  }, ["POST /sign-in/social"]);
 }
 
 for (const variant of ["signature", "issuer", "audience", "expired", "old", "nonce", "subject", "blank-subject", "disabled", "implicit-disabled"] as const) {
@@ -88,7 +91,7 @@ for (const variant of ["signature", "issuer", "audience", "expired", "old", "non
     const after = await state(ctx);
     expect(after).toEqual(before);
     return {result:ctx.snapshot(result), before, after, receipts:await receipts(ctx)};
-  });
+  }, ["POST /sign-in/social"]);
 }
 
 compatScenario("apple real code exchange persists tokens and consumes callback state", async ctx => {
@@ -117,7 +120,7 @@ compatScenario("apple real code exchange persists tokens and consumes callback s
   const afterReplay = await state(ctx);
   expect(afterReplay).toEqual(persisted);
   return {start:ctx.snapshot(start), callback:{status:callback.status,location:callback.headers.get("location")}, session:ctx.snapshot(session), persisted, replay:{status:replay.status,location:replay.headers.get("location")}, afterReplay, receipts:await receipts(ctx)};
-});
+}, ["GET /callback/{}"]);
 
 for (const variant of ["exact-nonce", "hashed-nonce", "bundle", "audience", "client-array", "explicit-signup"] as const) {
   compatScenario(`apple signed configured ${variant} admission`, async ctx => {
@@ -135,7 +138,7 @@ for (const variant of ["exact-nonce", "hashed-nonce", "bundle", "audience", "cli
     expect(persisted.sessions).toHaveLength(1);
     expect(persisted.accounts[0]!.idToken).toBe(token);
     return {result:ctx.snapshot(result),persisted,receipts:await receipts(ctx)};
-  });
+  }, ["POST /sign-in/social"]);
 }
 
 compatScenario("apple provider refresh rotates stored credentials and excludes foreign owners", async ctx => {
@@ -166,7 +169,7 @@ compatScenario("apple provider refresh rotates stored credentials and excludes f
   expect(signOut.error).toBeNull();
   expect((await actor.client.getSession()).data).toBeNull();
   return {before,denied:ctx.snapshot(denied),refreshed:ctx.snapshot(refreshed),after,signOut:ctx.snapshot(signOut),signedOut:await state(ctx),receipts:await receipts(ctx)};
-});
+}, ["GET /callback/{}", "POST /refresh-token"]);
 
 compatScenario("apple JWKS rotation is observed on each signed token admission", async ctx => {
   const keys = await Bun.file(new URL("../../../../fixtures/one-tap/jwks.json",import.meta.url)).json();
@@ -190,7 +193,7 @@ compatScenario("apple JWKS rotation is observed on each signed token admission",
   expect(Date.parse(String(after.accounts[0]!.updatedAt))).toBeGreaterThanOrEqual(Date.parse(String(admitted.accounts[0]!.updatedAt)));
   expect(after.sessions).toHaveLength(admitted.sessions.length+1);
   return {first:ctx.snapshot(first),admitted,retired:ctx.snapshot(retired),restored:ctx.snapshot(restored),after,receipts:await receipts(ctx)};
-});
+}, ["POST /sign-in/social"]);
 
 compatScenario("apple profile mapping receives supplied name and cannot replace raw subject", async ctx => {
   const token = await proof(ctx);
@@ -201,7 +204,7 @@ compatScenario("apple profile mapping receives supplied name and cannot replace 
   expect(persisted.users[0]).toMatchObject({name:"Mapped Ada Apple",email:"mapped-apple@example.invalid",emailVerified:false,image:"https://images.example.invalid/mapped-apple.png"});
   expect(persisted.accounts[0]!.accountId).toBe(JSON.parse(Buffer.from(token.split(".")[1]!,"base64url").toString()).sub);
   return {result:ctx.snapshot(result),persisted,receipts:await receipts(ctx)};
-});
+}, ["POST /sign-in/social"]);
 
 for (const variant of ["absent", "zero", "fractional", "array-scope", "comma-scope"] as const) {
   compatScenario(`apple token transport preserves ${variant} expiry and scope`, async ctx => {
@@ -223,7 +226,7 @@ for (const variant of ["absent", "zero", "fractional", "array-scope", "comma-sco
       expect(Date.parse(String(account.accessTokenExpiresAt))).toBeLessThanOrEqual(Date.now()+3600250);
     } else expect(account.accessTokenExpiresAt).toBeNull();
     return {start:ctx.snapshot(start),callback:{status:callback.status,location:callback.headers.get("location")},persisted,receipts:await receipts(ctx)};
-  });
+  }, ["GET /callback/{}"]);
 }
 
 compatScenario("apple rejects wrong provider and callback state without creating identities", async ctx => {
@@ -240,7 +243,7 @@ compatScenario("apple rejects wrong provider and callback state without creating
   expect(await state(ctx)).toEqual(before);
   expect(await receipts(ctx)).toEqual([]);
   return {wrongProvider:ctx.snapshot(wrongProvider),start:ctx.snapshot(start),invalid:{status:invalid.status,location:invalid.headers.get("location"),body:await invalid.text()},before,after:await state(ctx),receipts:await receipts(ctx)};
-});
+}, ["POST /sign-in/social", "GET /callback/{}"]);
 
 compatScenario("apple explicit empty client array rejects empty token audience without writes", async ctx => {
   const actor = ctx.actor("apple","social-apple-empty-clients");
@@ -250,4 +253,4 @@ compatScenario("apple explicit empty client array rejects empty token audience w
   expect(result.error?.code).toBe("INVALID_TOKEN");
   expect(await state(ctx)).toEqual(before);
   return {result:ctx.snapshot(result),before,after:await state(ctx),receipts:await receipts(ctx)};
-});
+}, ["POST /sign-in/social"]);

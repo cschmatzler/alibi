@@ -511,7 +511,9 @@
           "kick explicit browser link mapped-verified retains existing and foreign authority",
           "kick explicit browser link missing-raw retains existing and foreign authority",
           "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing any principal",
@@ -634,7 +636,9 @@
           "kick explicit browser link mapped-verified retains existing and foreign authority",
           "kick explicit browser link missing-raw retains existing and foreign authority",
           "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -1360,9 +1364,6 @@
           "api-key awaited individual exhausted deletion waits for actual adapter release and rejects without observer registration",
           "api-key deferred individual storage failure resolves caught completion retains the exact row and awaited retry preserves failure then deletes only its owner",
           "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
-          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
-          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
-          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
           "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
           "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
@@ -1377,10 +1378,6 @@
           "api-key deferred individual expired deletion rejects before the actual write and ignored completion cannot cancel ownership-safe cleanup",
           "api-key awaited individual expired deletion waits for actual adapter release and rejects without observer registration",
           "api-key rejected individual completion handler cannot cancel deletion while genuine application 403 retains exact response authority",
-          "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
-          "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
-          "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
-          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
           "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
           "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
@@ -2339,7 +2336,6 @@
           "admin impersonation ordinary uses original actor permissions for admin targets and self sessions",
           "admin impersonation legacy uses original actor permissions for admin targets and self sessions",
           "admin impersonation no-base uses original actor permissions for admin targets and self sessions",
-          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
           "client IP trusted admin impersonation retains operator and foreign authority with resolved metadata"
         ],
         "authorization": [
@@ -3211,19 +3207,13 @@
         "rejection": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
           "builtin social link authorization requires a session and retains configured scope additions",
-          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
-          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
+          "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
           "builtin social link authorization requires a session and retains configured scope additions",
           "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
-          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
-          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -4731,7 +4721,6 @@
           "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
           "core redirect controls reject path controls while preserving encoded query and fragment values",
           "core redirect controls reject authority-shaped paths while permitting owned safe paths",
-          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
           "last login default preserves real cookie consent database updates and failed authentication ownership",
           "last login database preserves real cookie consent database updates and failed authentication ownership",
           "last login custom preserves real cookie consent database updates and failed authentication ownership",
@@ -4748,7 +4737,6 @@
           "server-only setPassword creates a genuine credential for only its physical passwordless owner",
           "dispatch default origin and CSRF configuration preserves writes only after admission",
           "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
-          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
           "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
@@ -4806,7 +4794,6 @@
           "server-only setPassword creates a genuine credential for only its physical passwordless owner",
           "dispatch default origin and CSRF configuration preserves writes only after admission",
           "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
-          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
           "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
@@ -5403,9 +5390,6 @@
           "apple signed ID token rejects blank-subject without writes",
           "apple explicit empty client array rejects empty token audience without writes",
           "Google default genuine cryptographic and claim negatives never mutate any principal",
-          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
           "atlassian unsupported ID token and invalid provider/state produce no requests",
           "cloudflare unsupported ID token and invalid provider state produce no requests",
           "cognito rejects caller override of reserved nonce before any credential exchange",
@@ -5483,18 +5467,8 @@
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
-          "apple signed ID token named profile and ownership",
-          "apple signed ID token numeric-name profile and ownership",
-          "apple signed ID token zero-name profile and ownership",
-          "apple signed ID token missing-name profile and ownership",
-          "apple signed ID token null-name profile and ownership",
-          "apple signed ID token empty-name profile and ownership",
-          "apple signed ID token supplied-name profile and ownership",
-          "apple signed ID token numeric profile and ownership",
           "apple signed ID token missing-email profile and ownership",
           "apple signed ID token null-email profile and ownership",
-          "apple signed ID token unverified profile and ownership",
-          "apple signed ID token false-string profile and ownership",
           "apple signed ID token rejects signature without writes",
           "apple signed ID token rejects issuer without writes",
           "apple signed ID token rejects audience without writes",
@@ -5502,18 +5476,10 @@
           "apple signed ID token rejects old without writes",
           "apple signed ID token rejects nonce without writes",
           "apple signed ID token rejects subject without writes",
-          "apple signed ID token rejects disabled without writes",
           "apple signed ID token rejects implicit-disabled without writes",
           "apple JWKS rotation is observed on each signed token admission",
-          "apple profile mapping receives supplied name and cannot replace raw subject",
-          "apple rejects wrong provider and callback state without creating identities",
-          "apple signed ID token js-trim profile and ownership",
           "apple signed ID token rejects blank-subject without writes",
           "apple explicit empty client array rejects empty token audience without writes",
-          "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
-          "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
           "cognito signed admission rejects blank-subject without user account or session writes",
           "cognito signed admission rejects implicit-disabled without user account or session writes",
           "cognito signed admission rejects unknown-kid without user account or session writes",
@@ -5934,8 +5900,7 @@
           "sign in with nonexistent username returns error",
           "core redirect validation rejects inner encoded path separators and controls while retaining query and fragment semantics",
           "core redirect controls reject path controls while preserving encoded query and fragment values",
-          "core redirect controls reject authority-shaped paths while permitting owned safe paths",
-          "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
+          "core redirect controls reject authority-shaped paths while permitting owned safe paths"
         ],
         "authorization": [
           "sign in with nonexistent username returns error",
@@ -6044,7 +6009,7 @@
           "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "rejection": null,
-        "authorization": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
+        "authorization": null,
         "state": [
           "passkey registration authentication ownership and deletion round trip",
           "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
@@ -6245,22 +6210,10 @@
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
-          "dispatch default origin and CSRF configuration preserves writes only after admission",
-          "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
-          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
-          "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
-          "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
-          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
           "compromised password signup denies before real hashing and user creation with prefix-only HTTP"
         ],
         "authorization": [
-          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
-          "dispatch default origin and CSRF configuration preserves writes only after admission",
-          "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
-          "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
-          "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
-          "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
-          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
         ],
         "state": [
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
@@ -6673,7 +6626,13 @@
           "two-factor default OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor observe OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
           "two-factor ignore OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
-          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors"
+          "two-factor throw OTP delivery scheduling preserves issued codes, owner rotation and pending expiry despite callback errors",
+          "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
         ],
         "authorization": [
           "two-factor nonpositive OTP lengths fail before storage or delivery while retaining body and session validation",
