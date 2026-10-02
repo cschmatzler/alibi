@@ -703,7 +703,11 @@ impl<T: AuthApiKey> From<&T> for ApiKeyView {
             updated_at: api_key_wire_date(ak.updated_at()),
             permissions: ak
                 .permissions()
-                .and_then(|s| crate::utils::json::from_slice(s.as_bytes()).ok()),
+                .and_then(|s| crate::utils::json::from_slice(s.as_bytes()).ok())
+                .map(|mut value| {
+                    normalize_api_key_permission_dates(&mut value);
+                    value
+                }),
             metadata: ak.metadata().and_then(|s| {
                 crate::utils::json::parse_value(s)
                     .ok()?
@@ -711,6 +715,27 @@ impl<T: AuthApiKey> From<&T> for ApiKeyView {
                     .ok()
             }),
         }
+    }
+}
+
+fn normalize_api_key_permission_dates(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::String(text) => {
+            if let Some(date) = crate::utils::datetime::normalize_json_date(text) {
+                *text = date;
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                normalize_api_key_permission_dates(value);
+            }
+        }
+        serde_json::Value::Object(values) => {
+            for value in values.values_mut() {
+                normalize_api_key_permission_dates(value);
+            }
+        }
+        _ => {}
     }
 }
 

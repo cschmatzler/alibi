@@ -417,7 +417,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                                     body
                                 },
                                 ApiKeyVerificationError::Internal(AuthError::Upstream {code,message,..}) => json!({"code":code,"message":message}),
-                                ApiKeyVerificationError::Internal(_) => json!({"code":ApiKeyErrorCode::InvalidApiKey,"message":{"code":ApiKeyErrorCode::InvalidApiKey,"message":ApiKeyErrorCode::InvalidApiKey.message()}}),
+                                ApiKeyVerificationError::Internal(_) | ApiKeyVerificationError::ExplicitValidator(_) => json!({"code":ApiKeyErrorCode::InvalidApiKey,"message":{"code":ApiKeyErrorCode::InvalidApiKey,"message":ApiKeyErrorCode::InvalidApiKey.message()}}),
                             };
                             Json(json!({"valid":false,"error":body,"key":null})).into_response()
                         },

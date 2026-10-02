@@ -263,6 +263,38 @@ pub struct ApiKey {
     pub metadata: Option<String>,
 }
 
+/// UTF-16 code units selected from the beginning of a generated API key.
+///
+/// JavaScript substring may end between a surrogate pair. Stores receive the
+/// original units so they can retain their encoding instead of replacing the
+/// substring before it reaches persistence.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ApiKeyStartingCharacters(Vec<u16>);
+
+impl ApiKeyStartingCharacters {
+    #[must_use]
+    pub const fn from_utf16(units: Vec<u16>) -> Self {
+        Self(units)
+    }
+
+    #[must_use]
+    pub fn as_utf16(&self) -> &[u16] {
+        &self.0
+    }
+}
+
+impl From<String> for ApiKeyStartingCharacters {
+    fn from(value: String) -> Self {
+        Self(value.encode_utf16().collect())
+    }
+}
+
+impl From<&str> for ApiKeyStartingCharacters {
+    fn from(value: &str) -> Self {
+        Self(value.encode_utf16().collect())
+    }
+}
+
 /// API key creation data.
 #[derive(Debug, Clone)]
 pub struct CreateApiKey {
@@ -274,7 +306,7 @@ pub struct CreateApiKey {
     pub name: Option<String>,
     pub prefix: Option<String>,
     pub key_hash: String,
-    pub start: Option<String>,
+    pub start: Option<ApiKeyStartingCharacters>,
     pub expires_at: Option<String>,
     pub remaining: Option<f64>,
     pub rate_limit_enabled: bool,

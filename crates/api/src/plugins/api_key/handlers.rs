@@ -5,7 +5,6 @@ use super::types::{
 };
 use crate::plugins::helpers;
 use better_auth_core::{AuthContext, AuthResult, CreateApiKey, UpdateApiKey};
-use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Core functions -- framework-agnostic business logic
@@ -67,73 +66,94 @@ impl ApiKeyPlugin {
 /// Mirrors the TypeScript `role(apiKeyPermissions).authorize(permissions)`
 /// implementation. Required actions must be a subset of the API key's actions
 /// for each resource/role.
-pub(super) fn check_permissions(key_permissions_json: &str, required: &serde_json::Value) -> bool {
-    let Some(required_map) = required.as_object() else {
-        return false;
+pub(super) fn check_permissions(
+    key_permissions_json: &str,
+    required: &serde_json::Value,
+) -> AuthResult<bool> {
+    use better_auth_core::utils::json::{JsValue, parse_value};
+    let Some(required_map) = required.as_object().filter(|map| !map.is_empty()) else {
+        return Ok(false);
     };
-
-    let key_map: HashMap<String, Vec<String>> = match serde_json::from_str(key_permissions_json) {
-        Ok(v) => v,
-        Err(_) => return false,
+    let Ok(permitted) = parse_value(key_permissions_json) else {
+        return Ok(false);
     };
-
-    for (resource, requested_actions) in required_map {
-        // Look up the allowed actions for this resource
-        let Some(allowed_actions) = key_map.get(resource) else {
-            return false;
+    if !json_truthy(&permitted) {
+        return Ok(false);
+    }
+    for (resource, requested) in required_map {
+        let allowed = permitted.get(resource).or_else(|| {
+            let index = resource.parse::<usize>().ok()?;
+            (index.to_string() == *resource)
+                .then(|| permitted.as_array()?.get(index))
+                .flatten()
+        });
+        let Some(allowed) = allowed.filter(|value| json_truthy(value)) else {
+            return Ok(false);
         };
-
-        // The request value can be:
-        // 1. An array of action strings -> all must be allowed (AND)
-        // 2. An object { actions: [...], connector: "OR"|"AND" }
-        if let Some(actions_array) = requested_actions.as_array() {
-            // Simple array -> every requested action must exist in allowed actions
-            for action_val in actions_array {
-                let Some(action) = action_val.as_str() else {
-                    return false;
-                };
-                if !allowed_actions.iter().any(|a| a == action) {
-                    return false;
-                }
-            }
-        } else if let Some(obj) = requested_actions.as_object() {
-            // Object form: { actions: [...], connector: "OR" | "AND" }
-            let Some(actions) = obj.get("actions").and_then(|v| v.as_array()) else {
-                return false;
+        let (actions, any) = if let Some(actions) = requested.as_array() {
+            (actions.as_slice(), false)
+        } else if let Some(request) = requested.as_object() {
+            let Some(actions) = request.get("actions").and_then(serde_json::Value::as_array) else {
+                return Ok(false);
             };
-            let connector = obj
-                .get("connector")
-                .and_then(|v| v.as_str())
-                .unwrap_or("AND");
-
-            if connector == "OR" {
-                // At least one requested action must be allowed
-                let any_allowed = actions.iter().any(|action_val| {
-                    action_val
-                        .as_str()
-                        .is_some_and(|action| allowed_actions.iter().any(|a| a == action))
-                });
-                if !any_allowed {
-                    return false;
-                }
-            } else {
-                // AND (default): every requested action must be allowed
-                for action_val in actions {
-                    let Some(action) = action_val.as_str() else {
-                        return false;
-                    };
-                    if !allowed_actions.iter().any(|a| a == action) {
-                        return false;
+            (
+                actions.as_slice(),
+                request.get("connector").and_then(serde_json::Value::as_str) == Some("OR"),
+            )
+        } else {
+            return Err(better_auth_core::AuthError::internal(
+                "Invalid access control request",
+            ));
+        };
+        if actions.is_empty() {
+            return Ok(false);
+        }
+        let mut authorized = false;
+        for action in actions {
+            let admitted = if let Some(action) = action.as_str() {
+                match allowed {
+                    JsValue::Array(values) => values.iter().any(|value| {
+                        value
+                            .as_str()
+                            .is_some_and(|value| value == action && !revived_permission_date(value))
+                    }),
+                    JsValue::String(value) if !revived_permission_date(value) => {
+                        value.contains(action)
+                    }
+                    JsValue::Null
+                    | JsValue::Bool(_)
+                    | JsValue::Number(_)
+                    | JsValue::Object(_)
+                    | JsValue::String(_) => {
+                        return Err(better_auth_core::AuthError::internal(
+                            "Stored permission actions do not support includes",
+                        ));
                     }
                 }
+            } else {
+                false
+            };
+            if any && admitted {
+                authorized = true;
+                break;
             }
-        } else {
-            // Invalid format
-            return false;
+            if !any && !admitted {
+                return Ok(false);
+            }
+            authorized |= admitted;
+        }
+        if !authorized {
+            return Ok(false);
         }
     }
+    Ok(true)
+}
 
-    true
+// safeJSONParse revives this exact ISO-shaped string into a Date before role
+// authorization. A Date does not provide String.includes and is not equal to a
+// requested string when nested inside an action array.
+fn revived_permission_date(value: &str) -> bool {
+    better_auth_core::utils::datetime::normalize_json_date(value).is_some()
 }
 
 ///
@@ -221,14 +241,10 @@ async fn create_key_for_user(
         } else {
             ApiKeyPlugin::hash_key(&full_key)
         };
-        let units: Vec<_> = full_key
-            .encode_utf16()
-            .take(config.starting_characters_length)
-            .collect();
-        let start = String::from_utf16_lossy(&units);
+        let start = ApiKeyPlugin::starting_characters(&full_key, config.starting_characters_length);
         (full_key, hash, start)
     } else {
-        ApiKeyPlugin::generate_key(config, body.prefix.as_deref())
+        ApiKeyPlugin::generate_key(config, body.prefix.as_deref())?
     };
     let dynamic_permissions = match &config.default_permissions_callback {
         Some(callback) => Some(
@@ -264,12 +280,14 @@ async fn create_key_for_user(
             .or(config.default_permissions.as_ref())
             .map(better_auth_core::utils::json::to_string)
             .transpose()?,
-        metadata: body
-            .metadata
-            .as_ref()
-            .filter(|value| json_truthy(value))
-            .map(better_auth_core::utils::json::to_string)
-            .transpose()?,
+        // Source supplies explicit JSON null to its JSON-column adapter when
+        // metadata is absent or falsy, preserving "null" rather than SQL NULL.
+        metadata: Some(better_auth_core::utils::json::to_string(
+            body.metadata
+                .as_ref()
+                .filter(|value| json_truthy(value))
+                .unwrap_or(&better_auth_core::utils::json::JsValue::Null),
+        )?),
         enabled: true,
     };
     let api_key = ctx.database.create_api_key(input).await?;
@@ -304,19 +322,15 @@ fn json_truthy(value: &better_auth_core::utils::json::JsValue) -> bool {
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
 fn expiration_date(seconds: Option<f64>) -> AuthResult<Option<String>> {
-    let Some(seconds) = seconds.filter(|seconds| *seconds != 0.0) else {
+    let Some(seconds) = seconds.filter(|seconds| *seconds != 0.0 && !seconds.is_nan()) else {
         return Ok(None);
     };
-    let milliseconds = seconds * 1000.0;
-    if !milliseconds.is_finite() || milliseconds.abs() > i64::MAX as f64 {
-        return Err(better_auth_core::AuthError::bad_request(
-            "expiresIn is out of range",
-        ));
+    let milliseconds = chrono::Utc::now().timestamp_millis() as f64 + seconds * 1000.0;
+    if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
+        return Err(better_auth_core::AuthError::internal("Invalid Date"));
     }
-    let duration = chrono::Duration::milliseconds(milliseconds as i64);
-    let date = chrono::Utc::now()
-        .checked_add_signed(duration)
-        .ok_or_else(|| better_auth_core::AuthError::bad_request("expiresIn is out of range"))?;
+    let date = chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
+        .ok_or_else(|| better_auth_core::AuthError::internal("Invalid Date"))?;
     Ok(Some(
         date.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
     ))

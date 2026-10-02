@@ -3,6 +3,7 @@
 mod concurrency_tests;
 
 use super::entities::api_key::{ActiveModel, Column, Entity};
+use super::entities::api_key_start::ApiKeyStart;
 use super::{SeaOrmStore, map_db_err, parse_optional_rfc3339};
 use crate::schema::AuthSchema;
 use async_trait::async_trait;
@@ -11,8 +12,8 @@ use better_auth_core::store::{ApiKeyStore, ConsumeApiKeyResult};
 use better_auth_core::types::{ApiKey, CreateApiKey, UpdateApiKey};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder,
-    QuerySelect, Set, SqliteTransactionMode, TransactionOptions, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, Iterable, QueryFilter, QueryOrder,
+    QuerySelect, QueryTrait, Set, SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -32,10 +33,17 @@ where
 
     async fn create_api_key(&self, input: CreateApiKey) -> AuthResult<ApiKey> {
         let now = Utc::now();
-        ActiveModel {
+        let start = input
+            .start
+            .map(|start| ApiKeyStart::prepare(start, self.connection().get_database_backend()))
+            .transpose()?;
+        let sqlite_cast = start
+            .as_ref()
+            .is_some_and(ApiKeyStart::requires_sqlite_cast);
+        let model = ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             name: Set(input.name),
-            start: Set(input.start),
+            start: Set(start),
             prefix: Set(input.prefix),
             key_hash: Set(input.key_hash),
             reference_id: Set(input.reference_id),
@@ -58,11 +66,33 @@ where
             updated_at: Set(now),
             permissions: Set(input.permissions),
             metadata: Set(input.metadata),
-        }
-        .insert(self.connection())
-        .await
-        .map(|model| ApiKey::from(&model))
-        .map_err(map_db_err)
+        };
+        let inserted = if sqlite_cast {
+            use sea_orm::sea_query::{Expr, ExprTrait, Query};
+            // Keep one bound INSERT with every ordinary model value. Only the
+            // invalid-surrogate SQLite start needs a bytes-to-TEXT expression;
+            // other engines and valid strings retain the original ORM path.
+            let mut insert = Entity::insert(model.clone());
+            let mut values = Query::select();
+            for column in Column::iter() {
+                let value = Expr::val(model.get(column).unwrap());
+                let _ = values.expr(if matches!(column, Column::Start) {
+                    value.cast_as("text")
+                } else {
+                    value
+                });
+            }
+            let _ = insert
+                .query()
+                .select_from(values)
+                .map_err(|error| AuthError::internal(error.to_string()))?;
+            insert.exec_with_returning(self.connection()).await
+        } else {
+            model.insert(self.connection()).await
+        };
+        inserted
+            .map(|model| ApiKey::from(&model))
+            .map_err(map_db_err)
     }
 
     async fn get_api_key_by_id(&self, id: &str) -> AuthResult<Option<ApiKey>> {

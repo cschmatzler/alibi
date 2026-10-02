@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests;
 
-use chrono::{DateTime, SecondsFormat, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, SecondsFormat, Utc};
 use serde::Serializer;
 
 /// Serialize a timestamp with exactly three fractional digits and a UTC suffix.
@@ -33,4 +33,70 @@ pub fn serialize_optional<S: Serializer>(
         }
         None => serializer.serialize_none(),
     }
+}
+
+/// Normalize the UTC ISO strings revived by Source's `safeJSONParse`.
+///
+/// Only its exact four-digit-year shape is accepted. JavaScript permits day
+/// overflow and midnight at 24:00, truncates fractional seconds, and emits an
+/// expanded six-digit year when midnight advances past year 9999. Invalid
+/// dates remain ordinary strings for authorization and JSON responses.
+#[must_use]
+pub fn normalize_json_date(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    if bytes.len() < 20
+        || !bytes.iter().enumerate().all(|(index, byte)| match index {
+            4 | 7 => *byte == b'-',
+            10 => *byte == b'T',
+            13 | 16 => *byte == b':',
+            19 if bytes.len() > 20 => *byte == b'.',
+            index if index == bytes.len() - 1 => *byte == b'Z',
+            _ => byte.is_ascii_digit(),
+        })
+    {
+        return None;
+    }
+    let year = value.get(..4)?.parse().ok()?;
+    let month = value.get(5..7)?.parse().ok()?;
+    let day: u32 = value.get(8..10)?.parse().ok()?;
+    let hour: u32 = value.get(11..13)?.parse().ok()?;
+    let minute: u32 = value.get(14..16)?.parse().ok()?;
+    let second: u32 = value.get(17..19)?.parse().ok()?;
+    let fraction = if bytes.len() == 20 {
+        ""
+    } else {
+        let fraction = value.get(20..bytes.len() - 1)?;
+        if fraction.is_empty() {
+            return None;
+        }
+        fraction
+    };
+    if !(1..=31).contains(&day)
+        || hour > 24
+        || minute > 59
+        || second > 59
+        || (hour == 24
+            && (minute != 0 || second != 0 || fraction.bytes().any(|digit| digit != b'0')))
+    {
+        return None;
+    }
+    let milliseconds = fraction
+        .bytes()
+        .chain(std::iter::repeat(b'0'))
+        .take(3)
+        .fold(0u32, |value, digit| value * 10 + u32::from(digit - b'0'));
+    let offset = i64::from(day - 1) * 86_400_000
+        + i64::from(hour) * 3_600_000
+        + i64::from(minute) * 60_000
+        + i64::from(second) * 1_000
+        + i64::from(milliseconds);
+    let date = NaiveDate::from_ymd_opt(year, month, 1)?
+        .and_hms_opt(0, 0, 0)?
+        .checked_add_signed(Duration::milliseconds(offset))?;
+    let year = if date.year() > 9999 {
+        format!("+{:06}", date.year())
+    } else {
+        format!("{:04}", date.year())
+    };
+    Some(format!("{year}{}", date.format("-%m-%dT%H:%M:%S%.3fZ")))
 }

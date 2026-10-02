@@ -24,7 +24,10 @@ async fn private_json_content_type(
     let path = request.uri().path();
     let private_control = path.starts_with("/__test/")
         && !path.starts_with("/__test/profiles/")
-        && !path.starts_with("/__test/server-api/");
+        && !path.starts_with("/__test/server-api/")
+        // This control forwards the real request to the server-only endpoint,
+        // whose Response keeps application/json rather than Response.json's charset.
+        && path != "/__test/api-key-hook/verify";
     let mut response = next.run(request).await;
     if private_control
         && axum::body::HttpBody::size_hint(response.body())
@@ -93,6 +96,7 @@ mod anonymous_fixture;
 mod api_key_background_fixture;
 mod api_key_generation_fixture;
 mod api_key_hook_fixture;
+mod api_key_options_fixture;
 mod apple_provider_fixture;
 mod atlassian_provider_fixture;
 mod client_ip_fixture;
@@ -804,6 +808,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let user_lifecycle_router = user_lifecycle_fixture::router(&config, database.clone()).await?;
     let api_key_generation_router =
         api_key_generation_fixture::router(&config, database.clone()).await?;
+    let api_key_options_router = api_key_options_fixture::router(&config, database.clone()).await?;
     let passkey_auth_events: passkey_authentication_fixture::Events = Arc::default();
     let passkey_auth_router = passkey_authentication_fixture::router(
         &config,
@@ -1090,7 +1095,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             }))
                             .into_response()
                         }
-                        Err(ApiKeyVerificationError::Internal(error)) => {
+                        Err(ApiKeyVerificationError::Internal(error) | ApiKeyVerificationError::ExplicitValidator(error)) => {
                             tracing::error!(%error, "API key verification failed");
                             (
                                 axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -1874,6 +1879,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)
         .merge(api_key_generation_router)
+        .merge(api_key_options_router)
         .merge(api_key_background_router)
         .merge(api_key_hook_router)
         .merge(session_fields_router)
