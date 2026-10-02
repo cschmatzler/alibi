@@ -59,7 +59,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
         {
             sender.0.send(&user, None, ctx).await?;
         } else if let Some(ref sender) = config.send_verification_email {
-            sender.send(&user, &url, &token).await?;
+            super::send_custom_verification_email(ctx, sender, user, url, token).await?;
         }
     } else {
         let start = tokio::time::Instant::now();
@@ -81,7 +81,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
                 {
                     sender.0.send(&user, None, ctx).await?;
                 } else if let Some(ref sender) = config.send_verification_email {
-                    sender.send(&user, &url, &token).await?;
+                    super::send_custom_verification_email(ctx, sender, user, url, token).await?;
                 }
                 Ok(())
             }
@@ -227,12 +227,14 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
                 {
                     sender.0.send(&updated_user, None, ctx).await?;
                 } else if let Some(ref sender) = config.send_verification_email {
-                    super::super::authentication_helpers::run_notification(sender.send(
-                        &updated_user,
-                        &url,
-                        &new_token,
-                    ))
-                    .await;
+                    super::send_custom_verification_email(
+                        ctx,
+                        sender,
+                        updated_user,
+                        url,
+                        new_token,
+                    )
+                    .await?;
                 }
 
                 if let Some(callback_url) = query.callback_url.as_deref() {
@@ -338,10 +340,8 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
                 {
                     sender.0.send(&wire_user, None, ctx).await?;
                 } else if let Some(ref sender) = config.send_verification_email {
-                    super::super::authentication_helpers::run_notification(
-                        sender.send(&wire_user, &url, &new_token),
-                    )
-                    .await;
+                    super::send_custom_verification_email(ctx, sender, wire_user, url, new_token)
+                        .await?;
                 }
 
                 session_user.email = Some(update_to.to_owned());

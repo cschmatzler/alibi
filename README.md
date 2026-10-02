@@ -119,6 +119,13 @@ credentials. Register `AdapterAfterHook` during initialization to observe retain
 write output after commit; transaction rollback discards those observations.
 Typed store methods and SeaORM hooks continue to expose physical models.
 
+Password-reset and email-verification delivery callbacks are awaited by default;
+their errors fail the request. Set `config.background_tasks` to observe delivery
+as background work and keep the request successful if that delivery fails.
+Already-issued reset proofs or committed email-change state remain stored after
+a delivery failure. This error policy intentionally differs from the pinned
+Better Auth 1.7.6 helper, which catches awaited callback errors too.
+
 ## Plugins
 
 Better Auth RS ships with a rich set of plugins. Enable only what you need:

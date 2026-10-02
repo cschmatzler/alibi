@@ -191,21 +191,53 @@ fn jwt_token(
 async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_followup() {
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
-    struct Sender(Arc<std::sync::Mutex<Vec<(UserView, String)>>>);
+    struct Sender {
+        calls: Arc<std::sync::Mutex<Vec<(UserView, String)>>>,
+        fail: bool,
+    }
+    #[derive(Default)]
+    struct Observer(std::sync::Mutex<Option<better_auth_core::BackgroundTaskCompletion>>);
+    impl better_auth_core::BackgroundTaskHandler for Observer {
+        fn handle(&self, completion: better_auth_core::BackgroundTaskCompletion) -> AuthResult<()> {
+            *self.0.lock().unwrap() = Some(completion);
+            Ok(())
+        }
+    }
     #[async_trait]
     impl SendVerificationEmail for Sender {
         async fn send(&self, user: &UserView, _: &str, token: &str) -> AuthResult<()> {
-            self.0.lock().unwrap().push((user.clone(), token.into()));
-            Err(AuthError::bad_request("fixture delivery failed"))
+            self.calls
+                .lock()
+                .unwrap()
+                .push((user.clone(), token.into()));
+            if self.fail {
+                Err(AuthError::bad_request("fixture delivery failed"))
+            } else {
+                Ok(())
+            }
         }
     }
 
-    for authenticated in [false, true] {
-        let ctx = test_helpers::create_test_context().await;
+    for (authenticated, fail, background) in [
+        (false, false, false),
+        (true, false, false),
+        (false, true, false),
+        (true, true, false),
+        (false, true, true),
+        (true, true, true),
+    ] {
+        let mut ctx = test_helpers::create_test_context().await;
+        let observer = Arc::new(Observer::default());
+        if background {
+            Arc::make_mut(&mut ctx.config).background_tasks = Some(observer.clone());
+        }
         let calls = Arc::new(std::sync::Mutex::new(Vec::new()));
         let plugin = EmailVerificationPlugin::new()
             .verification_token_expiry(Duration::seconds(90))
-            .custom_send_verification_email(Arc::new(Sender(std::sync::Arc::clone(&calls))));
+            .custom_send_verification_email(Arc::new(Sender {
+                calls: Arc::clone(&calls),
+                fail,
+            }));
         let user = ctx
             .database
             .create_user(CreateUser::new().with_email("before@legacy.fixture.test"))
@@ -248,28 +280,39 @@ async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_follo
             None,
             query,
         );
-        let response = plugin.handle_verify_email(&req, &ctx).await.unwrap();
-        assert_eq!(response.status, 200);
-        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
-        assert_eq!(
-            (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
-                .get("id")
-                .unwrap_or(&serde_json::Value::Null))
-            .as_str(),
-            Some(user.id().as_ref())
-        );
-        assert_eq!(
-            (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
-                .get("email")
-                .unwrap_or(&serde_json::Value::Null)),
-            "after@legacy.fixture.test"
-        );
-        assert_eq!(
-            (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
-                .get("emailVerified")
-                .unwrap_or(&serde_json::Value::Null)),
-            false
-        );
+        let result = plugin.handle_verify_email(&req, &ctx).await;
+        let response = if fail && !background {
+            assert_eq!(result.unwrap_err().status_code(), 400);
+            None
+        } else {
+            let response = result.unwrap();
+            assert_eq!(response.status, 200);
+            let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            assert_eq!(
+                (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+                    .get("id")
+                    .unwrap_or(&serde_json::Value::Null))
+                .as_str(),
+                Some(user.id().as_ref())
+            );
+            assert_eq!(
+                (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+                    .get("email")
+                    .unwrap_or(&serde_json::Value::Null)),
+                "after@legacy.fixture.test"
+            );
+            assert_eq!(
+                (*(*(body).get("user").unwrap_or(&serde_json::Value::Null))
+                    .get("emailVerified")
+                    .unwrap_or(&serde_json::Value::Null)),
+                false
+            );
+            Some(response)
+        };
+        if background {
+            let completion = observer.0.lock().unwrap().take().unwrap();
+            completion.await.unwrap();
+        }
         let sessions = ctx.database.get_user_sessions(&user.id()).await.unwrap();
         assert_eq!(sessions.len(), 1, "Anonymous proof must issue a session");
         let session = sessions.first().unwrap();
@@ -277,10 +320,12 @@ async fn legacy_email_change_reuses_or_issues_session_and_default_lifetime_follo
             assert_eq!(session.id(), previous.id());
             assert_eq!(session.token(), previous.token());
         }
-        assert_eq!(
-            response.headers.get("set-cookie"),
-            Some(&create_session_cookie(session.token(), &ctx.config))
-        );
+        if let Some(response) = response {
+            assert_eq!(
+                response.headers.get("set-cookie"),
+                Some(&create_session_cookie(session.token(), &ctx.config))
+            );
+        }
         let updated = ctx
             .database
             .get_user_by_email("after@legacy.fixture.test")
