@@ -1,4 +1,6 @@
 mod callbacks;
+mod endpoint;
+pub use endpoint::{ApiKeyVerificationInput, ApiKeyVerificationOutput};
 
 pub(super) mod handlers;
 
@@ -990,7 +992,15 @@ better_auth_core::impl_auth_plugin! {
             Ok(())
         }
 
-        async fn before_request(
+        fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> { endpoint::definitions() }
+
+    fn endpoint_hooks(&self) -> Vec<&dyn better_auth_core::endpoint::EndpointHook<S>> { vec![self] }
+
+    fn validate_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointInput> { endpoint::validate(call) }
+
+    async fn on_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
+
+    async fn before_request(
             &self,
             req: &AuthRequest,
             ctx: &AuthContext<S>,

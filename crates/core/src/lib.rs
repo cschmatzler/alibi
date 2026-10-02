@@ -24,6 +24,8 @@ pub mod config;
 
 pub mod email;
 
+pub mod endpoint;
+
 pub mod entity;
 
 pub mod error;

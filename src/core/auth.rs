@@ -17,15 +17,16 @@ use std::sync::Arc;
 
 pub struct BetterAuth<S: AuthSchema> {
     config: Arc<AuthConfig>,
-    plugins: Vec<Box<dyn AuthPlugin<S>>>,
+    pub(super) plugins: Vec<Box<dyn AuthPlugin<S>>>,
     transport_middlewares: Vec<Box<dyn Middleware>>,
     middlewares: Vec<Box<dyn Middleware>>,
     request_protection: CsrfMiddleware,
     body_limit: BodyLimitConfig,
     store: Arc<dyn AuthStore<S>>,
     session_manager: SessionManager<S>,
-    context: AuthContext<S>,
+    pub(super) context: AuthContext<S>,
     openapi: Arc<OpenApiRegistry>,
+    pub(super) endpoint_hooks: Vec<Arc<dyn better_auth_core::endpoint::EndpointHook<S>>>,
 }
 
 impl<S: AuthSchema> std::fmt::Debug for BetterAuth<S> {
@@ -44,6 +45,7 @@ pub struct AuthBuilder<S: AuthSchema> {
     cors_config: Option<CorsConfig>,
     body_limit_config: Option<BodyLimitConfig>,
     custom_middlewares: Vec<Box<dyn Middleware>>,
+    endpoint_hooks: Vec<Arc<dyn better_auth_core::endpoint::EndpointHook<S>>>,
 }
 
 impl<S: AuthSchema> std::fmt::Debug for AuthBuilder<S> {
@@ -64,6 +66,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
             cors_config: None,
             body_limit_config: None,
             custom_middlewares: Vec::new(),
+            endpoint_hooks: Vec::new(),
         }
     }
 
@@ -88,6 +91,16 @@ impl<S: AuthSchema> AuthBuilder<S> {
     #[must_use]
     pub fn plugin<P: AuthPlugin<S> + 'static>(mut self, plugin: P) -> Self {
         self.plugins.push(Box::new(plugin));
+        self
+    }
+
+    /// Register configured application hooks before installed plugin endpoint hooks.
+    #[must_use]
+    pub fn endpoint_hook<H: better_auth_core::endpoint::EndpointHook<S> + 'static>(
+        mut self,
+        hook: H,
+    ) -> Self {
+        self.endpoint_hooks.push(Arc::new(hook));
         self
     }
 
@@ -250,6 +263,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
             session_manager,
             context,
             openapi: openapi_2,
+            endpoint_hooks: self.endpoint_hooks,
         })
     }
 }
@@ -300,88 +314,92 @@ impl<S: AuthSchema> BetterAuth<S> {
             .insert(self.config.advanced.ip_address.clone());
 
         let request_context = RequestHookContext::from_request(&req);
-        with_request_hook_context_value(request_context, async {
-            let mut run_after_hooks = false;
-            let mut response = match self
-                .handle_request_inner(&mut req, &mut run_after_hooks)
-                .await
-            {
-                Ok(response) => response,
-                Err(err) => {
-                    if matches!(err, AuthError::CallbackFailure(_)) {
-                        run_after_hooks = false;
-                    }
-                    err.to_auth_response()
-                }
-            };
-            let (cache_headers, ordinary_cache_error) =
-                better_auth_core::cache::runtime::take_issuance(req.extensions());
-            if ordinary_cache_error {
-                run_after_hooks = false;
-                response = AuthResponse::new(500);
-                drop(req.take_response_headers());
-            }
-            if better_auth_api::plugins::oauth_proxy::take_unhandled_error(&req) {
-                run_after_hooks = false;
-            }
-            let mut nested_headers = req.take_response_headers();
-            for (name, value) in response.headers {
-                if name.eq_ignore_ascii_case("set-cookie") {
-                    nested_headers.append(name, value);
-                } else {
-                    drop(nested_headers.insert(name, value));
-                }
-            }
-            for header in cache_headers {
-                nested_headers.append("Set-Cookie", header);
-            }
-            response.headers = nested_headers;
-            let mut hook_request = req.clone();
-            let base_path = &self.config.base_path;
-            if !base_path.is_empty() && base_path != "/" {
-                hook_request.path = req
-                    .path()
-                    .strip_prefix(base_path)
-                    .unwrap_or_else(|| req.path())
-                    .to_owned();
-            }
-            for plugin in self.plugins.iter().filter(|_| run_after_hooks) {
-                let accumulated_headers = response.headers.clone();
-                response = match plugin
-                    .after_request(&hook_request, &self.context, response)
-                    .await
-                {
-                    Ok(response) => response,
-                    Err(error @ AuthError::CallbackFailure(_)) => {
-                        // An ordinary application exception aborts completed hooks.
-                        // Source drops accumulated headers, including already-issued
-                        // cookies, while preserving the committed authentication writes.
-                        response = error.to_auth_response();
-                        break;
-                    }
-                    Err(error) => {
-                        let mut response_2 = error.to_auth_response();
-                        for (name, value) in accumulated_headers {
-                            if name.eq_ignore_ascii_case("set-cookie") {
-                                response_2.headers.append(name, value);
-                            } else if !response_2.headers.contains_key(&name) {
-                                drop(response_2.headers.insert(name, value));
+        better_auth_core::endpoint::without_endpoint_call_context(with_request_hook_context_value(
+            request_context,
+            async {
+                let mut run_after_hooks = false;
+                // Keep the public request future bounded while scoped context
+                // and route-specific authentication retain their actual state.
+                let mut response =
+                    match Box::pin(self.handle_request_inner(&mut req, &mut run_after_hooks)).await
+                    {
+                        Ok(response) => response,
+                        Err(err) => {
+                            if matches!(err, AuthError::CallbackFailure(_)) {
+                                run_after_hooks = false;
                             }
+                            err.to_auth_response()
                         }
-                        response_2
-                    }
-                };
-                for (name, value) in req.take_response_headers() {
+                    };
+                let (cache_headers, ordinary_cache_error) =
+                    better_auth_core::cache::runtime::take_issuance(req.extensions());
+                if ordinary_cache_error {
+                    run_after_hooks = false;
+                    response = AuthResponse::new(500);
+                    drop(req.take_response_headers());
+                }
+                if better_auth_api::plugins::oauth_proxy::take_unhandled_error(&req) {
+                    run_after_hooks = false;
+                }
+                let mut nested_headers = req.take_response_headers();
+                for (name, value) in response.headers {
                     if name.eq_ignore_ascii_case("set-cookie") {
-                        response.headers.append(name, value);
+                        nested_headers.append(name, value);
                     } else {
-                        drop(response.headers.insert(name, value));
+                        drop(nested_headers.insert(name, value));
                     }
                 }
-            }
-            let response = middleware::run_after(&self.middlewares, &req, response).await?;
-            middleware::run_after(&self.transport_middlewares, &req, response).await
-        })
+                for header in cache_headers {
+                    nested_headers.append("Set-Cookie", header);
+                }
+                response.headers = nested_headers;
+                let mut hook_request = req.clone();
+                let base_path = &self.config.base_path;
+                if !base_path.is_empty() && base_path != "/" {
+                    hook_request.path = req
+                        .path()
+                        .strip_prefix(base_path)
+                        .unwrap_or_else(|| req.path())
+                        .to_owned();
+                }
+                for plugin in self.plugins.iter().filter(|_| run_after_hooks) {
+                    let accumulated_headers = response.headers.clone();
+                    response = match plugin
+                        .after_request(&hook_request, &self.context, response)
+                        .await
+                    {
+                        Ok(response) => response,
+                        Err(error @ AuthError::CallbackFailure(_)) => {
+                            // An ordinary application exception aborts completed hooks.
+                            // Source drops accumulated headers, including already-issued
+                            // cookies, while preserving the committed authentication writes.
+                            response = error.to_auth_response();
+                            break;
+                        }
+                        Err(error) => {
+                            let mut response_2 = error.to_auth_response();
+                            for (name, value) in accumulated_headers {
+                                if name.eq_ignore_ascii_case("set-cookie") {
+                                    response_2.headers.append(name, value);
+                                } else if !response_2.headers.contains_key(&name) {
+                                    drop(response_2.headers.insert(name, value));
+                                }
+                            }
+                            response_2
+                        }
+                    };
+                    for (name, value) in req.take_response_headers() {
+                        if name.eq_ignore_ascii_case("set-cookie") {
+                            response.headers.append(name, value);
+                        } else {
+                            drop(response.headers.insert(name, value));
+                        }
+                    }
+                }
+                let response = middleware::run_after(&self.middlewares, &req, response).await?;
+                middleware::run_after(&self.transport_middlewares, &req, response).await
+            },
+        ))
         .await
     }
 

@@ -4,6 +4,7 @@
 //! [`EmailOtpPlugin::get_verification_otp`] are server-only operations. Neither
 //! operation registers an HTTP endpoint.
 
+mod endpoint;
 mod handlers;
 
 mod helpers;
@@ -18,6 +19,7 @@ mod tests;
 use async_trait::async_trait;
 use better_auth_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
 use chrono::Duration;
+pub use endpoint::EmailOtpRead;
 use std::sync::Arc;
 pub use storage::{EmailOtpCodec, EmailOtpStorage};
 pub use types::{EmailOtpDelivery, EmailOtpType, OtpResendStrategy};
@@ -250,6 +252,12 @@ better_auth_core::impl_auth_plugin! {
         post "/email-otp/change-email" => change_email, "changeEmailWithEmailOTP";
     }
     extra {
+        fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> { endpoint::definitions() }
+
+        fn validate_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointInput> { endpoint::validate(call) }
+
+        async fn on_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
+
         async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
             ctx.set_metadata("email-otp.enabled", serde_json::json!(true));
             if self.config.override_default_email_verification {

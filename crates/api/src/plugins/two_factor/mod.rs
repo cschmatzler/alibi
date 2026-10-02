@@ -1,4 +1,5 @@
 mod backup_storage;
+mod endpoint;
 
 mod otp_storage;
 
@@ -28,6 +29,7 @@ use better_auth_core::{
     CreateVerification, RequestMeta, TwoFactor, UpdateTwoFactor, UpdateUser,
 };
 use chrono::{Duration, Utc};
+pub use endpoint::{BackupCodesOutput, TotpOutput};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
 pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
@@ -411,6 +413,12 @@ better_auth_core::impl_auth_plugin! {
         post "/two-factor/verify-backup-code" => handle_verify_backup_code, "verify_backup_code";
     }
     extra {
+        fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> { endpoint::definitions() }
+
+        fn validate_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointInput> { endpoint::validate(call) }
+
+        async fn on_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
+
         async fn on_init(
             &self,
             ctx: &mut better_auth_core::AuthInitContext<S>,

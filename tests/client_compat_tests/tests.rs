@@ -116,6 +116,12 @@ async fn jwt_client_compat() {
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
+async fn server_endpoints_client_compat() {
+    run_client_compat(&["tests/server-endpoints"]).await;
+}
+
+#[tokio::test]
+#[ignore = "starts external TS and Rust servers"]
 async fn organization_teams_client_compat() {
     run_client_compat(&["tests/organization-extensions/teams.test.ts"]).await;
 }
