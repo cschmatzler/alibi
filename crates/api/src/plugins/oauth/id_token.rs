@@ -60,6 +60,8 @@ pub enum OAuthJwksSelection {
     AllMatching,
     /// Apple matches the header key ID literally, without a truthiness fallback.
     ExactKid,
+    /// JOSE remote RSA selection filters metadata and rejects ambiguous keys.
+    RemoteRs256,
 }
 #[derive(Debug, Clone, Copy)]
 pub enum OAuthNonceComparison {
@@ -75,7 +77,11 @@ pub struct OAuthIdTokenConfig {
     /// Explicit client-ID array supplied by the provider builder, including an empty array.
     pub client_ids: Option<Vec<String>>,
     pub jwks_source: Arc<dyn OAuthJwksSource>,
-    pub max_age_secs: u64,
+    /// When absent, issued-at is optional and is not bounded by token age.
+    pub max_age_secs: Option<u64>,
+    /// Permits opaque candidates; the provider must independently authenticate
+    /// the access token in its actual user-info operation before admission.
+    pub allow_opaque_token: bool,
     /// Fixed import algorithm, or the JWK's declared algorithm for Apple.
     pub algorithm: Option<Algorithm>,
     pub selection: OAuthJwksSelection,
@@ -94,7 +100,8 @@ impl OAuthIdTokenConfig {
             jwks_source: Arc::new(HttpOAuthJwksSource::new(
                 "https://www.googleapis.com/oauth2/v3/certs",
             )),
-            max_age_secs: 3600,
+            max_age_secs: Some(3600),
+            allow_opaque_token: false,
             algorithm: Some(Algorithm::RS256),
             selection: OAuthJwksSelection::First,
             nonce_comparison: OAuthNonceComparison::Exact,
@@ -109,7 +116,8 @@ impl OAuthIdTokenConfig {
             jwks_source: Arc::new(HttpOAuthJwksSource::new(
                 "https://appleid.apple.com/auth/keys",
             )),
-            max_age_secs: 3600,
+            max_age_secs: Some(3600),
+            allow_opaque_token: false,
             algorithm: None,
             selection: OAuthJwksSelection::ExactKid,
             nonce_comparison: OAuthNonceComparison::ExactOrSha256,
@@ -123,6 +131,7 @@ impl std::fmt::Debug for OAuthIdTokenConfig {
             .field("audience", &self.audience)
             .field("client_ids", &self.client_ids)
             .field("max_age_secs", &self.max_age_secs)
+            .field("allow_opaque_token", &self.allow_opaque_token)
             .field("algorithm", &self.algorithm)
             .field("selection", &self.selection)
             .field("nonce_comparison", &self.nonce_comparison)
@@ -147,6 +156,9 @@ pub(super) async fn verify_provider_token(
     let Some(config) = &provider.id_token else {
         return false;
     };
+    if token.split('.').count() != 3 {
+        return config.allow_opaque_token;
+    }
     let mut audiences = vec![provider.client_id.clone()];
     audiences.extend(provider.additional_client_ids.clone());
     let verified = verify_jwks_token(
@@ -196,8 +208,10 @@ pub(in crate::plugins) async fn verify_jwks_token(
     let _ignored_as_object = header.as_object()?;
     let algorithm: Algorithm =
         serde_json::from_value(header.get("alg")?.to_json_value().ok()?).ok()?;
-    if matches!(config.selection, OAuthJwksSelection::AllMatching)
-        && config.algorithm.is_some_and(|fixed| fixed != algorithm)
+    if matches!(
+        config.selection,
+        OAuthJwksSelection::AllMatching | OAuthJwksSelection::RemoteRs256
+    ) && config.algorithm.is_some_and(|fixed| fixed != algorithm)
     {
         return None;
     }
@@ -210,6 +224,7 @@ pub(in crate::plugins) async fn verify_jwks_token(
                 None => key.get("kid").is_none(),
                 Some(kid) => kid.to_json_value().ok().as_ref() == key.get("kid"),
             },
+            OAuthJwksSelection::RemoteRs256 => remote_rsa_key_matches(key, kid),
             OAuthJwksSelection::First | OAuthJwksSelection::AllMatching => {
                 kid.filter(|kid| js_truthy(kid)).is_none_or(|kid| {
                     kid.as_str()
@@ -218,6 +233,11 @@ pub(in crate::plugins) async fn verify_jwks_token(
             }
         })
         .collect();
+    if matches!(config.selection, OAuthJwksSelection::RemoteRs256)
+        && (selected.len() != 1 || !selected.first().is_some_and(remote_rsa_public_key))
+    {
+        return None;
+    }
     if matches!(config.selection, OAuthJwksSelection::ExactKid) {
         selected.truncate(1);
     }
@@ -235,7 +255,10 @@ pub(in crate::plugins) async fn verify_jwks_token(
     if config.algorithm.is_some_and(|fixed| fixed != algorithm) {
         return None;
     }
-    if !matches!(config.selection, OAuthJwksSelection::AllMatching) {
+    if !matches!(
+        config.selection,
+        OAuthJwksSelection::AllMatching | OAuthJwksSelection::RemoteRs256
+    ) {
         public_keys.truncate(1);
     }
     if let Some(crit) = header.get("crit") {
@@ -272,6 +295,61 @@ pub(in crate::plugins) async fn verify_jwks_token(
     None
 }
 
+fn remote_rsa_key_matches(key: &Value, kid: Option<&JsValue>) -> bool {
+    key.get("kty").and_then(Value::as_str) == Some("RSA")
+        && kid.is_none_or(|kid| {
+            kid.as_str()
+                .is_some_and(|kid| key.get("kid").and_then(Value::as_str) == Some(kid))
+        })
+        && key
+            .get("alg")
+            .is_none_or(|value| value.as_str() == Some("RS256"))
+        && key
+            .get("use")
+            .is_none_or(|value| value.as_str() == Some("sig"))
+        && key.get("ext").is_none_or(Value::is_boolean)
+        && key.get("key_ops").is_none_or(|value| {
+            value.as_array().is_some_and(|operations| {
+                operations
+                    .iter()
+                    .any(|operation| operation.as_str() == Some("verify"))
+                    && operations.iter().enumerate().all(|(index, operation)| {
+                        operation.is_string()
+                            && operations
+                                .iter()
+                                .take(index)
+                                .all(|previous| previous != operation)
+                    })
+            })
+        })
+}
+
+fn remote_rsa_public_key(key: &Value) -> bool {
+    if key.get("d").is_some() {
+        return false;
+    }
+    let Some(modulus) = key.get("n").and_then(Value::as_str).and_then(|value| {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(value)
+            .ok()
+    }) else {
+        return false;
+    };
+    let Some((offset, first)) = modulus.iter().enumerate().find(|(_, byte)| **byte != 0) else {
+        return false;
+    };
+    modulus
+        .len()
+        .checked_sub(offset)
+        .and_then(|length| length.checked_mul(8))
+        .and_then(|bits| {
+            usize::try_from(first.leading_zeros())
+                .ok()
+                .and_then(|zeros| bits.checked_sub(zeros))
+        })
+        .is_some_and(|bits| bits >= 2048)
+}
+
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,
@@ -298,15 +376,20 @@ fn valid_claims(payload: &JsValue, audiences: &[String], config: &OAuthIdTokenCo
         return false;
     }
     let now = Utc::now().timestamp() as f64;
-    let Some(iat) = payload
-        .get("iat")
-        .and_then(JsValue::as_f64)
-        .filter(|value| value.is_finite())
-    else {
-        return false;
+    let iat = match payload.get("iat") {
+        None => None,
+        Some(value) => match value.as_f64() {
+            Some(date) => Some(date),
+            None => return false,
+        },
     };
-    if iat > now || now - iat > config.max_age_secs as f64 {
-        return false;
+    if let Some(max_age) = config.max_age_secs {
+        let Some(iat) = iat else {
+            return false;
+        };
+        if iat > now || now - iat > max_age as f64 {
+            return false;
+        }
     }
     for (claim, lower_bound) in [("exp", true), ("nbf", false)] {
         if let Some(value) = payload.get(claim) {

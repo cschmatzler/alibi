@@ -57,6 +57,7 @@ import { anonymousFixture } from "./anonymous-fixture";
 import { createUserValidationFixture } from "./user-validation-fixture";
 import {cloudflareProviderFixture} from "./cloudflare-provider-fixture";
 import {dropboxProviderFixture} from "./dropbox-provider-fixture";
+import {facebookProviderFixture} from "./facebook-provider-fixture";
 import {cognitoProviderFixture} from "./cognito-provider-fixture";
 import {atlassianProviderFixture} from "./atlassian-provider-fixture";
 import { appleProviderFixture } from "./apple-provider-fixture";
@@ -463,6 +464,7 @@ const passkeyAuthentication = passkeyAuthenticationFixture(database, authOptions
 const cloudflareFixture=cloudflareProviderFixture(authOptions);
 const cognitoFixture=cognitoProviderFixture(authOptions);
 const dropboxFixture=dropboxProviderFixture(authOptions);
+const facebookFixture=facebookProviderFixture(authOptions);
 const atlassianFixture=atlassianProviderFixture(authOptions);
 const appleFixture = appleProviderFixture(authOptions);
 const socialProvidersFixture = socialProviderFixture(authOptions);
@@ -477,6 +479,7 @@ for (const [path, instance] of userLifecycleFixture.profiles) verificationProfil
 for(const [path,instance] of cloudflareFixture.profiles) verificationProfiles.set(path,instance);
 for(const [path,instance] of cognitoFixture.profiles) verificationProfiles.set(path,instance);
 for(const [path,instance] of dropboxFixture.profiles) verificationProfiles.set(path,instance);
+for(const [path,instance] of facebookFixture.profiles) verificationProfiles.set(path,instance);
 for(const [path,instance] of atlassianFixture.profiles) verificationProfiles.set(path,instance);
 for (const [path, instance] of appleFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of socialProvidersFixture.profiles) verificationProfiles.set(path, instance);
@@ -849,6 +852,8 @@ const server = Bun.serve({
       if (proxyControl) return proxyControl;
       const cloudflareControl=await cloudflareFixture.handle(request);
       if(cloudflareControl)return cloudflareControl;
+      const facebookControl=await facebookFixture.handle(request);
+      if(facebookControl)return facebookControl;
       const dropboxControl=await dropboxFixture.handle(request);
       if(dropboxControl)return dropboxControl;
       const cognitoControl=await cognitoFixture.handle(request);
@@ -1143,6 +1148,7 @@ const server = Bun.serve({
         cloudflareFixture.reset();
         cognitoFixture.reset();
         dropboxFixture.reset();
+        facebookFixture.reset();
         atlassianFixture.reset();
         appleFixture.reset();
         socialProvidersFixture.reset();

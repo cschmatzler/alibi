@@ -10,6 +10,9 @@ function variants<P extends string, S extends string>(prefix: P, suffixes: reado
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  ...variants("social-facebook-", ["default", "configured", "disabled-scope", "disabled-configured", "mapped", "client-array", "missing-secret", "empty-clients", "configured-endpoint", "client-key", "disabled-idtoken", "implicit-disabled", "signup-disabled", "fields"] as const),
+  ...variants("social-facebook-jwt-", ["no-iat", "old", "future", "raw-positive-iat", "raw-negative-iat", "issuer", "audience", "expired", "not-before", "iat-type", "nonce", "hashed-nonce", "signature", "unknown-kid", "missing-subject", "null-subject", "blank-subject", "missing-email", "null-email", "empty-email", "numeric-name", "null-name", "empty-image"] as const),
+  ...variants("social-facebook-keys-", ["removed", "algorithm", "use", "operations", "private", "duplicate", "invalid-ext", "duplicate-import", "weak-modulus"] as const),
   ...variants("social-dropbox-",["default","public","configured","disabled-scope","disabled-configured","offline","online","legacy","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
   ...variants("user-lifecycle-", ["default", "required", "delivery", "auto", "change", "promotion", "promotion-no-mail", "verification-expired", "no-mail", "delete", "delete-mail", "delete-zero", "delete-expired", "delete-policy", "delete-no-freshness"] as const),
   "validation", "validation-no-auto", "validation-required", "validation-disabled", "validation-no-policy",
