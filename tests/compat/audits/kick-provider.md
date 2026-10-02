@@ -79,4 +79,29 @@ constraints from39Kick owners, totaling5,189. Every addition is present in the
 final canonical passing evidence. This asserts the measured additions and
 retained inventory; it does not claim a green strict gate for the separately
 identified115 inherited missing metadata requirements. Exact-main composition
-after147/221 remains a separate recorded validation step before landing.
+after147/221 is recorded below.
+
+## Final ordinary-main composition
+
+Frozen9be3a191d17caa123cb21b7fcc5137e1ac386be0 on Kakao/221 mainfb8f6597
+passes both strict matrices, rustls, both formats, TypeScript,71harness and all845
+native feature owners, plus the rebuilt genuine40Kick table/1,582assertions:
+/tmp/issue148-main147-221-composed-checks.log,exit0. This preserves all5,104
+parent requirements plus198Kick additions,5,302total.
+
+After135 landed, frozend61ce80c7791d5c0e407400756345a6511d52978 on actual
+2984354a passes feature all-target strict Clippy, formatting, TypeScript,
+71harness and freshly rebuilt40Kick owners/1,582assertions:
+/tmp/issue148-main135-composed-checks.log,exit0. Every5,141 parent requirement
+remains alongside198Kick additions,5,339total. The password plugin and its
+public context changes come exclusively from the ordinarily merged135 parent.
+
+Final frozen53056ce026f5de1cfccd2bd2b93d35effbd27081 is based on signed-header
+main2bf51a600d053ea7d1f48d56af25f5d967ee5dce. Its own production and SDK owner
+hunks remain unchanged; that comparator-only rebase adds no native delta.
+TypeScript, the complete retained72harness/825assertions and genuinely rebuilt
+40Kick table/1,582assertions all pass:
+/tmp/issue148-main135-286-final-composition.log,exit0. Final publication adds
+only this composition audit. Earlier full canonical/clean-floor/docs/browser
+results remain attributed to their exact original head rather than inferred
+as a new complete collection on the composed parent.
