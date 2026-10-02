@@ -323,8 +323,9 @@ pub(in crate::plugins) fn validation_response(message: &str) -> AuthResponse {
     .unwrap_or_else(|_| AuthResponse::text(400, "Validation failed"))
 }
 
-/// Configured username create-hook behavior for auth methods whose additional
-/// inputs have already passed through the username input transform.
+/// Parse passwordless signup fields before username create-hook validation.
+/// Endpoint input transforms, database hooks, and adapter transforms are
+/// separate stages; display fallback uses the parsed username.
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
@@ -342,6 +343,48 @@ pub(in crate::plugins) async fn prepare_additional_user_fields(
         data.display_username = None;
         return Ok(());
     }
+    let policy = ctx
+        .extensions
+        .get::<better_auth_core::utils::username::UsernameConfig>()
+        .map(|policy| (*policy).clone())
+        .unwrap_or_default();
+    let mut input = indexmap::IndexMap::new();
+    if let Some(username) = &data.username {
+        drop(input.insert(
+            "username".into(),
+            better_auth_core::utils::json::JsValue::String(username.clone()),
+        ));
+    }
+    if policy.include_display_username
+        && let Some(display) = &data.display_username
+    {
+        drop(input.insert(
+            "displayUsername".into(),
+            better_auth_core::utils::json::JsValue::String(display.clone()),
+        ));
+    }
+    data.additional_fields = ctx
+        .parse_user_fields(&input, true)
+        .map_err(|error| match error {
+            better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
+                AuthError::Api {
+                    status: 400,
+                    code: Some(code.into()),
+                    message,
+                }
+            }
+            better_auth_core::field_policy::FieldInputError::Transform(error) => error,
+        })?;
+    data.username = data
+        .additional_fields
+        .get("username")
+        .and_then(better_auth_core::utils::json::JsValue::as_str)
+        .map(str::to_owned);
+    data.display_username = data
+        .additional_fields
+        .get("displayUsername")
+        .and_then(better_auth_core::utils::json::JsValue::as_str)
+        .map(str::to_owned);
     let Some(username) = data
         .username
         .as_deref()
@@ -349,11 +392,6 @@ pub(in crate::plugins) async fn prepare_additional_user_fields(
     else {
         return Ok(());
     };
-    let policy = ctx
-        .extensions
-        .get::<better_auth_core::utils::username::UsernameConfig>()
-        .map(|policy| (*policy).clone())
-        .unwrap_or_default();
     policy.validate_hook_value(username).await?;
     let username = policy.normalize(username)?;
     if ctx
