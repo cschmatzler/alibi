@@ -435,7 +435,18 @@ pub async fn issue_user_session<S: better_auth_core::AuthSchema>(
     ip_address: Option<String>,
     user_agent: Option<String>,
 ) -> Result<IssuedSession<S>, SessionIssueError> {
-    issue_user_session_inner(ctx, user_id, ip_address, user_agent, None).await
+    issue_user_session_inner(ctx, user_id, ip_address, user_agent, None, true).await
+}
+
+/// Create a genuine session for an endpoint that publishes it after later
+/// persistence and application callbacks have completed.
+pub(in crate::plugins) async fn create_user_session<S: better_auth_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    user_id: &str,
+    ip_address: Option<String>,
+    user_agent: Option<String>,
+) -> Result<IssuedSession<S>, SessionIssueError> {
+    issue_user_session_inner(ctx, user_id, ip_address, user_agent, None, false).await
 }
 
 /// Issue a replacement session while preserving trusted session extension fields.
@@ -460,7 +471,7 @@ pub async fn issue_user_session_with_overrides<S: better_auth_core::AuthSchema>(
         active_organization_id: current_session.active_organization_id().map(str::to_owned),
         active_team_id: current_session.active_team_id().map(str::to_owned),
     };
-    issue_user_session_inner(ctx, user_id, ip_address, user_agent, Some(overrides)).await
+    issue_user_session_inner(ctx, user_id, ip_address, user_agent, Some(overrides), true).await
 }
 
 async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
@@ -469,6 +480,7 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
     ip_address: Option<String>,
     user_agent: Option<String>,
     overrides: Option<SessionOverrides>,
+    publish: bool,
 ) -> Result<IssuedSession<S>, SessionIssueError> {
     let user = ctx
         .database
@@ -524,8 +536,10 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
         }
     };
 
-    better_auth_core::cache::runtime::emit_issuance(ctx, &user, &session).await?;
-    record_completed_session::<S>(&user, &session);
+    if publish {
+        better_auth_core::cache::runtime::emit_issuance(ctx, &user, &session).await?;
+        record_completed_session::<S>(&user, &session);
+    }
     Ok(IssuedSession { user, session })
 }
 

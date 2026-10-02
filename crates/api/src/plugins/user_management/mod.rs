@@ -6,8 +6,7 @@ pub(super) mod types;
 mod tests;
 
 use async_trait::async_trait;
-use better_auth_core::entity::AuthUser;
-use better_auth_core::wire::{SessionView, UserView};
+use better_auth_core::wire::UserView;
 use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
 use better_auth_core::{AuthError, AuthResult};
 use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
@@ -20,29 +19,8 @@ use types::{ChangeEmailRequest, DeleteUserRequest, TokenQuery};
 // User info snapshot (dyn-compatible alternative to &dyn AuthUser)
 // ---------------------------------------------------------------------------
 
-/// A plain-data snapshot of the core user fields, passed to callback hooks.
-///
-/// `AuthUser` is **not** dyn-compatible (it requires `Serialize`), so we
-/// extract the fields the callbacks are most likely to need into this struct.
-#[derive(Debug, Clone)]
-pub struct UserInfo {
-    pub id: String,
-    pub email: Option<String>,
-    pub name: Option<String>,
-    pub email_verified: bool,
-}
-
-impl UserInfo {
-    /// Build a [`UserInfo`] from any type that implements [`AuthUser`].
-    fn from_auth_user(user: &impl AuthUser) -> Self {
-        Self {
-            id: user.id().to_string(),
-            email: user.email().map(ToOwned::to_owned),
-            name: user.name().map(ToOwned::to_owned),
-            email_verified: user.email_verified(),
-        }
-    }
-}
+/// The initialized user's full snapshot passed to application lifecycle hooks.
+pub type UserInfo = UserView;
 
 // ---------------------------------------------------------------------------
 // Callback traits
@@ -62,6 +40,13 @@ pub trait SendChangeEmailConfirmation: Send + Sync {
         url: &str,
         token: &str,
     ) -> AuthResult<()>;
+}
+
+/// Application delivery of an issued account-deletion proof. The original
+/// request is available through `current_request_hook_context` during delivery.
+#[async_trait]
+pub trait SendDeleteAccountVerification: Send + Sync {
+    async fn send(&self, user: &UserInfo, url: &str, token: &str) -> AuthResult<()>;
 }
 
 /// Hook invoked **before** a user is deleted.
@@ -119,8 +104,11 @@ pub struct DeleteUserConfig {
     /// How long a delete-confirmation token remains valid. Default: 1 day.
     pub delete_token_expires_in: Duration,
     /// If `true`, a verification email must be confirmed before the account is
-    /// deleted. Default: `true`.
+    /// deleted using the configured `EmailProvider`. Default: `false`.
     pub require_verification: bool,
+    /// Custom delivery of an account-deletion proof. A configured callback
+    /// selects verification before the session-freshness check.
+    pub send_delete_account_verification: Option<Arc<dyn SendDeleteAccountVerification>>,
     /// Hook called before the user record is removed.
     pub before_delete: Option<Arc<dyn BeforeDeleteUser>>,
     /// Hook called after the user record has been removed.
@@ -133,6 +121,10 @@ impl std::fmt::Debug for DeleteUserConfig {
             .field("enabled", &self.enabled)
             .field("delete_token_expires_in", &self.delete_token_expires_in)
             .field("require_verification", &self.require_verification)
+            .field(
+                "send_delete_account_verification",
+                &self.send_delete_account_verification.is_some(),
+            )
             .field("before_delete", &self.before_delete.is_some())
             .field("after_delete", &self.after_delete.is_some())
             .finish()
@@ -144,7 +136,8 @@ impl Default for DeleteUserConfig {
         Self {
             enabled: false,
             delete_token_expires_in: Duration::hours(24),
-            require_verification: true,
+            require_verification: false,
+            send_delete_account_verification: None,
             before_delete: None,
             after_delete: None,
         }
@@ -229,6 +222,15 @@ impl UserManagementPlugin {
     }
 
     #[must_use]
+    pub fn send_delete_account_verification(
+        mut self,
+        sender: Arc<dyn SendDeleteAccountVerification>,
+    ) -> Self {
+        self.config.delete_user.send_delete_account_verification = Some(sender);
+        self
+    }
+
+    #[must_use]
     pub fn before_delete(mut self, hook: Arc<dyn BeforeDeleteUser>) -> Self {
         self.config.delete_user.before_delete = Some(hook);
         self
@@ -258,14 +260,18 @@ impl UserManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
-        let user = UserView::from(&user);
+        let (user, session) = handlers::authoritative_session(req, ctx).await?;
         let body: ChangeEmailRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let response = change_email_core(&body, &user, &self.config, ctx).await?;
-        Ok(AuthResponse::json(200, &response)?)
+        let projection = change_email_core(&body, &user, &session, &self.config, ctx).await?;
+        let mut response =
+            AuthResponse::json(200, &better_auth_core::StatusResponse { status: true })?;
+        if projection.is_some() {
+            append_session_cookie(&mut response, req, &session.token, &ctx.config);
+        }
+        Ok(response)
     }
 
     /// `POST /delete-user`
@@ -274,16 +280,18 @@ impl UserManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, session) = ctx.require_session(req).await?;
-        let user = UserView::from(&user);
-        let session = SessionView::from(&session);
+        let (user, session) = handlers::authoritative_session(req, ctx).await?;
         let body: DeleteUserRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let response = delete_user_core(&body, &user, &session, &self.config, ctx).await?;
+        let response = delete_user_core(&body, &user, &session, req, &self.config, ctx).await?;
+        let deleted = response.message == "User deleted"
+            && !body.token.as_deref().is_some_and(|token| !token.is_empty());
         let mut response = AuthResponse::json(200, &response)?;
-        append_clear_session_cookies(&mut response, &ctx.config);
+        if deleted {
+            append_clear_session_cookies(&mut response, &ctx.config);
+        }
         Ok(response)
     }
 
@@ -293,20 +301,20 @@ impl UserManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _) = ctx
-            .require_session(req)
+        let (user, _) = handlers::authoritative_session(req, ctx)
             .await
             .map_err(|_error| AuthError::not_found("Failed to get user info"))?;
-        let user = UserView::from(&user);
         let query: TokenQuery = serde_json::from_value(serde_json::json!({
             "token": req.query.get("token").cloned(),
             "callbackURL": req.query.get("callbackURL").cloned(),
         }))
         .map_err(|_error| AuthError::bad_request("Verification token is required"))?;
-        let response = delete_user_callback_core(&query.token, &user, &self.config, ctx).await?;
-        if let Some(callback_url) = query.callback_url {
+        let response =
+            delete_user_callback_core(&query.token, &user, req, true, &self.config, ctx).await?;
+        if let Some(callback_url) = query.callback_url.filter(|url| !url.is_empty()) {
             let mut headers = better_auth_core::Headers::new();
             drop(headers.insert("Location".to_owned(), callback_url));
+            drop(headers.insert("Content-Type".to_owned(), "application/json".to_owned()));
             let mut response_2 = AuthResponse {
                 status: 302,
                 headers,
@@ -369,7 +377,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
     }
 }
 
-fn append_clear_session_cookies(
+pub(super) fn append_clear_session_cookies(
     response: &mut AuthResponse,
     config: &better_auth_core::AuthConfig,
 ) {
@@ -400,6 +408,29 @@ fn append_clear_session_cookies(
             ),
         );
     }
+}
+
+pub(in crate::plugins) fn append_session_cookie(
+    response: &mut AuthResponse,
+    req: &AuthRequest,
+    token: &str,
+    config: &better_auth_core::AuthConfig,
+) {
+    use better_auth_core::utils::cookie_utils::{
+        create_session_cookie_with_max_age, verify_cookie_value,
+    };
+    let dont_remember =
+        super::helpers::get_cookie(req, &related_cookie_name(config, "dont_remember"))
+            .and_then(|value| verify_cookie_value(&value, &config.secret))
+            .is_some_and(|value| !value.is_empty());
+    response.headers.append(
+        "Set-Cookie",
+        create_session_cookie_with_max_age(
+            Some(token),
+            (!dont_remember).then(|| config.session.expires_in.num_seconds()),
+            config,
+        ),
+    );
 }
 
 fn related_cookie_name(config: &better_auth_core::AuthConfig, suffix: &str) -> String {

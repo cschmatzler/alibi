@@ -9,7 +9,11 @@ use std::io::Write;
     reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
 )]
 async fn test_spec_driven_endpoint_validation() {
-    let auth = create_test_auth().await;
+    let mut config = test_config();
+    config.email_provider = Some(std::sync::Arc::new(
+        better_auth_core::email::ConsoleEmailProvider,
+    ));
+    let auth = create_test_auth_with_config(config).await;
     let mut validator = SpecValidator::new();
 
     // --- GET /ok ---

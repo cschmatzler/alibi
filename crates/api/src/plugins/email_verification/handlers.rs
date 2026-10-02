@@ -2,7 +2,8 @@ use super::token::{create_email_verification_token, decode_email_verification_to
 use super::types::{SendVerificationEmailRequest, VerifyEmailQuery, VerifyEmailResult};
 use super::{EmailVerificationConfig, StatusResponse};
 use crate::plugins::helpers::{
-    SessionIssueError, issue_user_session, record_completed_session_user_view,
+    SessionIssueError, create_user_session, record_completed_session,
+    record_completed_session_user_view,
 };
 use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{AuthContext, AuthError, AuthResult, UpdateUser};
@@ -177,21 +178,15 @@ fn verification_error(
     clippy::too_many_lines,
     reason = "Keep verification ownership, account transitions, and callback ordering together"
 )]
-pub(super) async fn verify_email_core<U, S, A>(
+pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
     query: &VerifyEmailQuery,
-    current_session: Option<(U, S)>,
     config: &EmailVerificationConfig,
-    ip_address: Option<String>,
-    user_agent: Option<String>,
+    request: &better_auth_core::AuthRequest,
     ctx: &AuthContext<A>,
-) -> AuthResult<VerifyEmailResult>
-where
-    U: AuthUser,
-    S: AuthSession,
-    A: better_auth_core::AuthSchema,
-{
-    let current_session =
-        current_session.map(|(user, session)| (ctx.user_view(&user), ctx.session_view(&session)));
+) -> AuthResult<VerifyEmailResult> {
+    let meta = better_auth_core::RequestMeta::from_request(request);
+    let ip_address = meta.ip_address;
+    let user_agent = meta.user_agent;
 
     let claims = match decode_email_verification_token(&ctx.config.secret, &query.token) {
         Ok(claims) => claims,
@@ -214,6 +209,7 @@ where
     };
 
     if let Some(update_to) = claims.update_to.as_deref() {
+        let current_session = verification_session(request, ctx).await;
         if let Some((ref session_user, _)) = current_session
             && session_user.email().unwrap_or_default() != claims.email
         {
@@ -258,11 +254,11 @@ where
                 });
             }
             Some("change-email-verification") => {
-                let (_session_user, session): (UserView, SessionView) =
+                let (mut session_user, session): (UserView, SessionView) =
                     if let Some((user_2, session)) = current_session {
                         (user_2, session)
                     } else {
-                        let session = issue_user_session(ctx, &user.id(), ip_address, user_agent)
+                        let session = create_user_session(ctx, &user.id(), ip_address, user_agent)
                             .await
                             .map_err(SessionIssueError::into_auth_error)?
                             .session;
@@ -286,6 +282,15 @@ where
                     hook(&hook_user).await?;
                 }
 
+                session_user.email = Some(update_to.to_owned());
+                session_user.email_verified = true;
+                super::super::user_management::handlers::renew_session_snapshot(
+                    &session_user,
+                    &session,
+                    ctx,
+                )
+                .await?;
+
                 if let Some(callback_url) = query.callback_url.as_deref() {
                     return Ok(VerifyEmailResult::Redirect {
                         url: redirect_url(callback_url, None),
@@ -302,15 +307,16 @@ where
                 });
             }
             _ => {
-                let session = if let Some((_, session)) = current_session {
-                    session
-                } else {
-                    let session = issue_user_session(ctx, &user.id(), ip_address, user_agent)
-                        .await
-                        .map_err(SessionIssueError::into_auth_error)?
-                        .session;
-                    ctx.session_view(&session)
-                };
+                let (mut session_user, session) =
+                    if let Some((session_user, session)) = current_session {
+                        (session_user, session)
+                    } else {
+                        let session = create_user_session(ctx, &user.id(), ip_address, user_agent)
+                            .await
+                            .map_err(SessionIssueError::into_auth_error)?
+                            .session;
+                        (ctx.user_view(&user), ctx.session_view(&session))
+                    };
                 let updated_user = ctx
                     .database
                     .update_user(
@@ -341,6 +347,15 @@ where
                     )
                     .await;
                 }
+
+                session_user.email = Some(update_to.to_owned());
+                session_user.email_verified = false;
+                super::super::user_management::handlers::renew_session_snapshot(
+                    &session_user,
+                    &session,
+                    ctx,
+                )
+                .await?;
 
                 if let Some(callback_url) = query.callback_url.as_deref() {
                     return Ok(VerifyEmailResult::Redirect {
@@ -396,20 +411,40 @@ where
     }
 
     let session_token = if config.auto_sign_in_after_verification {
+        let current_session = verification_session(request, ctx).await;
         match current_session {
             Some((session_user, session))
                 if session_user.email().unwrap_or_default() == claims.email =>
             {
+                let mut original_view = session_user;
+                original_view.email_verified = true;
+                super::super::user_management::handlers::renew_session_snapshot(
+                    &original_view,
+                    &session,
+                    ctx,
+                )
+                .await?;
                 Some(session.token().to_owned())
             }
             _ => {
-                let issued = issue_user_session(ctx, &user.id(), ip_address, user_agent)
+                let issued = create_user_session(ctx, &user.id(), ip_address, user_agent)
                     .await
                     .map_err(SessionIssueError::into_auth_error)?;
                 // Source publishes the original lookup snapshot with only the
                 // verification flag changed, even though the stored row is newer.
                 let mut original_view = ctx.user_view(&user);
                 original_view.email_verified = true;
+                better_auth_core::cache::runtime::emit_issuance_snapshot(
+                    ctx,
+                    better_auth_core::CacheVersionContext::created(
+                        issued.user.clone(),
+                        issued.session.clone(),
+                        original_view.clone(),
+                        ctx.session_view(&issued.session),
+                    ),
+                )
+                .await?;
+                record_completed_session::<A>(&issued.user, &issued.session);
                 record_completed_session_user_view::<A>(&user, &issued.session, original_view);
                 Some(issued.session.token().to_owned())
             }
@@ -429,4 +464,15 @@ where
         body: serde_json::json!({ "status": true, "user": serde_json::Value::Null }),
         session_token,
     })
+}
+
+async fn verification_session<S: better_auth_core::AuthSchema>(
+    request: &better_auth_core::AuthRequest,
+    ctx: &AuthContext<S>,
+) -> Option<(UserView, SessionView)> {
+    better_auth_core::cache::runtime::authenticated(ctx, request, false)
+        .await
+        .ok()
+        .flatten()
+        .map(|read| (ctx.user_view(&read.user), read.session))
 }

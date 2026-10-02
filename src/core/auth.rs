@@ -634,7 +634,27 @@ impl<S: AuthSchema> BetterAuth<S> {
         reason = "Keep field validation and user-update callbacks adjacent to the persistence operation"
     )]
     async fn handle_update_user(&self, req: &AuthRequest) -> AuthResult<AuthResponse> {
-        let current_user = self.extract_current_user(req).await?;
+        let current_user = self.extract_current_user(req).await.map_err(|error| {
+            if matches!(error, AuthError::SessionNotFound | AuthError::UserNotFound) {
+                for cookie in better_auth_core::utils::cookie_utils::delete_session_cookie_headers(
+                    &self.config,
+                ) {
+                    req.queue_response_header("Set-Cookie", cookie);
+                }
+            }
+            if matches!(
+                error,
+                AuthError::Unauthenticated | AuthError::SessionNotFound | AuthError::UserNotFound
+            ) {
+                AuthError::Upstream {
+                    status: 401,
+                    code: "UNAUTHORIZED",
+                    message: "Unauthorized",
+                }
+            } else {
+                error
+            }
+        })?;
         let body: serde_json::Value = req
             .body_as_json()
             .map_err(|e| AuthError::bad_request(format!("Invalid JSON: {e}")))?;

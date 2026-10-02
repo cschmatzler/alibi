@@ -10,7 +10,6 @@ mod tests;
 use super::StatusResponse;
 use async_trait::async_trait;
 use better_auth_core::AuthUser;
-use better_auth_core::utils::cookie_utils::create_session_cookie;
 use better_auth_core::wire::UserView;
 use better_auth_core::{AuthContext, AuthError, AuthResult};
 use better_auth_core::{AuthRequest, AuthResponse};
@@ -157,7 +156,11 @@ impl EmailVerificationPlugin {
                 Ok(v) => v,
                 Err(resp) => return Ok(resp),
             };
-        let current_user = ctx.require_session(req).await.ok().map(|(user, _)| user);
+        let current_user = better_auth_core::cache::runtime::authenticated(ctx, req, false)
+            .await
+            .ok()
+            .flatten()
+            .map(|read| read.user);
         let response =
             send_verification_email_core(&body, current_user.as_ref(), &self.config, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
@@ -193,41 +196,38 @@ impl EmailVerificationPlugin {
             callback_url,
         };
 
-        let metadata = better_auth_core::RequestMeta::from_request(req);
-        let current_session = ctx.require_session(req).await.ok();
-
-        match verify_email_core(
-            &query,
-            current_session,
-            &self.config,
-            metadata.ip_address,
-            metadata.user_agent,
-            ctx,
-        )
-        .await?
-        {
+        match verify_email_core(&query, &self.config, req, ctx).await? {
             VerifyEmailResult::Redirect { url, session_token } => {
                 let mut headers = better_auth_core::Headers::new();
                 drop(headers.insert("Location".to_owned(), url));
                 drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
-                if let Some(token_2) = session_token {
-                    let cookie = create_session_cookie(&token_2, &ctx.config);
-                    headers.append("Set-Cookie".to_owned(), cookie);
-                }
-                Ok(AuthResponse {
+                let mut response = AuthResponse {
                     status: 302,
                     headers,
                     body: Vec::new(),
-                })
+                };
+                if let Some(token) = session_token {
+                    super::user_management::append_session_cookie(
+                        &mut response,
+                        req,
+                        &token,
+                        &ctx.config,
+                    );
+                }
+                Ok(response)
             }
             VerifyEmailResult::Json {
                 body,
                 session_token,
             } => {
                 let mut response = AuthResponse::json(200, &body)?;
-                if let Some(token_3) = session_token {
-                    let cookie = create_session_cookie(&token_3, &ctx.config);
-                    response = response.with_header("Set-Cookie", cookie);
+                if let Some(token) = session_token {
+                    super::user_management::append_session_cookie(
+                        &mut response,
+                        req,
+                        &token,
+                        &ctx.config,
+                    );
                 }
                 Ok(response)
             }

@@ -14,7 +14,7 @@ type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_sch
 #[tokio::test]
 async fn test_change_email_success() {
     let plugin = UserManagementPlugin::new().change_email_enabled(true);
-    let (ctx, _user, session) = test_helpers::create_test_context_with_user(
+    let (mut ctx, _user, session) = test_helpers::create_test_context_with_user(
         CreateUser::new()
             .with_email("test@example.com")
             .with_name("Test User")
@@ -22,6 +22,8 @@ async fn test_change_email_success() {
         Duration::hours(24),
     )
     .await;
+
+    ctx.email_provider = Some(Arc::new(better_auth_core::email::ConsoleEmailProvider));
 
     let body = serde_json::json!({ "newEmail": "new@example.com" });
     let req = test_helpers::create_auth_request(

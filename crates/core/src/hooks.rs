@@ -5,6 +5,8 @@ use crate::types::{AuthRequest, HttpMethod, RequestExtensions, RequestMeta};
 pub struct RequestHookContext {
     pub method: HttpMethod,
     pub path: String,
+    /// Original transport URL, including the auth base path and query string.
+    pub url: Option<url::Url>,
     pub headers: std::collections::HashMap<String, String>,
     pub query: std::collections::HashMap<String, String>,
     /// Original request body, available to application lifecycle callbacks.
@@ -21,6 +23,7 @@ impl RequestHookContext {
         Self {
             method: request.method().clone(),
             path: request.path().to_owned(),
+            url: request.url().cloned(),
             headers: request.headers.clone(),
             query: request.query.clone(),
             body: request.body.clone(),
