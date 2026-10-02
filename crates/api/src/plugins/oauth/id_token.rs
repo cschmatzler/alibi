@@ -15,6 +15,12 @@ pub trait OAuthJwksSource: Send + Sync {
     async fn fetch_keys(&self) -> Result<Vec<Value>, String>;
 }
 
+/// Application-owned policy applied to claims only after cryptographic and
+/// standard claim verification. It must not select an untrusted key authority.
+pub trait OAuthIdTokenClaimsVerifier: Send + Sync {
+    fn verify_claims(&self, claims: &JsValue) -> bool;
+}
+
 /// HTTP transport for an application-configured provider key authority.
 pub struct HttpOAuthJwksSource {
     url: String,
@@ -86,6 +92,9 @@ pub struct OAuthIdTokenConfig {
     pub algorithm: Option<Algorithm>,
     pub selection: OAuthJwksSelection,
     pub nonce_comparison: OAuthNonceComparison,
+    /// A trusted additional policy, including tenant binding for multi-tenant
+    /// issuers. Empty fixed issuers require this policy and otherwise fail closed.
+    pub verify_claims: Option<Arc<dyn OAuthIdTokenClaimsVerifier>>,
 }
 impl OAuthIdTokenConfig {
     #[must_use]
@@ -105,6 +114,7 @@ impl OAuthIdTokenConfig {
             algorithm: Some(Algorithm::RS256),
             selection: OAuthJwksSelection::First,
             nonce_comparison: OAuthNonceComparison::Exact,
+            verify_claims: None,
         }
     }
     #[must_use]
@@ -121,6 +131,7 @@ impl OAuthIdTokenConfig {
             algorithm: None,
             selection: OAuthJwksSelection::ExactKid,
             nonce_comparison: OAuthNonceComparison::ExactOrSha256,
+            verify_claims: None,
         }
     }
 }
@@ -135,6 +146,7 @@ impl std::fmt::Debug for OAuthIdTokenConfig {
             .field("algorithm", &self.algorithm)
             .field("selection", &self.selection)
             .field("nonce_comparison", &self.nonce_comparison)
+            .field("verify_claims", &self.verify_claims.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -288,7 +300,13 @@ pub(in crate::plugins) async fn verify_jwks_token(
                         return None;
                     }
                 }
-                return Some(payload);
+                if config
+                    .verify_claims
+                    .as_ref()
+                    .is_none_or(|policy| policy.verify_claims(&payload))
+                {
+                    return Some(payload);
+                }
             }
         }
     }
@@ -356,10 +374,12 @@ fn remote_rsa_public_key(key: &Value) -> bool {
     reason = "JWT numeric dates deliberately retain JavaScript floating point comparison"
 )]
 fn valid_claims(payload: &JsValue, audiences: &[String], config: &OAuthIdTokenConfig) -> bool {
-    if !payload
-        .get("iss")
-        .and_then(JsValue::as_str)
-        .is_some_and(|issuer| config.issuers.iter().any(|configured| issuer == configured))
+    if (config.issuers.is_empty() && config.verify_claims.is_none())
+        || (!config.issuers.is_empty()
+            && !payload
+                .get("iss")
+                .and_then(JsValue::as_str)
+                .is_some_and(|issuer| config.issuers.iter().any(|configured| issuer == configured)))
     {
         return false;
     }

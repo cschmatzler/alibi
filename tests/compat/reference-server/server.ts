@@ -42,6 +42,7 @@ import { createCompromisedPasswordFixture } from "./fixtures/compromised-passwor
 import { createCustomSessionFixture } from "./fixtures/custom-session-fixture";
 import { createDispatchFixture } from "./fixtures/dispatch-fixture";
 import { dropboxProviderFixture } from "./fixtures/dropbox-provider-fixture";
+import { microsoftProviderFixture } from "./microsoft-provider-fixture";
 import { facebookProviderFixture } from "./fixtures/facebook-provider-fixture";
 import { figmaProviderFixture } from "./fixtures/figma-provider-fixture";
 import { googleIdTokenProfiles } from "./fixtures/google-id-token-fixture";
@@ -182,6 +183,8 @@ const oauthServer = Bun.serve({
   port: 0,
   async fetch(request) {
     const url = new URL(request.url);
+      const microsoftControl = await microsoftFixture.handle(request);
+      if (microsoftControl) return microsoftControl;
 
     if (url.pathname === "/oauth/authorize" && request.method === "GET") {
       const redirectURI = url.searchParams.get("redirect_uri");
@@ -614,6 +617,7 @@ const cloudflareFixture = cloudflareProviderFixture(authOptions);
 const cognitoFixture = cognitoProviderFixture(authOptions);
 const dropboxFixture = dropboxProviderFixture(authOptions);
 const facebookFixture = facebookProviderFixture(authOptions);
+const microsoftFixture = microsoftProviderFixture(authOptions);
 const figmaFixture = figmaProviderFixture(authOptions);
 const huggingfaceFixture = huggingfaceProviderFixture(authOptions);
 const kakaoFixture = kakaoProviderFixture(authOptions);
@@ -648,6 +652,7 @@ for (const [path, instance] of dropboxFixture.profiles) {
 for (const [path, instance] of facebookFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
+for (const [path, instance] of microsoftFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of figmaFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
@@ -2465,6 +2470,7 @@ const server = Bun.serve({
         dropboxFixture.reset();
         facebookFixture.reset();
         figmaFixture.reset();
+        microsoftFixture.reset();
         huggingfaceFixture.reset();
         kakaoFixture.reset();
         kickFixture.reset();

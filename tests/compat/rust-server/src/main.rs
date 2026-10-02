@@ -110,6 +110,8 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
+mod microsoft_provider_fixture;
+
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[derive(Deserialize)]
@@ -885,6 +887,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         facebook_provider_fixture::router(&config, database.clone()).await?;
     let (dropbox_router, dropbox_reset) =
         dropbox_provider_fixture::router(&config, database.clone()).await?;
+    let (microsoft_router, microsoft_reset) = microsoft_provider_fixture::router(&config, database.clone()).await?;
     let (figma_router, figma_reset) =
         figma_provider_fixture::router(&config, database.clone()).await?;
     let (huggingface_router, huggingface_reset) =
@@ -1415,6 +1418,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     dropbox_reset.reset().await;
                     facebook_reset.reset().await;
                     figma_reset.reset().await;
+                    microsoft_reset.reset().await;
                     huggingface_reset.reset().await;
                     kakao_reset.reset().await;
                     kick_reset.reset().await;
@@ -2041,6 +2045,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(dropbox_router)
         .merge(facebook_router)
         .merge(figma_router)
+        .merge(microsoft_router)
         .merge(huggingface_router)
         .merge(kakao_router)
         .merge(kick_router)
