@@ -17,11 +17,12 @@ function numeric(value: number) {
 export function createApiKeyOptionsFixture(database: Database, options: Parameters<typeof betterAuth>[0]) {
   const path = "/__test/profiles/api-key-options/api/auth";
   const events: Data[] = [];
-  let mode = "normal", serial = 0;
+  let mode = "normal", serial = 0, getterCalls = 0;
   function failure(stage: string) {
-    if (mode === `${stage}-ordinary`) throw new Error(`Private ${stage} failure`);
-    if (mode === `${stage}-api`) throw new APIError("FORBIDDEN", {code:`APPLICATION_${stage.toUpperCase()}_DENIED`,message:`Application ${stage} denied`});
-    if (mode === `${stage}-public-500`) throw new APIError("INTERNAL_SERVER_ERROR", {code:`APPLICATION_${stage.toUpperCase()}_FAILED`,message:`Application ${stage} failed`});
+    const selected = mode.replace("-handler-", "-");
+    if (selected === `${stage}-ordinary`) throw new Error(`Private ${stage} failure`);
+    if (selected === `${stage}-api`) throw new APIError("FORBIDDEN", {code:`APPLICATION_${stage.toUpperCase()}_DENIED`,message:`Application ${stage} denied`});
+    if (selected === `${stage}-public-500`) throw new APIError("INTERNAL_SERVER_ERROR", {code:`APPLICATION_${stage.toUpperCase()}_FAILED`,message:`Application ${stage} failed`});
   }
   function context(ctx: any) {
     return {requestPresent:!!ctx.request,method:ctx.request?.method??null,marker:ctx.request?.headers.get("x-options-marker")??null,body:ctx.body??null};
@@ -48,7 +49,8 @@ export function createApiKeyOptionsFixture(database: Database, options: Paramete
       const key=ctx.headers?.get("x-options-getter-session")??null;
       if(key!==null) {
         events.push({kind:"getter",configId:entry.id,key,mode,...context(ctx)});
-        failure("getter");
+        getterCalls++;
+        if(!mode.startsWith("getter-handler-") || getterCalls===2) failure("getter");
       }
       return key;
     }}:{}),
@@ -61,7 +63,7 @@ export function createApiKeyOptionsFixture(database: Database, options: Paramete
     const url=new URL(request.url), action=url.pathname.replace("/__test/api-key-options/","");
     if(!url.pathname.startsWith("/__test/api-key-options/"))return null;
     if(action==="events")return Response.json(events.splice(0));
-    if(action==="mode") {const input=await request.json();mode=input.mode;if(input.reset){serial=0;events.length=0;}return Response.json({mode});}
+    if(action==="mode") {const input=await request.json();mode=input.mode;getterCalls=0;if(input.reset){serial=0;events.length=0;}return Response.json({mode});}
     if(action==="state") return Response.json({
       keys:database.query('SELECT *,hex(CAST(start AS BLOB)) AS startHex,typeof(start) AS startType FROM apikey ORDER BY name,id').all().map((raw:any)=>{
         const row={...raw,enabled:!!raw.enabled,rateLimitEnabled:!!raw.rateLimitEnabled};

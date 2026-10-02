@@ -30,11 +30,12 @@ struct Application {
     events: Arc<Mutex<Vec<Value>>>,
     mode: Arc<Mutex<String>>,
     serial: Arc<AtomicUsize>,
+    getter_calls: Arc<AtomicUsize>,
     config_id: String,
 }
 impl Application {
     fn failure(&self, stage: &str) -> AuthResult<()> {
-        let mode = self.mode.lock().unwrap().clone();
+        let mode = self.mode.lock().unwrap().replace("-handler-", "-");
         if mode == format!("{stage}-ordinary") {
             return Err(AuthError::internal(format!("Private {stage} failure")));
         }
@@ -130,7 +131,10 @@ impl ApiKeyGetter for Application {
             .cloned();
         if let Some(key) = &key {
             self.event("getter", key, context);
-            self.failure("getter")?;
+            let invocation = self.getter_calls.fetch_add(1, Ordering::SeqCst) + 1;
+            if !self.mode.lock().unwrap().starts_with("getter-handler-") || invocation == 2 {
+                self.failure("getter")?;
+            }
         }
         Ok(key)
     }
@@ -232,6 +236,7 @@ async fn events(State(fixture): State<Fixture>) -> Json<Value> {
 async fn mode(State(fixture): State<Fixture>, Json(input): Json<Value>) -> Json<Value> {
     let mode = input["mode"].as_str().unwrap().to_owned();
     *fixture.application.mode.lock().unwrap() = mode.clone();
+    fixture.application.getter_calls.store(0, Ordering::SeqCst);
     if input["reset"] == true {
         fixture.application.serial.store(0, Ordering::SeqCst);
         fixture.application.events.lock().unwrap().clear();
@@ -339,6 +344,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         events: Arc::new(Mutex::new(Vec::new())),
         mode: Arc::new(Mutex::new("normal".into())),
         serial: Arc::new(AtomicUsize::new(0)),
+        getter_calls: Arc::new(AtomicUsize::new(0)),
         config_id: String::new(),
     };
     let entries: Vec<Value> =

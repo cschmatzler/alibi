@@ -6,7 +6,7 @@ pub struct Model {
     #[sea_orm(primary_key, auto_increment = false)]
     pub id: String,
     pub name: Option<String>,
-    #[sea_orm(column_type = "Text", save_as = "text")]
+    #[sea_orm(column_type = "Text")]
     pub start: Option<super::api_key_start::ApiKeyStart>,
     pub prefix: Option<String>,
     #[sea_orm(column_name = "key")]

@@ -98,13 +98,15 @@
           "api-key concurrent verification cannot overdraw quota",
           "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
           "api-key custom getter replaces headers and validator binds the request owner before usage",
-          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
+          "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification"
         ],
         "rejection": [
           "api-key CRUD isolates configurations and preserves all-config listing",
           "api-key custom getter replaces headers and validator binds the request owner before usage",
           "api-key application generation and dynamic permissions bind issuing configuration, owner and persisted authorization",
-          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
+          "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification"
         ],
         "authorization": "api-key organization ownership rejects unrelated users",
         "state": [
@@ -120,7 +122,8 @@
       "evidence": {
         "success": [
           "api-key CRUD isolates configurations and preserves all-config listing",
-          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
+          "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification"
         ],
         "rejection": "api-key list validates pagination and sort direction",
         "authorization": null,
@@ -536,7 +539,9 @@
           "client IP client-ip-disabled verified email auto-signin applies initialized policy",
           "client IP empty configured headers persists authoritative session context",
           "client IP zero IPv6 prefix persists authoritative session context",
-          "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets"
+          "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets",
+          "api-key application callback errors preserve real request inputs and each explicit implicit and HTTP catch boundary",
+          "api-key installed configuration and references resolve the actual principal after admitted usage without changing foreign keys"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -554,7 +559,9 @@
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
           "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
           "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
-          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies"
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies",
+          "api-key application callback errors preserve real request inputs and each explicit implicit and HTTP catch boundary",
+          "api-key installed configuration and references resolve the actual principal after admitted usage without changing foreign keys"
         ],
         "authorization": [
           "api-key shared headers select the first configured session",
@@ -570,7 +577,9 @@
           "application JWT keyring public callbacks retain request context explicit errors and unchanged owned storage",
           "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
           "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
-          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies"
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies",
+          "api-key application callback errors preserve real request inputs and each explicit implicit and HTTP catch boundary",
+          "api-key installed configuration and references resolve the actual principal after admitted usage without changing foreign keys"
         ],
         "state": [
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
@@ -663,7 +672,9 @@
           "client IP rightmost untrusted hop persists authoritative session context",
           "client IP client-ip-disabled verified email auto-signin applies initialized policy",
           "client IP empty configured headers persists authoritative session context",
-          "client IP zero IPv6 prefix persists authoritative session context"
+          "client IP zero IPv6 prefix persists authoritative session context",
+          "api-key application callback errors preserve real request inputs and each explicit implicit and HTTP catch boundary",
+          "api-key installed configuration and references resolve the actual principal after admitted usage without changing foreign keys"
         ]
       }
     },
@@ -1850,17 +1861,25 @@
           "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes",
           "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
           "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
-          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies"
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies",
+          "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification",
+          "api-key numeric default expiry and fractional policy retain callback input and complete failure state",
+          "api-key raw numeric generation options preserve safe fractional nonfinite and rejected write phases"
         ],
         "rejection": [
           "api-key HTTP requests cannot select a different owner",
           "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
           "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes",
-          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer"
+          "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
+          "api-key application callback errors preserve real request inputs and each explicit implicit and HTTP catch boundary",
+          "api-key installed permission shapes retain Source authorization decisions exact quota phases and foreign authority",
+          "api-key numeric default expiry and fractional policy retain callback input and complete failure state"
         ],
         "authorization": [
           "api-key HTTP requests cannot select a different owner",
-          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes"
+          "api-key creation rejects client authority before callbacks and preserves deliberate callback errors without secret writes",
+          "api-key application callback errors preserve real request inputs and each explicit implicit and HTTP catch boundary",
+          "api-key installed permission shapes retain Source authorization decisions exact quota phases and foreign authority"
         ],
         "state": [
           "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
@@ -1869,7 +1888,11 @@
           "api-key automatic creation starts hot global cleanup before a rejecting generator and ignores the optional observer",
           "client IP client-ip-disabled API-key virtual principals keep nullable metadata and override foreign cookies",
           "client IP client-ip-ordered API-key virtual principals keep nullable metadata and override foreign cookies",
-          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies"
+          "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies",
+          "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification",
+          "api-key application callback errors preserve real request inputs and each explicit implicit and HTTP catch boundary",
+          "api-key numeric default expiry and fractional policy retain callback input and complete failure state",
+          "api-key raw numeric generation options preserve safe fractional nonfinite and rejected write phases"
         ]
       }
     },
@@ -1891,14 +1914,20 @@
       "evidence": {
         "success": [
           "api-key update accepts keyId field and updates name",
-          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
+          "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification"
         ],
         "rejection": [
           "api-key CRUD isolates configurations and preserves all-config listing",
-          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
+          "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification",
+          "api-key installed permission shapes retain Source authorization decisions exact quota phases and foreign authority"
         ],
         "authorization": "api-key HTTP requests cannot select a different owner",
-        "state": "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update"
+        "state": [
+          "arbitrary JSON key metadata persists JavaScript rounded numbers through create and update",
+          "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification"
+        ]
       }
     },
     {

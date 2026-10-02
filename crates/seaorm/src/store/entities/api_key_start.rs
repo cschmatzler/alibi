@@ -52,6 +52,10 @@ impl ApiKeyStart {
     pub(crate) fn as_str(&self) -> &str {
         &self.text
     }
+
+    pub(crate) const fn requires_sqlite_cast(&self) -> bool {
+        self.sqlite_bytes.is_some()
+    }
 }
 
 impl From<ApiKeyStart> for Value {

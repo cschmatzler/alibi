@@ -52,12 +52,12 @@ async function setup(ctx: ScenarioContext) {
   expect(await events(ctx)).toEqual([]);
   return { owner, foreign, ownerResponses, foreignResponses, ownerId: signup.data!.user.id, foreignId: other.data!.user.id, foreignKey, initial, ownerState, foreignState, signup: ctx.snapshot(signup), other: ctx.snapshot(other), guard: ctx.snapshot(guard) };
 }
-async function authority(ctx: ScenarioContext, setup: Awaited<ReturnType<typeof setup>>) {
+async function authority(ctx: ScenarioContext, ownerSetup: Awaited<ReturnType<typeof setup>>) {
   const after = await state(ctx);
-  expect(row(after, setup.foreignKey)).toEqual(row(setup.initial, setup.foreignKey));
-  expect(await ctx.readUserState({ userId: setup.ownerId })).toEqual(setup.ownerState);
-  expect(await ctx.readUserState({ userId: setup.foreignId })).toEqual(setup.foreignState);
-  return { after, ownerResponses: setup.ownerResponses, foreignResponses: setup.foreignResponses, owner: await ctx.readUserState({ userId: setup.ownerId }), foreign: await ctx.readUserState({ userId: setup.foreignId }) };
+  expect(row(after, ownerSetup.foreignKey)).toEqual(row(ownerSetup.initial, ownerSetup.foreignKey));
+  expect(await ctx.readUserState({ userId: ownerSetup.ownerId })).toEqual(ownerSetup.ownerState);
+  expect(await ctx.readUserState({ userId: ownerSetup.foreignId })).toEqual(ownerSetup.foreignState);
+  return { after, ownerResponses: ownerSetup.ownerResponses, foreignResponses: ownerSetup.foreignResponses, owner: await ctx.readUserState({ userId: ownerSetup.ownerId }), foreign: await ctx.readUserState({ userId: ownerSetup.foreignId }) };
 }
 async function trustedCreate(ctx: ScenarioContext, input: Data) {
   const result = object(await control(ctx, "create", input));
@@ -307,6 +307,16 @@ compatScenario("api-key application callback errors preserve real request inputs
     expect(http.error?.status).toBe(500);
     expect(http.error?.message).toBe("An error occurred during hook matcher execution. Check the logs for more details.");
     expect(callback).toEqual([{ kind: "getter", configId: "getter-session", key: getter.key.key, mode, requestPresent: true, method: "GET", marker: "http-request", body: null }]);
+    const after = await state(ctx); expect(after).toEqual(before);
+    observations.push({ mode, before, http: ctx.snapshot(http), callback, after });
+  }
+  for (const mode of ["getter-handler-ordinary", "getter-handler-api", "getter-handler-public-500"]) {
+    await control(ctx, "mode", { mode });
+    const before = await state(ctx), http = await s.foreign.getSession({ fetchOptions: { headers: { "x-options-getter-session": getter.key.key, "x-options-marker": "http-request" } } }), callback = await events(ctx);
+    expect(http.error?.status).toBe(mode === "getter-handler-api" ? 403 : 500);
+    if (mode === "getter-handler-ordinary") expect(s.foreignResponses.at(-1)).toEqual({ status: 500, body: null });
+    else expect(http.error).toMatchObject({ code: mode === "getter-handler-api" ? "APPLICATION_GETTER_DENIED" : "APPLICATION_GETTER_FAILED", message: mode === "getter-handler-api" ? "Application getter denied" : "Application getter failed" });
+    expect(callback).toEqual([1, 2].map(() => ({ kind: "getter", configId: "getter-session", key: getter.key.key, mode, requestPresent: true, method: "GET", marker: "http-request", body: null })));
     const after = await state(ctx); expect(after).toEqual(before);
     observations.push({ mode, before, http: ctx.snapshot(http), callback, after });
   }
