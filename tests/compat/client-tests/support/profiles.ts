@@ -15,6 +15,7 @@ export const FIXTURE_PROFILES = [
   ...variants("social-facebook-keys-", ["removed", "algorithm", "use", "operations", "private", "duplicate", "invalid-ext", "duplicate-import", "weak-modulus"] as const),
   ...variants("social-dropbox-",["default","public","configured","disabled-scope","disabled-configured","offline","online","legacy","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
   ...variants("social-huggingface-",["default","public","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
+  ...variants("social-kakao-",["default","public","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
   ...variants("social-figma-",["default","public","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
   "session-cache-guards", "session-cache-interactions",
   ...variants("user-lifecycle-", ["default", "required", "delivery", "auto", "change", "promotion", "promotion-no-mail", "verification-expired", "no-mail", "delete", "delete-mail", "delete-zero", "delete-expired", "delete-policy", "delete-no-freshness"] as const),

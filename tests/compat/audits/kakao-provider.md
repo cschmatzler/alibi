@@ -27,5 +27,20 @@ boundaries. No private predicate owner or test-only production export is added.
 Malformed complex projection/async-hook/advanced runtime policies remain bounded
 by #181/#184/#188/#193 instead of claiming arbitrary JavaScript equivalence.
 
-Implementation, actual parent before proof, independent review, measured cells
-and broad final gates are pending. No Source/comparer edits or hook bypasses.
+Strict API and fixture all-target Clippy, formatting and TypeScript pass. The
+actual complete public table passes all58 Source/native owners on its first
+executed run,2,016assertions (/tmp/issue147-initial-real-owner-strict.log,exit0).
+This retains nested numeric/null/absent/empty/zero/false fallbacks, independent
+raw subject and foreign whole-row ownership, exact no-verifier code grants,
+secret/public exchanges, rotation/replay, browser linking and account retrieval.
+
+An unchanged3077a96e actual parent with only the genuine fixture and old public
+generic constructor compiles; Source preserves all three defaults followed by
+requested scopes, while Native replaces them (/tmp/issue147-generic-before-owner.log,
+28assertions,exit1). Production and both lockfile diffs from this parent are empty.
+This is the intended observable regression, not a missing constructor or404.
+
+Independent review of actual factory/helpers, production and both fixtures found
+no blocker. All4,704 parent capability cells retain their order; new Kakao cells
+come only from successful real Source/native traces. Full canonical evidence,
+broad strict/docs/browser and clean unchanged-floor coverage are pending. No Source/comparer edits or hook bypasses.
