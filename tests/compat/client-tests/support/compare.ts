@@ -616,6 +616,17 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         && record(b.request) && record(b.before) && record(b.snapshot) && record(b.set);
       const cacheSet = a.operation === "set" && b.operation === "set" && typeof a.key === "string" && a.key.startsWith("verification:")
         && typeof b.key === "string" && b.key.startsWith("verification:") && "rawValue" in a && "rawValue" in b;
+      const otpDelivery = verificationPublications.find(pair => pair.kind === "otp" && pair.valid
+        && samePublication(a, pair.left.delivery) && samePublication(b, pair.right.delivery));
+      if (otpDelivery) {
+        for (const field of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+          const child = `${path}.${field}`;
+          if (!Object.hasOwn(a, field) || !Object.hasOwn(b, field)) fail(child, "field presence differs");
+          else if (field === "otp") identity(String(a.otp), String(b.otp), child, "token");
+          else visit(a[field], b[field], child, field);
+        }
+        return;
+      }
       const observed = (complete || cacheSet) && verificationPublications.some(pair => samePublication(a, complete ? pair.left : pair.left.set)
         || samePublication(b, complete ? pair.right : pair.right.set));
       if (observed) {
@@ -628,6 +639,11 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
               const child = `${target}.${field}`;
               if (!Object.hasOwn(left, field) || !Object.hasOwn(right, field)) fail(child, "field presence differs");
               else if (field === "identifier" && receipt.kind === "oauth") identity(String(left.identifier), String(right.identifier), child, "verification-identifier");
+              else if (field === "value" && receipt.kind === "otp") {
+                const [leftCode, leftCounter] = String(left.value).split(":"), [rightCode, rightCounter] = String(right.value).split(":");
+                identity(leftCode!, rightCode!, `${child}.otp`, "token");
+                visit(leftCounter, rightCounter, `${child}.counter`, "counter");
+              }
               else if (field === "value" && receipt.kind === "transfer") identity(String(left.value), String(right.value), child, "token");
               else if (field === "value" && receipt.kind === "oauth") {
                 const a = JSON.parse(String(left.value)), b = JSON.parse(String(right.value));

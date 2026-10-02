@@ -355,3 +355,39 @@ for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} defa
   for (const key of ["metadata", "custom", "additionalFields", "applicationData"])
     expect(compareValues({...a.root as Row, [key]: {expiresAt: 600000, ttl: 600}}, {...original, [key]: {expiresAt: 600001, ttl: 599}}, context).some(difference => difference.path === `${key}.ttl`)).toBe(true);
 }, 30000);
+
+// Independent generated codes exercise receipt-to-delivery identity rather than
+// changing the original default lifetime owners' shared public generators.
+test("actual Source independent OTP codes bind complete publications and delivery while counters and foreign producers remain literal", async () => {
+  const leftCode = String(randomInt(100000, 1000000));
+  let rightCode = String(randomInt(100000, 1000000));
+  while (rightCode === leftCode) rightCode = String(randomInt(100000, 1000000));
+  const shared = {magic: randomBytes(24).toString("base64url"), transfer: randomBytes(24).toString("base64url")};
+  const email = `${randomBytes(12).toString("hex")}@test.com`;
+  const a = await run("cache", {otp: leftCode, ...shared}, email), b = await run("cache", {otp: rightCode, ...shared}, email);
+  const context: ComparisonContext = {leftBaseURL: a.baseURL, rightBaseURL: b.baseURL, leftStartedAt: a.startedAt, rightStartedAt: b.startedAt, leftFinishedAt: a.finishedAt, rightFinishedAt: b.finishedAt, sessionCookieSecret: secret,
+    leftRequestWindows: a.traces.map(t => t[requestWindow]), rightRequestWindows: b.traces.map(t => t[requestWindow])};
+  const differences = compareValues(a.root, b.root, context);
+  await Bun.write("/tmp/issue302-independent-otp-pair.json", JSON.stringify({left: a, right: b, context, differences}, null, 2));
+  expect(differences).toEqual([]);
+  const original = b.root as Row, observerIndex = original.traces.findIndex((t: Row) => t.path === verificationPublicationObserver);
+  const owning = "observation.verificationPublications.0.set.ttl";
+  const changedCode = rightCode === "999999" ? "999998" : "999999";
+  for (const change of [
+    (p: Row) => { p.delivery.otp = changedCode; },
+    (p: Row) => { p.snapshot.value = `${rightCode}:1`; p.before.snapshot.value = p.snapshot.value; p.set.value.value = p.snapshot.value; p.set.rawValue = JSON.stringify(p.snapshot); },
+    (p: Row) => { p.request = clone(original.observation.verificationPublications[3].request); },
+  ]) {
+    const bad = clone(original), publication = bad.observation.verificationPublications[0]; change(publication);
+    bad.observation.aliases[0] = clone(publication.set);
+    bad.traces[observerIndex].responseBody.publications[0] = clone(publication);
+    bad.traces[observerIndex].responseBody.deliveries[0] = clone(publication.delivery);
+    expect(compareValues(a.root, bad, context).some(d => d.path === owning)).toBe(true);
+  }
+  const delivery = clone(original); delivery.traces[observerIndex].responseBody.deliveries[0].otp = changedCode;
+  expect(compareValues(a.root, delivery, context).some(d => d.path === `traces.${observerIndex}.responseBody.deliveries.0.otp`)).toBe(true);
+  const counter = clone(original); counter.observation.aliases[0].value.value = `${rightCode}:1`;
+  expect(compareValues(a.root, counter, context).some(d => d.path === "observation.aliases.0.value.value")).toBe(true);
+  for (const key of ["metadata", "applicationData", "additionalFields", "custom"])
+    expect(compareValues({[key]: {otp: leftCode, value: `${leftCode}:0`}}, {[key]: {otp: rightCode, value: `${rightCode}:0`}}, context).some(d => d.path === `${key}.otp`)).toBe(true);
+}, 30000);
