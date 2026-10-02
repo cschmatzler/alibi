@@ -63,7 +63,15 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   const invalidLifetimes = new Set<string>();
   const invalidPhysicalDates = new Set<string>();
   const dateKey = (owner: string, field: string, a: string, b: string) => JSON.stringify([owner, field, Date.parse(a), Date.parse(b)]);
-  const physicalOwner = (a: Record<string, unknown>, b: Record<string, unknown>) => JSON.stringify(["physical", a, b]);
+  const physicalOwners = new WeakMap<object, WeakMap<object, string>>();
+  let nextPhysicalOwner = 0;
+  function physicalOwner(a: Record<string, unknown>, b: Record<string, unknown>): string {
+    let rights = physicalOwners.get(a);
+    if (!rights) { rights = new WeakMap(); physicalOwners.set(a, rights); }
+    let owner = rights.get(b);
+    if (!owner) { owner = `physical:${nextPhysicalOwner++}`; rights.set(b, owner); }
+    return owner;
+  }
   const dateOwners = (a: Record<string, unknown>, b: Record<string, unknown>) => [...["id", "token"].flatMap(key => typeof a[key] === "string" && typeof b[key] === "string" ? [JSON.stringify([key, a[key], b[key]])] : []), physicalOwner(a, b)];
   const approvedDate = (owners: readonly string[], field: string, a: string, b: string) => owners.some(owner => pairedDates.has(dateKey(owner, field, a, b)));
   const approveDate = (owners: readonly string[], field: string, a: string, b: string) => { for (const owner of owners) pairedDates.add(dateKey(owner, field, a, b)); };

@@ -224,7 +224,6 @@ pub(super) async fn build(
             otp_length: numeric_setting(name, "length", 6.0),
             allowed_attempts: numeric_setting(name, "attempts", 3.0),
             expires_in: numeric_setting(name, "lifetime", 300.0),
-            ..Default::default()
         });
         let auth = Arc::new(
             AuthBuilder::new(config.clone())
