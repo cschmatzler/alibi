@@ -67,3 +67,46 @@ test("Source default OAuth error redirects record admission denial without count
   }
   expect(collectCoverage(scenario, [defaultCallback], ["state"], baseURL)["GET /callback/{}"]?.state).toBeUndefined();
 });
+
+test("real account ownership errors and request-bound reset denials retain evidence without promoting unknown failures", () => {
+  const scenario = "measured denial", baseURL = "http://fixture.local:42921";
+  const account = { ...trace("/api/auth/refresh-token", 400), method: "POST", responseErrorBody: {code:"ACCOUNT_NOT_FOUND",message:"Account not found"} };
+  const unlink = { ...account, path:"/__test/profiles/social-gitlab-issuer/api/auth/unlink-account" };
+  const credential = { ...account, path:"/api/auth/delete-user", responseErrorBody:{code:"CREDENTIAL_ACCOUNT_NOT_FOUND",message:"Credential account not found"} };
+  expect(collectCoverage(scenario, [account, unlink, credential], [], baseURL)).toEqual({
+    "POST /delete-user":{rejection:[scenario],authorization:[scenario]},
+    "POST /refresh-token":{rejection:[scenario],authorization:[scenario]},
+    "POST /unlink-account":{rejection:[scenario],authorization:[scenario]},
+  });
+  for (const changed of [
+    {responseStatus:200}, {responseStatus:500}, {method:"GET"},
+    {path:"/api/auth/sign-up/email"}, {path:"/__test/refresh-token"},
+    {responseErrorBody:{code:"FAILED_TO_UNLINK_LAST_ACCOUNT"}},
+    {responseErrorBody:{code:"APPLICATION_ERROR"}}, {responseErrorBody:null},
+  ]) {
+    for (const record of Object.values(collectCoverage(scenario, [{...account,...changed}], [], baseURL)))
+      expect(record.authorization).toBeUndefined();
+  }
+  expect(collectCoverage(scenario, [{...account,responseStatus:500}], [], baseURL)).toEqual({"POST /refresh-token":{}});
+
+  const reset = { ...trace("/api/auth/reset-password/invalid-reset-token?callbackURL=%2Fcallback%3Ffoo%3Dbar%26baz%3Dqux",302), responseHeaders:{location:`${baseURL}/callback?foo=bar&baz=qux&error=INVALID_TOKEN`} };
+  expect(collectCoverage(scenario, [reset], [], baseURL)).toEqual({"GET /reset-password/{}":{rejection:[scenario]}});
+  const profile = {...reset,path:reset.path.replace("/api/auth/","/__test/profiles/dispatch-default/api/auth/")};
+  expect(collectCoverage(scenario, [profile], [], baseURL)).toEqual({"GET /reset-password/{}":{rejection:[scenario]}});
+  for (const changed of [
+    {responseStatus:200}, {responseStatus:301}, {method:"POST"},
+    {path:"/api/auth/reset-password/invalid-reset-token"},
+    {path:reset.path+"&callbackURL=%2Fcallback"},
+    {path:"/api/auth/reset-password/invalid-reset-token?callbackURL=%2Fcallback%3Ffoo%3Dbar%26baz%3Dqux%26error%3DINVALID_TOKEN"},
+    {path:"/api/auth/reset-password/invalid-reset-token?callbackURL=http%3A%2F%2Fforeign.local%2Fcallback"},
+    {responseHeaders:{location:`${baseURL}/callback?foo=bar&baz=qux&error=INVALID_TOKEN&error=INVALID_TOKEN`}},
+    {responseHeaders:{location:`${baseURL}/callback?foo=bar&baz=qux&error=UNKNOWN`}},
+    {responseHeaders:{location:`${baseURL}/callback?foo=changed&baz=qux&error=INVALID_TOKEN`}},
+    {responseHeaders:{location:`${baseURL}/unowned?foo=bar&baz=qux&error=INVALID_TOKEN`}},
+    {responseHeaders:{location:"http://foreign.local/callback?foo=bar&baz=qux&error=INVALID_TOKEN"}},
+    {responseHeaders:{location:`${baseURL}/callback?foo=bar&baz=qux&error=INVALID_TOKEN#fragment`}},
+  ]) {
+    for (const record of Object.values(collectCoverage(scenario, [{...reset,...changed}], [], baseURL)))
+      expect(record.rejection).toBeUndefined();
+  }
+});

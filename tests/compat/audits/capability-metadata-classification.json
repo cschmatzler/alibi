@@ -1,0 +1,1328 @@
+{
+  "baselineHead": "16205b5b0e99f69899cf84ac71b11be64c362dba",
+  "beforeOwners": {
+    "passed": 66,
+    "failed": 1,
+    "assertions": 3332
+  },
+  "missingInheritedRequirements": 115,
+  "classification": [
+    {
+      "route": "GET /callback/{}",
+      "kind": "state",
+      "scenario": "apple provider refresh rotates stored credentials and excludes foreign owners",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "state",
+        "scenario": "apple provider refresh rotates stored credentials and excludes foreign owners"
+      }
+    },
+    {
+      "route": "GET /callback/{}",
+      "kind": "state",
+      "scenario": "apple real code exchange persists tokens and consumes callback state",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "state",
+        "scenario": "apple real code exchange persists tokens and consumes callback state"
+      }
+    },
+    {
+      "route": "GET /callback/{}",
+      "kind": "state",
+      "scenario": "apple token transport preserves absent expiry and scope",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "state",
+        "scenario": "apple token transport preserves absent expiry and scope"
+      }
+    },
+    {
+      "route": "GET /callback/{}",
+      "kind": "state",
+      "scenario": "apple token transport preserves array-scope expiry and scope",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "state",
+        "scenario": "apple token transport preserves array-scope expiry and scope"
+      }
+    },
+    {
+      "route": "GET /callback/{}",
+      "kind": "state",
+      "scenario": "apple token transport preserves comma-scope expiry and scope",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "state",
+        "scenario": "apple token transport preserves comma-scope expiry and scope"
+      }
+    },
+    {
+      "route": "GET /callback/{}",
+      "kind": "state",
+      "scenario": "apple token transport preserves fractional expiry and scope",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "state",
+        "scenario": "apple token transport preserves fractional expiry and scope"
+      }
+    },
+    {
+      "route": "GET /callback/{}",
+      "kind": "state",
+      "scenario": "apple token transport preserves zero expiry and scope",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "state",
+        "scenario": "apple token transport preserves zero expiry and scope"
+      }
+    },
+    {
+      "route": "GET /get-session",
+      "kind": "authorization",
+      "scenario": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /get-session",
+        "kind": "success",
+        "scenario": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+      },
+      "reason": "Source returns HTTP200 object/null for present, absent, invalid, revoked and expired authority. Its full public result, signed-cookie relationships and SQL controls remain required success/state observations."
+    },
+    {
+      "route": "GET /get-session",
+      "kind": "authorization",
+      "scenario": "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /get-session",
+        "kind": "success",
+        "scenario": "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
+      },
+      "reason": "Source returns HTTP200 object/null for present, absent, invalid, revoked and expired authority. Its full public result, signed-cookie relationships and SQL controls remain required success/state observations."
+    },
+    {
+      "route": "GET /get-session",
+      "kind": "authorization",
+      "scenario": "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /get-session",
+        "kind": "success",
+        "scenario": "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle"
+      },
+      "reason": "Source returns HTTP200 object/null for present, absent, invalid, revoked and expired authority. Its full public result, signed-cookie relationships and SQL controls remain required success/state observations."
+    },
+    {
+      "route": "GET /get-session",
+      "kind": "authorization",
+      "scenario": "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /get-session",
+        "kind": "success",
+        "scenario": "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle"
+      },
+      "reason": "Source returns HTTP200 object/null for present, absent, invalid, revoked and expired authority. Its full public result, signed-cookie relationships and SQL controls remain required success/state observations."
+    },
+    {
+      "route": "GET /get-session",
+      "kind": "rejection",
+      "scenario": "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /get-session",
+        "kind": "success",
+        "scenario": "bearer bearer-composition preserves signed issuance header precedence and physical session lifecycle"
+      },
+      "reason": "Source returns HTTP200 object/null for present, absent, invalid, revoked and expired authority. Its full public result, signed-cookie relationships and SQL controls remain required success/state observations."
+    },
+    {
+      "route": "GET /get-session",
+      "kind": "rejection",
+      "scenario": "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /get-session",
+        "kind": "success",
+        "scenario": "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle"
+      },
+      "reason": "Source returns HTTP200 object/null for present, absent, invalid, revoked and expired authority. Its full public result, signed-cookie relationships and SQL controls remain required success/state observations."
+    },
+    {
+      "route": "GET /get-session",
+      "kind": "rejection",
+      "scenario": "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /get-session",
+        "kind": "success",
+        "scenario": "bearer bearer-signed preserves signed issuance header precedence and physical session lifecycle"
+      },
+      "reason": "Source returns HTTP200 object/null for present, absent, invalid, revoked and expired authority. Its full public result, signed-cookie relationships and SQL controls remain required success/state observations."
+    },
+    {
+      "route": "GET /reset-password/{}",
+      "kind": "rejection",
+      "scenario": "reset password callback redirects invalid token to error callback",
+      "decision": "verify exact Source-generated INVALID_TOKEN redirect and bind collector to request callback",
+      "retainedRequirement": {
+        "route": "GET /reset-password/{}",
+        "kind": "rejection",
+        "scenario": "reset password callback redirects invalid token to error callback"
+      }
+    },
+    {
+      "route": "POST /admin/impersonate-user",
+      "kind": "rejection",
+      "scenario": "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /admin/impersonate-user",
+        "kind": "state",
+        "scenario": "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
+      },
+      "reason": "Application callback ordinary exception is an empty HTTP500 with trusted callback receipts and unchanged complete principals. It is retained as failure/state, rather than classifying unknown server failures as successful rejection evidence."
+    },
+    {
+      "route": "POST /delete-user",
+      "kind": "authorization",
+      "scenario": "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+      "decision": "actual scoped 400 account/credential denial; bounded Source-code collection",
+      "retainedRequirement": {
+        "route": "POST /delete-user",
+        "kind": "authorization",
+        "scenario": "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+      }
+    },
+    {
+      "route": "POST /link-social",
+      "kind": "authorization",
+      "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "authorization",
+        "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+      },
+      "reason": "The POST OAuth starts succeed. Actual callback replay rejects state_mismatch at GET /callback/{}, while ambiguous adapter/link 500 failures retain complete row/receipt comparisons and state requirements."
+    },
+    {
+      "route": "POST /link-social",
+      "kind": "authorization",
+      "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "authorization",
+        "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped"
+      },
+      "reason": "The POST OAuth starts succeed. Actual callback replay rejects state_mismatch at GET /callback/{}, while ambiguous adapter/link 500 failures retain complete row/receipt comparisons and state requirements."
+    },
+    {
+      "route": "POST /link-social",
+      "kind": "authorization",
+      "scenario": "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /link-social",
+        "kind": "state",
+        "scenario": "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
+      },
+      "reason": "Ambiguous adapter causes HTTP500 linking and a default internal_server_error redirect, not a classified auth decision. The real unchanged rows, original/foreign sessions and signed token receipts remain required state observations."
+    },
+    {
+      "route": "POST /link-social",
+      "kind": "rejection",
+      "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "rejection",
+        "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+      },
+      "reason": "The POST OAuth starts succeed. Actual callback replay rejects state_mismatch at GET /callback/{}, while ambiguous adapter/link 500 failures retain complete row/receipt comparisons and state requirements."
+    },
+    {
+      "route": "POST /link-social",
+      "kind": "rejection",
+      "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "rejection",
+        "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped"
+      },
+      "reason": "The POST OAuth starts succeed. Actual callback replay rejects state_mismatch at GET /callback/{}, while ambiguous adapter/link 500 failures retain complete row/receipt comparisons and state requirements."
+    },
+    {
+      "route": "POST /link-social",
+      "kind": "rejection",
+      "scenario": "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /link-social",
+        "kind": "state",
+        "scenario": "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
+      },
+      "reason": "Ambiguous adapter causes HTTP500 linking and a default internal_server_error redirect, not a classified auth decision. The real unchanged rows, original/foreign sessions and signed token receipts remain required state observations."
+    },
+    {
+      "route": "POST /organization/create",
+      "kind": "state",
+      "scenario": "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks",
+      "decision": "retain original requirement; collect complete real application creation and issued SDK session receipts for unchanged request-window comparison",
+      "retainedRequirement": {
+        "route": "POST /organization/create",
+        "kind": "state",
+        "scenario": "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks"
+      }
+    },
+    {
+      "route": "POST /organization/create",
+      "kind": "success",
+      "scenario": "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks",
+      "decision": "retain original requirement; collect complete real application creation and issued SDK session receipts for unchanged request-window comparison",
+      "retainedRequirement": {
+        "route": "POST /organization/create",
+        "kind": "success",
+        "scenario": "organization fixed membership policies retain falsy defaults and raw Number admission without read callbacks"
+      }
+    },
+    {
+      "route": "POST /refresh-token",
+      "kind": "authorization",
+      "scenario": "apple provider refresh rotates stored credentials and excludes foreign owners",
+      "decision": "actual scoped 400 account/credential denial; bounded Source-code collection",
+      "retainedRequirement": {
+        "route": "POST /refresh-token",
+        "kind": "authorization",
+        "scenario": "apple provider refresh rotates stored credentials and excludes foreign owners"
+      }
+    },
+    {
+      "route": "POST /refresh-token",
+      "kind": "authorization",
+      "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "actual scoped 400 account/credential denial; bounded Source-code collection",
+      "retainedRequirement": {
+        "route": "POST /refresh-token",
+        "kind": "authorization",
+        "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+      }
+    },
+    {
+      "route": "POST /refresh-token",
+      "kind": "authorization",
+      "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "actual scoped 400 account/credential denial; bounded Source-code collection",
+      "retainedRequirement": {
+        "route": "POST /refresh-token",
+        "kind": "authorization",
+        "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped"
+      }
+    },
+    {
+      "route": "POST /refresh-token",
+      "kind": "state",
+      "scenario": "apple provider refresh rotates stored credentials and excludes foreign owners",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /refresh-token",
+        "kind": "state",
+        "scenario": "apple provider refresh rotates stored credentials and excludes foreign owners"
+      }
+    },
+    {
+      "route": "POST /sign-in/email",
+      "kind": "authorization",
+      "scenario": "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
+      "decision": "extend media-order owner with well-formed JSON and actual foreign origin",
+      "retainedRequirement": {
+        "route": "POST /sign-in/email",
+        "kind": "authorization",
+        "scenario": "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+      }
+    },
+    {
+      "route": "POST /sign-in/email",
+      "kind": "authorization",
+      "scenario": "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/email",
+        "kind": "success",
+        "scenario": "dispatch origin-off origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "The intentional origin-off application disables the relevant guard; every actual sign-in succeeds. Real guarded configuration owners retain rejection/authorization requirements."
+    },
+    {
+      "route": "POST /sign-in/email",
+      "kind": "rejection",
+      "scenario": "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/email",
+        "kind": "state",
+        "scenario": "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
+      },
+      "reason": "Application callback ordinary exception is an empty HTTP500 with trusted callback receipts and unchanged complete principals. It is retained as failure/state, rather than classifying unknown server failures as successful rejection evidence."
+    },
+    {
+      "route": "POST /sign-in/email",
+      "kind": "rejection",
+      "scenario": "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/email",
+        "kind": "success",
+        "scenario": "dispatch origin-off origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "The intentional origin-off application disables the relevant guard; every actual sign-in succeeds. Real guarded configuration owners retain rejection/authorization requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple profile mapping receives supplied name and cannot replace raw subject",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple profile mapping receives supplied name and cannot replace raw subject"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple rejects wrong provider and callback state without creating identities",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "authorization",
+        "scenario": "apple rejects wrong provider and callback state without creating identities"
+      },
+      "reason": "POST rejects unavailable provider with 404 PROVIDER_NOT_FOUND; actual callback-state admission denial belongs to GET /callback/{}."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token empty-name profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token empty-name profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token false-string profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token false-string profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token js-trim profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token js-trim profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token missing-name profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token missing-name profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token named profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token named profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token null-name profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token null-name profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token numeric profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token numeric profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token numeric-name profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token numeric-name profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token rejects disabled without writes",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "rejection",
+        "scenario": "apple signed ID token rejects disabled without writes"
+      },
+      "reason": "Published disabled verifier lookup is 404 ID_TOKEN_NOT_SUPPORTED. Rejection and complete unchanged rows are retained; it is not a 401/403 authentication decision."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token supplied-name profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token supplied-name profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token unverified profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token unverified profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "apple signed ID token zero-name profile and ownership",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "success",
+        "scenario": "apple signed ID token zero-name profile and ownership"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "authorization",
+        "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+      },
+      "reason": "The POST OAuth starts succeed. Actual callback replay rejects state_mismatch at GET /callback/{}, while ambiguous adapter/link 500 failures retain complete row/receipt comparisons and state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "authorization",
+        "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped"
+      },
+      "reason": "The POST OAuth starts succeed. Actual callback replay rejects state_mismatch at GET /callback/{}, while ambiguous adapter/link 500 failures retain complete row/receipt comparisons and state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "authorization",
+      "scenario": "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
+      },
+      "reason": "Ambiguous adapter causes HTTP500 linking and a default internal_server_error redirect, not a classified auth decision. The real unchanged rows, original/foreign sessions and signed token receipts remain required state observations."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "rejection",
+      "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "rejection",
+        "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+      },
+      "reason": "The POST OAuth starts succeed. Actual callback replay rejects state_mismatch at GET /callback/{}, while ambiguous adapter/link 500 failures retain complete row/receipt comparisons and state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "rejection",
+      "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "GET /callback/{}",
+        "kind": "rejection",
+        "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped"
+      },
+      "reason": "The POST OAuth starts succeed. Actual callback replay rejects state_mismatch at GET /callback/{}, while ambiguous adapter/link 500 failures retain complete row/receipt comparisons and state requirements."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "rejection",
+      "scenario": "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "duplicate signed Google identity rejects direct sign-in and linking before selecting any owner"
+      },
+      "reason": "Ambiguous adapter causes HTTP500 linking and a default internal_server_error redirect, not a classified auth decision. The real unchanged rows, original/foreign sessions and signed token receipts remain required state observations."
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple JWKS rotation is observed on each signed token admission",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple JWKS rotation is observed on each signed token admission"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple explicit empty client array rejects empty token audience without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple explicit empty client array rejects empty token audience without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple profile mapping receives supplied name and cannot replace raw subject",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple profile mapping receives supplied name and cannot replace raw subject"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple published configured authorization scopes and form-post PKCE",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple published configured authorization scopes and form-post PKCE"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple published default authorization scopes and form-post PKCE",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple published default authorization scopes and form-post PKCE"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple published disabled-configured authorization scopes and form-post PKCE",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple published disabled-configured authorization scopes and form-post PKCE"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple published disabled-scope authorization scopes and form-post PKCE",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple published disabled-scope authorization scopes and form-post PKCE"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple rejects wrong provider and callback state without creating identities",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple rejects wrong provider and callback state without creating identities"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token empty-name profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token empty-name profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token false-string profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token false-string profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token js-trim profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token js-trim profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token missing-email profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token missing-email profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token missing-name profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token missing-name profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token named profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token named profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token null-email profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token null-email profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token null-name profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token null-name profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token numeric profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token numeric profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token numeric-name profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token numeric-name profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token rejects audience without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token rejects audience without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token rejects blank-subject without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token rejects blank-subject without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token rejects disabled without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token rejects disabled without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token rejects expired without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token rejects expired without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token rejects implicit-disabled without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token rejects implicit-disabled without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token rejects issuer without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token rejects issuer without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token rejects nonce without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token rejects nonce without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token rejects old without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token rejects old without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token rejects signature without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token rejects signature without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token rejects subject without writes",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token rejects subject without writes"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token supplied-name profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token supplied-name profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token unverified profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token unverified profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed ID token zero-name profile and ownership",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed ID token zero-name profile and ownership"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed configured audience admission",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed configured audience admission"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed configured bundle admission",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed configured bundle admission"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed configured client-array admission",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed configured client-array admission"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed configured exact-nonce admission",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed configured exact-nonce admission"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed configured explicit-signup admission",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed configured explicit-signup admission"
+      }
+    },
+    {
+      "route": "POST /sign-in/social",
+      "kind": "state",
+      "scenario": "apple signed configured hashed-nonce admission",
+      "decision": "annotate existing complete SQL creation/preservation assertions at this actual route",
+      "retainedRequirement": {
+        "route": "POST /sign-in/social",
+        "kind": "state",
+        "scenario": "apple signed configured hashed-nonce admission"
+      }
+    },
+    {
+      "route": "POST /sign-in/username",
+      "kind": "rejection",
+      "scenario": "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-in/username",
+        "kind": "state",
+        "scenario": "admin ordinary callback failure preserves an anonymous compact-cache session and original principals"
+      },
+      "reason": "Application callback ordinary exception is an empty HTTP500 with trusted callback receipts and unchanged complete principals. It is retained as failure/state, rather than classifying unknown server failures as successful rejection evidence."
+    },
+    {
+      "route": "POST /sign-out",
+      "kind": "authorization",
+      "scenario": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-out",
+        "kind": "success",
+        "scenario": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields"
+      },
+      "reason": "Only successful setup/admission and full row preservation occur at this route; they already retain their measured success/state requirements."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "authorization",
+      "scenario": "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch csrf-off origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "authorization",
+      "scenario": "dispatch default origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch default origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "authorization",
+      "scenario": "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "authorization",
+      "scenario": "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch origin-off origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "authorization",
+      "scenario": "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "authorization",
+      "scenario": "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch origin-path origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "rejection",
+      "scenario": "dispatch csrf-off origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch csrf-off origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "rejection",
+      "scenario": "dispatch default origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch default origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "rejection",
+      "scenario": "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "rejection",
+      "scenario": "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch origin-off origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "rejection",
+      "scenario": "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /sign-up/email",
+      "kind": "rejection",
+      "scenario": "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
+      "decision": "reclassified",
+      "retainedRequirement": {
+        "route": "POST /sign-up/email",
+        "kind": "success",
+        "scenario": "dispatch origin-path origin and CSRF configuration preserves writes only after admission"
+      },
+      "reason": "Both calls only establish real owner/foreign principals with HTTP200; media/origin denials occur at sign-in. Signup success/state plus the actual sign-in denial controls remain required."
+    },
+    {
+      "route": "POST /two-factor/send-otp",
+      "kind": "authorization",
+      "scenario": "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage",
+      "decision": "extend strongest existing pending-cookie owner with actual absent/corrupt-cookie send-OTP denials",
+      "retainedRequirement": {
+        "route": "POST /two-factor/send-otp",
+        "kind": "authorization",
+        "scenario": "two-factor pending otp expired default cleanup preserves the actual lookup snapshot and failure stage"
+      }
+    },
+    {
+      "route": "POST /two-factor/send-otp",
+      "kind": "authorization",
+      "scenario": "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+      "decision": "extend strongest existing pending-cookie owner with actual absent/corrupt-cookie send-OTP denials",
+      "retainedRequirement": {
+        "route": "POST /two-factor/send-otp",
+        "kind": "authorization",
+        "scenario": "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage"
+      }
+    },
+    {
+      "route": "POST /two-factor/send-otp",
+      "kind": "authorization",
+      "scenario": "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage",
+      "decision": "extend strongest existing pending-cookie owner with actual absent/corrupt-cookie send-OTP denials",
+      "retainedRequirement": {
+        "route": "POST /two-factor/send-otp",
+        "kind": "authorization",
+        "scenario": "two-factor pending otp missing-user default cleanup preserves the actual lookup snapshot and failure stage"
+      }
+    },
+    {
+      "route": "POST /two-factor/send-otp",
+      "kind": "authorization",
+      "scenario": "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
+      "decision": "extend strongest existing pending-cookie owner with actual absent/corrupt-cookie send-OTP denials",
+      "retainedRequirement": {
+        "route": "POST /two-factor/send-otp",
+        "kind": "authorization",
+        "scenario": "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage"
+      }
+    },
+    {
+      "route": "POST /two-factor/send-otp",
+      "kind": "authorization",
+      "scenario": "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
+      "decision": "extend strongest existing pending-cookie owner with actual absent/corrupt-cookie send-OTP denials",
+      "retainedRequirement": {
+        "route": "POST /two-factor/send-otp",
+        "kind": "authorization",
+        "scenario": "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage"
+      }
+    },
+    {
+      "route": "POST /two-factor/send-otp",
+      "kind": "authorization",
+      "scenario": "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+      "decision": "extend strongest existing pending-cookie owner with actual absent/corrupt-cookie send-OTP denials",
+      "retainedRequirement": {
+        "route": "POST /two-factor/send-otp",
+        "kind": "authorization",
+        "scenario": "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
+      }
+    },
+    {
+      "route": "POST /unlink-account",
+      "kind": "authorization",
+      "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "actual scoped 400 account/credential denial; bounded Source-code collection",
+      "retainedRequirement": {
+        "route": "POST /unlink-account",
+        "kind": "authorization",
+        "scenario": "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+      }
+    },
+    {
+      "route": "POST /unlink-account",
+      "kind": "authorization",
+      "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
+      "decision": "actual scoped 400 account/credential denial; bounded Source-code collection",
+      "retainedRequirement": {
+        "route": "POST /unlink-account",
+        "kind": "authorization",
+        "scenario": "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped"
+      }
+    },
+    {
+      "route": "POST /unlink-account",
+      "kind": "authorization",
+      "scenario": "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+      "decision": "actual scoped 400 account/credential denial; bounded Source-code collection",
+      "retainedRequirement": {
+        "route": "POST /unlink-account",
+        "kind": "authorization",
+        "scenario": "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+      }
+    },
+    {
+      "route": "POST /unlink-account",
+      "kind": "rejection",
+      "scenario": "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
+      "decision": "extend strongest existing owner with actual foreign-row unlink denial",
+      "retainedRequirement": {
+        "route": "POST /unlink-account",
+        "kind": "rejection",
+        "scenario": "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in"
+      }
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
-import { createTracingFetch, type TraceEntry } from "../support/trace";
+import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
+import { compareValues } from "../support/compare";
 
 test("expired, cleared, wrong-domain and wrong-path cookies are never sent", async () => {
   const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
@@ -51,5 +52,52 @@ test("configured authentication paths preserve Request bodies, cookie scopes and
     expect(await (await traced(request)).json()).toEqual({ path: `${profilePath}/action`, cookie: "profile=valid", body: "payload" });
     expect(await (await traced("/__test/profiles/org-teams-no-default/api/auth/action")).json()).toEqual({ path: "/__test/profiles/org-teams-no-default/api/auth/action", cookie: null, body: "" });
     expect(traces.map(trace => trace.path)).toEqual([`${profilePath}/issue`, `${profilePath}/action`, "/__test/profiles/org-teams-no-default/api/auth/action"]);
+  } finally { await server.stop(true); }
+});
+
+test("organization application creation receipts retain full bodies with bounded clocks and control privacy", async () => {
+  const paths = ["/__test/organization-membership-policy/server", "/__test/organization-member-addition/server"];
+  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch(request) {
+    const createdAt = new Date().toISOString();
+    return Response.json({
+      member: { id: crypto.randomUUID(), organizationId: "organization", userId: "owner", role: "member", createdAt },
+      session: { id: crypto.randomUUID(), token: crypto.randomUUID(), userId: "owner", createdAt, updatedAt: createdAt, expiresAt: new Date(Date.parse(createdAt) + 300_000).toISOString() },
+      foreignRows: [{ id: "foreign-member", organizationId: "foreign-organization", userId: "foreign-user", role: "owner", createdAt: "2025-01-01T00:00:00.000Z" }],
+      receipt: { applicationData: { privateMarker: "literal-application-value" } },
+    }, { status: new URL(request.url).searchParams.has("reject") ? 403 : 200 });
+  } });
+  try {
+    for (const path of paths) {
+      const left: TraceEntry[] = [], right: TraceEntry[] = [];
+      const first = await (await createTracingFetch(server.url.origin, "owner", left)(path, { method: "POST" })).json();
+      await Bun.sleep(10);
+      const second = await (await createTracingFetch(server.url.origin, "owner", right)(path, { method: "POST" })).json();
+      expect(left[0]!.responseBody).toEqual(first);
+      expect(right[0]!.responseBody).toEqual(second);
+      const context = { leftBaseURL: server.url.origin, rightBaseURL: server.url.origin, leftStartedAt: left[0]![requestWindow]!.startedAt, rightStartedAt: right[0]![requestWindow]!.startedAt, leftRequestWindows: left.map(entry => entry[requestWindow]), rightRequestWindows: right.map(entry => entry[requestWindow]) };
+      const a = { observation: first, traces: left }, b = { observation: second, traces: right };
+      expect(compareValues(a, b, context)).toEqual([]);
+      for (const corrupt of [
+        { ...second, member: { ...second.member, createdAt: new Date(context.rightStartedAt - 60_000).toISOString() } },
+        { ...second, session: { ...second.session, expiresAt: new Date(Date.parse(second.session.expiresAt) + 60_000).toISOString() } },
+        { ...second, foreignRows: [{ ...second.foreignRows[0], role: "member" }] },
+        { ...second, receipt: { applicationData: { privateMarker: "wrong-application-value" } } },
+      ]) {
+        expect(compareValues(a, { observation: corrupt, traces: [{ ...right[0], responseBody: corrupt }] }, context).length).toBeGreaterThan(0);
+      }
+      expect(compareValues(a, { ...b, traces: [{ ...right[0], responseStatus: 201 }] }, context).length).toBeGreaterThan(0);
+      const rejected: TraceEntry[] = [];
+      const body = await (await createTracingFetch(server.url.origin, "owner", rejected)(`${path}?reject`, { method: "POST" })).json();
+      expect(rejected[0]!.responseBody).toEqual(body);
+      expect(rejected[0]!.responseErrorBody).toEqual(body);
+      expect(rejected[0]!.responseStatus).toBe(403);
+    }
+    for (const [path, method] of [[paths[0]!, "GET"], [paths[1]!, "GET"], [`${paths[0]}/state`, "POST"], ["/__test/unrelated-control", "POST"]]) {
+      const traces: TraceEntry[] = [];
+      const response = await createTracingFetch(server.url.origin, "owner", traces)(path!, { method });
+      expect(response.status).toBe(200);
+      expect(traces[0]!.responseBody).toBeUndefined();
+      expect(traces[0]!.responseBodyShape).toHaveProperty("foreignRows");
+    }
   } finally { await server.stop(true); }
 });

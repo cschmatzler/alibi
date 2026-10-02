@@ -376,6 +376,11 @@ compatScenario(
       code: "CREDENTIAL_ACCOUNT_NOT_FOUND",
     });
     expect(rows(await state(ctx))).toEqual(rows(prepared));
+    const foreignCredential = prepared.accounts.find(row => row.userId === other.data!.user.id && row.providerId === "credential")!;
+    const foreignUnlink = await owner.client.unlinkAccount({accountId:String(foreignCredential.id)});
+    expect(foreignUnlink.error).toMatchObject({status:400,code:"ACCOUNT_NOT_FOUND"});
+    expect(rows(await state(ctx))).toEqual(rows(prepared));
+    expect(await ctx.readUserState({userId:other.data!.user.id})).toEqual(foreignBefore);
     const removed = await owner.client.unlinkAccount({
       accountId: String(credential.id),
     });
@@ -405,6 +410,7 @@ compatScenario(
       denied: ctx.snapshot(denied),
       afterDenied: observed(afterDenied),
       deleteDenied: ctx.snapshot(deleteDenied),
+      foreignUnlink: ctx.snapshot(foreignUnlink),
       removed: ctx.snapshot(removed),
       restored: ctx.snapshot(restored),
       after: observed(after),

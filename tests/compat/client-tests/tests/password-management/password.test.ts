@@ -198,6 +198,10 @@ compatScenario(
       path: `/api/auth/reset-password/invalid-reset-token?callbackURL=${encodeURIComponent(callbackURL)}`,
       redirect: "manual",
     });
+    const deniedURL = new URL(callbackURL, ctx.baseURL);
+    deniedURL.searchParams.set("error", "INVALID_TOKEN");
+    expect(callback.status).toBe(302);
+    expect(callback.location).toBe(deniedURL.href);
 
     return {
       callback: ctx.snapshot(callback),

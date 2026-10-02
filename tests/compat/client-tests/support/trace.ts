@@ -22,7 +22,7 @@ export type TraceEntry = {
   responseHeaders: Record<string, string>;
   responseCookies: Record<string, unknown>;
   responseBodyShape: unknown;
-  /** Complete public auth responses; fixture-control observations use their typed scenario owners. */
+  /** Complete auth and observed application creation responses; other controls retain shapes. */
   responseBody?: unknown;
   /** Complete rejection payload, compared by value: error wire text carries no runtime entropy. */
   responseErrorBody?: unknown;
@@ -223,6 +223,8 @@ export function createTracingFetch(
         responseCookies: responseCookies(response),
         responseBodyShape: bodyShape(responseText),
         ...(url.pathname === "/__test/api-key/create" ||
+        (request.method === "POST" &&
+          ["/__test/organization-membership-policy/server", "/__test/organization-member-addition/server"].includes(url.pathname)) ||
         /^\/(?:__test\/profiles\/[^/]+\/)?api\/auth(?:\/|$)/.test(url.pathname)
           ? {
               responseBody: (() => {

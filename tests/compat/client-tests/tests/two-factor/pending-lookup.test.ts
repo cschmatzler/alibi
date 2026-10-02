@@ -213,7 +213,16 @@ for (const cleanup of [true, false] as const)
             const guarded = await state(ctx, profile);
             expect(guarded.receipts).toEqual([]);
             expect(guarded.snapshot).toEqual(guardState.snapshot);
-            guards.push(guard);
+            let sendGuard;
+            if (kind === "otp") {
+              await control(ctx, profile, { action: "arm" });
+              sendGuard = await raw.twoFactor.sendOtp({}, { headers: { cookie: header } });
+              expect(sendGuard.error).toMatchObject({status:401,code:"INVALID_TWO_FACTOR_COOKIE"});
+              const afterSend = await state(ctx, profile);
+              expect(afterSend.receipts).toEqual([]);
+              expect(afterSend.snapshot).toEqual(guardState.snapshot);
+            }
+            guards.push({verify:guard,send:sendGuard});
           }
           let negative: unknown = null,
             delivery: unknown = null,

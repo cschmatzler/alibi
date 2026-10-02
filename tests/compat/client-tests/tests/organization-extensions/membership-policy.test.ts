@@ -8,7 +8,17 @@ const row=z.object({id:z.string()}).passthrough();
 const stateSchema=z.object({receipts:z.array(z.record(z.string(),z.unknown())),snapshot:z.object({organizations:z.array(row),members:z.array(row),invitations:z.array(row),teams:z.array(row)})});
 async function state(ctx:ScenarioContext){const response=await ctx.rawRequest({path:`${root}/state`});expect(response.status).toBe(200);return stateSchema.parse(response.body);}
 async function reset(ctx:ScenarioContext){expect((await ctx.rawRequest({path:`${root}/configure`,method:"POST",json:{}})).status).toBe(200);}
-async function signup(ctx:ScenarioContext,name:string){const actor=ctx.actor(name,"org-membership-default"),email=ctx.uniqueEmail(name);const created=await actor.client.signUp.email({email,name,password:"password123"});expect(created.error).toBeNull();const user=row.parse(z.object({user:row}).parse(ctx.snapshot(created.data)).user);return {...actor,user,email,created};}
+async function signup(ctx:ScenarioContext,name:string){
+ const actor=ctx.actor(name,"org-membership-default"),email=ctx.uniqueEmail(name);
+ const created=await actor.client.signUp.email({email,name,password:"password123"});expect(created.error).toBeNull();
+ const user=row.parse(z.object({user:row}).parse(ctx.snapshot(created.data)).user);
+ const session=await actor.client.getSession();expect(session.error).toBeNull();
+ const issued=z.object({user:row,session:row.extend({token:z.string(),userId:z.string()})}).parse(ctx.snapshot(session.data));
+ expect(issued.user.id).toBe(user.id);expect(issued.session.userId).toBe(user.id);expect(issued.session.token).toBe(z.string().parse(created.data!.token));
+ const stored=z.object({sessions:z.array(row)}).parse(await ctx.readUserState({userId:user.id}));expect(stored.sessions).toHaveLength(1);
+ expect(stored.sessions[0]).toMatchObject({id:issued.session.id,userId:user.id,token:issued.session.token});
+ return {...actor,user,email,created,session:ctx.snapshot(session)};
+}
 type Actor=Awaited<ReturnType<typeof signup>>;
 function client(ctx:ScenarioContext,actor:Actor,profile:FixtureProfile){return createAuthClient({baseURL:`${ctx.baseURL}/__test/profiles/${profile}/api/auth`,fetchOptions:{customFetchImpl:actor.fetch}});}
 async function org(ctx:ScenarioContext,actor:Actor,name:string){const response=await actor.client.$fetch("/organization/create",{method:"POST",body:{name,slug:ctx.uniqueToken(name),logo:`https://example.test/${name}.png`,metadata:{amount:1e20,original:name}}});expect(response.error).toBeNull();return row.parse(response.data);}
@@ -25,9 +35,9 @@ compatScenario("organization fixed membership policies retain falsy defaults and
   if(allowed){expect(response.status).toBe(200);const created=row.parse(response.body);expect(after.snapshot.members).toEqual([...before.snapshot.members,created]);expect(created).toMatchObject({organizationId:own.id,userId:candidate.user.id,role:"member"});}
   else{expect(response.status).toBe(403);expect(response.body).toHaveProperty("code","ORGANIZATION_MEMBERSHIP_LIMIT_REACHED");expect(after.snapshot).toEqual(before.snapshot);}
   expect(after.receipts).toEqual([]);expect(after.snapshot.organizations).toEqual(before.snapshot.organizations);expect(after.snapshot.invitations).toEqual(before.snapshot.invitations);expect(after.snapshot.teams).toEqual(before.snapshot.teams);expect(await owned(ctx,[owner!,existing!,foreign!,candidate])).toEqual(usersBefore);
-  observations.push({suffix,candidate:candidate.created,before,response,after,usersBefore,usersAfter:await owned(ctx,[owner!,existing!,foreign!,candidate])});
+  observations.push({suffix,candidate:candidate.created,candidateSession:candidate.session,before,response,after,usersBefore,usersAfter:await owned(ctx,[owner!,existing!,foreign!,candidate])});
  }
- return {owner:owner!.created,existing:existing!.created,foreign:foreign!.created,observations};
+ return {owner:owner!.created,ownerSession:owner!.session,existing:existing!.created,existingSession:existing!.session,foreign:foreign!.created,foreignSession:foreign!.session,observations};
 },["POST /organization/create"]);
 
 compatScenario("organization fixed fractional membership admits one physical row then rejects capacity without principal writes",async ctx=>{

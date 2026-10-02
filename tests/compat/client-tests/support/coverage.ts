@@ -18,7 +18,8 @@ const inventory = inventorySchema.parse(await Bun.file(new URL("../../capabiliti
 export function collectCoverage(scenario: string, traces: readonly TraceEntry[], stateTransitions: readonly string[], baseURL?: string) {
   const observations = new Map<string, Map<EvidenceKind, Set<string>>>();
   for (const trace of traces) {
-    const pathname = new URL(trace.path, "http://compat.local").pathname;
+    const requestURL = new URL(trace.path, "http://compat.local");
+    const pathname = requestURL.pathname;
     const prefix = pathname.match(/^(?:\/__test\/profiles\/[a-z0-9-]+)?\/api\/auth(?=\/)/)?.[0];
     if (!prefix) continue;
     const path = pathname.slice(prefix.length);
@@ -28,6 +29,7 @@ export function collectCoverage(scenario: string, traces: readonly TraceEntry[],
     })?.route ?? `${trace.method} ${path}`;
     const kinds: EvidenceKind[] = [];
     let rejectedCallback = false;
+    let rejectedReset = false;
     if (baseURL && trace.method === "GET" && /^\/callback\/[^/]+$/.test(path) && trace.responseStatus === 302) {
       try {
         const base = new URL(baseURL), location = new URL(trace.responseHeaders.location ?? "", base);
@@ -37,13 +39,35 @@ export function collectCoverage(scenario: string, traces: readonly TraceEntry[],
           && errors.length === 1 && ["email_does_not_match", "unable_to_get_user_info", "state_mismatch"].includes(errors[0]!);
       } catch { /* Malformed locations cannot supply callback admission evidence. */ }
     }
+    if (baseURL && route === "GET /reset-password/{}" && trace.responseStatus === 302) {
+      try {
+        const base = new URL(baseURL), callbacks = requestURL.searchParams.getAll("callbackURL");
+        const callback = callbacks.length === 1 ? new URL(callbacks[0]!, new URL(prefix, base)) : undefined;
+        if (callback && callback.origin === base.origin && !callback.username && !callback.password && !callback.href.includes("#")
+          && !callback.searchParams.has("error") && !callback.searchParams.has("token")) {
+          callback.searchParams.set("error", "INVALID_TOKEN");
+          rejectedReset = !!trace.responseHeaders.location && new URL(trace.responseHeaders.location, base).href === callback.href;
+        }
+      } catch { /* An unbound or malformed application redirect cannot supply denial evidence. */ }
+    }
     // These measured Source errors use the default OAuth error channel. Owners
     // still prove their actual denial and unchanged state; arbitrary configured
     // application callbacks are not generally inferable from transport alone.
     if (rejectedCallback) kinds.push("rejection", "authorization");
+    else if (rejectedReset) kinds.push("rejection");
     else if (trace.responseStatus >= 200 && trace.responseStatus < 400) kinds.push("success");
     if (trace.responseStatus >= 400 && trace.responseStatus < 500) kinds.push("rejection");
-    if ([401, 403].includes(trace.responseStatus)) kinds.push("authorization");
+    const error = trace.responseErrorBody;
+    const code = error !== null && typeof error === "object" && !Array.isArray(error) && Object.hasOwn(error, "code")
+      ? (error as Record<string, unknown>).code : undefined;
+    // The published account resolver deliberately hides foreign row ownership
+    // behind these BAD_REQUEST codes. Other 400s and unknown server failures
+    // do not establish an authorization decision.
+    const rejectedOwnership = trace.responseStatus === 400 && (
+      (["POST /refresh-token", "POST /unlink-account"].includes(route) && code === "ACCOUNT_NOT_FOUND")
+      || (route === "POST /delete-user" && code === "CREDENTIAL_ACCOUNT_NOT_FOUND")
+    );
+    if ([401, 403].includes(trace.responseStatus) || rejectedOwnership) kinds.push("authorization");
     if (stateTransitions.includes(route)) kinds.push("state");
     const record = observations.get(route) ?? new Map<EvidenceKind, Set<string>>();
     for (const kind of kinds) { const scenarios = record.get(kind) ?? new Set<string>(); scenarios.add(scenario); record.set(kind, scenarios); }
