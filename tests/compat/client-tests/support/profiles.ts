@@ -148,6 +148,7 @@ export const FIXTURE_PROFILES = [
     "empty-clients",
     "client-key",
   ] as const),
+  ...variants("social-linear-", ["default","public","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
   ...variants("social-kick-", [
     "default",
     "public",
