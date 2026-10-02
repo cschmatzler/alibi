@@ -258,7 +258,11 @@ impl AnonymousIdentity for Application {
 }
 #[async_trait]
 impl SendMagicLink for Application {
-    async fn send(&self, delivery: &MagicLinkDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &MagicLinkDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.deliver(
             format!("magic:{}", delivery.email),
             serde_json::to_value(delivery)?,
@@ -268,7 +272,11 @@ impl SendMagicLink for Application {
 }
 #[async_trait]
 impl SendEmailOtp for Application {
-    async fn send(&self, delivery: &EmailOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &EmailOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.deliver(
             format!("otp:{}:{}", delivery.otp_type.as_str(), delivery.email),
             json!({"email":delivery.email,"otp":delivery.otp,"type":delivery.otp_type.as_str()}),
@@ -278,7 +286,11 @@ impl SendEmailOtp for Application {
 }
 #[async_trait]
 impl SendPhoneOtp for Application {
-    async fn send(&self, delivery: &PhoneOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.deliver(
             format!("phone:{}", delivery.phone_number),
             json!({"phoneNumber":delivery.phone_number,"code":delivery.code}),

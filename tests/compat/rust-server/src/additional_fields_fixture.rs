@@ -42,7 +42,11 @@ struct Application {
 }
 #[async_trait::async_trait]
 impl SendMagicLink for Application {
-    async fn send(&self, delivery: &MagicLinkDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &MagicLinkDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.events.lock().expect("application delivery").push(json!({
             "phase":"delivery", "delivery":delivery, "metadataPresent":delivery.metadata.is_some()
         }));

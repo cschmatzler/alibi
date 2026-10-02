@@ -234,13 +234,21 @@ impl AnonymousIdentity for Application {
 }
 #[async_trait::async_trait]
 impl SendMagicLink for Application {
-    async fn send(&self, delivery: &MagicLinkDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &MagicLinkDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.deliver(format!("magic:{}",delivery.email),json!({"email":delivery.email,"url":delivery.url,"token":delivery.token,"metadata":delivery.metadata}))
     }
 }
 #[async_trait::async_trait]
 impl SendEmailOtp for Application {
-    async fn send(&self, delivery: &EmailOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &EmailOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.deliver(
             format!("{}:{}", delivery.otp_type.as_str(), delivery.email),
             json!({"email":delivery.email,"otp":delivery.otp,"type":delivery.otp_type.as_str()}),

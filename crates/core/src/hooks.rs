@@ -3,6 +3,8 @@ use crate::types::{AuthRequest, HttpMethod, RequestExtensions, RequestMeta};
 /// Request-derived data available to middleware, stores, and other hooks during request handling.
 #[derive(Debug, Clone)]
 pub struct RequestHookContext {
+    /// Original native transport request, retained before endpoint transformations.
+    pub request: AuthRequest,
     pub method: HttpMethod,
     pub path: String,
     /// Original transport URL, including the auth base path and query string.
@@ -21,6 +23,7 @@ impl RequestHookContext {
     #[must_use]
     pub fn from_request(request: &AuthRequest) -> Self {
         Self {
+            request: request.clone(),
             method: request.method().clone(),
             path: request.path().to_owned(),
             url: request.url().cloned(),
@@ -74,3 +77,50 @@ pub struct ValidatedRequestBody(pub crate::utils::json::JsValue);
 /// bytes remain available on `AuthRequest` and `RequestHookContext`.
 #[derive(Clone, Debug)]
 pub struct TransformedRequestBody(pub crate::utils::json::JsValue);
+
+/// Owned native context for application callbacks, including background delivery.
+/// The schema accessor exposes the live instance and its hook-aware store; the
+/// request and hook data retain the actual transport and admitted endpoint input.
+#[derive(Clone)]
+pub struct CallbackContext {
+    pub request: Option<AuthRequest>,
+    pub request_hook: Option<RequestHookContext>,
+    pub endpoint: Option<crate::endpoint::EndpointCall>,
+    context: std::sync::Arc<dyn std::any::Any + Send + Sync>,
+}
+
+impl CallbackContext {
+    #[must_use]
+    pub fn new<S: crate::AuthSchema>(
+        context: &crate::AuthContext<S>,
+        request: Option<&AuthRequest>,
+    ) -> Self {
+        let endpoint = crate::endpoint::current_endpoint_call_context();
+        let request_hook = current_request_hook_context();
+        Self {
+            request: request
+                .or_else(|| {
+                    endpoint
+                        .as_ref()
+                        .and_then(crate::endpoint::EndpointCall::request)
+                })
+                .or_else(|| request_hook.as_ref().map(|hook| &hook.request))
+                .cloned(),
+            request_hook,
+            endpoint,
+            context: std::sync::Arc::new(crate::AuthContext::<S> {
+                config: context.config.clone(),
+                database: context.database.clone(),
+                email_provider: context.email_provider.clone(),
+                metadata: context.metadata.clone(),
+                extensions: context.extensions.clone(),
+            }),
+        }
+    }
+
+    /// Access the actual initialized instance using the application's schema.
+    #[must_use]
+    pub fn context<S: crate::AuthSchema>(&self) -> Option<&crate::AuthContext<S>> {
+        self.context.downcast_ref()
+    }
+}

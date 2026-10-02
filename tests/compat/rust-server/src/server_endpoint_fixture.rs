@@ -298,8 +298,15 @@ impl AuthPlugin<TestSchema> for Observer {
 }
 #[async_trait::async_trait]
 impl EmailOtpGenerator for Application {
-    async fn generate(&self, email: &str, otp_type: EmailOtpType) -> AuthResult<Option<String>> {
-        let call = current_endpoint_call_context()
+    async fn generate(
+        &self,
+        email: &str,
+        otp_type: EmailOtpType,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<Option<String>> {
+        let call = _context
+            .endpoint
+            .clone()
             .ok_or_else(|| AuthError::internal("missing actual logical context"))?;
         let mut event = snapshot(&call, None);
         event["stage"] = value!("otp-generator");

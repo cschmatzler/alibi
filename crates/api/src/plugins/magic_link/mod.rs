@@ -38,7 +38,11 @@ impl std::fmt::Debug for MagicLinkDelivery {
 
 #[async_trait]
 pub trait SendMagicLink: Send + Sync {
-    async fn send(&self, delivery: &MagicLinkDelivery) -> AuthResult<()>;
+    async fn send(
+        &self,
+        delivery: &MagicLinkDelivery,
+        context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()>;
 }
 
 #[async_trait]
@@ -194,12 +198,15 @@ impl MagicLinkPlugin {
             .send_magic_link
             .as_ref()
             .ok_or_else(|| AuthError::config("Magic link sender is not configured"))?
-            .send(&MagicLinkDelivery {
-                email: body.email,
-                url: url.to_string(),
-                token,
-                metadata: body.metadata,
-            })
+            .send(
+                &MagicLinkDelivery {
+                    email: body.email,
+                    url: url.to_string(),
+                    token,
+                    metadata: body.metadata,
+                },
+                &better_auth_core::CallbackContext::new(ctx, Some(req)),
+            )
             .await?;
         AuthResponse::json(200, &json!({"status":true})).map_err(AuthError::from)
     }

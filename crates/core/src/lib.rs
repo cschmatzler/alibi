@@ -96,7 +96,9 @@ pub use entity::{
 pub use error::{
     AuthError, AuthResult, DatabaseError, validate_request_body, validation_error_response,
 };
-pub use hooks::{RequestHookContext, with_request_hook_context, with_request_hook_context_value};
+pub use hooks::{
+    CallbackContext, RequestHookContext, with_request_hook_context, with_request_hook_context_value,
+};
 pub use middleware::{
     BodyLimitConfig, BodyLimitMiddleware, CorsConfig, CorsMiddleware, CsrfConfig, CsrfMiddleware,
     EndpointRateLimit, Middleware, RateLimitConfig, RateLimitMiddleware,

@@ -12,7 +12,11 @@ struct Outbox(Mutex<Vec<PhoneOtpDelivery>>);
 
 #[async_trait]
 impl SendPhoneOtp for Outbox {
-    async fn send(&self, delivery: &PhoneOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.0.lock().unwrap().push(delivery.clone());
         Ok(())
     }
@@ -22,7 +26,11 @@ struct RejectingSender(Arc<Outbox>);
 
 #[async_trait]
 impl SendPhoneOtp for RejectingSender {
-    async fn send(&self, delivery: &PhoneOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.0.0.lock().unwrap().push(delivery.clone());
         Err(AuthError::bad_request("fixture delivery failed"))
     }
@@ -40,7 +48,11 @@ struct Provider(Mutex<Option<PhoneOtpDelivery>>);
 
 #[async_trait]
 impl PhoneOtpVerifier for Provider {
-    async fn verify(&self, delivery: &PhoneOtpDelivery) -> AuthResult<bool> {
+    async fn verify(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<bool> {
         let mut challenge = self.0.lock().unwrap();
         let verified = if challenge.as_ref().is_some_and(|expected| {
             expected.phone_number == delivery.phone_number && expected.code == delivery.code
@@ -63,7 +75,11 @@ struct VerificationCallback {
 
 #[async_trait]
 impl PhoneVerificationHook for VerificationCallback {
-    async fn verified(&self, result: &PhoneNumberVerification) -> AuthResult<()> {
+    async fn verified(
+        &self,
+        result: &PhoneNumberVerification,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.captured.lock().unwrap().push(result.clone());
         if self.reject {
             Err(AuthError::Upstream {
@@ -153,7 +169,10 @@ async fn phone_user(ctx: &AuthContext<impl AuthSchema>, phone: &str, verified: b
     reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
 )]
 async fn notification_failure_preserves_phone_authentication_gates_and_issued_proofs() {
-    let ctx = context().await;
+    let mut ctx = context().await;
+    ctx.config = Arc::new((*ctx.config).clone().awaited_notification_errors(
+        better_auth_core::AwaitedNotificationErrorPolicy::LogAndContinue,
+    ));
     let phone = "+15551110099";
     let user_id = phone_user(&ctx, phone, false).await;
     let outbox = Arc::new(Outbox::default());

@@ -11,7 +11,11 @@ struct Outbox(Mutex<Vec<MagicLinkDelivery>>);
 
 #[async_trait]
 impl SendMagicLink for Outbox {
-    async fn send(&self, delivery: &MagicLinkDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &MagicLinkDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.0.lock().unwrap().push(delivery.clone());
         Ok(())
     }
@@ -39,7 +43,11 @@ struct FailedDelivery;
 
 #[async_trait]
 impl SendMagicLink for FailedDelivery {
-    async fn send(&self, _: &MagicLinkDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        _: &MagicLinkDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         Err(AuthError::internal("deterministic sender outage"))
     }
 }

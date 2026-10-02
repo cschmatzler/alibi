@@ -36,12 +36,72 @@ pub(super) type Outbox = Arc<Mutex<HashMap<String, Value>>>;
 pub(super) struct Sender(pub Outbox);
 #[async_trait]
 impl SendEmailOtp for Sender {
-    async fn send(&self, delivery: &EmailOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &EmailOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
+        let identifier = if delivery.otp_type == EmailOtpType::ChangeEmail
+            && _context.request.as_ref().is_some_and(|request| {
+                request
+                    .headers
+                    .get("x-callback-probe")
+                    .is_some_and(|value| value == "issue207")
+            }) {
+            let auth = _context.context::<TestSchema>().unwrap();
+            let proof = auth
+                .database
+                .get_verification_by_value(&format!("{}:0", delivery.otp))
+                .await?
+                .ok_or_else(|| AuthError::internal("missing issued change proof"))?;
+            better_auth_core::AuthVerification::identifier(&proof).to_string()
+        } else {
+            format!("{}-otp-{}", delivery.otp_type.as_str(), delivery.email)
+        };
+        let context = crate::passwordless_context::snapshot(_context, &identifier).await?;
+        let key = format!("{}:{}", delivery.otp_type.as_str(), delivery.email);
+        let generator = self
+            .0
+            .lock()
+            .await
+            .get(&key)
+            .and_then(|value| value.get("generator"))
+            .cloned();
+        let mut value = json!({"otp":delivery.otp});
+        if let Some(context) = context {
+            value["context"] = context;
+        }
+        if let Some(generator) = generator {
+            value["generator"] = generator;
+        }
         _ = self.0.lock().await.insert(
             format!("{}:{}", delivery.otp_type.as_str(), delivery.email),
-            json!({"otp":delivery.otp}),
+            value,
         );
         Ok(())
+    }
+}
+#[async_trait]
+impl better_auth::plugins::email_otp::EmailOtpGenerator for Sender {
+    async fn generate(
+        &self,
+        email: &str,
+        kind: EmailOtpType,
+        context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<Option<String>> {
+        if let Some(mut snapshot) = crate::passwordless_context::snapshot(
+            context,
+            &format!("{}-otp-{email}", kind.as_str()),
+        )
+        .await?
+        {
+            _ = snapshot.as_object_mut().unwrap().remove("proofExists");
+            _ = self.0.lock().await.insert(
+                format!("{}:{email}", kind.as_str()),
+                json!({"generator":snapshot}),
+            );
+        }
+        Ok(None)
     }
 }
 #[derive(Clone)]
@@ -97,6 +157,7 @@ fn response(result: AuthResult<Value>) -> Response {
 
 pub(super) fn plugin(outbox: Outbox) -> EmailOtpPlugin {
     EmailOtpPlugin::new(EmailOtpConfig {
+        generate_otp: Some(Arc::new(Sender(outbox.clone()))),
         send_verification_otp: Some(Arc::new(Sender(outbox))),
         change_email_enabled: true,
         ..Default::default()
@@ -135,6 +196,7 @@ pub(super) async fn router(
             .base_path(format!("/__test/profiles/{name}/api/auth"));
         config.verification.disable_cleanup = name == "verification-no-cleanup";
         let otp = EmailOtpPlugin::new(EmailOtpConfig {
+            generate_otp: Some(Arc::new(Sender(outbox.clone()))),
             send_verification_otp: Some(Arc::new(Sender(outbox.clone()))),
             change_email_enabled: true,
             storage: match name {

@@ -127,14 +127,22 @@ impl SendTwoFactorOtp for Application {
 }
 #[async_trait]
 impl SendPhoneOtp for Application {
-    async fn send(&self, delivery: &PhoneOtpDelivery) -> AuthResult<()> {
+    async fn send(
+        &self,
+        delivery: &PhoneOtpDelivery,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.state.lock().expect("cache phone delivery").events.push(json!({"mode":self.mode,"stage":"phone-delivery","phoneNumber":delivery.phone_number,"code":delivery.code}));
         Ok(())
     }
 }
 #[async_trait]
 impl PhoneVerificationHook for Application {
-    async fn verified(&self, receipt: &PhoneNumberVerification) -> AuthResult<()> {
+    async fn verified(
+        &self,
+        receipt: &PhoneNumberVerification,
+        _context: &better_auth_core::CallbackContext,
+    ) -> AuthResult<()> {
         self.state.lock().expect("cache phone verification").events.push(json!({"mode":self.mode,"stage":"phone-verified","phoneNumber":receipt.phone_number,"user":receipt.user}));
         Ok(())
     }
