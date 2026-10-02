@@ -169,6 +169,10 @@ pub struct AuthConfig {
     /// does not cancel them; applications may retain completions for shutdown.
     pub background_tasks: Option<Arc<dyn crate::BackgroundTaskHandler>>,
 
+    /// Validate fresh identity data before its creation hooks or provider
+    /// account/session writes. Returning non-provider sign-ins are unchanged.
+    pub user_validation: Option<Arc<dyn crate::user_validation::UserInfoValidator>>,
+
     /// Advanced configuration options
     pub advanced: AdvancedConfig,
 }
@@ -554,6 +558,7 @@ impl Default for AuthConfig {
             account: AccountConfig::default(),
             email_provider: None,
             background_tasks: None,
+            user_validation: None,
             advanced: AdvancedConfig::default(),
         }
     }

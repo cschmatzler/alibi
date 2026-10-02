@@ -914,6 +914,8 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         .with_email(&body.email)
         .with_name(&body.name);
     create_user.image = body.image.clone();
+    create_user.email_verified = Some(false);
+    super::authentication_helpers::apply_creation_input_defaults(ctx, &mut create_user);
     if phone_enabled {
         create_user.phone_number =
             super::phone_number::parse_signup_phone(ctx, body.phone_number.as_ref()).await?;
@@ -954,7 +956,15 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
     better_auth_core::store::transaction(database.as_ref(), move |tx| {
         let _database = Arc::clone(&transaction_database);
         Box::pin(async move {
-            let user = match tx.create_user(create_user).await {
+            let user = match tx
+                .create_user_with_source(
+                    create_user,
+                    better_auth_core::user_validation::UserValidationSource::creation(
+                        "email-password",
+                    ),
+                )
+                .await
+            {
                 Ok(user) => user,
                 Err(AuthError::UserCreationCancelled) => {
                     return Err(AuthError::bad_request("Failed to create user"));

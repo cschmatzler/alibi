@@ -415,10 +415,12 @@ better_auth_core::impl_auth_plugin! {
             &self,
             ctx: &mut better_auth_core::AuthInitContext<S>,
         ) -> AuthResult<()> {
-            ctx.register_user_create_transform(|mut input| {
+            let default = |mut input: better_auth_core::CreateUser| {
                 _ = input.two_factor_enabled.get_or_insert(false);
                 Ok(input)
-            });
+            };
+            if ctx.config.user_validation.is_some() {ctx.register_user_creation_adapter_default(default);}
+            else {ctx.register_user_create_transform(default);}
             ctx.set_metadata(METADATA_ENABLED, serde_json::Value::Bool(true));
             ctx.set_metadata(METADATA_TOTP_DISABLED, serde_json::Value::Bool(self.config.totp_disabled));
             ctx.set_metadata(

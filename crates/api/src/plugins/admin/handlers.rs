@@ -216,7 +216,7 @@ pub(in crate::plugins) async fn create_user_core(
     body: &CreateUserRequest,
     config: &AdminConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<UserResponse<AdminUserView>> {
+) -> AuthResult<UserResponse<UserView>> {
     let requested_role = requested_create_role(body)?;
     if let Some(role) = &requested_role {
         validate_role_input(role, config)?;
@@ -227,6 +227,19 @@ pub(in crate::plugins) async fn create_user_core(
             status: 400,
             code: Some("INVALID_EMAIL".into()),
             message: "Invalid email".into(),
+        });
+    }
+    let password_policy = ctx.extensions.get::<crate::plugins::EmailPasswordConfig>();
+    if body.password.as_deref().is_some_and(|password| {
+        password.encode_utf16().count()
+            > password_policy
+                .as_ref()
+                .map_or(128, |policy| policy.password_max_length)
+    }) {
+        return Err(AuthError::Api {
+            status: 400,
+            code: Some("PASSWORD_TOO_LONG".into()),
+            message: "Password too long".into(),
         });
     }
     if ctx.database.get_user_by_email(&email).await?.is_some() {
@@ -247,20 +260,35 @@ pub(in crate::plugins) async fn create_user_core(
         },
     );
 
-    let create_user = better_auth_core::CreateUser::new()
+    let mut create_user = better_auth_core::CreateUser::new()
         .with_email(&email)
         .with_name(&body.name)
         .with_role(role)
         .with_metadata(metadata);
+    if ctx.config.user_validation.is_some() && body.data.is_none() {
+        create_user.metadata = None;
+    }
 
-    let user = ctx.database.create_user(create_user).await?;
+    let user = ctx
+        .database
+        .create_user_with_source(
+            create_user,
+            better_auth_core::user_validation::UserValidationSource::creation("admin"),
+        )
+        .await?;
 
     if let Some(password) = body
         .password
         .as_deref()
         .filter(|password| !password.is_empty())
     {
-        let password_hash = better_auth_core::hash_password(None, password).await?;
+        let password_hash = better_auth_core::hash_password(
+            password_policy
+                .as_ref()
+                .and_then(|policy| policy.password_hasher.as_ref()),
+            password,
+        )
+        .await?;
         drop(
             ctx.database
                 .create_account(CreateAccount {
@@ -280,7 +308,7 @@ pub(in crate::plugins) async fn create_user_core(
     }
 
     Ok(UserResponse {
-        user: AdminUserView::from(&user),
+        user: ctx.user_view(&user),
     })
 }
 

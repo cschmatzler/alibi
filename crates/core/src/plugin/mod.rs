@@ -359,6 +359,24 @@ impl<S: AuthSchema> AuthInitContext<S> {
         self.extensions.insert(transforms);
     }
 
+    /// Register model defaults applied after creation hooks to an identity
+    /// candidate admitted by the configured user validation policy.
+    pub fn register_user_creation_adapter_default<F>(&mut self, default: F)
+    where
+        F: Fn(crate::types::CreateUser) -> AuthResult<crate::types::CreateUser>
+            + Send
+            + Sync
+            + 'static,
+    {
+        let mut transforms = self
+            .extensions
+            .get::<crate::store::UserTransforms>()
+            .map(|value| (*value).clone())
+            .unwrap_or_default();
+        transforms.adapter_defaults.0.push(Arc::new(default));
+        self.extensions.insert(transforms);
+    }
+
     /// Register a transform applied to every user update through this auth instance.
     pub fn register_user_update_transform<F>(&mut self, transform: F)
     where
@@ -411,11 +429,13 @@ impl<S: AuthSchema> AuthInitContext<S> {
             && transforms.updates.is_empty()
             && session_callbacks.callbacks.is_empty()
             && fields.is_none()
+            && self.config.user_validation.is_none()
         {
             return Arc::clone(&self.database);
         }
         Arc::new(crate::store::PluginStore::new(
             Arc::clone(&self.database),
+            Arc::clone(&self.config),
             transforms,
             session_callbacks,
             fields.map(|fields| (*fields).clone()).unwrap_or_default(),

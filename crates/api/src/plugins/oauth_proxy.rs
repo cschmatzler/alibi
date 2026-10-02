@@ -472,10 +472,12 @@ impl OAuthProxyPlugin {
             }),
             ..Default::default()
         };
+        let profile = payload.profile.unwrap_or(Value::Null);
         if let Some(link) = state.link.as_ref() {
             return match complete_link_social(
                 &payload.account.provider_id,
                 &user,
+                &profile,
                 &tokens,
                 link,
                 ctx,
@@ -502,6 +504,7 @@ impl OAuthProxyPlugin {
                 ..Default::default()
             },
             &user,
+            &profile,
             &tokens,
             payload.disable_sign_up.unwrap_or(false),
             &better_auth_core::RequestMeta::from_request(req),

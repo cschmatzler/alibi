@@ -130,6 +130,7 @@ mod two_factor_delivery_fixture;
 mod two_factor_otp_fixture;
 mod two_factor_policy_fixture;
 mod two_factor_totp_fixture;
+mod user_validation_fixture;
 mod verification_profiles;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
@@ -702,6 +703,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let set_password_router = set_password_fixture::router(&config, database.clone()).await?;
     let reset_database = database.clone();
     let signup_policy_router = signup_policy_fixture::router(&config, database.clone()).await?;
+    let (user_validation_router, user_validation_app) =
+        user_validation_fixture::router(&config, database.clone()).await?;
     let verification_outbox = Arc::new(Mutex::new(HashMap::new()));
     let team_profiles = team_fixture::profiles(
         &config,
@@ -1216,6 +1219,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/__test/reset-state",
             post(move || {
+                let user_validation_app = user_validation_app.clone();
                 let registration_receipts = registration_receipts.clone();
                 let passkey_auth_events = passkey_auth_events.clone();
                 let backup_receipts = backup_receipts.clone();
@@ -1252,6 +1256,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                     invitation_acceptance_reset.reset().await;
                     anonymous_reset.reset();
+                    user_validation_app.reset();
                     siwe_fixture::reset(&siwe_state).await;
                     multiple_session_counter.store(0, std::sync::atomic::Ordering::SeqCst);
                     registration_receipts.reset();
@@ -1886,6 +1891,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(jwt_keyring_router)
         .merge(jwt_remote_router)
         .merge(signup_policy_router)
+        .merge(user_validation_router)
         .merge(magic_router)
         .merge(siwe_profile_router)
         .merge(phone_router);

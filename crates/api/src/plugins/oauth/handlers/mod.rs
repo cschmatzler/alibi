@@ -20,6 +20,9 @@ use super::types::{
 use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session};
 use base64::Engine;
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
+use better_auth_core::user_validation::{
+    UserValidationAction, UserValidationData, UserValidationSource, validate_user_info,
+};
 use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateAccount, CreateUser,
@@ -41,11 +44,19 @@ pub(in crate::plugins) enum OAuthSignInError {
     Generic(String),
     AccountLookup(AuthError),
     SessionAuth(AuthError),
+    IdentityDenied { code: String, message: String },
     Banned(String),
     EmailNotVerified,
 }
 
 impl OAuthSignInError {
+    fn from_identity_denial(error: AuthError) -> Self {
+        let (_, code, message) = error.error_payload();
+        Self::IdentityDenied {
+            code: code.unwrap_or_else(|| "validation_failed".into()),
+            message,
+        }
+    }
     fn from_account_lookup(error: AuthError) -> Self {
         if matches!(
             error,
@@ -77,6 +88,7 @@ impl OAuthSignInError {
             // An APIError instead redirects with its `code` and message, so the
             // param is the constant, not a lowercased word.
             Self::Banned(message) => ("BANNED_USER".to_owned(), Some(message.as_str())),
+            Self::IdentityDenied { code, message } => (code.clone(), Some(message.as_str())),
             Self::EmailNotVerified => ("email_not_verified".to_owned(), None),
         }
     }
@@ -867,10 +879,38 @@ async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
+fn provider_candidate(user_info: &OAuthUserInfo, user_id: &str) -> CreateUser {
+    let mut candidate = CreateUser::new();
+    candidate.id = Some(user_id.to_owned());
+    candidate.email = Some(user_info.email.to_lowercase());
+    candidate.name = user_info.name.clone();
+    candidate.image = user_info.image.clone();
+    candidate.email_verified = Some(user_info.email_verified);
+    candidate
+}
+
+async fn validate_provider_identity(
+    provider: &str,
+    profile: &serde_json::Value,
+    user: &OAuthUserInfo,
+    user_id: &str,
+    action: UserValidationAction,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> Result<(), OAuthSignInError> {
+    let mut data = UserValidationData {
+        user: provider_candidate(user, user_id),
+        source: UserValidationSource::oauth(provider, profile, action),
+    };
+    validate_user_info(&ctx.config, &mut data)
+        .await
+        .map_err(OAuthSignInError::from_identity_denial)
+}
+
 pub(in crate::plugins) async fn process_oauth_sign_in(
     provider_name: &str,
     policy: &OAuthProcessPolicy,
     user_info: &OAuthUserInfo,
+    profile: &serde_json::Value,
     tokens: &OAuthTokenSet,
     disable_sign_up: bool,
     meta: &better_auth_core::RequestMeta,
@@ -895,6 +935,21 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
     .map_err(|error| error.to_string())?;
 
     if let Some(existing_account) = linked_account {
+        let existing_user = ctx
+            .database
+            .get_user_by_id(&existing_account.user_id())
+            .await
+            .map_err(|error| error.to_string())?
+            .ok_or_else(|| "user not found".to_owned())?;
+        validate_provider_identity(
+            provider_name,
+            profile,
+            user_info,
+            &existing_user.id(),
+            UserValidationAction::SignIn,
+            ctx,
+        )
+        .await?;
         if ctx.config.account.update_account_on_sign_in {
             drop(
                 ctx.database
@@ -914,12 +969,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
             );
         }
 
-        let mut user = ctx
-            .database
-            .get_user_by_id(&existing_account.user_id())
-            .await
-            .map_err(|error| error.to_string())?
-            .ok_or_else(|| "user not found".to_owned())?;
+        let mut user = existing_user;
 
         if user_info.email_verified
             && !user.email_verified()
@@ -1032,6 +1082,15 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         }
 
         let mut linked_user = existing_user;
+        validate_provider_identity(
+            provider_name,
+            profile,
+            user_info,
+            &linked_user.id(),
+            UserValidationAction::LinkAccount,
+            ctx,
+        )
+        .await?;
         let created_account = ctx
             .database
             .create_account(CreateAccount {
@@ -1135,8 +1194,12 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
 
         let mut create_user = CreateUser::new()
             .with_email(user_info.email.to_lowercase())
-            .with_name(user_info.name.as_deref().unwrap_or(&user_info.email))
+            .with_name(user_info.name.as_deref().unwrap_or_default())
             .with_email_verified(user_info.email_verified);
+        crate::plugins::authentication_helpers::apply_creation_input_defaults(
+            ctx,
+            &mut create_user,
+        );
         apply_default_role(ctx, &mut create_user);
         create_user.image = user_info.image.clone();
 
@@ -1153,19 +1216,27 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                 .then(|| tokens.scopes.join(",")),
             password: None,
         };
+        let source =
+            UserValidationSource::oauth(provider_name, profile, UserValidationAction::CreateUser);
         // OAuth registration commits its identity and provider binding together.
         // Notifications and session creation follow the committed transaction.
         let (persisted_user, persisted_account) =
             better_auth_core::store::transaction(ctx.database.as_ref(), move |tx| {
                 Box::pin(async move {
-                    let user = tx.create_user(create_user).await?;
+                    let user = tx.create_user_with_source(create_user, source).await?;
                     create_account.user_id = user.id().to_string();
                     let account = tx.create_account(create_account).await?;
                     Ok((user, account))
                 })
             })
             .await
-            .map_err(|_error| "unable to create user".to_owned())?;
+            .map_err(|error| {
+                if error.status_code() == 403 {
+                    OAuthSignInError::from_identity_denial(error)
+                } else {
+                    OAuthSignInError::Generic("unable to create user".to_owned())
+                }
+            })?;
 
         let issued = finish_oauth_session(&persisted_user, true, policy, meta, ctx).await?;
         let account_cookie = ctx
@@ -1193,10 +1264,28 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
 pub(in crate::plugins) async fn complete_link_social(
     provider_name: &str,
     user_info: &OAuthUserInfo,
+    profile: &serde_json::Value,
     tokens: &OAuthTokenSet,
     link: &OAuthStateLink,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> Result<(), OAuthSignInError> {
+    // Explicit linking validates fresh provider data before its trust/email
+    // guards or account lookup. The candidate retains the selected local ID.
+    let mut candidate = provider_candidate(user_info, &link.user_id);
+    candidate.email = (!user_info.email.is_empty()).then(|| user_info.email.clone());
+    validate_user_info(
+        &ctx.config,
+        &mut UserValidationData {
+            user: candidate,
+            source: UserValidationSource::oauth(
+                provider_name,
+                profile,
+                UserValidationAction::LinkAccount,
+            ),
+        },
+    )
+    .await
+    .map_err(OAuthSignInError::from_identity_denial)?;
     let linking = &ctx.config.account.account_linking;
     let trusted_provider = linking
         .trusted_providers
@@ -1340,6 +1429,7 @@ async fn sign_in_with_id_token_core(
         &body.provider,
         &OAuthProcessPolicy::for_provider(provider, body.callback_url.clone()),
         &user_info.user,
+        &user_info.data,
         &OAuthTokenSet {
             access_token: id_token.access_token.clone(),
             id_token: Some(id_token.token.clone()),
@@ -1352,6 +1442,11 @@ async fn sign_in_with_id_token_core(
     )
     .await
     .map_err(|error| match error {
+        OAuthSignInError::IdentityDenied { code, message } => AuthError::Api {
+            status: 403,
+            code: Some(code),
+            message,
+        },
         OAuthSignInError::AccountLookup(error) => error,
         OAuthSignInError::EmailNotVerified => AuthError::Upstream {
             status: 403,
@@ -2019,8 +2114,15 @@ pub(super) async fn handle_callback(
     };
 
     if let Some(link) = payload.link.as_ref() {
-        if let Err(error_3) =
-            complete_link_social(provider_name, &user_info.user, &tokens, link, ctx).await
+        if let Err(error_3) = complete_link_social(
+            provider_name,
+            &user_info.user,
+            &user_info.data,
+            &tokens,
+            link,
+            ctx,
+        )
+        .await
         {
             if error_3.is_ambiguous_account() {
                 return Ok(AuthResponse::new(500));
@@ -2043,6 +2145,7 @@ pub(super) async fn handle_callback(
         provider_name,
         &OAuthProcessPolicy::for_provider(provider, Some(payload.callback_url.clone())),
         &user_info.user,
+        &user_info.data,
         &tokens,
         disable_sign_up,
         &meta,

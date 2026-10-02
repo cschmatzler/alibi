@@ -258,6 +258,21 @@ where
         Ok(user)
     }
 
+    async fn create_user_prepared(
+        &self,
+        prepared: better_auth_core::user_validation::PreparedUserCreation,
+    ) -> AuthResult<S::User> {
+        let user = self
+            .store
+            .create_user_prepared_in_tx(self.tx, prepared)
+            .await?;
+        self.pending_after
+            .lock()
+            .await
+            .push(AfterCreate::User(user.clone()));
+        Ok(user)
+    }
+
     async fn create_account(
         &self,
         create_account: better_auth_core::CreateAccount,

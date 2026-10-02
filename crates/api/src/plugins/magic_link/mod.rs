@@ -278,7 +278,16 @@ impl MagicLinkPlugin {
                     .with_email_verified(true);
                 super::helpers::apply_default_role(ctx, &mut user);
                 is_new_user = true;
-                match ctx.database.create_user(user).await {
+                match ctx
+                    .database
+                    .create_user_with_source(
+                        user,
+                        better_auth_core::user_validation::UserValidationSource::creation(
+                            "magic-link",
+                        ),
+                    )
+                    .await
+                {
                     Ok(user) => user,
                     Err(error) => {
                         let (_, code, message) = error.error_payload();

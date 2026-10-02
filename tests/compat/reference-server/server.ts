@@ -53,6 +53,7 @@ import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/organization/access";
 import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { anonymousFixture } from "./anonymous-fixture";
+import { createUserValidationFixture } from "./user-validation-fixture";
 import {cloudflareProviderFixture} from "./cloudflare-provider-fixture";
 import {atlassianProviderFixture} from "./atlassian-provider-fixture";
 import { appleProviderFixture } from "./apple-provider-fixture";
@@ -575,6 +576,7 @@ const oneTapProfiles = createOneTapProfiles(authOptions);
 const googleIdProfiles = googleIdTokenProfiles(authOptions);
 const setPasswordFixture = createSetPasswordFixture(database, authOptions);
 const signupPolicyFixture = createSignupPolicyFixture(database, authOptions);
+const userValidationFixture = await createUserValidationFixture(database, authOptions);
 
 const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
 const ottExposedHeaderFixture: BetterAuthPlugin = {
@@ -966,6 +968,12 @@ const server = Bun.serve({
         return jsonResponse({ ok: true, oauthBaseURL, upstreamVersion: INSTALLED_BETTER_AUTH_VERSION });
       }
 
+      const userValidationControl = await userValidationFixture.handle(request);
+      if (userValidationControl) return userValidationControl;
+      for (const [name, profile] of userValidationFixture.profiles) {
+        const path = `/__test/profiles/${name}/api/auth`;
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.handler(request);
+      }
       const signupPolicyControl = await signupPolicyFixture.handle(request);
       if (signupPolicyControl) return signupPolicyControl;
       for (const [name, profile] of signupPolicyFixture.profiles) {
@@ -1124,6 +1132,7 @@ const server = Bun.serve({
         await oauthProxyProfiles.reset();
         organizationInvitationFixture.reset();
         anonymousProfiles.reset();
+        userValidationFixture.reset();
         passkeyRegistration.reset();
         passkeyAuthentication.reset();
         siweFixture.reset();

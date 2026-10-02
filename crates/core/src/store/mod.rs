@@ -20,6 +20,7 @@ use crate::types::{
     Organization, Passkey, TwoFactor, UpdateAccount, UpdateApiKey, UpdateDeviceCode,
     UpdateOrganization, UpdatePasskeyAuthentication, UpdateTwoFactor, UpdateUser,
 };
+use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
 use async_trait::async_trait;
 #[cfg(feature = "redis-cache")]
 pub use cache::RedisAdapter;
@@ -42,7 +43,18 @@ pub(crate) type UserUpdateTransform =
 #[derive(Clone, Default)]
 pub(crate) struct UserTransforms {
     pub(crate) creates: Vec<UserCreateTransform>,
+    pub(crate) adapter_defaults: UserCreationDefaults,
     pub(crate) updates: Vec<UserUpdateTransform>,
+}
+
+/// Registered model defaults applied by an adapter after its creation hooks.
+/// Keeping this phase separate preserves a validation candidate's absent fields.
+#[derive(Clone, Default)]
+pub struct UserCreationDefaults(pub(crate) Vec<UserCreateTransform>);
+impl UserCreationDefaults {
+    pub fn apply(self, data: CreateUser) -> AuthResult<CreateUser> {
+        create_data(data, &self.0)
+    }
 }
 
 /// Application/plugin adapter hook observing a successfully persisted session.
@@ -77,6 +89,7 @@ impl<S: AuthSchema> Clone for SessionCreatedCallbacks<S> {
 
 pub(crate) struct PluginStore<S: AuthSchema> {
     inner: Arc<dyn AuthStore<S>>,
+    config: Arc<crate::AuthConfig>,
     transforms: UserTransforms,
     session_callbacks: SessionCreatedCallbacks<S>,
     session_fields: crate::field_policy::SessionFields,
@@ -87,6 +100,7 @@ impl<S: AuthSchema> PluginStore<S> {
     #[must_use]
     pub(crate) fn new(
         inner: Arc<dyn AuthStore<S>>,
+        config: Arc<crate::AuthConfig>,
         transforms: UserTransforms,
         session_callbacks: SessionCreatedCallbacks<S>,
         session_fields: crate::field_policy::SessionFields,
@@ -94,6 +108,7 @@ impl<S: AuthSchema> PluginStore<S> {
     ) -> Self {
         Self {
             inner,
+            config,
             transforms,
             session_callbacks,
             session_fields,
@@ -105,8 +120,32 @@ impl<S: AuthSchema> PluginStore<S> {
 #[async_trait]
 impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User> {
+        if self.config.user_validation.is_some() {
+            let prepared = prepare_creation(&self.config, create_user, None).await?;
+            return self.create_user_prepared(prepared).await;
+        }
         let create_user = create_data(create_user, &self.transforms.creates)?;
         self.inner.create_user(create_user).await
+    }
+    async fn create_user_with_source(
+        &self,
+        create_user: CreateUser,
+        source: UserValidationSource,
+    ) -> AuthResult<S::User> {
+        if self.config.user_validation.is_none() {
+            return self.create_user(create_user).await;
+        }
+        let prepared = prepare_creation(&self.config, create_user, Some(source)).await?;
+        self.create_user_prepared(prepared).await
+    }
+    async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
+        let data = create_data(prepared.into_data(), &self.transforms.creates)?;
+        self.inner
+            .create_user_prepared(
+                PreparedUserCreation::from_data(data)
+                    .with_defaults(self.transforms.adapter_defaults.clone()),
+            )
+            .await
     }
     async fn coerce_user_text_number(&self, input: NumericTextInput) -> AuthResult<String> {
         self.inner.coerce_user_text_number(input).await
@@ -790,7 +829,9 @@ impl<S: AuthSchema> OrganizationRoleStore for PluginStore<S> {
 
 struct PluginTransaction<'a, S: AuthSchema> {
     inner: &'a dyn AuthTransaction<S>,
+    config: Arc<crate::AuthConfig>,
     creates: Vec<UserCreateTransform>,
+    adapter_defaults: UserCreationDefaults,
     pending_sessions: Arc<std::sync::Mutex<Vec<S::Session>>>,
     session_fields: crate::field_policy::SessionFields,
     adapter_fields: crate::field_policy::SessionAdapterFields,
@@ -842,8 +883,31 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
     }
 
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User> {
+        if self.config.user_validation.is_some() {
+            let prepared = prepare_creation(&self.config, create_user, None).await?;
+            return self.create_user_prepared(prepared).await;
+        }
         self.inner
             .create_user(create_data(create_user, &self.creates)?)
+            .await
+    }
+    async fn create_user_with_source(
+        &self,
+        create_user: CreateUser,
+        source: UserValidationSource,
+    ) -> AuthResult<S::User> {
+        if self.config.user_validation.is_none() {
+            return self.create_user(create_user).await;
+        }
+        let prepared = prepare_creation(&self.config, create_user, Some(source)).await?;
+        self.create_user_prepared(prepared).await
+    }
+    async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
+        let data = create_data(prepared.into_data(), &self.creates)?;
+        self.inner
+            .create_user_prepared(
+                PreparedUserCreation::from_data(data).with_defaults(self.adapter_defaults.clone()),
+            )
             .await
     }
 
@@ -876,6 +940,8 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
         work: Box<TransactionWork<S>>,
     ) -> AuthResult<BoxedTransactionValue> {
         let creates = self.transforms.creates.clone();
+        let adapter_defaults = self.transforms.adapter_defaults.clone();
+        let config = Arc::clone(&self.config);
         let pending_sessions = Arc::new(std::sync::Mutex::new(Vec::new()));
         let pending_in_transaction = Arc::clone(&pending_sessions);
         let session_fields = self.session_fields.clone();
@@ -886,7 +952,9 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
                 Box::pin(async move {
                     let transaction = PluginTransaction {
                         inner,
+                        config,
                         creates,
+                        adapter_defaults,
                         pending_sessions: pending_in_transaction,
                         session_fields,
                         adapter_fields,
@@ -1004,6 +1072,22 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         ))
     }
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User>;
+    /// Create with endpoint-owned identity provenance. The finalized instance
+    /// applies its policy before adapter hooks. Raw adapters retain ordinary creation.
+    async fn create_user_with_source(
+        &self,
+        create_user: CreateUser,
+        _source: UserValidationSource,
+    ) -> AuthResult<S::User> {
+        self.create_user(create_user).await
+    }
+    /// Persist an admitted candidate without a second email normalization.
+    /// Custom adapters serving validation-enabled instances must implement this.
+    async fn create_user_prepared(&self, _prepared: PreparedUserCreation) -> AuthResult<S::User> {
+        Err(AuthError::NotImplemented(
+            "Prepared user creation is not supported by this transaction".into(),
+        ))
+    }
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account>;
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session>;
     async fn create_verification(
@@ -1027,6 +1111,22 @@ pub enum NumericTextInput {
 #[async_trait]
 pub trait UserStore<S: AuthSchema>: Send + Sync {
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User>;
+    /// Create with endpoint-owned identity provenance, retaining the finalized
+    /// instance's validation and database-hook ordering.
+    async fn create_user_with_source(
+        &self,
+        create_user: CreateUser,
+        _source: UserValidationSource,
+    ) -> AuthResult<S::User> {
+        self.create_user(create_user).await
+    }
+    /// Persist a normalized, admitted candidate without normalizing trusted
+    /// callback mutations again. Unsupported custom adapters fail closed.
+    async fn create_user_prepared(&self, _prepared: PreparedUserCreation) -> AuthResult<S::User> {
+        Err(AuthError::NotImplemented(
+            "Prepared user creation is not supported by this store".into(),
+        ))
+    }
     /// Coerce a numeric binding with the configured adapter's text semantics.
     /// Custom adapters must implement this explicitly when accepting such input.
     async fn coerce_user_text_number(&self, _input: NumericTextInput) -> AuthResult<String> {

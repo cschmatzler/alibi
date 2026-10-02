@@ -264,7 +264,9 @@ pub fn apply_default_role(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     create_user: &mut CreateUser,
 ) {
-    if create_user.role.is_some() {
+    // The registered admin create transform runs after identity validation.
+    // Preserve that ordering for policy-enabled instances.
+    if ctx.config.user_validation.is_some() || create_user.role.is_some() {
         return;
     }
 
