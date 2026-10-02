@@ -4,9 +4,10 @@
 # scenarios against each and compares the traces.
 #
 #   ./run-against-both.sh                          all scenarios
-#   ./run-against-both.sh admin                    one tests/<directory>
+#   ./run-against-both.sh core/session             one scenario directory
+#   ./run-against-both.sh core|plugins             one scenario group
 #   ./run-against-both.sh browser|environment      browser or process-environment suites
-#   ./run-against-both.sh tests/jwt/keyring.test.ts any client-test paths
+#   ./run-against-both.sh tests/plugins/jwt/keyring.test.ts any client-test paths
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 paths=()
@@ -14,13 +15,13 @@ target="all"
 for arg in "$@"; do
   case "$arg" in
     --skip-build) ;;
-    */*) paths+=("$arg") ;;
+    *.ts) paths+=("$arg") ;;
     *)
       if [[ "$arg" == all || "$arg" == browser || "$arg" == environment || -d "tests/compat/client-tests/tests/$arg" ]]; then
         target="$arg"
       else
         echo "Unknown scenario directory: $arg" >&2
-        echo "Known directories: $(ls tests/compat/client-tests/tests | tr '\n' ' ')" >&2
+        echo "Known directories: generated core plugins $(cd tests/compat/client-tests/tests && ls -d core/* plugins/* | tr '\n' ' ')" >&2
         exit 1
       fi ;;
   esac
@@ -32,6 +33,7 @@ if ((${#paths[@]})); then
 elif [[ "$target" == all ]]; then
   test_name="full_client_compat"
 else
-  test_name="${target//-/_}_client_compat"
+  test_name="${target//-/_}"
+  test_name="${test_name//\//_}_client_compat"
 fi
 cargo nextest run --locked --test client_compat_tests --run-ignored only --no-capture "$test_name"

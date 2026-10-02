@@ -110,16 +110,16 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
   published decoder and retain their complete protected headers and payloads.
   The explicit evidence container tracks random JWT IDs, token rotation and
   repeated claims without normalizing application JWT-shaped data. See the
-  [comparison regression audit](audits/encrypted-cookie-comparison.md).
+  [comparison regression audit](audits/harness/encrypted-cookie-comparison.md).
 - Compact session-cache evidence authenticates complete cookies with the
   published decoder, retains raw ordered chunk cookies and attributes, and
   compares the full user/session projection, version and effective lifetime.
   Cached endpoint reads and physical session storage are separate contracts.
-  See the [cache audit](audits/session-cookie-cache-compact.md).
+  See the [cache audit](audits/core/session/cookie-cache-compact.md).
 - OAuth proxy evidence uses two real local auth instances and a deterministic
   provider that verifies the actual PKCE exchange. It decrypts and retains the
   complete original package, state and profile, including all relationships and
-  callback URL components. See the [proxy audit](audits/oauth-proxy.md).
+  callback URL components. See the [proxy audit](audits/plugins/oauth-proxy/README.md).
 - Harness negative controls deliberately corrupt identity relationships,
   lifetimes, redirects, array structure and cookies. A live HTTP/SDK canary
   confirms wrong session ownership and removed cookie protection are detected.
@@ -182,9 +182,9 @@ is a bounded sample, and every unrun mutation stays unresolved. Use repeated
 
 ```bash
 bun run assurance run --report-only --budget 5 \
-  --tests tests/password-management/password.test.ts \
-  --tests tests/user-management/user.test.ts
-bun run assurance:mutate --tests tests/password-management/password.test.ts \
+  --tests tests/core/password/password.test.ts \
+  --tests tests/core/user/user.test.ts
+bun run assurance:mutate --tests tests/core/password/password.test.ts \
   --mutation 'npm:better-auth/dist/api/routes/password.mjs#omit-effect:6479:6541' \
   --report-only
 ```
@@ -296,13 +296,13 @@ bun run --cwd tests/compat/client-tests format:check
 bun run --cwd tests/compat/client-tests lint
 bun run --cwd tests/compat/client-tests typecheck
 bun test --cwd tests/compat/client-tests harness
-tests/compat/client-tests/run-against-both.sh passkey
+tests/compat/client-tests/run-against-both.sh plugins/passkey
 tests/compat/client-tests/run-against-both.sh browser
-tests/compat/client-tests/run-against-both.sh tests/organization/teams.test.ts
+tests/compat/client-tests/run-against-both.sh tests/plugins/organization/teams.test.ts
 ./scripts/alignment-check.sh
 ```
 
-Every directory under `client-tests/tests` has a `<directory>_client_compat`
+Every scenario directory (`core/<area>`, `plugins/<plugin>`, `generated`) has a `<group>_<area>_client_compat`
 runner in `tests/client_compat_tests.rs`, and a guard test keeps that list in
 sync. File-level runs go through `selected_client_compat`, which reads the
 space-separated paths in `BETTER_AUTH_COMPAT_PATHS`.
@@ -313,13 +313,13 @@ and Rust servers; configure `AUTH_BASE_URL_TS` and `AUTH_BASE_URL_RUST`.
 
 ## One-time tokens
 
-`devenv shell -- cargo nextest run --test client_compat_tests one_time_token_client_compat --run-ignored only --no-capture` runs the official client against the pinned TypeScript and Rust fixtures. Four explicit profiles exercise plain and hashed storage, no-cookie consumption, server-only issuance and response headers. The scenarios assert stored session ownership, expiry, revocation, replay and newest-generation invalidation.
+`devenv shell -- cargo nextest run --test client_compat_tests plugins_one_time_token_client_compat --run-ignored only --no-capture` runs the official client against the pinned TypeScript and Rust fixtures. Four explicit profiles exercise plain and hashed storage, no-cookie consumption, server-only issuance and response headers. The scenarios assert stored session ownership, expiry, revocation, replay and newest-generation invalidation.
 
 This database-backed integration uses persisted sessions and verification records. Secondary-storage-only sessions remain a separate integration boundary.
 
 ## Managed JWT capability
 
-`tests/jwt` uses the official `jwtClient` and pinned JOSE 6.2.12 to check public
+`tests/plugins/jwt` uses the official `jwtClient` and pinned JOSE 6.2.12 to check public
 JWKS, all five asymmetric signing algorithms, complete authenticated user claims,
 get-session response headers, configured claims/path/header settings, encrypted
 and plain private-key persistence, signing-key rotation and public grace periods.
@@ -334,20 +334,20 @@ and deferred reads, original completed-handler snapshots, API-key session
 ownership and exact exposed-header ordering. Payload callbacks receive the
 complete nested session response, including deferred `needsRefresh`; direct
 get-session hooks observe the original stored snapshot. See the
-[interaction audit](audits/jwt-session-interactions.md) for configuration evidence
+[interaction audit](audits/plugins/jwt/session-interactions.md) for configuration evidence
 and the pinned expiry-cleanup behavior.
 
 Organization-team checks use dedicated teams, no-default-team, request-dependent
 limit, and removable-final-team configurations under `/__test/profiles/`. Private
 fixture controls inspect persisted organization state and invoke typed server-only
 team APIs; public flows use the official client and its cookie jar. See the
-[organization-team implementation audit](audits/organization-teams.md) for the
+[organization-team implementation audit](audits/plugins/organization/teams.md) for the
 supported branches, lifecycle evidence, and remaining integration boundaries.
 
 Dynamic-role checks add disabled, quota, missing-access-control, delegated-role,
 and asynchronous-policy profiles. They inspect stored permission JSON, tenant
 scopes, member assignments, API-key authority, and controlled overlapping
-permission-cache reloads. See the [dynamic-role implementation audit](audits/organization-dynamic-roles.md)
+permission-cache reloads. See the [dynamic-role implementation audit](audits/plugins/organization/dynamic-roles.md)
 for the configuration contracts, source quirks, review evidence, and remaining
 schema and integration boundaries.
 
@@ -355,10 +355,10 @@ SIWE checks use the official `siweClient`, independent signed EIP-191 messages,
 and a local ERC-1271 JSON-RPC provider. They compare wallet/account/session
 ownership, nonce expiry and single use, email reservation, callback context,
 ENS behavior, bans, and overlapping verification. Run
-`devenv shell -- cargo nextest run --test client_compat_tests siwe_client_compat --run-ignored only --no-capture`.
-The [SIWE implementation audit](audits/siwe.md) records the pinned runtime's
+`devenv shell -- cargo nextest run --test client_compat_tests plugins_siwe_client_compat --run-ignored only --no-capture`.
+The [SIWE implementation audit](audits/plugins/siwe/README.md) records the pinned runtime's
 global nonce contract and remaining storage/schema/provider boundaries.
-OpenAPI/reference whole-document proof and remaining configuration branches are tracked in [the OpenAPI audit](audits/open-api.md).
+OpenAPI/reference whole-document proof and remaining configuration branches are tracked in [the OpenAPI audit](audits/plugins/open-api/README.md).
 
 Native user-list filters accept `UserFilterValue::Scalar(String)` or
 `UserFilterValue::Multiple(Vec<String>)`; existing scalar native callers can use
@@ -366,7 +366,7 @@ Native user-list filters accept `UserFilterValue::Scalar(String)` or
 columns. `AuthEntity` derives bindings for declared application fields, including
 physical column renames. Manual `SeaOrmUserModel` implementations can override
 `list_users_column` to add typed plugin/application columns. See the
-[admin array-filter audit](audits/admin-array-filters.md) for actual SQL, SDK,
+[admin array-filter audit](audits/plugins/admin/array-filters.md) for actual SQL, SDK,
 custom-model and authorization evidence and the remaining adapter boundaries.
 
 ## Why upstream's own test suite is not run against the Rust server

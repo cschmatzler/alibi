@@ -269,7 +269,8 @@ async fn run_client_compat_in_environment(
 mod tests {
     use super::*;
 
-    /// One focused runner per scenario directory under `client-tests/tests`.
+    /// One focused runner per scenario directory: `generated`, `core/<area>` and
+    /// `plugins/<plugin>` under `client-tests/tests`.
     macro_rules! directory_runners {
         ($($name:ident => $directory:literal,)+) => {
             const DIRECTORIES: &[&str] = &[$($directory),+];
@@ -285,47 +286,61 @@ mod tests {
     }
 
     directory_runners! {
-        account_management_client_compat => "account-management",
-        admin_client_compat => "admin",
-        anonymous_client_compat => "anonymous",
-        api_key_client_compat => "api-key",
-        captcha_client_compat => "captcha",
-        core_client_compat => "core",
-        custom_session_client_compat => "custom-session",
-        device_authorization_client_compat => "device-authorization",
-        email_verification_client_compat => "email-verification",
+        core_account_client_compat => "core/account",
+        core_auth_client_compat => "core/auth",
+        core_email_verification_client_compat => "core/email-verification",
+        core_password_client_compat => "core/password",
+        core_request_client_compat => "core/request",
+        core_schema_client_compat => "core/schema",
+        core_server_api_client_compat => "core/server-api",
+        core_session_client_compat => "core/session",
+        core_social_client_compat => "core/social",
+        core_user_client_compat => "core/user",
         generated_client_compat => "generated",
-        generic_oauth_client_compat => "generic-oauth",
-        jwt_client_compat => "jwt",
-        last_login_method_client_compat => "last-login-method",
-        magic_link_client_compat => "magic-link",
-        multiple_sessions_client_compat => "multiple-sessions",
-        oauth_client_compat => "oauth",
-        one_tap_client_compat => "one-tap",
-        one_time_token_client_compat => "one-time-token",
-        open_api_client_compat => "open-api",
-        organization_client_compat => "organization",
-        passkey_client_compat => "passkey",
-        password_management_client_compat => "password-management",
-        passwordless_client_compat => "passwordless",
-        phone_number_client_compat => "phone-number",
-        server_endpoints_client_compat => "server-endpoints",
-        sessions_client_compat => "sessions",
-        siwe_client_compat => "siwe",
-        two_factor_client_compat => "two-factor",
-        user_management_client_compat => "user-management",
-        username_client_compat => "username",
+        plugins_admin_client_compat => "plugins/admin",
+        plugins_anonymous_client_compat => "plugins/anonymous",
+        plugins_api_key_client_compat => "plugins/api-key",
+        plugins_bearer_client_compat => "plugins/bearer",
+        plugins_captcha_client_compat => "plugins/captcha",
+        plugins_custom_session_client_compat => "plugins/custom-session",
+        plugins_device_authorization_client_compat => "plugins/device-authorization",
+        plugins_email_otp_client_compat => "plugins/email-otp",
+        plugins_generic_oauth_client_compat => "plugins/generic-oauth",
+        plugins_have_i_been_pwned_client_compat => "plugins/have-i-been-pwned",
+        plugins_jwt_client_compat => "plugins/jwt",
+        plugins_last_login_method_client_compat => "plugins/last-login-method",
+        plugins_magic_link_client_compat => "plugins/magic-link",
+        plugins_multi_session_client_compat => "plugins/multi-session",
+        plugins_oauth_proxy_client_compat => "plugins/oauth-proxy",
+        plugins_one_tap_client_compat => "plugins/one-tap",
+        plugins_one_time_token_client_compat => "plugins/one-time-token",
+        plugins_open_api_client_compat => "plugins/open-api",
+        plugins_organization_client_compat => "plugins/organization",
+        plugins_passkey_client_compat => "plugins/passkey",
+        plugins_phone_number_client_compat => "plugins/phone-number",
+        plugins_siwe_client_compat => "plugins/siwe",
+        plugins_two_factor_client_compat => "plugins/two-factor",
+        plugins_username_client_compat => "plugins/username",
     }
 
     #[test]
     fn every_scenario_directory_has_a_runner() {
         let root = project_root().join("tests/compat/client-tests/tests");
-        let mut directories: Vec<String> = std::fs::read_dir(&root)
-            .unwrap_or_else(|error| panic!("failed to read {}: {error}", root.display()))
-            .map(|entry| entry.unwrap_or_else(|error| panic!("failed to read entry: {error}")))
-            .filter(|entry| entry.path().is_dir())
-            .map(|entry| entry.file_name().to_string_lossy().into_owned())
-            .collect();
+        let mut directories = vec!["generated".to_owned()];
+        for group in ["core", "plugins"] {
+            let path = root.join(group);
+            for entry in std::fs::read_dir(&path)
+                .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+            {
+                let entry = entry.unwrap_or_else(|error| panic!("failed to read entry: {error}"));
+                assert!(
+                    entry.path().is_dir(),
+                    "{} must hold directories only",
+                    path.display()
+                );
+                directories.push(format!("{group}/{}", entry.file_name().to_string_lossy()));
+            }
+        }
         directories.sort();
         assert_eq!(directories, DIRECTORIES);
     }
@@ -334,6 +349,18 @@ mod tests {
     #[ignore = "starts external TS and Rust servers"]
     async fn full_client_compat() {
         run_client_compat(&["tests"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn core_client_compat() {
+        run_client_compat(&["tests/core"]).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "starts external TS and Rust servers"]
+    async fn plugins_client_compat() {
+        run_client_compat(&["tests/plugins"]).await;
     }
 
     /// Runs the space-separated client-test paths in `BETTER_AUTH_COMPAT_PATHS`.

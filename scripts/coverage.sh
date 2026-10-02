@@ -12,7 +12,7 @@ cargo llvm-cov clean --workspace
 cargo llvm-cov nextest --workspace --locked --features axum,seaorm2,redis-cache --no-report
 cargo llvm-cov nextest --workspace --locked --features axum,seaorm2,redis-cache \
   --no-report --test client_compat_tests --run-ignored only --test-threads 1 \
-  -E 'test(=tests::oauth_client_compat) | test(=tests::account_management_client_compat) | test(=tests::jwt_client_compat) | test(=tests::sessions_client_compat) | test(=tests::user_management_client_compat) | test(=tests::captcha_client_compat) | test(=tests::server_endpoints_client_compat) | test(=tests::core_client_compat) | test(=tests::anonymous_client_compat)'
+  -E 'test(=tests::core_client_compat) | test(=tests::plugins_jwt_client_compat) | test(=tests::plugins_captcha_client_compat) | test(=tests::plugins_anonymous_client_compat) | test(=tests::plugins_bearer_client_compat) | test(=tests::plugins_oauth_proxy_client_compat) | test(=tests::plugins_have_i_been_pwned_client_compat)'
 export LLVM_COV_FLAGS="${LLVM_COV_FLAGS:+$LLVM_COV_FLAGS }-object=coverage/target/debug/compat-rust-server"
 cargo llvm-cov report --locked --package '*' \
   --ignore-filename-regex '(tests/|scripts/|target/)' \
