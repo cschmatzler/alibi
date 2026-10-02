@@ -81,3 +81,32 @@ Source/native alias paths. Both logs are retained as
 `/tmp/issue174-source-source-oauth600.log`. The sibling assertion correction
 changes only the exact Source-backed error text. The paused845 run leaves701
 unreached tests; no broad pass claim is made.
+
+The later fixture adaptation emits the exact publication observer protocol
+owned separately by issue302. It changes no174 comparer or production policy.
+Actual incoming HTTP middleware records request start/body/cookie; genuine
+before-create callbacks record the candidate, real successful cache writes
+record raw JSON/TTL/storage deadline and clocks, after-create callbacks record
+the admitted snapshot, and actual sender callbacks record delivery. Full
+shared-backend diagnostics additionally retain raw serialized values for every
+key, including unrelated Source session entries. The original four-field
+cache-set projections receive the complete actual set receipt only when every
+existing projected field matches it; every original value remains present.
+
+Native Axum dispatch intentionally runs authentication in a supervised worker,
+so an outer fixture task-local did not reach callbacks. Two retained initial
+seven-owner diagnostics therefore included a missing Native observer; those
+are fixture observation failures, not production before proofs. The repaired
+fixture uses the existing public immutable request hook context inside the
+actual callbacks and matches exactly one live original HTTP frame by method,
+full path, body and cookie. Ambiguous/missing matches receive no receipt. There
+is no injected header, fabricated request, production capture seam or change
+to supervised dispatch. Temporary diagnostic logs were removed.
+
+The actual Source/native seven-owner physical-context diagnostic completed all
+1402 assertions; hashed/custom OAuth owners pass, while the five cache/default
+owners retain raw comparer differences until the separate302 prerequisite is
+integrated. Both actual runtimes emit all three default publication receipts.
+The terminal log is `/tmp/issue174-publication-physical-context-diagnostic.log`.
+Native fixture builds and client TypeScript pass. These observations are not
+claimed as a green full53 gate. Final immutable composed checks remain pending.

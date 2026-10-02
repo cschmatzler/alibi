@@ -1019,7 +1019,7 @@ const server = Bun.serve({
       if (verificationStorageControl) return verificationStorageControl;
       for (const [name, profile] of verificationStorageFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
-        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.handler(request);
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return verificationStorageFixture.profileHandler(profile,request);
       }
       const userValidationControl = await userValidationFixture.handle(request);
       if (userValidationControl) return userValidationControl;

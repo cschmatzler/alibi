@@ -151,8 +151,14 @@ compatScenario("verification storage cache omits nonpositive TTL and preserves a
   return observed({foreign:other,expired,expiredState,found,consumed,fallback,after});
 });
 
-function consumerObservation(value:unknown,identifiers:ReadonlyMap<string,Row>=new Map()):any{
-  if(Array.isArray(value))return value.map(child=>consumerObservation(child,identifiers));
+function consumerObservation(value:unknown,identifiers:ReadonlyMap<string,Row>=new Map(),publications:readonly Row[]=[]):any{
+  if(Array.isArray(value))return value.map(child=>consumerObservation(child,identifiers,publications));
+  if(value!==null&&typeof value==="object"&&!Array.isArray(value)&&(value as Row).operation==="set") {
+    // Supplement the existing projection with the complete actual cache-set
+    // receipt. Every projected field must match; none is discarded or changed.
+    const admitted=publications.find(publication=>Object.entries(value).every(([key,child])=>JSON.stringify(child)===JSON.stringify(publication.set[key])));
+    if(admitted)return admitted.set;
+  }
   if(value!==null&&typeof value==="object")return Object.fromEntries(Object.entries(value).map(([key,child])=>{
     if(key==="codeVerifier"&&typeof child==="string"){expect(child).toMatch(/^[a-zA-Z0-9_-]{128}$/);return [key,{token:child,length:128,encoding:"base64url-alphabet"}];}
     if(key==="oauthState"&&typeof child==="string")return [key,{state:child}];
@@ -162,9 +168,23 @@ function consumerObservation(value:unknown,identifiers:ReadonlyMap<string,Row>=n
     if(key==="identifier"&&typeof child==="string"&&identifiers.has(child))return [key,{token:child,...identifiers.get(child)}];
     if(key==="value"&&typeof child==="string"&&/^\d{6}:\d+$/.test(child)){const [otp,counter]=child.split(":");return [key,{otp:{token:otp,encoding:"decimal",length:6},counter}];}
     if(key==="value"&&typeof child==="string"&&/^[a-zA-Z0-9_-]{32}$/.test(child))return [key,{token:child}];
-    if(key==="value"&&typeof child==="string"&&child.startsWith("{")){const parsed=JSON.parse(child);return [key,{token:child,decoded:consumerObservation(parsed,identifiers),encoding:"json"}];}
-    return [key,consumerObservation(child,identifiers)];
+    if(key==="value"&&typeof child==="string"&&child.startsWith("{")){const parsed=JSON.parse(child);return [key,{token:child,decoded:consumerObservation(parsed,identifiers,publications),encoding:"json"}];}
+    return [key,consumerObservation(child,identifiers,publications)];
   }));return value;
+}
+async function publicationObservation(ctx:ScenarioContext,value:Row,identifiers:ReadonlyMap<string,Row>=new Map()) {
+  const response=await ctx.rawRequest({path:"/__test/verification-publications",method:"GET"});expect(response.status).toBe(200);
+  const publications=(response.body as Row).publications as Row[];
+  for(const publication of publications) {
+    expect(publication.set.rawValue).toBe(JSON.stringify(publication.snapshot));
+    expect(publication.set.value).toEqual(publication.snapshot);
+    expect(publication.set.key).toBe(`verification:${publication.before.snapshot.identifier}`);
+    const expiry=Date.parse(publication.snapshot.expiresAt),earliest=Date.parse(publication.before.executedAt),latest=Date.parse(publication.set.executedAt);
+    expect(publication.set.ttl).toBeGreaterThanOrEqual(Math.max(Math.floor((expiry-latest)/1000),0));
+    expect(publication.set.ttl).toBeLessThanOrEqual(Math.max(Math.floor((expiry-earliest)/1000),0));
+    expect(Date.parse(publication.set.storageExpiresAt)).toBe(Date.parse(publication.set.storedAt)+publication.set.ttl*1000);
+  }
+  return observed({...consumerObservation(value,identifiers,publications),verificationPublications:publications});
 }
 function transformed(mode:string,identifier:string){return mode==="custom"?`custom:${sha(identifier)}`:sha(identifier);}
 function issued(s:State,mode:string,identifier:string):Row{const actual=transformed(mode,identifier),row=mode==="cache"?s.cache.find(row=>row.key===`verification:${actual}`)?.value:s.verifications.find(row=>row.identifier===actual);expect(row).toBeDefined();expect(row.identifier).toBe(actual);return row;}
@@ -214,12 +234,12 @@ for(const mode of ["hashed","custom","cache","mixed"] as const)compatScenario(`v
   if(mode!=="cache"){const sibling=await call(ctx,{operation:"seed",identifier:stored,data:{value:proof.value,expiresAt:proof.expiresAt,...jsonDates}});expect(sibling.status).toBe(200);}
   const before=await state(ctx),completed=await callback(ctx,"oauth-owner",selected,oauthState);expect(completed).toMatchObject({status:302,location:"/verification-complete"});const current=await owner.getSession();expect(current.data?.user.email).toBe(email);const after=await state(ctx);unchanged(other,after);expect(after.verifications.filter(row=>row.identifier===stored)).toEqual([]);expect(after.cache.filter(row=>row.key===`verification:${stored}`)).toEqual([]);const replay=await callback(ctx,"oauth-owner",selected,oauthState);expect(replay.status).toBe(302);expect(new URL(replay.location!,ctx.baseURL).searchParams.get("error")).toBe("state_mismatch");const final=await state(ctx);expect(sql(final)).toEqual(sql(after));unchanged(other,final);
   const expiring=await owner.signIn.social({provider:"google",callbackURL:"/expired-verification-must-not-complete",disableRedirect:true});expect(expiring.error).toBeNull();const expiredState=new URL(expiring.data!.url!).searchParams.get("state")!,expiredStored=transformed(mode,expiredState);identifiers.set(expiredStored,{algorithm:mode,logical:{state:expiredState}});identifiers.set(expiredState,{algorithm:"legacy-plain",logical:{state:expiredState}});const expiryIssued=await state(ctx),live=issued(expiryIssued,mode,expiredState),expiredPayload={...JSON.parse(live.value),expiresAt:Date.parse("2000-01-01T00:00:00.000Z")};expect(Date.parse(live.expiresAt)).toBeGreaterThan(Date.now());const editedExpired=await call(ctx,{operation:"update",profile:selected,identifier:expiredState,data:{value:JSON.stringify(expiredPayload)}});expect(editedExpired.status).toBe(200);const expiryBefore=await state(ctx),expired=await callback(ctx,"oauth-owner",selected,expiredState);expect(expired.status).toBe(302);expect(new URL(expired.location!,ctx.baseURL).searchParams.get("error")).toBe("state_mismatch");const expiredAfter=await state(ctx);unchanged(other,expiredAfter);for(const table of ["users","accounts","sessions"] as const)expect(expiredAfter[table]).toEqual(expiryBefore[table]);expect(expiredAfter.verifications.filter(row=>row.identifier===expiredStored)).toEqual([]);expect(expiredAfter.cache.filter(row=>row.key===`verification:${expiredStored}`)).toEqual([]);
-  return observed(consumerObservation({foreign:other,initiated,initial,wrongCookie,before,completed,current,after,replay,final,expiring,expiryIssued,editedExpired,expiryBefore,expired,expiredAfter},identifiers));
+  return publicationObservation(ctx,{foreign:other,initiated,initial,wrongCookie,before,completed,current,after,replay,final,expiring,expiryIssued,editedExpired,expiryBefore,expired,expiredAfter},identifiers);
 },["POST /sign-in/social","GET /callback/{}"]);
 
 compatScenario("verification global cache OAuth read failure retains proof and cookie then permits the actual original callback",async ctx=>{
   const other=await foreign(ctx);await configure(ctx);const selected=profile("cache"),owner=ctx.actor("oauth-error-owner",selected).client,email=ctx.uniqueEmail("global-oauth-error");await ctx.setSocialProfile({sub:ctx.uniqueToken("global-oauth-error-subject"),email,name:"Cache Read Owner",emailVerified:true,idTokenValid:true});const initiated=await owner.signIn.social({provider:"google",callbackURL:"/verification-recovered",disableRedirect:true});expect(initiated.error).toBeNull();const oauthState=new URL(initiated.data!.url!).searchParams.get("state")!,stored=sha(oauthState),identifiers=new Map([[stored,{algorithm:"hashed",logical:{state:oauthState}}],[oauthState,{algorithm:"legacy-plain",logical:{state:oauthState}}]]),before=await state(ctx);await configure(ctx,{}, {get:true});const failed=await callback(ctx,"oauth-error-owner",selected,oauthState);expect(failed.status).toBe(302);expect(new URL(failed.location!,ctx.baseURL).searchParams.get("error")).toBe("internal_server_error");const preserved=await state(ctx);expect(preserved.cache).toEqual(before.cache);expect(sql(preserved)).toEqual(sql(before));await configure(ctx);const completed=await callback(ctx,"oauth-error-owner",selected,oauthState);expect(completed).toMatchObject({status:302,location:"/verification-recovered"});const after=await state(ctx);unchanged(other,after);
-  return observed(consumerObservation({foreign:other,initiated,before,failed,preserved,completed,after},identifiers));
+  return publicationObservation(ctx,{foreign:other,initiated,before,failed,preserved,completed,after},identifiers);
 },["POST /sign-in/social","GET /callback/{}"]);
 
 for(const mode of ["hashed","cache"] as const)compatScenario(`verification global ${mode} real concurrent consumers admit one actual snapshot and preserve unrelated proofs`,async ctx=>{
@@ -249,5 +269,5 @@ for(const mode of ["cache-default","mixed-default"] as const)compatScenario(`ver
   const otp=await owner.emailOtp.sendVerificationOtp({email:ctx.uniqueEmail("default-otp"),type:"sign-in"});expect(otp.error).toBeNull();const magic=await owner.signIn.magicLink({email:ctx.uniqueEmail("default-magic"),metadata:{mode:"actual default"}});expect(magic.error).toBeNull();const ott=createAuthClient({baseURL:`${ctx.baseURL}${authProfilePath(selected)}`,plugins:[oneTimeTokenClient()],fetchOptions:{customFetchImpl:ctx.actor("default-owner",selected).fetch}}),transfer=await ott.oneTimeToken.generate();expect(transfer.error).toBeNull();const after=await state(ctx);unchanged(other,after);
   const response=await fetch(`${ctx.baseURL}/__test/server-api/verification-storage`,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({operation:"backend-state"})});expect(response.status).toBe(200);const backend=await response.json() as Row,sets=backend.cacheEvents.filter((row:Row)=>row.operation==="set"&&row.key.startsWith("verification:"));expect(sets).toHaveLength(3);const publications=[];
   for(const publication of sets){const before=backend.events.find((row:Row)=>row.stage==="create-before"&&row.data.identifier===publication.value.identifier&&row.data.expiresAt===publication.value.expiresAt);expect(before).toBeDefined();const expiry=Date.parse(publication.value.expiresAt),earliest=Date.parse(before.executedAt),latest=Date.parse(publication.executedAt);expect(latest).toBeGreaterThanOrEqual(earliest);expect(publication.ttl).toBeGreaterThanOrEqual(Math.max(Math.floor((expiry-latest)/1000),0));expect(publication.ttl).toBeLessThanOrEqual(Math.max(Math.floor((expiry-earliest)/1000),0));publications.push({publication,computationInterval:{startedAt:before.executedAt,finishedAt:publication.executedAt},expiresAt:publication.value.expiresAt});}
-  return observed(consumerObservation({foreign:other,signup,otp,magic,transfer,after,publications}));
+  return publicationObservation(ctx,{foreign:other,signup,otp,magic,transfer,after,publications});
 },["POST /email-otp/send-verification-otp","POST /sign-in/magic-link","GET /one-time-token/generate"]);

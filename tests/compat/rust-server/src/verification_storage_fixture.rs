@@ -1,7 +1,14 @@
 //! Actual initialized verification service, physical SQL and application cache.
 use crate::TestSchema;
 use async_trait::async_trait;
-use axum::{Json, Router, response::IntoResponse, routing::post};
+use axum::{
+    Json, Router,
+    body::{Body, to_bytes},
+    extract::{Request, State},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -65,6 +72,67 @@ fn error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
 fn decoded(raw: &str) -> Value {
     serde_json::from_str(raw).unwrap_or_else(|_| json!({"raw":raw}))
 }
+fn clock() -> String {
+    Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+#[derive(Default)]
+struct PublicationFrame {
+    request: Value,
+    pending: Option<Arc<Mutex<Value>>>,
+}
+async fn capture_publication(
+    State(app): State<Arc<Application>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request
+        .extensions()
+        .get::<axum::extract::OriginalUri>()
+        .map_or_else(
+            || request.uri().path().to_owned(),
+            |original| original.0.path().to_owned(),
+        );
+    let eligible = ["cache", "mixed", "cache-default", "mixed-default"]
+        .iter()
+        .any(|mode| {
+            let prefix = format!("/__test/profiles/verification-storage-{mode}/api/auth/");
+            path.strip_prefix(&prefix).is_some_and(|suffix| {
+                suffix == "sign-in/social"
+                    || (mode.ends_with("-default")
+                        && matches!(
+                            suffix,
+                            "email-otp/send-verification-otp"
+                                | "sign-in/magic-link"
+                                | "one-time-token/generate"
+                        ))
+            })
+        });
+    if !eligible {
+        return next.run(request).await;
+    }
+    let (parts, body) = request.into_parts();
+    let bytes = match to_bytes(body, usize::MAX).await {
+        Ok(bytes) => bytes,
+        Err(_) => return axum::http::StatusCode::BAD_REQUEST.into_response(),
+    };
+    let frame = Arc::new(Mutex::new(PublicationFrame {
+        request: json!({"method":parts.method.as_str(),"path":path,"cookie":parts.headers.get("cookie").and_then(|value|value.to_str().ok()),"body":if parts.method==axum::http::Method::GET {Value::Null}else{serde_json::from_slice::<Value>(&bytes).unwrap_or(Value::Null)},"startedAt":clock()}),
+        pending: None,
+    }));
+    app.requests.lock().unwrap().push(frame.clone());
+    let response = next
+        .run(Request::from_parts(parts, Body::from(bytes)))
+        .await;
+    let pending = frame.lock().unwrap().pending.clone();
+    if let Some(pending) = pending {
+        pending.lock().unwrap()["request"]["finishedAt"] = json!(clock());
+    }
+    app.requests
+        .lock()
+        .unwrap()
+        .retain(|request| !Arc::ptr_eq(request, &frame));
+    response
+}
 #[derive(Default)]
 struct Application {
     cache: Mutex<BTreeMap<String, (String, DateTime<Utc>)>>,
@@ -75,6 +143,8 @@ struct Application {
     action: Mutex<Value>,
     fault: Mutex<Value>,
     stage_calls: Mutex<HashMap<String, usize>>,
+    publications: Mutex<Vec<Arc<Mutex<Value>>>>,
+    requests: Mutex<Vec<Arc<Mutex<PublicationFrame>>>>,
 }
 impl Application {
     fn cache_state(&self) -> Value {
@@ -89,6 +159,58 @@ impl Application {
         *self.action.lock().unwrap() = json!({});
         *self.fault.lock().unwrap() = json!({});
         self.stage_calls.lock().unwrap().clear();
+        self.publications.lock().unwrap().clear();
+        self.requests.lock().unwrap().clear();
+    }
+    fn current_frame(&self) -> Option<Arc<Mutex<PublicationFrame>>> {
+        let context = better_auth_core::hooks::current_request_hook_context()?;
+        let path = context.url?.path().to_owned();
+        let method = match context.method {
+            better_auth_core::HttpMethod::Post => "POST",
+            better_auth_core::HttpMethod::Get => "GET",
+            _ => return None,
+        };
+        let cookie = json!(context.headers.get("cookie"));
+        let body = context
+            .body
+            .as_deref()
+            .and_then(|bytes| serde_json::from_slice::<Value>(bytes).ok())
+            .unwrap_or(Value::Null);
+        let matches = self
+            .requests
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|frame| {
+                let frame = frame.lock().unwrap();
+                frame.request["method"] == method
+                    && frame.request["path"] == path
+                    && frame.request["cookie"] == cookie
+                    && frame.request["body"] == body
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        if matches.len() == 1 {
+            matches.into_iter().next()
+        } else {
+            None
+        }
+    }
+    fn pending_publication(&self) -> Option<Arc<Mutex<Value>>> {
+        self.current_frame()?.lock().unwrap().pending.clone()
+    }
+    fn publication_state(&self) -> Value {
+        json!(
+            self.publications
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|publication| publication.lock().unwrap().clone())
+                .collect::<Vec<_>>()
+        )
+    }
+    fn backend_cache_state(&self) -> Value {
+        json!(self.cache.lock().unwrap().iter().map(|(key,(value,expiry))|json!({"key":key,"rawValue":value,"value":decoded(value),"expiresAt":expiry})).collect::<Vec<_>>())
     }
     async fn receipt(
         &self,
@@ -109,7 +231,7 @@ impl Application {
         }
         .map_err(error)?;
         self.events.lock().unwrap().push(json!({"stage":stage,"data":data,"cache":self.cache_state(),"verifications":rows.iter().map(VerificationView::from).collect::<Vec<_>>()}));
-        self.backend_events.lock().unwrap().push(json!({"stage":stage,"data":data,"executedAt":Utc::now(),"cache":self.cache_state(),"verifications":rows.iter().map(VerificationView::from).collect::<Vec<_>>()}));
+        self.backend_events.lock().unwrap().push(json!({"stage":stage,"data":data,"executedAt":Utc::now(),"cache":self.backend_cache_state(),"verifications":rows.iter().map(VerificationView::from).collect::<Vec<_>>()}));
         let calls = {
             let mut stages = self.stage_calls.lock().unwrap();
             let calls = stages.entry(stage.to_owned()).or_default();
@@ -135,16 +257,29 @@ impl Application {
 #[async_trait]
 impl CacheAdapter for Application {
     async fn set(&self, key: &str, value: &str, ttl: Duration) -> AuthResult<()> {
-        self.cache_events.lock().unwrap().push(
-            json!({"operation":"set","key":key,"value":decoded(value),"ttl":ttl.num_seconds(),"executedAt":Utc::now()}),
-        );
+        let mut event = json!({"operation":"set","key":key,"rawValue":value,"value":decoded(value),"ttl":ttl.num_seconds(),"executedAt":clock()});
         if self.fault.lock().unwrap()["set"].as_bool() == Some(true) {
+            self.cache_events.lock().unwrap().push(event);
             return Err(AuthError::internal("verification cache set rejected"));
         }
+        let stored_at = Utc::now();
+        let stored_at =
+            DateTime::<Utc>::from_timestamp_millis(stored_at.timestamp_millis()).unwrap();
+        let expiry = stored_at + ttl;
+        event["storedAt"] = json!(stored_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
+        event["storageExpiresAt"] =
+            json!(expiry.to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
         self.cache
             .lock()
             .unwrap()
-            .insert(key.into(), (value.into(), Utc::now() + ttl));
+            .insert(key.into(), (value.into(), expiry));
+        self.cache_events.lock().unwrap().push(event.clone());
+        if key.starts_with("verification:") {
+            if let Some(pending) = self.pending_publication() {
+                pending.lock().unwrap()["set"] = event;
+                self.publications.lock().unwrap().push(pending);
+            }
+        }
         Ok(())
     }
     async fn get(&self, key: &str) -> AuthResult<Option<String>> {
@@ -220,6 +355,12 @@ impl SeaOrmHooks<TestSchema> for Application {
         data: &mut VerificationCreation,
         context: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
+        if let Some(frame) = self.current_frame() {
+            let mut frame = frame.lock().unwrap();
+            frame.pending = Some(Arc::new(Mutex::new(
+                json!({"request":frame.request,"before":{"snapshot":data.snapshot().data(),"executedAt":clock()}}),
+            )));
+        }
         self.receipt(
             "create-before",
             serde_json::to_value(data.snapshot().data()).unwrap(),
@@ -253,6 +394,9 @@ impl SeaOrmHooks<TestSchema> for Application {
         data: &VerificationSnapshot,
         context: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
+        if let Some(pending) = self.pending_publication() {
+            pending.lock().unwrap()["snapshot"] = json!(data.data());
+        }
         self.receipt(
             "create-after",
             serde_json::to_value(data.data()).unwrap(),
@@ -333,6 +477,10 @@ impl SendTwoFactorOtp for Application {
 #[async_trait]
 impl SendEmailOtp for Application {
     async fn send(&self, data: &EmailOtpDelivery) -> AuthResult<()> {
+        if let Some(pending) = self.pending_publication() {
+            pending.lock().unwrap()["delivery"] =
+                json!({"email":data.email,"otp":data.otp,"type":data.otp_type.as_str()});
+        }
         self.deliveries.lock().unwrap().push(
             json!({"type":"otp","email":data.email,"otp":data.otp,"type":data.otp_type.as_str()}),
         );
@@ -342,6 +490,9 @@ impl SendEmailOtp for Application {
 #[async_trait]
 impl SendMagicLink for Application {
     async fn send(&self, data: &MagicLinkDelivery) -> AuthResult<()> {
+        if let Some(pending) = self.pending_publication() {
+            pending.lock().unwrap()["delivery"] = json!(data);
+        }
         let mut value = serde_json::to_value(data).unwrap();
         value["type"] = json!("magic");
         self.deliveries.lock().unwrap().push(value);
@@ -549,6 +700,23 @@ pub(super) async fn router(
         profiles.insert(name, auth);
     }
     let fixture = Fixture(app.clone());
+    let publication_app = app.clone();
+    let middleware_app = app.clone();
+    router = router.route(
+        "/__test/verification-publications",
+        get(move || {
+            let app = publication_app.clone();
+            async move {
+                let mut response =
+                    Json(json!({"publications":app.publication_state()})).into_response();
+                response.headers_mut().insert(
+                    axum::http::header::CONTENT_TYPE,
+                    axum::http::HeaderValue::from_static("application/json;charset=utf-8"),
+                );
+                response
+            }
+        }),
+    );
     let profiles = Arc::new(profiles);
     router = router.route(
         "/__test/server-api/verification-storage",
@@ -583,12 +751,12 @@ pub(super) async fn router(
                             app.clear().await?;
                             return Ok(json!({"status":true}));
                         }
-                        "backend-state" => {return Ok(json!({"cache":app.cache_state(),"cacheEvents":*app.cache_events.lock().unwrap(),"events":*app.backend_events.lock().unwrap()}));}
+                        "backend-state" => {return Ok(json!({"cache":app.backend_cache_state(),"cacheEvents":*app.cache_events.lock().unwrap(),"events":*app.backend_events.lock().unwrap(),"publications":app.publication_state()}));}
                         "state" => {
                             let mut value = sql_state(auth, &database).await?;
                             value["cache"] = app.cache_state();
                             value["events"] = json!(*app.events.lock().unwrap());
-                            value["cacheEvents"] = json!(app.cache_events.lock().unwrap().iter().map(|row| {let mut row=row.clone();row.as_object_mut().unwrap().remove("executedAt");row}).collect::<Vec<_>>());
+                            value["cacheEvents"] = json!(app.cache_events.lock().unwrap().iter().map(|row| {let mut row=row.clone();for key in ["executedAt","rawValue","storedAt","storageExpiresAt"] {row.as_object_mut().unwrap().remove(key);}row}).collect::<Vec<_>>());
                             value["deliveries"] = json!(*app.deliveries.lock().unwrap());
                             return Ok(value);
                         }
@@ -694,5 +862,11 @@ pub(super) async fn router(
             }
         }),
     );
-    Ok((router, fixture))
+    Ok((
+        router.layer(middleware::from_fn_with_state(
+            middleware_app,
+            capture_publication,
+        )),
+        fixture,
+    ))
 }
