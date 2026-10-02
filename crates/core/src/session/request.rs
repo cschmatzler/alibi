@@ -11,8 +11,14 @@ pub trait SessionRequest: Send + Sync {
     fn session_method(&self) -> &HttpMethod;
     fn session_query_truthy(&self, name: &str) -> bool;
     fn extensions(&self) -> &RequestExtensions;
-    fn virtual_session(&self) -> Option<SessionView>;
-    fn authenticated_user<S: AuthSchema>(&self) -> Option<S::User> {
+    fn virtual_session<S: AuthSchema>(
+        &self,
+        context: &crate::AuthContext<S>,
+    ) -> Option<SessionView>;
+    fn authenticated_user<S: AuthSchema>(
+        &self,
+        _context: &crate::AuthContext<S>,
+    ) -> Option<S::User> {
         None
     }
     fn take_response_headers(&self) -> crate::Headers;
@@ -33,7 +39,10 @@ impl SessionRequest for AuthRequest {
     fn extensions(&self) -> &RequestExtensions {
         self.extensions()
     }
-    fn virtual_session(&self) -> Option<SessionView> {
+    fn virtual_session<S: AuthSchema>(
+        &self,
+        _context: &crate::AuthContext<S>,
+    ) -> Option<SessionView> {
         self.virtual_session().cloned()
     }
     fn take_response_headers(&self) -> crate::Headers { self.take_response_headers() }
@@ -70,11 +79,18 @@ impl SessionRequest for crate::endpoint::EndpointCall {
     fn extensions(&self) -> &RequestExtensions {
         self.extensions()
     }
-    fn virtual_session(&self) -> Option<SessionView> {
-        self.virtual_session()
+    fn virtual_session<S: AuthSchema>(
+        &self,
+        context: &crate::AuthContext<S>,
+    ) -> Option<SessionView> {
+        self.authenticated_user(context)
+            .and_then(|_| self.virtual_session())
     }
-    fn authenticated_user<S: AuthSchema>(&self) -> Option<S::User> {
-        self.authenticated_user::<S>()
+    fn authenticated_user<S: AuthSchema>(
+        &self,
+        context: &crate::AuthContext<S>,
+    ) -> Option<S::User> {
+        self.authenticated_user::<S>(context)
     }
     fn take_response_headers(&self) -> crate::Headers { self.take_response_headers() }
     fn queue_response_header(&self, name: impl Into<String>, value: impl Into<String>) {

@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { createCaptchaFixture } from "./captcha-fixture";
 import {physicalCookieProfiles} from "./physical-cookie-fixture";
+import { createServerEndpointFixture } from "./server-endpoint-fixture";
 import { createJwtKeyringFixture } from "./jwt-keyring-fixture";
 import { createRemoteJwtFixture } from "./jwt-remote-fixture";
 import { createLastLoginMethodFixture } from "./last-login-method-fixture";
@@ -453,6 +454,7 @@ const multipleSessionFixture = createMultipleSessionFixture(authOptions);
 const bearerFixture = createBearerFixture(authOptions);
 const dispatchFixture = createDispatchFixture(authOptions);
 const captchaFixture = createCaptchaFixture(authOptions, PORT);
+const serverEndpointFixture = createServerEndpointFixture(database,authOptions);
 const organizationCreationFixture = createOrganizationCreationFixture(database, authOptions, `http://localhost:${PORT}`);
 const organizationTransport = organizationTransportProbe();
 const organizationHooksFixture = organizationCreationHooksFixture(database, authOptions, `http://localhost:${PORT}`, organizationTransport);
@@ -487,6 +489,7 @@ const userLifecycleFixture = createUserLifecycleFixture(authOptions, database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+verificationProfiles.set(serverEndpointFixture.path,serverEndpointFixture.auth);
 for (const [path, instance] of userLifecycleFixture.profiles) verificationProfiles.set(path, instance);
 for(const [path,instance] of cloudflareFixture.profiles) verificationProfiles.set(path,instance);
 for(const [path,instance] of cognitoFixture.profiles) verificationProfiles.set(path,instance);
@@ -1130,6 +1133,8 @@ const server = Bun.serve({
       if (apiKeyOptionsControl) return apiKeyOptionsControl;
       const physicalCookieControl=physicalCookies.control(request);
       if(physicalCookieControl)return physicalCookieControl;
+      const serverEndpointControl = await serverEndpointFixture.control(request);
+      if (serverEndpointControl) return serverEndpointControl;
       const apiKeyHookControl = await apiKeyHookFixture.control(request);
       if (apiKeyHookControl) return apiKeyHookControl;
       if (url.pathname === "/__test/api-key/verify" && request.method === "POST") {

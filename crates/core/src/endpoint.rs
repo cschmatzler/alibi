@@ -102,7 +102,11 @@ struct EndpointState {
     session_observation: Option<(UserView, SessionView)>,
 }
 
-struct VerifiedEndpointUser<S: AuthSchema>(S::User);
+struct VerifiedEndpointUser<S: AuthSchema> {
+    user: S::User,
+    config: Arc<crate::AuthConfig>,
+    database: Arc<dyn crate::AuthStore<S>>,
+}
 
 /// Runtime normalization phase, retaining absence in original logical inputs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -268,8 +272,13 @@ impl EndpointCall {
         user: S::User,
         user_view: UserView,
         session: SessionView,
+        context: &crate::AuthContext<S>,
     ) {
-        self.extensions.insert(VerifiedEndpointUser::<S>(user));
+        self.extensions.insert(VerifiedEndpointUser::<S> {
+            user,
+            config: context.config.clone(),
+            database: context.database.clone(),
+        });
         let mut state = self
             .state
             .lock()
@@ -296,10 +305,17 @@ impl EndpointCall {
     }
 
     #[must_use]
-    pub fn authenticated_user<S: AuthSchema>(&self) -> Option<S::User> {
+    pub fn authenticated_user<S: AuthSchema>(
+        &self,
+        context: &crate::AuthContext<S>,
+    ) -> Option<S::User> {
         self.extensions
             .get::<VerifiedEndpointUser<S>>()
-            .map(|user| user.0.clone())
+            .filter(|user| {
+                Arc::ptr_eq(&user.config, &context.config)
+                    && Arc::ptr_eq(&user.database, &context.database)
+            })
+            .map(|user| user.user.clone())
     }
 
     pub fn set_response_header(&self, name: impl Into<String>, value: impl Into<String>) {

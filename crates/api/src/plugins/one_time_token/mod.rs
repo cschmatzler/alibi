@@ -33,6 +33,25 @@ pub struct OneTimeTokenSession {
     pub user: UserView,
 }
 
+enum TokenSessionAbsence {
+    InvalidToken,
+    SessionNotFound,
+}
+
+impl TokenSessionAbsence {
+    const fn message(&self) -> &'static str {
+        match self {
+            Self::InvalidToken => "Invalid token",
+            Self::SessionNotFound => "Session not found",
+        }
+    }
+}
+
+enum TokenSessionLookup<S: AuthSchema> {
+    Found { user: S::User, session: S::Session },
+    Missing(TokenSessionAbsence),
+}
+
 /// Application-owned token generation, including asynchronous generators.
 #[async_trait]
 pub trait GenerateOneTimeToken: Send + Sync {
@@ -180,7 +199,12 @@ impl OneTimeTokenPlugin {
         token: &str,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<OneTimeTokenSession> {
-        let (user, session) = self.consume_stored_session(token, ctx).await?;
+        let (user, session) = match self.consume_stored_session(token, ctx).await? {
+            TokenSessionLookup::Found { user, session } => (user, session),
+            TokenSessionLookup::Missing(absence) => {
+                return Err(AuthError::bad_request(absence.message()));
+            }
+        };
         Ok(OneTimeTokenSession {
             session: ctx.session_view(&session),
             user: ctx.user_view(&user),
@@ -191,24 +215,32 @@ impl OneTimeTokenPlugin {
         &self,
         token: &str,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<(S::User, S::Session)> {
+    ) -> AuthResult<TokenSessionLookup<S>> {
         let stored = self.stored_token(token).await?;
-        let verification = ctx
+        let Some(verification) = ctx
             .database
             .consume_verification_by_identifier(&format!("one-time-token:{stored}"))
             .await?
-            .ok_or_else(|| AuthError::bad_request("Invalid token"))?;
-        let session = ctx
-            .database
-            .get_session(verification.value())
-            .await?
-            .ok_or_else(|| AuthError::bad_request("Session not found"))?;
-        let user = ctx
+        else {
+            return Ok(TokenSessionLookup::Missing(
+                TokenSessionAbsence::InvalidToken,
+            ));
+        };
+        let Some(session) = ctx.database.get_session(verification.value()).await? else {
+            return Ok(TokenSessionLookup::Missing(
+                TokenSessionAbsence::SessionNotFound,
+            ));
+        };
+        let Some(user) = ctx
             .database
             .get_user_by_id(session.user_id().as_ref())
             .await?
-            .ok_or_else(|| AuthError::bad_request("Session not found"))?;
-        Ok((user, session))
+        else {
+            return Ok(TokenSessionLookup::Missing(
+                TokenSessionAbsence::SessionNotFound,
+            ));
+        };
+        Ok(TokenSessionLookup::Found { user, session })
     }
 
     async fn generate(

@@ -7,8 +7,7 @@ use better_auth_core::endpoint::{
 };
 use better_auth_core::session::SessionRequest;
 use better_auth_core::utils::cookie_utils::{
-    create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
-    sign_cookie_value, verify_cookie_value,
+    related_cookie_name, sign_cookie_value, verify_cookie_value,
 };
 use better_auth_core::utils::json::JsValue;
 use better_auth_core::{AuthContext, AuthError, AuthResult, AuthSchema};
@@ -109,7 +108,17 @@ impl OneTimeTokenPlugin {
                 token: String,
             }
             let body: Body = call.body_as()?;
-            let (user, stored_session) = self.consume_stored_session(&body.token, ctx).await?;
+            let (user, stored_session) = match self.consume_stored_session(&body.token, ctx).await?
+            {
+                super::TokenSessionLookup::Found { user, session } => (user, session),
+                super::TokenSessionLookup::Missing(absence) => {
+                    return Err(AuthError::Api {
+                        status: 400,
+                        code: None,
+                        message: absence.message().into(),
+                    });
+                }
+            };
             let session = OneTimeTokenSession {
                 user: ctx.user_view(&user),
                 session: ctx.session_view(&stored_session),
@@ -128,24 +137,51 @@ impl OneTimeTokenPlugin {
                     })
                     .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
                     .is_some_and(|value| !value.is_empty());
-                call.queue_response_header(
-                    "set-cookie",
-                    create_session_cookie_with_max_age(
-                        Some(&session.session.token),
-                        (!dont_remember).then_some(ctx.config.session.expires_in.num_seconds()),
-                        &ctx.config,
-                    ),
-                );
-                if dont_remember {
+                // Cache publication owns the token and preference headers when
+                // enabled. The ordinary registered endpoint uses the same
+                // canonical serializer without synthesizing an Expires attribute.
+                if !ctx
+                    .config
+                    .session
+                    .cookie_cache
+                    .as_ref()
+                    .is_some_and(|cache| cache.enabled)
+                {
+                    #[expect(
+                        clippy::as_conversions,
+                        clippy::cast_precision_loss,
+                        reason = "Cookie Max-Age uses JavaScript Number seconds at the genuine publication boundary"
+                    )]
+                    let max_age = (!dont_remember)
+                        .then(|| ctx.config.session.expires_in.num_seconds() as f64);
                     call.queue_response_header(
                         "set-cookie",
-                        create_session_like_cookie(
-                            &related_cookie_name(&ctx.config, "dont_remember"),
-                            &sign_cookie_value("true", &ctx.config.secret),
-                            None,
+                        better_auth_core::cache::cookie_header(
+                            &ctx.config.session.cookie_name,
+                            &urlencoding::decode(&sign_cookie_value(
+                                &session.session.token,
+                                &ctx.config.secret,
+                            ))
+                            .map_err(|error| AuthError::internal(error.to_string()))?,
+                            max_age,
                             &ctx.config,
-                        ),
+                        )?,
                     );
+                    if dont_remember {
+                        call.queue_response_header(
+                            "set-cookie",
+                            better_auth_core::cache::cookie_header(
+                                &related_cookie_name(&ctx.config, "dont_remember"),
+                                &urlencoding::decode(&sign_cookie_value(
+                                    "true",
+                                    &ctx.config.secret,
+                                ))
+                                .map_err(|error| AuthError::internal(error.to_string()))?,
+                                None,
+                                &ctx.config,
+                            )?,
+                        );
+                    }
                 }
                 better_auth_core::cache::runtime::emit_issuance(ctx, &user, &stored_session)
                     .await?;

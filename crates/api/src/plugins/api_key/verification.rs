@@ -348,13 +348,14 @@ impl ApiKeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<Option<(&'a ApiKeyConfig, String)>> {
-        self.find_session_key_for_input(&req.headers, Some(req), ctx)
+        self.find_session_key_for_input(&req.headers, Some(req), None, ctx)
     }
 
     pub(super) fn find_session_key_for_input<'a>(
         &'a self,
         headers: &std::collections::HashMap<String, String>,
         request: Option<&AuthRequest>,
+        endpoint: Option<&better_auth_core::endpoint::EndpointCall>,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<Option<(&'a ApiKeyConfig, String)>> {
         for config in self
@@ -364,7 +365,11 @@ impl ApiKeyPlugin {
         {
             let key = match &config.custom_api_key_getter {
                 Some(getter) => {
-                    getter.get_key(&ApiKeyCallbackContext::new(request, ctx, &config.config_id))?
+                    let mut context = ApiKeyCallbackContext::new(request, ctx, &config.config_id);
+                    if let Some(endpoint) = endpoint {
+                        context = context.with_endpoint(endpoint);
+                    }
+                    getter.get_key(&context)?
                 }
                 None => config.api_key_headers.iter().find_map(|header| {
                     headers

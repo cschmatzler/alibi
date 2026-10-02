@@ -4,7 +4,6 @@ use better_auth_core::endpoint::{
     EndpointOptions, EndpointOutput, EndpointResponse, ServerEndpoint, is_endpoint_api_error,
     with_endpoint_call_context,
 };
-use better_auth_core::hooks::{RequestHookContext, with_optional_request_hook_context};
 use better_auth_core::{AuthError, AuthSchema, Headers};
 
 impl<S: AuthSchema> BetterAuth<S> {
@@ -41,12 +40,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                 .extensions()
                 .insert(self.context.config.advanced.ip_address.clone());
         }
-        let physical_context = call.request().map(RequestHookContext::from_request);
-        with_optional_request_hook_context(
-            physical_context,
-            self.dispatch_endpoint_inner(call, plugin),
-        )
-        .await
+        with_endpoint_call_context(call.clone(), self.dispatch_endpoint_inner(call, plugin)).await
     }
 
     async fn dispatch_endpoint_inner<T>(
@@ -66,6 +60,7 @@ impl<S: AuthSchema> BetterAuth<S> {
             .collect();
         let mut patch = EndpointContextPatch::default();
         let mut before_headers = Headers::new();
+        let mut outer = call.clone();
         for hook in &hooks {
             let matched = with_endpoint_call_context(call.clone(), async { hook.matches_before(&call, &self.context) }).await.map_err(|error| {
                 tracing::error!(%error, "Endpoint before-hook matcher failed");
@@ -75,11 +70,9 @@ impl<S: AuthSchema> BetterAuth<S> {
                 continue;
             }
             let middleware = call.middleware_context();
-            let action = with_endpoint_call_context(
-                middleware.clone(),
-                hook.before(&middleware, &self.context),
-            )
-            .await;
+            let action =
+                with_endpoint_call_context(call.clone(), hook.before(&middleware, &self.context))
+                    .await;
             let headers = call.take_response_headers();
             let action = action.map_err(|error| EndpointError {
                 body: None,
@@ -106,6 +99,14 @@ impl<S: AuthSchema> BetterAuth<S> {
             }
         }
         patch.apply(&mut call);
+        // Source retains the original outer frame for hook task-local access.
+        // Header patches update (or initialize) its Headers property in place;
+        // other patched input and the optional Request belong to the active argument.
+        EndpointContextPatch {
+            headers: call.headers().cloned(),
+            ..Default::default()
+        }
+        .apply(&mut outer);
         if let Some(request) = call.request() {
             request
                 .extensions()
@@ -141,7 +142,7 @@ impl<S: AuthSchema> BetterAuth<S> {
             response = response.with_header("set-cookie", header);
         }
         for hook in hooks {
-            if !with_endpoint_call_context(call.clone(), async {
+            if !with_endpoint_call_context(outer.clone(), async {
                 hook.matches_after(&call, &self.context, &response)
             })
             .await?
@@ -154,7 +155,7 @@ impl<S: AuthSchema> BetterAuth<S> {
             let previous_headers = response.headers().clone();
             let previous_status = response.status();
             response = match with_endpoint_call_context(
-                middleware.clone(),
+                outer.clone(),
                 hook.after(&middleware, &self.context, response),
             )
             .await

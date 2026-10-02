@@ -29,6 +29,13 @@ impl std::fmt::Debug for ApiKeyCallbackContext<'_> {
 }
 
 impl<'a> ApiKeyCallbackContext<'a> {
+    pub(super) fn with_endpoint(
+        mut self,
+        endpoint: &better_auth_core::endpoint::EndpointCall,
+    ) -> Self {
+        self.endpoint = Some(endpoint.clone());
+        self
+    }
     #[must_use]
     pub(super) fn new(
         request: Option<&'a AuthRequest>,

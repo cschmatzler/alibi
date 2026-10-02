@@ -859,8 +859,8 @@ impl<S: AuthSchema> AuthContext<S> {
         req: &impl crate::session::SessionRequest,
         allow_virtual: bool,
     ) -> AuthResult<(S::User, crate::wire::SessionView, Option<bool>)> {
-        if allow_virtual && let Some(session) = req.virtual_session() {
-            let user = if let Some(user) = req.authenticated_user::<S>() {
+        if allow_virtual && let Some(session) = req.virtual_session(self) {
+            let user = if let Some(user) = req.authenticated_user::<S>(self) {
                 user
             } else {
                 self.database
@@ -928,8 +928,8 @@ impl<S: AuthSchema> AuthContext<S> {
         &self,
         req: &impl crate::session::SessionRequest,
     ) -> AuthResult<Option<(S::User, crate::wire::SessionView)>> {
-        if let Some(session) = req.virtual_session() {
-            if let Some(user) = req.authenticated_user::<S>() {
+        if let Some(session) = req.virtual_session(self) {
+            if let Some(user) = req.authenticated_user::<S>(self) {
                 return Ok(Some((user, session)));
             }
             return Ok(self

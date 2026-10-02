@@ -111,7 +111,7 @@ fn establish<S: AuthSchema>(
                 needs_refresh: read.needs_refresh,
             },
             headers: request.session_headers().clone(),
-            virtual_session: request.virtual_session(),
+            virtual_session: request.virtual_session(ctx),
             config: Arc::clone(&ctx.config),
             database: Arc::clone(&ctx.database),
         })));
@@ -517,7 +517,7 @@ pub async fn authenticated<S: AuthSchema>(
         && Arc::ptr_eq(&established.config, &ctx.config)
         && Arc::ptr_eq(&established.database, &ctx.database)
         && &established.headers == request.session_headers()
-        && established.virtual_session == request.virtual_session()
+        && established.virtual_session == request.virtual_session(ctx)
     {
         let read = &established.read;
         return Ok(Some(AuthenticatedRead {
@@ -527,8 +527,8 @@ pub async fn authenticated<S: AuthSchema>(
         }));
     }
     request.extensions().insert(SessionHookCache(None));
-    if let Some(session) = request.virtual_session() {
-        let user = if let Some(user) = request.authenticated_user::<S>() {
+    if let Some(session) = request.virtual_session(ctx) {
+        let user = if let Some(user) = request.authenticated_user::<S>(ctx) {
             user
         } else {
             let Some(user) = ctx.database.get_user_by_id(&session.user_id).await? else {
@@ -536,13 +536,13 @@ pub async fn authenticated<S: AuthSchema>(
             };
             user
         };
-        request.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(&session));
+        request.set_session_hook_snapshot(ctx.user_view(&user), session.clone());
         return Ok(Some(establish(
             ctx,
             request,
             AuthenticatedRead {
                 user: crate::AuthenticatedUser::Stored(user),
-                session: ctx.session_view(&session),
+                session,
                 needs_refresh: None,
             },
         )));

@@ -3,8 +3,7 @@ use super::{
     ApiKeyValidationError, ApiKeyVerificationError, CreateKeyRequest, CreateKeyResponse,
     DeleteExpiredApiKeysResponse, UpdateKeyRequest, VerifyApiKey,
 };
-use crate::plugins::authentication_helpers::{JsonField, JsonFieldKind};
-use crate::plugins::endpoint::{definition, error_response, validate_fields};
+use crate::plugins::endpoint::definition;
 use better_auth_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointDefinition, EndpointHook,
     EndpointInput, EndpointResponse, ServerEndpoint,
@@ -58,83 +57,8 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
     let body = match call.operation_id() {
-        "verifyApiKey" => Some(validate_fields(
-            call.body(),
-            "body",
-            &[
-                JsonField::string("configId", false),
-                JsonField::string("key", true),
-                JsonField {
-                    name: "permissions",
-                    kind: JsonFieldKind::Record,
-                    required: false,
-                },
-            ],
-        )?),
-        "createApiKey" | "updateApiKey" => {
-            let body = call.body().cloned().unwrap_or(JsValue::Null);
-            if call.operation_id() == "createApiKey" {
-                let _validated: CreateKeyRequest =
-                    super::types::parse_api_key_value(body.clone()).map_err(error_response)?;
-            } else {
-                let _validated: UpdateKeyRequest =
-                    super::types::parse_api_key_value(body.clone()).map_err(error_response)?;
-            }
-            let mut body = body.as_object().cloned().ok_or_else(|| {
-                crate::plugins::endpoint::validation("[body] Invalid input: expected object")
-            })?;
-            const CREATE_FIELDS: &[&str] = &[
-                "configId",
-                "userId",
-                "organizationId",
-                "name",
-                "prefix",
-                "expiresIn",
-                "remaining",
-                "rateLimitEnabled",
-                "rateLimitTimeWindow",
-                "rateLimitMax",
-                "refillInterval",
-                "refillAmount",
-                "permissions",
-                "metadata",
-            ];
-            const UPDATE_FIELDS: &[&str] = &[
-                "configId",
-                "keyId",
-                "userId",
-                "name",
-                "expiresIn",
-                "remaining",
-                "rateLimitEnabled",
-                "rateLimitTimeWindow",
-                "rateLimitMax",
-                "refillInterval",
-                "refillAmount",
-                "permissions",
-                "metadata",
-                "enabled",
-            ];
-            let fields = if call.operation_id() == "createApiKey" {
-                CREATE_FIELDS
-            } else {
-                UPDATE_FIELDS
-            };
-            body.retain(|name, _| fields.contains(&name.as_str()));
-            for name in ["userId", "organizationId"] {
-                if let Some(value) = body.get(name) {
-                    let value = value
-                        .coerce_string()
-                        .map_err(crate::plugins::endpoint::validation)?;
-                    drop(body.insert(name.into(), JsValue::String(value)));
-                }
-            }
-            if call.operation_id() == "createApiKey" {
-                for name in ["expiresIn", "remaining"] {
-                    let _value = body.entry(name.into()).or_insert(JsValue::Null);
-                }
-            }
-            Some(JsValue::Object(body))
+        "verifyApiKey" | "createApiKey" | "updateApiKey" => {
+            Some(validate_key_body(call.body(), call.operation_id())?)
         }
         _ => call.body().cloned(),
     };
@@ -142,6 +66,170 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
         body,
         query: call.query().cloned(),
     })
+}
+
+#[derive(Clone, Copy)]
+enum KeyFieldKind {
+    String,
+    Prefix,
+    CoercedId,
+    Boolean,
+    Number(Option<f64>),
+    Permissions,
+    Any,
+}
+
+fn key_fields(operation: &str) -> &'static [(&'static str, KeyFieldKind, bool, bool)] {
+    use KeyFieldKind::{Any, Boolean, CoercedId, Number, Permissions, Prefix, String};
+    match operation {
+        "verifyApiKey" => &[
+            ("configId", String, false, false),
+            ("key", String, true, false),
+            ("permissions", Permissions, false, false),
+        ],
+        "createApiKey" => &[
+            ("configId", String, false, false),
+            ("name", String, false, false),
+            ("expiresIn", Number(Some(1.0)), false, true),
+            ("prefix", Prefix, false, false),
+            ("remaining", Number(Some(0.0)), false, true),
+            ("metadata", Any, false, true),
+            ("refillAmount", Number(Some(1.0)), false, false),
+            ("refillInterval", Number(None), false, false),
+            ("rateLimitTimeWindow", Number(None), false, false),
+            ("rateLimitMax", Number(None), false, false),
+            ("rateLimitEnabled", Boolean, false, false),
+            ("permissions", Permissions, false, false),
+            ("userId", CoercedId, false, true),
+            ("organizationId", CoercedId, false, true),
+        ],
+        _ => &[
+            ("configId", String, false, false),
+            ("keyId", String, true, false),
+            ("userId", CoercedId, false, true),
+            ("name", String, false, false),
+            ("enabled", Boolean, false, false),
+            ("remaining", Number(Some(1.0)), false, false),
+            ("refillAmount", Number(None), false, false),
+            ("refillInterval", Number(None), false, false),
+            ("metadata", Any, false, true),
+            ("expiresIn", Number(Some(1.0)), false, true),
+            ("rateLimitEnabled", Boolean, false, false),
+            ("rateLimitTimeWindow", Number(None), false, false),
+            ("rateLimitMax", Number(None), false, false),
+            ("permissions", Permissions, false, true),
+        ],
+    }
+}
+
+// Registered schemas validate after accumulated before-hook patches. Preserve
+// Source's schema order and all nested issues before invoking the typed core.
+fn validate_key_body(body: Option<&JsValue>, operation: &str) -> AuthResult<JsValue> {
+    use KeyFieldKind::{Any, Boolean, CoercedId, Number, Permissions, Prefix, String};
+    let fields = key_fields(operation);
+    let object = body.and_then(JsValue::as_object).ok_or_else(|| {
+        crate::plugins::endpoint::validation(format!(
+            "[body] Invalid input: expected object, received {}",
+            crate::plugins::authentication_helpers::json_type(body)
+        ))
+    })?;
+    let mut issues = Vec::new();
+    let mut output = indexmap::IndexMap::new();
+    for &(name, kind, required, nullable) in fields {
+        let value = object.get(name);
+        if value.is_none() && !required {
+            if operation == "createApiKey" && matches!(name, "expiresIn" | "remaining") {
+                drop(output.insert(name.to_owned(), JsValue::Null));
+            }
+            continue;
+        }
+        let path = format!("body.{name}");
+        if nullable && value.is_some_and(JsValue::is_null) && !matches!(kind, CoercedId) {
+            drop(output.insert(name.to_owned(), JsValue::Null));
+            continue;
+        }
+        if matches!(kind, CoercedId) {
+            if let Some(value) = value {
+                match value.coerce_string() {
+                    Ok(value) => {
+                        drop(output.insert(name.to_owned(), JsValue::String(value)));
+                    }
+                    Err(_) => issues.push(format!(
+                        "[{path}] Invalid input: expected string, received {}",
+                        crate::plugins::authentication_helpers::json_type(Some(value))
+                    )),
+                }
+            }
+            continue;
+        }
+        let expected = match kind {
+            String | Prefix | CoercedId => "string",
+            Boolean => "boolean",
+            Number(_) => "number",
+            Permissions => "record",
+            Any => "any",
+        };
+        let valid = value.is_some_and(|value| match kind {
+            String | Prefix => value.is_string(),
+            Boolean => value.is_boolean(),
+            Number(_) => value.as_f64().is_some_and(f64::is_finite),
+            Permissions => value.is_object(),
+            Any => true,
+            CoercedId => false,
+        });
+        if !valid {
+            issues.push(format!(
+                "[{path}] Invalid input: expected {expected}, received {}",
+                key_field_type(value)
+            ));
+            continue;
+        }
+        let value =
+            value.ok_or_else(|| crate::plugins::endpoint::validation("Missing validated input"))?;
+        match kind {
+            Number(Some(minimum)) if value.as_f64().is_some_and(|number|number<minimum)=>issues.push(format!("[{path}] Too small: expected number to be >={minimum}")),
+            Prefix if value.as_str().is_some_and(|prefix|prefix.is_empty()||!prefix.bytes().all(|byte|byte.is_ascii_alphanumeric()||matches!(byte,b'_'|b'-')))=>issues.push(format!("[{path}] Invalid prefix format, must be alphanumeric and contain only underscores and hyphens.")),
+            Permissions => validate_permissions(value,&path,&mut issues),
+            _ => {}
+        }
+        drop(output.insert(name.to_owned(), value.clone()));
+    }
+    if issues.is_empty() {
+        Ok(JsValue::Object(output))
+    } else {
+        Err(crate::plugins::endpoint::validation(issues.join("; ")))
+    }
+}
+
+fn validate_permissions(value: &JsValue, path: &str, issues: &mut Vec<String>) {
+    if let Some(resources) = value.as_object() {
+        for (resource, actions) in resources {
+            let path = format!("{path}.{resource}");
+            if let Some(actions) = actions.as_array() {
+                for (index, action) in actions.iter().enumerate() {
+                    if !action.is_string() {
+                        issues.push(format!(
+                            "[{path}.{index}] Invalid input: expected string, received {}",
+                            key_field_type(Some(action))
+                        ));
+                    }
+                }
+            } else {
+                issues.push(format!(
+                    "[{path}] Invalid input: expected array, received {}",
+                    key_field_type(Some(actions))
+                ));
+            }
+        }
+    }
+}
+
+fn key_field_type(value: Option<&JsValue>) -> &'static str {
+    if value.and_then(JsValue::as_f64).is_some_and(f64::is_nan) {
+        "NaN"
+    } else {
+        crate::plugins::authentication_helpers::json_type(value)
+    }
 }
 
 impl ApiKeyPlugin {
@@ -348,7 +436,7 @@ impl ApiKeyPlugin {
 impl<S: AuthSchema> EndpointHook<S> for ApiKeyPlugin {
     fn matches_before(&self, call: &EndpointCall, ctx: &AuthContext<S>) -> AuthResult<bool> {
         Ok(self
-            .find_session_key_for_input(call.session_headers(), call.request(), ctx)?
+            .find_session_key_for_input(call.session_headers(), call.request(), Some(call), ctx)?
             .is_some())
     }
 
@@ -358,7 +446,7 @@ impl<S: AuthSchema> EndpointHook<S> for ApiKeyPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<BeforeEndpointAction>> {
         let (config, key) = self
-            .find_session_key_for_input(call.session_headers(), call.request(), ctx)?
+            .find_session_key_for_input(call.session_headers(), call.request(), Some(call), ctx)?
             .ok_or_else(|| {
                 AuthError::internal("API key getter did not return a key after matching")
             })?;
@@ -375,7 +463,8 @@ impl<S: AuthSchema> EndpointHook<S> for ApiKeyPlugin {
         if let Some(validator) = &config.custom_api_key_validator
             && !validator
                 .validate(
-                    &ApiKeyCallbackContext::new(call.request(), ctx, &config.config_id),
+                    &ApiKeyCallbackContext::new(call.request(), ctx, &config.config_id)
+                        .with_endpoint(call),
                     &key,
                 )
                 .await?
@@ -422,7 +511,7 @@ impl<S: AuthSchema> EndpointHook<S> for ApiKeyPlugin {
         };
         let session = Self::virtual_session_from_key(&view, &key, &user, call.request(), ctx)?;
         let user_view = ctx.user_view(&user);
-        call.establish_session::<S>(user, user_view.clone(), session.clone());
+        call.establish_session::<S>(user, user_view.clone(), session.clone(), ctx);
         if call.path() == Some("/get-session") {
             return Ok(Some(BeforeEndpointAction::Respond(EndpointResponse::json(
                 &serde_json::json!({"user":user_view,"session":session}),
