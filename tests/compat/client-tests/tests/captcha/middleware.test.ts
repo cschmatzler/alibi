@@ -1,0 +1,76 @@
+import { expect } from "bun:test";
+import { compatScenario, type ScenarioContext } from "../../support/scenario";
+import { authProfilePath } from "../../support/profiles";
+
+async function events(ctx: ScenarioContext) { const result = await ctx.rawRequest({ path: "/__test/captcha-events" }); expect(result.status).toBe(200); return result.body as Record<string, unknown>[]; }
+const ip = { "x-forwarded-for": "203.0.113.7" };
+async function principals(ctx: ScenarioContext) {
+  const owner = ctx.actor("owner"), foreign = ctx.actor("foreign");
+  const signup = await owner.client.signUp.email({ email: ctx.uniqueEmail("owner"), password: "password123", name: "Owner" });
+  const other = await foreign.client.signUp.email({ email: ctx.uniqueEmail("foreign"), password: "password123", name: "Foreign" });
+  expect(signup.error).toBeNull(); expect(other.error).toBeNull(); await events(ctx);
+  return { signup, other, foreignBefore: await ctx.readUserState({ userId: other.data!.user.id }) };
+}
+
+for (const profile of ["captcha-turnstile", "captcha-turnstile-configured", "captcha-google", "captcha-google-configured", "captcha-google-zero", "captcha-hcaptcha", "captcha-hcaptcha-sitekey", "captcha-captchafox", "captcha-captchafox-sitekey", "captcha-turnstile-ip-disabled", "captcha-turnstile-ip-custom"] as const) {
+  compatScenario(`CAPTCHA ${profile} actual verification transport admits only provider-approved authentication`, async ctx => {
+    const s = await principals(ctx), path = authProfilePath(profile), observations = [];
+    for (const token of ["", "denied", "http-failure", "invalid-json", "null", "wrong-action", "wrong-host", "low-score", "v2", "valid", "special & = % + /"]) {
+      const configured = profile.endsWith("-configured"), google = profile.includes("google");
+      const status = !token ? 400 : ["http-failure", "null"].includes(token) ? 500 : ["denied", "invalid-json"].includes(token) || configured && ["wrong-action", "wrong-host"].includes(token) || google && profile !== "captcha-google-zero" && token === "low-score" ? 403 : 200;
+      const before = await ctx.readUserState({ userId: s.signup.data!.user.id });
+      const headers = { ...ip, ...(profile.endsWith("-ip-custom") ? { "x-fixture-ip": "198.51.100.9" } : {}), ...(token ? { "x-captcha-response": token } : {}) };
+      const result = await ctx.rawRequest({ actor: `attempt-${token}`, path: path + "/sign-in/email", method: "POST", json: { email: s.signup.data!.user.email, password: "password123" }, headers });
+      expect(result.status).toBe(status);
+      const after = await ctx.readUserState({ userId: s.signup.data!.user.id }), receipts = await events(ctx);
+      if (status !== 200) {
+        expect(result.body).toMatchObject({ code: status === 400 ? "MISSING_RESPONSE" : status === 403 ? "VERIFICATION_FAILED" : "UNKNOWN_ERROR" });
+        expect(after).toEqual(before); expect(receipts.some(e => e.kind === "before" || e.kind === "early-b")).toBe(false);
+      } else { expect(result.body).toMatchObject({ user: { id: s.signup.data!.user.id } }); expect(receipts.at(-1)).toMatchObject({ kind: "before", path: "/sign-in/email" }); }
+      const provider = receipts.find(e => e.kind === "provider");
+      if (token) { expect(provider!.body).toMatchObject({ secret: "fixture-captcha-secret", response: token }); expect(provider!.body.remoteip ?? provider!.body.remoteIp).toBe(profile.endsWith("-ip-disabled") ? undefined : profile.endsWith("-ip-custom") ? "198.51.100.9" : "203.0.113.7"); if (profile.endsWith("-sitekey")) expect(provider!.body.sitekey).toBe("fixture-site-key"); }
+      else expect(provider).toBeUndefined();
+      expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
+      observations.push({ captchaResponse: token, before, result, after, receipts });
+    }
+    const newSignup = await ctx.actor("new-owner", profile).client.signUp.email({ email: ctx.uniqueEmail("new-owner"), password: "password123", name: "Protected" }, { headers: { ...ip, "x-fixture-ip": "198.51.100.9", "x-captcha-response": "valid" } });
+    expect(newSignup.error).toBeNull(); const signupReceipts = await events(ctx);
+    expect(signupReceipts.at(-1)).toMatchObject({ kind: "before", path: "/sign-up/email" });
+    return { initial: ctx.snapshot(s.signup), other: ctx.snapshot(s.other), foreignBefore: s.foreignBefore, observations, newSignup: ctx.snapshot(newSignup), newState: await ctx.readUserState({ userId: newSignup.data!.user.id }), signupReceipts, foreignAfter: await ctx.readUserState({ userId: s.other.data!.user.id }) };
+  }, ["POST /sign-in/email", "POST /sign-up/email"]);
+}
+
+for (const profile of ["captcha-turnstile-custom", "captcha-turnstile-wildcard", "captcha-turnstile-globstar", "captcha-turnstile-empty", "captcha-turnstile-disabled", "captcha-turnstile-no-secret"] as const) {
+  compatScenario(`CAPTCHA ${profile} path and early rejection ordering preserve unchanged physical principals`, async ctx => {
+    const s = await principals(ctx), observations = [], path = authProfilePath(profile);
+    for (const route of ["/sign-in/email", "/sign-in/email/extra", "/sign-in//email", "/sign-in/email/", "/request-password-reset", "/ok"]) {
+      const before = await ctx.readUserState({ userId: s.signup.data!.user.id });
+      const protectedPath = profile.endsWith("-custom") ? route === "/ok" : profile.endsWith("-wildcard") ? ["/sign-in/email", "/sign-in//email", "/sign-in/email/"].includes(route) : profile.endsWith("-globstar") ? route.startsWith("/sign-in/") : ["/sign-in/email", "/sign-in//email", "/sign-in/email/", "/request-password-reset"].includes(route);
+      const result = await ctx.rawRequest({ actor: "invalid", path: path + route, method: route === "/ok" ? "GET" : "POST", body: route === "/ok" ? undefined : "{", headers: { ...ip, "content-type": "text/plain", origin: "https://foreign.fixture.test" } });
+      const receipts = await events(ctx), after = await ctx.readUserState({ userId: s.signup.data!.user.id });
+      if (profile.endsWith("-disabled") && ["/sign-in/email", "/sign-in/email/"].includes(route)) { expect(result.status).toBe(404); expect(receipts).toEqual([]); }
+      else if (protectedPath) { expect(result.status).toBe(profile.endsWith("-no-secret") ? 500 : 400); expect(result.body).toMatchObject({ code: profile.endsWith("-no-secret") ? "UNKNOWN_ERROR" : "MISSING_RESPONSE" }); expect(receipts.map(e => e.kind)).toEqual(["early-a"]); }
+      else expect(receipts.map(e => e.kind)).toEqual(route === "/ok" ? ["early-a", "early-b", "before"] : ["early-a", "early-b"]);
+      expect(after).toEqual(before); expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore);
+      observations.push({ route, before, result, receipts, after });
+    }
+    return { signup: ctx.snapshot(s.signup), other: ctx.snapshot(s.other), foreignBefore: s.foreignBefore, observations, foreignAfter: await ctx.readUserState({ userId: s.other.data!.user.id }) };
+  }, ["POST /sign-in/email", "POST /request-password-reset"]);
+}
+
+for (const profile of ["captcha-botid", "captcha-botid-denied", "captcha-botid-custom", "captcha-botid-throw", "captcha-botid-validator-throw"] as const) {
+  compatScenario(`CAPTCHA ${profile} actual configured BotID callbacks preserve middleware and principal boundaries`, async ctx => {
+    const s = await principals(ctx), observations = [];
+    for (const allow of [false, true]) {
+      const before = await ctx.readUserState({ userId: s.signup.data!.user.id });
+      const result = await ctx.rawRequest({ actor: `bot-${allow}`, path: authProfilePath(profile) + "/sign-in/email", method: "POST", json: { email: s.signup.data!.user.email, password: "password123" }, headers: { ...ip, ...(allow ? { "x-allow-verified": "yes" } : {}) } });
+      const status = profile.endsWith("-throw") ? 500 : profile === "captcha-botid" || profile.endsWith("-custom") && allow ? 200 : 403;
+      expect(result.status).toBe(status); const after = await ctx.readUserState({ userId: s.signup.data!.user.id }), receipts = await events(ctx);
+      expect(receipts.some(e => e.kind === "bot-check")).toBe(true); expect(receipts.some(e => e.kind === "provider")).toBe(false);
+      if (status !== 200) { expect(after).toEqual(before); expect(receipts.some(e => e.kind === "early-b" || e.kind === "before")).toBe(false); }
+      else { expect(result.body).toMatchObject({ user: { id: s.signup.data!.user.id } }); expect(receipts.at(-1)).toMatchObject({ kind: "before" }); }
+      expect(await ctx.readUserState({ userId: s.other.data!.user.id })).toEqual(s.foreignBefore); observations.push({ allow, before, result, after, receipts });
+    }
+    return { signup: ctx.snapshot(s.signup), other: ctx.snapshot(s.other), foreignBefore: s.foreignBefore, observations, foreignAfter: await ctx.readUserState({ userId: s.other.data!.user.id }) };
+  }, ["POST /sign-in/email"]);
+}
