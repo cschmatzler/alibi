@@ -101,6 +101,7 @@ mod apple_provider_fixture;
 mod atlassian_provider_fixture;
 mod client_ip_fixture;
 mod cloudflare_provider_fixture;
+mod cognito_provider_fixture;
 mod device_fixture;
 mod google_id_token_fixture;
 mod invitation_fixture;
@@ -618,6 +619,7 @@ fn mock_oauth_plugin(
                 ],
                 authorization: None,
                 authorization_params: Vec::new(),
+                account_subject: None,
                 map_user_info: Some(|_value| {
                     Ok(OAuthUserInfo {
                         id: "mock-account-id".to_string(),
@@ -669,6 +671,7 @@ fn mock_oauth_plugin(
                     "include_granted_scopes".to_string(),
                     "true".to_string(),
                 )],
+                account_subject: None,
                 map_user_info: None,
                 get_user_info: Some(Arc::new(CompatGoogleUserInfoHandler {
                     profile: social_profile,
@@ -793,6 +796,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (oauth_proxy_router, oauth_proxy_reset) = oauth_proxy_fixture::router(&config).await?;
     let (cloudflare_router, cloudflare_reset) =
         cloudflare_provider_fixture::router(&config, database.clone()).await?;
+    let (cognito_router, cognito_reset) =
+        cognito_provider_fixture::router(&config, database.clone()).await?;
     let (atlassian_router, atlassian_reset) =
         atlassian_provider_fixture::router(&config, database.clone()).await?;
     let (apple_router, apple_reset) =
@@ -1245,6 +1250,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let social_id_token_valid = social_id_token_valid_for_reset.clone();
                 let database = database_for_reset.clone();
                 let cloudflare_reset=cloudflare_reset.clone();
+                let cognito_reset=cognito_reset.clone();
                 let atlassian_reset=atlassian_reset.clone();
                 let apple_reset = apple_reset.clone();
                 let social_provider_reset = social_provider_reset.clone();
@@ -1253,6 +1259,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
                     cloudflare_reset.reset().await;
+                    cognito_reset.reset().await;
                     atlassian_reset.reset().await;
                     apple_reset.reset().await;
                     social_provider_reset.reset().await;
@@ -1864,6 +1871,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(cloudflare_router)
+        .merge(cognito_router)
         .merge(atlassian_router)
         .merge(apple_router)
         .merge(social_provider_router)

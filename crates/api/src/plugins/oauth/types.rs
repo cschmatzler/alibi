@@ -20,6 +20,8 @@ pub(super) struct SocialSignInRequest {
     pub request_sign_up: Option<bool>,
     #[serde(rename = "loginHint")]
     pub login_hint: Option<String>,
+    #[serde(rename = "additionalParams")]
+    pub additional_params: Option<std::collections::BTreeMap<String, String>>,
     #[serde(rename = "additionalData")]
     #[serde(
         default,
@@ -43,6 +45,8 @@ pub(super) struct LinkSocialRequest {
     pub id_token: Option<OAuthIdTokenRequest>,
     #[serde(rename = "requestSignUp")]
     pub request_sign_up: Option<bool>,
+    #[serde(rename = "additionalParams")]
+    pub additional_params: Option<std::collections::BTreeMap<String, String>>,
     #[serde(rename = "additionalData")]
     #[serde(
         default,
