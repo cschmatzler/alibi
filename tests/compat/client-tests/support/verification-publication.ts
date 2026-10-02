@@ -66,6 +66,15 @@ export function verificationPublicationPairs(
         || window.startedAt > requestStart! || window.finishedAt < requestEnd!
         || !Object.hasOwn(window, "verificationInput") || !exact(window.verificationInput, req.body)) return [];
       if (kind === "transfer" && (!window.sessionCookie || window.sessionCookie !== cookie(req.cookie))) return [];
+      // Adjacent identical requests can touch the same millisecond. Select the
+      // actual signed state before requiring one producer; time alone is not an ID.
+      if (kind === "oauth") {
+        try {
+          const payload: unknown = typeof snapshot.value === "string" ? JSON.parse(snapshot.value) : undefined;
+          if (!row(payload) || typeof payload.oauthState !== "string" || !window.issuedVerificationStateCookie
+            || !stateCookie(payload.oauthState, window.issuedVerificationStateCookie)) return [];
+        } catch { return []; }
+      }
       return [index];
     });
     if (matching.length !== 1 || typeof snapshot.identifier !== "string") return;

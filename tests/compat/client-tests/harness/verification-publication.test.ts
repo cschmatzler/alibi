@@ -318,10 +318,24 @@ for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} defa
   const a = await runOAuth(mode, email, authorizationCode), b = await runOAuth(mode, email, authorizationCode);
   const context: ComparisonContext = {leftBaseURL: a.baseURL, rightBaseURL: b.baseURL, leftStartedAt: a.startedAt, rightStartedAt: b.startedAt,
     leftFinishedAt: a.finishedAt, rightFinishedAt: b.finishedAt, sessionCookieSecret: secret, leftRequestWindows: a.windows, rightRequestWindows: b.windows};
+  // Identical request bodies can share a millisecond boundary. Enclose both
+  // actual requests in overlapping client windows to force that ambiguity;
+  // their signed states and PKCE must still identify the distinct producers.
+  const overlap = (run: typeof a) => {
+    const windows = run.windows.filter((_, index) => (run.root as Row).traces[index].path.endsWith("/sign-in/social"));
+    const startedAt = Math.min(...windows.map(window => window!.startedAt)), finishedAt = Math.max(...windows.map(window => window!.finishedAt));
+    return run.windows.map((window, index) => (run.root as Row).traces[index].path.endsWith("/sign-in/social") ? {...window!, startedAt, finishedAt} : window);
+  };
+  const overlapping = {...context, leftRequestWindows: overlap(a), rightRequestWindows: overlap(b)};
+  expect(compareValues(a.root, b.root, overlapping)).toEqual([]);
   expect(compareValues(a.root, b.root, context)).toEqual([]);
   const original = b.root as Row, owning = "observation.verificationPublications.0.set.ttl";
   const observerIndex = original.traces.findIndex((trace: Row) => trace.path === verificationPublicationObserver);
   const producerIndex = original.traces.findIndex((trace: Row) => trace.path.endsWith("/sign-in/social"));
+  const foreignProducerIndex = original.traces.findLastIndex((trace: Row) => trace.path.endsWith("/sign-in/social"));
+  const foreignState = {...overlapping, rightRequestWindows: overlapping.rightRequestWindows.map((window, index) => index === producerIndex
+    ? {...window!, issuedVerificationStateCookie: overlapping.rightRequestWindows[foreignProducerIndex]!.issuedVerificationStateCookie} : window)};
+  expect(compareValues(a.root, b.root, foreignState).some(difference => difference.path === owning)).toBe(true);
   for (const change of [
     (p: Row) => {p.set.ttl = Math.floor((Date.parse(p.snapshot.expiresAt) - Date.parse(p.before.executedAt)) / 1000) + 1; p.set.storageExpiresAt = new Date(Date.parse(p.set.storedAt) + p.set.ttl * 1000).toISOString();},
     (p: Row) => {p.set.ttl -= 2; p.set.storageExpiresAt = new Date(Date.parse(p.set.storedAt) + p.set.ttl * 1000).toISOString();},
