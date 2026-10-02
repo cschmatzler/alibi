@@ -894,6 +894,9 @@ async fn validate_provider_identity(
         user: provider_candidate(user, user_id),
         source: UserValidationSource::oauth(provider, profile, action),
     };
+    // Sign-in completion supplies an empty name before the shared policy.
+    // Explicit linking validates the original mapped optional name instead.
+    data.user.name = Some(user.name.as_deref().unwrap_or_default().to_owned());
     validate_user_info(&ctx.config, &mut data)
         .await
         .map_err(OAuthSignInError::from_identity_denial)

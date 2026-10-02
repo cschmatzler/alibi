@@ -148,6 +148,12 @@ impl UserInfoValidator for Application {
         if mode == "hold" {
             self.release.notified().await;
         }
+        if mode == "deny-empty-name" && data.user.name.as_deref() == Some("") {
+            return Ok(Some(UserValidationRejection {
+                error: "identity_denied".into(),
+                error_description: Some("Configured identity rejected".into()),
+            }));
+        }
         match mode.as_str() {
             "hold" | "deny" | "deny-default" | "empty-error" => {
                 return Ok(Some(UserValidationRejection {

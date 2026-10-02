@@ -37,7 +37,7 @@ export async function createUserValidationFixture(database: Database, shared: Be
               contentType: context.request.headers.get("content-type")} : null,
           }});
           if (policyMode === "hold") await new Promise<void>(resolve => {release = resolve;});
-          if (policyMode === "deny" || policyMode === "hold") return {error: "identity_denied", errorDescription: "Configured identity rejected"};
+          if (policyMode === "deny" || policyMode === "hold" || policyMode === "deny-empty-name" && data.user.name === "") return {error: "identity_denied", errorDescription: "Configured identity rejected"};
           if (mode === "deny-default") return {error: "identity_denied"};
           if (mode === "empty-error") return {error: "", errorDescription: "Unused description"};
           if (mode === "throw") throw new Error("Private application exception");
