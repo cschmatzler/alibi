@@ -25,7 +25,7 @@
           "kick existing account info uses real GET without readmitting a changed raw account subject",
           "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy"
         ],
-        "authorization": null,
+        "authorization": "session-gated routes reject requests without a session",
         "state": [
           "cognito existing account info reads original profile without applying new identity admission",
           "dropbox existing account info uses real POST without readmitting a changed raw account subject",
@@ -1009,7 +1009,9 @@
           "configured deletion after-delete retains exact delivery, consumption and callback-error ordering",
           "configured deletion consumes its real proof before the application hook so concurrent replay cannot delete twice"
         ],
-        "authorization": null,
+        "authorization": {
+          "knownGap": "No scenario uses a deletion token from another user's session."
+        },
         "state": [
           "configured delete-zero issues and delivers a real deletion proof, retains sessions and owns expiry and replay",
           "configured deletion wrong-owner retains exact delivery, consumption and callback-error ordering",
@@ -1032,7 +1034,9 @@
           "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
         ],
         "rejection": "device approve flow returns a bearer token",
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "device approve flow returns a bearer token",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
@@ -1049,9 +1053,15 @@
       "implemented": true,
       "evidence": {
         "success": "error page renders valid error code",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "rejection": {
+          "notApplicable": "Renders the error page for any input; there is nothing to reject."
+        },
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
+        "state": {
+          "notApplicable": "Read-only page."
+        }
       }
     },
     {
@@ -1687,8 +1697,12 @@
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
         ],
-        "rejection": null,
-        "authorization": null,
+        "rejection": {
+          "notApplicable": "Takes no input and returns [] without session cookies; there is nothing to reject."
+        },
+        "authorization": {
+          "notApplicable": "Lists only sessions in the caller's own signed cookies and returns [] without them."
+        },
         "state": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
@@ -1733,7 +1747,9 @@
         "rejection": [
           "CAPTCHA captcha-turnstile-custom path and early rejection ordering preserve unchanged physical principals"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "client IP full IPv6 prefix separates interface addresses selects real HTTP rate buckets",
           "client IP normalized IPv6 subnet selects real HTTP rate buckets",
@@ -1801,8 +1817,12 @@
           "OpenAPI session-fields-plugins documents real custom session columns with source-specific config precedence",
           "additional field documentation preserves logical model policies and callable defaults without executing adapter callbacks or revealing physical columns"
         ],
-        "rejection": null,
-        "authorization": null,
+        "rejection": {
+          "notApplicable": "Takes no input; there is nothing to reject."
+        },
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "additional field documentation preserves logical model policies and callable defaults without executing adapter callbacks or revealing physical columns"
         ]
@@ -1814,9 +1834,11 @@
       "implemented": true,
       "evidence": {
         "success": "organization member queries reflect non-public add-member and active member endpoints",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "rejection": "session-gated routes reject requests without a session",
+        "authorization": "session-gated routes reject requests without a session",
+        "state": {
+          "notApplicable": "Read-only."
+        }
       }
     },
     {
@@ -1828,8 +1850,8 @@
           "organization member queries reflect non-public add-member and active member endpoints",
           "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ],
-        "rejection": null,
-        "authorization": null,
+        "rejection": "session-gated routes reject requests without a session",
+        "authorization": "session-gated routes reject requests without a session",
         "state": "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
       }
     },
@@ -1927,8 +1949,8 @@
           "organization physical membership pages preserve newer older newer rows and visible organization limits",
           "organization trusted duplicate memberships keep first-row authority and exact-ID cleanup with foreign peers"
         ],
-        "rejection": null,
-        "authorization": null,
+        "rejection": "session-gated routes reject requests without a session",
+        "authorization": "session-gated routes reject requests without a session",
         "state": [
           "compact cache authenticates the signed token and complete payload while retaining revoked ordinary authority only until explicit bypass",
           "organization concurrent normal admissions pass real prechecks and retain both physical members",
@@ -1943,9 +1965,11 @@
       "implemented": true,
       "evidence": {
         "success": "organization invitation happy path covers list and accept flows",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "rejection": "session-gated routes reject requests without a session",
+        "authorization": "session-gated routes reject requests without a session",
+        "state": {
+          "notApplicable": "Read-only."
+        }
       }
     },
     {
@@ -2054,8 +2078,12 @@
           "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
           "client IP client-ip-trusted passkey login applies initialized policy after a genuine signature"
         ],
-        "rejection": null,
-        "authorization": null,
+        "rejection": {
+          "notApplicable": "Takes no input and issues options to any caller; there is nothing to reject."
+        },
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
           "client IP client-ip-disabled passkey login applies initialized policy after a genuine signature",
@@ -2157,8 +2185,12 @@
           "OpenAPI disabling the reference preserves the public schema endpoint",
           "OpenAPI openapi-configured generates the complete configured document and reference frame"
         ],
-        "authorization": null,
-        "state": null
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
+        "state": {
+          "notApplicable": "Read-only page."
+        }
       }
     },
     {
@@ -2168,8 +2200,12 @@
       "evidence": {
         "success": "reset password callback redirects with token and preserves callbackURL query params",
         "rejection": "reset password callback redirects invalid token to error callback",
-        "authorization": null,
-        "state": null
+        "authorization": {
+          "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
+        },
+        "state": {
+          "notApplicable": "Validates the token and redirects; the token is consumed by POST /reset-password."
+        }
       }
     },
     {
@@ -2868,7 +2904,9 @@
         "success": "api-key SDK uses the standalone 1.7 client plugin",
         "rejection": "api-key CRUD isolates configurations and preserves all-config listing",
         "authorization": "organization delegated roles enforce grant subsets and revoke organization API-key authority",
-        "state": null
+        "state": {
+          "knownGap": "No scenario asserts the deleted key row is gone from storage."
+        }
       }
     },
     {
@@ -2900,9 +2938,15 @@
       "implemented": true,
       "evidence": {
         "success": "social callback POST redirects to GET and preserves TS param precedence",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "rejection": {
+          "knownGap": "Form-post OAuth callbacks are not exercised."
+        },
+        "authorization": {
+          "knownGap": "Form-post OAuth callbacks are not exercised."
+        },
+        "state": {
+          "knownGap": "Form-post OAuth callbacks are not exercised."
+        }
       }
     },
     {
@@ -3065,7 +3109,9 @@
           "device endpoint schemas preserve OAuth validation and media type errors",
           "device configuration controls client validation lifetime polling and verification URL parameters"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
@@ -3117,7 +3163,9 @@
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
           "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
+        },
         "state": [
           "device approve flow returns a bearer token",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
@@ -3145,7 +3193,9 @@
       "evidence": {
         "success": "email OTP check preserves the code until email verification consumes it",
         "rejection": "email OTP check preserves the code until email verification consumes it",
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
+        },
         "state": "email OTP check preserves the code until email verification consumes it"
       }
     },
@@ -3167,7 +3217,9 @@
       "evidence": {
         "success": "email OTP password reset and deprecated request alias update credentials and verification",
         "rejection": "email OTP validates all body fields before issuing or consuming authentication state",
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": "email OTP password reset and deprecated request alias update credentials and verification"
       }
     },
@@ -3184,7 +3236,9 @@
           "email OTP password reset and deprecated request alias update credentials and verification",
           "compromised email-otp reset consumes actual delivered proof before checking and retains foreign credentials"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
+        },
         "state": [
           "email OTP password reset and deprecated request alias update credentials and verification",
           "compromised email-otp reset consumes actual delivered proof before checking and retains foreign credentials"
@@ -3209,7 +3263,9 @@
           "verification global mixed-default retains literal default OTP magic and transfer TTL diagnostics with real publication intervals"
         ],
         "rejection": "email OTP validates all body fields before issuing or consuming authentication state",
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "email OTP signs up a verified user and consumes its scoped code once",
           "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
@@ -3243,7 +3299,9 @@
           "verification global hashed real OTP admission retains mailbox operation retry counter and replay isolation",
           "verification global mixed real OTP admission retains mailbox operation retry counter and replay isolation"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
+        },
         "state": [
           "anonymous email-otp-verification verified login transfers only the actual anonymous owner and preserves rejected proof state",
           "email OTP check preserves the code until email verification consumes it",
@@ -3261,7 +3319,9 @@
       "evidence": {
         "success": "email OTP password reset and deprecated request alias update credentials and verification",
         "rejection": "email OTP validates all body fields before issuing or consuming authentication state",
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": "email OTP password reset and deprecated request alias update credentials and verification"
       }
     },
@@ -3302,8 +3362,10 @@
       "implemented": true,
       "evidence": {
         "success": "api-key session accepts configured headers for GET and POST",
-        "rejection": null,
-        "authorization": null,
+        "rejection": "POST get-session is rejected unless deferred session refresh is enabled",
+        "authorization": {
+          "notApplicable": "Returns null without a session rather than rejecting; there is no authorization decision."
+        },
         "state": "deferred session GET preserves rows while POST performs refresh and expired cleanup"
       }
     },
@@ -3314,7 +3376,9 @@
       "evidence": {
         "success": "username availability follows normalized persisted usernames",
         "rejection": "username availability rejects invalid names before lookup",
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": "username availability follows normalized persisted usernames"
       }
     },
@@ -3492,7 +3556,9 @@
           "verification global hashed real one-time transfer consumes only the owned original session and rejects expiry revocation and replay",
           "verification global mixed real one-time transfer consumes only the owned original session and rejects expiry revocation and replay"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
+        },
         "state": [
           "one-time tokens transfer the original session once without creating another session",
           "verification global cache real one-time transfer consumes only the owned original session and rejects expiry revocation and replay",
@@ -3619,8 +3685,8 @@
       "implemented": true,
       "evidence": {
         "success": "organization invitation validation, reject, and cancel flows match TS",
-        "rejection": null,
-        "authorization": null,
+        "rejection": "session-gated routes reject requests without a session",
+        "authorization": "session-gated routes reject requests without a session",
         "state": "organization server invitation listing scopes email and applies configured page limits before status filtering"
       }
     },
@@ -3631,8 +3697,10 @@
       "evidence": {
         "success": "organization core lifecycle matches TS",
         "rejection": "organization core lifecycle matches TS",
-        "authorization": null,
-        "state": null
+        "authorization": "session-gated routes reject requests without a session",
+        "state": {
+          "notApplicable": "Read-only."
+        }
       }
     },
     {
@@ -3845,8 +3913,8 @@
       "implemented": true,
       "evidence": {
         "success": "organization membership mutations cover permissions, role updates, removal, and leave",
-        "rejection": null,
-        "authorization": null,
+        "rejection": "session-gated routes reject requests without a session",
+        "authorization": "session-gated routes reject requests without a session",
         "state": "organization multi-team invitations reject another user and prune deleted-team pending links"
       }
     },
@@ -3856,9 +3924,11 @@
       "implemented": true,
       "evidence": {
         "success": "organization invitation validation, reject, and cancel flows match TS",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "rejection": "session-gated routes reject requests without a session",
+        "authorization": "session-gated routes reject requests without a session",
+        "state": {
+          "knownGap": "No scenario asserts the stored invitation status after rejection."
+        }
       }
     },
     {
@@ -4428,7 +4498,9 @@
       "evidence": {
         "success": "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
         "rejection": "phone endpoint schemas reject every malformed field before any state transition",
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": "phone password reset consumes rejected proofs creates credentials and revokes configured sessions"
       }
     },
@@ -4446,7 +4518,9 @@
           "phone endpoint schemas reject every malformed field before any state transition",
           "compromised phone-number reset consumes actual delivered proof before checking and retains foreign credentials"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
+        },
         "state": [
           "phone password reset consumes rejected proofs creates credentials and revokes configured sessions",
           "compromised phone-number reset consumes actual delivered proof before checking and retains foreign credentials"
@@ -4467,7 +4541,9 @@
           "phone endpoint schemas reject every malformed field before any state transition",
           "external phone OTP verification enforces provider binding and replaces local expiry policy"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "phone verification signs up a phone owner and preserves identity across new sessions",
           "compact ordinary phone verification consumes genuine delivery proof before updating the revoked cached owner"
@@ -4683,7 +4759,9 @@
           "CAPTCHA captcha-turnstile-disabled path and early rejection ordering preserve unchanged physical principals",
           "CAPTCHA captcha-turnstile-custom path and early rejection ordering preserve unchanged physical principals"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
           "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
@@ -4714,7 +4792,9 @@
           "password reset malformed burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
           "password reset provider-error burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
+        },
         "state": [
           "request password reset then reset password updates credentials",
           "password reset compromised burns its genuine proof before hash rejection and preserves credentials sessions and callback isolation",
@@ -4729,9 +4809,9 @@
       "implemented": true,
       "evidence": {
         "success": "revoke other sessions keeps the caller alive",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "rejection": "session-gated routes reject requests without a session",
+        "authorization": "session-gated routes reject requests without a session",
+        "state": "revoke other sessions keeps the caller alive"
       }
     },
     {
@@ -4745,7 +4825,7 @@
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
         ],
         "rejection": "session nested middleware clears expired cookies and rejects invalid revocation bodies",
-        "authorization": null,
+        "authorization": "session-gated routes reject requests without a session",
         "state": [
           "session refresh suppression preserves expiry and foreign revocation cannot extend a session",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
@@ -4759,9 +4839,9 @@
       "implemented": true,
       "evidence": {
         "success": "revoke sessions logs out all active clients",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "rejection": "session-gated routes reject requests without a session",
+        "authorization": "session-gated routes reject requests without a session",
+        "state": "revoke sessions logs out all active clients"
       }
     },
     {
@@ -4779,7 +4859,9 @@
           "send verification email rejects already verified user",
           "configured direct verification delivery propagates the application error while notification delivery retains its pending stage"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "email OTP override inherits automatic verification sign-in and requires current mailbox proof",
           "client IP client-ip-trusted verified email auto-signin applies initialized policy",
@@ -5219,7 +5301,9 @@
           "magic links reject malformed bodies callbacks and missing query tokens before consumption",
           "JSON request grammar rejects malformed numbers structures and escapes before delivery"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
           "magic links deliver metadata and authenticate a new user with one-time consumption",
@@ -6310,8 +6394,12 @@
           "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout"
         ],
-        "rejection": null,
-        "authorization": null,
+        "rejection": {
+          "notApplicable": "Succeeds without a session and takes no input; there is nothing to reject."
+        },
+        "authorization": {
+          "notApplicable": "Succeeds without a session; there is no authorization decision."
+        },
         "state": [
           "passkey registration authentication ownership and deletion round trip",
           "bearer bearer-default preserves signed issuance header precedence and physical session lifecycle",
@@ -6682,7 +6770,9 @@
           "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
           "SIWE media validation preserves signed nonce and verifier state before successful JSON retry"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",
           "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
@@ -6715,7 +6805,9 @@
           "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
           "SIWE media validation preserves signed nonce and verifier state before successful JSON retry"
         ],
-        "authorization": null,
+        "authorization": {
+          "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
+        },
         "state": [
           "SIWE official client binds real Unicode signatures to nonce wallet account and rotated session state",
           "SIWE nonce aliases reject wallet body fields and strict verification prevents user ownership injection",
@@ -6948,7 +7040,7 @@
           "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor"
         ],
-        "authorization": null,
+        "authorization": "session-gated routes reject requests without a session",
         "state": [
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
@@ -6982,7 +7074,7 @@
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations"
         ],
-        "authorization": null,
+        "authorization": "session-gated routes reject requests without a session",
         "state": [
           "configured TOTP URI fields and real codes preserve enrollment and sign-in ownership",
           "disabled TOTP rejects generator and verification before touching owner factor state",
@@ -7502,7 +7594,9 @@
         "success": "verify password succeeds with the current credential password",
         "rejection": "verify password requires a session",
         "authorization": "verify password requires a session",
-        "state": null
+        "state": {
+          "notApplicable": "Read-only credential check."
+        }
       }
     }
   ]

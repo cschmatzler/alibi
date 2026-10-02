@@ -4,10 +4,28 @@ import { z } from "zod";
 
 import type { TraceEntry } from "./trace";
 
-/** One category can require several independent configuration or lifecycle scenarios. */
-const requirementSchema = z
-  .union([z.string().min(1), z.array(z.string().min(1)).min(1)])
-  .nullable();
+/**
+ * Each category names the scenarios that must produce its evidence, or states
+ * why it has none: `notApplicable` when the route cannot exhibit it (a public
+ * route has no authorization decision), `knownGap` when evidence is missing.
+ * There is no silent empty category.
+ */
+const requirementSchema = z.union([
+  z.string().min(1),
+  z.array(z.string().min(1)).min(1),
+  z.object({ notApplicable: z.string().min(1) }).strict(),
+  z.object({ knownGap: z.string().min(1) }).strict(),
+]);
+
+export type Requirement = z.infer<typeof requirementSchema>;
+
+/** Scenario names a requirement demands; explained absences demand none. */
+export function requiredScenarios(requirement: Requirement): string[] {
+  if (typeof requirement === "string") {
+    return [requirement];
+  }
+  return Array.isArray(requirement) ? requirement : [];
+}
 
 /** Validated, committed route and scenario requirements. */
 export const inventorySchema = z

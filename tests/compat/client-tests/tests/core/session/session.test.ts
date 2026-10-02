@@ -37,32 +37,47 @@ compatScenario("list sessions and revoke a session through the SDK", async (ctx)
   };
 });
 
-compatScenario("revoke sessions logs out all active clients", async (ctx) => {
-  const first = ctx.actor("first");
-  const second = ctx.actor("second");
-  const email = ctx.uniqueEmail("core-revoke-all");
+compatScenario(
+  "revoke sessions logs out all active clients",
+  async (ctx) => {
+    const first = ctx.actor("first");
+    const second = ctx.actor("second");
+    const email = ctx.uniqueEmail("core-revoke-all");
 
-  const signup = await first.client.signUp.email({
-    email,
-    password: "password123",
-    name: "Revoke All User",
-  });
-  const secondSignin = await second.client.signIn.email({
-    email,
-    password: "password123",
-  });
-  const revoke = await first.client.revokeSessions();
-  const firstAfter = await first.client.getSession();
-  const secondAfter = await second.client.getSession();
+    const signup = await first.client.signUp.email({
+      email,
+      password: "password123",
+      name: "Revoke All User",
+    });
+    const secondSignin = await second.client.signIn.email({
+      email,
+      password: "password123",
+    });
+    expect(signup.error).toBeNull();
+    expect(secondSignin.error).toBeNull();
 
-  return {
-    signup: ctx.snapshot(signup),
-    secondSignin: ctx.snapshot(secondSignin),
-    revoke: ctx.snapshot(revoke),
-    firstAfter: ctx.snapshot(firstAfter),
-    secondAfter: ctx.snapshot(secondAfter),
-  };
-});
+    const revoke = await first.client.revokeSessions();
+    expect(revoke.error).toBeNull();
+
+    const firstAfter = await first.client.getSession();
+    const secondAfter = await second.client.getSession();
+    expect(firstAfter.data).toBeNull();
+    expect(secondAfter.data).toBeNull();
+
+    const persisted = await ctx.readUserState({ userId: signup.data!.user.id });
+    expect(persisted).toMatchObject({ sessions: [] });
+
+    return {
+      signup: ctx.snapshot(signup),
+      secondSignin: ctx.snapshot(secondSignin),
+      revoke: ctx.snapshot(revoke),
+      firstAfter: ctx.snapshot(firstAfter),
+      secondAfter: ctx.snapshot(secondAfter),
+      persisted,
+    };
+  },
+  ["POST /revoke-sessions"],
+);
 
 compatScenario(
   "change password with revokeOtherSessions invalidates the other client",
@@ -98,32 +113,51 @@ compatScenario(
   },
 );
 
-compatScenario("revoke other sessions keeps the caller alive", async (ctx) => {
-  const primary = ctx.actor("primary");
-  const secondary = ctx.actor("secondary");
-  const email = ctx.uniqueEmail("core-other-sessions");
+compatScenario(
+  "revoke other sessions keeps the caller alive",
+  async (ctx) => {
+    const primary = ctx.actor("primary");
+    const secondary = ctx.actor("secondary");
+    const email = ctx.uniqueEmail("core-other-sessions");
 
-  const signup = await primary.client.signUp.email({
-    email,
-    password: "password123",
-    name: "Revoke Other Sessions User",
-  });
-  const secondarySignin = await secondary.client.signIn.email({
-    email,
-    password: "password123",
-  });
-  const revoke = await primary.client.revokeOtherSessions();
-  const primaryAfter = await primary.client.getSession();
-  const secondaryAfter = await secondary.client.getSession();
+    const signup = await primary.client.signUp.email({
+      email,
+      password: "password123",
+      name: "Revoke Other Sessions User",
+    });
+    const secondarySignin = await secondary.client.signIn.email({
+      email,
+      password: "password123",
+    });
+    expect(signup.error).toBeNull();
+    expect(secondarySignin.error).toBeNull();
 
-  return {
-    signup: ctx.snapshot(signup),
-    secondarySignin: ctx.snapshot(secondarySignin),
-    revoke: ctx.snapshot(revoke),
-    primaryAfter: ctx.snapshot(primaryAfter),
-    secondaryAfter: ctx.snapshot(secondaryAfter),
-  };
-});
+    const revoke = await primary.client.revokeOtherSessions();
+    expect(revoke.error).toBeNull();
+
+    const primaryAfter = await primary.client.getSession();
+    const secondaryAfter = await secondary.client.getSession();
+    expect(primaryAfter.data).not.toBeNull();
+    expect(secondaryAfter.data).toBeNull();
+
+    const persisted = (await ctx.readUserState({ userId: signup.data!.user.id })) as {
+      sessions: { id: string }[];
+    };
+    expect(persisted.sessions.map((session) => session.id)).toEqual([
+      primaryAfter.data!.session.id,
+    ]);
+
+    return {
+      signup: ctx.snapshot(signup),
+      secondarySignin: ctx.snapshot(secondarySignin),
+      revoke: ctx.snapshot(revoke),
+      primaryAfter: ctx.snapshot(primaryAfter),
+      secondaryAfter: ctx.snapshot(secondaryAfter),
+      persisted,
+    };
+  },
+  ["POST /revoke-other-sessions"],
+);
 
 const listModes = ["reject", "success", "coordinated"] as const;
 

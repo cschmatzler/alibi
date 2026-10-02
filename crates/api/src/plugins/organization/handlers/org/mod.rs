@@ -808,7 +808,7 @@ pub async fn handle_list_organizations(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let (user, _session) = ctx.require_cached_session(req).await?;
+    let (user, _session) = super::extension_common::session(req, ctx).await?;
     let organizations = list_organizations_core(&user, ctx).await?;
     Ok(AuthResponse::json(200, &organizations)?)
 }
@@ -903,7 +903,7 @@ pub async fn handle_check_slug(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    drop(require_session(req, ctx).await?);
+    drop(super::extension_common::session(req, ctx).await?);
     let body: CheckSlugRequest = match better_auth_core::validate_request_body(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
@@ -990,7 +990,7 @@ pub async fn handle_leave_organization(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
+    let (user, session) = super::extension_common::session(req, ctx).await?;
     let body: LeaveOrganizationRequest = match better_auth_core::validate_request_body(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),

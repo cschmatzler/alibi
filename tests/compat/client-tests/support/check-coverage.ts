@@ -2,7 +2,10 @@ import { readdir } from "node:fs/promises";
 
 import { z } from "zod";
 
-import { inventorySchema } from "./coverage";
+import { inventorySchema, type Requirement, requiredScenarios } from "./coverage";
+
+const isGap = (requirement: Requirement): requirement is { knownGap: string } =>
+  typeof requirement === "object" && "knownGap" in requirement;
 
 const inventoryURL = new URL("../../capabilities.json", import.meta.url);
 const inventory = inventorySchema.parse(await Bun.file(inventoryURL).json());
@@ -90,9 +93,7 @@ for (const entry of inventory.capabilities) {
     missing.push(`Committed capability route disappeared: ${entry.route}`);
   }
   for (const kind of kinds) {
-    const requirement = entry.evidence[kind];
-    const required = typeof requirement === "string" ? [requirement] : (requirement ?? []);
-    for (const scenario of required) {
+    for (const scenario of requiredScenarios(entry.evidence[kind])) {
       if (!evidence.get(entry.route)?.get(kind)?.has(scenario)) {
         missing.push(`${entry.route}: missing ${kind} (${scenario})`);
       }
@@ -111,12 +112,20 @@ if (process.env.BETTER_AUTH_UPDATE_CAPABILITIES === "1") {
     upstream: upstream.has(route),
     implemented: runtime.has(route),
     evidence: Object.fromEntries(
-      kinds.map((kind) => [
-        kind,
-        previous.get(route)?.evidence[kind] ??
-          [...(evidence.get(route)?.get(kind) ?? [])].sort().at(0) ??
-          null,
-      ]),
+      kinds.map((kind) => {
+        const committed = previous.get(route)?.evidence[kind];
+        const observed = [...(evidence.get(route)?.get(kind) ?? [])].sort().at(0);
+        // Observed evidence replaces a recorded gap; every other requirement is kept.
+        if (observed && (committed === undefined || isGap(committed))) {
+          return [kind, observed];
+        }
+        return [
+          kind,
+          committed ?? {
+            knownGap: "No scenario produced this evidence; review and explain or cover it.",
+          },
+        ];
+      }),
     ),
   }));
   await Bun.write(
@@ -144,7 +153,16 @@ if (process.env.BETTER_AUTH_UPDATE_CAPABILITIES === "1") {
     throw new Error(`Capability evidence disappeared:\n${missing.join("\n")}`);
   }
 
-  console.log(
-    `Capability inventory: ${inventory.capabilities.length} routes; ${inventory.capabilities.filter((entry) => !entry.implemented).length} unimplemented; ${inventory.capabilities.filter((entry) => entry.implemented && !entry.evidence.success).length} implemented without successful scenario evidence.`,
+  const gaps = inventory.capabilities.flatMap((entry) =>
+    kinds.flatMap((kind) => {
+      const requirement = entry.evidence[kind];
+      return isGap(requirement) ? [`  ${entry.route} ${kind}: ${requirement.knownGap}`] : [];
+    }),
   );
+  console.log(
+    `Capability inventory: ${inventory.capabilities.length} routes; ${inventory.capabilities.filter((entry) => !entry.implemented).length} unimplemented; ${gaps.length} known evidence gaps.`,
+  );
+  if (gaps.length) {
+    console.log(gaps.join("\n"));
+  }
 }

@@ -355,7 +355,13 @@ pub(super) async fn handle_account_info(
             .query
             .insert("disableCookieCache".into(), "true".into()),
     );
-    let (_, session) = ctx.require_cached_session(&session_request).await?;
+    let (_, session) = match ctx.require_cached_session(&session_request).await {
+        Ok(session) => session,
+        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+            return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
+        }
+        Err(error) => return Err(error),
+    };
     let mut account = selection.resolve(req, &session.user_id, ctx).await?;
     let provider = config
         .providers

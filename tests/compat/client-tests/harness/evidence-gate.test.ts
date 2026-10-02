@@ -39,8 +39,8 @@ test("capability gate requires every committed scenario and regeneration preserv
           evidence: {
             success: ["session refresh", "API key principal"],
             rejection: "expired session",
-            authorization: null,
-            state: null,
+            authorization: { notApplicable: "public route" },
+            state: { knownGap: "not yet observed" },
           },
         },
       ],
@@ -98,6 +98,27 @@ test("capability gate requires every committed scenario and regeneration preserv
     );
     expect(updated.capabilities[0].evidence.rejection).toBe("expired session");
     expect(updated.capabilities[0].evidence.state).toBe("persisted refresh");
+    expect(updated.capabilities[0].evidence.authorization).toEqual({
+      notApplicable: "public route",
+    });
+
+    // A category must name evidence or explain its absence; it cannot be empty.
+    const silent = {
+      ...updated,
+      capabilities: [
+        {
+          ...updated.capabilities[0],
+          evidence: { ...updated.capabilities[0].evidence, state: null },
+        },
+      ],
+    };
+    await Bun.write(inventoryPath, JSON.stringify(silent));
+    for (const update of [false, true]) {
+      const result = await run(update);
+      expect(result.code).not.toBe(0);
+      expect(result.output).toContain('"state"');
+      expect(await Bun.file(inventoryPath).json()).toEqual(silent);
+    }
 
     // A misspelled or separate requirement field must never be silently stripped.
     const unknownRequirements = {

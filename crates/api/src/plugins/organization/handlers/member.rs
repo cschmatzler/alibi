@@ -526,7 +526,7 @@ pub async fn handle_get_active_member(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
+    let (user, session) = super::extension_common::session(req, ctx).await?;
     let response = get_active_member_core(&user, &session, ctx).await?;
     Ok(AuthResponse::json(200, &response)?)
 }
@@ -558,7 +558,7 @@ pub async fn handle_get_active_member_role(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let (user, session) = require_session(req, ctx).await?;
+    let (user, session) = super::extension_common::session(req, ctx).await?;
     let query = parse_query::<GetActiveMemberRoleQuery>(&req.query);
     let response = get_active_member_role_core(&query, &user, &session, ctx).await?;
     Ok(AuthResponse::json(200, &response)?)
