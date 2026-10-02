@@ -211,6 +211,8 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     enabled: name != "pwned-disabled",
                     paths: match name {
                         "pwned-empty" => Some(vec![]),
+                        "pwned-virtual" => Some(vec!["virtual:".into()]),
+                        "pwned-wildcard" => Some(vec!["*".into()]),
                         "pwned-custom" => {
                             Some(vec!["/set-password".into(), "/sign-in/email".into()])
                         }

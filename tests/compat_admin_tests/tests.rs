@@ -329,9 +329,11 @@ async fn test_admin_set_user_password_user_not_found() {
         }),
         &admin_token,
     );
-    let (status, _json) = send_request(&auth, req).await;
+    let (status, json) = send_request(&auth, req).await;
 
-    assert_eq!(status, 200, "missing user should no-op with success");
+    assert_eq!(status, 404, "missing user should get 404: {json}");
+    assert_eq!(json["code"], "USER_NOT_FOUND");
+    assert_eq!(json["message"], "User not found");
 }
 
 #[tokio::test]

@@ -80,9 +80,9 @@ compatScenario("published compromised password helper retains exact first-match 
     ["JSON-object",'{"matching":"ignored"}',null,200,"application/json"],
     ["JSON-number","1e500",null],["JSON-null","null",null],["binary",`${s}:1`,null,200,"application/octet-stream"],
     ["JSON-parameters",`${s}:1`,true,200,"application/json;charset=utf-8"],
-    ["JSON-empty-parameters",`${s}:1`,null,200,"application/json;"],
+    ["JSON-empty-parameters",`${s}:1`,true,200,"application/json;"],
     ["XML",`${s}:1`,true,200,"application/xml"],
-    ["XML-parameters",`${s}:1`,null,200,"application/xml;charset=utf-8"],
+    ["XML-parameters",`${s}:1`,true,200,"application/xml;charset=utf-8"],
     ["text-case",`${s}:1`,null,200,"Text/plain"],
     ["provider-status",'{"service":"unavailable"}',null,503,"application/json"],
   ];
@@ -162,13 +162,14 @@ compatScenario("compromised admin create preserves actual pre-hash user creation
   const other=await foreign(ctx);await range(ctx);const owner=ctx.actor("admin","pwned-default"),email=ctx.uniqueEmail("pwned-admin"),signup=await owner.client.signUp.email({email,name:"Administrator",password:"admin-password123"});expect(signup.error).toBeNull();
   const promoted=await ctx.promoteAdmin({email}),configured=await range(ctx,`${suffix(password)}:7`),before=await state(ctx),targetEmail=ctx.uniqueEmail("admin-created-pwned");
   const forbidden=await ctx.actor("outsider","pwned-default").client.admin.createUser({email:targetEmail,name:"Target",password});expect(forbidden.error?.status).toBe(401);const guarded=await state(ctx);expect(rows(guarded)).toEqual(rows(before));expect(guarded.events).toEqual([]);expect(guarded.receipts).toEqual([]);
+  const missing=await owner.client.admin.setUserPassword({userId:"missing-target-135",newPassword:password});expect(missing.error).toMatchObject({status:404,code:"USER_NOT_FOUND",message:"User not found"});const missingState=await state(ctx);expect(rows(missingState)).toEqual(rows(before));expect(missingState.events).toEqual([]);expect(missingState.receipts).toEqual([]);
   const rejected=await owner.client.admin.createUser({email:targetEmail,name:"Created Before Check",password});expect(rejected.error?.code).toBe("PASSWORD_COMPROMISED");const after=await state(ctx);
   expect(after.users).toHaveLength(before.users.length+1);const created=after.users.find(row=>row.email===targetEmail)!;expect(created).toMatchObject({name:"Created Before Check",role:"user"});
   expect(after.accounts).toEqual(before.accounts);expect(after.sessions).toEqual(before.sessions);expect(after.verifications).toEqual(before.verifications);expect(stages(after)).toEqual(["user-create","range"]);receipt(after,password);
   const reset=await range(ctx,`${suffix(password)}:7`),setRejected=await owner.client.admin.setUserPassword({userId:String(created.id),newPassword:password});expect(setRejected.error?.code).toBe("PASSWORD_COMPROMISED");const denied=await state(ctx);expect(rows(denied)).toEqual(rows(after));expect(stages(denied)).toEqual(["range"]);receipt(denied,password);
   const clean=await range(ctx,`${suffix(password)}:0`),setAccepted=await owner.client.admin.setUserPassword({userId:String(created.id),newPassword:password});expect(setAccepted.error).toBeNull();const admitted=await state(ctx);
   expect(stages(admitted)).toEqual(["range","hash-enter","hash-result"]);receipt(admitted,password);const account=admitted.accounts.find(row=>row.userId===created.id)!;expect(account.accountId).toBe(created.id);expect(account.providerId).toBe("credential");expect(admitted.events[2]!.hash).toBe(account.password);expect(await verifyPassword({hash:String(account.password),password})).toBe(true);
-  await unchanged(ctx,other);return {foreign:other,signup,promoted,configured,before:observed(before),forbidden,guarded:observed(guarded),rejected,after:observed(after),reset,setRejected,denied:observed(denied),clean,setAccepted,admitted:observed(admitted)};
+  await unchanged(ctx,other);return {foreign:other,signup,promoted,configured,before:observed(before),forbidden,guarded:observed(guarded),missing,missingState:observed(missingState),rejected,after:observed(after),reset,setRejected,denied:observed(denied),clean,setAccepted,admitted:observed(admitted)};
 },["POST /admin/create-user","POST /admin/set-user-password"]);
 
 compatScenario("compromised server-only set-password uses actual virtual handler identity without a public URL",async ctx=>{
