@@ -67,7 +67,7 @@ export async function createCompromisedPasswordFixture(database: Database, share
         return Response.json({users:await read("user"),accounts:await read("account"),sessions:await read("session"),
           verifications:await read("verification"),events,receipts});
       }
-      if(url.pathname!=="/__test/compromised-password"||request.method!=="POST")return;
+      if(!["/__test/compromised-password","/__test/server-api/compromised-password"].includes(url.pathname)||request.method!=="POST")return;
       const body=await request.json() as {operation:string;profile?:string;body?:string;status?:number;contentType?:string;
         password?:string;accountId?:string;newPassword?:string;hashFailure?:boolean};
       if(body.operation==="range") {

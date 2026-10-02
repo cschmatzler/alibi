@@ -15,7 +15,7 @@ function sha1(value:string) {return createHash("sha1").update(value,"utf8").dige
 function suffix(value:string) {return sha1(value).slice(5);}
 async function control(ctx:ScenarioContext,body:Row,actor?:string) {
   if(!actor)return ctx.rawRequest({path:"/__test/compromised-password",method:"POST",json:body});
-  const response=await ctx.actor(actor,body.profile as FixtureProfile).fetch(ctx.baseURL+"/__test/compromised-password",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
+  const response=await ctx.actor(actor,body.profile as FixtureProfile).fetch(ctx.baseURL+(body.operation==="set"?"/__test/server-api/compromised-password":"/__test/compromised-password"),{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify(body)});
   return {status:response.status,location:response.headers.get("location"),body:await response.json() as unknown};
 }
 async function range(ctx:ScenarioContext,body="",status=200,contentType="text/plain") {

@@ -248,8 +248,12 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 "events":*app.events.lock().unwrap(),"receipts":*app.receipts.lock().unwrap()}))
         }.await;match result {Ok(value)=>Json(value).into_response(),Err(error)=>error.into_response()}
     }}));
-    router=router.route("/__test/compromised-password",post(move |headers:HeaderMap,Json(body):Json<Value>| {
-        let profiles=profiles.clone();let app=app.clone();let database=database.clone();let client=client.clone();async move {
+    let control = post(move |headers: HeaderMap, Json(body): Json<Value>| {
+        let profiles = profiles.clone();
+        let app = app.clone();
+        let database = database.clone();
+        let client = client.clone();
+        async move {
             let result:AuthResult<Value>=async {
                 let operation=body["operation"].as_str().unwrap_or_default();
                 if operation=="range" {
@@ -273,8 +277,14 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 }
                 Err(AuthError::bad_request("unknown fixture operation"))
             }.await;
-            match result {Ok(value)=>Json(value).into_response(),Err(error)=>error.into_response()}
+            match result {
+                Ok(value) => Json(value).into_response(),
+                Err(error) => error.into_response(),
+            }
         }
-    }));
+    });
+    router = router
+        .route("/__test/compromised-password", control.clone())
+        .route("/__test/server-api/compromised-password", control);
     Ok(router)
 }
