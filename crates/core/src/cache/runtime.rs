@@ -578,11 +578,11 @@ pub async fn authenticated<S: AuthSchema>(
         let nested = call.session_read_context();
         crate::endpoint::with_endpoint_call_context(
             nested.clone(),
-            authenticated_inner(ctx, &nested, false),
+            Box::pin(authenticated_inner(ctx, &nested, false)),
         )
         .await
     } else {
-        authenticated_inner(ctx, request, direct).await
+        Box::pin(authenticated_inner(ctx, request, direct)).await
     }
 }
 

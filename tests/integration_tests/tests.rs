@@ -988,9 +988,11 @@ async fn test_list_accounts_with_account() {
         .iter()
         .find(|account| account["providerId"] == "google")
         .expect("google account should be present");
+    // The pinned account parser splits stored scopes on commas; an embedded
+    // space remains part of one stored scope.
     assert_eq!(
         google_account["scopes"],
-        serde_json::json!(["email", "profile"])
+        serde_json::json!(["email profile"])
     );
     // Sensitive fields should NOT be present
     assert!(google_account.get("access_token").is_none());

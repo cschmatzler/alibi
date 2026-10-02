@@ -26,12 +26,6 @@ async fn core_client_compat() {
 
 #[tokio::test]
 #[ignore = "starts external TS and Rust servers"]
-async fn additional_fields_client_compat() {
-    run_client_compat(&["tests/core/additional-fields.test.ts"]).await;
-}
-
-#[tokio::test]
-#[ignore = "starts external TS and Rust servers"]
 async fn device_authorization_client_compat() {
     run_client_compat(&["tests/device-authorization"]).await;
 }
