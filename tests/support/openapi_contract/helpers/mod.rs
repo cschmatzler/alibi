@@ -109,7 +109,7 @@ pub struct TestHarness {
 
 impl TestHarness {
     /// Create a harness with a **minimal** plugin set matching
-    /// `http_flow_tests.rs` conventions (`EmailPassword`, `SessionManagement`,
+    /// `tests/integration/core/http_flow.rs` conventions (`EmailPassword`, `SessionManagement`,
     /// `PasswordManagement`, `AccountManagement`, `ApiKey`).
     pub async fn minimal() -> Self {
         let config = test_config()

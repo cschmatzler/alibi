@@ -459,6 +459,13 @@ compatScenario(
     });
   },
   ["POST /api-key/create"],
+  30_000,
+  {
+    oracle: {
+      collapsedFixtureErrors:
+        "the creation control reports the deliberate callback error as a generic 500; the public route owns the error body",
+    },
+  },
 );
 
 compatScenario(
@@ -570,4 +577,7 @@ compatScenario(
       publicCleanup,
     });
   },
+  [],
+  30_000,
+  { oracle: { unroutedRequests: "asserts expired-key cleanup is not exposed over HTTP" } },
 );

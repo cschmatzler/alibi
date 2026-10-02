@@ -372,6 +372,13 @@ for (const profile of [
 
       return ctx.snapshot({ schema, frame, wrongPath: wrongPath.status, minimal, custom });
     },
+    [],
+    30_000,
+    {
+      oracle: {
+        unroutedRequests: "asserts the unconfigured reference path and disabled routes 404",
+      },
+    },
   );
 }
 
@@ -390,6 +397,9 @@ compatScenario(
 
     return ctx.snapshot({ document, status: page.status });
   },
+  [],
+  30_000,
+  { oracle: { unroutedRequests: "asserts the disabled reference page 404s" } },
 );
 
 for (const profile of ["session-fields", "session-fields-plugins"] as const) {

@@ -126,6 +126,7 @@ for (const item of cases) {
       expect(keysBefore.body).toEqual([]);
 
       await control(ctx, { operation: "clear" });
+      const issuedFrom = Math.floor(Date.now() / 1000);
       const response = await ctx.rawRequest({
         path: "/__test/jwt-remote",
         method: "POST",
@@ -155,6 +156,17 @@ for (const item of cases) {
         expect(event.ownKeys).toEqual(["2", "10", "custom", "iat", "exp", "nbf", "iss", "aud"]);
         expect(verified.payload).not.toHaveProperty("iat");
         expect(verified.payload).not.toHaveProperty("nbf");
+        // The default lifetime is filled in from the signing clock in whole
+        // seconds. Compare its offset from the request, not the wall-clock value,
+        // so the two runs cannot disagree across a second boundary.
+        const issuedTo = Math.ceil(Date.now() / 1000);
+        for (const payload of [event.payload, verified.payload] as Record<string, unknown>[]) {
+          expect(payload.exp).toBeNumber();
+          const lifetime = (payload.exp as number) - issuedFrom;
+          expect(lifetime).toBeGreaterThanOrEqual(900);
+          expect(lifetime).toBeLessThanOrEqual(issuedTo - issuedFrom + 900);
+          payload.exp = "issued + 900s";
+        }
       }
 
       if (item.name === "infinity-exp") {

@@ -372,6 +372,12 @@ compatScenario(
     };
   },
   ["POST /organization/create"],
+  30_000,
+  {
+    oracle: {
+      unroutedRequests: "asserts the server-only add-member endpoint is not exposed over HTTP",
+    },
+  },
 );
 
 compatScenario(

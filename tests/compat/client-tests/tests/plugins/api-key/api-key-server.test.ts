@@ -87,19 +87,25 @@ compatScenario("api-key SDK uses the standalone 1.7 client plugin", async (ctx) 
   };
 });
 
-compatScenario("api-key server methods are not public HTTP routes", async (ctx) => {
-  const responses = [];
-  for (const route of ["verify", "delete-all-expired-api-keys"]) {
-    const response = await ctx.rawRequest({
-      path: `/api/auth/api-key/${route}`,
-      method: "POST",
-      json: { key: "invalid" },
-    });
-    expect(response.status).toBe(404);
-    responses.push(response);
-  }
-  return responses;
-});
+compatScenario(
+  "api-key server methods are not public HTTP routes",
+  async (ctx) => {
+    const responses = [];
+    for (const route of ["verify", "delete-all-expired-api-keys"]) {
+      const response = await ctx.rawRequest({
+        path: `/api/auth/api-key/${route}`,
+        method: "POST",
+        json: { key: "invalid" },
+      });
+      expect(response.status).toBe(404);
+      responses.push(response);
+    }
+    return responses;
+  },
+  [],
+  30_000,
+  { oracle: { unroutedRequests: "asserts server-only API-key methods are not exposed over HTTP" } },
+);
 
 compatScenario("api-key HTTP requests cannot select a different owner", async (ctx) => {
   const key = await serverKey(ctx);

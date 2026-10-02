@@ -522,6 +522,15 @@ compatScenario(
       notPublic,
     };
   },
+  [],
+  30_000,
+  {
+    oracle: {
+      unroutedRequests: "asserts the server-only sign/verify operations are not exposed over HTTP",
+      collapsedFixtureErrors:
+        "the trusted signing control reports rejected claims as a generic 500",
+    },
+  },
 );
 
 compatScenario(
@@ -592,6 +601,13 @@ compatScenario(
       session: ctx.snapshot(session),
       authHeader,
     };
+  },
+  [],
+  30_000,
+  {
+    oracle: {
+      unroutedRequests: "asserts the default JWKS path is gone once a custom path is configured",
+    },
   },
 );
 

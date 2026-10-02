@@ -1494,6 +1494,7 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
 }
 
 const RESET_MODELS = [
+  "twoFactor",
   "deviceCode",
   "passkey",
   "apikey",
@@ -1521,6 +1522,29 @@ async function resetDatabaseState() {
   }
   const context = await jwtProfiles.get("jwt-default")!.auth.$context;
   await context.adapter.deleteMany({ model: "jwks", where: [] });
+  // Application-owned keys of the custom-adapter JWT keyring profiles.
+  database.query("DELETE FROM fixtureJwtKeyring").run();
+}
+
+/** Row counts of every non-empty table; the scenario runner requires none after reset. */
+function databaseResidue() {
+  const tables = database
+    .query(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+    )
+    .all() as { name: string }[];
+  const residue: Record<string, number> = {};
+  for (const { name } of tables) {
+    const { n } = database
+      .query(`SELECT count(*) AS n FROM "${name.replaceAll('"', '""')}"`)
+      .get() as {
+      n: number;
+    };
+    if (n > 0) {
+      residue[name] = n;
+    }
+  }
+  return residue;
 }
 
 function controlRecord(value: unknown): value is Record<string, unknown> {
@@ -2421,6 +2445,9 @@ const server = Bun.serve({
           throw error;
         }
         return jsonResponse({ message: "unknown server operation" }, { status: 400 });
+      }
+      if (url.pathname === "/__test/residue" && request.method === "GET") {
+        return jsonResponse(databaseResidue());
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         cloudflareFixture.reset();

@@ -9,8 +9,8 @@ data-exfiltration and PII reviews apply. Fixture users and addresses are synthet
 
 | Interface | Contract and primary executable owner |
 | --- | --- |
-| Axum `AxumIntegration` | Mount into an application router, including custom application state. Convert actual method, URI/origin, query, bounded body and headers; forward status, body bytes and repeated response headers. `tests/axum_integration_tests` owns real signup/session/extractor/revocation and body-limit behavior. |
-| Direct `BetterAuth::handle_request` | Native `AuthRequest` / `AuthResponse` dispatch with the same admission, plugin and middleware pipeline. The caller forwards every response header entry; a map that overwrites repeated Set-Cookie loses the contract. `tests/axum_dispatch_continuation_tests` owns direct context, ordered middleware, exact connected response and native cancellation/continuation. |
+| Axum `AxumIntegration` | Mount into an application router, including custom application state. Convert actual method, URI/origin, query, bounded body and headers; forward status, body bytes and repeated response headers. `tests/integration/axum_integration/router.rs` owns real signup/session/extractor/revocation and body-limit behavior. |
+| Direct `BetterAuth::handle_request` | Native `AuthRequest` / `AuthResponse` dispatch with the same admission, plugin and middleware pipeline. The caller forwards every response header entry; a map that overwrites repeated Set-Cookie loses the contract. `tests/integration/axum_integration/dispatch_continuation.rs` owns direct context, ordered middleware, exact connected response and native cancellation/continuation. |
 | Trusted `BetterAuth::dispatch_endpoint` | Logical input/headers remain separate from an optional physical request. Installed middleware verifies authority; endpoint hooks do not substitute a fixture principal. The controlled server fixture and `tests/core/server-api/dispatch.test.ts` own actual API-key/cookie authority, absent request context, hook order/errors, OTP state, OTT cookies/consumption/replay and cryptographic results. Plain typed plugin helpers intentionally remain separate operations. The additional registration-level SERVER_ONLY HTTP guard and its OpenAPI/trusted-availability probes are tracked separately by #191 in `tests/plugins/open-api/open-api.test.ts`; documentation-only `scope=server` is not a transport guard. |
 | Official Better Auth HTTP client | The unchanged pinned client consumes actual Axum HTTP. Shared `tests/core/request/dispatch.test.ts` owns origin/CSRF/method/path rejection, media types, invalid JSON, order of admission and persisted principal state. Existing plugin scenarios own signed cookies, redirect locations, response status/body/message/headers and resulting records. |
 
@@ -18,7 +18,7 @@ Axum buffers and validates the body before accepting a supervised dispatch.
 A real TCP close drops the HTTP service future; an accepted worker retains the
 request context and continues actual later writes and completed hooks even after
 server/router drop. Incomplete and over-limit bodies never reach that worker.
-The real socket owners are `axum_dispatch_continuation_tests` and the official
+The real socket owners are `tests/integration/axum_integration/dispatch_continuation.rs` and the official
 client organization creation/deletion hook scenarios. They wait for actual
 server abort/drop receipts before releasing the callback and inspect real SQL
 state after the observer is gone. See [the continuation audit](axum-dispatch-continuation.md).

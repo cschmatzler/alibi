@@ -323,7 +323,8 @@ Rust tooling and lint rules come from the private `cschmatzler/rust` flake.
 Local development requires GitHub SSH access; CI uses the `RUST_STYLE_TOKEN`
 secret to fetch the locked revision. `devenv.lock` pins the environment.
 
-See [Compatibility testing](tests/compat/README.md) for focused checks and the
+See [Tests](tests/README.md) for the unit, integration and compat tiers, and
+[Compatibility testing](tests/compat/README.md) for focused checks and the
 compatibility contract.
 
 ## License

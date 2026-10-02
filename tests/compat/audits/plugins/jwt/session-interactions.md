@@ -58,7 +58,7 @@ original owners and evidence.
 | Normal renewal, query coercion, browser preference and deferred true/false/absent fields | `JWT token middleware signs persisted refresh and browser preference branches` |
 | Original direct-hook context, expiry cleanup/retention, exact exposed-header order, expired token refusal | `JWT session headers preserve original refresh expiry cleanup and exposed header order` |
 | API-key owner versus a foreign cookie, no virtual session persistence, invalid-key refusal | `JWT API key principal owns signing while foreign cookies and persisted sessions remain unchanged` |
-| One renewal with no duplicate write; refused/failed refresh cannot issue an authenticated token | Real public-builder SQLite tests in `tests/jwt_session_tests.rs`, using actual SQL triggers |
+| One renewal with no duplicate write; refused/failed refresh cannot issue an authenticated token | Real public-builder SQLite tests in `tests/integration/plugins/jwt.rs`, using actual SQL triggers |
 | Caller-supplied completed-hook context cannot issue a JWT | Public-dispatch SQLite test; intentionally preserving the supplied snapshot makes its header assertion fail |
 | Exact ordered header deduplication | Pinned real-runtime probe plus complete native and official-client response headers |
 

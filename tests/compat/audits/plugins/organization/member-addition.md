@@ -73,7 +73,7 @@ Returned snapshots prove selected current/sibling organization and active-team
 fields survive, original-user team cleanup stays scoped, and foreign rows are
 preserved. No fixture supplies synthetic callback receipts or a fake success.
 
-The distinct native owner `tests/organization_member_addition_tests.rs` exercises
+The distinct native owner `tests/integration/plugins/organization/member_addition.rs` exercises
 the public helper from a legitimate manual AuthContext with real SQLite. It checks
 that an insertion veto remains a typed database error, an actual after callback's
 explicit 500 remains an `Api` error with its committed row, duplicate retry fails,

@@ -311,5 +311,7 @@ for (const profile of ["custom-session-jwt", "custom-session-deferred"] as const
       };
     },
     ["GET /get-session", "POST /get-session", "GET /token"],
+    30_000,
+    { oracle: { unroutedRequests: "asserts get-session rejects POST" } },
   );
 }

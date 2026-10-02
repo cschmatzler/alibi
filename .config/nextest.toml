@@ -1,0 +1,15 @@
+# Test tiers (see tests/README.md):
+#   unit         inline `#[cfg(test)]` modules in each crate
+#   integration  `tests/integration/main.rs`: the Rust API on its own terms
+#   compat       `tests/compat/main.rs`: comparisons against the pinned upstream
+#   repo         `tests/repo/main.rs`: repository invariants
+
+[test-groups]
+# Every SDK runner builds the Rust fixture and owns a TypeScript/Rust server
+# pair; concurrent runners would compete for the same cold build and CPU.
+compat-servers = { max-threads = 1 }
+
+[[profile.default.overrides]]
+filter = 'binary_id(better-auth::compat) & test(/^sdk::tests::\w+_client_compat$/)'
+test-group = 'compat-servers'
+slow-timeout = { period = "300s" }

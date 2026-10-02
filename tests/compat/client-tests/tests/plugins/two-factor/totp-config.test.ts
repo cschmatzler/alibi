@@ -85,6 +85,14 @@ compatScenario(
 
     return { results, publicRequest, empty };
   },
+  [],
+  30_000,
+  {
+    oracle: {
+      unroutedRequests: "asserts the server-only TOTP generator is not exposed over HTTP",
+      collapsedFixtureErrors: "the TOTP control reports invalid secrets as a generic 500",
+    },
+  },
 );
 
 compatScenario(

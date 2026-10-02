@@ -3,6 +3,7 @@ import { readdir } from "node:fs/promises";
 import { z } from "zod";
 
 import { inventorySchema, type Requirement, requiredScenarios } from "./coverage";
+import { ORACLE_RECEIPTS } from "./oracle";
 
 const isGap = (requirement: Requirement): requirement is { knownGap: string } =>
   typeof requirement === "object" && "knownGap" in requirement;
@@ -18,6 +19,23 @@ for (const project of ["client-tests", "reference-server"]) {
     ).json();
     z.object({ version: z.literal(inventory.upstreamVersion) }).parse(metadata);
   }
+}
+
+// A declared oracle expectation must still be needed by its passing scenario;
+// otherwise it has outlived the behavior it excuses.
+const unneededOracleExpectations: string[] = [];
+for (const file of await readdir(ORACLE_RECEIPTS).catch(() => [])) {
+  const receipt = z
+    .object({ scenario: z.string(), needed: z.boolean() })
+    .parse(await Bun.file(new URL(file, ORACLE_RECEIPTS)).json());
+  if (!receipt.needed) {
+    unneededOracleExpectations.push(receipt.scenario);
+  }
+}
+if (unneededOracleExpectations.length) {
+  throw new Error(
+    `Remove oracle expectations these scenarios no longer need:\n${unneededOracleExpectations.sort().join("\n")}`,
+  );
 }
 
 const routesSchema = z.array(z.string());
