@@ -40,7 +40,7 @@ compatScenario("organization fixed membership policies retain falsy defaults and
   observations.push({suffix,candidate:candidate.created,candidateSession:candidate.session,before,response,after,usersBefore,usersAfter});
  }
  return {owner:owner!.created,ownerSession:owner!.session,existing:existing!.created,existingSession:existing!.session,foreign:foreign!.created,foreignSession:foreign!.session,observations};
-},["POST /organization/create"],15000);
+},["POST /organization/create"]);
 
 compatScenario("organization fixed fractional membership admits one physical row then rejects capacity without principal writes",async ctx=>{
  const [owner,foreign]=await actors(ctx,["fractional-owner","fractional-foreign"]);await org(ctx,foreign!,"fractional-foreign");

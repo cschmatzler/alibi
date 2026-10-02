@@ -361,7 +361,7 @@ export function compatScenario(
   scenarioName: string,
   scenario: (ctx: ScenarioServerContext) => Promise<unknown>,
   stateTransitions: readonly string[] = [],
-  timeoutMs?: number,
+  timeoutMs = 30_000,
   comparisonOptions: { readonly oauthProxyProfileSecret?: string } = {},
   reproduction?: unknown,
 ) {

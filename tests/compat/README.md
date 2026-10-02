@@ -70,6 +70,12 @@ with `TEST=0`, checking the dependency's process-initialization behavior. Run it
 alone with `tests/compat/client-tests/run-against-both.sh environment` inside the
 development shell.
 
+SDK scenarios run against both servers sequentially and default to a 30-second
+test deadline, including real password hashing and multi-step tables. Scenarios
+can override that deadline; assertions about protocol timeouts and lifetimes
+remain independent. CI allows two hours for cold builds, the full SDK suite,
+browser checks, and the instrumented coverage pass.
+
 The shared Rust style supplies nextest, Clippy, rustfmt, and Mr. Boxington.
 The style input is private and requires GitHub SSH access. `scripts/check.sh`
 combines the Rust and compatibility gates. `devenv.lock` pins all
