@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { createCaptchaFixture } from "./captcha-fixture";
 import {physicalCookieProfiles} from "./physical-cookie-fixture";
+import { createServerEndpointFixture } from "./server-endpoint-fixture";
 import { createJwtKeyringFixture } from "./jwt-keyring-fixture";
 import { createRemoteJwtFixture } from "./jwt-remote-fixture";
 import { createLastLoginMethodFixture } from "./last-login-method-fixture";
@@ -8,6 +9,7 @@ import { createSetPasswordFixture } from "./set-password-fixture";
 import { createUserLifecycleFixture } from "./user-lifecycle-fixture";
 import { createDispatchFixture } from "./dispatch-fixture";
 import { createCompromisedPasswordFixture } from "./compromised-password-fixture";
+import { createVerificationStorageFixture } from "./verification-storage-fixture";
 import { createSignupPolicyFixture } from "./signup-policy-fixture";
 import { createClientIpFixture } from "./client-ip-fixture";
 import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
@@ -608,8 +610,15 @@ const authContext = await auth.$context;
 const oneTapProfiles = createOneTapProfiles(authOptions);
 const googleIdProfiles = googleIdTokenProfiles(authOptions);
 const setPasswordFixture = createSetPasswordFixture(database, authOptions);
+const verificationStorageFixture = await createVerificationStorageFixture(database, authOptions);
 const signupPolicyFixture = createSignupPolicyFixture(database, authOptions);
 const compromisedPasswordFixture = await createCompromisedPasswordFixture(database, authOptions);
+const serverEndpointFixture = createServerEndpointFixture(database,authOptions);
+verificationProfiles.set(serverEndpointFixture.path,serverEndpointFixture.auth);
+const serverEndpointCacheFixture=createServerEndpointFixture(database,{...authOptions,session:{...authOptions.session,cookieCache:{enabled:true,strategy:"compact",maxAge:300}}},"server-dispatch-cache");
+verificationProfiles.set(serverEndpointCacheFixture.path,serverEndpointCacheFixture.auth);
+const serverEndpointVersionFixture=createServerEndpointFixture(database,authOptions,"server-dispatch-cache-version");
+verificationProfiles.set(serverEndpointVersionFixture.path,serverEndpointVersionFixture.auth);
 const userValidationFixture = await createUserValidationFixture(database, authOptions);
 
 const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
@@ -1018,6 +1027,12 @@ const server = Bun.serve({
         return jsonResponse({ ok: true, oauthBaseURL, upstreamVersion: INSTALLED_BETTER_AUTH_VERSION });
       }
 
+      const verificationStorageControl = await verificationStorageFixture.handle(request);
+      if (verificationStorageControl) return verificationStorageControl;
+      for (const [name, profile] of verificationStorageFixture.profiles) {
+        const path = `/__test/profiles/${name}/api/auth`;
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return verificationStorageFixture.profileHandler(profile,request);
+      }
       const userValidationControl = await userValidationFixture.handle(request);
       if (userValidationControl) return userValidationControl;
       for (const [name, profile] of userValidationFixture.profiles) {
@@ -1135,6 +1150,12 @@ const server = Bun.serve({
       if (apiKeyOptionsControl) return apiKeyOptionsControl;
       const physicalCookieControl=physicalCookies.control(request);
       if(physicalCookieControl)return physicalCookieControl;
+      const serverEndpointControl = await serverEndpointFixture.control(request);
+      if (serverEndpointControl) return serverEndpointControl;
+      const serverEndpointCacheControl = await serverEndpointCacheFixture.control(request);
+      if (serverEndpointCacheControl) return serverEndpointCacheControl;
+      const serverEndpointVersionControl = await serverEndpointVersionFixture.control(request);
+      if (serverEndpointVersionControl) return serverEndpointVersionControl;
       const apiKeyHookControl = await apiKeyHookFixture.control(request);
       if (apiKeyHookControl) return apiKeyHookControl;
       if (url.pathname === "/__test/api-key/verify" && request.method === "POST") {
@@ -1206,6 +1227,7 @@ const server = Bun.serve({
         anonymousProfiles.reset();
         userValidationFixture.reset();
         additionalFields.reset();
+        verificationStorageFixture.reset();
         passkeyRegistration.reset();
         passkeyAuthentication.reset();
         siweFixture.reset();

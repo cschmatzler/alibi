@@ -92,6 +92,43 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
     /// Routes that this plugin handles
     fn routes(&self) -> Vec<AuthRoute>;
 
+    /// Trusted operations available through host dispatch, independently of HTTP visibility.
+    fn server_endpoints(&self) -> Vec<crate::endpoint::EndpointDefinition> {
+        Vec::new()
+    }
+
+    /// Installed logical-call hooks, in this plugin's registration order.
+    fn endpoint_hooks(&self) -> Vec<&dyn crate::endpoint::EndpointHook<S>> {
+        Vec::new()
+    }
+
+    /// Validate actual input after all before-hook patches have been applied.
+    /// # Errors
+    /// Returns an intentional validation error, which completed hooks can observe.
+    fn validate_endpoint(
+        &self,
+        call: &crate::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<crate::endpoint::EndpointInput> {
+        Ok(crate::endpoint::EndpointInput {
+            body: call.body().cloned(),
+            query: call.query().cloned(),
+        })
+    }
+
+    /// Execute a registered operation with validated handler-phase context.
+    /// # Errors
+    /// Returns the operation's actual API or application failure.
+    async fn on_endpoint(
+        &self,
+        _call: &crate::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<crate::endpoint::EndpointResponse> {
+        Err(AuthError::not_implemented(
+            "This plugin does not implement trusted endpoint calls",
+        ))
+    }
+
     /// Media types accepted before request hooks and endpoint dispatch. An empty
     /// list disables the media restriction for an application-owned endpoint.
     fn allowed_media_types(&self, _route: &AuthRoute) -> Vec<&'static str> {
@@ -566,8 +603,20 @@ impl<S: AuthSchema> AuthContext<S> {
         hasher: Option<&Arc<dyn crate::utils::password::PasswordHasher>>,
         password: &str,
     ) -> AuthResult<String> {
-        let context = crate::hooks::current_request_hook_context()
-            .map(crate::utils::password::PasswordHashContext::from_request);
+        let context = crate::endpoint::current_endpoint_call_context().map_or_else(
+            || {
+                crate::hooks::current_request_hook_context()
+                    .map(crate::utils::password::PasswordHashContext::from_request)
+            },
+            |call| {
+                Some(crate::utils::password::PasswordHashContext {
+                    path: call.path().map(str::to_owned),
+                    request: call
+                        .request()
+                        .map(crate::hooks::RequestHookContext::from_request),
+                })
+            },
+        );
         self.hash_password_with_context(hasher, password, context.as_ref())
             .await
     }
@@ -978,7 +1027,7 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Returns an authentication error for a missing or invalid session, or propagates storage errors.
     pub async fn require_session(
         &self,
-        req: &AuthRequest,
+        req: &impl crate::session::SessionRequest,
     ) -> AuthResult<(S::User, crate::wire::SessionView)> {
         let (user, session, _) = self.require_session_with_refresh_state(req).await?;
         Ok((user, session))
@@ -992,7 +1041,7 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Returns an error if the request has no valid session or session lookup fails.
     pub async fn require_cached_session(
         &self,
-        req: &AuthRequest,
+        req: &impl crate::session::SessionRequest,
     ) -> AuthResult<(crate::AuthenticatedUser<S>, crate::wire::SessionView)> {
         let read = crate::cache::runtime::authenticated(self, req, false)
             .await
@@ -1010,7 +1059,7 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Returns an authentication error for a missing or invalid session, or propagates storage errors.
     pub async fn require_session_with_refresh_state(
         &self,
-        req: &AuthRequest,
+        req: &impl crate::session::SessionRequest,
     ) -> AuthResult<(S::User, crate::wire::SessionView, Option<bool>)> {
         self.authenticated_session(req, true).await
     }
@@ -1024,7 +1073,7 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Returns an authentication error if no valid persisted session exists, or propagates storage errors.
     pub async fn require_authoritative_session(
         &self,
-        req: &AuthRequest,
+        req: &impl crate::session::SessionRequest,
     ) -> AuthResult<(S::User, crate::wire::SessionView)> {
         crate::cache::runtime::clear_established_session::<S>(req);
         let (user, session, _) = self.authenticated_session(req, false).await?;
@@ -1059,15 +1108,18 @@ impl<S: AuthSchema> AuthContext<S> {
 
     async fn authenticated_session(
         &self,
-        req: &AuthRequest,
+        req: &impl crate::session::SessionRequest,
         allow_virtual: bool,
     ) -> AuthResult<(S::User, crate::wire::SessionView, Option<bool>)> {
-        if allow_virtual && let Some(session) = req.virtual_session() {
-            let user = self
-                .database
-                .get_user_by_id(&session.user_id)
-                .await?
-                .ok_or(AuthError::Unauthenticated)?;
+        if allow_virtual && let Some(session) = req.virtual_session(self) {
+            let user = if let Some(user) = req.authenticated_user::<S>(self) {
+                user
+            } else {
+                self.database
+                    .get_user_by_id(&session.user_id)
+                    .await?
+                    .ok_or(AuthError::Unauthenticated)?
+            };
             return Ok((user, session.clone(), None));
         }
         let session_manager = self.session_manager();
@@ -1111,7 +1163,7 @@ impl<S: AuthSchema> AuthContext<S> {
         ))
     }
 
-    fn queue_session_cleanup(&self, req: &AuthRequest) {
+    fn queue_session_cleanup(&self, req: &impl crate::session::SessionRequest) {
         for cookie in crate::utils::cookie_utils::delete_session_cookie_headers(&self.config) {
             req.queue_response_header("Set-Cookie", cookie);
         }
@@ -1126,9 +1178,12 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Propagates errors from session or user lookups.
     pub async fn session_without_refresh(
         &self,
-        req: &AuthRequest,
+        req: &impl crate::session::SessionRequest,
     ) -> AuthResult<Option<(S::User, crate::wire::SessionView)>> {
-        if let Some(session) = req.virtual_session() {
+        if let Some(session) = req.virtual_session(self) {
+            if let Some(user) = req.authenticated_user::<S>(self) {
+                return Ok(Some((user, session)));
+            }
             return Ok(self
                 .database
                 .get_user_by_id(&session.user_id)
@@ -1145,7 +1200,7 @@ impl<S: AuthSchema> AuthContext<S> {
     /// Propagates errors from session or user lookups.
     pub async fn persistent_session(
         &self,
-        req: &AuthRequest,
+        req: &impl crate::session::SessionRequest,
     ) -> AuthResult<Option<(S::User, crate::wire::SessionView)>> {
         let Some(token) = self.session_manager().extract_session_token(req) else {
             return Ok(None);

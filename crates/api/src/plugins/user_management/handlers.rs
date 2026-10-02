@@ -5,7 +5,7 @@ use crate::plugins::email_verification::EmailVerificationConfig;
 use crate::plugins::email_verification::handlers::verification_url;
 use crate::plugins::email_verification::token::create_email_verification_token;
 use better_auth_core::SuccessMessageResponse;
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
+use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
 use better_auth_core::utils::password as password_utils;
 use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, UpdateUser};
@@ -333,8 +333,8 @@ pub(in crate::plugins) async fn delete_user_core(
             config.delete_user.delete_token_expires_in
         };
         drop(
-            ctx.database
-                .create_verification(better_auth_core::CreateVerification {
+            ctx.verifications()
+                .create(better_auth_core::CreateVerification {
                     identifier: format!("delete-account-{token}"),
                     value: user.id().into_owned(),
                     expires_at: Utc::now() + expiry,
@@ -413,10 +413,10 @@ pub(in crate::plugins) async fn delete_user_callback_core(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<SuccessMessageResponse> {
     let verification = ctx
-        .database
-        .consume_verification_by_identifier(&format!("delete-account-{token}"))
+        .verifications()
+        .consume(&format!("delete-account-{token}"))
         .await?
-        .filter(|verification| verification.value() == user.id())
+        .filter(|verification| verification.value().is_ok_and(|value| value == user.id()))
         .ok_or_else(|| AuthError::not_found("Invalid token"))?;
     drop(verification);
     perform_user_deletion(user, request, clear_cookie_errors, config, ctx).await?;

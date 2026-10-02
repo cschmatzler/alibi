@@ -1,5 +1,7 @@
 //! Short-lived, single-use credentials that hand an existing session to a client.
 
+mod endpoint;
+
 #[cfg(test)]
 mod tests;
 
@@ -14,9 +16,10 @@ use better_auth_core::utils::cookie_utils::{
 use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
-    AuthSchema, AuthSession, AuthVerification, CreateVerification, HttpMethod,
+    AuthSchema, AuthSession, CreateVerification, HttpMethod,
 };
 use chrono::{Duration, Utc};
+pub use endpoint::OneTimeTokenOutput;
 use rand::{rngs::OsRng, seq::SliceRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -24,10 +27,29 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 /// The authenticated account and session represented by a one-time token.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OneTimeTokenSession {
     pub session: SessionView,
     pub user: UserView,
+}
+
+enum TokenSessionAbsence {
+    InvalidToken,
+    SessionNotFound,
+}
+
+impl TokenSessionAbsence {
+    const fn message(&self) -> &'static str {
+        match self {
+            Self::InvalidToken => "Invalid token",
+            Self::SessionNotFound => "Session not found",
+        }
+    }
+}
+
+enum TokenSessionLookup<S: AuthSchema> {
+    Found { user: S::User, session: S::Session },
+    Missing(TokenSessionAbsence),
 }
 
 /// Application-owned token generation, including asynchronous generators.
@@ -134,8 +156,8 @@ impl OneTimeTokenPlugin {
         };
         let stored = self.stored_token(&token).await?;
         drop(
-            ctx.database
-                .create_verification(CreateVerification {
+            ctx.verifications()
+                .create(CreateVerification {
                     identifier: format!("one-time-token:{stored}"),
                     value: session.session.token.clone(),
                     expires_at: Utc::now() + self.config.expires_in,
@@ -177,26 +199,48 @@ impl OneTimeTokenPlugin {
         token: &str,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<OneTimeTokenSession> {
-        let stored = self.stored_token(token).await?;
-        let verification = ctx
-            .database
-            .consume_verification_by_identifier(&format!("one-time-token:{stored}"))
-            .await?
-            .ok_or_else(|| AuthError::bad_request("Invalid token"))?;
-        let session = ctx
-            .database
-            .get_session(verification.value())
-            .await?
-            .ok_or_else(|| AuthError::bad_request("Session not found"))?;
-        let user = ctx
-            .database
-            .get_user_by_id(session.user_id().as_ref())
-            .await?
-            .ok_or_else(|| AuthError::bad_request("Session not found"))?;
+        let (user, session) = match self.consume_stored_session(token, ctx).await? {
+            TokenSessionLookup::Found { user, session } => (user, session),
+            TokenSessionLookup::Missing(absence) => {
+                return Err(AuthError::bad_request(absence.message()));
+            }
+        };
         Ok(OneTimeTokenSession {
             session: ctx.session_view(&session),
             user: ctx.user_view(&user),
         })
+    }
+
+    async fn consume_stored_session<S: AuthSchema>(
+        &self,
+        token: &str,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<TokenSessionLookup<S>> {
+        let stored = self.stored_token(token).await?;
+        let Some(verification) = ctx
+            .verifications()
+            .consume(&format!("one-time-token:{stored}"))
+            .await?
+        else {
+            return Ok(TokenSessionLookup::Missing(
+                TokenSessionAbsence::InvalidToken,
+            ));
+        };
+        let Some(session) = ctx.database.get_session(verification.value()?).await? else {
+            return Ok(TokenSessionLookup::Missing(
+                TokenSessionAbsence::SessionNotFound,
+            ));
+        };
+        let Some(user) = ctx
+            .database
+            .get_user_by_id(session.user_id().as_ref())
+            .await?
+        else {
+            return Ok(TokenSessionLookup::Missing(
+                TokenSessionAbsence::SessionNotFound,
+            ));
+        };
+        Ok(TokenSessionLookup::Found { user, session })
     }
 
     async fn generate(
@@ -338,6 +382,26 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
             AuthRoute::post("/one-time-token/verify", "verify_one_time_token"),
         ]
     }
+    fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> {
+        endpoint::definitions()
+    }
+
+    fn validate_endpoint(
+        &self,
+        call: &better_auth_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<better_auth_core::endpoint::EndpointInput> {
+        endpoint::validate(call)
+    }
+
+    async fn on_endpoint(
+        &self,
+        call: &better_auth_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<better_auth_core::endpoint::EndpointResponse> {
+        self.call_endpoint(call, ctx).await
+    }
+
     async fn on_request(
         &self,
         req: &AuthRequest,

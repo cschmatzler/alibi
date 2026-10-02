@@ -14,6 +14,7 @@ pub(in crate::plugins) mod authentication_helpers;
 pub mod device_authorization;
 
 pub mod email_otp;
+mod endpoint;
 
 pub mod email_password;
 pub mod haveibeenpwned;

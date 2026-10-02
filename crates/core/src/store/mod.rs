@@ -21,6 +21,7 @@ use crate::types::{
     UpdateOrganization, UpdatePasskeyAuthentication, UpdateTwoFactor, UpdateUser,
 };
 use crate::user_validation::{PreparedUserCreation, UserValidationSource, prepare_creation};
+use crate::verification::{VerificationCreation, VerificationPublication, VerificationSnapshot};
 use async_trait::async_trait;
 #[cfg(feature = "redis-cache")]
 pub use cache::RedisAdapter;
@@ -750,6 +751,39 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> VerificationStore<S> for PluginStore<S> {
+    async fn create_verification_record(
+        &self,
+        data: VerificationCreation,
+        publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        self.inner
+            .create_verification_record(data, publication)
+            .await
+    }
+    async fn consume_verification_snapshot(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        self.inner.consume_verification_snapshot(identifier).await
+    }
+    async fn update_verification_by_identifier(
+        &self,
+        identifier: &str,
+        data: crate::UpdateVerification,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        self.inner
+            .update_verification_by_identifier(identifier, data)
+            .await
+    }
+    async fn reserve_verification_record(
+        &self,
+        logical_identifier: &str,
+        data: CreateVerification,
+    ) -> AuthResult<Option<S::Verification>> {
+        self.inner
+            .reserve_verification_record(logical_identifier, data)
+            .await
+    }
     async fn create_verification(
         &self,
         verification: CreateVerification,
@@ -1509,6 +1543,15 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         Ok(session)
     }
 
+    async fn create_verification_record(
+        &self,
+        data: VerificationCreation,
+        publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        self.inner
+            .create_verification_record(data, publication)
+            .await
+    }
     async fn create_verification(&self, data: CreateVerification) -> AuthResult<S::Verification> {
         self.inner.create_verification(data).await
     }
@@ -1693,6 +1736,17 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         crate::AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
     }
 
+    /// Create through before hooks, optional physical persistence, secondary
+    /// publication, then after hooks. Unsupported adapters must fail closed.
+    async fn create_verification_record(
+        &self,
+        _data: VerificationCreation,
+        _publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        Err(AuthError::NotImplemented(
+            "Verification publication phases are not supported by this store".into(),
+        ))
+    }
     /// Read a team within the authorized organization through this transaction.
     async fn get_team(&self, _organization_id: &str, _team_id: &str) -> AuthResult<Option<Team>> {
         Err(AuthError::NotImplemented(
@@ -2238,6 +2292,49 @@ pub trait AccountStore<S: AuthSchema>: Send + Sync {
 
 #[async_trait]
 pub trait VerificationStore<S: AuthSchema>: Send + Sync {
+    /// Create through before hooks, optional physical persistence, secondary
+    /// publication, then after hooks. Unsupported adapters must fail closed.
+    async fn create_verification_record(
+        &self,
+        _data: VerificationCreation,
+        _publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        Err(AuthError::NotImplemented(
+            "Verification publication phases are not supported by this store".into(),
+        ))
+    }
+    /// Atomically remove the newest generation and all siblings, returning the
+    /// actual winning snapshot even when expired. This keeps legacy fallback
+    /// from resurrecting an older logical generation.
+    async fn consume_verification_snapshot(
+        &self,
+        _identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        Err(AuthError::NotImplemented(
+            "Raw atomic verification consumption is not supported by this store".into(),
+        ))
+    }
+    /// Update every physical match, with one actual adapter result snapshot.
+    async fn update_verification_by_identifier(
+        &self,
+        _identifier: &str,
+        _data: crate::UpdateVerification,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        Err(AuthError::NotImplemented(
+            "Verification identifier updates are not supported by this store".into(),
+        ))
+    }
+    /// Reserve by the original logical identifier while storing its configured
+    /// transformed identifier. Return the actual newly inserted model only.
+    async fn reserve_verification_record(
+        &self,
+        _logical_identifier: &str,
+        _data: CreateVerification,
+    ) -> AuthResult<Option<S::Verification>> {
+        Err(AuthError::NotImplemented(
+            "Configured verification reservation is not supported by this store".into(),
+        ))
+    }
     async fn create_verification(
         &self,
         verification: CreateVerification,

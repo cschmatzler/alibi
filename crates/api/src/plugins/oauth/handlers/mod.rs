@@ -21,7 +21,7 @@ use crate::plugins::helpers::{
     SessionIssueError, apply_default_role, issue_selected_user_session_record,
 };
 use base64::Engine;
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
+use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
 use better_auth_core::user_validation::{
     UserValidationAction, UserValidationData, UserValidationSource, validate_user_info,
 };
@@ -812,7 +812,7 @@ fn attach_state_cookie(
     secret: &str,
     state: &str,
 ) -> AuthResult<AuthResponse> {
-    let value = create_database_state_cookie_value(secret, state)?;
+    let value = create_database_state_cookie_value(secret, state);
     Ok(response.with_appended_header(
         "Set-Cookie",
         better_auth_core::utils::cookie_utils::create_cookie(
@@ -1932,7 +1932,18 @@ async fn initiate_oauth_flow_core(
     request: FlowStartRequest<'_>,
 ) -> AuthResult<InitiatedOAuthFlow> {
     let (code_verifier, code_challenge) = generate_pkce();
-    let state = uuid::Uuid::new_v4().to_string();
+    let state: String = {
+        let alphabet = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
+        let mut random = thread_rng();
+        (0..32)
+            .filter_map(|_| {
+                alphabet
+                    .get(random.gen_range(0..alphabet.len()))
+                    .copied()
+                    .map(char::from)
+            })
+            .collect()
+    };
 
     let proxy = better_auth_core::hooks::current_request_hook_context().and_then(|req| {
         req.extensions
@@ -1951,31 +1962,33 @@ async fn initiate_oauth_flow_core(
         request.additional_data,
     );
     capture_server_context(&mut payload, &state, &ctx.config.secret)?;
-    if proxy.is_some() {
-        drop(payload.additional_data.insert(
-            "oauthState".to_owned(),
-            serde_json::Value::String(state.clone()),
-        ));
-        if let Some(req) = better_auth_core::hooks::current_request_hook_context() {
-            req.extensions
-                .insert(crate::plugins::oauth_proxy::IssuedProxyState {
-                    state: state.clone(),
-                    payload: payload.clone(),
-                });
-        }
+    drop(payload.additional_data.insert(
+        "oauthState".to_owned(),
+        serde_json::Value::String(state.clone()),
+    ));
+    if proxy.is_some()
+        && let Some(req) = better_auth_core::hooks::current_request_hook_context()
+    {
+        req.extensions
+            .insert(crate::plugins::oauth_proxy::IssuedProxyState {
+                state: state.clone(),
+                payload: payload.clone(),
+            });
     }
 
     match ctx.config.account.store_state_strategy {
         better_auth_core::OAuthStateStrategy::Database => {
-            drop(
-                ctx.database
-                    .create_verification(CreateVerification {
-                        identifier: format!("oauth:{state}"),
-                        value: serde_json::to_string(&payload)?,
-                        expires_at: Utc::now() + Duration::minutes(10),
-                    })
-                    .await?,
-            );
+            let created = ctx
+                .verifications()
+                .create(CreateVerification {
+                    identifier: state.clone(),
+                    value: serde_json::to_string(&payload)?,
+                    expires_at: Utc::now() + Duration::minutes(10),
+                })
+                .await?;
+            if created.is_none() {
+                return Err(AuthError::internal("Unable to create verification"));
+            }
         }
         better_auth_core::OAuthStateStrategy::Cookie => {}
     }
@@ -2177,41 +2190,70 @@ pub(super) async fn handle_callback(
     };
     let payload = match ctx.config.account.store_state_strategy {
         better_auth_core::OAuthStateStrategy::Database => {
-            let Some(verification) = ctx
-                .database
-                .get_verification_by_identifier(&format!("oauth:{state_param}"))
-                .await?
-            else {
-                return Ok(redirect_response(&format!(
-                    "{default_error_url}?error=state_mismatch"
-                )));
-            };
-
-            if !ctx.config.account.skip_state_cookie_check {
-                let Some(cookie_value) = get_cookie(req, &state_cookie_name(&ctx.config)) else {
-                    return Ok(redirect_response(&format!(
-                        "{default_error_url}?error=state_mismatch"
-                    )));
-                };
-                let Ok(persisted_state) =
-                    decode_database_state_cookie_value(&ctx.config.secret, &cookie_value)
-                else {
-                    return Ok(redirect_response(&format!(
-                        "{default_error_url}?error=state_mismatch"
-                    )));
-                };
-                if persisted_state != state_param {
+            let verification = match ctx.verifications().find(&state_param).await {
+                Ok(Some(verification)) => verification,
+                Ok(None) => {
                     return Ok(redirect_response(&format!(
                         "{default_error_url}?error=state_mismatch"
                     )));
                 }
-            }
+                Err(_) => {
+                    return Ok(redirect_response(&format!(
+                        "{default_error_url}?error=internal_server_error"
+                    )));
+                }
+            };
 
-            let payload: OAuthStatePayload =
-                serde_json::from_str(verification.value()).map_err(|error_2| {
-                    AuthError::internal(format!("Invalid state payload: {error_2}"))
-                })?;
-            ctx.database.delete_verification(&verification.id()).await?;
+            let payload: OAuthStatePayload = match verification.value().and_then(|value| {
+                serde_json::from_str(value)
+                    .map_err(|error| AuthError::internal(format!("Invalid state payload: {error}")))
+            }) {
+                Ok(payload) => payload,
+                Err(_) => {
+                    return Ok(redirect_response(&format!(
+                        "{default_error_url}?error=internal_server_error"
+                    )));
+                }
+            };
+            let state_error_url = payload.error_url.as_deref().unwrap_or(&default_error_url);
+            let state_mismatch = || {
+                redirect_response(
+                    &build_redirect_url(
+                        &auth_base_url(ctx),
+                        Some(state_error_url),
+                        &[("error", "state_mismatch")],
+                    )
+                    .unwrap_or_else(|_| format!("{default_error_url}?error=state_mismatch")),
+                )
+            };
+            if payload
+                .additional_data
+                .get("oauthState")
+                .is_some_and(|value| value.as_str() != Some(state_param.as_str()))
+            {
+                return Ok(state_mismatch());
+            }
+            if !ctx.config.account.skip_state_cookie_check {
+                let persisted_state =
+                    get_cookie(req, &state_cookie_name(&ctx.config)).and_then(|value| {
+                        decode_database_state_cookie_value(&ctx.config.secret, &value).ok()
+                    });
+                if persisted_state.as_deref() != Some(state_param.as_str()) {
+                    return Ok(state_mismatch());
+                }
+            }
+            if ctx.verifications().delete(&state_param).await.is_err() {
+                return Ok(redirect_response(&format!(
+                    "{default_error_url}?error=internal_server_error"
+                ))
+                .with_appended_header(
+                    "Set-Cookie",
+                    better_auth_core::utils::cookie_utils::create_clear_cookie(
+                        &state_cookie_name(&ctx.config),
+                        &ctx.config,
+                    ),
+                ));
+            }
             payload
         }
         better_auth_core::OAuthStateStrategy::Cookie => {
@@ -2221,7 +2263,20 @@ pub(super) async fn handle_callback(
                 )));
             };
             match decode_cookie_state_value(&ctx.config.secret, &cookie_value) {
-                Ok(payload) => payload,
+                Ok(payload)
+                    if payload
+                        .additional_data
+                        .get("oauthState")
+                        .and_then(serde_json::Value::as_str)
+                        == Some(state_param.as_str()) =>
+                {
+                    payload
+                }
+                Ok(_) => {
+                    return Ok(redirect_response(&format!(
+                        "{default_error_url}?error=state_mismatch"
+                    )));
+                }
                 Err(_) => {
                     return Ok(redirect_response(&format!(
                         "{default_error_url}?error=please_restart_the_process"
@@ -2252,6 +2307,9 @@ pub(super) async fn handle_callback(
         .with_appended_header("Set-Cookie", clear_state_cookie.clone())
     };
 
+    if payload.is_expired() {
+        return Ok(redirect_on_error("state_mismatch", None));
+    }
     if let Some(error) = error.as_deref() {
         return Ok(redirect_on_error(
             error,
@@ -2259,9 +2317,6 @@ pub(super) async fn handle_callback(
         ));
     }
 
-    if payload.is_expired() {
-        return Ok(redirect_on_error("please_restart_the_process", None));
-    }
     if let Some(context) = verified_server_context(&payload, &state_param, &ctx.config.secret) {
         req.extensions()
             .insert(RecoveredOAuthServerContext(context));

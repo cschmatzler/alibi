@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod tests;
 
+mod request;
 use crate::config::AuthConfig;
 use crate::entity::{AuthSession, AuthUser};
 use crate::error::AuthResult;
@@ -8,6 +9,7 @@ use crate::schema::AuthSchema;
 use crate::store::AuthStore;
 use crate::types::CreateSession;
 use chrono::Utc;
+pub use request::SessionRequest;
 use std::sync::Arc;
 
 /// Controls whether a persistent session read may write to its store.
@@ -219,27 +221,26 @@ impl<S: AuthSchema> SessionManager<S> {
     /// Query values use the upstream Boolean coercion: any nonempty string,
     /// including `false`, disables refreshing.
     #[must_use]
-    pub fn request_disables_refresh(&self, request: &crate::types::AuthRequest) -> bool {
-        if request
-            .query
-            .get("disableRefresh")
-            .is_some_and(|value| !value.is_empty())
-        {
+    pub fn request_disables_refresh(&self, request: &impl SessionRequest) -> bool {
+        if request.session_query_truthy("disableRefresh") {
             return true;
         }
         let name = crate::utils::cookie_utils::related_cookie_name(&self.config, "dont_remember");
-        request.headers.get("cookie").is_some_and(|header| {
-            cookie::Cookie::split_parse(header)
-                .flatten()
-                .find(|cookie| cookie.name() == name)
-                .and_then(|cookie| {
-                    crate::utils::cookie_utils::verify_cookie_value(
-                        cookie.value(),
-                        &self.config.secret,
-                    )
-                })
-                .is_some_and(|value| !value.is_empty())
-        })
+        request
+            .session_headers()
+            .get("cookie")
+            .is_some_and(|header| {
+                cookie::Cookie::split_parse(header)
+                    .flatten()
+                    .find(|cookie| cookie.name() == name)
+                    .and_then(|cookie| {
+                        crate::utils::cookie_utils::verify_cookie_value(
+                            cookie.value(),
+                            &self.config.secret,
+                        )
+                    })
+                    .is_some_and(|value| !value.is_empty())
+            })
     }
 
     /// Delete a session
@@ -373,8 +374,8 @@ impl<S: AuthSchema> SessionManager<S> {
     /// The core runtime does not authenticate bearer headers. The separate
     /// bearer plugin may establish a signed cookie before this parser runs.
     #[must_use]
-    pub fn extract_session_token(&self, req: &crate::types::AuthRequest) -> Option<String> {
-        let header = req.headers.get("cookie")?;
+    pub fn extract_session_token(&self, req: &impl SessionRequest) -> Option<String> {
+        let header = req.session_headers().get("cookie")?;
         cookie::Cookie::split_parse(header)
             .flatten()
             .find(|cookie| cookie.name() == self.config.session.cookie_name)

@@ -1,7 +1,7 @@
 use super::*;
 use crate::plugins::test_helpers;
-use better_auth_core::AuthPlugin;
 use better_auth_core::wire::{SessionView, UserView};
+use better_auth_core::{AuthPlugin, AuthVerification};
 use better_auth_core::{CreateAccount, CreateUser, HttpMethod};
 use chrono::Duration;
 use cookie::Cookie;

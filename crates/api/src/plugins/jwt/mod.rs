@@ -1,6 +1,8 @@
 //! Asymmetric session JWTs, public JWKS, and trusted server-side signing.
 
 mod crypto;
+mod endpoint;
+pub use endpoint::{JwtTokenOutput, JwtVerifyOutput};
 
 #[cfg(test)]
 mod tests;
@@ -88,6 +90,8 @@ impl Default for JwtKeyPairConfig {
 #[derive(Clone, Debug)]
 pub enum JwtExpiration {
     After(Duration),
+    /// Relative lifetime retaining the Source floating-point seconds.
+    AfterSeconds(f64),
     At(DateTime<Utc>),
     Numeric(f64),
 }
@@ -125,6 +129,21 @@ impl JwtExpiration {
                 };
                 base + seconds
             }
+            Self::AfterSeconds(seconds) => {
+                let base = match issued_at {
+                    None | Some(JsValue::Null) => Utc::now().timestamp() as f64,
+                    Some(JsValue::Bool(value)) => f64::from(u8::from(*value)),
+                    Some(JsValue::Number(value)) => *value,
+                    Some(value) => {
+                        return JsValue::String(format!(
+                            "{}{}",
+                            js_raw_primitive_string(value),
+                            ryu_js::Buffer::new().format(*seconds)
+                        ));
+                    }
+                };
+                base + seconds
+            }
             Self::At(date) => date.timestamp() as f64,
             Self::Numeric(value) => *value,
         };
@@ -149,7 +168,26 @@ impl JwtExpiration {
                         // toExpJWT uses JavaScript addition before JOSE parses a
                         // relative NumericDate. Preserve string concatenation,
                         // including arrays' and objects' primitive conversion.
-                        return json!(format!("{}{seconds}", js_primitive_string(value)));
+                        return json!(format!(
+                            "{}{}",
+                            js_primitive_string(value),
+                            ryu_js::Buffer::new().format(seconds)
+                        ));
+                    }
+                };
+                base + seconds
+            }
+            Self::AfterSeconds(seconds) => {
+                let base = match issued_at {
+                    None | Some(Value::Null) => Utc::now().timestamp() as f64,
+                    Some(Value::Bool(value)) => f64::from(u8::from(*value)),
+                    Some(Value::Number(value)) => value.as_f64().unwrap_or_default(),
+                    Some(value) => {
+                        return json!(format!(
+                            "{}{}",
+                            js_primitive_string(value),
+                            ryu_js::Buffer::new().format(*seconds)
+                        ));
                     }
                 };
                 base + seconds
@@ -233,6 +271,7 @@ pub trait JwtKeyring: Send + Sync {
 pub struct JwtKeyringContext<'a> {
     pub path: &'a str,
     pub request: Option<&'a AuthRequest>,
+    pub endpoint: Option<&'a better_auth_core::endpoint::EndpointCall>,
 }
 
 /// One property in an application-owned remote signing payload.
@@ -398,8 +437,12 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Vec<Jwk>> {
-        self.keys_at_path(request, request.map_or("virtual:", AuthRequest::path), ctx)
-            .await
+        let endpoint = better_auth_core::endpoint::current_endpoint_call_context();
+        let path = endpoint
+            .as_ref()
+            .and_then(better_auth_core::endpoint::EndpointCall::path)
+            .unwrap_or_else(|| request.map_or("virtual:", AuthRequest::path));
+        self.keys_at_path(request, path, ctx).await
     }
 
     async fn keys_at_path(
@@ -408,8 +451,17 @@ impl JwtPlugin {
         path: &str,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Vec<Jwk>> {
+        let endpoint = better_auth_core::endpoint::current_endpoint_call_context();
         match &self.config.keyring {
-            Some(keyring) => keyring.keys(&JwtKeyringContext { path, request }).await,
+            Some(keyring) => {
+                keyring
+                    .keys(&JwtKeyringContext {
+                        path,
+                        request,
+                        endpoint: endpoint.as_ref(),
+                    })
+                    .await
+            }
             None => ctx.database.list_jwks().await,
         }
     }
@@ -447,14 +499,19 @@ impl JwtPlugin {
             alg: Some(config.algorithm.as_str().to_owned()),
             crv: config.algorithm.curve().map(str::to_owned),
         };
+        let endpoint = better_auth_core::endpoint::current_endpoint_call_context();
         match &self.config.keyring {
             Some(keyring) => {
                 keyring
                     .create_key(
                         data,
                         &JwtKeyringContext {
-                            path: request.map_or("virtual:", AuthRequest::path),
+                            path: endpoint
+                                .as_ref()
+                                .and_then(better_auth_core::endpoint::EndpointCall::path)
+                                .unwrap_or_else(|| request.map_or("virtual:", AuthRequest::path)),
                             request,
+                            endpoint: endpoint.as_ref(),
                         },
                     )
                     .await
@@ -943,12 +1000,12 @@ impl JwtPlugin {
             updated_at: None,
             version: None,
         };
-        self.sign_session_token(req, ctx, &session).await
+        self.sign_session_token(Some(req), ctx, &session).await
     }
 
     async fn sign_session_token(
         &self,
-        req: &AuthRequest,
+        req: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
         session: &JwtSession,
     ) -> AuthResult<String> {
@@ -972,7 +1029,7 @@ impl JwtPlugin {
             None => session.user.id.clone(),
         };
         drop(payload.insert("sub".to_owned(), json!(subject)));
-        self.sign_jwt(payload, &JwtSignOptions::default(), Some(req), ctx)
+        self.sign_jwt(payload, &JwtSignOptions::default(), req, ctx)
             .await
     }
 
@@ -984,10 +1041,28 @@ impl JwtPlugin {
         if self.config.remote_url.is_some() {
             return Ok(AuthResponse::new(404).with_header("content-type", "application/json"));
         }
-        let mut keys = self.keys(Some(req), ctx).await?;
+        Ok(AuthResponse::json(
+            200,
+            &self.jwks_value(Some(req), ctx).await?,
+        )?)
+    }
+
+    async fn jwks_value(
+        &self,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<impl AuthSchema>,
+    ) -> AuthResult<Value> {
+        if self.config.remote_url.is_some() {
+            return Err(AuthError::Api {
+                status: 404,
+                code: None,
+                message: String::new(),
+            });
+        }
+        let mut keys = self.keys(request, ctx).await?;
         if keys.is_empty() {
-            drop(self.create_jwk(None, Some(req), ctx).await?);
-            keys = self.keys(Some(req), ctx).await?;
+            drop(self.create_jwk(None, request, ctx).await?);
+            keys = self.keys(request, ctx).await?;
         }
         if keys.is_empty() {
             return Err(AuthError::config(
@@ -1020,7 +1095,7 @@ impl JwtPlugin {
                 Ok::<_, AuthError>(public)
             })
             .collect::<AuthResult<Vec<_>>>()?;
-        Ok(AuthResponse::json(200, &json!({ "keys": keys }))?)
+        Ok(json!({ "keys": keys }))
     }
 }
 
@@ -1035,6 +1110,26 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
             AuthRoute::get("/token", "get_token"),
         ]
     }
+    fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> {
+        endpoint::definitions(&self.config.jwks_path)
+    }
+
+    fn validate_endpoint(
+        &self,
+        call: &better_auth_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<better_auth_core::endpoint::EndpointInput> {
+        endpoint::validate(call)
+    }
+
+    async fn on_endpoint(
+        &self,
+        call: &better_auth_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<better_auth_core::endpoint::EndpointResponse> {
+        self.call_endpoint(call, ctx).await
+    }
+
     async fn on_init(&self, _ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
         if self.config.jwks_path.is_empty()
             || !self.config.jwks_path.starts_with('/')
@@ -1082,7 +1177,7 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
         let cache = better_auth_core::cache::runtime::session_hook_cache_metadata(req);
         let token = self
             .sign_session_token(
-                req,
+                Some(req),
                 ctx,
                 &JwtSession {
                     user,

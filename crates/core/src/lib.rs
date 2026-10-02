@@ -26,6 +26,8 @@ pub mod config;
 
 pub mod email;
 
+pub mod endpoint;
+
 pub mod entity;
 
 pub mod error;
@@ -52,6 +54,8 @@ pub(crate) mod test_store;
 pub mod types;
 
 pub mod user_validation;
+
+pub mod verification;
 
 mod types_org;
 

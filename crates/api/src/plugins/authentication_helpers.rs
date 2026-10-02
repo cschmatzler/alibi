@@ -95,16 +95,8 @@ pub(in crate::plugins) fn parse_email(email: &str) -> AuthResult<String> {
 pub(in crate::plugins) async fn find_verification<S: AuthSchema>(
     ctx: &AuthContext<S>,
     identifier: &str,
-) -> AuthResult<Option<S::Verification>> {
-    let value = ctx
-        .database
-        .get_latest_verification_by_identifier(identifier)
-        .await?;
-    if !ctx.config.verification.disable_cleanup {
-        let _ignored_delete_expired_verifications =
-            ctx.database.delete_expired_verifications().await?;
-    }
-    Ok(value)
+) -> AuthResult<Option<better_auth_core::verification::VerificationSnapshot>> {
+    ctx.verifications().find(identifier).await
 }
 
 // This is the exact practical-email grammar used by the pinned Zod runtime.
@@ -506,22 +498,30 @@ pub(in crate::plugins) async fn revoke_unproven_access<S: AuthSchema>(
     user_id: &str,
 ) -> AuthResult<Option<S::User>> {
     let identifier = format!("revoke-unproven-account-access:{user_id}");
-    if !ctx
-        .database
-        .reserve_verification(CreateVerification {
+    let reserved = ctx
+        .verifications()
+        .reserve(CreateVerification {
             identifier: identifier.clone(),
             value: user_id.to_owned(),
             expires_at: Utc::now() + Duration::seconds(5),
         })
-        .await?
-    {
+        .await;
+    // The pinned mailbox-promotion helper deliberately proceeds without a
+    // reservation when verification storage is secondary-only. Other failures
+    // still stop cleanup and publication.
+    let reserved = match reserved {
+        Ok(value) => value,
+        Err(AuthError::Internal(message))
+            if message
+                == "reserveVerificationValue requires database-backed verification storage. Set verification.storeInDatabase to true for flows that reserve verification values." =>
+        {
+            true
+        }
+        Err(error) => return Err(error),
+    };
+    if !reserved {
         for _ in 0..8 {
-            if ctx
-                .database
-                .get_verification_by_identifier(&identifier)
-                .await?
-                .is_none()
-            {
+            if ctx.verifications().find(&identifier).await?.is_none() {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
@@ -551,11 +551,7 @@ pub(in crate::plugins) async fn revoke_unproven_access<S: AuthSchema>(
             .map(Some)
     }
     .await;
-    drop(
-        ctx.database
-            .delete_verifications_by_identifier(&identifier)
-            .await,
-    );
+    drop(ctx.verifications().delete(&identifier).await);
     result
 }
 

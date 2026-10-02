@@ -235,7 +235,7 @@ pub(in crate::plugins) struct ListKeysResponse {
 }
 
 /// Newly issued API key. The plaintext key is only returned during creation.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CreateKeyResponse {
     /// Plaintext secret to deliver to the key holder.
     pub key: String,
@@ -245,7 +245,7 @@ pub struct CreateKeyResponse {
 }
 
 /// Result of trusted forced expiration cleanup. Store failures are logged.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DeleteExpiredApiKeysResponse {
     pub success: bool,
     pub error: Option<String>,
@@ -262,6 +262,13 @@ where
     let input: JsValue = request
         .body_as_json()
         .map_err(|_error| validation_response("body", "Invalid JSON"))?;
+    parse_api_key_value(input)
+}
+
+pub(super) fn parse_api_key_value<T>(input: JsValue) -> Result<T, AuthResponse>
+where
+    T: serde::de::DeserializeOwned + Validate,
+{
     let body: T = serde_path_to_error::deserialize(input.clone()).map_err(|error| {
         let mut path = error.path().to_string().replace('[', ".").replace(']', "");
         if path == "." {

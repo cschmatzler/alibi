@@ -7,12 +7,12 @@ mkdir -p coverage
 export CARGO_LLVM_COV_TARGET_DIR="$PWD/coverage/target"
 export BETTER_AUTH_COMPAT_COVERAGE_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
 cargo llvm-cov clean --workspace
-# Preserve the native matrix and add its existing public HTTP/SDK owners.
+# Preserve the native matrix and add its existing public HTTP/SDK and server-call owners.
 # Both runs contribute real native execution to one unchanged production floor.
 cargo llvm-cov nextest --workspace --locked --features axum,seaorm2,redis-cache --no-report
 cargo llvm-cov nextest --workspace --locked --features axum,seaorm2,redis-cache \
   --no-report --test client_compat_tests --run-ignored only --test-threads 1 \
-  -E 'test(=tests::oauth_client_compat) | test(=tests::account_management_client_compat) | test(=tests::jwt_client_compat) | test(=tests::sessions_client_compat) | test(=tests::user_management_client_compat) | test(=tests::captcha_client_compat) | test(=tests::additional_fields_client_compat)'
+  -E 'test(=tests::oauth_client_compat) | test(=tests::account_management_client_compat) | test(=tests::jwt_client_compat) | test(=tests::sessions_client_compat) | test(=tests::user_management_client_compat) | test(=tests::captcha_client_compat) | test(=tests::server_endpoints_client_compat) | test(=tests::core_client_compat) | test(=tests::additional_fields_client_compat)'
 export LLVM_COV_FLAGS="${LLVM_COV_FLAGS:+$LLVM_COV_FLAGS }-object=coverage/target/debug/compat-rust-server"
 cargo llvm-cov report --locked --package '*' \
   --ignore-filename-regex '(tests/|scripts/|target/)' \

@@ -25,6 +25,30 @@ pub enum JsValue {
 }
 
 impl JsValue {
+    /// JavaScript String coercion used by trusted endpoint ID schemas.
+    /// # Errors
+    /// Returns an error when an own toString value prevents object coercion.
+    pub fn coerce_string(&self) -> Result<String, &'static str> {
+        match self {
+            Self::Null => Ok("null".to_owned()),
+            Self::Bool(value) => Ok(value.to_string()),
+            Self::String(value) => Ok(value.clone()),
+            Self::Number(value) => Ok(ryu_js::Buffer::new().format(*value).to_owned()),
+            Self::Array(values) => values
+                .iter()
+                .map(|value| match value {
+                    Self::Null => Ok(String::new()),
+                    value => value.coerce_string(),
+                })
+                .collect::<Result<Vec<_>, _>>()
+                .map(|values| values.join(",")),
+            Self::Object(value) if value.contains_key("toString") => {
+                Err("Cannot convert object to primitive value")
+            }
+            Self::Object(_) => Ok("[object Object]".to_owned()),
+        }
+    }
+
     #[must_use]
     pub const fn as_f64(&self) -> Option<f64> {
         if let Self::Number(n) = self {

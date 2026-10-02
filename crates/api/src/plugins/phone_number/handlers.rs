@@ -14,8 +14,7 @@ use crate::plugins::{
 };
 use better_auth_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
-    AuthUser, AuthVerification, CreateAccount, CreateUser, CreateVerification, UpdateAccount,
-    UpdateUser,
+    AuthUser, CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
 };
 use chrono::Utc;
 use rand::{Rng, rngs::OsRng};
@@ -57,8 +56,8 @@ impl PhoneNumberPlugin {
     ) -> AuthResult<String> {
         let code = self.generate_code();
         drop(
-            ctx.database
-                .create_verification(CreateVerification {
+            ctx.verifications()
+                .create(CreateVerification {
                     identifier: identifier.into(),
                     value: if count_attempts {
                         format!("{code}:0")
@@ -106,9 +105,7 @@ impl PhoneNumberPlugin {
             {
                 return Err(invalid_otp());
             }
-            ctx.database
-                .delete_verifications_by_identifier(phone_number)
-                .await?;
+            ctx.verifications().delete(phone_number).await?;
             return Ok(());
         }
         self.consume_local(ctx, phone_number, code).await
@@ -122,35 +119,31 @@ impl PhoneNumberPlugin {
         let existing = find_verification(ctx, identifier)
             .await?
             .ok_or_else(|| phone_error(400, "OTP_NOT_FOUND", "OTP not found"))?;
-        if existing.expires_at() < Utc::now() {
-            ctx.database
-                .delete_verifications_by_identifier(identifier)
-                .await?;
+        if existing.is_expired() {
+            ctx.verifications().delete(identifier).await?;
             return Err(phone_error(400, "OTP_EXPIRED", "OTP expired"));
         }
-        let (_, attempts) = split_code(existing.value());
+        let (_, attempts) = split_code(existing.value()?);
         if attempts >= self.config.allowed_attempts {
-            ctx.database
-                .delete_verifications_by_identifier(identifier)
-                .await?;
+            ctx.verifications().delete(identifier).await?;
             return Err(phone_error(403, "TOO_MANY_ATTEMPTS", "Too many attempts"));
         }
         let consumed = ctx
-            .database
-            .consume_verification_by_identifier(identifier)
+            .verifications()
+            .consume(identifier)
             .await?
             .ok_or_else(invalid_otp)?;
-        let (code, attempts_2) = split_code(consumed.value());
+        let (code, attempts_2) = split_code(consumed.value()?);
         if attempts_2 >= self.config.allowed_attempts {
             return Err(phone_error(403, "TOO_MANY_ATTEMPTS", "Too many attempts"));
         }
         if code != provided_code {
             drop(
-                ctx.database
-                    .create_verification(CreateVerification {
+                ctx.verifications()
+                    .create(CreateVerification {
                         identifier: identifier.into(),
                         value: format!("{code}:{}", attempts_2 + 1),
-                        expires_at: consumed.expires_at(),
+                        expires_at: consumed.expires_at()?,
                     })
                     .await?,
             );

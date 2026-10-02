@@ -59,10 +59,10 @@ pub mod wire;
 
 #[doc(hidden)]
 pub use better_auth_core as __private_core;
-pub use better_auth_core::field_policy;
 pub use better_auth_core::{
     AuthConfig, AuthError, AuthResult, AuthSchema, BackgroundTaskCompletion, BackgroundTaskHandler,
     PasswordHashContext, PasswordHashHook, PasswordHasher, ScryptHasher, hash_password,
     verify_password,
 };
+pub use better_auth_core::{endpoint, field_policy};
 pub use core::{AuthBuilder, BetterAuth};

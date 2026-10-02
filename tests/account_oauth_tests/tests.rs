@@ -916,11 +916,12 @@ async fn test_account_linking_disabled_rejects_new_provider() {
     let payload = json!({
         "callbackURL": format!("{}/callback/test", mock_url),
         "codeVerifier": "test-verifier",
+        "oauthState": state,
         "expiresAt": (Utc::now() + Duration::minutes(10)).timestamp_millis(),
     });
 
     db.create_verification(CreateVerification {
-        identifier: format!("oauth:{state}"),
+        identifier: state.to_owned(),
         value: payload.to_string(),
         expires_at: Utc::now() + Duration::minutes(10),
     })
@@ -1073,11 +1074,12 @@ async fn test_callback_with_encryption_encrypts_tokens_for_new_user() {
     let payload = json!({
         "callbackURL": format!("{}/callback/test", mock_url),
         "codeVerifier": "test-verifier",
+        "oauthState": state,
         "expiresAt": (Utc::now() + Duration::minutes(10)).timestamp_millis(),
     });
 
     db.create_verification(CreateVerification {
-        identifier: format!("oauth:{state}"),
+        identifier: state.to_owned(),
         value: payload.to_string(),
         expires_at: Utc::now() + Duration::minutes(10),
     })

@@ -15,7 +15,7 @@ use super::{PasskeyConfig, PasskeyRegistrationUser};
 use crate::plugins::StatusResponse;
 use crate::plugins::helpers::{SessionIssueError, issue_user_session_record};
 use base64::Engine;
-use better_auth_core::entity::{AuthPasskey, AuthSession, AuthUser, AuthVerification};
+use better_auth_core::entity::{AuthPasskey, AuthSession, AuthUser};
 use better_auth_core::types::UpdatePasskeyAuthentication;
 use better_auth_core::wire::PasskeyView;
 use better_auth_core::{AuthContext, AuthError, AuthResult, CreatePasskey, CreateVerification};
@@ -177,8 +177,8 @@ pub(super) async fn generate_register_options_core(
         }),
     })?;
     drop(
-        ctx.database
-            .create_verification(CreateVerification {
+        ctx.verifications()
+            .create(CreateVerification {
                 identifier: token.clone(),
                 value: serialized_state,
                 expires_at,
@@ -254,8 +254,8 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
     let token = Uuid::new_v4().to_string();
     let expires_at = Utc::now() + Duration::seconds(config.challenge_ttl_secs);
     drop(
-        ctx.database
-            .create_verification(CreateVerification {
+        ctx.verifications()
+            .create(CreateVerification {
                 identifier: token.clone(),
                 value: serde_json::to_string(&state)?,
                 expires_at,
@@ -305,18 +305,14 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         return challenge_not_found();
     };
 
-    let Some(verification) = ctx
-        .database
-        .consume_verification_by_identifier(&token)
-        .await?
-    else {
+    let Some(verification) = ctx.verifications().consume(&token).await? else {
         return challenge_not_found();
     };
 
-    let stored_state: StoredRegistrationState = match serde_json::from_str(verification.value()) {
+    let stored_state: StoredRegistrationState = match serde_json::from_str(verification.value()?) {
         Ok(state) => state,
         Err(_)
-            if serde_json::from_str::<StoredAuthenticationState>(verification.value()).is_ok() =>
+            if serde_json::from_str::<StoredAuthenticationState>(verification.value()?).is_ok() =>
         {
             return challenge_not_found();
         }
@@ -654,17 +650,16 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         return challenge_not_found();
     };
 
-    let Some(verification) = ctx
-        .database
-        .consume_verification_by_identifier(&token)
-        .await?
-    else {
+    let Some(verification) = ctx.verifications().consume(&token).await? else {
         return challenge_not_found();
     };
 
-    let stored_state: StoredAuthenticationState = match serde_json::from_str(verification.value()) {
+    let stored_state: StoredAuthenticationState = match serde_json::from_str(verification.value()?)
+    {
         Ok(state) => state,
-        Err(_) if serde_json::from_str::<StoredRegistrationState>(verification.value()).is_ok() => {
+        Err(_)
+            if serde_json::from_str::<StoredRegistrationState>(verification.value()?).is_ok() =>
+        {
             return challenge_not_found();
         }
         Err(_) => return passkey_authentication_failure(),

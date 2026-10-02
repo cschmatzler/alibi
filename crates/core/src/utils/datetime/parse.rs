@@ -1,10 +1,11 @@
-//! SIWE compares JavaScript Date.parse results, including ISO day overflow and
+//! JavaScript Date.parse results, including ISO day overflow and
 //! fractional-second truncation. Invalid dates deliberately impose no bound.
 
-use super::parse::js_trim;
+use crate::utils::javascript::trim as js_trim;
 use chrono::{DateTime, Datelike, Local, NaiveDate, NaiveDateTime, Offset, TimeZone};
 
-pub(super) fn parse_date_millis(value: &str) -> Option<i64> {
+#[must_use]
+pub fn parse_date_millis(value: &str) -> Option<i64> {
     let value = js_trim(value);
     parse_iso(value).or_else(|| parse_legacy(value))
 }
