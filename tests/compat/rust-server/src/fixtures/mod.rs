@@ -76,3 +76,5 @@ pub(crate) mod verification_storage_fixture;
 pub(crate) mod managed_secrets_fixture;
 
 pub(crate) mod linear_provider_fixture;
+
+pub(crate) mod naver_provider_fixture;

@@ -750,6 +750,9 @@ pub use huggingface::HuggingFaceOptions;
 pub use kakao::KakaoOptions;
 pub use kick::KickOptions;
 
+mod naver;
+pub use naver::NaverOptions;
+
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
