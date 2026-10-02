@@ -411,3 +411,59 @@ all-targets strict Clippy (`/tmp/issue205-stack-bounded-native14.log`, terminal
 0). Existing stronger native owners detect this regression without adding a
 duplicate test. Final composed canonical, docs/browser and fresh seven-family
 coverage remain to be measured on the next frozen head.
+
+## Final composed validation
+
+The final production and primary-owner freeze is
+`ad4caa79636cd4957fb1f5007649118a8e1ca800`, composed on actual main
+`70b541b54615ffc8fca5c3e66de83ea7bfc6f662`. Its complete canonical run
+finishes at the full SDK failure, with 1,483/1,487 owners passing and 105,474
+assertions (`/tmp/issue205-canonical-ad4caa79.log`). All 27 dispatcher owners
+pass in that full run, including the real incoming POST and all three
+organization/cache modes. The earlier focused owner run passes 27/27 and
+3,966 assertions; no final full-canonical pass is claimed.
+
+The four remaining full SDK failures are retained without comparison waivers:
+
+- Organization trusted-role addition reports ten session-expiry paths under
+  observation5.usersBefore/usersAfter: owner and target sessions0/1, and
+  foreign session0. Actual Source timestamps are 10:01:22.683–.861 versus
+  native 10:01:26.005–.244, each with the configured seven-day duration.
+- The remote application signer undefined owner reports only
+  observation.captured.events.0.payload.exp. Exact unchanged-parent
+  reproduction of this particular pair is not claimed.
+- The trust-cleanup-disabled factor owner reports six timestamp paths under
+  observation.observations.6.attempts.0 and challenge.0: createdAt, updatedAt
+  and expiresAt. Actual creation times are Source10:08:00.235 versus
+  native10:08:02.584–.585; actual expiry times are Source10:18:00.985 versus
+  native10:18:03.334. No exact unchanged-parent attribution is claimed.
+- The expired reset/OTP owner reports only
+  observation.observations.0.proof.length, Source24/native32, the separately
+  preserved verification-storage issue174 repair.
+
+Both strict workspace matrices, rustls, formatting, 794 default and 846
+optional native tests, two fixture tests, TypeScript, all 81 harness
+owners/1,935 assertions, 36 Axum owners, three endpoint checks and two
+inventory checks pass before the canonical full SDK failure. Its later
+docs/browser/coverage stages are not reached. Independently, strict workspace
+rustdoc and the actual Chromium wrapper pass on this same freeze
+(`/tmp/issue205-docs-browser-ad4caa79.log`, one wrapper test, terminal0).
+
+Fresh instrumented collection passes all 846 native tests and all seven real
+SDK families: account-management, CAPTCHA, JWT, OAuth, server-endpoints,
+sessions and user-management. The unchanged 75% production floor passes at
+34,079/44,058 lines = 77.350311%, with 225 source records and no duplicate
+paths. Both fixture and native execution use this checkout's own
+coverage/target, and exclusions remain unchanged. Collection is terminal0
+(`/tmp/issue205-clean-coverage-ad4caa79.log`). The complete preserved report
+is `/tmp/issue205-clean-coverage-ad4caa79.lcov.info`, SHA256
+`973345bb1f0589797930bedd938e8b09168e92a56fb2af8bb907d6c187b75caa`;
+the primary agent independently recalculated its hash, counts and duplicates.
+
+Independent review cleared the physical principal/config/store binding,
+scoped member operations, nested GET/real POST context separation, actual
+signature/issuance bounds and unchanged coverage selector/exclusions. All
+5,519 parent capability requirements remain intact. The five-projection
+persistence scope and same-second cached/physical JWS representation limit
+above remain explicit. Final publication changes only this audit; the tested
+production and primary owners stay frozen.
