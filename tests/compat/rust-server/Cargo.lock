@@ -590,6 +590,7 @@ dependencies = [
  "jsonwebtoken",
  "percent-encoding",
  "rand 0.8.5",
+ "regex",
  "ryu-js",
  "scrypt",
  "serde",
@@ -630,6 +631,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
  "uuid",
 ]
 

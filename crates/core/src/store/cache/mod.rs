@@ -86,6 +86,21 @@ pub mod redis_adapter {
                 .map_err(|error| AuthError::internal(format!("Redis consume error: {error}")))
         }
 
+        async fn increment(&self, key: &str, expires_in: std::time::Duration) -> AuthResult<f64> {
+            if expires_in.is_zero() || expires_in.subsec_nanos() != 0 {
+                return Err(AuthError::internal(
+                    "Redis counter TTL must be a positive integer number of seconds",
+                ));
+            }
+            let mut connection = self
+                .client
+                .get_connection()
+                .map_err(|_| AuthError::internal("Redis counter connection failed"))?;
+            redis::Script::new("local count = redis.call('INCR', KEYS[1]); if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]); end; return count")
+                .key(key).arg(expires_in.as_secs()).invoke(&mut connection)
+                .map_err(|_| AuthError::internal("Redis counter increment failed"))
+        }
+
         async fn exists(&self, key: &str) -> AuthResult<bool> {
             let mut conn = self
                 .client
@@ -153,6 +168,14 @@ pub trait CacheAdapter: Send + Sync {
     async fn get_and_delete(&self, _key: &str) -> AuthResult<Option<String>> {
         Err(AuthError::internal(
             "atomic cache consumption is not supported by this adapter",
+        ))
+    }
+
+    /// Atomically increment a counter, setting its TTL only on creation.
+    /// Existing TTLs must not be extended by admitted or rejected requests.
+    async fn increment(&self, _key: &str, _expires_in: std::time::Duration) -> AuthResult<f64> {
+        Err(AuthError::internal(
+            "atomic cache increment is not supported by this adapter",
         ))
     }
 
@@ -268,6 +291,36 @@ impl CacheAdapter for MemoryCacheAdapter {
             .remove(key)
             .filter(|entry| entry.expires_at > Utc::now())
             .map(|entry| entry.value))
+    }
+
+    async fn increment(&self, key: &str, expires_in: std::time::Duration) -> AuthResult<f64> {
+        let now = Utc::now();
+        let duration = Duration::from_std(expires_in)
+            .map_err(|_| AuthError::internal("Cache counter TTL is too large"))?;
+        let expires_at = now
+            .checked_add_signed(duration)
+            .ok_or_else(|| AuthError::internal("Cache counter TTL is too large"))?;
+        let mut data = self
+            .data
+            .lock()
+            .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
+        if let Some(entry) = data.get_mut(key).filter(|entry| entry.expires_at > now) {
+            let count =
+                entry.value.parse::<f64>().map_err(|_| {
+                    AuthError::internal("Cache counter contains a non-numeric value")
+                })? + 1.0;
+            entry.value = count.to_string();
+            return Ok(count);
+        }
+        drop(data.insert(
+            key.to_owned(),
+            CacheEntry {
+                value: "1".to_owned(),
+                expires_at,
+            },
+        ));
+        drop(data);
+        Ok(1.0)
     }
 
     async fn exists(&self, key: &str) -> AuthResult<bool> {

@@ -79,6 +79,7 @@ pub struct MagicLinkConfig {
     /// Lifetime in seconds. Zero and NaN use 300 seconds. Fractions retain
     /// JavaScript millisecond rounding; invalid dates fail before persistence.
     pub expires_in: f64,
+    pub rate_limit: better_auth_core::EndpointRateLimit,
     pub disable_sign_up: bool,
 }
 
@@ -95,6 +96,10 @@ impl Default for MagicLinkConfig {
             generate_token: None,
             storage: MagicLinkTokenStorage::Plain,
             expires_in: 300.0,
+            rate_limit: better_auth_core::EndpointRateLimit {
+                window_seconds: 60.0,
+                max_requests: 5.0,
+            },
             disable_sign_up: false,
         }
     }
@@ -325,6 +330,12 @@ better_auth_core::impl_auth_plugin! {
         get "/magic-link/verify" => verify, "verifyMagicLink";
     }
     extra {
+        fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
+            vec![better_auth_core::PluginRateLimit { matches: |path| path.starts_with("/sign-in/magic-link") || path.starts_with("/magic-link/verify"), limit: better_auth_core::EndpointRateLimit {
+                window_seconds: if self.config.rate_limit.window_seconds == 0.0 || self.config.rate_limit.window_seconds.is_nan() { 60.0 } else { self.config.rate_limit.window_seconds },
+                max_requests: if self.config.rate_limit.max_requests == 0.0 || self.config.rate_limit.max_requests.is_nan() { 5.0 } else { self.config.rate_limit.max_requests },
+            } }]
+        }
         async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
             ctx.set_metadata("magic-link.enabled", json!(true));
             Ok(())

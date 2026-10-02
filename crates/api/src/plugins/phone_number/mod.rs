@@ -142,6 +142,9 @@ better_auth_core::impl_auth_plugin! {
         post "/phone-number/reset-password" => reset_password,"resetPasswordPhoneNumber";
     }
     extra {
+        fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
+            vec![better_auth_core::PluginRateLimit { matches: |path| path.starts_with("/phone-number"), limit: better_auth_core::EndpointRateLimit { window_seconds: 60.0, max_requests: 10.0 } }]
+        }
         async fn on_init(&self,ctx:&mut better_auth_core::AuthInitContext<S>)->AuthResult<()> {
             ctx.set_metadata("phone-number.enabled",serde_json::json!(true));
             ctx.register_user_update_transform(|_, mut update| {

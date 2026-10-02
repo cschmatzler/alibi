@@ -92,6 +92,11 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
     /// Routes that this plugin handles
     fn routes(&self) -> Vec<AuthRoute>;
 
+    /// Ordered rate-limit policies supplied by this installed plugin.
+    fn rate_limits(&self) -> Vec<crate::middleware::rate_limit::PluginRateLimit> {
+        Vec::new()
+    }
+
     /// Trusted operations available through host dispatch, independently of HTTP visibility.
     fn server_endpoints(&self) -> Vec<crate::endpoint::EndpointDefinition> {
         Vec::new()
