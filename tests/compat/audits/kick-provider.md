@@ -25,5 +25,16 @@ No private predicate tests or production exports used only by tests are added.
 Complex malformed projections/async callbacks/advanced policies remain bounded
 by #181/#184/#188/#193 instead of claiming arbitrary JavaScript emulation.
 
-Implementation, actual before proof, independent review, measured capability
-cells and final gates are pending. No Source/comparer edit or hook bypass.
+Strict API/fixture all-target Clippy and formatting passed. An initial script
+failed to generate the new SDK owner and returned127 after strict TypeScript;
+that log is retained and does not claim an executed owner. The corrected program
+passes all40 actual Source/native owners with1,582assertions
+(/tmp/issue148-corrected-real-owner.log,exit0). Every remote profile envelope
+contains a second valid unselected profile, so success and missing-first-subject
+controls prove first-only selection rather than fallback. All full receipts,
+raw mapper input, physical and foreign rows, verified mapping/linking policies,
+replay/rotation and local logout remain observed.
+
+Independent factory/helpers/production/fixture review found no blocker. Preserve
+all4,991 parent cells and append only actual passing Kick trace constraints.
+Intended generic-parent authorization proof and final broad gates remain pending. No Source/comparer edit or hook bypass.

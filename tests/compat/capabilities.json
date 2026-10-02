@@ -12,14 +12,16 @@
           "dropbox existing account info uses real POST without readmitting a changed raw account subject",
           "figma existing account info uses real GET without readmitting a changed raw account subject",
           "huggingface existing account info uses real GET without readmitting a changed raw account subject",
-          "kakao existing account info uses real GET without readmitting a changed raw account subject"
+          "kakao existing account info uses real GET without readmitting a changed raw account subject",
+          "kick existing account info uses real GET without readmitting a changed raw account subject"
         ],
         "rejection": [
           "account info requires an explicit account selector",
           "dropbox existing account info uses real POST without readmitting a changed raw account subject",
           "figma existing account info uses real GET without readmitting a changed raw account subject",
           "huggingface existing account info uses real GET without readmitting a changed raw account subject",
-          "kakao existing account info uses real GET without readmitting a changed raw account subject"
+          "kakao existing account info uses real GET without readmitting a changed raw account subject",
+          "kick existing account info uses real GET without readmitting a changed raw account subject"
         ],
         "authorization": null,
         "state": [
@@ -27,7 +29,8 @@
           "dropbox existing account info uses real POST without readmitting a changed raw account subject",
           "figma existing account info uses real GET without readmitting a changed raw account subject",
           "huggingface existing account info uses real GET without readmitting a changed raw account subject",
-          "kakao existing account info uses real GET without readmitting a changed raw account subject"
+          "kakao existing account info uses real GET without readmitting a changed raw account subject",
+          "kick existing account info uses real GET without readmitting a changed raw account subject"
         ]
       }
     },
@@ -364,7 +367,26 @@
           "kakao zero access expiry follows actual token helper",
           "kakao zero image nested profile retains original raw account and typed persistence",
           "kakao zero nickname nested profile retains original raw account and typed persistence",
-          "kakao zero valid email nested profile retains original raw account and typed persistence"
+          "kakao zero valid email nested profile retains original raw account and typed persistence",
+          "kick absent access expiry follows actual token helper",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick empty image first envelope profile retains original raw account and typed persistence",
+          "kick empty name first envelope profile retains original raw account and typed persistence",
+          "kick existing account info uses real GET without readmitting a changed raw account subject",
+          "kick explicit signup overrides implicit signup policy",
+          "kick fractional access expiry follows actual token helper",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick missing image first envelope profile retains original raw account and typed persistence",
+          "kick missing name first envelope profile retains original raw account and typed persistence",
+          "kick null image first envelope profile retains original raw account and typed persistence",
+          "kick null name first envelope profile retains original raw account and typed persistence",
+          "kick numeric image first envelope profile retains original raw account and typed persistence",
+          "kick numeric name first envelope profile retains original raw account and typed persistence",
+          "kick numeric subject first envelope profile retains original raw account and typed persistence",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick zero access expiry follows actual token helper"
         ],
         "rejection": [
           "social callback rejects consumed database state while retaining the issued session and foreign state",
@@ -476,7 +498,20 @@
           "kakao explicit browser link admits raw account while retaining the existing principal",
           "kakao explicit browser link rejects missing raw account while retaining the existing principal",
           "kakao mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick browser blank-subject denies before any owned or foreign identity write",
+          "kick browser missing-subject denies before any owned or foreign identity write",
+          "kick browser null-subject denies before any owned or foreign identity write",
+          "kick browser userinfo-http-error denies before any owned or foreign identity write",
+          "kick browser wrong-state denies before any owned or foreign identity write",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick explicit browser link default-unverified retains existing and foreign authority",
+          "kick explicit browser link mapped-verified retains existing and foreign authority",
+          "kick explicit browser link missing-raw retains existing and foreign authority",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "authorization": [
           "social linking rejects missing tampered and revoked sessions without changing any principal",
@@ -586,7 +621,20 @@
           "kakao explicit browser link admits raw account while retaining the existing principal",
           "kakao explicit browser link rejects missing raw account while retaining the existing principal",
           "kakao mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick browser blank-subject denies before any owned or foreign identity write",
+          "kick browser missing-subject denies before any owned or foreign identity write",
+          "kick browser null-subject denies before any owned or foreign identity write",
+          "kick browser userinfo-http-error denies before any owned or foreign identity write",
+          "kick browser wrong-state denies before any owned or foreign identity write",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick explicit browser link default-unverified retains existing and foreign authority",
+          "kick explicit browser link mapped-verified retains existing and foreign authority",
+          "kick explicit browser link missing-raw retains existing and foreign authority",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -855,7 +903,38 @@
           "kakao zero access expiry follows actual token helper",
           "kakao zero image nested profile retains original raw account and typed persistence",
           "kakao zero nickname nested profile retains original raw account and typed persistence",
-          "kakao zero valid email nested profile retains original raw account and typed persistence"
+          "kakao zero valid email nested profile retains original raw account and typed persistence",
+          "kick absent access expiry follows actual token helper",
+          "kick browser blank-subject denies before any owned or foreign identity write",
+          "kick browser implicit-disabled denies before any owned or foreign identity write",
+          "kick browser missing-email denies before any owned or foreign identity write",
+          "kick browser missing-subject denies before any owned or foreign identity write",
+          "kick browser null-subject denies before any owned or foreign identity write",
+          "kick browser signup-disabled denies before any owned or foreign identity write",
+          "kick browser token-http-error denies before any owned or foreign identity write",
+          "kick browser userinfo-http-error denies before any owned or foreign identity write",
+          "kick browser wrong-provider denies before any owned or foreign identity write",
+          "kick browser wrong-state denies before any owned or foreign identity write",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick empty image first envelope profile retains original raw account and typed persistence",
+          "kick empty name first envelope profile retains original raw account and typed persistence",
+          "kick explicit browser link default-unverified retains existing and foreign authority",
+          "kick explicit browser link mapped-verified retains existing and foreign authority",
+          "kick explicit browser link missing-raw retains existing and foreign authority",
+          "kick explicit signup overrides implicit signup policy",
+          "kick fractional access expiry follows actual token helper",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick missing image first envelope profile retains original raw account and typed persistence",
+          "kick missing name first envelope profile retains original raw account and typed persistence",
+          "kick null image first envelope profile retains original raw account and typed persistence",
+          "kick null name first envelope profile retains original raw account and typed persistence",
+          "kick numeric image first envelope profile retains original raw account and typed persistence",
+          "kick numeric name first envelope profile retains original raw account and typed persistence",
+          "kick numeric subject first envelope profile retains original raw account and typed persistence",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick zero access expiry follows actual token helper"
         ]
       }
     },
@@ -1241,7 +1320,35 @@
           "kakao unverified email nested profile retains original raw account and typed persistence",
           "kakao zero image nested profile retains original raw account and typed persistence",
           "kakao zero nickname nested profile retains original raw account and typed persistence",
-          "kakao zero valid email nested profile retains original raw account and typed persistence"
+          "kakao zero valid email nested profile retains original raw account and typed persistence",
+          "kick browser blank-subject denies before any owned or foreign identity write",
+          "kick browser implicit-disabled denies before any owned or foreign identity write",
+          "kick browser missing-email denies before any owned or foreign identity write",
+          "kick browser missing-subject denies before any owned or foreign identity write",
+          "kick browser null-subject denies before any owned or foreign identity write",
+          "kick browser signup-disabled denies before any owned or foreign identity write",
+          "kick browser token-http-error denies before any owned or foreign identity write",
+          "kick browser userinfo-http-error denies before any owned or foreign identity write",
+          "kick browser wrong-provider denies before any owned or foreign identity write",
+          "kick browser wrong-state denies before any owned or foreign identity write",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick empty image first envelope profile retains original raw account and typed persistence",
+          "kick empty name first envelope profile retains original raw account and typed persistence",
+          "kick explicit browser link default-unverified retains existing and foreign authority",
+          "kick explicit browser link mapped-verified retains existing and foreign authority",
+          "kick explicit browser link missing-raw retains existing and foreign authority",
+          "kick explicit signup overrides implicit signup policy",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick missing image first envelope profile retains original raw account and typed persistence",
+          "kick missing name first envelope profile retains original raw account and typed persistence",
+          "kick null image first envelope profile retains original raw account and typed persistence",
+          "kick null name first envelope profile retains original raw account and typed persistence",
+          "kick numeric image first envelope profile retains original raw account and typed persistence",
+          "kick numeric name first envelope profile retains original raw account and typed persistence",
+          "kick numeric subject first envelope profile retains original raw account and typed persistence",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -3096,7 +3203,10 @@
           "huggingface explicit browser link admits raw account while retaining the existing principal",
           "huggingface explicit browser link rejects missing raw account while retaining the existing principal",
           "kakao explicit browser link admits raw account while retaining the existing principal",
-          "kakao explicit browser link rejects missing raw account while retaining the existing principal"
+          "kakao explicit browser link rejects missing raw account while retaining the existing principal",
+          "kick explicit browser link default-unverified retains existing and foreign authority",
+          "kick explicit browser link mapped-verified retains existing and foreign authority",
+          "kick explicit browser link missing-raw retains existing and foreign authority"
         ],
         "rejection": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -3133,7 +3243,10 @@
           "huggingface explicit browser link admits raw account while retaining the existing principal",
           "huggingface explicit browser link rejects missing raw account while retaining the existing principal",
           "kakao explicit browser link admits raw account while retaining the existing principal",
-          "kakao explicit browser link rejects missing raw account while retaining the existing principal"
+          "kakao explicit browser link rejects missing raw account while retaining the existing principal",
+          "kick explicit browser link default-unverified retains existing and foreign authority",
+          "kick explicit browser link mapped-verified retains existing and foreign authority",
+          "kick explicit browser link missing-raw retains existing and foreign authority"
         ]
       }
     },
@@ -4292,7 +4405,12 @@
           "kakao configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kakao default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kakao mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
@@ -4337,7 +4455,12 @@
           "kakao configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kakao default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kakao mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -4388,7 +4511,12 @@
           "kakao configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kakao default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kakao mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
         ]
       }
     },
@@ -5220,7 +5348,42 @@
           "kakao zero access expiry follows actual token helper",
           "kakao zero image nested profile retains original raw account and typed persistence",
           "kakao zero nickname nested profile retains original raw account and typed persistence",
-          "kakao zero valid email nested profile retains original raw account and typed persistence"
+          "kakao zero valid email nested profile retains original raw account and typed persistence",
+          "kick absent access expiry follows actual token helper",
+          "kick browser blank-subject denies before any owned or foreign identity write",
+          "kick browser implicit-disabled denies before any owned or foreign identity write",
+          "kick browser missing-email denies before any owned or foreign identity write",
+          "kick browser missing-subject denies before any owned or foreign identity write",
+          "kick browser null-subject denies before any owned or foreign identity write",
+          "kick browser signup-disabled denies before any owned or foreign identity write",
+          "kick browser token-http-error denies before any owned or foreign identity write",
+          "kick browser userinfo-http-error denies before any owned or foreign identity write",
+          "kick browser wrong-provider denies before any owned or foreign identity write",
+          "kick browser wrong-state denies before any owned or foreign identity write",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick disabled default scope omits an empty scope parameter",
+          "kick empty image first envelope profile retains original raw account and typed persistence",
+          "kick empty name first envelope profile retains original raw account and typed persistence",
+          "kick existing account info uses real GET without readmitting a changed raw account subject",
+          "kick explicit signup overrides implicit signup policy",
+          "kick fractional access expiry follows actual token helper",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick missing image first envelope profile retains original raw account and typed persistence",
+          "kick missing name first envelope profile retains original raw account and typed persistence",
+          "kick null image first envelope profile retains original raw account and typed persistence",
+          "kick null name first envelope profile retains original raw account and typed persistence",
+          "kick numeric image first envelope profile retains original raw account and typed persistence",
+          "kick numeric name first envelope profile retains original raw account and typed persistence",
+          "kick numeric subject first envelope profile retains original raw account and typed persistence",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick published configured authorization retains ordered scopes and required PKCE",
+          "kick published configured-endpoint authorization retains ordered scopes and required PKCE",
+          "kick published default authorization retains ordered scopes and required PKCE",
+          "kick published disabled-configured authorization retains ordered scopes and required PKCE",
+          "kick published disabled-scope authorization retains ordered scopes and required PKCE",
+          "kick zero access expiry follows actual token helper"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -5315,7 +5478,8 @@
           "facebook remote JWKS weak-modulus applies usable public key selection to actual signed proof",
           "figma rejects direct ID-token sign-in without remote verification or identity writes",
           "huggingface rejects direct ID-token sign-in without remote verification or identity writes",
-          "kakao rejects direct ID-token sign-in without remote verification or identity writes"
+          "kakao rejects direct ID-token sign-in without remote verification or identity writes",
+          "kick rejects direct ID-token sign-in without remote verification or identity writes"
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
@@ -5725,7 +5889,31 @@
           "kakao zero access expiry follows actual token helper",
           "kakao zero image nested profile retains original raw account and typed persistence",
           "kakao zero nickname nested profile retains original raw account and typed persistence",
-          "kakao zero valid email nested profile retains original raw account and typed persistence"
+          "kakao zero valid email nested profile retains original raw account and typed persistence",
+          "kick absent access expiry follows actual token helper",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick disabled default scope omits an empty scope parameter",
+          "kick empty image first envelope profile retains original raw account and typed persistence",
+          "kick empty name first envelope profile retains original raw account and typed persistence",
+          "kick explicit signup overrides implicit signup policy",
+          "kick fractional access expiry follows actual token helper",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick missing image first envelope profile retains original raw account and typed persistence",
+          "kick missing name first envelope profile retains original raw account and typed persistence",
+          "kick null image first envelope profile retains original raw account and typed persistence",
+          "kick null name first envelope profile retains original raw account and typed persistence",
+          "kick numeric image first envelope profile retains original raw account and typed persistence",
+          "kick numeric name first envelope profile retains original raw account and typed persistence",
+          "kick numeric subject first envelope profile retains original raw account and typed persistence",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick published configured authorization retains ordered scopes and required PKCE",
+          "kick published configured-endpoint authorization retains ordered scopes and required PKCE",
+          "kick published default authorization retains ordered scopes and required PKCE",
+          "kick published disabled-configured authorization retains ordered scopes and required PKCE",
+          "kick published disabled-scope authorization retains ordered scopes and required PKCE",
+          "kick zero access expiry follows actual token helper"
         ]
       }
     },
@@ -5848,7 +6036,12 @@
           "kakao configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kakao default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kakao mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
         ],
         "rejection": null,
         "authorization": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
@@ -5925,7 +6118,12 @@
           "kakao configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kakao default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "kakao mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "kakao public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick client-key real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "kick public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
         ]
       }
     },
