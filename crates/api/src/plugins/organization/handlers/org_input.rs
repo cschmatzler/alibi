@@ -140,7 +140,12 @@ fn validate(issues: &[String]) -> Result<(), AuthResponse> {
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn create(req: &AuthRequest) -> Result<CreateOrganizationRequest, AuthResponse> {
-    let decoded = decode(req)?;
+    create_value(decode(req)?)
+}
+
+pub(in crate::plugins::organization) fn create_value(
+    decoded: Option<JsValue>,
+) -> Result<CreateOrganizationRequest, AuthResponse> {
     object(decoded.as_ref(), "body")
         .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
     let input = decoded.as_ref();

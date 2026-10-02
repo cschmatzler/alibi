@@ -13,15 +13,6 @@ use better_auth_core::{
 };
 use std::collections::HashMap;
 
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_precision_loss,
-    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
-)]
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep membership authorization and its transaction callbacks in one ordered operation"
-)]
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
@@ -43,6 +34,35 @@ pub(in crate::plugins) async fn add_member<S: AuthSchema>(
             .collect();
         ctx.require_cached_session(&resolution).await.ok()
     };
+    add_member_with_session(
+        body,
+        session.map(|(user, session)| (better_auth_core::AuthenticatedUser::Stored(user), session)),
+        None,
+        config,
+        ctx,
+    )
+    .await
+}
+
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "JavaScript compares actual membership counts as Number"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep admission callbacks and persisted membership in one ordered operation"
+)]
+pub(in crate::plugins) async fn add_member_with_session<S: AuthSchema>(
+    body: &AddOrganizationMemberRequest,
+    session: Option<(
+        better_auth_core::AuthenticatedUser<S>,
+        better_auth_core::SessionView,
+    )>,
+    request: Option<&AuthRequest>,
+    config: &OrganizationConfig,
+    ctx: &AuthContext<S>,
+) -> AuthResult<BasicMemberResponse> {
     let organization_id = body
         .organization_id
         .as_deref()
@@ -154,7 +174,7 @@ pub(in crate::plugins) async fn add_member<S: AuthSchema>(
                         team_id: Some(team_id.to_owned()),
                         session: Some(actor_session.clone()),
                         user: Some(ctx.user_view(actor)),
-                        request: None,
+                        request: request.cloned(),
                     })
                     .await?
             } else {

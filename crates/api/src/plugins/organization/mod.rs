@@ -1,3 +1,5 @@
+mod endpoint;
+
 pub mod creation_policy;
 
 pub mod extensions;
@@ -292,6 +294,24 @@ pub(in crate::plugins) const METADATA_CREATOR_ROLE: &str = "organization.creator
 
 #[async_trait]
 impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
+    fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> {
+        endpoint::definitions()
+    }
+    fn validate_endpoint(
+        &self,
+        call: &better_auth_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<better_auth_core::endpoint::EndpointInput> {
+        endpoint::validate(call)
+    }
+    async fn on_endpoint(
+        &self,
+        call: &better_auth_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<better_auth_core::endpoint::EndpointResponse> {
+        self.call_endpoint(call, ctx).await
+    }
+
     fn name(&self) -> &'static str {
         "organization"
     }

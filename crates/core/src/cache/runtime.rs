@@ -1,5 +1,6 @@
 //! Request-local cache cookies and genuine stored/cached snapshot transitions.
 use super::{CacheValidation, CacheVersionContext};
+use crate::session::SessionRequest;
 use crate::types::RequestExtensions;
 use crate::utils::cookie_utils::{related_cookie_name, sign_cookie_value, verify_cookie_value};
 use crate::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthSession};
@@ -26,7 +27,7 @@ struct PublishedSession(Option<(crate::UserView, crate::SessionView)>);
 /// The snapshot whose session cookies completed successfully in this dispatch.
 /// Response hooks may observe it; it never establishes authentication.
 #[must_use]
-pub fn published_session(request: &AuthRequest) -> Option<(crate::UserView, crate::SessionView)> {
+pub fn published_session(request: &impl SessionRequest) -> Option<(crate::UserView, crate::SessionView)> {
     request
         .extensions()
         .get::<PublishedSession>()
@@ -34,7 +35,7 @@ pub fn published_session(request: &AuthRequest) -> Option<(crate::UserView, crat
 }
 
 /// Retire cookie publication when a real login becomes a pending factor challenge.
-pub fn discard_issuance(request: &AuthRequest) {
+pub fn discard_issuance(request: &impl SessionRequest) {
     request.extensions().insert(PublishedSession(None));
     if let Some(pending) = request.extensions().get::<PendingIssuance>() {
         *pending
@@ -45,16 +46,18 @@ pub fn discard_issuance(request: &AuthRequest) {
 }
 
 fn record_publication(user: crate::UserView, session: crate::SessionView) {
-    if let Some(request) = crate::hooks::current_request_hook_context() {
-        request
-            .extensions
-            .insert(PublishedSession(Some((user, session))));
+    if let Some(endpoint) = crate::endpoint::current_endpoint_call_context() {
+        endpoint.extensions().insert(PublishedSession(Some((user,session))));
+    } else if let Some(request) = crate::hooks::current_request_hook_context() {
+        request.extensions.insert(PublishedSession(Some((user,session))));
     }
 }
 
 /// Read the metadata attached to the actual authenticated hook snapshot.
 #[must_use]
-pub fn session_hook_cache_metadata(request: &AuthRequest) -> Option<SessionHookCacheMetadata> {
+pub fn session_hook_cache_metadata(
+    request: &impl SessionRequest,
+) -> Option<SessionHookCacheMetadata> {
     request
         .extensions()
         .get::<SessionHookCache>()
@@ -90,13 +93,13 @@ struct EstablishedRead<S: AuthSchema> {
 }
 
 /// Retire the ordinary middleware result before a sensitive physical read.
-pub fn clear_established_session<S: AuthSchema>(request: &AuthRequest) {
+pub fn clear_established_session<S: AuthSchema>(request: &impl SessionRequest) {
     request.extensions().insert(EstablishedSession::<S>(None));
 }
 
 fn establish<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    request: &AuthRequest,
+    request: &impl SessionRequest,
     read: AuthenticatedRead<S>,
 ) -> AuthenticatedRead<S> {
     request
@@ -107,8 +110,8 @@ fn establish<S: AuthSchema>(
                 session: read.session.clone(),
                 needs_refresh: read.needs_refresh,
             },
-            headers: request.headers.clone(),
-            virtual_session: request.virtual_session().cloned(),
+            headers: request.session_headers().clone(),
+            virtual_session: request.virtual_session(),
             config: Arc::clone(&ctx.config),
             database: Arc::clone(&ctx.database),
         })));
@@ -202,7 +205,7 @@ pub async fn stored_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
         user.clone(),
         session.clone(),
         ctx.user_view(user),
-        ctx.session_view(session),
+        ctx.session_view(&session),
     );
     build_headers(ctx, context, headers, dont_remember).await
 }
@@ -213,7 +216,7 @@ async fn stored_read_headers<S: AuthSchema>(
     session: &S::Session,
     headers: &std::collections::HashMap<String, String>,
 ) -> AuthResult<Vec<String>> {
-    let context = CacheVersionContext::stored(ctx.user_view(user), ctx.session_view(session));
+    let context = CacheVersionContext::stored(ctx.user_view(user), ctx.session_view(&session));
     build_headers(ctx, context, headers, false).await
 }
 
@@ -300,7 +303,7 @@ pub async fn emit_issuance<S: AuthSchema>(
             user.clone(),
             session.clone(),
             ctx.user_view(user),
-            ctx.session_view(session),
+            ctx.session_view(&session),
         ),
     )
     .await
@@ -332,23 +335,31 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
         record_publication(published.0, published.1);
         return Ok(());
     }
+    let endpoint = crate::endpoint::current_endpoint_call_context();
     let request = crate::hooks::current_request_hook_context();
-    let headers = request
+    let extensions = endpoint
         .as_ref()
-        .map(|request| request.headers.clone())
-        .unwrap_or_default();
-    let dont_remember = request
-        .as_ref()
-        .and_then(|request| request.extensions.get::<IssuancePreference>())
+        .map(crate::endpoint::EndpointCall::extensions)
+        .or_else(|| request.as_ref().map(|request| &request.extensions));
+    let headers = if let Some(endpoint) = &endpoint {
+        endpoint.headers().cloned().unwrap_or_default()
+    } else {
+        request
+            .as_ref()
+            .map(|request| request.headers.clone())
+            .unwrap_or_default()
+    };
+    let dont_remember = extensions
+        .and_then(|extensions| extensions.get::<IssuancePreference>())
         .map_or_else(
             || browser_preference(&headers, &ctx.config),
             |value| value.0,
         );
-    let pending = request.as_ref().and_then(|request| {
-        if request.extensions.get::<PendingIssuance>().is_none() {
-            request.extensions.insert(PendingIssuance::default());
+    let pending = extensions.and_then(|extensions| {
+        if extensions.get::<PendingIssuance>().is_none() {
+            extensions.insert(PendingIssuance::default());
         }
-        request.extensions.get::<PendingIssuance>()
+        extensions.get::<PendingIssuance>()
     });
     if let Some(pending) = &pending {
         let token_header = super::cookie_header(
@@ -432,7 +443,7 @@ pub fn take_issuance(extensions: &RequestExtensions) -> (Vec<String>, bool) {
 /// Returns an error when validation, storage, or an application callback fails.
 pub async fn read<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    request: &AuthRequest,
+    request: &impl SessionRequest,
 ) -> AuthResult<Option<super::CompactCache>> {
     let manager = ctx.session_manager();
     let enabled = ctx
@@ -446,7 +457,7 @@ pub async fn read<S: AuthSchema>(
         return Ok(None);
     }
     let name = related_cookie_name(&ctx.config, "session_data");
-    let values = cookies(&request.headers);
+    let values = cookies(request.session_headers());
     if enabled.is_none() {
         for old in existing_names(&values, &name) {
             request.queue_response_header(
@@ -456,11 +467,7 @@ pub async fn read<S: AuthSchema>(
         }
         return Ok(None);
     }
-    if request
-        .query
-        .get("disableCookieCache")
-        .is_some_and(|value| !value.is_empty())
-    {
+    if request.session_query_truthy("disableCookieCache") {
         return Ok(None);
     }
     let Some(token) = token else {
@@ -502,15 +509,15 @@ pub async fn read<S: AuthSchema>(
 )]
 pub async fn authenticated<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    request: &AuthRequest,
+    request: &impl SessionRequest,
     direct: bool,
 ) -> AuthResult<Option<AuthenticatedRead<S>>> {
     if let Some(established) = request.extensions().get::<EstablishedSession<S>>()
         && let Some(established) = &established.0
         && Arc::ptr_eq(&established.config, &ctx.config)
         && Arc::ptr_eq(&established.database, &ctx.database)
-        && established.headers == request.headers
-        && established.virtual_session.as_ref() == request.virtual_session()
+        && &established.headers == request.session_headers()
+        && established.virtual_session == request.virtual_session()
     {
         let read = &established.read;
         return Ok(Some(AuthenticatedRead {
@@ -521,16 +528,21 @@ pub async fn authenticated<S: AuthSchema>(
     }
     request.extensions().insert(SessionHookCache(None));
     if let Some(session) = request.virtual_session() {
-        let Some(user) = ctx.database.get_user_by_id(&session.user_id).await? else {
-            return Ok(None);
+        let user = if let Some(user) = request.authenticated_user::<S>() {
+            user
+        } else {
+            let Some(user) = ctx.database.get_user_by_id(&session.user_id).await? else {
+                return Ok(None);
+            };
+            user
         };
-        request.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(session));
+        request.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(&session));
         return Ok(Some(establish(
             ctx,
             request,
             AuthenticatedRead {
                 user: crate::AuthenticatedUser::Stored(user),
-                session: ctx.session_view(session),
+                session: ctx.session_view(&session),
                 needs_refresh: None,
             },
         )));
@@ -572,7 +584,7 @@ pub async fn authenticated<S: AuthSchema>(
     request.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(&original));
     let suppressed = manager.request_disables_refresh(request);
     let deferred = ctx.config.session.defer_session_refresh
-        && !(direct && request.method() == &crate::HttpMethod::Post);
+        && !(direct && request.session_method() == &crate::HttpMethod::Post);
     let read = manager
         .read_loaded_session(
             original,
@@ -609,7 +621,7 @@ pub async fn authenticated<S: AuthSchema>(
         );
     }
     if !suppressed {
-        for header in stored_read_headers(ctx, &user, &session, &request.headers).await? {
+        for header in stored_read_headers(ctx, &user, &session, request.session_headers()).await? {
             request.queue_response_header("Set-Cookie", header);
         }
     }
@@ -624,7 +636,7 @@ pub async fn authenticated<S: AuthSchema>(
     )))
 }
 
-fn cleanup<S: AuthSchema>(ctx: &AuthContext<S>, request: &AuthRequest) -> AuthResult<()> {
+fn cleanup<S: AuthSchema>(ctx: &AuthContext<S>, request: &impl SessionRequest) -> AuthResult<()> {
     let cache_name = related_cookie_name(&ctx.config, "session_data");
     let mut names = vec![ctx.config.session.cookie_name.clone(), cache_name.clone()];
     if ctx.config.account.store_account_cookie {
@@ -653,7 +665,7 @@ fn cleanup<S: AuthSchema>(ctx: &AuthContext<S>, request: &AuthRequest) -> AuthRe
             request.queue_response_header(name, value);
         }
     }
-    for header in session_cleanup_headers(&ctx.config, &request.headers, false)? {
+    for header in session_cleanup_headers(&ctx.config, request.session_headers(), false)? {
         request.queue_response_header("Set-Cookie", header);
     }
     Ok(())

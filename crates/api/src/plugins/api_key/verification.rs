@@ -60,7 +60,7 @@ pub struct ApiKeyValidationError {
 }
 
 impl ApiKeyValidationError {
-    fn new(code: ApiKeyErrorCode) -> Self {
+    pub(super) fn new(code: ApiKeyErrorCode) -> Self {
         Self {
             code,
             message: ApiKeyErrorMessage::Text(code.message().to_owned()),
@@ -68,7 +68,7 @@ impl ApiKeyValidationError {
         }
     }
 
-    const fn status(&self) -> u16 {
+    pub(super) const fn status(&self) -> u16 {
         match self.code {
             ApiKeyErrorCode::NoDefaultConfiguration => 400,
             ApiKeyErrorCode::RateLimited | ApiKeyErrorCode::UsageExceeded => 429,
@@ -187,7 +187,7 @@ impl ApiKeyPlugin {
             .await
     }
 
-    async fn verify_api_key_with_registration(
+    pub(super) async fn verify_api_key_with_registration(
         &self,
         input: &VerifyApiKey<'_>,
         request: Option<&AuthRequest>,
@@ -205,7 +205,7 @@ impl ApiKeyPlugin {
         Ok(view)
     }
 
-    async fn verify_api_key_checked(
+    pub(super) async fn verify_api_key_checked(
         &self,
         input: &VerifyApiKey<'_>,
         request: Option<&AuthRequest>,
@@ -343,9 +343,18 @@ impl ApiKeyPlugin {
         }
     }
 
-    fn find_session_key<'a>(
+    pub(super) fn find_session_key<'a>(
         &'a self,
         req: &AuthRequest,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> AuthResult<Option<(&'a ApiKeyConfig, String)>> {
+        self.find_session_key_for_input(&req.headers, Some(req), ctx)
+    }
+
+    pub(super) fn find_session_key_for_input<'a>(
+        &'a self,
+        headers: &std::collections::HashMap<String, String>,
+        request: Option<&AuthRequest>,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<Option<(&'a ApiKeyConfig, String)>> {
         for config in self
@@ -354,13 +363,11 @@ impl ApiKeyPlugin {
             .filter(|config| config.enable_session_for_api_keys)
         {
             let key = match &config.custom_api_key_getter {
-                Some(getter) => getter.get_key(&ApiKeyCallbackContext::new(
-                    Some(req),
-                    ctx,
-                    &config.config_id,
-                ))?,
+                Some(getter) => {
+                    getter.get_key(&ApiKeyCallbackContext::new(request, ctx, &config.config_id))?
+                }
                 None => config.api_key_headers.iter().find_map(|header| {
-                    req.headers
+                    headers
                         .get(&header.to_ascii_lowercase())
                         .filter(|key| !key.is_empty())
                         .cloned()
@@ -508,44 +515,7 @@ impl ApiKeyPlugin {
             )));
         };
 
-        let now = chrono::Utc::now();
-        let expires_at = match view.expires_at {
-            Some(value) => chrono::DateTime::parse_from_rfc3339(&value)
-                .map_err(|error| {
-                    AuthError::internal(format!("Invalid stored API key expiration: {error}"))
-                })?
-                .with_timezone(&chrono::Utc),
-            // Upstream passes its session lifetime in seconds to getDate(..., "ms").
-            None => {
-                now + chrono::Duration::milliseconds(ctx.config.session.expires_in.num_seconds())
-            }
-        };
-        // Virtual principals retain the resolver's nullable result. Physical
-        // session creation supplies empty defaults through RequestMeta.
-        let ip_policy = req
-            .extensions()
-            .get::<better_auth_core::config::IpAddressConfig>()
-            .unwrap_or_default();
-        let session = SessionView {
-            omitted_fields: std::collections::BTreeSet::default(),
-            active_team_id: None,
-            extension_fields: std::collections::BTreeMap::default(),
-            id: view.id,
-            token: key.clone(),
-            user_id: user.id().into_owned(),
-            created_at: now,
-            updated_at: now,
-            expires_at,
-            ip_address: ip_policy.resolve_ip(&req.headers),
-            user_agent: req
-                .headers
-                .iter()
-                .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
-                .map(|(_, value)| value.clone()),
-            impersonated_by: None,
-            active_organization_id: None,
-            active: true,
-        };
+        let session = Self::virtual_session_from_key(&view, &key, &user, Some(req), ctx)?;
         // Upstream answers this path in its hook before the route method gate.
         if req.path() == "/get-session" {
             return Ok(Some(BeforeRequestAction::Respond(AuthResponse::json(
@@ -557,6 +527,61 @@ impl ApiKeyPlugin {
             )?)));
         }
         Ok(Some(BeforeRequestAction::InjectSession { session }))
+    }
+}
+
+impl ApiKeyPlugin {
+    pub(super) fn virtual_session_from_key<S: better_auth_core::AuthSchema>(
+        view: &ApiKeyView,
+        key: &str,
+        user: &S::User,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<SessionView> {
+        let now = chrono::Utc::now();
+        let expires_at = match view.expires_at.as_deref() {
+            Some(value) => chrono::DateTime::parse_from_rfc3339(value)
+                .map_err(|error| {
+                    AuthError::internal(format!("Invalid stored API key expiration: {error}"))
+                })?
+                .with_timezone(&chrono::Utc),
+            // Upstream passes its session lifetime in seconds to getDate(..., "ms").
+            None => {
+                now + chrono::Duration::milliseconds(ctx.config.session.expires_in.num_seconds())
+            }
+        };
+        // Virtual principals retain the resolver's nullable result. Physical
+        // session creation supplies empty defaults through RequestMeta.
+        let ip_policy = request
+            .and_then(|request| {
+                request
+                    .extensions()
+                    .get::<better_auth_core::config::IpAddressConfig>()
+            })
+            .unwrap_or_default();
+        let session = SessionView {
+            omitted_fields: std::collections::BTreeSet::default(),
+            active_team_id: None,
+            extension_fields: std::collections::BTreeMap::default(),
+            id: view.id.clone(),
+            token: key.to_owned(),
+            user_id: user.id().into_owned(),
+            created_at: now,
+            updated_at: now,
+            expires_at,
+            ip_address: request.and_then(|request| ip_policy.resolve_ip(&request.headers)),
+            user_agent: request.and_then(|request| {
+                request
+                    .headers
+                    .iter()
+                    .find(|(name, _)| name.eq_ignore_ascii_case("user-agent"))
+                    .map(|(_, value)| value.clone())
+            }),
+            impersonated_by: None,
+            active_organization_id: None,
+            active: true,
+        };
+        Ok(session)
     }
 }
 

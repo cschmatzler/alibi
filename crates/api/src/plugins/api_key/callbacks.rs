@@ -10,6 +10,9 @@ use better_auth_core::{
 /// may capture their own typed store or service in the callback implementation.
 pub struct ApiKeyCallbackContext<'a> {
     pub request: Option<&'a AuthRequest>,
+    /// Genuine logical context when verification is dispatched as a registered endpoint.
+    /// It never manufactures a physical request for virtual calls.
+    pub endpoint: Option<better_auth_core::endpoint::EndpointCall>,
     pub auth_config: &'a AuthConfig,
     pub extensions: &'a ContextExtensions,
     pub configuration_id: &'a str,
@@ -34,6 +37,7 @@ impl<'a> ApiKeyCallbackContext<'a> {
     ) -> Self {
         Self {
             request,
+            endpoint: better_auth_core::endpoint::current_endpoint_call_context(),
             auth_config: &ctx.config,
             extensions: &ctx.extensions,
             configuration_id,

@@ -1,5 +1,7 @@
 //! Short-lived, single-use credentials that hand an existing session to a client.
 
+mod endpoint;
+
 #[cfg(test)]
 mod tests;
 
@@ -17,6 +19,7 @@ use better_auth_core::{
     AuthSchema, AuthSession, AuthVerification, CreateVerification, HttpMethod,
 };
 use chrono::{Duration, Utc};
+pub use endpoint::OneTimeTokenOutput;
 use rand::{rngs::OsRng, seq::SliceRandom};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -24,7 +27,7 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
 /// The authenticated account and session represented by a one-time token.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OneTimeTokenSession {
     pub session: SessionView,
     pub user: UserView,
@@ -177,6 +180,18 @@ impl OneTimeTokenPlugin {
         token: &str,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<OneTimeTokenSession> {
+        let (user, session) = self.consume_stored_session(token, ctx).await?;
+        Ok(OneTimeTokenSession {
+            session: ctx.session_view(&session),
+            user: ctx.user_view(&user),
+        })
+    }
+
+    async fn consume_stored_session<S: AuthSchema>(
+        &self,
+        token: &str,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<(S::User, S::Session)> {
         let stored = self.stored_token(token).await?;
         let verification = ctx
             .database
@@ -193,10 +208,7 @@ impl OneTimeTokenPlugin {
             .get_user_by_id(session.user_id().as_ref())
             .await?
             .ok_or_else(|| AuthError::bad_request("Session not found"))?;
-        Ok(OneTimeTokenSession {
-            session: ctx.session_view(&session),
-            user: ctx.user_view(&user),
-        })
+        Ok((user, session))
     }
 
     async fn generate(
@@ -338,6 +350,26 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
             AuthRoute::post("/one-time-token/verify", "verify_one_time_token"),
         ]
     }
+    fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> {
+        endpoint::definitions()
+    }
+
+    fn validate_endpoint(
+        &self,
+        call: &better_auth_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<better_auth_core::endpoint::EndpointInput> {
+        endpoint::validate(call)
+    }
+
+    async fn on_endpoint(
+        &self,
+        call: &better_auth_core::endpoint::EndpointCall,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<better_auth_core::endpoint::EndpointResponse> {
+        self.call_endpoint(call, ctx).await
+    }
+
     async fn on_request(
         &self,
         req: &AuthRequest,

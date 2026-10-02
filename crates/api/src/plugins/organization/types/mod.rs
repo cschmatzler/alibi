@@ -16,7 +16,7 @@ pub enum NullableStringField {
     Value(String),
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum RoleInput {
     One(String),
@@ -51,7 +51,8 @@ impl RoleInput {
 
 /// Input to the privileged server-only member-admission operation.
 /// Roles are joined verbatim, including whitespace, duplicates and empty roles.
-#[derive(Debug, Clone, Deserialize)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct AddOrganizationMemberRequest {
     #[serde(
         rename = "userId",
@@ -66,7 +67,8 @@ pub struct AddOrganizationMemberRequest {
     pub team_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct CreateOrganizationRequest {
     #[validate(length(min = 1, message = "Name is required"))]
     pub name: String,
@@ -102,7 +104,8 @@ pub struct UpdateOrganizationRequest {
     pub data: UpdateOrganizationData,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct DeleteOrganizationRequest {
     #[serde(rename = "organizationId")]
     pub organization_id: String,
@@ -172,7 +175,8 @@ impl TeamInput {
     }
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct RemoveMemberRequest {
     #[serde(rename = "memberIdOrEmail")]
     pub member_id_or_email: String,
@@ -273,7 +277,7 @@ pub struct HasPermissionResponse {
     pub error: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CreateOrganizationResponse<O, M> {
     #[serde(flatten)]
     pub organization: O,
@@ -316,14 +320,14 @@ pub struct InvitationResponse<I> {
     pub invitation: I,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct RemovedMemberResponse<M = MemberResponse> {
     pub member: M,
 }
 
 /// The original removed member. Email selection retains the joined minimal
 /// user; ID selection omits that join, matching the source adapter projection.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizationMemberRemovalSnapshot {
     #[serde(flatten)]
     pub member: better_auth_core::Member,
@@ -331,7 +335,7 @@ pub struct OrganizationMemberRemovalSnapshot {
     pub user: Option<MemberUserView>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct BasicMemberResponse {
     pub id: String,
     #[serde(rename = "userId")]
@@ -381,7 +385,7 @@ pub struct UserInvitationResponse<I> {
     pub organization_name: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatedOrganizationResponse {
     pub id: String,
     pub name: String,
@@ -394,7 +398,7 @@ pub struct CreatedOrganizationResponse {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizationResponse {
     pub id: String,
     pub name: String,
@@ -518,32 +522,8 @@ pub(super) fn deserialize_coercible_string<'de, D>(deserializer: D) -> Result<St
 where
     D: serde::Deserializer<'de>,
 {
-    fn string(value: &JsValue) -> Result<String, &'static str> {
-        match value {
-            JsValue::Null => Ok("null".to_owned()),
-            JsValue::Bool(value) => Ok(value.to_string()),
-            JsValue::String(value) => Ok(value.clone()),
-            JsValue::Number(value) => Ok(ryu_js::Buffer::new().format(*value).to_owned()),
-            JsValue::Array(values) => values
-                .iter()
-                .map(|value_2| match value_2 {
-                    JsValue::Null => Ok(String::new()),
-                    value_2_3 @ (JsValue::Bool(_)
-                    | JsValue::Number(_)
-                    | JsValue::String(_)
-                    | JsValue::Array(_)
-                    | JsValue::Object(_)) => string(value_2_3),
-                })
-                .collect::<Result<Vec<_>, _>>()
-                .map(|values| values.join(",")),
-            JsValue::Object(value) if value.contains_key("toString") => {
-                Err("Cannot convert object to primitive value")
-            }
-            JsValue::Object(_) => Ok("[object Object]".to_owned()),
-        }
-    }
     let value = JsValue::deserialize(deserializer)?;
-    string(&value).map_err(serde::de::Error::custom)
+    value.coerce_string().map_err(serde::de::Error::custom)
 }
 
 // These routes intentionally use different published query conversions:

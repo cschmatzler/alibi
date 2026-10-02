@@ -34,7 +34,7 @@ impl RequestHookContext {
 }
 
 tokio::task_local! {
-    static REQUEST_HOOK_CONTEXT: RequestHookContext;
+    static REQUEST_HOOK_CONTEXT: Option<RequestHookContext>;
 }
 
 /// Run a future with request context available to downstream integrations.
@@ -50,11 +50,19 @@ pub async fn with_request_hook_context_value<T>(
     request_context: RequestHookContext,
     future: impl Future<Output = T>,
 ) -> T {
+    with_optional_request_hook_context(Some(request_context), future).await
+}
+
+/// Scope an optional actual HTTP context, including absence for a trusted server call.
+pub async fn with_optional_request_hook_context<T>(
+    request_context: Option<RequestHookContext>,
+    future: impl Future<Output = T>,
+) -> T {
     REQUEST_HOOK_CONTEXT.scope(request_context, future).await
 }
 
 pub fn current_request_hook_context() -> Option<RequestHookContext> {
-    REQUEST_HOOK_CONTEXT.try_with(Clone::clone).ok()
+    REQUEST_HOOK_CONTEXT.try_with(Clone::clone).ok().flatten()
 }
 
 /// A trusted endpoint's parsed body for adapter callbacks. Completed response

@@ -191,7 +191,7 @@ pub(in crate::plugins) async fn create_key_core(
     clippy::too_many_lines,
     reason = "Keep key policy checks, hook callbacks, and persistence in their observable request order"
 )]
-async fn create_key_for_user(
+pub(super) async fn create_key_for_user(
     body: &CreateKeyRequest,
     user_id: &str,
     plugin: &ApiKeyPlugin,
@@ -494,7 +494,7 @@ pub(in crate::plugins) async fn update_key_core(
     update_key_for_user(body, user_id.as_ref(), plugin, ctx).await
 }
 
-async fn update_key_for_user(
+pub(super) async fn update_key_for_user(
     body: &UpdateKeyRequest,
     user_id: &str,
     plugin: &ApiKeyPlugin,
