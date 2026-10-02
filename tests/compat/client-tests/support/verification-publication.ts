@@ -22,7 +22,7 @@ export type PublicationPair = {
   readonly left: Row;
   readonly right: Row;
   readonly producerIndex: number;
-  readonly kind: "otp" | "magic" | "transfer";
+  readonly kind: "otp" | "magic" | "transfer" | "oauth";
   readonly valid: boolean;
 };
 
@@ -33,6 +33,7 @@ export function verificationPublicationPairs(
   leftWindows: readonly (RequestWindow | undefined)[] | undefined,
   rightWindows: readonly (RequestWindow | undefined)[] | undefined,
   sessionPair: (leftToken: string, rightToken: string, leftCookie: string, rightCookie: string) => boolean,
+  stateCookie: (state: string, cookie: string) => boolean,
 ): PublicationPair[] {
   if (!row(left) || !row(right) || !Array.isArray(left.traces) || !Array.isArray(right.traces)) return [];
   const lt = left.traces, rt = right.traces;
@@ -50,10 +51,11 @@ export function verificationPublicationPairs(
     if (typeof set.ttl !== "number" || !Number.isInteger(set.ttl) || set.ttl <= 0 || storageExpiresAt !== storedAt! + set.ttl * 1000
       || set.ttl < Math.max(Math.floor((expiry! - setAt!) / 1000), 0)
       || set.ttl > Math.max(Math.floor((expiry! - hookAt!) / 1000), 0)) return;
-    const suffix = /^(\/__test\/profiles\/verification-storage-(?:cache|mixed)-default\/api\/auth)\/(email-otp\/send-verification-otp|sign-in\/magic-link|one-time-token\/generate)$/.exec(String(req.path));
+    const suffix = /^(\/__test\/profiles\/verification-storage-(?:cache|mixed)(?:-default)?\/api\/auth)\/(email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.exec(String(req.path));
     if (!suffix) return;
-    const kind: PublicationPair["kind"] = suffix[2] === "email-otp/send-verification-otp" ? "otp" : suffix[2] === "sign-in/magic-link" ? "magic" : "transfer";
-    const lifetime = kind === "transfer" ? 180000 : 300000;
+    const kind: PublicationPair["kind"] = suffix[2] === "email-otp/send-verification-otp" ? "otp" : suffix[2] === "sign-in/magic-link" ? "magic" : suffix[2] === "sign-in/social" ? "oauth" : "transfer";
+    if (kind !== "oauth" && !suffix[1]!.includes("-default/")) return;
+    const lifetime = kind === "transfer" ? 180000 : kind === "oauth" ? 600000 : 300000;
     if (expiry! < requestStart! + lifetime || expiry! > requestEnd! + lifetime) return;
     const matching = traces.flatMap((trace, index) => {
       const window = windows?.[index];
@@ -78,6 +80,24 @@ export function verificationPublicationPairs(
         || value.delivery.email !== req.body.email || typeof value.delivery.token !== "string"
         || snapshot.value !== JSON.stringify({email: req.body.email, name: req.body.name})) return;
       logical = value.delivery.token;
+    } else if (kind === "oauth") {
+      const trace = traces[matching[0]!] as Row, window = windows![matching[0]!]!;
+      if (req.method !== "POST" || !row(req.body) || typeof req.body.provider !== "string" || typeof req.body.callbackURL !== "string"
+        || !row(trace.responseBody) || trace.responseBody.redirect !== false || typeof trace.responseBody.url !== "string"
+        || typeof snapshot.value !== "string" || !window.issuedVerificationStateCookie) return;
+      try {
+        const url = new URL(trace.responseBody.url), payload: unknown = JSON.parse(snapshot.value);
+        if (!row(payload) || JSON.stringify(payload) !== snapshot.value || payload.callbackURL !== req.body.callbackURL
+          || typeof payload.oauthState !== "string" || !/^[a-zA-Z0-9_-]{32}$/.test(payload.oauthState)
+          || typeof payload.codeVerifier !== "string" || !/^[a-zA-Z0-9_-]{128}$/.test(payload.codeVerifier)
+          || typeof payload.expiresAt !== "number" || !Number.isInteger(payload.expiresAt)
+          || payload.expiresAt < requestStart! + 600000 || payload.expiresAt > requestEnd! + 600000
+          || url.searchParams.getAll("state").length !== 1 || url.searchParams.get("state") !== payload.oauthState
+          || url.searchParams.getAll("code_challenge").length !== 1 || url.searchParams.get("code_challenge") !== hash(payload.codeVerifier)
+          || url.searchParams.getAll("code_challenge_method").length !== 1 || url.searchParams.get("code_challenge_method") !== "S256"
+          || !stateCookie(payload.oauthState, window.issuedVerificationStateCookie)) return;
+        logical = payload.oauthState;
+      } catch { return; }
     } else {
       const trace = traces[matching[0]!] as Row;
       if (req.method !== "GET" || !row(trace.responseBody) || typeof trace.responseBody.token !== "string" || typeof snapshot.value !== "string") return;

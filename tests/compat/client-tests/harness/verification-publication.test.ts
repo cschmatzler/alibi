@@ -1,10 +1,10 @@
 import { Database } from "bun:sqlite";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { randomBytes, randomInt } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { verifyPassword } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
-import { emailOTP, magicLink, oneTimeToken } from "better-auth/plugins";
+import { emailOTP, genericOAuth, magicLink, oneTimeToken } from "better-auth/plugins";
 import { createAuthClient } from "better-auth/client";
 import { emailOTPClient, magicLinkClient, oneTimeTokenClient } from "better-auth/client/plugins";
 import { expect, test } from "bun:test";
@@ -18,16 +18,41 @@ const secret = "verification-publication-application-secret32";
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 const profile = (mode: "cache" | "mixed") => `/__test/profiles/verification-storage-${mode}-default/api/auth`;
 
-async function source(mode: "cache" | "mixed", generators: {otp: string; magic: string; transfer: string}, extraEvidence = false) {
+async function source(mode: "cache" | "mixed", generators: {otp: string; magic: string; transfer: string}, extraEvidence = false, oauthEmail?: string) {
   const db = new Database(":memory:"), frames = new AsyncLocalStorage<Row>();
   const publications: Row[] = [], deliveries: Row[] = [], backendEvents: Row[] = [];
   const cache = new Map<string, {rawValue: string; expiresAt: string}>();
+  const grants = new Map<string, Row>(), oauthReceipts: Row[] = [];
   let handler: (request: Request) => Promise<Response>;
   const server = Bun.serve({port: 0, hostname: "127.0.0.1", async fetch(request) {
     const path = new URL(request.url).pathname;
+    if (oauthEmail && path === "/oauth/authorize") {
+      const url = new URL(request.url), code = generators.transfer, accessToken = randomBytes(24).toString("base64url");
+      const grant = {code, accessToken, authorization: Object.fromEntries(url.searchParams)};
+      grants.set(code, grant); oauthReceipts.push({stage: "authorize", ...grant});
+      const callback = new URL(url.searchParams.get("redirect_uri")!);
+      callback.searchParams.set("state", url.searchParams.get("state")!); callback.searchParams.set("code", code);
+      return Response.redirect(callback, 302);
+    }
+    if (oauthEmail && path === "/oauth/token") {
+      const body = Object.fromEntries(new URLSearchParams(await request.text())), grant = grants.get(body.code!);
+      oauthReceipts.push({stage: "grant", body});
+      if (!grant || body.client_id !== "publication-client" || body.client_secret !== "publication-secret"
+        || body.grant_type !== "authorization_code" || body.redirect_uri !== grant.authorization.redirect_uri
+        || createHash("sha256").update(body.code_verifier!).digest("base64url") !== grant.authorization.code_challenge)
+        return Response.json({error: "invalid_grant"}, {status: 400});
+      return Response.json({access_token: grant.accessToken, token_type: "Bearer", expires_in: 3600});
+    }
+    if (oauthEmail && path === "/oauth/userinfo") {
+      const authorization = request.headers.get("authorization");
+      oauthReceipts.push({stage: "userinfo", authorization});
+      if (![...grants.values()].some(grant => authorization === `Bearer ${grant.accessToken}`)) return new Response(null, {status: 401});
+      return Response.json({id: "actual-publication-owner", name: "Publication Owner", email: `oauth-${oauthEmail}`, email_verified: true});
+    }
+    if (path === "/ok") return Response.json({completed: true});
     if (path === verificationPublicationObserver && request.method === "GET") return Response.json({publications, deliveries});
     if (path === "/__test/verification-publication-backend" && request.method === "GET") {
-      return Response.json({publications, deliveries, backend: {
+      return Response.json({publications, deliveries, oauthReceipts, backend: {
         events: backendEvents, cache: [...cache].map(([key, entry]) => ({key, ...entry, value: JSON.parse(entry.rawValue)})),
         verificationRows: db.query("SELECT * FROM verification ORDER BY createdAt").all(),
         users: db.query("SELECT * FROM user").all(), accounts: db.query("SELECT * FROM account").all(), sessions: db.query("SELECT * FROM session").all(),
@@ -73,7 +98,9 @@ async function source(mode: "cache" | "mixed", generators: {otp: string; magic: 
     }}},
     plugins: [emailOTP({generateOTP: () => generators.otp, async sendVerificationOTP(data) { const delivery = clone(data); frames.getStore()!.pending.delivery = delivery; deliveries.push(delivery); }}),
       magicLink({generateToken: async () => generators.magic, async sendMagicLink(data) { const delivery = clone(data); frames.getStore()!.pending.delivery = delivery; deliveries.push(delivery); }}),
-      oneTimeToken({generateToken: async () => generators.transfer})],
+      oneTimeToken({generateToken: async () => generators.transfer}),
+      ...(oauthEmail ? [genericOAuth({config: [{providerId: "publication", clientId: "publication-client", clientSecret: "publication-secret",
+        authorizationUrl: `${baseURL}/oauth/authorize`, tokenUrl: `${baseURL}/oauth/token`, userInfoUrl: `${baseURL}/oauth/userinfo`, scopes: ["profile", "email"]}]})] : [])],
   } satisfies BetterAuthOptions;
   await (await getMigrations(options)).runMigrations();
   // Cache-only instances omit the adapter verification schema. The full backend
@@ -217,4 +244,114 @@ for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} defa
   expect(compareValues(unrelated, {...unrelated, ttl: 299}, context).some(d => d.path === "ttl")).toBe(true);
   const alias = clone(original); alias.observation.aliases[0].ttl -= 2;
   expect(compareValues(a.root, alias, context).some(d => d.path === "observation.aliases.0.ttl")).toBe(true);
+}, 30000);
+
+async function runOAuth(mode: "cache" | "mixed", email: string, authorizationCode: string, extraEvidence = false) {
+  const instance = await source(mode, {otp: "unused", magic: "unused", transfer: authorizationCode}, extraEvidence, email), startedAt = Date.now();
+  try {
+    const foreign = await instance.client.signUp.email({email: `foreign-${email}`, password: "password123", name: "Foreign Owner"});
+    expect(foreign.error).toBeNull();
+    const before = await (await fetch(`${instance.baseURL}/__test/verification-publication-backend`)).json() as Row;
+    const signup = await instance.client.signUp.email({email, password: "password123", name: "Publication Owner"});
+    expect(signup.error).toBeNull();
+    const oauth = await instance.client.signIn.social({provider: "publication", callbackURL: `${instance.baseURL}/ok`, disableRedirect: true});
+    expect(oauth.error).toBeNull();
+    const foreignFetch = createTracingFetch(instance.baseURL, "foreign-producer", instance.traces, profile(mode));
+    const foreignClient = createAuthClient({baseURL: `${instance.baseURL}${profile(mode)}`, fetchOptions: {customFetchImpl: foreignFetch}});
+    const foreignOauth = await foreignClient.signIn.social({provider: "publication", callbackURL: `${instance.baseURL}/ok`, disableRedirect: true});
+    expect(foreignOauth.error).toBeNull();
+    const observer = await instance.fetch(`${instance.baseURL}${verificationPublicationObserver}`);
+    expect(observer.status).toBe(200);
+    const body = await observer.json() as Row;
+    expect(body.publications).toHaveLength(2);
+    const issued = await (await fetch(`${instance.baseURL}/__test/verification-publication-backend`)).json() as Row;
+    expect(typeof oauth.data!.url).toBe("string");
+    const completed = await instance.fetch(oauth.data!.url!);
+    expect(completed.status).toBe(200);
+    expect(await completed.json()).toEqual({completed: true});
+    const complete = await (await fetch(`${instance.baseURL}/__test/verification-publication-backend`)).json() as Row;
+    for (const publication of body.publications) {
+      const value = JSON.parse(publication.snapshot.value), expiry = Date.parse(publication.snapshot.expiresAt);
+      expect(value.oauthState).toMatch(/^[a-zA-Z0-9_-]{32}$/);
+      expect(value.codeVerifier).toMatch(/^[a-zA-Z0-9_-]{128}$/);
+      expect(expiry).toBeGreaterThanOrEqual(Date.parse(publication.request.startedAt) + 600000);
+      expect(expiry).toBeLessThanOrEqual(Date.parse(publication.request.finishedAt) + 600000);
+      expect(value.expiresAt).toBeGreaterThanOrEqual(Date.parse(publication.request.startedAt) + 600000);
+      expect(value.expiresAt).toBeLessThanOrEqual(Date.parse(publication.request.finishedAt) + 600000);
+      expect(publication.set.rawValue).toBe(JSON.stringify(publication.snapshot));
+      expect(publication.set.value).toEqual(publication.snapshot);
+      expect(publication.set.key).toBe(`verification:${createHash("sha256").update(value.oauthState).digest("base64url")}`);
+      expect(publication.set.ttl).toBeGreaterThanOrEqual(Math.floor((expiry - Date.parse(publication.set.executedAt)) / 1000));
+      expect(publication.set.ttl).toBeLessThanOrEqual(Math.floor((expiry - Date.parse(publication.before.executedAt)) / 1000));
+      expect(Date.parse(publication.set.storageExpiresAt)).toBe(Date.parse(publication.set.storedAt) + publication.set.ttl * 1000);
+    }
+    const primary = body.publications[0], ownedForeign = body.publications[1];
+    expect(issued.backend.verificationRows).toHaveLength(mode === "mixed" ? 2 : 0);
+    expect(complete.backend.verificationRows).toHaveLength(mode === "mixed" ? 1 : 0);
+    expect(complete.backend.cache.some((entry: Row) => entry.key === primary.set.key)).toBe(false);
+    expect(complete.backend.cache.find((entry: Row) => entry.key === ownedForeign.set.key)).toEqual(issued.backend.cache.find((entry: Row) => entry.key === ownedForeign.set.key));
+    if (mode === "mixed") expect(complete.backend.verificationRows[0]).toEqual(issued.backend.verificationRows.find((entry: Row) => entry.identifier === ownedForeign.snapshot.identifier));
+    expect(complete.oauthReceipts.map((receipt: Row) => receipt.stage)).toEqual(["authorize", "grant", "userinfo"]);
+    expect(complete.oauthReceipts[1].body.code_verifier).toBe(JSON.parse(primary.snapshot.value).codeVerifier);
+    expect(complete.backend.users).toHaveLength(3);
+    expect(complete.backend.accounts).toHaveLength(3);
+    expect(complete.backend.sessions).toHaveLength(3);
+    for (const field of ["users", "accounts", "sessions"]) expect(complete.backend[field].find((entry: Row) => entry.id === before.backend[field][0].id)).toEqual(before.backend[field][0]);
+    for (const entry of before.backend.cache) expect(complete.backend.cache.find((item: Row) => item.key === entry.key)).toEqual(entry);
+    for (const account of complete.backend.accounts.filter((entry: Row) => entry.providerId === "credential")) expect(await verifyPassword({password: "password123", hash: account.password})).toBe(true);
+    const root = normalizeClientValue({observation: {foreign, signup, oauth, foreignOauth, completed: {status: completed.status}, verificationPublications: body.publications, aliases: body.publications.map((publication: Row) => publication.set)}, traces: instance.traces});
+    const finishedAt = Date.now(), windows = instance.traces.map(trace => trace[requestWindow]);
+    const artifact = `/tmp/issue302-oauth600-source-${mode}-${instance.server.port}-${finishedAt}.json`;
+    await Bun.write(artifact, JSON.stringify({root, windows, startedAt, finishedAt, baseURL: instance.baseURL, before, issued, complete}, null, 2));
+    return {root, windows, startedAt, finishedAt, baseURL: instance.baseURL, artifact};
+  } finally {instance.server.stop(true); instance.db.close();}
+}
+
+for (const mode of ["cache", "mixed"] as const) test(`actual Source ${mode} default600 OAuth publications bind signed state PKCE consumption and reject forged receipts`, async () => {
+  const email = `${randomBytes(12).toString("hex")}@test.com`;
+  const authorizationCode = randomBytes(24).toString("base64url");
+  const a = await runOAuth(mode, email, authorizationCode), b = await runOAuth(mode, email, authorizationCode);
+  const context: ComparisonContext = {leftBaseURL: a.baseURL, rightBaseURL: b.baseURL, leftStartedAt: a.startedAt, rightStartedAt: b.startedAt,
+    leftFinishedAt: a.finishedAt, rightFinishedAt: b.finishedAt, sessionCookieSecret: secret, leftRequestWindows: a.windows, rightRequestWindows: b.windows};
+  const pairArtifact = `/tmp/issue302-oauth600-pair-${mode}-${Date.now()}.json`;
+  await Bun.write(pairArtifact, JSON.stringify({leftArtifact: a.artifact, rightArtifact: b.artifact, left: a.root, right: b.root, context}, null, 2));
+  expect(compareValues(a.root, b.root, context)).toEqual([]);
+  const original = b.root as Row, owning = "observation.verificationPublications.0.set.ttl";
+  const observerIndex = original.traces.findIndex((trace: Row) => trace.path === verificationPublicationObserver);
+  const producerIndex = original.traces.findIndex((trace: Row) => trace.path.endsWith("/sign-in/social"));
+  for (const change of [
+    (p: Row) => {p.set.ttl += 1;},
+    (p: Row) => {p.set.ttl -= 2;},
+    (p: Row) => {p.set.ttl = String(p.set.ttl);},
+    (p: Row) => {delete p.before.executedAt;},
+    (p: Row) => {p.before.executedAt = new Date(Date.parse(p.request.startedAt) - 1).toISOString();},
+    (p: Row) => {p.snapshot.expiresAt = new Date(Date.parse(p.snapshot.expiresAt) + 1000).toISOString(); p.before.snapshot.expiresAt = p.snapshot.expiresAt; p.set.value.expiresAt = p.snapshot.expiresAt; p.set.rawValue = JSON.stringify(p.snapshot);},
+    (p: Row) => {const payload = JSON.parse(p.snapshot.value); payload.expiresAt += 1000; p.snapshot.value = JSON.stringify(payload); p.before.snapshot.value = p.snapshot.value; p.set.value.value = p.snapshot.value; p.set.rawValue = JSON.stringify(p.snapshot);},
+    (p: Row) => {const payload = JSON.parse(p.snapshot.value); payload.codeVerifier = "x".repeat(128); p.snapshot.value = JSON.stringify(payload); p.before.snapshot.value = p.snapshot.value; p.set.value.value = p.snapshot.value; p.set.rawValue = JSON.stringify(p.snapshot);},
+    (p: Row) => {const payload = JSON.parse(p.snapshot.value); payload.oauthState = "x".repeat(32); p.snapshot.value = JSON.stringify(payload); p.before.snapshot.value = p.snapshot.value; p.set.value.value = p.snapshot.value; p.set.rawValue = JSON.stringify(p.snapshot);},
+    (p: Row) => {p.set.storageExpiresAt = new Date(Date.parse(p.set.storageExpiresAt) + 1000).toISOString();},
+  ]) {
+    const bad = clone(original), publication = bad.observation.verificationPublications[0]; change(publication);
+    bad.traces[observerIndex].responseBody.publications[0] = clone(publication);
+    expect(compareValues(a.root, bad, context).some(difference => difference.path === owning)).toBe(true);
+  }
+  for (const changed of [
+    {...context, rightRequestWindows: context.rightRequestWindows!.map((window, index) => index === producerIndex ? {...window!, issuedVerificationStateCookie: undefined} : window)},
+    {...context, rightRequestWindows: context.rightRequestWindows!.map((window, index) => index === producerIndex ? {...window!, issuedVerificationStateCookie: "better-auth.state=wrong.invalid"} : window)},
+    {...context, rightRequestWindows: context.rightRequestWindows!.map((window, index) => index === observerIndex ? {...window!, verificationObserverDigest: undefined} : window)},
+  ]) expect(compareValues(a.root, b.root, changed).some(difference => difference.path === owning)).toBe(true);
+  const foreign = clone(original);
+  foreign.observation.verificationPublications[0] = clone(original.observation.verificationPublications[1]);
+  foreign.traces[observerIndex].responseBody.publications[0] = clone(foreign.observation.verificationPublications[0]);
+  expect(compareValues(a.root, foreign, context).some(difference => difference.path === owning)).toBe(true);
+  const challenge = clone(original), url = new URL(challenge.traces[producerIndex].responseBody.url);
+  url.searchParams.set("code_challenge", "x".repeat(43)); challenge.traces[producerIndex].responseBody.url = url.href;
+  expect(compareValues(a.root, challenge, context).some(difference => difference.path === owning)).toBe(true);
+  const extra = await runOAuth(mode, email, authorizationCode, true);
+  const extraContext = {...context, rightBaseURL: extra.baseURL, rightStartedAt: extra.startedAt, rightFinishedAt: extra.finishedAt, rightRequestWindows: extra.windows};
+  const fields = compareValues(a.root, extra.root, extraContext);
+  for (const path of ["applicationReceipt", "request.applicationReceipt", "before.applicationReceipt", "set.applicationReceipt"])
+    expect(fields.some(difference => difference.path === `observation.verificationPublications.0.${path}` && difference.reason === "field presence differs")).toBe(true);
+  for (const key of ["metadata", "custom", "additionalFields", "applicationData"])
+    expect(compareValues({...a.root as Row, [key]: {expiresAt: 600000, ttl: 600}}, {...original, [key]: {expiresAt: 600001, ttl: 599}}, context).some(difference => difference.path === `${key}.ttl`)).toBe(true);
 }, 30000);

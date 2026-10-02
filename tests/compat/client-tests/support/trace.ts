@@ -10,7 +10,9 @@ export type RequestWindow = {
   inputOwner?: { field: "id" | "token"; value: string };
   sessionCookie?: string;
   issuedSessionCookie?: string;
-  /** Exact input of the three default verification-publication owners. */
+  /** Actual signed database-state cookie from the default OAuth issuing response. */
+  issuedVerificationStateCookie?: string;
+  /** Exact input of the admitted default verification-publication owners. */
   verificationInput?: unknown;
   /** Integrity of the original complete parsed observer response, separate from compared output. */
   verificationObserverDigest?: string;
@@ -223,8 +225,12 @@ export function createTracingFetch(
           startedAt,
           finishedAt: Date.now(),
           inputDates,
-          ...(/\/(?:email-otp\/send-verification-otp|sign-in\/magic-link|one-time-token\/generate)$/.test(url.pathname)
+          ...(/\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(url.pathname)
             ? { verificationInput: requestText ? verificationInput : null } : {}),
+          ...(/\/sign-in\/social$/.test(url.pathname) ? (() => {
+            const cookies = response.headers.getSetCookie().map(value => Cookie.parse(value)).filter(value => value && /^(?:__Secure-)?better-auth\.state$/.test(value.key) && value.maxAge === 300);
+            return cookies.length === 1 ? {issuedVerificationStateCookie: `${cookies[0]!.key}=${cookies[0]!.value}`} : {};
+          })() : {}),
           ...(verificationObserverDigest ? { verificationObserverDigest } : {}),
           ...(inputOwner ? { inputOwner } : {}),
           ...sessionReceipt(headers, response.headers),

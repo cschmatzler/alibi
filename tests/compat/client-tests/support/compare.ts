@@ -147,7 +147,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
       if (!context.sessionCookieSecret || !signedCookieIssuances.has(JSON.stringify([a, b]))) return false;
       return signedCookie(leftCookie.slice(leftCookie.indexOf("=") + 1)).token === a
         && signedCookie(rightCookie.slice(rightCookie.indexOf("=") + 1)).token === b;
-    });
+    }, (state, cookie) => !!context.sessionCookieSecret && /^(?:__Secure-)?better-auth\.state=/.test(cookie)
+      && signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token === state);
 
   function traceEndpoint(root: unknown, path: string): string | undefined {
     const index = /^traces\.(\d+)\.responseBody(?:\.|$)/.exec(path)?.[1];
@@ -626,7 +627,19 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
             for (const field of [...new Set([...Object.keys(left), ...Object.keys(right)])].sort()) {
               const child = `${target}.${field}`;
               if (!Object.hasOwn(left, field) || !Object.hasOwn(right, field)) fail(child, "field presence differs");
+              else if (field === "identifier" && receipt.kind === "oauth") identity(String(left.identifier), String(right.identifier), child, "verification-identifier");
               else if (field === "value" && receipt.kind === "transfer") identity(String(left.value), String(right.value), child, "token");
+              else if (field === "value" && receipt.kind === "oauth") {
+                const a = JSON.parse(String(left.value)), b = JSON.parse(String(right.value));
+                for (const key of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+                  const target = `${child}.${key}`;
+                  if (!Object.hasOwn(a, key) || !Object.hasOwn(b, key)) fail(target, "field presence differs");
+                  else if (key === "expiresAt") continue; // Each exact 600s deadline was independently admitted.
+                  else if (key === "codeVerifier") identity(a[key], b[key], target, "code-verifier");
+                  else if (key === "oauthState") identity(a[key], b[key], target, "state");
+                  else visit(a[key], b[key], target, key);
+                }
+              }
               else visit(left[field], right[field], child, field, false, false, false, false, undefined, false, false, undefined, false, dateOwners(left, right));
             }
           };
@@ -635,7 +648,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
               const child = `${target}.${field}`;
               if (!Object.hasOwn(left, field) || !Object.hasOwn(right, field)) { fail(child, "field presence differs"); continue; }
               if (["ttl", "executedAt", "storedAt", "storageExpiresAt"].includes(field)) continue;
-              if (field === "rawValue") snapshot(JSON.parse(String(left.rawValue)), JSON.parse(String(right.rawValue)), child);
+              if (field === "key" && receipt.kind === "oauth") identity(String(left.key).slice("verification:".length), String(right.key).slice("verification:".length), child, "verification-identifier");
+              else if (field === "rawValue") snapshot(JSON.parse(String(left.rawValue)), JSON.parse(String(right.rawValue)), child);
               else if (field === "value") snapshot(left.value as Record<string, unknown>, right.value as Record<string, unknown>, child);
               else visit(left[field], right[field], child, field);
             }
