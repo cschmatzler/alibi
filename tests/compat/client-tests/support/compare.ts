@@ -213,6 +213,24 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
           }
         }
         const owner = left.sessionCookie && right.sessionCookie ? cookieOwners.get(JSON.stringify([left.sessionCookie, right.sessionCookie])) : undefined;
+        // Enabling a factor rotates the authenticated session, but its response
+        // contains setup data rather than the new token. Bind that rotation to
+        // the previously proved owner and the actual signed primary cookie.
+        if (owner && trace.path === `${owner.authPath}/two-factor/enable`
+          && context.sessionCookieSecret && left.issuedSessionCookie && right.issuedSessionCookie) {
+          const token = (cookie: string) => sessionCookieName.test(cookie.slice(0, cookie.indexOf("=")))
+            ? signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token : undefined;
+          const at = token(left.issuedSessionCookie), bt = token(right.issuedSessionCookie);
+          const previous = JSON.stringify([token(left.sessionCookie!), token(right.sessionCookie!)]);
+          if (at && bt && signedCookieIssuances.has(previous)
+            && !identities.has(`token:${at}`) && !reverseIdentities.has(`token:${bt}`)) {
+            const receipt = {...owner, left, right}, pair = JSON.stringify([at, bt]);
+            issuances.set(pair, receipt);
+            signedCookieIssuances.add(pair);
+            cookieOwners.set(JSON.stringify([left.issuedSessionCookie, right.issuedSessionCookie]), receipt);
+            identity(at, bt, `traces.${index}.responseCookies`, "token");
+          }
+        }
         if (owner && trace.path === `${owner.authPath}/update-user`) {
           const key = JSON.stringify([owner.leftUser, owner.rightUser]);
           updates.set(key, [...updates.get(key) ?? [], { ...owner, left, right }]);

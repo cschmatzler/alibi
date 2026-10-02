@@ -6,12 +6,12 @@ import { getMigrations } from "better-auth/db/migration";
 import { createAuthMiddleware } from "better-auth/api";
 import { getCookieCache } from "better-auth/cookies";
 import { verifyPassword } from "better-auth/crypto";
-import { jwt, oneTimeToken } from "better-auth/plugins";
+import { jwt, multiSession, oneTimeToken, twoFactor } from "better-auth/plugins";
 import { createHmac } from "node:crypto";
 import { createLocalJWKSet, jwtVerify } from "jose";
 import { compareValues, type ComparisonContext } from "../support/compare";
 import { normalizeClientValue } from "../support/normalize";
-import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
+import { createTracingFetch, requestWindow, type RequestWindow, type TraceEntry } from "../support/trace";
 
 const secret = "signed-header-harness-application-secret32";
 type Data = Record<string, any>;
@@ -309,4 +309,77 @@ test("actual Source co-present compact cookie headers bind authenticated cache t
     const appRight={...right.value,[field]:{headers:right.value.observation.owner.headers,issued:right.value.observation.owner.issued}};
     expect(compareValues(appLeft,appRight,context)).toContainEqual({path:`${field}.headers.cookie`,reason:"value or type differs"});
   }
+});
+
+test("actual Source factor rotation binds multi-session issuance and later tombstones to authenticated request ownership", async () => {
+  async function captureRotation() {
+    const database = new Database(":memory:"), traces: TraceEntry[] = [];
+    let handler: (request: Request) => Promise<Response>;
+    const server = Bun.serve({port: 0, fetch: request => handler(request)});
+    const baseURL = `http://localhost:${server.port}`;
+    const options = {baseURL, secret, database, rateLimit: {enabled: false},
+      emailAndPassword: {enabled: true},
+      plugins: [twoFactor({otpOptions: {sendOTP: async () => {}}}), multiSession()],
+    };
+    const startedAt = Date.now();
+    try {
+      await (await getMigrations(options)).runMigrations();
+      handler = betterAuth(options).handler;
+      const owner = createAuthClient({baseURL, fetchOptions: {customFetchImpl: createTracingFetch(baseURL, "owner", traces)}});
+      const foreign = createAuthClient({baseURL, fetchOptions: {customFetchImpl: createTracingFetch(baseURL, "foreign", traces)}});
+      const signup = await owner.signUp.email({email: "rotation-owner@fixture.test", name: "Owner", password: "password123"});
+      const other = await foreign.signUp.email({email: "rotation-foreign@fixture.test", name: "Foreign", password: "password123"});
+      expect(signup.error).toBeNull(); expect(other.error).toBeNull();
+      const enabled = await owner.$fetch("/two-factor/enable", {method: "POST", body: {method: "otp", password: "password123"}});
+      expect(enabled.data).toEqual({method: "otp"});
+      const rows = database.query("SELECT token,userId FROM session WHERE userId=?").all(signup.data!.user.id) as {token: string; userId: string}[];
+      expect(rows).toHaveLength(1); expect(rows[0]!.token).not.toBe(signup.data!.token!);
+      const rotated = traces[2]![requestWindow]!;
+      expect(rotated.issuedSessionCookie).toContain(encodeURIComponent(rows[0]!.token));
+      // Isolate this device's retirement; concurrent cleanup of other device
+      // cookies has independent completion order in the installed runtime.
+      const cookie = `${rotated.issuedSessionCookie}; ${rotated.issuedMultiSessionCookies![0]!.split(";")[0]}`;
+      expect((await owner.signOut({fetchOptions: {headers: {cookie}}})).error).toBeNull();
+      expect(database.query("SELECT token FROM session WHERE userId=?").all(signup.data!.user.id)).toEqual([]);
+      return {value: {traces}, windows: traces.map(trace => trace[requestWindow]!), baseURL, startedAt, finishedAt: Date.now()};
+    } finally { server.stop(true); database.close(); }
+  }
+  const left = await captureRotation(), right = await captureRotation();
+  const context: ComparisonContext = {leftBaseURL: left.baseURL, rightBaseURL: right.baseURL,
+    sessionCookieSecret: secret, leftStartedAt: left.startedAt, rightStartedAt: right.startedAt,
+    leftFinishedAt: left.finishedAt, rightFinishedAt: right.finishedAt,
+    leftRequestWindows: left.windows, rightRequestWindows: right.windows,
+  };
+  expect(compareValues(left.value, right.value, context)).toEqual([]);
+  const ownership = "multi-session credential lacks corresponding observed issuance and ownership";
+  const credential = "multi-session cookie name does not identify its signed credential";
+  type Mutation = {value: {traces: TraceEntry[]}; windows: RequestWindow[]};
+  const changes: {name: string; mutate: (capture: Mutation) => void; reason: string; index?: number}[] = [
+    {name: "missing primary", mutate: c => { delete c.windows[2]!.issuedSessionCookie; }, reason: ownership},
+    {name: "corrupt primary", mutate: c => { c.windows[2]!.issuedSessionCookie += "corrupt"; }, reason: ownership},
+    {name: "missing request authority", mutate: c => { delete c.windows[2]!.sessionCookie; }, reason: ownership},
+    {name: "foreign request authority", mutate: c => { c.windows[2]!.sessionCookie = c.windows[1]!.issuedSessionCookie; }, reason: ownership},
+    {name: "unproved previous issuance", mutate: c => { c.windows[0]!.issuedSessionCookie += "corrupt"; c.windows[2]!.sessionCookie = c.windows[0]!.issuedSessionCookie; }, reason: ownership},
+    {name: "failed rotation", mutate: c => { c.value.traces[2]!.responseStatus = 400; }, reason: ownership},
+    {name: "unrelated route", mutate: c => { c.value.traces[2]!.path = "/api/auth/unrelated"; }, reason: ownership},
+    {name: "reused primary", mutate: c => { c.windows[2]!.issuedSessionCookie = c.windows[0]!.issuedSessionCookie; }, reason: ownership},
+    {name: "corrupt multi signature", mutate: c => { c.windows[2]!.issuedMultiSessionCookies![0] = c.windows[2]!.issuedMultiSessionCookies![0]!.replace(";", "corrupt;"); }, reason: credential},
+    {name: "wrong multi suffix", mutate: c => { c.windows[2]!.issuedMultiSessionCookies![0] = c.windows[2]!.issuedMultiSessionCookies![0]!.replace("_multi-", "_multi-other"); }, reason: credential},
+    {name: "altered attributes", mutate: c => { c.windows[2]!.issuedMultiSessionCookies![0] = c.windows[2]!.issuedMultiSessionCookies![0]!.replace("Path=/", "Path=/changed"); }, reason: "multi-session cookie bytes, order or attributes differ"},
+    {name: "missing scope", mutate: c => { const key = Object.keys(c.value.traces[2]!.responseCookies).find(key => key.includes("_multi-"))!; delete c.value.traces[2]!.responseCookies[key]; }, reason: "multi-session cookie scope observation is missing"},
+    {name: "unproved tombstone", mutate: c => { c.windows[2]!.issuedMultiSessionCookies = []; }, reason: credential, index: 3},
+    {name: "duplicate tombstone", mutate: c => { c.windows[3]!.issuedMultiSessionCookies!.push(c.windows[3]!.issuedMultiSessionCookies![0]!); }, reason: "multi-session cookie count differs", index: 3},
+    {name: "live empty cookie", mutate: c => { c.windows[3]!.issuedMultiSessionCookies![0] = c.windows[3]!.issuedMultiSessionCookies![0]!.replace("Max-Age=0", "Max-Age=1"); }, reason: credential, index: 3},
+  ];
+  for (const change of changes) {
+    const altered: Mutation = {value: structuredClone(right.value), windows: structuredClone(right.windows)};
+    change.mutate(altered);
+    expect(compareValues(left.value, altered.value, {...context, rightRequestWindows: altered.windows}), change.name)
+      .toContainEqual({path: `traces.${change.index ?? 2}.responseCookies`, reason: change.reason});
+  }
+  // Identical corrupt credentials must fail before literal equality can hide them.
+  const windows = structuredClone(right.windows);
+  windows[2]!.issuedMultiSessionCookies![0] = windows[2]!.issuedMultiSessionCookies![0]!.replace(";", "corrupt;");
+  expect(compareValues(right.value, right.value, {...context, leftRequestWindows: windows, rightRequestWindows: windows}))
+    .toContainEqual({path: "traces.2.responseCookies", reason: credential});
 });
