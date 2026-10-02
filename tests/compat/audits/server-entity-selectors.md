@@ -58,8 +58,50 @@ Before publication:
   typecheck correctly rejected a widened boolean outcome; the actual result
   discriminants were typed without changing runtime observations.
 
-This is a draft pending immutable canonical execution and independent review.
+## Frozen full gate and final composition
+
+The original immutable `0a08d25f1618a55fda4307242a9be703e62505aa`
+completed the actual canonical command with exit 100,
+`/tmp/issue287-canonical-0a08d25f.log`. Default native 794, optional-feature
+native 845, SQLite fixture 2, strict/build checks, harness 72/832, Axum 36,
+endpoint checks 3 and inventory checks 2 passed. The complete SDK run passed
+1,290 of 1,296 tests with 83,984 assertions. Six actual failures remain recorded:
+
+- Organization addition observation 5 had two member createdAt aliases.
+- Membership-policy observations 6/7 had six member/session timestamp aliases.
+- Keyring pinning had four manualState key createdAt/expiresAt aliases:
+  Source 04:22:26.575 versus native 04:22:29.278, a 2.703-second difference.
+  The scalar timestamp policy is unchanged by this selector repair.
+- Generated lifecycle seed 12648430 had snapshot 22 code/message drift in
+  default, session-no-refresh and session-deferred profiles, assigned to the
+  separately repaired ordinary cache guard #221.
+
+The stopped canonical did not reach its downstream documentation/browser/
+coverage stages. Independent strict rustdoc and the actual Chromium wrapper
+passed with exit zero (`/tmp/issue287-docs-browser-0a08d25f.log`). T3 preview
+reported no headless automation host and no retry; the actual repository
+Playwright wrapper was used. This zero-native-production comparator repair
+makes no new clean coverage claim and retains the required floor.
+
+Final composition uses actual main
+`dbc67fd8d4e10b1857daa54c49ed520a0caee101`, preserving #221, #135, signed-cookie
+#284/#286 and the provider additions. The complete capability ledger is
+byte-identical to that parent. The only rebase conflict was adjacent string
+comparison guards; the existing signed-header guard and selector guard are
+both retained. The exact selector delta remains 39 added lines.
+
+Composed strict TypeScript and the complete retained harness passed:
+73 tests, 903 assertions, including both signed-header and selector owners
+(`/tmp/issue287-composed286-typecheck.log`,
+`/tmp/issue287-composed286-harness.log`). The unchanged full #205 organization
+and factor owners passed against their actual Source/native fixture programs,
+2 tests, 238 assertions (`/tmp/issue287-composed286-real205-consumers.log`).
+Their test source was temporarily copied into the composed checkout to use its
+actual comparer and removed afterward; no #205 test/fixture or native
+production enters this PR. Those focused observations were collected before
+the final provider-only rebase; the full SDK/canonical was not rerun after
+composition and its historical result is not claimed green.
+
 OpenClaw/Crabbox/autoreview/PR helper tools are not installed. The repository
 canonical command is `devenv shell -- bash scripts/check.sh`; `devenv test` is a
-no-op. No unexecuted gate is claimed. Signed-cookie prerequisite #284/#286 stays
-separate and its frozen gate is untouched.
+no-op. No unexecuted gate is claimed.
