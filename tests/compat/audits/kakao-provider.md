@@ -42,5 +42,29 @@ This is the intended observable regression, not a missing constructor or404.
 
 Independent review of actual factory/helpers, production and both fixtures found
 no blocker. All4,704 parent capability cells retain their order; new Kakao cells
-come only from successful real Source/native traces. Full canonical evidence,
-broad strict/docs/browser and clean unchanged-floor coverage are pending. No Source/comparer edits or hook bypasses.
+come only from successful real Source/native traces. All287 additions are verified against final canonical artifacts; no prior cell
+is lost or reordered. The measured program32b702f80fdd908ec312fcff3e7f46474ce72ff0
+was rebased onto actualmain4efe6df4 as9d0b165e: only the already merged Hugging
+Face audit differs, with all executable production/fixtures/owners/locks and
+capabilities byte-identical. The final audit-only commit changes no runtime input.
+
+Actual canonical `devenv shell -- bash scripts/check.sh` exits100 at full SDK
+(/tmp/issue147-final-canonical.log). Default/optional strict Clippy, Rustls, both
+format checks,794default/845optional native tests,fixture2,TypeScript and71harness
+tests pass. Full actual SDK passes1,350/1,354owners with86,000assertions including
+all58 Kakao owners. Four failures remain: fixed membership-policy's six timestamp
+aliases and three generatedseed12648430snapshot22guard comparisons tracked by
+#221. Exact timestamp aliases are observation6 usersBefore/usersAfter session3
+expiresAt, observation7 usersBefore/usersAfter session3expiresAt, snapshot.member7
+createdAt and response.createdAt. Allsix exact membership paths reproduce in the
+independent unchangedFacebook parent run retained by #221. This does not claim
+arbitrary organization clock paths are proven or that full canonical is green.
+
+Warning-free docs and both real Chromium browser owners pass,22assertions
+(/tmp/issue147-docs-browser.log,exit0). Clean scoped MBX_DISABLE=1 instrumentation
+with both isolated target variables passes all845native and allfiveSDKgroups
+(/tmp/issue147-clean-coverage.log,exit0). Complete212-source report contains no
+duplicate logical workspace paths and passes the unchanged75%floor at
+31,495/40,789native lines (77.214445%). No missing-owner/compiler failure is used
+as before evidence, and no Source/comparer change, dependency patch, suppression
+or hook bypass is introduced. No Source/comparer edits or hook bypasses.
