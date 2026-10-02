@@ -22,6 +22,7 @@ export const FIXTURE_PROFILES = [
   "session-cache-guards", "session-cache-interactions",
   "additional-fields",
   "additional-provider-fields",
+  "additional-issuer-fields",
   "additional-output-fields",
   "additional-cached-fields",
   "additional-plugin-fields",

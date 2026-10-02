@@ -108,8 +108,25 @@ compatScenario("additional output transforms await real adapter results retain h
   expect(failedState.events.filter(event => event.phase === "after")).toEqual(listedPhysical.events.filter(event => event.phase === "after"));
   expect(failedState.events.slice(listedPhysical.events.length)).toContainEqual({ phase: "output", entity: "user", field: "label", value: "throw" });
   for (const key of ["users", "accounts", "sessions"] as const) expect(failedState[key].filter(row => row[key === "users" ? "id" : "userId"] === foreignId)).toEqual(original[key]);
-  return { foreignSignup: ctx.snapshot(foreignSignup), before: await observedState(before.body), signup: ctx.snapshot(signup), created: await observedState(created.body), session: ctx.snapshot(session), update: ctx.snapshot(update), updatedSession: ctx.snapshot(updatedSession), updated: await observedState(updated.body), listed:ctx.snapshot(listed),listedState:await observedState(listedState.body), failedSignup: ctx.snapshot(failedSignup), failed: await observedState(failed.body) };
-}, ["POST /sign-up/email", "GET /get-session", "POST /update-user", "GET /list-accounts"],30_000);
+  const issuerForeign=ctx.actor("issuer-foreign","additional-issuer-fields");
+  const issuerForeignSignup=await issuerForeign.client.signUp.email({email:ctx.uniqueEmail("issuer-foreign"),name:"Issuer foreign",password:"Password123!"});expect(issuerForeignSignup.error).toBeNull();
+  const issuerForeignId=z.object({user:z.object({id:z.string()})}).parse(issuerForeignSignup.data).user.id;
+  const issuer=ctx.actor("magic-owner","additional-issuer-fields"),issuerEmail=ctx.uniqueEmail("magic-owner");
+  const sent=await issuer.client.signIn.magicLink({email:issuerEmail,name:"Magic field owner"});expect(sent.error).toBeNull();
+  const delivered=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=issuer"});expect(delivered.status).toBe(200);const deliveryState=stateSchema.parse(delivered.body);
+  const delivery=z.object({token:z.string(),email:z.literal(issuerEmail),url:z.string(),metadata:z.null()}).parse(deliveryState.events.find(event=>event.phase==="delivery")!.delivery);
+  expect(new URL(delivery.url).searchParams.get("token")).toBe(delivery.token);expect(deliveryState.verifications).toHaveLength(1);
+  const verified=await issuer.client.$fetch("/magic-link/verify",{method:"GET",query:{token:delivery.token}});expect(verified.error).toBeNull();
+  const magicUser=z.object({user:z.object({id:z.string(),label:z.object({stored:z.literal("user-initial")})}).passthrough()}).parse(verified.data).user;
+  const issuerState=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=issuer"});expect(issuerState.status).toBe(200);const issuedState=stateSchema.parse(issuerState.body);
+  expect(issuedState.events.filter(event=>event.phase==="after"&&event.entity==="user"&&z.record(z.string(),z.unknown()).parse(event.record).id===magicUser.id)).toHaveLength(1);
+  expect(issuedState.users.find(row=>row.id===magicUser.id)).toMatchObject({email:issuerEmail,label:"user-initial",hidden:"user-secret"});expect(issuedState.sessions.filter(row=>row.userId===magicUser.id)).toHaveLength(1);expect(issuedState.accounts.filter(row=>row.userId===magicUser.id)).toHaveLength(0);expect(issuedState.verifications).toHaveLength(0);
+  for(const key of ["users","accounts","sessions"] as const) expect(issuedState[key].filter(row=>row[key==="users"?"id":"userId"]===issuerForeignId)).toEqual(deliveryState[key]);
+  const magicRead=await issuer.client.getSession();expect(magicRead.error).toBeNull();expect(magicRead.data?.user).toMatchObject({id:magicUser.id,label:{stored:"user-initial"}});
+  const magicReplay=await issuer.client.$fetch("/magic-link/verify",{method:"GET",query:{token:delivery.token},redirect:"manual"});expect(magicReplay.error).not.toBeNull();
+  const issuerAfter=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=issuer"});expect(issuerAfter.status).toBe(200);const issuerFinal=stateSchema.parse(issuerAfter.body);for(const key of ["users","accounts","sessions","verifications"] as const) expect(issuerFinal[key]).toEqual(issuedState[key]);
+  return { foreignSignup: ctx.snapshot(foreignSignup), before: await observedState(before.body), signup: ctx.snapshot(signup), created: await observedState(created.body), session: ctx.snapshot(session), update: ctx.snapshot(update), updatedSession: ctx.snapshot(updatedSession), updated: await observedState(updated.body), listed:ctx.snapshot(listed),listedState:await observedState(listedState.body), failedSignup: ctx.snapshot(failedSignup), failed: await observedState(failed.body),issuerForeignSignup:ctx.snapshot(issuerForeignSignup),sent:ctx.snapshot(sent),delivered:await observedState(delivered.body),verified:ctx.snapshot(verified),issuerState:await observedState(issuerState.body),magicRead:ctx.snapshot(magicRead),magicReplay:ctx.snapshot(magicReplay),issuerAfter:await observedState(issuerAfter.body) };
+}, ["POST /sign-up/email", "GET /get-session", "POST /update-user", "GET /list-accounts","POST /sign-in/magic-link","GET /magic-link/verify"],30_000);
 
 compatScenario("additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors", async ctx => {
   const foreign = ctx.actor("policy-foreign", "additional-policy-fields");

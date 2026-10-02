@@ -10,6 +10,9 @@ use axum::{
 use better_auth::field_policy::{FieldConfig, FieldConfigs};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
+use better_auth::plugins::magic_link::{
+    MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, SendMagicLink,
+};
 use better_auth::plugins::{
     AccountManagementPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin,
     OpenApiPlugin, PasswordManagementPlugin, SessionManagementPlugin, UserManagementPlugin,
@@ -36,6 +39,15 @@ struct Application {
     mode: &'static str,
     database: DatabaseConnection,
     events: Events,
+}
+#[async_trait::async_trait]
+impl SendMagicLink for Application {
+    async fn send(&self, delivery: &MagicLinkDelivery) -> AuthResult<()> {
+        self.events.lock().expect("application delivery").push(json!({
+            "phase":"delivery", "delivery":delivery, "metadataPresent":delivery.metadata.is_some()
+        }));
+        Ok(())
+    }
 }
 #[derive(Clone)]
 pub(super) struct Fixture {
@@ -78,7 +90,7 @@ fn db_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldConfigs {
-    let output = matches!(mode, "output" | "cached" | "provider");
+    let output = matches!(mode, "output" | "cached" | "provider" | "issuer");
     let mut fields = FieldConfigs::new();
     for name in ["label", "hidden", "omitted"] {
         let mut field = FieldConfig::new(json!({"type":"string"}));
@@ -511,6 +523,12 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
     if mode != "normal" {
         builder = builder.plugin(application.clone());
     }
+    if mode == "issuer" {
+        builder = builder.plugin(MagicLinkPlugin::new(MagicLinkConfig {
+            send_magic_link: Some(Arc::new(application.clone())),
+            ..Default::default()
+        }));
+    }
     let auth = Arc::new(builder.build().await?);
     Ok((
         Router::new().nest(&path, auth.clone().axum_router().with_state(auth)),
@@ -570,6 +588,7 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
         "cached",
         "plugin",
         "provider",
+        "issuer",
     ] {
         let (application_router, application) = application(config, mode).await?;
         router = router.merge(application_router);

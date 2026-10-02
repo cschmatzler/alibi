@@ -1,6 +1,6 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { createAuthMiddleware } from "better-auth/api";
-import { openAPI } from "better-auth/plugins";
+import { magicLink, openAPI } from "better-auth/plugins";
 import { getMigrations } from "better-auth/db/migration";
 import { Database } from "bun:sqlite";
 
@@ -9,8 +9,8 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const mapperReceipts: unknown[] = [];
   const applications = new Map<string, { database: Database; events: Record<string, unknown>[] }>();
-  for (const mode of ["normal", "output", "policy", "async-validation", "cached", "plugin", "provider"] as const) {
-    const transformed = mode === "output" || mode === "cached" || mode === "provider";
+  for (const mode of ["normal", "output", "policy", "async-validation", "cached", "plugin", "provider", "issuer"] as const) {
+    const transformed = mode === "output" || mode === "cached" || mode === "provider" || mode === "issuer";
     const database = new Database(":memory:");
     const events: Record<string, unknown>[] = [];
     const path = `/__test/profiles/${mode === "normal" ? "additional-fields" : `additional-${mode}-fields`}/api/auth`;
@@ -52,7 +52,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
         hidden: { type: "string" as const, required: false, returned: false, input: false, defaultValue: "user-secret" },
       } : {}),
     });
-    const auth = betterAuth({ ...base, database, basePath: path, plugins: [openAPI(), ...(mode === "plugin" ? [{ id:"application-fields", schema: {
+    const auth = betterAuth({ ...base, database, basePath: path, plugins: [openAPI(), ...(mode === "issuer" ? [magicLink({sendMagicLink:async delivery=>{events.push({phase:"delivery",delivery:{...delivery,metadata:delivery.metadata??null},metadataPresent:delivery.metadata!==undefined});}})] : []), ...(mode === "plugin" ? [{ id:"application-fields", schema: {
         user: {fields:{label:{type:"string" as const,required:false,defaultValue:"plugin-user",returned:false},role:{type:"string" as const,required:false,input:false,defaultValue:"plugin-role",transform:{output:async (value:unknown)=>{events.push({phase:"plugin-output",entity:"user",field:"role",value});return `observed:${value}`;}}}}},
         session: {fields:{label:{type:"string" as const,required:false,defaultValue:"plugin-session",returned:false}}},
         account: {fields:{label:{type:"string" as const,required:false,defaultValue:"plugin-account",returned:false}}},
