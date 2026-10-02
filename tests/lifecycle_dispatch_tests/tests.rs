@@ -391,7 +391,7 @@ async fn initialization_telemetry_is_opt_in_bounded_and_nonfatal() {
                     "runtime":"rust",
                     "platform":std::env::consts::OS,
                     "architecture":std::env::consts::ARCH,
-                    "plugins":["lifecycle-probe"]
+                    "plugins":["lifecycle-probe", "session-management", "email-password", "password-management", "email-verification", "account-management", "oauth", "user-management"]
                 })
             );
             assert_eq!(

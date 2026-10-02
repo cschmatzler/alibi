@@ -80,7 +80,10 @@ available. The custom profile proves that distinction through the real upstream
 API and native `BetterAuth::dispatch_endpoint` behind a controlled fixture
 interface. Upstream `scope: server` hiding retains HTTP and document visibility;
 disabled paths independently return 404 and disappear from docs. Transport
-middleware and physical on-request hooks still precede HTTP resolution.
+middleware and physical on-request hooks still precede HTTP resolution. Dispatch
+uses only the resolved HTTP plugin, so a server-only application handler sharing
+a path with a core route cannot intercept the core call. Native HTTP proof
+failed before that repair with 200 private data instead of the core 401.
 
 ## Focused proof and test ownership
 
@@ -134,9 +137,10 @@ include it. Both choices retain actual registration and have native HTTP proof. 
 OpenAPI documentation exclusions. The SDK scenarios own
 built-in schema and HTML behavior; native tests do not duplicate those flows.
 
-Focused #191 results: 63 SDK OpenAPI/user-management scenarios / 2,640
-assertions; 12 native user-management lifecycle checks; six native application
-metadata/builder surface checks; strict API/core/root production Clippy and client
+Focused #191 results: 76 SDK OpenAPI/user-management/core-dispatch/lifecycle
+scenarios / 3,624 assertions; 12 native user-management lifecycle checks; six
+native application metadata/builder surface checks; ten native dispatch and
+initialization checks; strict API/core/root production Clippy and client
 TypeScript check. The original production code fails the final owner fixtures
 for missing minimal routes, configured last-login metadata and enum inputs.
 Root batch validation owns the integrated canonical `devenv test` gate.

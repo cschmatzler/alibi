@@ -654,11 +654,12 @@ impl<S: AuthSchema> BetterAuth<S> {
             return Ok(response);
         }
 
-        // Try each plugin until one handles the request
-        for plugin in &self.plugins {
-            if let Some(response) = plugin.on_request(&internal_req, &self.context).await? {
-                return Ok(response);
-            }
+        // Dispatch only the resolved HTTP endpoint. A server-only handler from
+        // another plugin may share this path and must never receive the call.
+        if let Some((plugin, _route)) = plugin_route
+            && let Some(response) = plugin.on_request(&internal_req, &self.context).await?
+        {
+            return Ok(response);
         }
 
         // No handler found

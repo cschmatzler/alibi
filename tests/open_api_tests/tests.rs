@@ -48,6 +48,14 @@ async fn application_schema_and_plugin_annotations_reach_the_public_document_wit
             serde_json::from_slice::<Value>(&updated.body).unwrap(),
             json!({"id":"fixture-id","labels":[7,"approved"]})
         );
+        let private = auth
+            .handle_request(AuthRequest::new(HttpMethod::Get, "/identity/list-sessions"))
+            .await
+            .unwrap();
+        assert_eq!(
+            private.status, 401,
+            "the HTTP core route must not dispatch the application's server-only handler"
+        );
         let session = auth
             .handle_request(AuthRequest::new(HttpMethod::Get, "/identity/get-session"))
             .await
