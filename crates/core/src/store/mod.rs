@@ -493,6 +493,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         user_id: &str,
     ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
         let models = self.get_user_sessions(user_id).await?;
+        if models.is_empty() {
+            return Ok(Vec::new());
+        }
         let mut records = vec![None; models.len()];
         let store = self.clone();
         let endpoint = crate::endpoint::current_endpoint_call_context();
@@ -517,7 +520,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                 );
             };
             if let Some(endpoint) = endpoint {
-                crate::endpoint::with_endpoint_call_context(endpoint, project).await;
+                crate::endpoint::with_endpoint_call_context(
+                    endpoint,
+                    crate::hooks::with_optional_request_hook_context(request, project),
+                )
+                .await;
             } else {
                 crate::hooks::with_optional_request_hook_context(request, project).await;
             }
@@ -527,7 +534,10 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                 .recv()
                 .await
                 .ok_or_else(|| AuthError::internal("Session collection projection stopped"))?;
-            records[index] = Some(record?);
+            let slot = records
+                .get_mut(index)
+                .ok_or_else(|| AuthError::internal("Invalid session projection row"))?;
+            *slot = Some(record?);
         }
         Ok(records.into_iter().flatten().collect())
     }
