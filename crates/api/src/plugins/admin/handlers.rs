@@ -282,13 +282,14 @@ pub(in crate::plugins) async fn create_user_core(
         .as_deref()
         .filter(|password| !password.is_empty())
     {
-        let password_hash = better_auth_core::hash_password(
-            password_policy
-                .as_ref()
-                .and_then(|policy| policy.password_hasher.as_ref()),
-            password,
-        )
-        .await?;
+        let password_hash = ctx
+            .hash_password(
+                password_policy
+                    .as_ref()
+                    .and_then(|policy| policy.password_hasher.as_ref()),
+                password,
+            )
+            .await?;
         drop(
             ctx.database
                 .create_account(CreateAccount {
@@ -736,20 +737,55 @@ pub(in crate::plugins) async fn set_user_password_core(
         return Err(AuthError::bad_request("Password too long"));
     }
 
-    let password_hash = better_auth_core::hash_password(None, &body.new_password).await?;
+    let target = ctx
+        .database
+        .get_user_by_id(&body.user_id)
+        .await?
+        .ok_or(AuthError::Upstream {
+            status: 404,
+            code: "USER_NOT_FOUND",
+            message: MESSAGE_USER_NOT_FOUND,
+        })?;
 
-    let accounts = ctx.database.get_user_accounts(&body.user_id).await?;
-    if let Some(account) = accounts
-        .iter()
-        .find(|account| account.provider_id() == "credential")
+    let password_policy = ctx.extensions.get::<crate::plugins::EmailPasswordConfig>();
+    let password_hash = ctx
+        .hash_password(
+            password_policy
+                .as_ref()
+                .and_then(|policy| policy.password_hasher.as_ref()),
+            &body.new_password,
+        )
+        .await?;
+
+    if let Some(account) =
+        crate::plugins::helpers::get_credential_account(ctx, &body.user_id).await?
     {
-        let account_update = better_auth_core::UpdateAccount {
-            password: Some(password_hash),
-            ..Default::default()
-        };
         drop(
             ctx.database
-                .update_account(&account.id(), account_update)
+                .update_account(
+                    &account.id(),
+                    better_auth_core::UpdateAccount {
+                        password: Some(password_hash),
+                        ..Default::default()
+                    },
+                )
+                .await?,
+        );
+    } else {
+        drop(
+            ctx.database
+                .create_account(CreateAccount {
+                    user_id: body.user_id.clone(),
+                    account_id: target.id().to_string(),
+                    provider_id: "credential".into(),
+                    password: Some(password_hash),
+                    access_token: None,
+                    refresh_token: None,
+                    id_token: None,
+                    access_token_expires_at: None,
+                    refresh_token_expires_at: None,
+                    scope: None,
+                })
                 .await?,
         );
     }

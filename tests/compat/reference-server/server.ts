@@ -5,6 +5,7 @@ import { createLastLoginMethodFixture } from "./last-login-method-fixture";
 import { createSetPasswordFixture } from "./set-password-fixture";
 import { createUserLifecycleFixture } from "./user-lifecycle-fixture";
 import { createDispatchFixture } from "./dispatch-fixture";
+import { createCompromisedPasswordFixture } from "./compromised-password-fixture";
 import { createSignupPolicyFixture } from "./signup-policy-fixture";
 import { createClientIpFixture } from "./client-ip-fixture";
 import { createTwoFactorPendingLookupFixture } from "./two-factor-pending-lookup-fixture";
@@ -597,6 +598,7 @@ const oneTapProfiles = createOneTapProfiles(authOptions);
 const googleIdProfiles = googleIdTokenProfiles(authOptions);
 const setPasswordFixture = createSetPasswordFixture(database, authOptions);
 const signupPolicyFixture = createSignupPolicyFixture(database, authOptions);
+const compromisedPasswordFixture = await createCompromisedPasswordFixture(database, authOptions);
 const userValidationFixture = await createUserValidationFixture(database, authOptions);
 
 const OTT_PROFILE_NAMES=["ott-default","ott-hashed","ott-no-cookie","ott-server-header","ott-refresh-disabled","ott-refresh-deferred"] as const;
@@ -1004,6 +1006,12 @@ const server = Bun.serve({
       const userValidationControl = await userValidationFixture.handle(request);
       if (userValidationControl) return userValidationControl;
       for (const [name, profile] of userValidationFixture.profiles) {
+        const path = `/__test/profiles/${name}/api/auth`;
+        if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.handler(request);
+      }
+      const compromisedPasswordControl = await compromisedPasswordFixture.handle(request);
+      if (compromisedPasswordControl) return compromisedPasswordControl;
+      for (const [name, profile] of compromisedPasswordFixture.profiles) {
         const path = `/__test/profiles/${name}/api/auth`;
         if (url.pathname === path || url.pathname.startsWith(`${path}/`)) return profile.handler(request);
       }

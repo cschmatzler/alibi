@@ -894,7 +894,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
     if let Some(user) = ctx.database.get_user_by_email(&body.email).await? {
         if config.require_email_verification || !config.auto_sign_in {
             drop(
-                password_utils::hash_password(config.password_hasher.as_ref(), &body.password)
+                ctx.hash_password(config.password_hasher.as_ref(), &body.password)
                     .await?,
             );
             signup::notify_existing(ctx.user_view(&user), request, config, ctx).await?;
@@ -907,8 +907,9 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
     }
 
     // Hash password
-    let password_hash =
-        password_utils::hash_password(config.password_hasher.as_ref(), &body.password).await?;
+    let password_hash = ctx
+        .hash_password(config.password_hasher.as_ref(), &body.password)
+        .await?;
 
     let mut create_user = CreateUser::new()
         .with_email(&body.email)
@@ -1189,7 +1190,10 @@ pub(in crate::plugins) async fn sign_in_core(
         .get_user_by_email(&body.email.to_lowercase())
         .await?;
     let Some(user) = user else {
-        drop(password_utils::hash_password(config.password_hasher.as_ref(), &body.password).await?);
+        drop(
+            ctx.hash_password(config.password_hasher.as_ref(), &body.password)
+                .await?,
+        );
         return Err(AuthError::InvalidCredentials);
     };
     let credential = super::helpers::get_credential_account(ctx, &user.id()).await?;
@@ -1198,7 +1202,10 @@ pub(in crate::plugins) async fn sign_in_core(
         .and_then(AuthAccount::password)
         .filter(|password| !password.is_empty())
     else {
-        drop(password_utils::hash_password(config.password_hasher.as_ref(), &body.password).await?);
+        drop(
+            ctx.hash_password(config.password_hasher.as_ref(), &body.password)
+                .await?,
+        );
         return Err(AuthError::InvalidCredentials);
     };
     password_utils::verify_password(
@@ -1255,7 +1262,7 @@ pub(in crate::plugins) async fn sign_in_username_core(
         .map_err(SignInUsernameFailure::Auth)?
     else {
         drop(
-            password_utils::hash_password(config.password_hasher.as_ref(), &body.password)
+            ctx.hash_password(config.password_hasher.as_ref(), &body.password)
                 .await
                 .map_err(SignInUsernameFailure::Auth)?,
         );

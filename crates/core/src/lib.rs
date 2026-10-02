@@ -122,7 +122,10 @@ pub use types::{
     ValidationErrorResponse, WalletAddress,
 };
 pub use types::{CreateJwk, Jwk};
-pub use utils::password::{PasswordHasher, ScryptHasher, hash_password, verify_password};
+pub use utils::password::{
+    PasswordHashContext, PasswordHashHook, PasswordHasher, ScryptHasher, hash_password,
+    verify_password,
+};
 #[doc(hidden)]
 pub use uuid;
 pub use wire::{

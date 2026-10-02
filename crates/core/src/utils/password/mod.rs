@@ -34,6 +34,42 @@ pub trait PasswordHasher: Send + Sync {
     async fn verify(&self, hash: &str, password: &str) -> AuthResult<bool>;
 }
 
+/// Logical identity of an actual endpoint call, independently of whether it
+/// came from HTTP. Trusted server APIs have a path and may have no request.
+#[derive(Clone, Debug)]
+pub struct PasswordHashContext {
+    pub path: Option<String>,
+    pub request: Option<crate::hooks::RequestHookContext>,
+}
+
+impl PasswordHashContext {
+    #[must_use]
+    pub fn from_request(request: crate::hooks::RequestHookContext) -> Self {
+        let path = request
+            .extensions
+            .get::<crate::plugin::ResolvedEndpoint>()
+            .map_or_else(|| request.path.clone(), |endpoint| endpoint.path.clone());
+        Self {
+            path: Some(path),
+            request: Some(request),
+        }
+    }
+}
+
+/// An initialized policy applied at actual password hashing, after endpoint
+/// admission and before the selected original hasher. Verification is unchanged.
+#[async_trait]
+pub trait PasswordHashHook: Send + Sync {
+    async fn before_hash(
+        &self,
+        password: &str,
+        context: Option<&PasswordHashContext>,
+    ) -> AuthResult<()>;
+}
+
+#[derive(Clone, Default)]
+pub(crate) struct PasswordHashHooks(pub Vec<Arc<dyn PasswordHashHook>>);
+
 /// The pinned Better Auth password format: hexadecimal salt and scrypt key.
 #[derive(Clone, Default, Debug)]
 pub struct ScryptHasher;

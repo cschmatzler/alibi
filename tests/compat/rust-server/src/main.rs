@@ -102,6 +102,7 @@ mod atlassian_provider_fixture;
 mod client_ip_fixture;
 mod cloudflare_provider_fixture;
 mod cognito_provider_fixture;
+mod compromised_password_fixture;
 mod device_fixture;
 mod dropbox_provider_fixture;
 mod facebook_provider_fixture;
@@ -715,6 +716,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let set_password_router = set_password_fixture::router(&config, database.clone()).await?;
     let reset_database = database.clone();
     let signup_policy_router = signup_policy_fixture::router(&config, database.clone()).await?;
+    let compromised_password_router =
+        compromised_password_fixture::router(&config, database.clone()).await?;
     let (user_validation_router, user_validation_app) =
         user_validation_fixture::router(&config, database.clone()).await?;
     let verification_outbox = Arc::new(Mutex::new(HashMap::new()));
@@ -1935,6 +1938,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(jwt_keyring_router)
         .merge(jwt_remote_router)
         .merge(signup_policy_router)
+        .merge(compromised_password_router)
         .merge(user_validation_router)
         .merge(magic_router)
         .merge(siwe_profile_router)

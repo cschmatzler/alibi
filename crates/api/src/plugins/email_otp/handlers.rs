@@ -459,11 +459,9 @@ impl EmailOtpPlugin {
             .get_user_by_email(&email)
             .await?
             .ok_or_else(user_not_found)?;
-        let password = better_auth_core::utils::password::hash_password(
-            settings.hasher.as_ref(),
-            &body.password,
-        )
-        .await?;
+        let password = ctx
+            .hash_password(settings.hasher.as_ref(), &body.password)
+            .await?;
         if let Some(account) = super::super::helpers::get_credential_account(ctx, user.id()).await?
         {
             drop(
@@ -496,7 +494,7 @@ impl EmailOtpPlugin {
             );
         }
         if let Some(hook) = &settings.on_reset {
-            hook(serde_json::to_value(&user)?).await?;
+            hook(serde_json::to_value(ctx.user_view(&user))?).await?;
         }
         if !user.email_verified() {
             drop(

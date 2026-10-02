@@ -18,6 +18,7 @@ export const FIXTURE_PROFILES = [
   ...variants("social-kakao-",["default","public","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
   ...variants("social-figma-",["default","public","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
   "session-cache-guards", "session-cache-interactions",
+  ...variants("pwned-", ["default", "disabled", "empty", "custom", "message", "empty-message", "no-auto", "virtual", "wildcard"] as const),
   ...variants("user-lifecycle-", ["default", "required", "delivery", "auto", "change", "promotion", "promotion-no-mail", "verification-expired", "no-mail", "delete", "delete-mail", "delete-zero", "delete-expired", "delete-policy", "delete-no-freshness"] as const),
   "validation", "validation-no-auto", "validation-required", "validation-disabled", "validation-no-policy",
   ...variants("social-cognito-",["default","configured","disabled-scope","disabled-configured","public","required","client-array","empty-clients","mapped","disabled-idtoken","implicit-disabled","signup-disabled","configured-endpoint","http-domain","encrypted","userinfo-override","query-overrides","client-key"] as const),

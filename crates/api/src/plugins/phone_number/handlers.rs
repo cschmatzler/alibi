@@ -528,11 +528,9 @@ impl PhoneNumberPlugin {
             settings.maximum,
             ctx,
         )?;
-        let hash = better_auth_core::utils::password::hash_password(
-            settings.hasher.as_ref(),
-            &body.new_password,
-        )
-        .await?;
+        let hash = ctx
+            .hash_password(settings.hasher.as_ref(), &body.new_password)
+            .await?;
         if let Some(account) =
             crate::plugins::helpers::get_credential_account(ctx, user.id()).await?
         {
@@ -566,7 +564,7 @@ impl PhoneNumberPlugin {
             );
         }
         if let Some(callback) = settings.on_reset {
-            callback(serde_json::to_value(&user)?).await?;
+            callback(serde_json::to_value(ctx.user_view(&user))?).await?;
         }
         if settings.revoke {
             ctx.database.delete_user_sessions(&user.id()).await?;
