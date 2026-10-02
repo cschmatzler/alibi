@@ -187,7 +187,8 @@ Two already-started delayed row callbacks finish after that response with their
 actual captured `/list-sessions` context. Successful output and physical/cache
 credentials are compared through the SDK, full HTTP traces and SQLite state.
 
-A separate observed scheduling question remains: with one immediately completing
+A separate observed scheduling question is tracked in
+[issue #332](https://github.com/cschmatzler/better-auth-rs/issues/332): with one immediately completing
 normal row alongside rejecting and delayed rows, Native and Source placed the
 normal row's remaining output-field observations differently relative to the
 completed HTTP500 hook. The controlled rejection owner uses two genuinely delayed
