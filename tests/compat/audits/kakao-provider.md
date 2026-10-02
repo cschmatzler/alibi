@@ -68,3 +68,18 @@ duplicate logical workspace paths and passes the unchanged75%floor at
 31,495/40,789native lines (77.214445%). No missing-owner/compiler failure is used
 as before evidence, and no Source/comparer change, dependency patch, suppression
 or hook bypass is introduced. No Source/comparer edits or hook bypasses.
+## Composition with the merged compact-cache repair
+
+Frozen20a7680b9dfe720ee08cff10315b8b491c0cdd52 is based on actual main
+16205b5b0e99f69899cf84ac71b11be64c362dba. Its own production/owner hunks
+remain unchanged; the actual221 guard and profile registry are retained.
+Both strict matrices, rustls, formatting, TypeScript,71harness and all845
+feature-native tests pass /tmp/issue147-main221-composed-checks.log,exit0.
+The genuinely rebuilt fixture and actual Source/native Kakao table pass all58
+owners and2,016assertions. Every4,817 merged-parent evidence requirement remains,
+in original route order, alongside the287 measured Kakao additions:5,104total.
+An initial merge-union script failed its count assertion before writing; no gate
+ran against that intermediate state. The union was regenerated from immutable
+parent/own refs, independently checked for retention and squashed into the own
+code commit before this frozen validation. All old canonical/coverage outcomes
+above remain attributed to their actual earlier measured heads.
