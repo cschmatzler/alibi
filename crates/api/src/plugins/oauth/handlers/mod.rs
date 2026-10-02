@@ -808,7 +808,7 @@ fn attach_state_cookie(
     secret: &str,
     state: &str,
 ) -> AuthResult<AuthResponse> {
-    let value = create_database_state_cookie_value(secret, state)?;
+    let value = create_database_state_cookie_value(secret, state);
     Ok(response.with_appended_header(
         "Set-Cookie",
         better_auth_core::utils::cookie_utils::create_cookie(
