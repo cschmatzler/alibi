@@ -158,6 +158,19 @@ where
     S::Session: SeaOrmSessionModel,
     S::Verification: SeaOrmVerificationModel,
 {
+    async fn list_jwks(&self) -> AuthResult<Vec<better_auth_core::types::Jwk>> {
+        self.store.list_jwks_with_connection(self.tx).await
+    }
+    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<better_auth_core::types::Jwk>> {
+        self.store.get_jwk_with_connection(self.tx, id).await
+    }
+    async fn create_jwk(
+        &self,
+        data: better_auth_core::types::CreateJwk,
+    ) -> AuthResult<better_auth_core::types::Jwk> {
+        self.store.create_jwk_with_connection(self.tx, data).await
+    }
+
     async fn get_team(
         &self,
         organization_id: &str,

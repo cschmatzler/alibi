@@ -166,9 +166,6 @@ impl<S: AuthSchema> AuthBuilder<S> {
     pub async fn build(mut self) -> AuthResult<BetterAuth<S>> {
         // Validate configuration
         self.config.validate()?;
-        if let Some(cache) = &self.config.session.cookie_cache {
-            better_auth_core::cache::validate_config(cache)?;
-        }
 
         // Authentication and every producer use the same initialized token
         // name; related-cookie overrides remain independently configured.

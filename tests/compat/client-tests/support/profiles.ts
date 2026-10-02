@@ -189,6 +189,7 @@ export const FIXTURE_PROFILES = [
   ] as const),
   "session-cache-guards",
   "session-cache-interactions",
+  "session-cache-jwt", "session-cache-jwe", "session-cache-managed", "session-cache-jwe-old", "session-cache-jwe-retained", "session-cache-jwe-retired",
   "additional-fields",
   "additional-provider-fields",
   "additional-issuer-fields",

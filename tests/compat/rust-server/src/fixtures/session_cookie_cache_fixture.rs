@@ -7,7 +7,7 @@ use better_auth::plugins::anonymous::{
     AnonymousConfig, AnonymousIdentity, AnonymousLink, LinkAnonymousAccount,
 };
 use better_auth::plugins::email_verification::{EmailVerificationPlugin, SendVerificationEmail};
-use better_auth::plugins::jwt::JwtPlugin;
+use better_auth::plugins::jwt::{JwtPlugin, JwtPluginConfig};
 use better_auth::plugins::multi_session::MultiSessionPlugin;
 use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
 use better_auth::plugins::phone_number::{
@@ -190,11 +190,30 @@ struct Control {
     token: Option<String>,
     name: Option<String>,
     email: Option<String>,
+    key: Option<ImportedKey>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ImportedKey {
+    id: String,
+    public_key: String,
+    private_key: String,
+    created_at: chrono::DateTime<chrono::Utc>,
+    expires_at: Option<chrono::DateTime<chrono::Utc>>,
+    alg: Option<String>,
+    crv: Option<String>,
 }
 pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthResult<Router> {
     let mut router = Router::new();
     let mut profiles = HashMap::new();
     for mode in [
+        "jwe-old",
+        "jwe-retained",
+        "jwe-retired",
+        "jwt",
+        "jwe",
+        "managed",
         "standard",
         "disabled",
         "version",
@@ -242,10 +261,39 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             .base_path(&path)
             .session_cookie_cache(CookieCacheConfig {
                 enabled: mode != "disabled",
+                strategy: match mode {
+                    "jwe" | "jwe-old" | "jwe-retained" | "jwe-retired" => {
+                        better_auth_core::CookieCacheStrategy::Jwe
+                    }
+                    "jwt" | "managed" => better_auth_core::CookieCacheStrategy::Jwt,
+                    _ => better_auth_core::CookieCacheStrategy::Compact,
+                },
                 max_age,
                 version: Some(version),
                 ..Default::default()
             });
+        if mode.starts_with("jwe-") {
+            let keys = if mode == "jwe-old" {
+                better_auth_core::ManagedSecrets::new(1, base.current_secret())
+            } else {
+                better_auth_core::ManagedSecrets::new(
+                    2,
+                    "cache-managed-new-secret-at-least-32-characters",
+                )
+            };
+            let keys = if mode == "jwe-retained" {
+                keys.retain(1, base.current_secret())
+            } else {
+                keys
+            };
+            config = config.managed_secrets(keys);
+        }
+        if mode == "managed" {
+            config = config
+                .base_url("https://session-cache.fixture.test")
+                .trusted_origin(&base.base_url);
+            config.session.cookie_secure = false;
+        }
         _ = config.session.additional_fields.insert(
             "hidden".into(),
             FieldConfig::new(json!({"type":"string"}))
@@ -332,6 +380,12 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                 .plugin(MultiSessionPlugin::new())
                 .plugin(JwtPlugin::new());
         }
+        if mode == "managed" {
+            builder = builder.plugin(JwtPlugin::with_config(JwtPluginConfig {
+                session_cookie_cache: true,
+                ..Default::default()
+            }));
+        }
         let auth = Arc::new(builder.build().await?);
         router = router.nest(&path, auth.clone().axum_router().with_state(auth.clone()));
         profiles.insert(mode.to_string(), (auth, state));
@@ -346,6 +400,21 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                     return Err(axum::http::StatusCode::BAD_REQUEST);
                 };
                 match control.action.as_str() {
+                    "cache-keys" | "import-cache-key" | "rotate-cache-key" | "retire-cache-key" => {
+                        if control.action=="import-cache-key" {
+                            let key=control.key.ok_or(axum::http::StatusCode::BAD_REQUEST)?;
+                            if auth.store().get_jwk_by_id(&key.id).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?.is_none() {
+                                auth.store().create_jwk(better_auth_core::CreateJwk{id:Some(key.id),public_key:key.public_key,private_key:key.private_key,created_at:key.created_at,expires_at:key.expires_at,alg:key.alg,crv:key.crv}).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                            }
+                        } else if control.action=="rotate-cache-key" {
+                            JwtPlugin::new().create_jwk(None,None,auth.context()).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        } else if control.action=="retire-cache-key" {
+                            better_auth_seaorm::store::entities::jwk::Entity::delete_by_id(control.token.ok_or(axum::http::StatusCode::BAD_REQUEST)?).exec(&db).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        }
+                        let keys=auth.store().list_jwks().await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        return Ok(Json(json!({"keys":keys.into_iter().map(|key|json!({"id":key.id,"publicKey":key.public_key,"privateKey":key.private_key,"createdAt":key.created_at,"expiresAt":key.expires_at,"alg":key.alg,"crv":key.crv})).collect::<Vec<_>>()})));
+                    }
+
                     "reset" => {
                         let mut state = state.lock().expect("cache fixture reset lock");
                         *state = State {
