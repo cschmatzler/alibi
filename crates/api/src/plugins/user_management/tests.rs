@@ -6,8 +6,6 @@ use chrono::Duration;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-
 // -- change email tests ────────────────────────────────────────────
 
 // Upstream reference: packages/better-auth/src/api/routes/update-user.test.ts :: describe("updateUser") and packages/better-auth/src/api/routes/update-user.ts; adapted to the Rust user-management plugin.
