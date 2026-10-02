@@ -16,6 +16,8 @@ extern crate self as better_auth;
 
 pub mod authenticated_user;
 
+pub mod adapter_record;
+
 pub mod background_tasks;
 
 pub mod cache;
@@ -65,6 +67,7 @@ pub mod wire;
 // Re-export commonly used items
 #[doc(hidden)]
 pub use crate as __private_core;
+pub use adapter_record::{AdapterOutput, AdapterRecord};
 pub use authenticated_user::AuthenticatedUser;
 // Re-export commonly used items
 pub use background_tasks::{
@@ -79,7 +82,7 @@ pub use config::{
     AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, AuthConfig,
     CookieAttributes, CookieCacheConfig, CookieCacheStrategy, CookieOverride, CrossSubDomainConfig,
     IpAddressConfig, JwtConfig, OAuthStateStrategy, PasswordConfig, SameSite, SessionConfig,
-    core_paths, extract_origin,
+    UserConfig, core_paths, extract_origin,
 };
 pub use email::{ConsoleEmailProvider, EmailProvider};
 pub use entity::{

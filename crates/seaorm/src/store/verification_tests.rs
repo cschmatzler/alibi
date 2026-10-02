@@ -407,6 +407,7 @@ async fn transactional_verification_creation_rolls_back_with_signup_work() -> Te
                         .await?;
                     drop(
                         tx.create_account(CreateAccount {
+                            additional_fields: Default::default(),
                             user_id: user.id.clone(),
                             account_id: identifier.to_owned(),
                             provider_id: "credential".to_owned(),

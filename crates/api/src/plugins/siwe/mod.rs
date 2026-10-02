@@ -14,7 +14,7 @@ mod validation;
 #[cfg(test)]
 mod tests;
 
-use super::helpers::{apply_default_role, issue_user_session};
+use super::helpers::{apply_default_role, issue_user_session_record};
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthSession,
     AuthUser, CreateAccount, CreateUser, CreateVerification, CreateWalletAddress, RequestMeta,
@@ -226,7 +226,7 @@ impl SiwePlugin {
             user_2
         };
         let meta = RequestMeta::from_request(request);
-        let issued = issue_user_session(ctx, &user.id(), meta.ip_address, meta.user_agent)
+        let issued = issue_user_session_record(ctx, &user.id(), meta.ip_address, meta.user_agent)
             .await
             .map_err(|error| storage_error(error.into_auth_error()))?;
         let token = issued.session.token();
@@ -354,6 +354,7 @@ impl SiwePlugin {
         drop(
             ctx.database
                 .create_account(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: user_id.to_owned(),
                     account_id: format!("{address}:{}", number.format(chain_id)),
                     provider_id: "siwe".to_owned(),

@@ -17,7 +17,7 @@ use super::state::{
 use super::types::{
     LinkSocialRequest, OAuthIdTokenRequest, SocialSignInRequest, SocialSignInResponse,
 };
-use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session};
+use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session_record};
 use base64::Engine;
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
 use better_auth_core::user_validation::{
@@ -910,7 +910,7 @@ async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
     policy: &OAuthProcessPolicy,
     meta: &better_auth_core::RequestMeta,
     ctx: &AuthContext<S>,
-) -> Result<crate::plugins::helpers::IssuedSession<S>, OAuthSignInError> {
+) -> Result<crate::plugins::helpers::IssuedSessionRecord<S>, OAuthSignInError> {
     if !user.email_verified() {
         let config = ctx
             .extensions
@@ -961,7 +961,7 @@ async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
             return Err(OAuthSignInError::EmailNotVerified);
         }
     }
-    issue_user_session(
+    issue_user_session_record(
         ctx,
         &user.id(),
         meta.ip_address.clone(),
@@ -1203,6 +1203,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         let created_account = ctx
             .database
             .create_account(CreateAccount {
+                additional_fields: Default::default(),
                 user_id: linked_user.id().to_string(),
                 account_id: user_info.id.clone(),
                 provider_id: provider_name.to_owned(),
@@ -1313,6 +1314,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         create_user.image = user_info.image.clone();
 
         let mut create_account = CreateAccount {
+            additional_fields: Default::default(),
             user_id: String::new(),
             account_id: user_info.id.clone(),
             provider_id: provider_name.to_owned(),
@@ -1460,6 +1462,7 @@ pub(in crate::plugins) async fn complete_link_social(
     drop(
         ctx.database
             .create_account(CreateAccount {
+                additional_fields: Default::default(),
                 user_id: link.user_id.clone(),
                 account_id: user_info.id.clone(),
                 provider_id: provider_name.to_owned(),
@@ -1717,6 +1720,7 @@ async fn link_with_id_token_core(
     drop(
         ctx.database
             .create_account(CreateAccount {
+                additional_fields: Default::default(),
                 user_id: session.user_id().to_string(),
                 provider_id: body.provider.clone(),
                 account_id: response.user.id,

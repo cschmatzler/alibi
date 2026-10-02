@@ -5,7 +5,7 @@ use super::{email_verification::EmailVerificationPlugin, two_factor};
 use crate::plugins::authentication_helpers::{
     JsonField, JsonFieldKind, RequestBody, is_valid_email, parse_body,
 };
-use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session};
+use crate::plugins::helpers::{SessionIssueError, apply_default_role, issue_user_session_record};
 use async_trait::async_trait;
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
 use better_auth_core::field_policy::FieldValues;
@@ -124,6 +124,8 @@ impl std::fmt::Debug for EmailPasswordConfig {
 
 #[derive(Clone, Debug, Deserialize, Validate)]
 pub(in crate::plugins) struct SignUpRequest {
+    #[serde(flatten, default)]
+    additional_fields: indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>,
     #[serde(rename = "lastLoginMethod")]
     last_login_method: Option<better_auth_core::utils::json::JsValue>,
     #[validate(length(min = 1, message = "Name is required"))]
@@ -880,6 +882,19 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         ctx,
     )?;
 
+    let additional_fields = ctx
+        .parse_user_fields(&body.additional_fields, true)
+        .map_err(|error| match error {
+            better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
+                AuthError::Api {
+                    status: 400,
+                    code: Some(code.into()),
+                    message,
+                }
+            }
+            better_auth_core::field_policy::FieldInputError::Transform(error) => error,
+        })?;
+
     super::last_login_method::reject_last_login_method_input(ctx, body.last_login_method.as_ref())?;
 
     let phone_enabled = ctx
@@ -915,6 +930,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         .with_email(&body.email)
         .with_name(&body.name);
     create_user.image = body.image.clone();
+    create_user.additional_fields = additional_fields;
     create_user.email_verified = Some(false);
     super::authentication_helpers::apply_creation_input_defaults(ctx, &mut create_user);
     if phone_enabled {
@@ -958,7 +974,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         let _database = Arc::clone(&transaction_database);
         Box::pin(async move {
             let user = match tx
-                .create_user_with_source(
+                .create_user_with_source_record(
                     create_user,
                     better_auth_core::user_validation::UserValidationSource::creation(
                         "email-password",
@@ -986,7 +1002,8 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
             };
 
             drop(
-                tx.create_account(CreateAccount {
+                tx.create_account_record(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: user.id().to_string(),
                     account_id: user.id().to_string(),
                     provider_id: "credential".to_owned(),
@@ -1012,7 +1029,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
 
             if auto_sign_in {
                 let session = tx
-                    .create_session(CreateSession {
+                    .create_session_record(CreateSession {
                         additional_fields: FieldValues::default(),
                         token: None,
                         active_team_id: None,
@@ -1027,7 +1044,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
                 let token = session.token().to_owned();
                 better_auth_core::cache::runtime::emit_issuance(&signup_context, &user, &session)
                     .await?;
-                super::helpers::record_completed_session::<S>(&user, &session);
+                super::helpers::record_completed_session_record::<S>(&user, &session);
 
                 Ok((
                     SignUpResponse {
@@ -1093,7 +1110,7 @@ async fn finalize_sign_in_with_user_core(
         metadata: ctx.metadata.clone(),
         extensions: ctx.extensions.clone(),
     };
-    let issued = issue_user_session(
+    let issued = issue_user_session_record(
         &issuing_context,
         &user.id(),
         meta.ip_address.clone(),

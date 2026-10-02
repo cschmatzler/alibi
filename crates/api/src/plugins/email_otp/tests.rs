@@ -617,6 +617,7 @@ async fn existing_unverified_account_loses_password_oauth_and_old_sessions() {
         drop(
             ctx.database
                 .create_account(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: user.id().to_string(),
                     account_id: format!("{provider}-identity"),
                     provider_id: provider.into(),
@@ -1010,6 +1011,7 @@ async fn reset_updates_password_runs_hook_and_revokes_owned_sessions() {
     let account = ctx
         .database
         .create_account(CreateAccount {
+            additional_fields: Default::default(),
             user_id: user.id().to_string(),
             account_id: user.id().to_string(),
             provider_id: "credential".into(),

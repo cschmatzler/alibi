@@ -324,6 +324,12 @@ impl<T: AuthVerification> From<&T> for VerificationView {
 }
 
 impl AuthUser for UserView {
+    fn retained_user_view(&self) -> Option<&UserView> {
+        Some(self)
+    }
+    fn additional_fields(&self) -> crate::field_policy::FieldOutput {
+        self.extension_fields.clone().into_iter().collect()
+    }
     fn id(&self) -> Cow<'_, str> {
         Cow::Borrowed(&self.id)
     }
@@ -392,6 +398,9 @@ impl AuthUser for UserView {
 }
 
 impl AuthSession for SessionView {
+    fn retained_session_view(&self) -> Option<&SessionView> {
+        Some(self)
+    }
     fn additional_fields(&self) -> serde_json::Map<String, serde_json::Value> {
         self.extension_fields.clone().into_iter().collect()
     }

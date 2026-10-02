@@ -9,8 +9,8 @@ mod tests;
 
 use super::StatusResponse;
 use crate::plugins::helpers::{
-    SessionIssueError, get_cookie, get_credential_password_hash, issue_user_session,
-    issue_user_session_with_overrides,
+    SessionIssueError, get_cookie, get_credential_password_hash, issue_user_session_record,
+    issue_user_session_with_overrides_record,
 };
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
@@ -333,7 +333,7 @@ pub(in crate::plugins) struct TwoFactorRedirectResponse {
 }
 
 struct PendingTwoFactorState<S: better_auth_core::AuthSchema> {
-    user: S::User,
+    user: better_auth_core::AdapterRecord<S::User>,
     verification: S::Verification,
     key: String,
     dont_remember: bool,
@@ -958,7 +958,7 @@ async fn enable_core(
                 },
             )
             .await?;
-        let issued = issue_user_session_with_overrides(
+        let issued = issue_user_session_with_overrides_record(
             ctx,
             updated_user.id().as_ref(),
             current_session.ip_address().map(str::to_owned),
@@ -1015,7 +1015,7 @@ async fn enable_core(
                 },
             )
             .await?;
-        let issued = issue_user_session_with_overrides(
+        let issued = issue_user_session_with_overrides_record(
             ctx,
             updated_user.id().as_ref(),
             current_session.ip_address().map(str::to_owned),
@@ -1106,7 +1106,7 @@ async fn disable_core(
 
     ctx.database.delete_two_factor(user.id().as_ref()).await?;
 
-    let issued = issue_user_session_with_overrides(
+    let issued = issue_user_session_with_overrides_record(
         ctx,
         updated_user.id().as_ref(),
         current_session.ip_address().map(str::to_owned),
@@ -1655,7 +1655,7 @@ async fn resolve_two_factor_state<S: better_auth_core::AuthSchema>(
 
     let user = ctx
         .database
-        .get_user_by_id(verification.value())
+        .get_user_by_id_record(verification.value())
         .await?
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
     let dont_remember = read_signed_cookie(req, DONT_REMEMBER_COOKIE_SUFFIX, ctx)
@@ -1896,7 +1896,7 @@ async fn verify_existing_session_factor(
                 },
             )
             .await?;
-        let issued = issue_user_session_with_overrides(
+        let issued = issue_user_session_with_overrides_record(
             ctx,
             updated_user.id().as_ref(),
             session.ip_address().map(str::to_owned),
@@ -1997,7 +1997,7 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
         metadata: ctx.metadata.clone(),
         extensions: ctx.extensions.clone(),
     };
-    let issued = issue_user_session(
+    let issued = issue_user_session_record(
         &issuing_context,
         pending.user.id().as_ref(),
         meta.ip_address,

@@ -1724,6 +1724,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let account = match auth
                         .store()
                         .create_account(CreateAccount {
+            additional_fields: Default::default(),
                             user_id: user.id.to_string(),
                             account_id,
                             provider_id,

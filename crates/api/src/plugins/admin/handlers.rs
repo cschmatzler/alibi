@@ -293,6 +293,7 @@ pub(in crate::plugins) async fn create_user_core(
         drop(
             ctx.database
                 .create_account(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: user.id().to_string(),
                     account_id: user.id().to_string(),
                     provider_id: "credential".to_owned(),
@@ -775,6 +776,7 @@ pub(in crate::plugins) async fn set_user_password_core(
         drop(
             ctx.database
                 .create_account(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: body.user_id.clone(),
                     account_id: target.id().to_string(),
                     provider_id: "credential".into(),

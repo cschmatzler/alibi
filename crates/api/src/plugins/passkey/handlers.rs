@@ -13,7 +13,7 @@ use super::webauthn::{
 };
 use super::{PasskeyConfig, PasskeyRegistrationUser};
 use crate::plugins::StatusResponse;
-use crate::plugins::helpers::{SessionIssueError, issue_user_session};
+use crate::plugins::helpers::{SessionIssueError, issue_user_session_record};
 use base64::Engine;
 use better_auth_core::entity::{AuthPasskey, AuthSession, AuthUser, AuthVerification};
 use better_auth_core::types::UpdatePasskeyAuthentication;
@@ -836,7 +836,7 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         return response_message(500, "User not found");
     };
 
-    let session = match issue_user_session(ctx, &user.id(), ip_address, user_agent)
+    let session = match issue_user_session_record(ctx, &user.id(), ip_address, user_agent)
         .await
         .map_err(SessionIssueError::into_auth_error)
     {

@@ -3,7 +3,7 @@ pub(super) mod types;
 #[cfg(test)]
 mod tests;
 
-use crate::plugins::helpers::{SessionIssueError, create_user_session};
+use crate::plugins::helpers::{SessionIssueError, create_user_session_record};
 use better_auth_core::entity::{AuthSession, AuthUser};
 use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateDeviceCode, RequestMeta,
@@ -491,7 +491,7 @@ impl DeviceAuthorizationPlugin {
 
             let meta = RequestMeta::from_request(req);
             let session =
-                match create_user_session(ctx, &user.id(), meta.ip_address, meta.user_agent)
+                match create_user_session_record(ctx, &user.id(), meta.ip_address, meta.user_agent)
                     .await
                     .map_err(SessionIssueError::into_auth_error)
                 {

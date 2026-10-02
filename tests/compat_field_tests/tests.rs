@@ -30,6 +30,7 @@ async fn test_all_responses_use_camel_case() {
     let account_info_account = auth
         .store()
         .create_account(CreateAccount {
+            additional_fields: Default::default(),
             user_id: signup_body["user"]["id"]
                 .as_str()
                 .expect("sign-up should return user id")
@@ -127,6 +128,7 @@ async fn test_response_type_signatures() {
     let account_info_account = auth
         .store()
         .create_account(CreateAccount {
+            additional_fields: Default::default(),
             user_id: signup_body["user"]["id"]
                 .as_str()
                 .expect("sign-up should return user id")

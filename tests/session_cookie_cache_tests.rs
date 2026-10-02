@@ -65,7 +65,11 @@ impl CookieCacheVersionResolver for Version {
             }
         };
         let projection = serde_json::to_value(context.session()).unwrap();
-        assert!(projection.get("hidden").is_none());
+        if context.source() == CacheVersionSource::Created {
+            assert_eq!(projection["hidden"], "actual-hidden-default");
+        } else {
+            assert!(projection.get("hidden").is_none());
+        }
         assert!(projection.get("server_only").is_none());
         assert_eq!(projection["label"], "public-label");
         self.0.lock().unwrap().push(event);

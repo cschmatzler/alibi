@@ -143,11 +143,8 @@ impl LastLoginMethodPlugin {
             .extensions
             .get::<super::helpers::CompletedSession<S>>()
             .map(|completed| LastLoginMethodSession {
-                user: completed
-                    .user_view
-                    .clone()
-                    .unwrap_or_else(|| ctx.user_view(&completed.user)),
-                session: ctx.session_view(&completed.session),
+                user: completed.callback_user(ctx),
+                session: completed.callback_session(ctx),
             });
         let endpoint = request
             .extensions
@@ -283,11 +280,8 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
         let new_session =
             super::helpers::completed_response_session(req, ctx, &response).map(|completed| {
                 LastLoginMethodSession {
-                    user: completed
-                        .user_view
-                        .clone()
-                        .unwrap_or_else(|| ctx.user_view(&completed.user)),
-                    session: ctx.session_view(&completed.session),
+                    user: completed.callback_user(ctx),
+                    session: completed.callback_session(ctx),
                 }
             });
         let endpoint = req

@@ -163,6 +163,7 @@ async fn setup_user_with_account(
 
     let account = db
         .create_account(CreateAccount {
+            additional_fields: Default::default(),
             user_id: user_id.clone(),
             account_id: format!("{provider}-account-id"),
             provider_id: provider.to_owned(),

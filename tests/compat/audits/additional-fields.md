@@ -78,3 +78,68 @@ their real existing pipeline and are not synthetic receipts.
 
 Native implementation, wider owners, capability cells and final gates remain
 pending. No unrun outcome is claimed as passing.
+
+The same application owner now extends into real async output callbacks and the
+record-aware after observer. It protects changed output type, hidden trusted
+fields, declared own undefined, actual committed user/account/session presence,
+onUpdate followed by adapter input transformation, and output-error signup
+rollback with unchanged complete foreign rows. Dropping transforms, filtering
+trusted after-hook input, running hooks before commit, or swallowing callback
+errors are credible independent regressions. The earlier defaults owner does not
+reach those lifecycle branches. This uses ordinary configured fields, real
+application schema and public observer API; no private production test seam.
+The signed credential observations still verify the actual hash, salt and derived
+key with the published verifier, including wrong-password rejection.
+
+The input-policy table owns real required/read-only/validator rejection,
+unknown/immutable input, validator precedence before awaited actual adapter input,
+callback-error rollback and complete foreign-row preservation. An independent
+async-validation branch protects the published explicit 500 rejection and proves
+that the declared callback is invoked while optional absent input remains usable.
+These extend the same physical application fixture; they do not fabricate writes
+or duplicate output-stage assertions. Source output validators are declaration
+metadata rather than validation admission at this published stage.
+
+## Partial implementation checkpoint
+
+The initialized store now exposes additive `AdapterRecord<M>` results containing
+the actual immutable storage model and one retained adapter output. Canonical
+identity, ownership and credential accessors continue to use the model. Declared
+output callbacks run before the public record after observer, with transaction
+after callbacks deferred until commit and discarded on rollback. Legacy typed
+store methods and physical SeaORM hooks remain separate, honest physical APIs.
+
+`/tmp/issue184-policy-owner-ready.log` is terminal0 with the four real SDK owners
+passing460 assertions, optional strict lint, fixture build and formatting. The
+earlier output-only pass238 assertions and default-only pass52 assertions are
+separate older checkpoints. Initial input-policy fixture omissions and SDK type
+errors remain in the failed logs; no earlier failure is overwritten. The salted
+credential observations verify the actual hash using the installed password
+verifier and retain salt/key/token relationships instead of omitting passwords.
+
+The first broad native run stopped with two stack overflows in long existing HTTP
+scenarios: `/tmp/issue184-partial-native-strict.log`, terminal100,124/126 tests
+passed with667 not run. Both unchanged binaries passed with a larger diagnostic
+thread stack. Boxing the actual inner HTTP dispatcher then passed the same two
+owners with the normal stack (`/tmp/issue184-normal-stack-ready.log`, terminal0).
+The subsequent default workspace run passed793/793 before its optional run
+stopped on one older Created-cache callback expectation
+(`/tmp/issue184-foundation-native-ready.log`, terminal100, optional291/292 with553
+not run). None of these stopped runs is a full-gate pass.
+
+The real Source probe `/tmp/issue184-source-cache-stage-ready-probe.log` shows
+Created cache-version and completed newSession receive raw declared hidden
+output, including own undefined. Cached inputs contain the filtered wire; the
+physical findSession path is already parsed before version resolution, so Stored
+inputs are filtered while retaining undefined presence. Source internal-adapter
+findSession and cookie helpers independently confirm those distinct stages. The
+existing native creation expectation is corrected only for hidden callback
+input; its signed-cache, public hidden/private-column, revoked physical-session
+and genuine typed-model controls remain. The Source-only probe's updateUser401
+reflects its incomplete cookie jar and supplies no native parity claim.
+
+`/tmp/issue184-foundation-optional-native-ready.log` is terminal0 with845/845
+optional native tests and strict optional workspace lint. Full canonical,
+browser/docs, unchanged75% coverage, cached/completed SDK owners, plugin policies,
+refresh/replacement/account projections and schema publication remain pending.
+This checkpoint does not complete or close issue184.

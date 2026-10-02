@@ -65,22 +65,43 @@ impl<S: AuthSchema> SessionManager<S> {
         ip_address: Option<String>,
         user_agent: Option<String>,
     ) -> AuthResult<S::Session> {
-        let expires_at = Utc::now() + self.config.session.expires_in;
+        self.database
+            .create_session(self.new_session(user, ip_address, user_agent))
+            .await
+    }
 
-        let create_session = CreateSession {
+    /// Create a real session and retain its declared adapter output.
+    ///
+    /// # Errors
+    /// Propagates errors from persistence or configured callbacks.
+    pub async fn create_session_record(
+        &self,
+        user: &impl AuthUser,
+        ip_address: Option<String>,
+        user_agent: Option<String>,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        self.database
+            .create_session_record(self.new_session(user, ip_address, user_agent))
+            .await
+    }
+
+    fn new_session(
+        &self,
+        user: &impl AuthUser,
+        ip_address: Option<String>,
+        user_agent: Option<String>,
+    ) -> CreateSession {
+        CreateSession {
             additional_fields: crate::field_policy::FieldValues::default(),
             token: None,
             active_team_id: None,
             user_id: user.id().to_string(),
-            expires_at,
+            expires_at: Utc::now() + self.config.session.expires_in,
             ip_address,
             user_agent,
             impersonated_by: None,
             active_organization_id: None,
-        };
-
-        let session = self.database.create_session(create_session).await?;
-        Ok(session)
+        }
     }
 
     /// Read and refresh a session according to the configured expiry window.
@@ -129,6 +150,38 @@ impl<S: AuthSchema> SessionManager<S> {
         session: S::Session,
         options: SessionReadOptions,
     ) -> AuthResult<SessionRead<S::Session>> {
+        self.read_loaded(session, options, |token, expires_at| async move {
+            self.database.refresh_session(&token, expires_at).await
+        })
+        .await
+    }
+
+    /// Apply the same physical expiry/refresh lifecycle to retained adapter output.
+    /// The record must originate from this manager's actual initialized store.
+    pub async fn read_loaded_session_record(
+        &self,
+        session: crate::AdapterRecord<S::Session>,
+        options: SessionReadOptions,
+    ) -> AuthResult<SessionRead<crate::AdapterRecord<S::Session>>> {
+        self.read_loaded(session, options, |token, expires_at| async move {
+            self.database
+                .refresh_session_record(&token, expires_at)
+                .await
+        })
+        .await
+    }
+
+    async fn read_loaded<T, F, Fut>(
+        &self,
+        session: T,
+        options: SessionReadOptions,
+        refresh: F,
+    ) -> AuthResult<SessionRead<T>>
+    where
+        T: AuthSession,
+        F: FnOnce(String, chrono::DateTime<chrono::Utc>) -> Fut,
+        Fut: std::future::Future<Output = AuthResult<Option<T>>>,
+    {
         let token = session.token();
         let now = Utc::now();
         if session.expires_at() < now || !session.active() {
@@ -146,10 +199,8 @@ impl<S: AuthSchema> SessionManager<S> {
                 session.expires_at() - self.config.session.expires_in + age <= now
             });
         if needs_refresh && options.allow_refresh {
-            let refreshed_session = self
-                .database
-                .refresh_session(token, now + self.config.session.expires_in)
-                .await?;
+            let refreshed_session =
+                refresh(token.to_owned(), now + self.config.session.expires_in).await?;
             let refreshed = refreshed_session.is_some();
             return Ok(SessionRead {
                 session: refreshed_session,

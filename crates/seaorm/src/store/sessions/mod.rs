@@ -68,7 +68,7 @@ where
                 );
             }
         }
-        fields.apply_adapter_transforms()?;
+        fields.apply_adapter_transforms_async().await?;
         let mut active = S::Session::new_active(None, token, create_session, now);
         if !fields.is_empty() {
             for (column, value) in
@@ -208,7 +208,7 @@ where
         else {
             return Ok(None);
         };
-        fields.apply_adapter_transforms()?;
+        fields.apply_adapter_transforms_async().await?;
         let mut active = model.into_active_model();
         let backend = self.connection().get_database_backend();
         if !fields.is_empty() {

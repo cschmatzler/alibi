@@ -2,7 +2,7 @@
 
 use super::helpers::{
     apply_default_role, completed_response_session, delete_session_cookie_headers, get_cookie,
-    issue_user_session, record_completed_session, response_has_session_cookie,
+    issue_user_session_record, record_completed_session_record, response_has_session_cookie,
 };
 use async_trait::async_trait;
 use better_auth_core::wire::{SessionView, UserView};
@@ -121,7 +121,7 @@ impl AnonymousPlugin {
         apply_default_role(ctx, &mut create);
         let user = ctx
             .database
-            .create_user_with_source(
+            .create_user_with_source_record(
                 create,
                 better_auth_core::user_validation::UserValidationSource::creation("anonymous"),
             )
@@ -165,49 +165,50 @@ impl AnonymousPlugin {
                 | better_auth_core::AuthError::Jwt(_)) => error,
             })?;
         let meta = RequestMeta::from_request(req);
-        let issued = issue_user_session(ctx, user.id().as_ref(), meta.ip_address, meta.user_agent)
-            .await
-            .map_err(|cause| match cause.into_auth_error() {
-                better_auth_core::AuthError::SessionCreationCancelled => {
-                    better_auth_core::AuthError::Upstream {
-                        status: 400,
-                        code: "COULD_NOT_CREATE_SESSION",
-                        message: "Could not create session",
+        let issued =
+            issue_user_session_record(ctx, user.id().as_ref(), meta.ip_address, meta.user_agent)
+                .await
+                .map_err(|cause| match cause.into_auth_error() {
+                    better_auth_core::AuthError::SessionCreationCancelled => {
+                        better_auth_core::AuthError::Upstream {
+                            status: 400,
+                            code: "COULD_NOT_CREATE_SESSION",
+                            message: "Could not create session",
+                        }
                     }
-                }
-                cause @ (better_auth_core::AuthError::Api { .. }
-                | better_auth_core::AuthError::Upstream { .. }
-                | better_auth_core::AuthError::BadRequest(_)
-                | better_auth_core::AuthError::InvalidRequest(_)
-                | better_auth_core::AuthError::Validation(_)
-                | better_auth_core::AuthError::InvalidCredentials
-                | better_auth_core::AuthError::Unauthenticated
-                | better_auth_core::AuthError::AuthenticationFailed(_)
-                | better_auth_core::AuthError::SessionNotFound
-                | better_auth_core::AuthError::Forbidden(_)
-                | better_auth_core::AuthError::UserCreationCancelled
-                | better_auth_core::AuthError::BannedUser(_)
-                | better_auth_core::AuthError::Unauthorized
-                | better_auth_core::AuthError::UserNotFound
-                | better_auth_core::AuthError::NotFound(_)
-                | better_auth_core::AuthError::Conflict(_)
-                | better_auth_core::AuthError::MethodNotAllowed(_)
-                | better_auth_core::AuthError::PayloadTooLarge(_)
-                | better_auth_core::AuthError::UnprocessableEntity(_)
-                | better_auth_core::AuthError::RateLimited
-                | better_auth_core::AuthError::NotImplemented(_)
-                | better_auth_core::AuthError::Config(_)
-                | better_auth_core::AuthError::Database(_)
-                | better_auth_core::AuthError::Serialization(_)
-                | better_auth_core::AuthError::Plugin { .. }
-                | better_auth_core::AuthError::CallbackFailure(_)
-                | better_auth_core::AuthError::Internal(_)
-                | better_auth_core::AuthError::PasswordHash(_)
-                | better_auth_core::AuthError::Jwt(_)) => cause,
-            })?;
+                    cause @ (better_auth_core::AuthError::Api { .. }
+                    | better_auth_core::AuthError::Upstream { .. }
+                    | better_auth_core::AuthError::BadRequest(_)
+                    | better_auth_core::AuthError::InvalidRequest(_)
+                    | better_auth_core::AuthError::Validation(_)
+                    | better_auth_core::AuthError::InvalidCredentials
+                    | better_auth_core::AuthError::Unauthenticated
+                    | better_auth_core::AuthError::AuthenticationFailed(_)
+                    | better_auth_core::AuthError::SessionNotFound
+                    | better_auth_core::AuthError::Forbidden(_)
+                    | better_auth_core::AuthError::UserCreationCancelled
+                    | better_auth_core::AuthError::BannedUser(_)
+                    | better_auth_core::AuthError::Unauthorized
+                    | better_auth_core::AuthError::UserNotFound
+                    | better_auth_core::AuthError::NotFound(_)
+                    | better_auth_core::AuthError::Conflict(_)
+                    | better_auth_core::AuthError::MethodNotAllowed(_)
+                    | better_auth_core::AuthError::PayloadTooLarge(_)
+                    | better_auth_core::AuthError::UnprocessableEntity(_)
+                    | better_auth_core::AuthError::RateLimited
+                    | better_auth_core::AuthError::NotImplemented(_)
+                    | better_auth_core::AuthError::Config(_)
+                    | better_auth_core::AuthError::Database(_)
+                    | better_auth_core::AuthError::Serialization(_)
+                    | better_auth_core::AuthError::Plugin { .. }
+                    | better_auth_core::AuthError::CallbackFailure(_)
+                    | better_auth_core::AuthError::Internal(_)
+                    | better_auth_core::AuthError::PasswordHash(_)
+                    | better_auth_core::AuthError::Jwt(_)) => cause,
+                })?;
         // The created row is Source's original new-user snapshot, even if a
         // lifecycle hook subsequently changes the database during session creation.
-        record_completed_session::<S>(&user, &issued.session);
+        record_completed_session_record::<S>(&user, &issued.session);
         let mut response = AuthResponse::json(
             200,
             &json!({"token":issued.session.token(),"user":ctx.user_view(&user)}),
@@ -497,7 +498,7 @@ async fn resolve_anonymous_session<S: AuthSchema>(
     };
     let Some(user) = ctx
         .database
-        .get_user_by_id(&context.0.anonymous_user_id)
+        .get_user_by_id_record(&context.0.anonymous_user_id)
         .await?
     else {
         return Ok(None);

@@ -107,6 +107,7 @@ pub async fn set_password<S: AuthSchema>(
             context
                 .database
                 .create_account(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: user.id().into_owned(),
                     account_id: user.id().into_owned(),
                     provider_id: "credential".to_owned(),

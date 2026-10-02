@@ -215,6 +215,7 @@ pub(super) async fn router(
                     .ok_or(axum::http::StatusCode::NOT_FOUND)?;
                 let created = store
                     .create_account(CreateAccount {
+                        additional_fields: Default::default(),
                         user_id: owner.to_owned(),
                         account_id: row.account_id,
                         provider_id: row.provider_id,

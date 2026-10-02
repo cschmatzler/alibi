@@ -47,7 +47,14 @@ where
             .as_deref()
             .map(S::User::parse_id)
             .transpose()?;
+        let mut fields = std::mem::take(&mut create_user.additional_fields);
+        fields.apply_adapter_transforms_async().await?;
         let mut model = S::User::new_active(user_id, create_user, now);
+        let backend = db.get_database_backend();
+        for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
+            let value = crate::session_fields::prepare_value(db, &column, value).await?;
+            S::User::set_additional_field(&mut model, column, value, backend)?;
+        }
         S::User::prepare_json_metadata(&mut model, db.get_database_backend())?;
 
         let user = model.insert(db).await.map_err(map_db_err)?;
@@ -251,7 +258,15 @@ where
         };
 
         let mut active = model.into_active_model();
+        let mut fields = std::mem::take(&mut update.additional_fields);
+        fields.apply_adapter_transforms_async().await?;
         S::User::apply_update(&mut active, update, Utc::now());
+        let backend = self.connection().get_database_backend();
+        for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
+            let value =
+                crate::session_fields::prepare_value(self.connection(), &column, value).await?;
+            S::User::set_additional_field(&mut active, column, value, backend)?;
+        }
         S::User::prepare_json_metadata(&mut active, self.connection().get_database_backend())?;
 
         let user = active.update(self.connection()).await.map_err(map_db_err)?;

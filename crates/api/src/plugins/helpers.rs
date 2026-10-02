@@ -35,12 +35,51 @@ pub struct IssuedSession<S: better_auth_core::AuthSchema> {
     pub session: S::Session,
 }
 
+/// Actual session issuance with retained adapter output for framework callbacks
+/// and separately filtered public responses.
+pub struct IssuedSessionRecord<S: better_auth_core::AuthSchema> {
+    pub user: better_auth_core::AdapterRecord<S::User>,
+    pub session: better_auth_core::AdapterRecord<S::Session>,
+}
+impl<S: better_auth_core::AuthSchema> IssuedSessionRecord<S> {
+    fn into_stored(self) -> IssuedSession<S> {
+        IssuedSession {
+            user: self.user.into_stored(),
+            session: self.session.into_stored(),
+        }
+    }
+}
+
 /// Original rows used by the handler that issued the completed session.
 /// This is a callback observation; authorization still uses a current session read.
 pub(in crate::plugins) struct CompletedSession<S: better_auth_core::AuthSchema> {
     pub(in crate::plugins) user: S::User,
     pub(in crate::plugins) session: S::Session,
     pub(in crate::plugins) user_view: Option<better_auth_core::wire::UserView>,
+    user_record: Option<better_auth_core::AdapterRecord<S::User>>,
+    session_record: Option<better_auth_core::AdapterRecord<S::Session>>,
+}
+impl<S: better_auth_core::AuthSchema> CompletedSession<S> {
+    pub(in crate::plugins) fn callback_user(
+        &self,
+        ctx: &AuthContext<S>,
+    ) -> better_auth_core::UserView {
+        self.user_view.clone().unwrap_or_else(|| {
+            self.user_record.as_ref().map_or_else(
+                || ctx.trusted_user_view(&self.user),
+                |record| ctx.trusted_user_view(record),
+            )
+        })
+    }
+    pub(in crate::plugins) fn callback_session(
+        &self,
+        ctx: &AuthContext<S>,
+    ) -> better_auth_core::SessionView {
+        self.session_record.as_ref().map_or_else(
+            || ctx.trusted_session_view(&self.session),
+            |record| ctx.trusted_session_view(record),
+        )
+    }
 }
 
 /// Session issuance failures that callers may need to surface differently from
@@ -354,6 +393,23 @@ pub(in crate::plugins) fn record_completed_session<S: better_auth_core::AuthSche
             user: user.clone(),
             session: session.clone(),
             user_view: None,
+            user_record: None,
+            session_record: None,
+        });
+    }
+}
+
+pub(in crate::plugins) fn record_completed_session_record<S: better_auth_core::AuthSchema>(
+    user: &better_auth_core::AdapterRecord<S::User>,
+    session: &better_auth_core::AdapterRecord<S::Session>,
+) {
+    if let Some(request) = better_auth_core::hooks::current_request_hook_context() {
+        request.extensions.insert(CompletedSession::<S> {
+            user: user.stored().clone(),
+            session: session.stored().clone(),
+            user_view: None,
+            user_record: Some(user.clone()),
+            session_record: Some(session.clone()),
         });
     }
 }
@@ -361,8 +417,8 @@ pub(in crate::plugins) fn record_completed_session<S: better_auth_core::AuthSche
 /// Retain a Source-defined callback projection after genuine session issuance.
 /// This cannot create a completion or replace its raw models/owner/token.
 pub(in crate::plugins) fn record_completed_session_user_view<S: better_auth_core::AuthSchema>(
-    original_user: &S::User,
-    session: &S::Session,
+    original_user: &impl AuthUser,
+    session: &impl better_auth_core::AuthSession,
     view: better_auth_core::wire::UserView,
 ) {
     use better_auth_core::AuthSession;
@@ -376,6 +432,8 @@ pub(in crate::plugins) fn record_completed_session_user_view<S: better_auth_core
             user: completed.user.clone(),
             session: completed.session.clone(),
             user_view: Some(view),
+            user_record: completed.user_record.clone(),
+            session_record: completed.session_record.clone(),
         });
     }
 }
@@ -435,7 +493,7 @@ pub(in crate::plugins) async fn resolve_admin_banned_user_message<
     S: better_auth_core::AuthSchema,
 >(
     ctx: &AuthContext<S>,
-    user: &S::User,
+    user: &impl AuthUser,
 ) -> AuthResult<String> {
     if let Some(policy) = ctx
         .extensions
@@ -460,17 +518,32 @@ pub async fn issue_user_session<S: better_auth_core::AuthSchema>(
     ip_address: Option<String>,
     user_agent: Option<String>,
 ) -> Result<IssuedSession<S>, SessionIssueError> {
+    issue_user_session_record(ctx, user_id, ip_address, user_agent)
+        .await
+        .map(IssuedSessionRecord::into_stored)
+}
+
+/// Issue and publish genuine retained adapter results.
+///
+/// # Errors
+/// Propagates validation, storage and configured callback errors.
+pub async fn issue_user_session_record<S: better_auth_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    user_id: &str,
+    ip_address: Option<String>,
+    user_agent: Option<String>,
+) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
     issue_user_session_inner(ctx, user_id, ip_address, user_agent, None, true).await
 }
 
 /// Create a genuine session for an endpoint that publishes it after later
 /// persistence and application callbacks have completed.
-pub(in crate::plugins) async fn create_user_session<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) async fn create_user_session_record<S: better_auth_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
     ip_address: Option<String>,
     user_agent: Option<String>,
-) -> Result<IssuedSession<S>, SessionIssueError> {
+) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
     issue_user_session_inner(ctx, user_id, ip_address, user_agent, None, false).await
 }
 
@@ -486,6 +559,22 @@ pub async fn issue_user_session_with_overrides<S: better_auth_core::AuthSchema>(
     user_agent: Option<String>,
     current_session: &impl better_auth_core::AuthSession,
 ) -> Result<IssuedSession<S>, SessionIssueError> {
+    issue_user_session_with_overrides_record(ctx, user_id, ip_address, user_agent, current_session)
+        .await
+        .map(IssuedSessionRecord::into_stored)
+}
+
+/// Issue replacement records with actual retained output.
+///
+/// # Errors
+/// Propagates persistence or configured callback errors.
+pub async fn issue_user_session_with_overrides_record<S: better_auth_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    user_id: &str,
+    ip_address: Option<String>,
+    user_agent: Option<String>,
+    current_session: &impl better_auth_core::AuthSession,
+) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
     let overrides = SessionOverrides {
         additional_fields: current_session
             .additional_fields()
@@ -506,10 +595,10 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
     user_agent: Option<String>,
     overrides: Option<SessionOverrides>,
     publish: bool,
-) -> Result<IssuedSession<S>, SessionIssueError> {
+) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
     let user = ctx
         .database
-        .get_user_by_id(user_id)
+        .get_user_by_id_record(user_id)
         .await?
         .ok_or(AuthError::UserNotFound)?;
 
@@ -520,7 +609,7 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
         {
             drop(
                 ctx.database
-                    .update_user(
+                    .update_user_record(
                         user_id,
                         UpdateUser {
                             banned: Some(false),
@@ -541,12 +630,12 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
     let session = match overrides {
         None => {
             ctx.session_manager()
-                .create_session(&user, ip_address, user_agent)
+                .create_session_record(&user, ip_address, user_agent)
                 .await?
         }
         Some(overrides) => {
             ctx.database
-                .create_session(better_auth_core::CreateSession {
+                .create_session_record(better_auth_core::CreateSession {
                     additional_fields: overrides.additional_fields,
                     token: None,
                     user_id: user.id().to_string(),
@@ -563,9 +652,9 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
 
     if publish {
         better_auth_core::cache::runtime::emit_issuance(ctx, &user, &session).await?;
-        record_completed_session::<S>(&user, &session);
+        record_completed_session_record::<S>(&user, &session);
     }
-    Ok(IssuedSession { user, session })
+    Ok(IssuedSessionRecord { user, session })
 }
 
 /// Parse a cookie value from the request's `Cookie` header.

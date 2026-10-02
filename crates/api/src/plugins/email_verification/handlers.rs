@@ -2,7 +2,7 @@ use super::token::{create_email_verification_token, decode_email_verification_to
 use super::types::{SendVerificationEmailRequest, VerifyEmailQuery, VerifyEmailResult};
 use super::{EmailVerificationConfig, StatusResponse};
 use crate::plugins::helpers::{
-    SessionIssueError, create_user_session, record_completed_session,
+    SessionIssueError, create_user_session_record, record_completed_session_record,
     record_completed_session_user_view,
 };
 use better_auth_core::wire::{SessionView, UserView};
@@ -258,10 +258,11 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
                     if let Some((user_2, session)) = current_session {
                         (user_2, session)
                     } else {
-                        let session = create_user_session(ctx, &user.id(), ip_address, user_agent)
-                            .await
-                            .map_err(SessionIssueError::into_auth_error)?
-                            .session;
+                        let session =
+                            create_user_session_record(ctx, &user.id(), ip_address, user_agent)
+                                .await
+                                .map_err(SessionIssueError::into_auth_error)?
+                                .session;
                         (ctx.user_view(&user), ctx.session_view(&session))
                     };
 
@@ -311,10 +312,11 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
                     if let Some((session_user, session)) = current_session {
                         (session_user, session)
                     } else {
-                        let session = create_user_session(ctx, &user.id(), ip_address, user_agent)
-                            .await
-                            .map_err(SessionIssueError::into_auth_error)?
-                            .session;
+                        let session =
+                            create_user_session_record(ctx, &user.id(), ip_address, user_agent)
+                                .await
+                                .map_err(SessionIssueError::into_auth_error)?
+                                .session;
                         (ctx.user_view(&user), ctx.session_view(&session))
                     };
                 let updated_user = ctx
@@ -427,12 +429,12 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
                 Some(session.token().to_owned())
             }
             _ => {
-                let issued = create_user_session(ctx, &user.id(), ip_address, user_agent)
+                let issued = create_user_session_record(ctx, &user.id(), ip_address, user_agent)
                     .await
                     .map_err(SessionIssueError::into_auth_error)?;
                 // Source publishes the original lookup snapshot with only the
                 // verification flag changed, even though the stored row is newer.
-                let mut original_view = ctx.user_view(&user);
+                let mut original_view = ctx.trusted_user_view(&user);
                 original_view.email_verified = true;
                 better_auth_core::cache::runtime::emit_issuance_snapshot(
                     ctx,
@@ -444,7 +446,7 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
                     ),
                 )
                 .await?;
-                record_completed_session::<A>(&issued.user, &issued.session);
+                record_completed_session_record::<A>(&issued.user, &issued.session);
                 record_completed_session_user_view::<A>(&user, &issued.session, original_view);
                 Some(issued.session.token().to_owned())
             }

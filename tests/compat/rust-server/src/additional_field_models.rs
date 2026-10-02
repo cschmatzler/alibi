@@ -20,6 +20,8 @@ pub(super) mod application_user {
         #[sea_orm(column_name = "user_label")]
         pub label: Option<String>,
         pub hidden: Option<String>,
+        pub omitted: Option<String>,
+        pub readonly: Option<String>,
         #[sea_orm(default_value = "physical-private")]
         #[serde(rename = "private_column")]
         pub private_column: String,
@@ -50,6 +52,7 @@ pub(super) mod application_session {
         pub active: bool,
         pub label: Option<String>,
         pub hidden: Option<String>,
+        pub omitted: Option<String>,
     }
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
     pub enum Relation {}
@@ -80,6 +83,7 @@ pub(super) mod application_account {
         pub updated_at: DateTimeUtc,
         pub label: Option<String>,
         pub hidden: Option<String>,
+        pub omitted: Option<String>,
     }
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
     pub enum Relation {}

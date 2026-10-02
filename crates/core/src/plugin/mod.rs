@@ -103,6 +103,14 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         indexmap::IndexMap::new()
     }
 
+    fn user_fields(&self) -> crate::field_policy::FieldConfigs {
+        crate::field_policy::FieldConfigs::new()
+    }
+
+    fn account_fields(&self) -> crate::field_policy::FieldConfigs {
+        crate::field_policy::FieldConfigs::new()
+    }
+
     /// Documentation annotations collected after all plugins initialize.
     /// Override this hook for custom endpoints and model field policies.
     fn openapi_metadata(&self, ctx: &AuthInitContext<S>) -> crate::openapi::PluginOpenApiMetadata {
@@ -438,6 +446,21 @@ impl<S: AuthSchema> AuthInitContext<S> {
         self.extensions.insert(callbacks);
     }
 
+    /// Observe genuine retained adapter output after a write, with transaction
+    /// callbacks deferred until commit. Existing typed physical hooks are separate.
+    pub fn register_adapter_after_hook(
+        &mut self,
+        callback: Arc<dyn crate::store::AdapterAfterHook<S>>,
+    ) {
+        let mut callbacks = self
+            .extensions
+            .get::<crate::store::AdapterCallbacks<S>>()
+            .map(|callbacks| (*callbacks).clone())
+            .unwrap_or_default();
+        callbacks.0.push(callback);
+        self.extensions.insert(callbacks);
+    }
+
     /// Finalize the instance's store without mutating a shared underlying adapter.
     #[must_use]
     pub fn database_with_registered_transforms(&self) -> Arc<dyn AuthStore<S>> {
@@ -470,6 +493,12 @@ impl<S: AuthSchema> AuthInitContext<S> {
                 .get::<crate::field_policy::SessionAdapterFields>()
                 .map(|fields_2| (*fields_2).clone())
                 .unwrap_or_default(),
+            AuthContext::with_metadata(
+                Arc::clone(&self.config),
+                Arc::clone(&self.database),
+                self.metadata.clone(),
+            )
+            .with_extensions(self.extensions.clone()),
         ))
     }
 
@@ -492,6 +521,24 @@ impl<S: AuthSchema> AuthInitContext<S> {
 }
 
 impl<S: AuthSchema> AuthContext<S> {
+    /// Parse configured user fields at the endpoint boundary before creation
+    /// validation or adapter hooks. Unknown fields are ignored by this policy.
+    pub fn parse_user_fields(
+        &self,
+        input: &indexmap::IndexMap<String, crate::utils::json::JsValue>,
+        creation: bool,
+    ) -> Result<crate::field_policy::FieldValues, crate::field_policy::FieldInputError> {
+        let registered = self.extensions.get::<crate::field_policy::UserFields>();
+        let configured =
+            crate::field_policy::SessionFields(self.config.user.additional_fields.clone());
+        let fields = registered.as_ref().map_or(&configured, |fields| &fields.0);
+        if creation {
+            fields.parse_create(input)
+        } else {
+            fields.parse_update(input)
+        }
+    }
+
     /// Hash through initialized policies at the current actual endpoint.
     ///
     /// # Errors
@@ -578,6 +625,32 @@ impl<S: AuthSchema> AuthContext<S> {
     }
 
     pub fn user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {
+        self.project_user_view(user, true)
+    }
+
+    /// Project trusted adapter output without removing declared hidden fields.
+    /// Canonical identity accessors still refer to the physical model.
+    pub fn trusted_user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {
+        self.project_user_view(user, false)
+    }
+
+    fn project_user_view(
+        &self,
+        user: &impl crate::entity::AuthUser,
+        public: bool,
+    ) -> crate::wire::UserView {
+        if let Some(view) = user.retained_user_view() {
+            let mut view = view.clone();
+            if public {
+                let registered = self.extensions.get::<crate::field_policy::UserFields>();
+                let fields = registered
+                    .as_ref()
+                    .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
+                view.extension_fields
+                    .retain(|name, _| fields.get(name).is_none_or(|field| field.returned));
+            }
+            return view;
+        }
         let mut view = crate::wire::UserView::from(user);
         if self.feature_enabled("username.enabled") {
             for (key, absent) in [
@@ -660,10 +733,56 @@ impl<S: AuthSchema> AuthContext<S> {
         } else {
             view.last_login_method = None;
         }
+        let registered = self.extensions.get::<crate::field_policy::UserFields>();
+        let fields = registered
+            .as_ref()
+            .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
+        let physical = user.additional_fields();
+        let values = user.adapter_output().unwrap_or(&physical);
+        for (name, field) in fields {
+            drop(view.extension_fields.remove(name));
+            if (!public || field.returned)
+                && let Some(value) = values.get(name).or_else(|| {
+                    field
+                        .field_name
+                        .as_ref()
+                        .and_then(|physical| values.get(physical))
+                })
+            {
+                drop(view.extension_fields.insert(name.clone(), value.clone()));
+            }
+        }
         view
     }
 
     pub fn session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
+        self.project_session_view(session, true)
+    }
+
+    pub fn trusted_session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
+        self.project_session_view(session, false)
+    }
+
+    fn project_session_view(
+        &self,
+        session: &impl AuthSession,
+        public: bool,
+    ) -> crate::wire::SessionView {
+        if let Some(view) = session.retained_session_view() {
+            let mut view = view.clone();
+            if public {
+                let registered = self.extensions.get::<crate::field_policy::SessionFields>();
+                let fields = registered
+                    .as_ref()
+                    .map_or(&self.config.session.additional_fields, |fields| &fields.0);
+                for (name, field) in fields {
+                    if !field.returned {
+                        let _ignored_clone = view.omitted_fields.insert(name.clone());
+                    }
+                }
+            }
+            return view;
+        }
         let mut view = crate::wire::SessionView::from(session);
         let registered = self.extensions.get::<crate::field_policy::SessionFields>();
         let fields = registered
@@ -671,8 +790,18 @@ impl<S: AuthSchema> AuthContext<S> {
             .map_or(&self.config.session.additional_fields, |fields| &fields.0);
         view.extension_fields
             .retain(|name, _| fields.contains_key(name));
+        if let Some(output) = session.adapter_output() {
+            for name in fields.keys() {
+                drop(view.extension_fields.remove(name));
+                if let Some(value) = output.get(name) {
+                    drop(view.extension_fields.insert(name.clone(), value.clone()));
+                } else {
+                    let _ignored_clone = view.omitted_fields.insert(name.clone());
+                }
+            }
+        }
         for (name, field) in fields {
-            if !field.returned {
+            if public && !field.returned {
                 let _ignored_clone = view.omitted_fields.insert(name.clone());
             }
         }

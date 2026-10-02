@@ -127,6 +127,7 @@ async fn phone_user(ctx: &AuthContext<impl AuthSchema>, phone: &str, verified: b
     drop(
         ctx.database
             .create_account(CreateAccount {
+                additional_fields: Default::default(),
                 user_id: user.id().to_string(),
                 account_id: user.id().to_string(),
                 provider_id: "credential".into(),

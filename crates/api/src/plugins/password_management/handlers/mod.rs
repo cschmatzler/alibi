@@ -8,7 +8,8 @@ use super::types::{
 };
 use super::{PasswordManagementConfig, StatusResponse};
 use crate::plugins::helpers::{
-    SessionIssueError, get_credential_account, get_credential_password_hash, issue_user_session,
+    SessionIssueError, get_credential_account, get_credential_password_hash,
+    issue_user_session_record,
 };
 use better_auth_core::utils::password as password_utils;
 use better_auth_core::wire::UserView;
@@ -166,6 +167,7 @@ pub(in crate::plugins) async fn reset_password_core(
         drop(
             ctx.database
                 .create_account(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: user_id.clone(),
                     account_id: user_id.clone(),
                     provider_id: "credential".to_owned(),
@@ -294,7 +296,7 @@ pub(in crate::plugins) async fn change_password_core(
 
     let new_token = if body.revoke_other_sessions == Some(true) {
         ctx.database.delete_user_sessions(&user.id()).await?;
-        let session = issue_user_session(
+        let session = issue_user_session_record(
             ctx,
             &user.id(),
             meta.ip_address.clone(),

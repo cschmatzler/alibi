@@ -111,6 +111,7 @@ async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rej
             drop(
                 ctx.database
                     .create_account(CreateAccount {
+                        additional_fields: Default::default(),
                         user_id: user.id.clone(),
                         account_id: user.id.clone(),
                         provider_id: "credential".into(),
@@ -554,6 +555,7 @@ async fn create_test_context_with_credential_user(
     drop(
         ctx.database
             .create_account(CreateAccount {
+                additional_fields: Default::default(),
                 user_id: user.id.clone(),
                 account_id: user.id.clone(),
                 provider_id: "credential".to_owned(),

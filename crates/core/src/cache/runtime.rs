@@ -2,7 +2,7 @@
 use super::{CacheValidation, CacheVersionContext};
 use crate::types::RequestExtensions;
 use crate::utils::cookie_utils::{related_cookie_name, sign_cookie_value, verify_cookie_value};
-use crate::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthSession};
+use crate::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthSession, AuthUser};
 use indexmap::IndexMap;
 use std::sync::{Arc, Mutex};
 
@@ -193,27 +193,29 @@ pub(super) fn browser_preference(
 /// Returns an error when validation, storage, or an application callback fails.
 pub async fn stored_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     ctx: &AuthContext<S>,
-    user: &S::User,
-    session: &S::Session,
+    user: &impl AuthUser,
+    session: &impl AuthSession,
     headers: &std::collections::HashMap<String, String, H>,
     dont_remember: bool,
 ) -> AuthResult<Vec<String>> {
     let context = CacheVersionContext::created(
         user.clone(),
         session.clone(),
-        ctx.user_view(user),
-        ctx.session_view(session),
-    );
+        ctx.trusted_user_view(user),
+        ctx.trusted_session_view(session),
+    )
+    .with_public_projection(ctx.user_view(user), ctx.session_view(session));
     build_headers(ctx, context, headers, dont_remember).await
 }
 
 async fn stored_read_headers<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    user: &S::User,
-    session: &S::Session,
+    user: &impl AuthUser,
+    session: &impl AuthSession,
     headers: &std::collections::HashMap<String, String>,
 ) -> AuthResult<Vec<String>> {
-    let context = CacheVersionContext::stored(ctx.user_view(user), ctx.session_view(session));
+    let context = CacheVersionContext::stored(ctx.user_view(user), ctx.session_view(session))
+        .with_public_projection(ctx.user_view(user), ctx.session_view(session));
     build_headers(ctx, context, headers, false).await
 }
 
@@ -238,8 +240,8 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
         None => "1".into(),
     };
     let value = super::encode_compact(
-        context.user(),
-        context.session(),
+        context.public_user(),
+        context.public_session(),
         &version,
         chrono::Utc::now().timestamp_millis(),
         config.max_age,
@@ -291,17 +293,18 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
 /// Returns an error when validation, storage, or an application callback fails.
 pub async fn emit_issuance<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    user: &S::User,
-    session: &S::Session,
+    user: &impl AuthUser,
+    session: &impl AuthSession,
 ) -> AuthResult<()> {
     emit_issuance_snapshot(
         ctx,
         CacheVersionContext::created(
             user.clone(),
             session.clone(),
-            ctx.user_view(user),
-            ctx.session_view(session),
-        ),
+            ctx.trusted_user_view(user),
+            ctx.trusted_session_view(session),
+        )
+        .with_public_projection(ctx.user_view(user), ctx.session_view(session)),
     )
     .await
 }
@@ -321,6 +324,9 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
     ctx: &AuthContext<S>,
     context: CacheVersionContext,
 ) -> AuthResult<()> {
+    let public_user = ctx.user_view(context.user());
+    let public_session = ctx.session_view(context.session());
+    let context = context.with_public_projection(public_user, public_session);
     let published = (context.user().clone(), context.session().clone());
     if !ctx
         .config
@@ -521,7 +527,7 @@ pub async fn authenticated<S: AuthSchema>(
     }
     request.extensions().insert(SessionHookCache(None));
     if let Some(session) = request.virtual_session() {
-        let Some(user) = ctx.database.get_user_by_id(&session.user_id).await? else {
+        let Some(user) = ctx.database.get_user_by_id_record(&session.user_id).await? else {
             return Ok(None);
         };
         request.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(session));
@@ -557,13 +563,13 @@ pub async fn authenticated<S: AuthSchema>(
     let Some(token) = manager.extract_session_token(request) else {
         return Ok(None);
     };
-    let Some(original) = ctx.database.get_session(&token).await? else {
+    let Some(original) = ctx.database.get_session_record(&token).await? else {
         cleanup(ctx, request)?;
         return Ok(None);
     };
     let Some(user) = ctx
         .database
-        .get_user_by_id(original.user_id().as_ref())
+        .get_user_by_id_record(original.user_id().as_ref())
         .await?
     else {
         cleanup(ctx, request)?;
@@ -574,7 +580,7 @@ pub async fn authenticated<S: AuthSchema>(
     let deferred = ctx.config.session.defer_session_refresh
         && !(direct && request.method() == &crate::HttpMethod::Post);
     let read = manager
-        .read_loaded_session(
+        .read_loaded_session_record(
             original,
             crate::session::SessionReadOptions {
                 allow_refresh: !suppressed && !deferred,

@@ -12,6 +12,7 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 const UPGRADE: &str = "m20261001_000016_account_key_multiplicity";
 fn account(user_id: &str) -> CreateAccount {
     CreateAccount {
+        additional_fields: Default::default(),
         user_id: user_id.to_owned(),
         provider_id: "gitlab".into(),
         account_id: "shared-provider-identity".into(),

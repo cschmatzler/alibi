@@ -15,7 +15,7 @@ use std::{borrow::Cow, fmt};
 /// current permissions. Sensitive stateful operations must use storage-backed
 /// authentication instead.
 pub enum AuthenticatedUser<S: AuthSchema> {
-    Stored(S::User),
+    Stored(crate::AdapterRecord<S::User>),
     Cached(Box<UserView>),
 }
 
@@ -58,6 +58,9 @@ macro_rules! delegate {
 }
 
 impl<S: AuthSchema> AuthUser for AuthenticatedUser<S> {
+    delegate!(retained_user_view, Option<&crate::UserView>);
+    delegate!(adapter_output, Option<&crate::field_policy::FieldOutput>);
+    delegate!(additional_fields, crate::field_policy::FieldOutput);
     delegate!(id, Cow<'_, str>);
     delegate!(email, Option<&str>);
     delegate!(name, Option<&str>);

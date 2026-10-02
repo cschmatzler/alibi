@@ -457,7 +457,7 @@ pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
         extensions: ctx.extensions.clone(),
     };
     let meta = better_auth_core::RequestMeta::from_request(req);
-    let issued = crate::plugins::helpers::issue_user_session(
+    let issued = crate::plugins::helpers::issue_user_session_record(
         &issuing_context,
         user_id,
         meta.ip_address,
