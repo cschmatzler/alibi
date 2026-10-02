@@ -11,6 +11,7 @@ import type { RequestWindow } from "./trace";
 export type Difference = { readonly path: string; readonly reason: string };
 /** Explicit fixture origins and scenario clocks used to compare runtime output. */
 export type ComparisonContext = {
+  readonly sessionCookieSecret?: string;
   readonly compactSessionCacheSecret?: string;
   readonly oauthProxyProfileSecret?: string;
   readonly leftBaseURL: string;
@@ -57,6 +58,28 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   const isDate = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d\d-\d\dT/.test(value) && Number.isFinite(Date.parse(value));
   type ClockReceipt = { left: RequestWindow; right: RequestWindow; leftUser: string; rightUser: string; authPath: string };
   const issuances = new Map<string, ClockReceipt>(), cookieOwners = new Map<string, ClockReceipt>();
+  const signedCookieIssuances = new Set<string>();
+  const sessionCookieName = /^(?:__Secure-)?better-auth\.session_token$/;
+  function signedCookie(value: string): { token: string; error?: never } | { error: string; token?: never } {
+    try {
+      const decoded = decodeURIComponent(value), separator = decoded.lastIndexOf(".");
+      if (separator < 1 || encodeURIComponent(decoded) !== value)
+        return { error: "signed session cookie encoding is not canonical" };
+      const token = decoded.slice(0, separator), encodedSignature = decoded.slice(separator + 1);
+      const signature = Buffer.from(encodedSignature, "base64");
+      const expected = createHmac("sha256", context.sessionCookieSecret!).update(token).digest();
+      if (signature.toString("base64") !== encodedSignature || signature.length !== expected.length
+        || !timingSafeEqual(signature, expected))
+        return { error: "signed session cookie signature is invalid" };
+      return { token };
+    } catch { return { error: "signed session cookie encoding is not canonical" }; }
+  }
+  function issuedCookie(value: string | undefined, token: string): boolean {
+    if (!value) return false;
+    const separator = value.indexOf("=");
+    if (separator < 1 || !sessionCookieName.test(value.slice(0, separator))) return false;
+    return signedCookie(value.slice(separator + 1)).token === token;
+  }
   const updates = new Map<string, ClockReceipt[]>();
   const inWindows = (a: number, b: number, left: RequestWindow, right: RequestWindow) => a >= left.startedAt - 5 && a <= left.finishedAt && b >= right.startedAt - 5 && b <= right.finishedAt;
   function collectResponseDates(a: unknown, b: unknown, left: RequestWindow, right: RequestWindow) {
@@ -96,6 +119,11 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
         if (issuancePath && record(a) && record(b) && typeof a.token === "string" && typeof b.token === "string" && record(a.user) && record(b.user) && typeof a.user.id === "string" && typeof b.user.id === "string") {
           const receipt = { left, right, leftUser: a.user.id, rightUser: b.user.id, authPath: issuancePath[1]! };
           issuances.set(JSON.stringify([a.token, b.token]), receipt);
+          if (context.sessionCookieSecret && issuedCookie(left.issuedSessionCookie, a.token)
+            && issuedCookie(right.issuedSessionCookie, b.token)) {
+            signedCookieIssuances.add(JSON.stringify([a.token, b.token]));
+            identity(a.token, b.token, `traces.${index}.responseBody.token`, "token");
+          }
           const containsToken = (cookie: string | undefined, token: string) => { try { return !!cookie && decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1)).startsWith(`${token}.`); } catch { return false; } };
           if (containsToken(left.issuedSessionCookie, a.token) && containsToken(right.issuedSessionCookie, b.token)) cookieOwners.set(JSON.stringify([left.issuedSessionCookie, right.issuedSessionCookie]), receipt);
         }
@@ -452,6 +480,34 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     }
   }
 
+  function sessionHeader(a: string, b: string, path: string, setCookie: boolean): boolean {
+    if (!context.sessionCookieSecret) return false;
+    // Preserve the complete raw header around its credential: name, spacing,
+    // order, every other cookie and all Set-Cookie attributes remain literal.
+    const pattern = setCookie
+      ? /(?:^|,\s*)((?:__Secure-)?better-auth\.session_token)=([^;,\s]*)/g
+      : /(?:^|;\s*)((?:__Secure-)?better-auth\.session_token)=([^;\s]*)/g;
+    const left = [...a.matchAll(pattern)], right = [...b.matchAll(pattern)];
+    if (!left.length && !right.length) return false;
+    if (left.length !== 1 || right.length !== 1 || left[0]![1] !== right[0]![1]) {
+      fail(path, "signed session cookie presence or name differs"); return true;
+    }
+    const av = left[0]![2]!, bv = right[0]![2]!;
+    const ac = signedCookie(av), bc = signedCookie(bv);
+    if (ac.error || bc.error) { fail(path, ac.error ?? bc.error!); return true; }
+    if (!signedCookieIssuances.has(JSON.stringify([ac.token, bc.token]))) {
+      fail(path, "signed session cookie does not match corresponding observed issuance"); return true;
+    }
+    const scaffold = (raw: string, match: RegExpMatchArray, value: string) => {
+      const start = match.index! + match[0].length - value.length;
+      return `${raw.slice(0, start)}<verified-session-credential>${raw.slice(start + value.length)}`;
+    };
+    if (scaffold(a, left[0]!, av) !== scaffold(b, right[0]!, bv))
+      fail(path, "signed session cookie header bytes or attributes differ");
+    identity(ac.token!, bc.token!, path, "token");
+    return true;
+  }
+
   function urlParts(value: string, base: string, oauthBase?: string): Record<string, unknown> | undefined {
     try {
       const url = new URL(value, base);
@@ -506,6 +562,8 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
     }
     if (typeof a === "string" && typeof b === "string" && !traceShape(path)
       && !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path)) {
+      if (!applicationData && !jwtPayload && /\.headers\.(?:cookie|set-cookie)$/.test(path)
+        && sessionHeader(a, b, path, key === "set-cookie")) return;
       if (key === "profile" && urlQueryContext === "query" && proxyProviders) {
         const leftPayload = leftProxyProfiles.get(a), rightPayload = rightProxyProfiles.get(b);
         if (!leftPayload || !rightPayload) {
