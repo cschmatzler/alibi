@@ -48,6 +48,14 @@ async fn application_schema_and_plugin_annotations_reach_the_public_document_wit
             serde_json::from_slice::<Value>(&updated.body).unwrap(),
             json!({"id":"fixture-id","labels":[7,"approved"]})
         );
+        let session = auth
+            .handle_request(AuthRequest::new(HttpMethod::Get, "/identity/get-session"))
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&session.body).unwrap(),
+            json!({"source":"application"})
+        );
         let registered = auth.registered_routes();
         for path in [
             "/items/:id",
@@ -104,6 +112,10 @@ async fn application_schema_and_plugin_annotations_reach_the_public_document_wit
         assert!(document["paths"].get("/error").is_none());
         assert!(document["paths"].get("/internal").is_none());
         assert!(document["paths"].get("/reference").is_none());
+        assert_eq!(
+            document["paths"]["/get-session"]["get"]["operationId"],
+            "applicationSession"
+        );
         let path = &document["paths"]["/items/{itemId}"];
         assert_eq!(path["get"]["operationId"], "items");
         assert_eq!(path["post"]["operationId"], "itemsPost");

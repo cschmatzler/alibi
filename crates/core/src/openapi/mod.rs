@@ -246,7 +246,7 @@ impl OpenApiBuilder {
         let mut parameters = metadata.parameters.clone();
         let documented_path = metadata.document_path.as_deref().unwrap_or(path);
         let path_2=documented_path.split('/').map(|segment| {
-            segment.strip_prefix(':').map_or_else(|| segment.to_owned(), |name| {
+            segment.strip_prefix(':').or_else(|| segment.strip_prefix('{').and_then(|name| name.strip_suffix('}'))).map_or_else(|| segment.to_owned(), |name| {
                 if !parameters.iter().any(|parameter|parameter["in"]=="path" && parameter["name"]==name) { parameters.push(json!({"name":name,"in":"path","required":true,"schema":{"type":"string"}})); }
                 format!("{{{name}}}")
             })

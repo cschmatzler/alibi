@@ -58,44 +58,54 @@ or storage behaviors.
 
 ## Minimal builder and core-module boundary
 
-The public Rust `AuthBuilder::new` starts with no installed plugins. Its
-unconditional metadata collection does not install email/password, session,
-account, or other core modules. In `src/core/auth.rs`, `AuthBuilder::build`
-registers the four routes from
-`crates/core/src/openapi/annotations.rs::core_routes`; those same four routes
-are actual unconditional `BetterAuth::handle_core_request` cases: `/ok`,
-`/error`, `/update-user`, and the native `/__test/openapi.json` embedding endpoint.
-All remaining endpoint metadata comes from each installed plugin's real routes.
-The registry snapshot retains every registration; the default document omits
-native extensions and the OpenAPI plugin's own endpoints according to the
-separate documentation policy.
+`AuthBuilder::new` installs the implemented core modules during build, before
+initialization and metadata collection. Explicit core plugins retain their
+configuration; defaults are appended after application plugins so their dispatch
+priority is preserved. The implicit email/password module disables both
+credential authentication and username support. Change-email and deletion are
+registered but their handlers retain the pinned disabled-feature guards.
+No social provider is installed by the implicit OAuth module.
 
-Consequently, `AuthBuilder` plus only `OpenApiPlugin` advertises its handled
-core routes and installed plugin routes; it does not fabricate handlers for
-omitted modules. Its document is smaller than pinned TypeScript Better Auth's
-always-present base API. Default core-module registration/API-default parity is
-an existing Rust boundary requiring separate implementation. The whole-document
-profiles explicitly install the equivalent Rust core modules, so their default
-OpenAPI-option and combined-plugin comparisons remain valid. This evidence does
-not establish that every minimal Rust builder configuration equals the upstream
-base configuration.
+The `openapi-minimal` profile omits upstream email/password and user options and
+installs only OpenAPI on the Rust builder. Its complete runtime document and
+reference frame match the pinned minimal instance. Actual requests prove null
+unauthenticated session lookup, disabled credential signup/signin, protected
+session-list/change/deletion rejection, and authenticated disabled change/delete
+outcomes. An explicitly configured instance issues the session used for those
+last checks; the minimal instance preserves that user's email and session.
+
+The registry retains all actual registrations. `SERVER_ONLY` metadata excludes a
+route from both the document and HTTP resolution, while trusted dispatch remains
+available. The custom profile proves that distinction through the real upstream
+API and native `BetterAuth::dispatch_endpoint` behind a controlled fixture
+interface. Upstream `scope: server` hiding retains HTTP and document visibility;
+disabled paths independently return 404 and disappear from docs. Transport
+middleware and physical on-request hooks still precede HTTP resolution.
 
 ## Focused proof and test ownership
 
-Eleven official SDK/raw HTTP scenarios compare complete ordinary and configured
+Fourteen official SDK/raw HTTP scenarios compare complete ordinary and configured
 documents, every model field/required list, security and endpoint metadata. The
 reference profiles compare embedded JSON with the same complete document and
 compare the remaining HTML frame verbatim. Fixture origins use the existing
 narrow URL comparison. No comparator exceptions, field exclusions, or generated
 oracle captures were added.
 
-Profiles cover default options, configured path/theme/nonce and disabled `/error`,
+Profiles cover minimal initialization, last-login database enabled/disabled metadata, default options, configured path/theme/nonce and disabled `/error`,
 disabled reference, JWT Jwks, username inputs, chosen custom user schema policies,
-and combined admin/organization/two-factor/API-key/passkey/device/JWT/phone/SIWE/
+custom entity models and enum/array/date user-field policies, and combined admin/organization/two-factor/API-key/passkey/device/JWT/phone/SIWE/
 multiple-session registrations. Teams/dynamic-role flags and configured API-key
 rate defaults are compared in whole documents. Optional bundled columns alone
 do not activate models. All profiles include the real `/update-session` endpoint;
 its SDK persistence proof is owned by [session updates](session-updates.md).
+
+The custom profile declares its application fields and a plugin-owned Document
+model explicitly. Complete documents prove enum types, nullable described bodies,
+query descriptions, dynamic-default omission, literal defaults, private/read-only
+policies, path parameters for idiomatic Rust `{id}` routes, and duplicate
+operation IDs. Undeclared optional storage columns remain absent from the model.
+The last-login database option now publishes its actual initialization flag to
+the generator; its default profile does not advertise that field.
 
 Two actual application session-schema profiles use real TEXT/REAL/JSON columns.
 Their documents derive from config field types and explicit required/input/returned
@@ -124,16 +134,19 @@ include it. Both choices retain actual registration and have native HTTP proof. 
 OpenAPI documentation exclusions. The SDK scenarios own
 built-in schema and HTML behavior; native tests do not duplicate those flows.
 
-Focused result for this core/configuration slice: 11 SDK scenarios / 494 assertions, one native
-application extension test and one real custom-session native lifecycle test, API/core/root production strict Clippy and client TS
-check pass. Existing core embedded builder checks are retained. Full gates,
-shared inventory/lock finalization, and publication belong to the coordinator.
+Focused #191 results: 63 SDK OpenAPI/user-management scenarios / 2,640
+assertions; 12 native user-management lifecycle checks; six native application
+metadata/builder surface checks; strict API/core/root production Clippy and client
+TypeScript check. The original production code fails the final owner fixtures
+for missing minimal routes, configured last-login metadata and enum inputs.
+Root batch validation owns the integrated canonical `devenv test` gate.
 
 ## Remaining work
 
-- Configuration branches of plugin models beyond the combined profiles require
-  their own evidence. Source tables alone do not establish those branches; for
-  example a future last-login-method plugin must publish its database flag.
+- New plugin configuration branches require their own runtime evidence; source
+  tables alone do not establish them. Implemented last-login, organization
+  teams/dynamic-role and API-key rate-default model branches have complete
+  runtime document comparisons.
 - OAuth's existing Rust route template uses `{provider}` while pinned source uses
   `:id`; an explicit canonical document-path annotation preserves the route ABI.
   An independent actual handler probe confirmed that upstream HTTP disabledPaths
@@ -142,10 +155,11 @@ shared inventory/lock finalization, and publication belong to the coordinator.
   and disabling `/items/value` returns 404 before the handler. Rust's existing
   literal dispatch policy matches upstream; no dispatch correction is required.
 - Additional application schemas must explicitly supply documentation fields;
-  derive convenience is not yet installed, and arbitrary stored extra columns
-  are not inferred. Session fields now have explicit policy integration and proof;
-  arbitrary custom enum schemas and every plugin-specific metadata option remain
-  separate configuration branches.
+  their explicit `AuthSchema::openapi_models` declarations are the public
+  application interface; arbitrary stored extra columns are not inferred. Session fields now have explicit policy integration and proof;
+  custom enum schemas and the implemented model configuration branches now have
+  complete runtime document evidence. Deriving arbitrary private columns remains
+  deliberately unsupported.
 
 ## Integrated review and canonical validation
 

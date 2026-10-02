@@ -453,41 +453,12 @@ async fn test_delete_user_before_hook_abort() {
     assert!(!called.load(Ordering::SeqCst));
 }
 
-// Upstream reference: packages/better-auth/src/api/routes/update-user.test.ts :: describe("updateUser") and packages/better-auth/src/api/routes/update-user.ts; adapted to the Rust user-management plugin.
+// The full-document SDK owner verifies default registration. This authenticated
+// native boundary independently proves disabled handlers cannot mutate storage.
 #[tokio::test]
-async fn test_plugin_routes_conditional() {
-    // All disabled
+async fn disabled_user_management_rejects_authenticated_mutations() {
     let plugin = UserManagementPlugin::new();
-    assert!(<UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin).is_empty());
-
-    // Only change-email enabled
-    let plugin_2 = UserManagementPlugin::new().change_email_enabled(true);
-    let routes = <UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin_2);
-    assert_eq!(routes.len(), 1);
-    assert!(routes.iter().any(|r| r.path == "/change-email"));
-
-    // Only delete-user enabled
-    let plugin_3 = UserManagementPlugin::new().delete_user_enabled(true);
-    let routes_2 = <UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin_3);
-    assert_eq!(routes_2.len(), 2);
-    assert!(routes_2.iter().any(|r| r.path == "/delete-user"));
-    assert!(routes_2.iter().any(|r| r.path == "/delete-user/callback"));
-
-    // Both enabled
-    let plugin_4 = UserManagementPlugin::new()
-        .change_email_enabled(true)
-        .delete_user_enabled(true);
-    assert_eq!(
-        <UserManagementPlugin as AuthPlugin<TestSchema>>::routes(&plugin_4).len(),
-        3
-    );
-}
-
-// Upstream reference: packages/better-auth/src/api/routes/update-user.test.ts :: describe("updateUser") and packages/better-auth/src/api/routes/update-user.ts; adapted to the Rust user-management plugin.
-#[tokio::test]
-async fn test_on_request_disabled_routes_passthrough() {
-    let plugin = UserManagementPlugin::new(); // both disabled
-    let (ctx, _user, session) = test_helpers::create_test_context_with_user(
+    let (ctx, user, session) = test_helpers::create_test_context_with_user(
         CreateUser::new()
             .with_email("test@example.com")
             .with_name("Test User")
@@ -495,16 +466,40 @@ async fn test_on_request_disabled_routes_passthrough() {
         Duration::hours(24),
     )
     .await;
-
-    let body = serde_json::json!({ "newEmail": "x@y.com" });
-    let req = test_helpers::create_auth_request(
-        HttpMethod::Post,
-        "/change-email",
-        Some(&session.token),
-        Some(body.to_string().into_bytes()),
-        HashMap::new(),
-    );
-
-    let result = plugin.on_request(&req, &ctx).await.unwrap();
-    assert!(result.is_none(), "disabled routes should return None");
+    for (path, body, status) in [
+        (
+            "/change-email",
+            serde_json::json!({"newEmail":"changed@example.com"}),
+            400,
+        ),
+        ("/delete-user", serde_json::json!({}), 404),
+    ] {
+        let req = test_helpers::create_auth_request(
+            HttpMethod::Post,
+            path,
+            Some(&session.token),
+            Some(body.to_string().into_bytes()),
+            HashMap::new(),
+        );
+        let result = plugin.on_request(&req, &ctx).await;
+        match result {
+            Ok(Some(response)) => assert_eq!(response.status, status),
+            Err(error) => assert_eq!(error.status_code(), status),
+            other => panic!("registered disabled handler did not reject: {other:?}"),
+        }
+        let stored = ctx
+            .database
+            .get_user_by_id(&user.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(stored.email, user.email);
+        assert!(
+            ctx.database
+                .get_session(&session.token)
+                .await
+                .unwrap()
+                .is_some()
+        );
+    }
 }

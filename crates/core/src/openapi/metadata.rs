@@ -150,7 +150,19 @@ pub struct OpenApiRegistry {
     pub(crate) core_overrides: Vec<OpenApiModel>,
 }
 impl OpenApiRegistry {
-    /// Actual dispatch routes, including routes omitted from generated documentation.
+    /// Whether an installed endpoint is available only through server calls.
+    /// This is independent of document hiding and disabled-path configuration.
+    #[must_use]
+    pub fn is_server_only(&self, plugin: &str, route: &AuthRoute) -> bool {
+        self.endpoints.iter().any(|endpoint| {
+            endpoint.plugin == plugin
+                && endpoint.route.method == route.method
+                && endpoint.route.path == route.path
+                && endpoint.metadata.server_only
+        })
+    }
+
+    /// Actual registered routes, including endpoints unavailable over HTTP or omitted from documentation.
     #[must_use]
     pub fn registered_routes(&self) -> Vec<AuthRoute> {
         self.endpoints

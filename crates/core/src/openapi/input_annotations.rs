@@ -3,6 +3,12 @@ use super::{OpenApiEndpoint, OpenApiField};
 use indexmap::IndexMap;
 use serde_json::{Map, Value, json};
 fn property(field: &OpenApiField) -> Value {
+    if let Some(values) = field.schema.get("type").and_then(Value::as_array) {
+        return json!({"type":"string","enum":values});
+    }
+    if field.schema.get("format").and_then(Value::as_str) == Some("date-time") {
+        return json!({"type":"string","format":"date-time"});
+    }
     match field.schema.get("type").and_then(Value::as_str) {
         Some("json") => json!({}),
         Some("array") => {
