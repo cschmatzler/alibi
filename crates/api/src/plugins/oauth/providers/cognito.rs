@@ -112,7 +112,8 @@ impl OAuthProvider {
                     "{issuer}/.well-known/jwks.json"
                 )))
             }),
-            max_age_secs: 3600,
+            max_age_secs: Some(3600),
+            allow_opaque_token: false,
             algorithm: None,
             selection: OAuthJwksSelection::ExactKid,
             nonce_comparison: OAuthNonceComparison::Exact,

@@ -21,7 +21,9 @@ JWKS authority, https://www.facebook.com issuer, all configured client audiences
 and exact requested nonce. Its published policy has no maximum token age;
 iat is optional, although present numeric dates must retain JOSE type checks.
 Remote JWKS filters key type, declared algorithm, key use, verify operations,
-header key ID and public-key status, trying every usable duplicate candidate.
+header key ID and public-key status, rejecting ambiguous matching candidates. The installed jwtVerify does not
+consume the resolver's optional retry iterator; the actual factory returns
+INVALID_TOKEN for both valid-after-wrong and valid-after-malformed duplicates.
 Other factories retain their distinct first-key, One Tap and Apple policies.
 
 Non-three-part ID tokens are permitted by the verifier only as opaque candidates.
@@ -51,8 +53,34 @@ rotation and local sign-out. Existing generic factories cannot prove Facebook
 initialization or app-bound opaque-token validation, and existing age-bound
 Google/Cognito owners cannot prove the optional-age policy.
 
-This is read-only contract discovery. No factory, fixture, completed owner,
-capability addition or green gate is claimed yet. An isolated actual-parent
-before proof and independent authorization/persistence review are required
-before this issue can close. No Source edit, comparator allowance, hook bypass
+The initial factory passes strict Clippy and the real application fixture passes
+strict Clippy/build. The initial actual Source/native program passes 55/57 owners
+(1,980 assertions, /tmp/issue144-initial-real-owner.log, terminal exit1). Two
+oracle-side expectations incorrectly inferred automatic duplicate-key retries
+from the remote resolver iterator; actual installed jwtVerify propagates the
+ambiguous-key error. Native policy and those expectations are corrected to
+measured factory rejection; Source and comparer stay unchanged.
+The corrected and expanded actual program passes all 89 owners (2,978 assertions,
+`/tmp/issue144-final89-owner-strict.log`, terminal exit 0), including strict API
+and fixture all-target Clippy, fixture build and TypeScript checking. The initial
+86-owner program also passed (`/tmp/issue144-expanded86-real-owner-correct-type.log`,
+2,880 assertions). Real 1024-bit RSA signed credentials are rejected by both
+actual factories before identity writes. An independent production review of
+app/user binding, raw identity, nonce/signature, remote key selection and other
+factories found one optional-age numeric-date drift: JOSE accepts numeric
+`iat:1e500` and `iat:-1e500` when no age policy exists. Both real Source halves
+passed while the initial Native finite-only check failed
+(`/tmp/issue144-numeric-before.log`, 1/3 passing, terminal exit 1). Native now
+retains numeric type validation and applies the existing age comparisons only
+where configured; the two raw signed owners pass without changing Google,
+Apple or Cognito's one-hour limits.
+
+The isolated actual-parent before proof preserves unchanged 358f5f6a production
+and uses the exact real Source/HTTP controls with the old public generic provider.
+It compiles, then fails for the intended native authorization drift: an unexpected
+PKCE code challenge, while the Source default owner passes
+(`/tmp/issue144-generic-before-owner.log`, 25 assertions, terminal exit 1).
+No 404, unavailable constructor or fabricated receipt is used as before evidence.
+Broad canonical, docs/browser and clean coverage gates remain pending on the
+final composed immutable head. No Source edit, comparator allowance, hook bypass
 or dependency patch is authorized by this audit.

@@ -7,6 +7,9 @@ pub use cognito::CognitoOptions;
 mod dropbox;
 pub use dropbox::{DropboxAccessType, DropboxOptions};
 
+mod facebook;
+pub use facebook::FacebookOptions;
+
 mod atlassian;
 pub use atlassian::AtlassianOptions;
 

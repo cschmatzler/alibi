@@ -104,6 +104,7 @@ mod cloudflare_provider_fixture;
 mod cognito_provider_fixture;
 mod device_fixture;
 mod dropbox_provider_fixture;
+mod facebook_provider_fixture;
 mod google_id_token_fixture;
 mod invitation_fixture;
 mod jwt_fixture;
@@ -797,6 +798,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (oauth_proxy_router, oauth_proxy_reset) = oauth_proxy_fixture::router(&config).await?;
     let (cloudflare_router, cloudflare_reset) =
         cloudflare_provider_fixture::router(&config, database.clone()).await?;
+    let (facebook_router, facebook_reset) =
+        facebook_provider_fixture::router(&config, database.clone()).await?;
     let (dropbox_router, dropbox_reset) =
         dropbox_provider_fixture::router(&config, database.clone()).await?;
     let (cognito_router, cognito_reset) =
@@ -1255,6 +1258,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let cloudflare_reset=cloudflare_reset.clone();
                 let cognito_reset=cognito_reset.clone();
                 let dropbox_reset=dropbox_reset.clone();
+                let facebook_reset=facebook_reset.clone();
                 let atlassian_reset=atlassian_reset.clone();
                 let apple_reset = apple_reset.clone();
                 let social_provider_reset = social_provider_reset.clone();
@@ -1265,6 +1269,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     cloudflare_reset.reset().await;
                     cognito_reset.reset().await;
                     dropbox_reset.reset().await;
+                    facebook_reset.reset().await;
                     atlassian_reset.reset().await;
                     apple_reset.reset().await;
                     social_provider_reset.reset().await;
@@ -1878,6 +1883,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(cloudflare_router)
         .merge(cognito_router)
         .merge(dropbox_router)
+        .merge(facebook_router)
         .merge(atlassian_router)
         .merge(apple_router)
         .merge(social_provider_router)
