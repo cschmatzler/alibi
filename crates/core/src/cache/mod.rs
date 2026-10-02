@@ -3,7 +3,7 @@
 //! The codec authenticates data; storage bypass and authoritative-read policy
 //! belong to the session resolver. No database model is reconstructed here.
 
-mod date;
+pub(crate) mod date;
 
 pub mod runtime;
 

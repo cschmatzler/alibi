@@ -168,6 +168,7 @@ enum AfterCreate<S: AuthSchema> {
     Account(S::Account),
     Session(S::Session),
     Verification(S::Verification),
+    VerificationRecord(better_auth_core::verification::VerificationSnapshot),
 }
 
 #[async_trait]
@@ -302,6 +303,24 @@ where
             .push(AfterCreate::Session(session.clone()));
         Ok(session)
     }
+    async fn create_verification_record(
+        &self,
+        data: better_auth_core::verification::VerificationCreation,
+        publication: better_auth_core::verification::VerificationPublication,
+    ) -> AuthResult<Option<better_auth_core::verification::VerificationSnapshot>> {
+        let snapshot = self
+            .store
+            .create_verification_record_with_connection(self.tx, Some(self.tx), data, publication)
+            .await?;
+        if let Some(snapshot) = &snapshot {
+            self.pending_after
+                .lock()
+                .await
+                .push(AfterCreate::VerificationRecord(snapshot.clone()));
+        }
+        Ok(snapshot)
+    }
+
     async fn create_verification(
         &self,
         verification: better_auth_core::CreateVerification,
@@ -357,6 +376,10 @@ where
                             }
                             AfterCreate::Session(session) => {
                                 hook.after_create_session(session, &hook_context).await?;
+                            }
+                            AfterCreate::VerificationRecord(snapshot) => {
+                                hook.after_create_verification_record(snapshot, &hook_context)
+                                    .await?;
                             }
                             AfterCreate::Verification(verification) => {
                                 hook.after_create_verification(verification, &hook_context)

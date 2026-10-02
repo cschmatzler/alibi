@@ -118,7 +118,7 @@ async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the
         );
         let row = auth
             .store()
-            .get_verification_by_identifier(&format!("oauth:{state}"))
+            .get_verification_by_identifier(&state)
             .await
             .unwrap()
             .unwrap();
@@ -190,11 +190,7 @@ async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the
                     .headers
                     .get("location")
                     .unwrap()
-                    .contains(if mode == "wrong-cookie" {
-                        "state_mismatch"
-                    } else {
-                        "please_restart_the_process"
-                    }),
+                    .contains("state_mismatch"),
                 "{mode}: {:?}",
                 response.headers
             );
@@ -281,7 +277,7 @@ async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the
         );
         assert_eq!(
             auth.store()
-                .get_verification_by_identifier(&format!("oauth:{state}"))
+                .get_verification_by_identifier(&state)
                 .await
                 .unwrap()
                 .is_some(),

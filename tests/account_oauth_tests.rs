@@ -251,8 +251,8 @@ async fn issue_account_cookie(
     let ctx = AuthContext::new(Arc::new(issuer_config), Arc::clone(db));
     let state = uuid::Uuid::new_v4().to_string();
     db.create_verification(CreateVerification {
-        identifier:format!("oauth:{state}"),
-        value:json!({"callbackURL":"http://localhost:3000", "codeVerifier":"native-cookie-verifier", "expiresAt":(Utc::now()+Duration::minutes(10)).timestamp_millis()}).to_string(),
+        identifier:state.clone(),
+        value:json!({"callbackURL":"http://localhost:3000", "codeVerifier":"native-cookie-verifier", "oauthState":state, "expiresAt":(Utc::now()+Duration::minutes(10)).timestamp_millis()}).to_string(),
         expires_at:Utc::now()+Duration::minutes(10),
     }).await.unwrap();
     let mut req = AuthRequest::new(

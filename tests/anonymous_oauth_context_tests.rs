@@ -107,7 +107,7 @@ async fn initiate(
         .into_owned();
     let row = auth
         .store()
-        .get_verification_by_identifier(&format!("oauth:{state}"))
+        .get_verification_by_identifier(&state)
         .await
         .unwrap()
         .unwrap();

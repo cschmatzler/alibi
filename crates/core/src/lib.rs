@@ -53,6 +53,8 @@ pub mod types;
 
 pub mod user_validation;
 
+pub mod verification;
+
 mod types_org;
 
 mod types_plugin;

@@ -1,8 +1,8 @@
 //! The pinned safeJSONParse date reviver, restricted to its ISO-Z grammar.
 use crate::utils::json::JsValue;
-use chrono::{DateTime, Duration, NaiveDate, SecondsFormat, Utc};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
 
-pub(super) fn parse(value: &str) -> Option<DateTime<Utc>> {
+pub(crate) fn parse(value: &str) -> Option<DateTime<Utc>> {
     let bytes = value.as_bytes();
     if bytes.len() < 20
         || bytes.get(4) != Some(&b'-')
@@ -62,11 +62,11 @@ pub(super) fn parse(value: &str) -> Option<DateTime<Utc>> {
     )
 }
 
-pub(super) fn revive(value: &mut JsValue) {
+pub(crate) fn revive(value: &mut JsValue) {
     match value {
         JsValue::String(text) => {
-            if let Some(date) = parse(text) {
-                *text = date.to_rfc3339_opts(SecondsFormat::Millis, true);
+            if let Some(normalized) = crate::utils::datetime::normalize_json_date(text) {
+                *text = normalized;
             }
         }
         JsValue::Array(values) => values.iter_mut().for_each(revive),

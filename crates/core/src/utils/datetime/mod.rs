@@ -3,7 +3,9 @@
 #[cfg(test)]
 mod tests;
 
+mod parse;
 use chrono::{DateTime, Datelike, Duration, NaiveDate, SecondsFormat, Utc};
+pub use parse::parse_date_millis;
 use serde::Serializer;
 
 /// Serialize a timestamp with exactly three fractional digits and a UTC suffix.
@@ -99,4 +101,35 @@ pub fn normalize_json_date(value: &str) -> Option<String> {
         format!("{:04}", date.year())
     };
     Some(format!("{year}{}", date.format("-%m-%dT%H:%M:%S%.3fZ")))
+}
+
+/// JavaScript Date JSON at every valid TimeClip millisecond, including dates
+/// outside Chrono's physical model range. Callers must supply a TimeClip value.
+#[must_use]
+pub fn json_date_millis(millis: i64) -> String {
+    let days = millis.div_euclid(86_400_000);
+    let shifted = days + 719_468;
+    let era = shifted.div_euclid(146_097);
+    let day_of_era = shifted - era * 146_097;
+    let year_of_era =
+        (day_of_era - day_of_era / 1460 + day_of_era / 36_524 - day_of_era / 146_096) / 365;
+    let mut year = year_of_era + era * 400;
+    let day_of_year = day_of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+    let month_index = (5 * day_of_year + 2) / 153;
+    let day = day_of_year - (153 * month_index + 2) / 5 + 1;
+    let month = month_index + if month_index < 10 { 3 } else { -9 };
+    year += i64::from(month <= 2);
+    let year = if (0..=9999).contains(&year) {
+        format!("{year:04}")
+    } else {
+        format!("{year:+07}")
+    };
+    let time = millis.rem_euclid(86_400_000);
+    format!(
+        "{year}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{:03}Z",
+        time / 3_600_000,
+        time / 60_000 % 60,
+        time / 1000 % 60,
+        time % 1000
+    )
 }
