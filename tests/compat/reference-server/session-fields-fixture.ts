@@ -6,7 +6,7 @@ import { Database } from "bun:sqlite";
 
 export async function createSessionFieldsFixture(database:Database, shared:Parameters<typeof betterAuth>[0], origin:string) {
   const profiles=new Map<string,Pick<ReturnType<typeof betterAuth>,"handler">>();
-  for(const name of ["session-fields","session-fields-plugins"]) {
+  for(const name of ["session-fields","session-fields-plugins","session-fields-secondary"]) {
     const extra={label:{type:"string",required:false,defaultValue:"initial"},hidden:{type:"string",required:false,returned:false,defaultValue:"server-secret"},serverOnly:{type:"string",required:false,input:false,defaultValue:"locked"},callback:{type:"string",required:false,defaultValue:()=>"callback-created"},payload:{type:"json",required:false,defaultValue:{initial:true}},number:{type:"number",required:false},transformed:{type:"string",required:false,transform:{input:(value:unknown)=>{
       if(value===undefined)return "generated-without-default";
       if(value==="stage:throw-at-binding")throw new Error("configured transform failed");
@@ -18,7 +18,14 @@ export async function createSessionFieldsFixture(database:Database, shared:Param
       if(Object.is(value,-0))return {value:"-0"};
       return {issues:[{message:"configured validation rejected the value"}]};
     }}}},transform:{input:(value:unknown)=>`stored:${typeof value==="string"?value:""}`}},...(name.endsWith("plugins")?{activeOrganizationId:{type:"string" as const,required:true,input:true,returned:false,defaultValue:"configured-default-org",transform:{input:(value:unknown)=>`adapter:${value}`}},activeTeamId:{type:"string" as const,required:false},impersonatedBy:{type:"string" as const,required:false}}:{activeOrganizationId:{type:"string" as const,required:false,defaultValue:"declared-without-plugin"}})} as const;
-    const instance=betterAuth({...shared,database,baseURL:origin,basePath:`/__test/profiles/${name}/api/auth`,plugins:[...(name.endsWith("plugins")?[admin(),organization({teams:{enabled:true}})]:[]),openAPI()],session:{additionalFields:extra},databaseHooks:{session:{update:{async before(data,ctx){
+    const secondary = new Map<string, {value:string, expiresAt:number}>();
+    const instance=betterAuth({...shared,database,
+      ...(name === "session-fields-secondary" ? {secondaryStorage: {
+        async get(key:string) {const entry=secondary.get(key);return entry&&entry.expiresAt>Date.now()?entry.value:null;},
+        async set(key:string,value:string,ttl:number) {secondary.set(key,{value,expiresAt:Date.now()+ttl*1000});},
+        async delete(key:string) {secondary.delete(key);},
+        async getAndDelete(key:string) {const entry=secondary.get(key);secondary.delete(key);return entry&&entry.expiresAt>Date.now()?entry.value:null;},
+      }} : {}),baseURL:origin,basePath:`/__test/profiles/${name}/api/auth`,plugins:[...(name.endsWith("plugins")?[admin(),organization({teams:{enabled:true}})]:[]),openAPI()],session:{additionalFields:extra},databaseHooks:{session:{update:{async before(data,ctx){
       if(data.label==="delete-before")database.query('DELETE FROM session WHERE token=?').run(ctx?.context.session?.session.token ?? "");
       if(data.label==="cancel-before")return false;
       if(data.label==="restore-undefined")return {data:{...data,transformed:"hook-current"}};

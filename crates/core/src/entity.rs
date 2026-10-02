@@ -19,6 +19,20 @@ use std::borrow::Cow;
 /// The framework reads user fields through these getters. Custom types
 /// must provide all framework fields and may have additional fields.
 pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    /// Encode the complete typed model for a trusted secondary backend.
+    /// Custom entities can opt in without adding a Deserialize bound to all schemas.
+    fn secondary_snapshot(&self) -> crate::AuthResult<serde_json::Value> {
+        Err(crate::AuthError::NotImplemented(
+            "Secondary model encoding is unsupported".into(),
+        ))
+    }
+    /// Restore a model from a trusted secondary backend, before public projection.
+    fn from_secondary_snapshot(_snapshot: serde_json::Value) -> crate::AuthResult<Self> {
+        Err(crate::AuthError::NotImplemented(
+            "Secondary model decoding is unsupported".into(),
+        ))
+    }
+
     /// A genuine retained adapter result, including declared undefined values.
     fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
         None
@@ -71,6 +85,20 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
 
 /// Trait representing a session entity.
 pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    /// Encode the complete typed model for a trusted secondary backend.
+    /// Custom entities can opt in without adding a Deserialize bound to all schemas.
+    fn secondary_snapshot(&self) -> crate::AuthResult<serde_json::Value> {
+        Err(crate::AuthError::NotImplemented(
+            "Secondary model encoding is unsupported".into(),
+        ))
+    }
+    /// Restore a model from a trusted secondary backend, before public projection.
+    fn from_secondary_snapshot(_snapshot: serde_json::Value) -> crate::AuthResult<Self> {
+        Err(crate::AuthError::NotImplemented(
+            "Secondary model decoding is unsupported".into(),
+        ))
+    }
+
     fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
         None
     }

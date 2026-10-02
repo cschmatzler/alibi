@@ -5,6 +5,8 @@
     reason = "Cargo shares package dependencies across its library, binaries, and integration tests"
 )]
 
+#[path = "session_refresh_integration_tests/secondary.rs"]
+mod secondary;
 #[cfg(test)]
 #[path = "session_refresh_integration_tests/tests.rs"]
 mod tests;
@@ -26,6 +28,10 @@ async fn fixture(deferred: bool, disabled: bool) -> (BetterAuth<Schema>, Databas
         AuthConfig::new("session-fixture-secret-at-least-32-characters").base_url(ORIGIN);
     config.session.defer_session_refresh = deferred;
     config.session.disable_session_refresh = disabled;
+    fixture_with_config(config).await
+}
+
+async fn fixture_with_config(config: AuthConfig) -> (BetterAuth<Schema>, DatabaseConnection) {
     let db = Database::connect("sqlite::memory:").await.unwrap();
     better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
         .await
@@ -33,6 +39,9 @@ async fn fixture(deferred: bool, disabled: bool) -> (BetterAuth<Schema>, Databas
     let auth = AuthBuilder::new(config.clone())
         .store(SeaOrmStore::<Schema>::new(config, db.clone()))
         .plugin(SessionManagementPlugin::new())
+        .plugin(better_auth::plugins::EmailPasswordPlugin::new())
+        .plugin(better_auth::plugins::OrganizationPlugin::new())
+        .plugin(better_auth::plugins::one_time_token::OneTimeTokenPlugin::new())
         .build()
         .await
         .unwrap();

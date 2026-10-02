@@ -29,6 +29,35 @@ wire behavior.
 - **Middleware** — CSRF, CORS, rate limiting, body size limits
 - **Database Hooks** — intercept create/update/delete operations
 
+## Secondary session storage
+
+Set `AuthConfig::session.secondary_storage` to an `Arc<dyn CacheAdapter>`;
+`MemoryCacheAdapter` and the `redis-cache` feature's `RedisAdapter` provide
+native implementations. Sessions then live in that backend by default.
+Set `session.store_in_database = true` to also persist SQL session rows.
+Set `session.preserve_in_database = true` to retain and expire those rows on
+revocation. Without a secondary backend, sessions always use the database.
+
+Cached credentials and their typed user snapshots are authoritative. Combined
+storage permits a database fallback for a missing cached credential only when
+preservation is disabled; session lists still use the secondary index. Cached
+malformed, expired, inactive, or mismatched credentials cannot authenticate.
+The backend holds sensitive credentials and must be trusted and isolated.
+
+Bundled SeaORM user/session models support this directly. Application-owned
+`AuthEntity` user/session models opt in with
+`#[auth(role = "user", secondary_storage)]` or the corresponding session role;
+each model field must support serialization and deserialization. Other schemas
+can implement the explicit `AuthUser`/`AuthSession` snapshot capabilities and
+session-store preparation capabilities. Existing schemas remain unchanged.
+
+Secondary writes happen during issuance and updates, including SQL transactions.
+A SQL rollback cannot roll back an already completed cache write. Failed signup
+issues no response credential, but earlier index or credential writes can remain
+until expiry. User snapshot refresh after a committed update is best effort.
+Use the same backend in `config.verification.secondary_storage` when verification
+credentials should also use secondary storage and atomic consumption.
+
 ## Quick Start
 
 ```toml

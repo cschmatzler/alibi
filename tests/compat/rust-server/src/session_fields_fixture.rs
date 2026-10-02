@@ -76,9 +76,12 @@ pub(super) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
             .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
     }
     let mut router = Router::new();
-    for name in ["session-fields", "session-fields-plugins"] {
+    for name in ["session-fields", "session-fields-plugins", "session-fields-secondary"] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = config.clone().base_path(&path);
+        if name == "session-fields-secondary" {
+            config.session.secondary_storage = Some(Arc::new(better_auth_core::store::MemoryCacheAdapter::new()));
+        }
         let fields = &mut config.session.additional_fields;
         _ = fields.insert(
             "label".into(),

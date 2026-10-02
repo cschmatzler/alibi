@@ -79,6 +79,7 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   type ClockReceipt = { left: RequestWindow; right: RequestWindow; leftUser: string; rightUser: string; authPath: string };
   const issuances = new Map<string, ClockReceipt>(), cookieOwners = new Map<string, ClockReceipt>();
   const signedCookieIssuances = new Set<string>();
+  const issuedMultiNames = new Map<string, {right: string; leftToken: string; rightToken: string}>();
   const emailOwners = new Map<string, {leftUser: string; rightUser: string}>();
   const challenges = new Map<string, ClockReceipt & {lifetime: number}>();
   const sessionCookieName = /^(?:__Secure-)?better-auth\.session_token$/;
@@ -734,6 +735,50 @@ export function compareValues(left: unknown, right: unknown, context: Comparison
   }
 
   function visit(a: unknown, b: unknown, path: string, key: string, jwtPayload = false, applicationData = false, jwtHeader = false, encryptedClaims = false, urlQueryContext: "url" | "query" | undefined = undefined, adminFilterUrl = false, compactCache = false, proxyProviders: readonly [string | undefined, string | undefined] | undefined = undefined, proxyPayload = false, owners: readonly string[] = []) {
+    const multiTrace = /^traces\.(\d+)\.responseCookies$/.exec(path);
+    if (multiTrace && record(a) && record(b) && context.sessionCookieSecret) {
+      const index = Number(multiTrace[1]);
+      const leftWindow = context.leftRequestWindows?.[index], rightWindow = context.rightRequestWindows?.[index];
+      const leftCookies = leftWindow?.issuedMultiSessionCookies ?? [], rightCookies = rightWindow?.issuedMultiSessionCookies ?? [];
+      if (leftCookies.length || rightCookies.length) {
+        if (leftCookies.length !== rightCookies.length) fail(path, "multi-session cookie count differs");
+        const remainingLeft = {...a}, remainingRight = {...b};
+        for (let position = 0; position < Math.max(leftCookies.length, rightCookies.length); position++) {
+          const leftRaw = leftCookies[position], rightRaw = rightCookies[position];
+          if (!leftRaw || !rightRaw) continue;
+          const leftCookie = Cookie.parse(leftRaw), rightCookie = Cookie.parse(rightRaw);
+          const leftName = /^(.*?)_multi-(.+)$/.exec(leftCookie?.key ?? ""), rightName = /^(.*?)_multi-(.+)$/.exec(rightCookie?.key ?? "");
+          if (!leftCookie || !rightCookie || !leftName || !rightName || leftName[1] !== rightName[1]) {
+            fail(path, "multi-session cookie prefix or encoding differs"); continue;
+          }
+          const retired = issuedMultiNames.get(leftCookie.key);
+          const tombstone = leftCookie.value === "" && rightCookie.value === "" && leftCookie.maxAge === 0 && rightCookie.maxAge === 0
+            && retired?.right === rightCookie.key;
+          const leftSigned = tombstone ? {token: retired!.leftToken} : signedCookie(leftCookie.value);
+          const rightSigned = tombstone ? {token: retired!.rightToken} : signedCookie(rightCookie.value);
+          if (!leftSigned.token || !rightSigned.token || leftName[2] !== leftSigned.token.toLowerCase() || rightName[2] !== rightSigned.token.toLowerCase()) {
+            fail(path, "multi-session cookie name does not identify its signed credential"); continue;
+          }
+          const pair = JSON.stringify([leftSigned.token, rightSigned.token]);
+          const leftPrimary = leftWindow?.issuedSessionCookie, rightPrimary = rightWindow?.issuedSessionCookie;
+          const primary = issuedCookie(leftPrimary, leftSigned.token) && issuedCookie(rightPrimary, rightSigned.token);
+          if ((!tombstone && !signedCookieIssuances.has(pair) && !primary)
+            || identities.get(`token:${leftSigned.token}`) !== `token:${rightSigned.token}`) {
+            fail(path, "multi-session credential lacks corresponding observed issuance and ownership"); continue;
+          }
+          if (!tombstone) issuedMultiNames.set(leftCookie.key, {right: rightCookie.key, leftToken: leftSigned.token, rightToken: rightSigned.token});
+          const scaffold = (raw: string, cookie: Cookie) => raw.replace(`${cookie.key}=${cookie.value}`, `${leftName[1]}_multi-<issued>=<signed>`);
+          if (scaffold(leftRaw, leftCookie) !== scaffold(rightRaw, rightCookie)) fail(path, "multi-session cookie bytes, order or attributes differ");
+          const leftKey = `${leftCookie.key};${leftCookie.domain ?? ""};${leftCookie.path ?? "/"}`;
+          const rightKey = `${rightCookie.key};${rightCookie.domain ?? ""};${rightCookie.path ?? "/"}`;
+          if (!Object.hasOwn(a, leftKey) || !Object.hasOwn(b, rightKey)) fail(path, "multi-session cookie scope observation is missing");
+          else visit(a[leftKey], b[rightKey], `${path}.multi-${position}`, "");
+          delete remainingLeft[leftKey]; delete remainingRight[rightKey];
+        }
+        visit(remainingLeft, remainingRight, `${path}.literal`, "");
+        return;
+      }
+    }
     if (!applicationData && !jwtPayload && !traceShape(path)
       && !/(?:^|\.)(?:metadata|custom|additionalFields|applicationData)(?:\.|$)/.test(path)
       && record(a) && record(b)) {

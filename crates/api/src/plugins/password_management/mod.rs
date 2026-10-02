@@ -10,7 +10,6 @@ mod tests;
 
 use super::StatusResponse;
 use async_trait::async_trait;
-use better_auth_core::AuthSession;
 use better_auth_core::RequestMeta;
 use better_auth_core::utils::password::PasswordHasher;
 use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
@@ -322,7 +321,7 @@ impl PasswordManagementPlugin {
         if let Some(token) = session_manager.extract_session_token(req)
             && let Some(session) = session_manager.get_session(&token).await?
         {
-            return ctx.database.get_user_by_id(&session.user_id()).await;
+            return ctx.session_user(&session).await;
         }
 
         Ok(None)

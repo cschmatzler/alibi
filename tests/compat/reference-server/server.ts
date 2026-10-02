@@ -58,7 +58,7 @@ import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./one-tap-f
 import { getMigrations } from "better-auth/db/migration";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { apiKey } from "@better-auth/api-key";
-import { admin, deviceAuthorization, emailOTP, magicLink, twoFactor, username, jwt, oneTimeToken } from "better-auth/plugins";
+import { admin, deviceAuthorization, emailOTP, magicLink, twoFactor, username, jwt, oneTimeToken, multiSession } from "better-auth/plugins";
 import { organization } from "better-auth/plugins/organization";
 import { createAccessControl } from "better-auth/plugins/access";
 import { defaultStatements } from "better-auth/plugins/organization/access";
@@ -567,6 +567,17 @@ for (const name of ["email-verification-required", "email-verification-no-signup
   verificationProfiles.set(path, instance);
 }
 
+const secondarySessionCaches = new Map<string, Map<string,{value:string,expiresAt:number}>>();
+for (const name of ["session-secondary-only","session-secondary-preserve-only","session-secondary-combined","session-secondary-preserved"] as const) {
+  const cache=new Map<string,{value:string,expiresAt:number}>();secondarySessionCaches.set(name,cache);
+  const path=`/__test/profiles/${name}/api/auth`;
+  verificationProfiles.set(path,betterAuth({...authOptions,basePath:path,
+    plugins:[...authOptions.plugins.filter(plugin=>plugin.id!=="api-key"),apiKey({enableSessionForAPIKeys:true}),multiSession(),oneTimeToken()],
+    secondaryStorage:{async get(key){const entry=cache.get(key);if(!entry)return null;if(entry.expiresAt<=Date.now()){cache.delete(key);return null;}return entry.value;},async set(key,value,ttl){cache.set(key,{value,expiresAt:Date.now()+ttl*1000});},async delete(key){cache.delete(key);},async getAndDelete(key){const entry=cache.get(key);cache.delete(key);return entry&&entry.expiresAt>Date.now()?entry.value:null;}},
+    session:{...authOptions.session,storeSessionInDatabase:name.endsWith("combined")||name.endsWith("preserved"),preserveSessionInDatabase:name.includes("preserve")},
+  }));
+}
+
 for (const name of ["session-deferred", "session-no-refresh", "session-deferred-no-refresh", "session-no-freshness", "session-cookie-cleanup"]) {
   const path = `/__test/profiles/${name}/api/auth`;
   verificationProfiles.set(path, betterAuth({
@@ -1014,6 +1025,13 @@ const server = Bun.serve({
       }
 
 
+      if(url.pathname==="/__test/secondary-session/control"&&request.method==="POST") {
+        const body=await request.json() as {profile:string;token:string;action:string};const cache=secondarySessionCaches.get(body.profile);
+        if(!cache)return Response.json({error:"Unknown profile"},{status:400});
+        if(body.action==="remove"){cache.delete(body.token);return Response.json(null);}
+        const entry=cache.get(body.token);if(entry&&entry.expiresAt<=Date.now())cache.delete(body.token);
+        return Response.json({present:cache.has(body.token)});
+      }
       for (const [name,instance] of openApiInstances) {
         if(name==="openapi-custom-schema" && url.pathname===`/__test/profiles/${name}/api/auth/__test/server-document`) {
           return new Response(JSON.stringify(await instance.api.serverDocument()), {headers:{"content-type":"application/json"}});
