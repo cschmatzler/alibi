@@ -102,6 +102,24 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Your app owns the auth entities and migrations — Better Auth adapts to whatever schema you define.
 
+The supported native integration is Axum (`AxumIntegration`, including application
+state and session extractors). Other Rust HTTP hosts can call
+`BetterAuth::handle_request` with an `AuthRequest` and forward the complete
+`AuthResponse`: status, body bytes and all header entries, including repeated
+`Set-Cookie`. This direct future belongs to the caller; cancelling it can leave
+already committed writes; independently owned background callbacks already
+launched can continue. Retain it in an owned task when dispatch must continue
+after a client disconnect. Axum already supervises accepted, fully buffered
+requests; runtime/process shutdown can still cancel them.
+
+Use `BetterAuth::dispatch_endpoint` for trusted server operations, with logical
+headers/input and an optional physical request. Keep that interface on the
+server; a server-only operation does not become an HTTP route. JavaScript
+framework cookie stores, server-component refresh suppression, reactive client
+stores and TypeScript inference helpers are explicit embedding boundaries.
+Shared HTTP semantics are checked with the pinned official Better Auth client;
+see the [native integration audit](tests/compat/audits/native-integrations.md).
+
 Configure application fields through `config.user.additional_fields`,
 `config.session.additional_fields` and `config.account.additional_fields`.
 `FieldConfig` supports required/default/input/returned policies, logical-to-physical
