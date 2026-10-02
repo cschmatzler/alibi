@@ -88,6 +88,7 @@ impl SeaOrmHooks<TestSchema> for Application {
         _user: &mut better_auth_core::CreateUser,
         _context: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
+        if _context.config.base_path.contains("signup-username-") {self.event(json!({"stage":"username-hook","request":request_observation()}));}
         if self.mode() == "user-forbidden" {
             self.event(json!({"stage":"user-create-denied"}));
             return Err(AuthError::Upstream {
@@ -176,6 +177,7 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         "signup-policy",
         "signup-zero-policy",
         "signup-username",
+        "signup-username-limits", "signup-username-unicode", "signup-username-implicit", "signup-username-display-pre", "signup-username-display-post", "signup-username-throw", "signup-username-required", "signup-username-readonly", "signup-username-preserve", "signup-username-pre", "signup-username-post", "signup-username-immutable", "signup-username-display-disabled",
         "signup-otp",
         "signup-background",
     ] {
@@ -206,9 +208,10 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             .plugin(EmailPasswordPlugin::with_config(EmailPasswordConfig {
                 enabled: name != "signup-password-disabled",
                 enable_signup: name != "signup-disabled",
-                enable_username: name == "signup-username",
+                enable_username: name.starts_with("signup-username"),
+                username: username_policy(name, &app),
                 auto_sign_in: !["signup-no-auto", "signup-custom", "signup-username", "signup-background"].contains(&name),
-                require_email_verification: ["signup-required", "signup-otp"].contains(&name),
+                require_email_verification: ["signup-required", "signup-otp", "signup-username-required"].contains(&name),
                 password_min_length: if name == "signup-zero-policy" {0} else if name == "signup-policy" {10} else {8},
                 password_max_length: if name == "signup-zero-policy" {0} else if name == "signup-policy" {20} else {128},
                 password_hasher: Some(app.clone()),
@@ -345,4 +348,44 @@ pub(super) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         }),
     );
     Ok(router)
+}
+
+fn username_policy(name: &str, app: &Arc<Application>) -> better_auth::plugins::email_password::UsernameConfig {
+    use better_auth::plugins::email_password::{UsernameConfig, UsernameNormalization, UsernameValidationOrder};
+    let mut policy = UsernameConfig::default();
+    match name {
+        "signup-username-limits" => { policy.min_length = 2; policy.max_length = 5; }
+        "signup-username-preserve" => policy.normalization = UsernameNormalization::Preserve,
+        "signup-username-pre" | "signup-username-post" | "signup-username-implicit" => {
+            let app=app.clone();
+            policy.normalization = UsernameNormalization::Custom(Arc::new(move |value: &str| {
+                app.event(json!({"stage":"username","callback":"normalize","value":value}));
+                Ok(value.trim().replace('-', "_").to_lowercase())
+            }));
+            policy.validation_order = if name == "signup-username-implicit" {None} else {Some(if name == "signup-username-pre" { UsernameValidationOrder::PreNormalization } else { UsernameValidationOrder::PostNormalization })};
+        }
+        "signup-username-unicode" | "signup-username-throw" => {
+            let throwing = name == "signup-username-throw";
+            if !throwing {policy.min_length=2;policy.max_length=4;}
+            let app=app.clone();
+            policy.validator=Some(Arc::new(move |value:String| {let app=app.clone();async move {
+                app.event(json!({"stage":"username","callback":"validate","value":value}));
+                if throwing && value=="explode" {return Err(AuthError::internal("Actual username validator failed"));}
+                Ok(throwing || value.chars().all(|c| c.is_alphabetic() || c=='😀'))
+            }}));
+        }
+        "signup-username-display-pre" | "signup-username-display-post" => {
+            let normalizer_app=app.clone();
+            policy.display_normalizer=Some(Arc::new(move |value:&str| {normalizer_app.event(json!({"stage":"username","callback":"display-normalize","value":value}));Ok(value.trim().to_uppercase())}));
+            let app=app.clone();policy.display_validator=Some(Arc::new(move |value:String| {let app=app.clone();async move {
+                app.event(json!({"stage":"username","callback":"display-validate","value":value}));Ok(value.chars().all(|c| c.is_ascii_uppercase() || c==' '))
+            }}));
+            policy.display_validation_order=Some(if name=="signup-username-display-pre" {UsernameValidationOrder::PreNormalization}else{UsernameValidationOrder::PostNormalization});
+        }
+        "signup-username-readonly" => policy.input = false,
+        "signup-username-immutable" => policy.immutable_username = true,
+        "signup-username-display-disabled" => policy.include_display_username = false,
+        _ => {}
+    }
+    policy
 }

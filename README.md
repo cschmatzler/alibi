@@ -183,6 +183,16 @@ Verification uses the configured IP policy.
 | [`better-auth-seaorm`](https://crates.io/crates/better-auth-seaorm) | SeaORM store, entity traits, and `AuthEntity` derive macro |
 | [`better-auth-cli`](https://crates.io/crates/better-auth-cli) | CLI tools (`better-auth-rs generate`) |
 
+Username policy is configured through `EmailPasswordPlugin::username_config(UsernameConfig { .. })`.
+It supports UTF-16 length bounds, case preservation or a synchronous custom normalizer,
+awaited username/display-name validators, display-name inclusion and normalization,
+immutable usernames, and read-only username input. The default remains lowercase ASCII
+usernames with lengths 3–30. Validation order follows the pinned username plugin:
+signup/update validate raw input unless `PostNormalization` is selected; sign-in
+normalizes before validation only when `PreNormalization` is explicitly selected.
+Availability always validates raw input before its normalized lookup. Callback failures
+propagate, and ordinary callback errors produce an empty HTTP 500.
+
 ## Development
 
 Install [devenv](https://devenv.sh/getting-started/) and

@@ -12,13 +12,14 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const name of ["signup-standard", "signup-disabled", "signup-password-disabled",
     "signup-no-auto", "signup-required", "signup-custom", "signup-policy", "signup-zero-policy",
-    "signup-username", "signup-otp", "signup-background"]) {
+    "signup-username", "signup-username-limits", "signup-username-unicode", "signup-username-implicit", "signup-username-display-pre", "signup-username-display-post", "signup-username-throw", "signup-username-required", "signup-username-readonly", "signup-username-preserve", "signup-username-pre", "signup-username-post", "signup-username-immutable", "signup-username-display-disabled", "signup-otp", "signup-background"]) {
     const basePath = `/__test/profiles/${name}/api/auth`;
-    const requireEmailVerification = name === "signup-required" || name === "signup-otp";
+    const requireEmailVerification = name === "signup-required" || name === "signup-otp" || name === "signup-username-required";
     const autoSignIn = !["signup-no-auto", "signup-custom", "signup-username", "signup-background"].includes(name);
     const instance = betterAuth({
       ...shared, database, basePath,
-      databaseHooks:{user:{create:{before:async()=>{
+      databaseHooks:{user:{create:{before:async(_user,context)=>{
+        if(name.startsWith("signup-username-"))events.push({stage:"username-hook",request:context?.request ? {method:context.request.method,path:context.path,marker:context.request.headers.get("x-test-policy-marker"),contentType:context.request.headers.get("content-type")} : null});
         if(mode==="user-forbidden") {
           events.push({stage:"user-create-denied"});
           throw new APIError("FORBIDDEN",{code:"USER_CREATION_DENIED",message:"Configured user creation denied"});
@@ -27,7 +28,24 @@ export function createSignupPolicyFixture(database: Database, shared: BetterAuth
         if(mode==="user-error") {events.push({stage:"user-create-error"});throw new Error("Actual configured user creation failed");}
       }}}},
       plugins: [
-        ...(name === "signup-username" ? [username()] : []),
+        ...(name.startsWith("signup-username") ? [username({
+          ...(name === "signup-username-limits" ? {minUsernameLength:2,maxUsernameLength:5} : {}),
+          ...(name === "signup-username-preserve" ? {usernameNormalization:false} : {}),
+          ...(["signup-username-pre","signup-username-post","signup-username-implicit"].includes(name) ? {
+            usernameNormalization:(value:string)=>{events.push({stage:"username",callback:"normalize",value});return value.trim().replaceAll("-","_").toLowerCase();},
+            ...(name === "signup-username-implicit" ? {} : {validationOrder:{username:name === "signup-username-pre" ? "pre-normalization" as const : "post-normalization" as const}}),
+          } : {}),
+          ...(name === "signup-username-unicode" ? {minUsernameLength:2,maxUsernameLength:4,
+            async usernameValidator(value:string){events.push({stage:"username",callback:"validate",value});return /^[\p{L}😀]+$/u.test(value);}} : {}),
+          ...(name === "signup-username-throw" ? {async usernameValidator(value:string){events.push({stage:"username",callback:"validate",value});if(value==="explode")throw new Error("Actual username validator failed");return true;}} : {}),
+          ...(["signup-username-display-pre","signup-username-display-post"].includes(name) ? {
+            displayUsernameNormalization:(value:string)=>{events.push({stage:"username",callback:"display-normalize",value});return value.trim().toUpperCase();},
+            async displayUsernameValidator(value:string){events.push({stage:"username",callback:"display-validate",value});return /^[A-Z ]+$/.test(value);},
+            validationOrder:{displayUsername:name === "signup-username-display-pre" ? "pre-normalization" as const : "post-normalization" as const},
+          } : {}),
+          ...(name === "signup-username-immutable" ? {immutableUsername:true} : {}),
+          ...(name === "signup-username-display-disabled" ? {displayUsername:false} : {}),
+        })].map(plugin=>{if(name === "signup-username-readonly")plugin.schema.user.fields.username.input=false;return plugin;}) : []),
         ...(name === "signup-otp" ? [emailOTP({ overrideDefaultEmailVerification: true,
           async sendVerificationOTP(delivery) { events.push({stage: "otp", ...delivery}); },
         })] : []),

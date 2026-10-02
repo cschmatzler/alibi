@@ -216,7 +216,7 @@ where
             return Ok(None);
         };
         <S::User as SeaOrmUserModel>::Entity::find()
-            .filter(col.eq(username.to_lowercase()))
+            .filter(col.eq(username))
             .one(self.connection())
             .await
             .map_err(map_db_err)
