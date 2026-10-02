@@ -69,7 +69,52 @@ reference dependencies also prevented the existing evidence subprocess owner;
 the frozen dependencies were installed. Both observations remain in
 `/tmp/issue284-harness.log`, rather than weakening either assertion.
 
-This publication is a draft pending the immutable canonical gate and independent
-review. OpenClaw/Crabbox/autoreview/PR helper tools are not installed. The actual
+## Frozen full gate and final composition
+
+The exact original head `185786705507e781439230f28bc7eff25d94eb1e`
+completed the actual canonical command with exit 100:
+`/tmp/issue284-canonical-18578670.log`. Default native 794, optional-feature
+native 845, SQLite fixture 2, required strict/build checks, harness 72/825,
+Axum 36, endpoint checks 3 and inventory checks 2 all passed. The complete SDK
+run passed 1,244 of 1,249 tests with 82,244 assertions. Its five failures were:
+
+- Organization addition's observation 5 had twelve timestamp aliases: two
+  member `createdAt` values and ten retained user session expiration values.
+- Membership-policy observations 6/7 had six member/session timestamp aliases.
+- Generated lifecycle seed 12648430 had only snapshot 22 code/message drift
+  in default, session-no-refresh and session-deferred profiles, assigned to
+  the separately repaired ordinary cache guard #221.
+
+Those actual full-gate failures remain recorded. The stopped canonical did not
+reach later documentation/browser/coverage stages. Independent strict rustdoc
+and the actual Chromium wrapper passed (2 tests, 22 assertions),
+`/tmp/issue284-docs-browser-18578670.log`. T3 preview explicitly reported no
+headless automation host and no retry; the repository Playwright wrapper was
+used. This comparator change contains zero native production changes and makes
+no new clean coverage claim or change to the existing floor.
+
+Final composition is on actual main
+`fb8f659726618c32929d0615ce2790db76b74f28`, including merged #221.
+The complete capability ledger is byte-identical to that parent. The exact
+comparer/owner delta is unchanged. Composed strict TypeScript and all retained
+harness owners passed 72/72, 825 assertions
+(`/tmp/issue284-composed221-typecheck.log`,
+`/tmp/issue284-composed221-harness.log`). The real #205 JWT and OTT consumers,
+with their unchanged full inputs/observations and actual fixture programs,
+both passed, 236 assertions
+(`/tmp/issue284-composed221-real205-consumers3.log`). Their test source was
+copied temporarily into this checkout to use its actual comparer and then
+removed; no consumer fixture/test or native production enters this PR.
+
+The strengthened literal header proof first exposed a genuine registered OTT
+native serializer mismatch: reordered attributes and a synthesized Expires.
+The failure and complete real controls remain in
+`/tmp/issue284-composed221-real205-consumers2.log` and
+`/tmp/issue205-ott-header-real-control.json`. #205 corrected that owning
+serializer using the existing canonical cookie serializer; comparisons were
+unchanged. Full SDK/canonical was not rerun after composition, and these
+focused passes do not turn its recorded full-gate result green.
+
+OpenClaw/Crabbox/autoreview/PR helper tools are not installed. The actual
 repository canonical command is `devenv shell -- bash scripts/check.sh`;
 `devenv test` is a no-op. No unexecuted gate is claimed.
