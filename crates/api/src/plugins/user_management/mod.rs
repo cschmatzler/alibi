@@ -265,6 +265,9 @@ impl UserManagementPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
+        if !self.config.change_email.enabled {
+            return Err(AuthError::bad_request("Change email is disabled"));
+        }
         let projection = change_email_core(&body, &user, &session, &self.config, ctx).await?;
         let mut response =
             AuthResponse::json(200, &better_auth_core::StatusResponse { status: true })?;
@@ -285,6 +288,9 @@ impl UserManagementPlugin {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
+        if !self.config.delete_user.enabled {
+            return Ok(AuthResponse::new(404).with_header("Content-Type", "application/json"));
+        }
         let response = delete_user_core(&body, &user, &session, req, &self.config, ctx).await?;
         let deleted = response.message == "User deleted"
             && !body.token.as_deref().is_some_and(|token| !token.is_empty());
@@ -301,6 +307,13 @@ impl UserManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        if !self.config.delete_user.enabled {
+            return Err(AuthError::Api {
+                status: 404,
+                code: Some("NOT_FOUND".into()),
+                message: "Not found".into(),
+            });
+        }
         let (user, _) = handlers::authoritative_session(req, ctx)
             .await
             .map_err(|_error| AuthError::not_found("Failed to get user info"))?;
@@ -341,18 +354,11 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
     }
 
     fn routes(&self) -> Vec<AuthRoute> {
-        let mut routes = Vec::new();
-        if self.config.change_email.enabled {
-            routes.push(AuthRoute::post("/change-email", "change_email"));
-        }
-        if self.config.delete_user.enabled {
-            routes.push(AuthRoute::post("/delete-user", "delete_user"));
-            routes.push(AuthRoute::get(
-                "/delete-user/callback",
-                "delete_user_callback",
-            ));
-        }
-        routes
+        vec![
+            AuthRoute::post("/change-email", "change_email"),
+            AuthRoute::post("/delete-user", "delete_user"),
+            AuthRoute::get("/delete-user/callback", "delete_user_callback"),
+        ]
     }
 
     async fn on_request(
@@ -362,14 +368,14 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
     ) -> AuthResult<Option<AuthResponse>> {
         match (req.method(), req.path()) {
             // -- change email --
-            (HttpMethod::Post, "/change-email") if self.config.change_email.enabled => {
+            (HttpMethod::Post, "/change-email") => {
                 Ok(Some(self.handle_change_email(req, ctx).await?))
             }
             // -- delete user --
-            (HttpMethod::Post, "/delete-user") if self.config.delete_user.enabled => {
+            (HttpMethod::Post, "/delete-user") => {
                 Ok(Some(self.handle_delete_user(req, ctx).await?))
             }
-            (HttpMethod::Get, "/delete-user/callback") if self.config.delete_user.enabled => {
+            (HttpMethod::Get, "/delete-user/callback") => {
                 Ok(Some(self.handle_delete_user_callback(req, ctx).await?))
             }
             _ => Ok(None),

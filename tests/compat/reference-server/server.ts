@@ -1005,6 +1005,9 @@ const server = Bun.serve({
 
 
       for (const [name,instance] of openApiInstances) {
+        if(name==="openapi-custom-schema" && url.pathname===`/__test/profiles/${name}/api/auth/__test/server-document`) {
+          return new Response(JSON.stringify(await instance.api.serverDocument()), {headers:{"content-type":"application/json"}});
+        }
         if(url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) return instance.handler(request);
       }
       for(const [name,profile] of ottProfiles) {

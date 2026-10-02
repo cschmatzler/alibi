@@ -235,6 +235,10 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
         Vec::new()
     }
     async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
+        ctx.set_metadata(
+            "last-login-method.store-in-database",
+            serde_json::json!(self.config.store_in_database),
+        );
         if !self.config.store_in_database {
             return Ok(());
         }

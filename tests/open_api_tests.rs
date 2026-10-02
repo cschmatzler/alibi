@@ -57,6 +57,8 @@ impl AuthPlugin<AppSchema> for AppPlugin {
             AuthRoute::get("/items/:id", "ignored_dispatch_id"),
             AuthRoute::post("/items/:id", "ignored_post_id"),
             AuthRoute::get("/internal", "internal"),
+            AuthRoute::get("/list-sessions", "private_sessions"),
+            AuthRoute::get("/get-session", "application_session"),
         ]
     }
     fn openapi_metadata(&self, _ctx: &AuthInitContext<AppSchema>) -> PluginOpenApiMetadata {
@@ -77,6 +79,22 @@ impl AuthPlugin<AppSchema> for AppPlugin {
             ..Default::default()
         };
         PluginOpenApiMetadata::default()
+            .endpoint(
+                HttpMethod::Get,
+                "/list-sessions",
+                OpenApiEndpoint {
+                    server_only: true,
+                    ..Default::default()
+                },
+            )
+            .endpoint(
+                HttpMethod::Get,
+                "/get-session",
+                OpenApiEndpoint {
+                    operation_id: Some("applicationSession".into()),
+                    ..Default::default()
+                },
+            )
             .endpoint(HttpMethod::Get, "/items/:id", get)
             .endpoint(HttpMethod::Post, "/items/:id", post)
             .endpoint(
@@ -104,6 +122,15 @@ impl AuthPlugin<AppSchema> for AppPlugin {
         req: &AuthRequest,
         _ctx: &AuthContext<AppSchema>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.method() == &HttpMethod::Get && req.path() == "/list-sessions" {
+            return Ok(Some(AuthResponse::json(200, &json!({"private":true}))?));
+        }
+        if req.method() == &HttpMethod::Get && req.path() == "/get-session" {
+            return Ok(Some(AuthResponse::json(
+                200,
+                &json!({"source":"application"}),
+            )?));
+        }
         if req.method() == &HttpMethod::Get && req.path().starts_with("/items/") {
             return Ok(Some(AuthResponse::json(
                 200,

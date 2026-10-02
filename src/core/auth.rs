@@ -55,6 +55,10 @@ impl<S: AuthSchema> std::fmt::Debug for AuthBuilder<S> {
 }
 
 impl<S: AuthSchema> AuthBuilder<S> {
+    /// Create an instance builder with the core API installed at build time.
+    /// Email/password and username authentication remain disabled until an
+    /// explicit email/password plugin enables them. Explicit core plugins keep
+    /// their configuration; custom plugins keep their dispatch priority.
     #[must_use]
     pub fn new(config: AuthConfig) -> Self {
         Self {
@@ -181,6 +185,31 @@ impl<S: AuthSchema> AuthBuilder<S> {
                     &self.config,
                     "session_token",
                 );
+        }
+
+        // Core modules exist on every instance. Explicit modules keep their own
+        // configuration and priority; defaults never enable credential login.
+        let defaults: Vec<Box<dyn AuthPlugin<S>>> = vec![
+            Box::new(crate::plugins::SessionManagementPlugin::new()),
+            Box::new(
+                crate::plugins::EmailPasswordPlugin::new()
+                    .enabled(false)
+                    .enable_username(false),
+            ),
+            Box::new(crate::plugins::PasswordManagementPlugin::new()),
+            Box::new(crate::plugins::EmailVerificationPlugin::new()),
+            Box::new(crate::plugins::AccountManagementPlugin::new()),
+            Box::new(crate::plugins::OAuthPlugin::new()),
+            Box::new(crate::plugins::UserManagementPlugin::new()),
+        ];
+        for plugin in defaults {
+            if !self
+                .plugins
+                .iter()
+                .any(|installed| installed.name() == plugin.name())
+            {
+                self.plugins.push(plugin);
+            }
         }
 
         let config = Arc::new(self.config);
@@ -555,6 +584,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                 .into_iter()
                 .find(|route| {
                     route.method == internal_req.method
+                        && !self.openapi.is_server_only(plugin.name(), route)
                         && route_path_matches(&route.path, internal_req.path())
                 })
                 .map(|route| (plugin, route))
@@ -624,11 +654,12 @@ impl<S: AuthSchema> BetterAuth<S> {
             return Ok(response);
         }
 
-        // Try each plugin until one handles the request
-        for plugin in &self.plugins {
-            if let Some(response) = plugin.on_request(&internal_req, &self.context).await? {
-                return Ok(response);
-            }
+        // Dispatch only the resolved HTTP endpoint. A server-only handler from
+        // another plugin may share this path and must never receive the call.
+        if let Some((plugin, _route)) = plugin_route
+            && let Some(response) = plugin.on_request(&internal_req, &self.context).await?
+        {
+            return Ok(response);
         }
 
         // No handler found
