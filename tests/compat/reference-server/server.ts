@@ -1,3 +1,4 @@
+import { linkedinProviderFixture } from "./fixtures/linkedin-provider-fixture";
 #!/usr/bin/env bun
 
 import { Database } from "bun:sqlite";
@@ -616,6 +617,7 @@ const dropboxFixture = dropboxProviderFixture(authOptions);
 const facebookFixture = facebookProviderFixture(authOptions);
 const figmaFixture = figmaProviderFixture(authOptions);
 const huggingfaceFixture = huggingfaceProviderFixture(authOptions);
+const linkedinFixture = linkedinProviderFixture(authOptions);
 const kakaoFixture = kakaoProviderFixture(authOptions);
 const kickFixture = kickProviderFixture(authOptions);
 const atlassianFixture = atlassianProviderFixture(authOptions);
@@ -654,6 +656,7 @@ for (const [path, instance] of figmaFixture.profiles) {
 for (const [path, instance] of huggingfaceFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
+for (const [path, instance] of linkedinFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of kakaoFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
@@ -1626,6 +1629,8 @@ const server = Bun.serve({
       if (huggingfaceControl) {
         return huggingfaceControl;
       }
+      const linkedinControl = await linkedinFixture.handle(request);
+      if (linkedinControl) return linkedinControl;
       const kakaoControl = await kakaoFixture.handle(request);
       if (kakaoControl) {
         return kakaoControl;
@@ -2466,6 +2471,7 @@ const server = Bun.serve({
         facebookFixture.reset();
         figmaFixture.reset();
         huggingfaceFixture.reset();
+        linkedinFixture.reset();
         kakaoFixture.reset();
         kickFixture.reset();
         atlassianFixture.reset();

@@ -18,7 +18,7 @@ use fixtures::{
     custom_session_fixture, device_fixture, dispatch_fixture, dropbox_provider_fixture,
     facebook_provider_fixture, figma_provider_fixture, google_id_token_fixture,
     huggingface_provider_fixture, invitation_fixture, jwt_fixture, jwt_keyring_fixture,
-    jwt_remote_fixture, kakao_provider_fixture, kick_provider_fixture, last_login_method_fixture,
+    jwt_remote_fixture, linkedin_provider_fixture, kakao_provider_fixture, kick_provider_fixture, last_login_method_fixture,
     lifecycle_fixture, multiple_session_fixture, oauth_proxy_fixture, one_tap_fixture,
     one_time_token_fixture, open_api_fixture, organization_creation_fixture,
     organization_creation_hooks_fixture, organization_deletion_hooks_fixture,
@@ -889,6 +889,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         figma_provider_fixture::router(&config, database.clone()).await?;
     let (huggingface_router, huggingface_reset) =
         huggingface_provider_fixture::router(&config, database.clone()).await?;
+    let (linkedin_router, linkedin_reset) = linkedin_provider_fixture::router(&config, database.clone()).await?;
     let (kakao_router, kakao_reset) =
         kakao_provider_fixture::router(&config, database.clone()).await?;
     let (kick_router, kick_reset) =
@@ -1397,6 +1398,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let facebook_reset=facebook_reset.clone();
                 let figma_reset=figma_reset.clone();
                 let huggingface_reset=huggingface_reset.clone();
+                let linkedin_reset=linkedin_reset.clone();
                 let kakao_reset=kakao_reset.clone();
                 let kick_reset=kick_reset.clone();
                 let atlassian_reset=atlassian_reset.clone();
@@ -1416,6 +1418,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     facebook_reset.reset().await;
                     figma_reset.reset().await;
                     huggingface_reset.reset().await;
+                    linkedin_reset.reset().await;
                     kakao_reset.reset().await;
                     kick_reset.reset().await;
                     atlassian_reset.reset().await;
@@ -2042,6 +2045,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(facebook_router)
         .merge(figma_router)
         .merge(huggingface_router)
+        .merge(linkedin_router)
         .merge(kakao_router)
         .merge(kick_router)
         .merge(atlassian_router)
