@@ -53,7 +53,18 @@ is closed on cancellation or a failed restoration rather than returned with
 altered settings. Migration-ledger insertion remains owned by the migrator
 after this helper returns: failure during rebuilding leaves the new migration
 unapplied, but ledger-insert failure or cancellation after the helper commits
-is an explicit separate driver boundary. PostgreSQL's scoped constraint
+is an explicit separate driver boundary. The installed recovery owner now
+proves this boundary with a genuine SQL ledger veto and deterministic
+cancellation after the real helper returns through an application-owned
+SeaORM MigratorTraitSelf driver. An independent file-database connection
+observes committed schema and preserved application rows with the target
+ledger entry absent. Removing the veto and rerunning AuthMigrator::up
+recognizes already removed references, records exactly one ledger entry, and
+leaves schema/bytes unchanged on a second retry. Connection foreign-key and
+rename settings, unrelated foreign keys, generated columns, indexes, views,
+triggers and CHECK enforcement remain intact. This defines safe retry for
+these reference-removal upgrades, not atomicity of schema plus ledger or of
+arbitrary custom migrations. PostgreSQL's scoped constraint
 removal is transactional and compile-checked; PostgreSQL runtime behavior is
 not claimed. Arbitrary unrecognized constraint definitions fail closed.
 

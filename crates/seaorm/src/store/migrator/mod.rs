@@ -11,6 +11,19 @@ use sea_orm::EntityName;
 use sea_orm::sea_query::IntoIden;
 use sea_orm_migration::prelude::*;
 
+/// Bundled authentication schema migrations.
+///
+/// SQLite reference-removal upgrades own their rebuild transaction so that
+/// foreign-key and rename settings can be restored before returning the
+/// connection. SeaORM records the ledger after that transaction commits. A
+/// ledger-write error or cancellation can therefore leave the schema upgraded
+/// while the migration remains pending. After correcting the ledger-write
+/// failure, rerun `AuthMigrator::up` outside an existing transaction: these
+/// upgrades recognize already removed auth references, preserve application
+/// data/constraints, and allow the driver to record the completed migration.
+/// Do not manually insert a ledger entry or infer completion from an error.
+/// This retry contract concerns the device-code, two-factor and organization
+/// reference-removal upgrades; it is not a cross-migration atomicity guarantee.
 #[derive(Debug)]
 pub struct AuthMigrator;
 
