@@ -413,6 +413,14 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
     let mut settings = config.clone().base_path(&path);
     settings.user.additional_fields = fields("user", mode, &application.events);
     settings.account.additional_fields = fields("account", mode, &application.events);
+    for name in ["password", "accessToken"] {
+        drop(
+            settings
+                .account
+                .additional_fields
+                .insert(name.into(), FieldConfig::new(json!({"type":"string"}))),
+        );
+    }
     settings.session.additional_fields = fields("session", mode, &application.events);
     if mode == "cached" {
         settings.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {

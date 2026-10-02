@@ -144,9 +144,6 @@ impl<M: AuthUser> AuthUser for AdapterRecord<M> {
     fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         Some(&self.output)
     }
-    fn adapter_output(&self) -> Option<&FieldOutput> {
-        Some(&self.output.values)
-    }
     delegate!(additional_fields, FieldOutput);
     delegate!(id, Cow<'_, str>);
     delegate!(email, Option<&str>);
@@ -175,9 +172,6 @@ impl<M: AuthSession> AuthSession for AdapterRecord<M> {
     fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         Some(&self.output)
     }
-    fn adapter_output(&self) -> Option<&FieldOutput> {
-        Some(&self.output.values)
-    }
     delegate!(additional_fields, FieldOutput);
     delegate!(id, Cow<'_, str>);
     delegate!(expires_at, DateTime<Utc>);
@@ -196,9 +190,6 @@ impl<M: AuthSession> AuthSession for AdapterRecord<M> {
 impl<M: AuthAccount> AuthAccount for AdapterRecord<M> {
     fn adapter_snapshot(&self) -> Option<&AdapterOutput> {
         Some(&self.output)
-    }
-    fn adapter_output(&self) -> Option<&FieldOutput> {
-        Some(&self.output.values)
     }
     delegate!(additional_fields, FieldOutput);
     delegate!(id, Cow<'_, str>);

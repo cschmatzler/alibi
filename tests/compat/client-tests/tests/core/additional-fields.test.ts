@@ -90,6 +90,11 @@ compatScenario("additional output transforms await real adapter results retain h
   expect(updatedState.sessions.find(row => row.userId === user.id)).toMatchObject({ label: "session-initial", hidden: "session-secret", omitted: "drop" });
   const updatedHook = updatedState.events.find(event => event.phase === "after" && event.entity === "user" && event.action === "update" && z.record(z.string(), z.unknown()).parse(event.record).id === user.id);
   expect(updatedHook).toMatchObject({ omittedPresent: true, omittedUndefined: true, record: { name: "Updated output", label: { stored: "user-initial" }, hidden: "USER-SECRET", readonly: "updated:bound" } });
+  const listed=await owner.client.listAccounts(); expect(listed.error).toBeNull();
+  const listedAccounts=z.array(z.object({userId:z.literal(user.id),providerId:z.literal("credential"),label:z.object({stored:z.literal("account-initial")})}).passthrough()).parse(listed.data); expect(listedAccounts).toHaveLength(1);
+  for(const account of listedAccounts) for(const name of ["password","accessToken","refreshToken","idToken","accessTokenExpiresAt","refreshTokenExpiresAt","hidden","omitted","private_column"]) expect(account).not.toHaveProperty(name);
+  const listedState=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=output"}); expect(listedState.status).toBe(200); const listedPhysical=stateSchema.parse(listedState.body);
+  for(const key of ["users","accounts","sessions","verifications"] as const) expect(listedPhysical[key]).toEqual(updatedState[key]);
   const rejected = ctx.actor("rejected-output", "additional-output-fields");
   const failedEmail = ctx.uniqueEmail("rejected-output");
   const rejectedInput = { email: failedEmail, name: "Rejected output", password: "Password123!", label: "throw" };
@@ -99,11 +104,11 @@ compatScenario("additional output transforms await real adapter results retain h
   const failedState = stateSchema.parse(failed.body);
   expect(failedState.users.some(row => row.email === failedEmail)).toBe(false);
   for (const key of ["users", "accounts", "sessions", "verifications"] as const) expect(failedState[key]).toEqual(updatedState[key]);
-  expect(failedState.events.filter(event => event.phase === "after")).toEqual(updatedState.events.filter(event => event.phase === "after"));
-  expect(failedState.events.slice(updatedState.events.length)).toContainEqual({ phase: "output", entity: "user", field: "label", value: "throw" });
+  expect(failedState.events.filter(event => event.phase === "after")).toEqual(listedPhysical.events.filter(event => event.phase === "after"));
+  expect(failedState.events.slice(listedPhysical.events.length)).toContainEqual({ phase: "output", entity: "user", field: "label", value: "throw" });
   for (const key of ["users", "accounts", "sessions"] as const) expect(failedState[key].filter(row => row[key === "users" ? "id" : "userId"] === foreignId)).toEqual(original[key]);
-  return { foreignSignup: ctx.snapshot(foreignSignup), before: await observedState(before.body), signup: ctx.snapshot(signup), created: await observedState(created.body), session: ctx.snapshot(session), update: ctx.snapshot(update), updatedSession: ctx.snapshot(updatedSession), updated: await observedState(updated.body), failedSignup: ctx.snapshot(failedSignup), failed: await observedState(failed.body) };
-}, ["POST /sign-up/email", "GET /get-session", "POST /update-user"]);
+  return { foreignSignup: ctx.snapshot(foreignSignup), before: await observedState(before.body), signup: ctx.snapshot(signup), created: await observedState(created.body), session: ctx.snapshot(session), update: ctx.snapshot(update), updatedSession: ctx.snapshot(updatedSession), updated: await observedState(updated.body), listed:ctx.snapshot(listed),listedState:await observedState(listedState.body), failedSignup: ctx.snapshot(failedSignup), failed: await observedState(failed.body) };
+}, ["POST /sign-up/email", "GET /get-session", "POST /update-user", "GET /list-accounts"],30_000);
 
 compatScenario("additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors", async ctx => {
   const foreign = ctx.actor("policy-foreign", "additional-policy-fields");

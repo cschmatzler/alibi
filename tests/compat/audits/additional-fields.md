@@ -275,3 +275,22 @@ strict, actual fixture build and client type checking in
 `/tmp/issue184-refresh-after-owner.log`, terminal 0, on the cookie-composed
 checkpoint plus this repair. Account output, schema documentation and complete
 canonical/coverage proofs remain outstanding.
+
+
+The existing transformed-output owner also owns list-accounts projection: the
+real SDK must retain declared changed-type account output while removing all
+six credential fields even when the application explicitly marks password and
+accessToken returned. The complete physical owner/foreign rows and trusted
+adapter callbacks remain observed. Existing account DTO owners cannot detect
+arbitrary additional output or configured credential re-exposure; no new
+production seam or authentication fixture is needed.
+
+The account before owner completed Source and failed on Native's missing changed-type
+list-accounts label (`/tmp/issue184-account-before-owner.log`, terminal 1,
+161 assertions). The record-aware list keeps the physical session/user ownership
+boundary, projects only declared account output, and unconditionally removes all
+six credentials even when configured returned. The redundant new map accessor
+was removed; all projections consume the single immutable adapter snapshot.
+Optional strict checks, fixture build, client types and all six SDK owners passed
+984 assertions (`/tmp/issue184-account-after-owner.log`, terminal 0). Schema and
+mapped-profile projection proofs remain outstanding.

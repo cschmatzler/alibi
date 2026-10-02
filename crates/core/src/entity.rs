@@ -27,10 +27,6 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
     fn retained_user_view(&self) -> Option<&crate::UserView> {
         None
     }
-    /// Declared transformed output retained by a record-aware adapter read.
-    fn adapter_output(&self) -> Option<&crate::field_policy::FieldOutput> {
-        None
-    }
     /// Physical application/plugin values; public policy is applied separately.
     fn additional_fields(&self) -> crate::field_policy::FieldOutput {
         crate::field_policy::FieldOutput::new()
@@ -81,9 +77,6 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
     fn retained_session_view(&self) -> Option<&crate::SessionView> {
         None
     }
-    fn adapter_output(&self) -> Option<&crate::field_policy::FieldOutput> {
-        None
-    }
     fn additional_fields(&self) -> serde_json::Map<String, serde_json::Value> {
         serde_json::Map::new()
     }
@@ -106,9 +99,6 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
 /// Trait representing an account entity (OAuth provider linking).
 pub trait AuthAccount: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
     fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
-        None
-    }
-    fn adapter_output(&self) -> Option<&crate::field_policy::FieldOutput> {
         None
     }
     fn additional_fields(&self) -> crate::field_policy::FieldOutput {

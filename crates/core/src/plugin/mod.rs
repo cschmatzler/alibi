@@ -738,7 +738,10 @@ impl<S: AuthSchema> AuthContext<S> {
             .as_ref()
             .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
         let physical = user.additional_fields();
-        let values = user.adapter_output().unwrap_or(&physical);
+        let values = user
+            .adapter_snapshot()
+            .map(crate::AdapterOutput::values)
+            .unwrap_or(&physical);
         for (name, field) in fields {
             drop(view.extension_fields.remove(name));
             if (!public || field.returned)
@@ -768,6 +771,55 @@ impl<S: AuthSchema> AuthContext<S> {
             .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
         let output = record.raw_snapshot().filter_returned(fields);
         crate::AdapterRecord::with_output(record.into_stored(), output)
+    }
+
+    /// Public account output retains declared adapter projections and always
+    /// removes credentials, including explicitly returned additional fields.
+    ///
+    /// # Errors
+    /// Returns an error when the canonical account view cannot be serialized.
+    pub fn account_view(
+        &self,
+        account: &impl crate::entity::AuthAccount,
+    ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+        let serde_json::Value::Object(mut view) =
+            serde_json::to_value(crate::wire::AccountView::from(account))?
+        else {
+            return Err(AuthError::internal("Account view must be an object"));
+        };
+        let registered = self.extensions.get::<crate::field_policy::AccountFields>();
+        let fields = registered
+            .as_ref()
+            .map_or(&self.config.account.additional_fields, |fields| &fields.0.0);
+        let physical = account.additional_fields();
+        let values = account
+            .adapter_snapshot()
+            .map(crate::AdapterOutput::values)
+            .unwrap_or(&physical);
+        for (name, field) in fields {
+            drop(view.remove(name));
+            if field.returned
+                && let Some(value) = values.get(name).or_else(|| {
+                    field
+                        .field_name
+                        .as_ref()
+                        .and_then(|physical| values.get(physical))
+                })
+            {
+                drop(view.insert(name.clone(), value.clone()));
+            }
+        }
+        for credential in [
+            "accessToken",
+            "refreshToken",
+            "idToken",
+            "accessTokenExpiresAt",
+            "refreshTokenExpiresAt",
+            "password",
+        ] {
+            drop(view.remove(credential));
+        }
+        Ok(view)
     }
 
     pub fn session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
@@ -805,7 +857,7 @@ impl<S: AuthSchema> AuthContext<S> {
             .map_or(&self.config.session.additional_fields, |fields| &fields.0);
         view.extension_fields
             .retain(|name, _| fields.contains_key(name));
-        if let Some(output) = session.adapter_output() {
+        if let Some(output) = session.adapter_snapshot().map(crate::AdapterOutput::values) {
             for name in fields.keys() {
                 drop(view.extension_fields.remove(name));
                 if let Some(value) = output.get(name) {

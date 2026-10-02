@@ -60,7 +60,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
         events.push({ phase: "version", user, session, userOmittedPresent: Object.hasOwn(user,"omitted"), userOmittedUndefined: user.omitted === undefined, sessionOmittedPresent: Object.hasOwn(session,"omitted"), sessionOmittedUndefined: session.omitted === undefined });
         await Promise.resolve(); return `fields:${(user.label as {stored:string}).stored}:${(session.label as {stored:string}).stored}`;
       } } } : {}) },
-      account: { ...base.account, modelName: "app_account", additionalFields: fields("account") },
+      account: { ...base.account, modelName: "app_account", additionalFields: {...fields("account"),password:{type:"string",required:false,returned:true},accessToken:{type:"string",required:false,returned:true}} },
       verification: { modelName: "app_verification" },
       ...(mode === "cached" ? { hooks: { after: createAuthMiddleware(async ctx => {
         const record = ctx.context.newSession;
