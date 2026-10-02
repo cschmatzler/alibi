@@ -53,6 +53,38 @@ There is no missing constructor/404 or fabricated admission as before evidence.
 Independent production review against the installed Figma factory and Basic
 helpers found no concrete authorization, ownership or protocol concern.
 
-Capability evidence and broad strict, canonical, docs/browser and clean coverage
-gates remain pending on the final composed immutable head. No Source/comparer edit,
-dependency patch or hook bypass is authorized.
+Final immutable program head 568ff991cd1fb7a260c608b1aeaa5ea8de02a869 is
+composed on actual main 6803cbef. The rebase preserves all Facebook providers,
+profiles and evidence; Figma production and owners match the independently
+reviewed program. The final audit-only commit does not change executable inputs.
+
+The canonical `devenv shell -- bash scripts/check.sh` run exits 100
+(`/tmp/issue145-main144-final-canonical.log`): default and optional strict Clippy,
+Rustls check, both format checks, all 794 default and 845 optional native tests,
+fixture tests, TypeScript and 71 harness tests pass. Actual full SDK run passes
+1,244/1,249 owners with 82,244 assertions, including all 40 Figma owners. The five
+remaining failures are two organization clock comparisons and three generated
+seed12648430 snapshot22 UNAUTHORIZED/AUTHENTICATION_REQUIRED comparisons owned
+by #221. The role-addition failure is exactly observation5 member.createdAt in
+its after receipt and result body. The membership-policy failure is exactly
+observation7 snapshot.members7 and response createdAt plus usersBefore/usersAfter
+session3 expiresAt. These are outside Figma; no claim is made that every clock
+path has an independently failing parent proof. The full canonical run is not green.
+
+Warning-free docs and both genuine Chromium browser owners pass, 22 assertions
+(`/tmp/issue145-main144-docs-browser.log`, exit 0). A separate clean instrumented
+run passes all 845 native tests and completes all five SDK groups with
+--no-fail-fast; four groups pass and the JWT group fails existing keyring clock
+comparisons (`/tmp/issue145-main144-clean-coverage.log`, exit 100). Eighteen
+createdAt/expiresAt aliases in legacy, manual and recovered keyring events and
+physical keys differ by approximately 2.7 seconds. This failure remains recorded,
+without an exact before counterfactual for all eighteen paths. The complete
+unchanged report then passes the existing 75% floor at 31,284/40,535 native lines
+(77.177748%; `/tmp/issue145-main144-coverage-report.log`, exit 0). A passing floor
+is distinct from the nonzero instrumented SDK suite; no repeat-until-green claim.
+
+All 4,285 parent capability cells retain their original order. Append 187 Figma
+cells from 38 actual successful Source/native scenarios; every new cell is
+verified against the final canonical evidence directory. Foreign setup and
+misleading success labels on redirected negative callbacks are excluded. No
+Source/comparer edit, dependency patch, lint suppression or hook bypass.
