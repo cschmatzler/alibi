@@ -89,12 +89,10 @@ Evidence:
   unused header insertion); its five runtime tests pass.
 
 This evidence covers stateful SQLite TEXT, REAL and JSON application fields.
-Secondary-storage/stateless fallback, output transforms, onUpdate adapter
-callbacks, asynchronous validators, other backend affinities and every arbitrary
-application column type are not proved here. New update hooks apply to configured
-field updates; older expiry-update hook branches are not claimed equivalent.
-Cookie-cache support is an existing wider session dependency and is not claimed
-by these profiles. Default OpenAPI completeness remains open until this endpoint
+Secondary-storage/stateless fallback, other backend affinities and every arbitrary
+application column type are not proved here. Output transforms, onUpdate adapter
+callbacks, asynchronous validators, expiry-update hook branches and cookie-cache
+interactions are established by the additional #223 profile evidence below. Default OpenAPI completeness remains open until this endpoint
 and configured-field metadata are integrated with the generated document proof.
 The 2FA disable replacement helper must preserve trusted additional_fields by
 collecting current stored fields into FieldValues; the coordinator owns that
@@ -122,3 +120,30 @@ requires both custom-schema scenarios plus default validation/auth/state proof
 in the shared inventory without removing earlier evidence. Final integrated gate passes: 277 SDK scenarios / 8,550 assertions, 37 harness tests /
 210 assertions, two Chromium tests / 22 assertions and 78.97% source lines
 (24,668 / 31,238). This proves the stateful SQLite slice rather than every storage mode.
+
+## Remaining projection and update hook interactions (#223)
+
+The actual `additional-cached-fields` SQLite application profile now owns
+configured update response versus compact-cache and physical readback, omitted
+`onUpdate` fields versus explicit updates, signed browser-session preference,
+foreign/sibling preservation, and password-replacement snapshots after an update.
+The additional async-validation profile invokes session validators with raw
+Infinity and negative zero, rejects promises before any binding, and retains the
+raw callback observations as explicit numeric sentinels.
+
+The same physical profile runs configured updates and due expiry renewals through
+mutation, veto, ordinary before-error, API before-error, after-error, output-error,
+and row-deletion branches. It observes real callbacks and database rows: before
+errors/veto leave the row unchanged, after/output errors retain committed writes,
+and deletion clears authentication cookies. A missing row invokes the new
+`SeaOrmHooks::after_update_session_missing` callback after successful before hooks;
+a veto does not. Adapter transforms and `onUpdate` run even when a before hook
+removed the target row. This remains stateful SQLite evidence.
+
+The baseline cache regression returned the old `session-initial` label after a
+successful configured update stored `configured-update`. Updates now publish
+through the existing issuance/cache lifecycle. Ordinary database callback errors
+abort completed request hooks while explicit API errors retain their response.
+Password replacement also honors the actual signed browser-session preference.
+Collection projections used during replacement await row callbacks concurrently
+in source order, retaining physical token and owner authority throughout.

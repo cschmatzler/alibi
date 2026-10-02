@@ -492,11 +492,15 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         &self,
         user_id: &str,
     ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
-        let mut records = Vec::new();
-        for model in self.get_user_sessions(user_id).await? {
-            records.push(self.session_record(model).await?);
-        }
-        Ok(records)
+        // The adapter projects collection rows concurrently, while preserving
+        // their result order. Awaited application callbacks observe that schedule.
+        futures_util::future::try_join_all(
+            self.get_user_sessions(user_id)
+                .await?
+                .into_iter()
+                .map(|model| self.session_record(model)),
+        )
+        .await
     }
 
     async fn refresh_session_record(

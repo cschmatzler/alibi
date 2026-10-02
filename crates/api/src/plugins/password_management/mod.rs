@@ -236,9 +236,32 @@ impl PasswordManagementPlugin {
 
         // Set session cookie if a new session was created
         if let Some(token) = new_token {
-            let cookie_header =
-                better_auth_core::utils::cookie_utils::create_session_cookie(&token, &ctx.config);
-            Ok(auth_response.with_header("Set-Cookie", cookie_header))
+            use better_auth_core::utils::cookie_utils::{
+                create_session_cookie_with_max_age, create_session_like_cookie,
+                related_cookie_name, sign_cookie_value, verify_cookie_value,
+            };
+            let preference = related_cookie_name(&ctx.config, "dont_remember");
+            let dont_remember = super::helpers::get_cookie(req, &preference)
+                .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+                .is_some_and(|value| !value.is_empty());
+            let cookie_header = create_session_cookie_with_max_age(
+                Some(&token),
+                (!dont_remember).then(|| ctx.config.session.expires_in.num_seconds()),
+                &ctx.config,
+            );
+            let mut response = auth_response.with_header("Set-Cookie", cookie_header);
+            if dont_remember {
+                response.headers.append(
+                    "Set-Cookie",
+                    create_session_like_cookie(
+                        &preference,
+                        &sign_cookie_value("true", &ctx.config.secret),
+                        None,
+                        &ctx.config,
+                    ),
+                );
+            }
+            Ok(response)
         } else {
             Ok(auth_response)
         }

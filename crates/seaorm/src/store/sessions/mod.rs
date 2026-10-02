@@ -128,15 +128,19 @@ where
                 return Ok(None);
             }
         }
+        fields.apply_adapter_transforms_async().await?;
         let mut query = <S::Session as SeaOrmSessionModel>::Entity::find()
             .filter(S::Session::token_column().eq(token));
         if expires_at.is_some() {
             query = query.filter(S::Session::active_column().eq(true));
         }
         let Some(model) = query.one(self.connection()).await.map_err(map_db_err)? else {
+            for hook in self.hooks() {
+                hook.after_update_session_missing(token, &hook_context)
+                    .await?;
+            }
             return Ok(None);
         };
-        fields.apply_adapter_transforms_async().await?;
         let mut active = model.into_active_model();
         let backend = self.connection().get_database_backend();
         if !fields.is_empty() {
@@ -152,7 +156,13 @@ where
         S::Session::set_updated_at(&mut active, Utc::now());
         let session = match active.update(self.connection()).await {
             Ok(session) => session,
-            Err(sea_orm::DbErr::RecordNotUpdated) => return Ok(None),
+            Err(sea_orm::DbErr::RecordNotUpdated) => {
+                for hook in self.hooks() {
+                    hook.after_update_session_missing(token, &hook_context)
+                        .await?;
+                }
+                return Ok(None);
+            }
             Err(error) => return Err(map_db_err(error)),
         };
         for hook in self.hooks() {

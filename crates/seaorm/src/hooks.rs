@@ -121,6 +121,16 @@ pub trait SeaOrmHooks<S: AuthSchema>: Send + Sync {
         Ok(HookControl::Continue)
     }
 
+    /// Observe an update that ran its before hooks but found no persisted row.
+    /// A before-hook veto does not invoke this callback.
+    async fn after_update_session_missing(
+        &self,
+        _token: &str,
+        _ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<()> {
+        Ok(())
+    }
+
     async fn after_update_session(
         &self,
         _session: &S::Session,

@@ -23,11 +23,11 @@ use better_auth_core::{
     store::{AdapterAfterHook, AdapterEvent, AuthStore},
     utils::json::JsValue,
 };
-use better_auth_seaorm::SeaOrmStore;
 use better_auth_seaorm::sea_orm::{
     ConnectionTrait, Database, DatabaseConnection, EntityTrait, Schema,
 };
 use better_auth_seaorm::store::entities::verification;
+use better_auth_seaorm::{HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -147,10 +147,7 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
                         .expect("application receipts")
                         .push(json!({"phase":"output","entity":entity,"field":name,"value":value}));
                     tokio::task::yield_now().await;
-                    if entity == "user"
-                        && name == "label"
-                        && value.as_ref().and_then(Value::as_str) == Some("throw")
-                    {
+                    if name == "label" && value.as_ref().and_then(Value::as_str) == Some("throw") {
                         return Err(AuthError::internal("application output failed"));
                     }
                     Ok(match name {
@@ -208,6 +205,14 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
                 });
         }
         drop(fields.insert("readonly".into(), readonly));
+    }
+    if entity == "session" && mode == "async-validation" {
+        let events = events.clone();
+        let label = FieldConfig::new(json!({"type":"string"})).default_value(json!("session-initial")).validate_async(move |value| {
+            events.lock().expect("application receipts").push(json!({"phase":"validation","entity":"session","field":"label","value":if matches!(&value,JsValue::Number(number) if *number==0.0) { json!(0) } else { serde_json::to_value(&value).expect("application value") },"negativeZero":matches!(&value,JsValue::Number(number) if *number==0.0 && number.is_sign_negative()),"infinite":matches!(&value,JsValue::Number(number) if !number.is_finite())}));
+            async move { Ok(value) }
+        });
+        drop(fields.insert("label".into(), label));
     }
     if entity == "user" && matches!(mode, "policy" | "async-validation") {
         let mut label = FieldConfig::new(json!({"type":"string"})).field_name("user_label");
@@ -337,9 +342,9 @@ impl AuthPlugin<ApplicationSchema> for Application {
             self.events.lock().expect("application receipts").push(json!({
                 "phase":"completed", "path":request.path(), "record":record,
                 "userOmittedPresent":snapshot.as_ref().map(|_| user_output.is_some_and(|output| output.contains_field("omitted"))),
-                "userOmittedUndefined":snapshot.as_ref().map(|_| user_output.is_some_and(|output| output.field_is_undefined("omitted"))),
+                "userOmittedUndefined":snapshot.as_ref().map(|snapshot| snapshot.user().extension_fields.get("omitted").is_none()),
                 "sessionOmittedPresent":snapshot.as_ref().map(|_| session_output.is_some_and(|output| output.contains_field("omitted"))),
-                "sessionOmittedUndefined":snapshot.as_ref().map(|_| session_output.is_some_and(|output| output.field_is_undefined("omitted")))
+                "sessionOmittedUndefined":snapshot.as_ref().map(|snapshot| snapshot.session().extension_fields.get("omitted").is_none())
             }));
         }
         Ok(response)
@@ -416,11 +421,88 @@ impl AdapterAfterHook<ApplicationSchema> for Application {
                 record.raw_snapshot().field_is_undefined("omitted"),
             ),
         };
+        if self.mode == "cached"
+            && entity == "session"
+            && action == "update"
+            && record["label"]["stored"] == "after-error"
+        {
+            return Err(AuthError::internal("application after failed"));
+        }
         let users = usize::from(database.get_user_by_id(&owner).await?.is_some());
         let accounts = database.get_user_accounts(&owner).await?.len();
         let sessions = database.get_user_sessions(&owner).await?.len();
         self.events.lock().expect("application receipts").push(json!({"phase":"after","entity":entity,"action":action,"record":record,"omittedPresent":omitted_present,"omittedUndefined":omitted_undefined,"persisted":{"users":users,"accounts":accounts,"sessions":sessions}}));
         Ok(())
+    }
+}
+#[async_trait::async_trait]
+impl SeaOrmHooks<ApplicationSchema> for Application {
+    async fn after_update_session_missing(
+        &self,
+        _: &str,
+        _: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<()> {
+        if self.mode == "cached" {
+            self.events
+                .lock()
+                .expect("application receipts")
+                .push(json!({"phase":"after","entity":"session","action":"update","record":null}));
+        }
+        Ok(())
+    }
+    async fn before_update_session(
+        &self,
+        token: &str,
+        fields: &mut better_auth::field_policy::FieldValues,
+        _: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        if self.mode != "cached" {
+            return Ok(HookControl::Continue);
+        }
+        use better_auth_seaorm::sea_orm::{ColumnTrait, QueryFilter};
+        self.events
+            .lock()
+            .expect("application receipts")
+            .push(json!({"phase":"before","entity":"session","fields":fields}));
+        let stored = application_session::Entity::find()
+            .filter(application_session::Column::Token.eq(token))
+            .one(&self.database)
+            .await
+            .map_err(db_error)?;
+        let command = fields.get("hidden").and_then(JsValue::as_str).or_else(|| {
+            if fields.get("label").is_none() {
+                stored.as_ref().and_then(|row| row.hidden.as_deref())
+            } else {
+                None
+            }
+        });
+        match command {
+            Some("cancel") => return Ok(HookControl::Cancel),
+            Some("ordinary-error") => return Err(AuthError::internal("application before failed")),
+            Some("api-error") => {
+                return Err(AuthError::Upstream {
+                    status: 403,
+                    code: "APP_DENIED",
+                    message: "Application denied",
+                });
+            }
+            Some("delete") => {
+                application_session::Entity::delete_many()
+                    .filter(application_session::Column::Token.eq(token))
+                    .exec(&self.database)
+                    .await
+                    .map_err(db_error)?;
+            }
+            Some(value @ ("after-error" | "throw")) => {
+                let value = value.to_owned();
+                drop(fields.insert("label".into(), JsValue::String(value)));
+            }
+            Some("mutate") => {
+                drop(fields.insert("label".into(), JsValue::String("hook-updated".into())));
+            }
+            _ => {}
+        }
+        Ok(HookControl::Continue)
     }
 }
 async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Router, Application)> {
@@ -472,7 +554,7 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
         });
     }
     let mut builder = AuthBuilder::<ApplicationSchema>::new(settings.clone())
-        .store(SeaOrmStore::<ApplicationSchema>::new(settings, database))
+        .store(SeaOrmStore::<ApplicationSchema>::new(settings, database).hook(application.clone()))
         .rate_limit(RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new().enable_username(false))
         .plugin(SessionManagementPlugin::new())
@@ -540,6 +622,7 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
 struct RewindInput {
     token: String,
     expires_at: chrono::DateTime<chrono::Utc>,
+    hidden: Option<String>,
 }
 #[derive(Deserialize)]
 struct StateQuery {
@@ -617,6 +700,17 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                         use better_auth_seaorm::sea_orm::{ColumnTrait, QueryFilter};
                         let application = application
                             .ok_or_else(|| AuthError::bad_request("Unknown application"))?;
+                        if let Some(hidden) = input.hidden {
+                            application_session::Entity::update_many()
+                                .col_expr(
+                                    application_session::Column::Hidden,
+                                    better_auth_seaorm::sea_orm::sea_query::Expr::value(hidden),
+                                )
+                                .filter(application_session::Column::Token.eq(&input.token))
+                                .exec(&application.database)
+                                .await
+                                .map_err(db_error)?;
+                        }
                         application_session::Entity::update_many()
                             .col_expr(
                                 application_session::Column::ExpiresAt,

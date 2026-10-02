@@ -17,6 +17,7 @@ workspace = true
 # Asynchronous runtime
 tokio = { workspace = true }
 async-trait = { workspace = true }
+futures-util = { version = "0.3.32", default-features = false, features = ["std"] }
 
 # Serialization
 serde = { workspace = true }
