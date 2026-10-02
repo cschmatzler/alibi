@@ -84,3 +84,24 @@ for(const expiry of [false,true])for(const command of ["mutate","cancel","ordina
   if(command==="cancel"||command==="ordinary-error"||command==="api-error"||command==="throw"||command==="after-error")expect(callbacks).toHaveLength(1);
   return {before,result:ctx.snapshot(result),after:{sessions:after.sessions,callbacks}};
 },["POST /update-session","GET /get-session"]);
+
+compatScenario("session replacement continues after collection rejection while launched callbacks retain deleted physical snapshots",async ctx=>{
+  const owner=ctx.actor("collection-owner","additional-cached-fields"),rejecting=ctx.actor("collection-rejecting","additional-cached-fields"),slow=ctx.actor("collection-slow","additional-cached-fields");
+  const email=ctx.uniqueEmail("collection-owner");expect((await owner.client.signUp.email({email,name:"Collection owner",password:"Password123!"})).error).toBeNull();
+  expect((await rejecting.client.signIn.email({email,password:"Password123!"})).error).toBeNull();expect((await slow.client.signIn.email({email,password:"Password123!"})).error).toBeNull();
+  const rejectedToken=z.string().parse((await rejecting.client.getSession()).data?.session.token),slowToken=z.string().parse((await slow.client.getSession()).data?.session.token);
+  const expiresAt=new Date(Date.now()+86_400_000*6).toISOString();
+  for(const [token,label] of [[rejectedToken,"collection-reject"],[slowToken,"collection-slow"]])expect((await ctx.rawRequest({path:"/__test/additional-fields/rewind-session?profile=cached",method:"POST",json:{token,label,expiresAt}})).status).toBe(200);
+  const read=async()=>{const result=await ctx.rawRequest({path:"/__test/additional-fields/state?profile=cached"});expect(result.status).toBe(200);const state=stateSchema.parse(result.body);state.events=state.events.filter(event=>event.entity!=="account");return state;};
+  const before=await read();
+  expect(before.sessions.find(row=>row.token===rejectedToken)?.label).toBe("collection-reject");expect(before.sessions.find(row=>row.token===slowToken)?.label).toBe("collection-slow");
+  const result=await owner.client.changePassword({currentPassword:"Password123!",newPassword:"Replacement184!",revokeOtherSessions:true});expect(result.error).toBeNull();
+  const replacementToken=z.string().parse(result.data?.token);
+  const pending=await read();expect(pending.sessions.map(row=>row.token)).toEqual([replacementToken]);expect(pending.events.filter(event=>event.phase==="settled")).toEqual([]);
+  expect(pending.events.filter(event=>event.phase==="output"&&event.entity==="session"&&event.value==="collection-slow")).toHaveLength(1);
+  await new Promise(resolve=>setTimeout(resolve,350));
+  const final=await read();
+  expect(final.events.filter(event=>event.phase==="settled")).toEqual([{phase:"settled",entity:"session",field:"label",value:"collection-slow",requestScoped:true}]);expect(final.sessions).toEqual(pending.sessions);
+  // State reads are real HTTP observations; callback receipts remain independently comparable.
+  return {sessions:before.sessions,result:ctx.snapshot(result),pending:pending.events.slice(before.events.length),final:final.events.slice(before.events.length)};
+},["POST /change-password"]);

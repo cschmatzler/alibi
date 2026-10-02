@@ -147,3 +147,16 @@ abort completed request hooks while explicit API errors retain their response.
 Password replacement also honors the actual signed browser-session preference.
 Collection projections used during replacement await row callbacks concurrently
 in source order, retaining physical token and owner authority throughout.
+
+A replacement regression also exercises Source's intentionally swallowed
+collection-projection rejection. A delayed sibling output transform continues
+from its original physical snapshot after the rows are deleted and the HTTP
+response finishes, with the actual request context retained. The initial
+`try_join_all` repair failed this owner by cancelling that callback; the owned
+projection worker returns the first error and leaves launched projections alive.
+Success results preserve row order. The custom operator now binds rewound dates
+as ISO strings, matching the application's real SQLite date columns and allowing
+SQL expiry predicates to observe the intended rows.
+
+Public list-sessions projection is separate #328; these update/replacement
+owners do not establish that endpoint's configured output parity.

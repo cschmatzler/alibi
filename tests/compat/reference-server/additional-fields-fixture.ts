@@ -1,5 +1,6 @@
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
+import { tryGetCurrentAuthEndpointContext } from "@better-auth/core/context";
 import { createAuthMiddleware } from "better-auth/api";
 import { magicLink, openAPI } from "better-auth/plugins";
 import { getMigrations } from "better-auth/db/migration";
@@ -18,7 +19,8 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     const output = (entity: string, field: string) => async (value: unknown) => {
       events.push({ phase: "output", entity, field, value });
       await Promise.resolve();
-      if (field === "label" && value === "throw") throw new Error("application output failed");
+      if(entity === "session" && field === "label" && value === "collection-slow"){await new Promise(resolve=>setTimeout(resolve,200));events.push({phase:"settled",entity,field,value,requestScoped:tryGetCurrentAuthEndpointContext()?.path==="/change-password"});}
+      if (field === "label" && (value === "throw" || value === "collection-reject")) throw new Error("application output failed");
       return field === "hidden" ? String(value).toUpperCase() : field === "omitted" ? undefined : { stored: value };
     };
     const after = (entity: "user" | "account" | "session", action: string) => async (record: Record<string, unknown>) => {
@@ -112,9 +114,10 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
     if (!application) return Response.json({ message: "Unknown application" }, { status: 404 });
     const { database, events } = application;
     if(url.pathname === "/__test/additional-fields/rewind-session") {
-      const {token,expiresAt,hidden}=await request.json() as {token:string;expiresAt:string;hidden?:string};
+      const {token,expiresAt,hidden,label}=await request.json() as {token:string;expiresAt:string;hidden?:string;label?:string};
       if(request.method!=="POST" || typeof token!=="string" || !Number.isFinite(new Date(expiresAt).getTime())) return Response.json({message:"Invalid operator input"},{status:400});
-      database.run("UPDATE app_session SET expiresAt=? WHERE token=?",[new Date(expiresAt).getTime(),token]);
+      database.run("UPDATE app_session SET expiresAt=? WHERE token=?",[new Date(expiresAt).toISOString(),token]);
+      if(label!==undefined)database.run("UPDATE app_session SET label=? WHERE token=?",[label,token]);
       if(hidden!==undefined)database.run("UPDATE app_session SET hidden=? WHERE token=?",[hidden,token]);
     }
     const rows = (table: string) => database.query(`SELECT * FROM ${table}`).all().map(value => {

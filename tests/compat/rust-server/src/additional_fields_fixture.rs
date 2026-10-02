@@ -147,7 +147,11 @@ fn fields(entity: &'static str, mode: &'static str, events: &Events) -> FieldCon
                         .expect("application receipts")
                         .push(json!({"phase":"output","entity":entity,"field":name,"value":value}));
                     tokio::task::yield_now().await;
-                    if name == "label" && value.as_ref().and_then(Value::as_str) == Some("throw") {
+                    if entity == "session" && name == "label" && value.as_ref().and_then(Value::as_str) == Some("collection-slow") {
+                        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+                        events.lock().expect("application receipts").push(json!({"phase":"settled","entity":entity,"field":name,"value":value,"requestScoped":better_auth_core::hooks::current_request_hook_context().is_some_and(|context| context.path.ends_with("/change-password"))}));
+                    }
+                    if name == "label" && matches!(value.as_ref().and_then(Value::as_str),Some("throw"|"collection-reject")) {
                         return Err(AuthError::internal("application output failed"));
                     }
                     Ok(match name {
@@ -342,9 +346,9 @@ impl AuthPlugin<ApplicationSchema> for Application {
             self.events.lock().expect("application receipts").push(json!({
                 "phase":"completed", "path":request.path(), "record":record,
                 "userOmittedPresent":snapshot.as_ref().map(|_| user_output.is_some_and(|output| output.contains_field("omitted"))),
-                "userOmittedUndefined":snapshot.as_ref().map(|snapshot| snapshot.user().extension_fields.get("omitted").is_none()),
+                "userOmittedUndefined":snapshot.as_ref().map(|snapshot| !snapshot.user().extension_fields.contains_key("omitted")),
                 "sessionOmittedPresent":snapshot.as_ref().map(|_| session_output.is_some_and(|output| output.contains_field("omitted"))),
-                "sessionOmittedUndefined":snapshot.as_ref().map(|snapshot| snapshot.session().extension_fields.get("omitted").is_none())
+                "sessionOmittedUndefined":snapshot.as_ref().map(|snapshot| !snapshot.session().extension_fields.contains_key("omitted"))
             }));
         }
         Ok(response)
@@ -623,6 +627,7 @@ struct RewindInput {
     token: String,
     expires_at: chrono::DateTime<chrono::Utc>,
     hidden: Option<String>,
+    label: Option<String>,
 }
 #[derive(Deserialize)]
 struct StateQuery {
@@ -700,6 +705,17 @@ pub(super) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                         use better_auth_seaorm::sea_orm::{ColumnTrait, QueryFilter};
                         let application = application
                             .ok_or_else(|| AuthError::bad_request("Unknown application"))?;
+                        if let Some(label) = input.label {
+                            application_session::Entity::update_many()
+                                .col_expr(
+                                    application_session::Column::Label,
+                                    better_auth_seaorm::sea_orm::sea_query::Expr::value(label),
+                                )
+                                .filter(application_session::Column::Token.eq(&input.token))
+                                .exec(&application.database)
+                                .await
+                                .map_err(db_error)?;
+                        }
                         if let Some(hidden) = input.hidden {
                             application_session::Entity::update_many()
                                 .col_expr(
