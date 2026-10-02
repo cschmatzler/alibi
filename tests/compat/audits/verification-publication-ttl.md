@@ -2,7 +2,8 @@
 
 Issue #302 is a tests-only prerequisite for verification storage issue #174.
 It changes the shared comparer and transport evidence, without native or
-installed Source edits. #174's checkout retains its original comparer.
+installed Source edits. #174 retains its original comparer until this separate
+prerequisite lands.
 
 The installed Better Auth 1.7.6 internal adapter computes a verification TTL as
 `max(floor((expiresAt - Date.now()) / 1000), 0)`. The unchanged Source-source
@@ -66,7 +67,8 @@ assertions, with no clock/Source/fixture patch. The complete harness passed
 78/78 and 1346 assertions before the final physical-cache-deadline assertions
 were added. Its initial 77/78 result was dependency setup (reference
 node_modules absent), repaired by the unchanged frozen-lockfile install.
-Final immutable-head gates are pending. No production-coverage claim is made.
+At that checkpoint immutable-head gates were pending. Final measured results
+are recorded below.
 
 Independent review of44f found a real right-only-field loss in its admitted
 outer/request/before/set dictionaries. Their iteration now uses complete key
@@ -149,4 +151,78 @@ fixture attempt used the existing account's mailbox and genuinely hit Source's
 identity. The second retained run's only comparison differences were two local
 issuer authorization-code literals per mode; paired issuers now use a shared
 cryptographically generated code. Neither setup result is called a production
-regression. Final immutable-head canonical checks are pending.
+regression. Final immutable-head results are recorded below.
+
+The final OTP linkage is restricted to an admitted publication whose actual
+six-digit delivery equals its stored code:0 value. Complete snapshot/raw JSON
+copies and entire exact delivery copies share the existing token bijection;
+the attempt counter and every other field remain literal with key-union and
+presence checks. No general otp property rule was introduced. A separate real
+Source-pair owner uses independent cryptographically generated OTP codes and
+retains complete physical/cache/delivery/window artifacts. Its untouched
+comparer before run fails26 precise code aliases after93 physical/publication
+assertions; final replay of the exact same complete pair reports zero
+differences in /tmp/issue302-independent-otp-before-after.json. The three
+coherent code/counter/foreign-request observer edits preserve the original
+private digest, so their owning-path rejection proves immutable-observer
+integrity rather than isolating each semantic admission guard. Independently
+changed delivery/cache aliases stay unmatched and fail literal comparison;
+unrelated application fields remain literal. The counter implementation also
+compares its component literally. No stronger isolated semantic-control claim
+is made. The original default300/180 owner bodies and every plugin lifetime are intact.
+
+Final production/test-support freeze60a9236624314d5183082eae401734727a6e880c
+is composed on actual main4257f585683f18daabdcbfee6dc78efbe5f5b968. Five
+publication owners pass809 assertions; TypeScript and the complete81-owner
+harness pass1935 assertions.
+
+The earlier immutable25f canonical terminated100 with1445/1451 owners and
+96466 assertions. Six failures were retained: Source24/native32 reset proof
+length (174); ten session-expiry aliases in organization observation5; eighteen
+created/expiry aliases across legacy/manual/recovered keyring observations;
+six attempt/challenge timestamp aliases in trust-cleanup-disabled observation6;
+and the hcaptcha-sitekey and captchafox owners each exceeding their unchanged
+5000ms timeout. The latter reported no decision difference. The timestamp
+paths are observed phase offsets, without a claim that every exact alias was
+independently reproduced on unchanged main. All earlier strict/default793/
+feature845/fixture2/harness80 checks passed; browser/docs/coverage were
+unreached in that run. Its complete log is /tmp/issue302-25f-canonical.log.
+The final60a canonical terminates100 after1457/1460 SDK owners and101508
+assertions, with no publication-owner failure. Exact remaining failures:
+
+- `organization addition trusted role patches are unvalidated and before versus
+  after errors retain exact writes`: eight expiry paths at
+  `observation.5.usersBefore` and `usersAfter`, each under
+  `owner.sessions.0/1.expiresAt` and `target.sessions.0/1.expiresAt`. Source
+ 09:35:58.324–.548 versus Native09:36:01.721–.991 is a3.397–3.443s phase
+ offset. The final run has no foreign alias; earlier25f had ten paths.
+- `two-factor two-factor-skip-verification checks outer and inner trust syntax
+  before deletion and cleanup`: six paths under `observation.observations.6`,
+  `attempts.0` and `challenge.0`, each createdAt/updatedAt/expiresAt. Source
+ 09:42:15.523 versus Native09:42:17.676 is a2.153s offset (expiries ten minutes
+ later). This is a different profile from earlier cleanup-disabled; exact
+ unchanged-parent reproduction of these six paths is not claimed.
+- `expired reset and OTP proofs reject before compromised-password HTTP or
+  original hash callbacks`: only `observation.observations.0.proof.length`,
+ Source24/native32, the separately preserved174 generator repair. All actions,
+ physical/delivery/replay/hash/callback and foreign observations complete
+ before that final length comparison.
+
+Both workspace Clippy matrices, rustls and formatting pass. Default794,
+feature846 and fixture2 native tests, all81 harness owners/1935 assertions,
+TypeScript,36 transport owners and endpoint/coverage contract checks pass
+before the terminal full SDK failure. The canonical does not reach its later
+browser/docs/coverage steps. Independently run strict docs and real Chromium
+2/2 with22 assertions terminate0 in /tmp/issue302-60a-docs-browser.log.
+
+The separately clean complete collector uses this checkout's own
+coverage/target for both CARGO_LLVM_COV_TARGET_DIR and
+BETTER_AUTH_COMPAT_COVERAGE_TARGET_DIR. All846 native tests and all six
+unchanged real instrumented SDK families (account-management, CAPTCHA, JWT,
+OAuth, sessions and user-management) pass, collection exit0. The complete
+fixture-inclusive report measures32931/42540 native lines=77.411848%,
+exceeding the unchanged75% floor with unchanged exclusions. This is a measured
+coverage pass, not a green full canonical claim. Final logs are
+/tmp/issue302-60a-final-canonical.log and
+/tmp/issue302-60a-final-coverage.log. The publication code stays frozen; final
+publication changes only this audit.
