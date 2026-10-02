@@ -132,7 +132,58 @@ substring's save cast is a fixed literal, and public views still omit hashes.
 Ordinary failures do not expose private callback messages. No concrete finding
 was identified; independent root review remains required before merge.
 
-The immutable full canonical result will be recorded after execution.
+The immutable full canonical ran on `cf19e0f3821f337083c9045e746669d040740ab9`
+and completed with exit 100, retained in
+`/tmp/issue204-canonical-cf19e0f3.log`. Strict default/optional workspace
+Clippy, the Rustls feature check, default 794 and optional 845 native tests,
+two fixture tests, TypeScript, 71 harness tests / 754 assertions, and Axum
+36 / endpoint 3 / inventory 2 checks pass. The SDK completes 932 pass / 5 fail /
+937 tests / 69,156 assertions. All 67 API-key owners, including all six new
+owners, pass. The exact remaining failures are:
+
+- `remote JWT configured defaults preserve custom results and application
+  exceptions without local key creation`: only
+  `finalReceipts.events.2.payload.exp` and `.3.payload.exp` differ.
+- `application JWT keyring pinning resolved keys RSA modulus grace corruption
+  and installed rows remain observable`: four `manualState` event/row
+  `createdAt` and `expiresAt` aliases differ, Source 00:31:10.945 versus Native
+  00:31:14.616. The earlier focused keyring failures and passing Source-only
+  control remain as recorded above; a Source-only keyring failure is not claimed.
+- `generated lifecycle seed 12648430 profile default`, `session-no-refresh`,
+  and `session-deferred`: each retains exactly the snapshot 21/22/29
+  code/message paths also observed in earlier main gates.
+
+An unchanged real-clock Source-versus-Source control independently reproduces
+the configured-defaults failure. The first 60 repeats pass 1,680 assertions;
+1,000 bounded ordinary repeats then complete 997 pass / 3 fail / 28,000
+assertions in 7.45 seconds. Each failure has only
+`finalReceipts.events.1/.2/.3.payload.exp` differences, including both exact
+paths from the full gate. No Source, owner or comparator change, fake clock,
+inserted delay, or changed payload is used. Both logs are retained as
+`/tmp/issue204-remote-defaults-source.log` and
+`/tmp/issue204-remote-defaults-source-1000.log`. This counterfactual does not
+remove the measured canonical failure. The generated lifecycle failures are
+also retained; full-suite failure prevented capability adjudication and the
+later documentation/coverage stages.
+An independent comparison of the unchanged committed ledger with the actual
+passing SDK evidence preserves all 3,433 prior cells and their order, loses
+zero, and confirms every one of the 27 appended cells in those real observations.
+
+After that immutable gate terminated, independent review narrowed middleware
+error handling. Ordinary failures are logged and returned as an empty 500 at
+the actual second getter invocation or direct validator invocation. Typed API
+errors keep their response, and unrelated storage, cleanup and principal errors
+are not reclassified as application callback failures. A getter that stops
+returning a key after successful matching retains the actual Source handler's
+ordinary failure. The existing real getter/validator owner remains unchanged.
+Strict default/optional workspace and fixture Clippy/build pass after this
+correction (`/tmp/issue204-callback-boundary-strict.log`), and the complete
+API-key suite plus JWT numeric sibling passes 68/68 / 6,536 assertions
+(`/tmp/issue204-callback-final.log`). These focused passes do not replace the
+earlier immutable full gate with a green claim. The additional code-execution
+review traces JSON/date parsing only to value normalization and membership
+checks, with no executable sink or concrete finding.
+
 The repository owns `devenv shell -- bash scripts/check.sh`; `devenv test` is a
 no-op. The skill's OpenClaw/Crabbox/autoreview/PR helper tools and scripts are not
 installed in this repository, so actual repository checks and independent review

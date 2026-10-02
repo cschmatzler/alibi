@@ -977,11 +977,7 @@ better_auth_core::impl_auth_plugin! {
             req: &AuthRequest,
             ctx: &AuthContext<S>,
         ) -> AuthResult<Option<BeforeRequestAction>> {
-            self.api_key_session(req, ctx).await.map_err(|error| {
-                if error.status_code() >= 500 && !matches!(error, AuthError::Api { .. } | AuthError::Upstream { .. }) {
-                    AuthError::CallbackFailure(Box::new(error))
-                } else { error }
-            })
+            self.api_key_session(req, ctx).await
         }
     }
 }

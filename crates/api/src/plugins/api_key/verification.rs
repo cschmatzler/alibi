@@ -399,9 +399,21 @@ impl ApiKeyPlugin {
         {
             return Ok(None);
         }
-        let (config, key) = self.find_session_key(req, ctx)?.ok_or_else(|| {
-            AuthError::internal("API key getter did not return a key after matching")
-        })?;
+        let (config, key) = match self.find_session_key(req, ctx) {
+            Ok(Some(value)) => value,
+            Ok(None) => {
+                tracing::error!("API key getter did not return a key after matching");
+                return Ok(Some(BeforeRequestAction::Respond(AuthResponse::new(500))));
+            }
+            Err(error)
+                if error.status_code() >= 500
+                    && !matches!(error, AuthError::Api { .. } | AuthError::Upstream { .. }) =>
+            {
+                tracing::error!(error = %error, "API key getter failed");
+                return Ok(Some(BeforeRequestAction::Respond(AuthResponse::new(500))));
+            }
+            Err(error) => return Err(error),
+        };
 
         if f64::from(
             u32::try_from(key.encode_utf16().count())
@@ -413,18 +425,30 @@ impl ApiKeyPlugin {
                 &ApiKeyValidationError::new(ApiKeyErrorCode::InvalidApiKey),
             )?)));
         }
-        if let Some(validator) = &config.custom_api_key_validator
-            && !validator
+        if let Some(validator) = &config.custom_api_key_validator {
+            let valid = match validator
                 .validate(
                     &ApiKeyCallbackContext::new(Some(req), ctx, &config.config_id),
                     &key,
                 )
-                .await?
-        {
-            return Ok(Some(BeforeRequestAction::Respond(AuthResponse::json(
-                403,
-                &ApiKeyValidationError::new(ApiKeyErrorCode::InvalidApiKey),
-            )?)));
+                .await
+            {
+                Ok(valid) => valid,
+                Err(error)
+                    if error.status_code() >= 500
+                        && !matches!(error, AuthError::Api { .. } | AuthError::Upstream { .. }) =>
+                {
+                    tracing::error!(error = %error, "API key validator failed");
+                    return Ok(Some(BeforeRequestAction::Respond(AuthResponse::new(500))));
+                }
+                Err(error) => return Err(error),
+            };
+            if !valid {
+                return Ok(Some(BeforeRequestAction::Respond(AuthResponse::json(
+                    403,
+                    &ApiKeyValidationError::new(ApiKeyErrorCode::InvalidApiKey),
+                )?)));
+            }
         }
         let input = VerifyApiKey {
             key: &key,
