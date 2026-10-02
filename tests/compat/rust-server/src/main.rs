@@ -891,6 +891,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         huggingface_provider_fixture::router(&config, database.clone()).await?;
     let (kakao_router, kakao_reset) =
         kakao_provider_fixture::router(&config, database.clone()).await?;
+    let (line_router, line_reset) =
+        line_provider_fixture::router(&config, database.clone()).await?;
     let (kick_router, kick_reset) =
         kick_provider_fixture::router(&config, database.clone()).await?;
     let (cognito_router, cognito_reset) =
@@ -1417,6 +1419,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     figma_reset.reset().await;
                     huggingface_reset.reset().await;
                     kakao_reset.reset().await;
+                    line_reset.reset().await;
                     kick_reset.reset().await;
                     atlassian_reset.reset().await;
                     apple_reset.reset().await;
@@ -2043,6 +2046,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(figma_router)
         .merge(huggingface_router)
         .merge(kakao_router)
+        .merge(line_router)
         .merge(kick_router)
         .merge(atlassian_router)
         .merge(apple_router)
