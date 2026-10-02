@@ -748,6 +748,7 @@ impl<S: AuthSchema> AuthContext<S> {
         &self,
         req: &AuthRequest,
     ) -> AuthResult<(S::User, crate::wire::SessionView)> {
+        crate::cache::runtime::clear_established_session::<S>(req);
         let (user, session, _) = self.authenticated_session(req, false).await?;
         Ok((user, session))
     }

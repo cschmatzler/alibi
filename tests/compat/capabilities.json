@@ -86,13 +86,17 @@
           "admin revoked session rejects every valid guest operation without changing owned state",
           "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner",
           "admin repeated query fields retain arrays and reject before authentication without selecting a different owner",
-          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners"
+          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners",
+          "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
+          "compact sensitive admin admission rejects genuine API-key virtual authority after physical revocation"
         ],
         "authorization": [
           "admin missing session rejects every valid guest operation without changing owned state",
           "admin tampered session rejects every valid guest operation without changing owned state",
           "admin revoked session rejects every valid guest operation without changing owned state",
-          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners"
+          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners",
+          "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
+          "compact sensitive admin admission rejects genuine API-key virtual authority after physical revocation"
         ],
         "state": [
           "admin missing session rejects every valid guest operation without changing owned state",
@@ -101,7 +105,9 @@
           "admin stored timestamp precision survives official read, update and list without shifting dates",
           "admin queries and permission alternatives validate before auth while supplied roles cannot select another owner",
           "admin repeated query fields retain arrays and reject before authentication without selecting a different owner",
-          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners"
+          "admin official client array filters preserve all operands SQL semantics pagination and authorization without changing owners",
+          "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
+          "compact sensitive admin admission rejects genuine API-key virtual authority after physical revocation"
         ]
       }
     },
@@ -139,11 +145,20 @@
         "success": [
           "api-key CRUD isolates configurations and preserves all-config listing",
           "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
-          "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification"
+          "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification",
+          "compact ordinary API-key list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
         ],
-        "rejection": "api-key list validates pagination and sort direction",
-        "authorization": null,
-        "state": "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions"
+        "rejection": [
+          "api-key list validates pagination and sort direction",
+          "compact ordinary API-key list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "authorization": [
+          "compact ordinary API-key list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "state": [
+          "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
+          "compact ordinary API-key list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ]
       }
     },
     {
@@ -786,7 +801,9 @@
           "device approve flow returns a bearer token",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
         ],
         "rejection": "device approve flow returns a bearer token",
         "authorization": null,
@@ -794,7 +811,9 @@
           "device approve flow returns a bearer token",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
         ]
       }
     },
@@ -1056,7 +1075,13 @@
           "huggingface numeric preferred profile retains original raw account and typed persistence",
           "huggingface numeric subject profile retains original raw account and typed persistence",
           "huggingface public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "huggingface zero name fallback profile retains original raw account and typed persistence"
+          "huggingface zero name fallback profile retains original raw account and typed persistence",
+          "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner",
+          "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP",
+          "compact interaction signed-email verification publishes the original authenticated projection through actual multi-session and JWT hooks",
+          "compact sensitive admin admission rejects genuine API-key virtual authority after physical revocation"
         ],
         "rejection": [
           "api-key shared headers select the first configured session",
@@ -1189,7 +1214,11 @@
           "client IP empty configured headers persists authoritative session context",
           "client IP zero IPv6 prefix persists authoritative session context",
           "api-key application callback errors preserve real request inputs and each explicit implicit and HTTP catch boundary",
-          "api-key installed configuration and references resolve the actual principal after admitted usage without changing foreign keys"
+          "api-key installed configuration and references resolve the actual principal after admitted usage without changing foreign keys",
+          "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP",
+          "compact interaction signed-email verification publishes the original authenticated projection through actual multi-session and JWT hooks",
+          "compact sensitive admin admission rejects genuine API-key virtual authority after physical revocation"
         ]
       }
     },
@@ -1256,10 +1285,22 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "admin impersonation restores the original admin session and hides impersonated sessions",
-        "rejection": "guest session surface returns identical empty reads and sign-out",
-        "authorization": "session nested middleware clears expired cookies and rejects invalid revocation bodies",
-        "state": "session nested middleware clears expired cookies and rejects invalid revocation bodies"
+        "success": [
+          "admin impersonation restores the original admin session and hides impersonated sessions",
+          "compact ordinary fresh list-sessions retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "rejection": [
+          "guest session surface returns identical empty reads and sign-out",
+          "compact ordinary fresh list-sessions retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "authorization": [
+          "session nested middleware clears expired cookies and rejects invalid revocation bodies",
+          "compact ordinary fresh list-sessions retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "state": [
+          "session nested middleware clears expired cookies and rejects invalid revocation bodies",
+          "compact ordinary fresh list-sessions retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ]
       }
     },
     {
@@ -1290,14 +1331,16 @@
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions rotate same-user login and honor configured browser account limit",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
-          "last login composition preserves real cookie consent database updates and failed authentication ownership"
+          "last login composition preserves real cookie consent database updates and failed authentication ownership",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
         ],
         "rejection": null,
         "authorization": null,
         "state": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
-          "last login composition preserves real cookie consent database updates and failed authentication ownership"
+          "last login composition preserves real cookie consent database updates and failed authentication ownership",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
         ]
       }
     },
@@ -1349,10 +1392,22 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "one-time tokens transfer the original session once without creating another session",
-        "rejection": "one-time tokens transfer the original session once without creating another session",
-        "authorization": "one-time tokens transfer the original session once without creating another session",
-        "state": "one-time tokens transfer the original session once without creating another session"
+        "success": [
+          "one-time tokens transfer the original session once without creating another session",
+          "compact ordinary one-time-token generation retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "rejection": [
+          "one-time tokens transfer the original session once without creating another session",
+          "compact ordinary one-time-token generation retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "authorization": [
+          "one-time tokens transfer the original session once without creating another session",
+          "compact ordinary one-time-token generation retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "state": [
+          "one-time tokens transfer the original session once without creating another session",
+          "compact ordinary one-time-token generation retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ]
       }
     },
     {
@@ -1413,7 +1468,8 @@
           "organization metadata lookup default scopes selectors and clears only the denied session",
           "organization metadata lookup org-teams scopes selectors and clears only the denied session",
           "organization legacy literal JSON null stays distinct from SQL null through owner endpoints",
-          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks",
+          "compact ordinary organization guards retain revoked identity while physical memberships still isolate the foreign organization"
         ],
         "rejection": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
@@ -1427,7 +1483,8 @@
         "state": [
           "organization metadata lookup default scopes selectors and clears only the denied session",
           "organization metadata lookup org-teams scopes selectors and clears only the denied session",
-          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks"
+          "organization read pages separate full member and user limits with Number versus parseInt and never invoke policy callbacks",
+          "compact ordinary organization guards retain revoked identity while physical memberships still isolate the foreign organization"
         ]
       }
     },
@@ -1685,10 +1742,15 @@
           "passkey overlapping issued challenges verify against the current saved counter rather than a stale generation snapshot",
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
           "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
-          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes"
+          "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
+          "compact ordinary passkey list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
         ],
-        "rejection": null,
-        "authorization": null,
+        "rejection": [
+          "compact ordinary passkey list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "authorization": [
+          "compact ordinary passkey list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
         "state": [
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
           "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
@@ -1697,7 +1759,8 @@
           "passkey signed backup-upgrade-backed authenticates original owner without historical verifier restrictions",
           "passkey signed backup-downgrade authenticates original owner without historical verifier restrictions",
           "passkey application public counter increase between issuance and verification remains authoritative over opaque stored history",
-          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history"
+          "passkey application public counter decrease between issuance and verification remains authoritative over opaque stored history",
+          "compact ordinary passkey list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
         ]
       }
     },
@@ -1796,7 +1859,8 @@
           "configured verified mailbox existing preserves old confirmation, new verification and persisted stage",
           "configured verified mailbox anonymous preserves old confirmation, new verification and persisted stage",
           "configured unverified mailbox promotion protects promotion and new-mail verification with the original session snapshot",
-          "configured verification foreign creates a real owner session without changing foreign authority"
+          "configured verification foreign creates a real owner session without changing foreign authority",
+          "compact interaction signed-email verification publishes the original authenticated projection through actual multi-session and JWT hooks"
         ],
         "rejection": [
           "verify email rejects untrusted callbackURL",
@@ -1824,7 +1888,8 @@
           "configured existing-session verification success preserves callbacks, cache snapshot and failure stage",
           "configured verified mailbox after-verification preserves old confirmation, new verification and persisted stage",
           "configured unverified mailbox promotion protects promotion and new-mail verification with the original session snapshot",
-          "configured verification anonymous creates a real owner session without changing foreign authority"
+          "configured verification anonymous creates a real owner session without changing foreign authority",
+          "compact interaction signed-email verification publishes the original authenticated projection through actual multi-session and JWT hooks"
         ]
       }
     },
@@ -2379,7 +2444,8 @@
           "client IP client-ip-trusted API-key virtual principals keep nullable metadata and override foreign cookies",
           "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification",
           "api-key numeric default expiry and fractional policy retain callback input and complete failure state",
-          "api-key raw numeric generation options preserve safe fractional nonfinite and rejected write phases"
+          "api-key raw numeric generation options preserve safe fractional nonfinite and rejected write phases",
+          "compact sensitive admin admission rejects genuine API-key virtual authority after physical revocation"
         ],
         "rejection": [
           "api-key HTTP requests cannot select a different owner",
@@ -2407,7 +2473,8 @@
           "api-key UTF16 starting characters preserve actual SQLite TEXT bytes across public reads updates and verification",
           "api-key application callback errors preserve real request inputs and each explicit implicit and HTTP catch boundary",
           "api-key numeric default expiry and fractional policy retain callback input and complete failure state",
-          "api-key raw numeric generation options preserve safe fractional nonfinite and rejected write phases"
+          "api-key raw numeric generation options preserve safe fractional nonfinite and rejected write phases",
+          "compact sensitive admin admission rejects genuine API-key virtual authority after physical revocation"
         ]
       }
     },
@@ -2491,9 +2558,18 @@
       "implemented": true,
       "evidence": {
         "success": "change password with revokeOtherSessions invalidates the other client",
-        "rejection": null,
-        "authorization": null,
-        "state": null
+        "rejection": [
+          "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
+        ],
+        "authorization": [
+          "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
+        ],
+        "state": [
+          "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
+        ]
       }
     },
     {
@@ -2520,7 +2596,8 @@
           "configured delete-mail issues and delivers a real deletion proof, retains sessions and owns expiry and replay",
           "configured deletion valid-password enforces the initialized password policy and fresh-session authority",
           "configured deletion no-freshness enforces the initialized password policy and fresh-session authority",
-          "configured deletion body proof checks maximum before consumption and revokes only its owner after valid retry"
+          "configured deletion body proof checks maximum before consumption and revokes only its owner after valid retry",
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
         ],
         "rejection": [
           "duplicate canonical credentials keep the first scoped physical row authoritative for sign-in",
@@ -2541,7 +2618,8 @@
           "configured delete-mail issues and delivers a real deletion proof, retains sessions and owns expiry and replay",
           "configured deletion propagates before-delete and preserves its persisted stage and foreign rows",
           "configured deletion propagates after-delete and preserves its persisted stage and foreign rows",
-          "configured deletion body proof checks wrong-password before consumption and revokes only its owner after valid retry"
+          "configured deletion body proof checks wrong-password before consumption and revokes only its owner after valid retry",
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
         ]
       }
     },
@@ -2554,25 +2632,29 @@
           "device approve flow returns a bearer token",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
         ],
         "rejection": [
           "device approve blocks already-processed codes",
           "device endpoint schemas preserve OAuth validation and media type errors",
           "device decisions require the claiming user and redact other actors",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
         ],
         "authorization": [
           "device decisions require the claiming user and redact other actors",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
         ],
         "state": [
           "device approve flow returns a bearer token",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
         ]
       }
     },
@@ -2605,14 +2687,24 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "device deny flow returns access_denied",
+        "success": [
+          "device deny flow returns access_denied",
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
+        ],
         "rejection": [
           "device deny flow returns access_denied",
           "device endpoint schemas preserve OAuth validation and media type errors",
-          "device decisions require the claiming user and redact other actors"
+          "device decisions require the claiming user and redact other actors",
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
         ],
-        "authorization": "device decisions require the claiming user and redact other actors",
-        "state": "device deny flow returns access_denied"
+        "authorization": [
+          "device decisions require the claiming user and redact other actors",
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
+        ],
+        "state": [
+          "device deny flow returns access_denied",
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
+        ]
       }
     },
     {
@@ -2624,13 +2716,15 @@
           "device approve flow returns a bearer token",
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
         ],
         "rejection": [
           "device approve flow returns a bearer token",
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
         ],
         "authorization": null,
         "state": [
@@ -2863,7 +2957,8 @@
       "evidence": {
         "success": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
-          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
         ],
         "rejection": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
@@ -2872,7 +2967,8 @@
         "authorization": "multiple browser sessions retain accounts switch active identity and revoke with fallback",
         "state": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
-          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
         ]
       }
     },
@@ -2884,17 +2980,23 @@
         "success": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
-          "last login composition preserves real cookie consent database updates and failed authentication ownership"
+          "last login composition preserves real cookie consent database updates and failed authentication ownership",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
         ],
         "rejection": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
-          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
         ],
-        "authorization": "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+        "authorization": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+        ],
         "state": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
-          "last login composition preserves real cookie consent database updates and failed authentication ownership"
+          "last login composition preserves real cookie consent database updates and failed authentication ownership",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
         ]
       }
     },
@@ -2944,8 +3046,14 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "one-time tokens transfer the original session once without creating another session",
-        "rejection": "one-time tokens transfer the original session once without creating another session",
+        "success": [
+          "one-time tokens transfer the original session once without creating another session",
+          "compact ordinary one-time-token generation retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "rejection": [
+          "one-time tokens transfer the original session once without creating another session",
+          "compact ordinary one-time-token generation retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
         "authorization": null,
         "state": "one-time tokens transfer the original session once without creating another session"
       }
@@ -3250,10 +3358,21 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "organization membership mutations cover permissions, role updates, removal, and leave",
-        "rejection": "organization role validation and permission request unions retain authentication precedence and persisted state",
-        "authorization": "organization role validation and permission request unions retain authentication precedence and persisted state",
-        "state": null
+        "success": [
+          "organization membership mutations cover permissions, role updates, removal, and leave",
+          "compact ordinary organization guards retain revoked identity while physical memberships still isolate the foreign organization"
+        ],
+        "rejection": [
+          "organization role validation and permission request unions retain authentication precedence and persisted state",
+          "compact ordinary organization guards retain revoked identity while physical memberships still isolate the foreign organization"
+        ],
+        "authorization": [
+          "organization role validation and permission request unions retain authentication precedence and persisted state",
+          "compact ordinary organization guards retain revoked identity while physical memberships still isolate the foreign organization"
+        ],
+        "state": [
+          "compact ordinary organization guards retain revoked identity while physical memberships still isolate the foreign organization"
+        ]
       }
     },
     {
@@ -3890,14 +4009,18 @@
       "evidence": {
         "success": [
           "phone verification signs up a phone owner and preserves identity across new sessions",
-          "external phone OTP verification enforces provider binding and replaces local expiry policy"
+          "external phone OTP verification enforces provider binding and replaces local expiry policy",
+          "compact ordinary phone verification consumes genuine delivery proof before updating the revoked cached owner"
         ],
         "rejection": [
           "phone endpoint schemas reject every malformed field before any state transition",
           "external phone OTP verification enforces provider binding and replaces local expiry policy"
         ],
         "authorization": null,
-        "state": "phone verification signs up a phone owner and preserves identity across new sessions"
+        "state": [
+          "phone verification signs up a phone owner and preserves identity across new sessions",
+          "compact ordinary phone verification consumes genuine delivery proof before updating the revoked cached owner"
+        ]
       }
     },
     {
@@ -3909,19 +4032,22 @@
           "phone verification signs up a phone owner and preserves identity across new sessions",
           "phone updates bind the requester preserve its session and reject occupied numbers",
           "external phone OTP verification enforces provider binding and replaces local expiry policy",
-          "anonymous phone verified login transfers only the actual anonymous owner and preserves rejected proof state"
+          "anonymous phone verified login transfers only the actual anonymous owner and preserves rejected proof state",
+          "compact ordinary phone verification consumes genuine delivery proof before updating the revoked cached owner"
         ],
         "rejection": [
           "phone OTP rejects foreign numbers exhausted attempts expiry and disabled signup",
           "phone endpoint schemas reject every malformed field before any state transition",
-          "anonymous phone verified login transfers only the actual anonymous owner and preserves rejected proof state"
+          "anonymous phone verified login transfers only the actual anonymous owner and preserves rejected proof state",
+          "compact ordinary phone verification consumes genuine delivery proof before updating the revoked cached owner"
         ],
         "authorization": "phone updates bind the requester preserve its session and reject occupied numbers",
         "state": [
           "phone verification signs up a phone owner and preserves identity across new sessions",
           "phone updates bind the requester preserve its session and reject occupied numbers",
           "external phone OTP verification enforces provider binding and replaces local expiry policy",
-          "anonymous phone verified login transfers only the actual anonymous owner and preserves rejected proof state"
+          "anonymous phone verified login transfers only the actual anonymous owner and preserves rejected proof state",
+          "compact ordinary phone verification consumes genuine delivery proof before updating the revoked cached owner"
         ]
       }
     },
@@ -4131,7 +4257,8 @@
         "success": [
           "change email for a verified user requires old-email confirmation first",
           "client IP client-ip-trusted verified email auto-signin applies initialized policy",
-          "client IP client-ip-disabled verified email auto-signin applies initialized policy"
+          "client IP client-ip-disabled verified email auto-signin applies initialized policy",
+          "compact interaction signed-email verification publishes the original authenticated projection through actual multi-session and JWT hooks"
         ],
         "rejection": [
           "send verification email rejects already verified user",
@@ -4142,7 +4269,8 @@
           "email OTP override inherits automatic verification sign-in and requires current mailbox proof",
           "client IP client-ip-trusted verified email auto-signin applies initialized policy",
           "client IP client-ip-disabled verified email auto-signin applies initialized policy",
-          "configured direct verification delivery propagates the application error while notification delivery retains its pending stage"
+          "configured direct verification delivery propagates the application error while notification delivery retains its pending stage",
+          "compact interaction signed-email verification publishes the original authenticated projection through actual multi-session and JWT hooks"
         ]
       }
     },
@@ -4160,7 +4288,8 @@
           "compact version-api issuance failure rolls email transaction back and does not link the authenticated anonymous account",
           "compact version-ordinary issuance failure rolls email transaction back and does not link the authenticated anonymous account",
           "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner"
         ],
         "rejection": [
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
@@ -4173,7 +4302,8 @@
           "anonymous official client issues repeats and deletes only its actual authenticated owner",
           "anonymous issuance inherits only a real signed browser-session preference",
           "admin ordinary callback failure preserves an anonymous compact-cache session and original principals",
-          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots"
+          "last login actual authentication methods and anonymous upgrade preserve resolver context and original issuance snapshots",
+          "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner"
         ]
       }
     },
@@ -4228,7 +4358,8 @@
           "dispatch origin-off origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-off-explicit-csrf origin and CSRF configuration preserves writes only after admission",
           "dispatch origin-path origin and CSRF configuration preserves writes only after admission",
-          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals"
+          "dispatch media and JSON syntax validation precede origin rejection and preserve physical principals",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -4421,7 +4552,8 @@
           "client IP rightmost untrusted hop persists authoritative session context",
           "client IP empty configured headers persists authoritative session context",
           "client IP zero IPv6 prefix persists authoritative session context",
-          "configured verification delivery protects signup and sign-in delivery defaults and original request receipts"
+          "configured verification delivery protects signup and sign-in delivery defaults and original request receipts",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
         ]
       }
     },
@@ -5377,7 +5509,9 @@
           "huggingface configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "huggingface default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "huggingface mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "huggingface public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "huggingface public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
         ],
         "rejection": null,
         "authorization": "Google default signed ID-token sign-in owns sessions and persists only accepted direct token fields",
@@ -5448,7 +5582,8 @@
           "huggingface configured-endpoint real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "huggingface default real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
           "huggingface mapped real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
-          "huggingface public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority"
+          "huggingface public real secret or public exchange and GET profile refresh replay and local logout preserve foreign authority",
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
         ]
       }
     },
@@ -5552,7 +5687,8 @@
           "client IP empty configured headers persists authoritative session context",
           "client IP zero IPv6 prefix persists authoritative session context",
           "client IP disabled tracking disables IP rate limiting selects real HTTP rate buckets",
-          "configured verification required protects signup and sign-in delivery defaults and original request receipts"
+          "configured verification required protects signup and sign-in delivery defaults and original request receipts",
+          "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner"
         ],
         "rejection": [
           "sign up with duplicate email returns error",
@@ -5656,7 +5792,8 @@
           "client IP empty configured headers persists authoritative session context",
           "client IP zero IPv6 prefix persists authoritative session context",
           "configured verification default protects signup and sign-in delivery defaults and original request receipts",
-          "configured verification required protects signup and sign-in delivery defaults and original request receipts"
+          "configured verification required protects signup and sign-in delivery defaults and original request receipts",
+          "compact interaction anonymous linking retains the original cached projection while later hooks publish the genuine completed owner"
         ]
       }
     },
@@ -5765,19 +5902,22 @@
           "two-factor disable requires a persistent cookie session and rejects API key emulation",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
-          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password"
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical"
         ],
         "authorization": [
           "two-factor disable deletes factor and trust state and rotates the authoritative session",
           "two-factor disable requires a persistent cookie session and rejects API key emulation",
-          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password"
+          "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
+          "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical"
         ],
         "state": [
           "two-factor disable deletes factor and trust state and rotates the authoritative session",
           "two-factor passwordless social owner completes real enrollment, URI retrieval, backup regeneration and disable without a credential password",
           "two-factor passwordless option retains password ownership for mixed social and credential accounts",
           "two-factor passwordless child overrides preserve required schemas and independently permit social URI and backup operations",
-          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation"
+          "two-factor passwordless treats a retained empty credential hash as absent and rejects explicit null before mutation",
+          "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical"
         ]
       }
     },
@@ -5823,7 +5963,9 @@
           "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage",
           "two-factor pending backup expired disabled cleanup preserves the actual lookup snapshot and failure stage",
           "two-factor pending backup missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
-          "two-factor pending backup newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
+          "two-factor pending backup newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
         ],
         "rejection": [
           "disabled TOTP rejects generator and verification before touching owner factor state",
@@ -5870,7 +6012,9 @@
           "two-factor two-factor-backup-encrypted applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor two-factor-backup-custom applies configured generation and storage through enrollment, server-only view, consumption and regeneration",
           "two-factor invalid backup generation preserves validation and credentials while OTP-only enrollment has no backup factor",
-          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device"
+          "two-factor pending backup disableSession consumes duplicates and attempt state without issuing a session or trusting the device",
+          "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
         ]
       }
     },
@@ -5976,7 +6120,9 @@
           "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
           "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
           "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
-          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
         ],
         "rejection": [
           "two-factor OTP enable uses an authoritative owner, validates method before password verification and succeeds with disabled TOTP without a factor",
@@ -6025,7 +6171,9 @@
           "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
           "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
           "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
-          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
         ]
       }
     },
@@ -6151,7 +6299,9 @@
           "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
           "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
           "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
-          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
         ],
         "rejection": [
           "two-factor otp flow completes sign-in and rejects requests without the pending cookie",
@@ -6231,7 +6381,9 @@
           "two-factor pending otp newest-expired default cleanup preserves the actual lookup snapshot and failure stage",
           "two-factor pending otp expired disabled cleanup preserves the actual lookup snapshot and failure stage",
           "two-factor pending otp missing-user disabled cleanup preserves the actual lookup snapshot and failure stage",
-          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage"
+          "two-factor pending otp newest-expired disabled cleanup preserves the actual lookup snapshot and failure stage",
+          "compact interaction factor enable and OTP session branch retain revoked ordinary authority while disable remains physical",
+          "compact interaction pending two-factor scrubs real issuance before later multi-session hooks and completes browser cache only after actual OTP"
         ]
       }
     },
@@ -6367,7 +6519,11 @@
       "upstream": true,
       "implemented": true,
       "evidence": {
-        "success": "update user changes session-visible profile fields",
+        "success": [
+          "update user changes session-visible profile fields",
+          "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
+        ],
         "rejection": [
           "update user rejects direct email mutation",
           "last login database preserves real cookie consent database updates and failed authentication ownership",
@@ -6381,10 +6537,14 @@
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
-          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes",
+          "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
         ],
         "authorization": [
-          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes",
+          "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
         ],
         "state": [
           "last login database preserves real cookie consent database updates and failed authentication ownership",
@@ -6398,7 +6558,9 @@
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
           "last login nan preserves real cookie consent database updates and failed authentication ownership",
           "last login negative preserves real cookie consent database updates and failed authentication ownership",
-          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes",
+          "compact ordinary profile mutation publishes the real updated owner cache after physical revocation and preserves sensitive and corrupt denials",
+          "compact ordinary update retains the genuine cached user projection after actual user deletion without recreating rows"
         ]
       }
     },

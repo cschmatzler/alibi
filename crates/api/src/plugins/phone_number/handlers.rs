@@ -332,42 +332,42 @@ impl PhoneNumberPlugin {
         self.verify_and_consume(ctx, &body.phone_number, &body.code)
             .await?;
         if body.update_phone_number == Some(true) {
-            let (user, session) = ctx
-                .require_session(req)
-                .await
-                .map_err(|error| match error {
-                    AuthError::Unauthenticated | AuthError::SessionNotFound => {
-                        phone_error(401, "USER_NOT_FOUND", "User not found")
-                    }
-                    error @ (AuthError::Api { .. }
-                    | AuthError::Upstream { .. }
-                    | AuthError::BadRequest(_)
-                    | AuthError::InvalidRequest(_)
-                    | AuthError::Validation(_)
-                    | AuthError::InvalidCredentials
-                    | AuthError::AuthenticationFailed(_)
-                    | AuthError::Forbidden(_)
-                    | AuthError::UserCreationCancelled
-                    | AuthError::SessionCreationCancelled
-                    | AuthError::BannedUser(_)
-                    | AuthError::Unauthorized
-                    | AuthError::UserNotFound
-                    | AuthError::NotFound(_)
-                    | AuthError::Conflict(_)
-                    | AuthError::MethodNotAllowed(_)
-                    | AuthError::PayloadTooLarge(_)
-                    | AuthError::UnprocessableEntity(_)
-                    | AuthError::RateLimited
-                    | AuthError::NotImplemented(_)
-                    | AuthError::Config(_)
-                    | AuthError::Database(_)
-                    | AuthError::Serialization(_)
-                    | AuthError::Plugin { .. }
-                    | AuthError::CallbackFailure(_)
-                    | AuthError::Internal(_)
-                    | AuthError::PasswordHash(_)
-                    | AuthError::Jwt(_)) => error,
-                })?;
+            let (user, session) =
+                ctx.require_cached_session(req)
+                    .await
+                    .map_err(|error| match error {
+                        AuthError::Unauthenticated | AuthError::SessionNotFound => {
+                            phone_error(401, "USER_NOT_FOUND", "User not found")
+                        }
+                        error @ (AuthError::Api { .. }
+                        | AuthError::Upstream { .. }
+                        | AuthError::BadRequest(_)
+                        | AuthError::InvalidRequest(_)
+                        | AuthError::Validation(_)
+                        | AuthError::InvalidCredentials
+                        | AuthError::AuthenticationFailed(_)
+                        | AuthError::Forbidden(_)
+                        | AuthError::UserCreationCancelled
+                        | AuthError::SessionCreationCancelled
+                        | AuthError::BannedUser(_)
+                        | AuthError::Unauthorized
+                        | AuthError::UserNotFound
+                        | AuthError::NotFound(_)
+                        | AuthError::Conflict(_)
+                        | AuthError::MethodNotAllowed(_)
+                        | AuthError::PayloadTooLarge(_)
+                        | AuthError::UnprocessableEntity(_)
+                        | AuthError::RateLimited
+                        | AuthError::NotImplemented(_)
+                        | AuthError::Config(_)
+                        | AuthError::Database(_)
+                        | AuthError::Serialization(_)
+                        | AuthError::Plugin { .. }
+                        | AuthError::CallbackFailure(_)
+                        | AuthError::Internal(_)
+                        | AuthError::PasswordHash(_)
+                        | AuthError::Jwt(_)) => error,
+                    })?;
             if ctx
                 .database
                 .get_user_by_phone_number(&body.phone_number)

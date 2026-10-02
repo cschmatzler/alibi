@@ -158,15 +158,10 @@ impl OAuthProcessPolicy {
 async fn require_session<S: better_auth_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> Result<S::Session, AuthError> {
-    let session_manager = ctx.session_manager();
-    let token = session_manager
-        .extract_session_token(req)
-        .ok_or(AuthError::Unauthenticated)?;
-    session_manager
-        .get_session(&token)
-        .await?
-        .ok_or(AuthError::Unauthenticated)
+) -> Result<better_auth_core::SessionView, AuthError> {
+    ctx.require_cached_session(req)
+        .await
+        .map(|(_, session)| session)
 }
 
 fn generate_pkce() -> (String, String) {
@@ -2347,25 +2342,11 @@ pub(super) async fn handle_link_social(
     let session = require_session(req, ctx)
         .await
         .map_err(|error| match error {
-            AuthError::Unauthenticated => {
-                // The nested source session read clears cookies for a valid signed
-                // token whose stored session is absent; unsigned/tampered input
-                // does not enter that cleanup branch.
-                if ctx.session_manager().extract_session_token(req).is_some() {
-                    for cookie in
-                        better_auth_core::utils::cookie_utils::delete_session_cookie_headers(
-                            &ctx.config,
-                        )
-                    {
-                        req.queue_response_header("Set-Cookie", cookie);
-                    }
-                }
-                AuthError::Api {
-                    status: 401,
-                    code: Some("UNAUTHORIZED".to_owned()),
-                    message: "Unauthorized".to_owned(),
-                }
-            }
+            AuthError::Unauthenticated => AuthError::Api {
+                status: 401,
+                code: Some("UNAUTHORIZED".to_owned()),
+                message: "Unauthorized".to_owned(),
+            },
             error @ (AuthError::Api { .. }
             | AuthError::Upstream { .. }
             | AuthError::BadRequest(_)

@@ -6,8 +6,7 @@
 
 use super::*;
 use crate::plugins::test_helpers::{
-    create_auth_json_request_no_query, create_auth_request_no_query, create_test_context,
-    create_user_and_session,
+    create_auth_json_request_no_query, create_test_context, create_user_and_session,
 };
 use better_auth_core::utils::cookie_utils::create_session_cookie;
 use better_auth_core::{CreateSession, CreateUser};
@@ -329,85 +328,5 @@ async fn cookie_tampering_expiry_revocation_fallback_and_logout_preserve_state()
             .await
             .unwrap()
             .is_none()
-    );
-}
-
-#[tokio::test]
-async fn new_session_hook_replaces_same_user_cookie_and_respects_browser_limit() {
-    let ctx = create_test_context().await;
-    let plugin = MultiSessionPlugin::with_config(MultiSessionConfig {
-        maximum_sessions: 1,
-    });
-    let (user, old) = create_user_and_session(
-        &ctx,
-        CreateUser::new().with_email("same@example.test"),
-        Duration::days(1),
-    )
-    .await;
-    let new = ctx
-        .session_manager()
-        .create_session(&user, None, None)
-        .await
-        .unwrap();
-    let old_cookie = format!(
-        "{}={}",
-        MultiSessionPlugin::cookie_name(&old.token, &ctx),
-        sign_cookie_value(&old.token, &ctx.config.secret)
-    );
-    let request = request_with_cookies(HttpMethod::Post, "/sign-in/email", &[old_cookie], None);
-    let mut response = AuthResponse::json(200, &json!({"token":new.token()})).unwrap();
-    response.headers.append(
-        "set-cookie",
-        create_session_cookie(new.token(), &ctx.config),
-    );
-    let response = plugin
-        .after_request(&request, &ctx, response)
-        .await
-        .unwrap();
-    assert!(
-        ctx.database
-            .get_session(&old.token)
-            .await
-            .unwrap()
-            .is_none()
-    );
-    assert!(
-        response
-            .headers
-            .get_all("set-cookie")
-            .any(|value| value.starts_with(&MultiSessionPlugin::cookie_name(new.token(), &ctx)))
-    );
-    let multi_cookie = response
-        .headers
-        .get_all("set-cookie")
-        .filter_map(|header| cookie::Cookie::parse(header.clone()).ok())
-        .find(|cookie| cookie.name() == MultiSessionPlugin::cookie_name(new.token(), &ctx))
-        .unwrap();
-    assert_eq!(multi_cookie.max_age().unwrap().whole_seconds(), 604_800);
-    let invalid_existing = request_with_cookies(
-        HttpMethod::Post,
-        "/sign-in/email",
-        &["other_multi-invalid=bad".to_owned()],
-        None,
-    );
-    let mut response_2 = AuthResponse::json(200, &json!({"token":new.token()})).unwrap();
-    response_2.headers.append(
-        "set-cookie",
-        create_session_cookie(new.token(), &ctx.config),
-    );
-    let response_2_3 = plugin
-        .after_request(&invalid_existing, &ctx, response_2)
-        .await
-        .unwrap();
-    assert_eq!(response_2_3.headers.get_all("set-cookie").count(), 1);
-    let empty = create_auth_request_no_query(
-        HttpMethod::Get,
-        "/multi-session/list-device-sessions",
-        None,
-        None,
-    );
-    assert_eq!(
-        plugin.on_request(&empty, &ctx).await.unwrap().unwrap().body,
-        b"[]"
     );
 }

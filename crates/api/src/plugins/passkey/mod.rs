@@ -196,8 +196,13 @@ impl PasskeyPlugin {
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<Option<(S::User, better_auth_core::wire::SessionView)>> {
-        let session = match ctx.require_session(req).await {
+    ) -> AuthResult<
+        Option<(
+            better_auth_core::AuthenticatedUser<S>,
+            better_auth_core::wire::SessionView,
+        )>,
+    > {
+        let session = match ctx.require_cached_session(req).await {
             Ok(session) => Some(session),
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound)
                 if !self.config.registration.require_session =>
@@ -225,7 +230,7 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let maybe_user = ctx.require_session(req).await.ok().map(|(u, _)| u);
+        let maybe_user = ctx.require_cached_session(req).await.ok().map(|(u, _)| u);
         let (result, cookie_header) =
             generate_authenticate_options_core(maybe_user.as_ref(), &self.config, ctx).await?;
         Ok(AuthResponse::json(200, &result)?.with_header("Set-Cookie", cookie_header))
@@ -266,7 +271,7 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
         let result = list_user_passkeys_core(&user, ctx).await?;
         AuthResponse::json(200, &result).map_err(AuthError::from)
     }
@@ -277,7 +282,7 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
         let body: DeletePasskeyRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
@@ -296,7 +301,7 @@ impl PasskeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
         let body: UpdatePasskeyRequest = match better_auth_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),

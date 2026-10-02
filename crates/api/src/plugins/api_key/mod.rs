@@ -784,8 +784,14 @@ impl ApiKeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        let mut resolution = req.clone();
+        drop(
+            resolution
+                .query
+                .insert("disableCookieCache".into(), "true".into()),
+        );
         let (user, _session) = ctx
-            .require_session(req)
+            .require_cached_session(&resolution)
             .await
             .map_err(|error| match error {
                 AuthError::Unauthenticated => api_key_error(ApiKeyErrorCode::UnauthorizedSession),
@@ -841,7 +847,10 @@ impl ApiKeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let mut resolution = req.clone();
+        drop(resolution.query.remove("disableCookieCache"));
+        drop(resolution.query.remove("disableRefresh"));
+        let (user, _session) = super::helpers::ordinary_session(&resolution, ctx).await?;
         let id = req
             .query
             .get("id")
@@ -856,7 +865,10 @@ impl ApiKeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let mut resolution = req.clone();
+        drop(resolution.query.remove("disableCookieCache"));
+        drop(resolution.query.remove("disableRefresh"));
+        let (user, _session) = super::helpers::ordinary_session(&resolution, ctx).await?;
         let query = match ListKeysQuery::from_request(req) {
             Ok(query) => query,
             Err(response) => return Ok(response),
@@ -870,8 +882,14 @@ impl ApiKeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        let mut resolution = req.clone();
+        drop(
+            resolution
+                .query
+                .insert("disableCookieCache".into(), "true".into()),
+        );
         let (user, _session) = ctx
-            .require_session(req)
+            .require_cached_session(&resolution)
             .await
             .map_err(|error| match error {
                 AuthError::Unauthenticated => api_key_error(ApiKeyErrorCode::UnauthorizedSession),
@@ -918,7 +936,7 @@ impl ApiKeyPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, _session) = ctx.require_session(req).await?;
+        let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
         if user.banned() {
             return Err(AuthError::authentication_failed("User is banned"));
         }

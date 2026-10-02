@@ -1702,8 +1702,11 @@ async fn configured_backup_callback_errors_preserve_factor_user_and_current_sess
             let before_user =
                 serde_json::to_value(ctx.database.get_user_by_id(&user.id).await.unwrap()).unwrap();
             observed.lock().unwrap().clear();
-            request.path = "/two-factor/generate-backup-codes".into();
-            let error_2 = plugin.on_request(&request, &ctx).await.unwrap_err();
+            let mut regeneration =
+                AuthRequest::new(HttpMethod::Post, "/two-factor/generate-backup-codes");
+            regeneration.headers.clone_from(&request.headers);
+            regeneration.body.clone_from(&request.body);
+            let error_2 = plugin.on_request(&regeneration, &ctx).await.unwrap_err();
             assert!(
                 matches!(error_2, AuthError::Upstream { status: actual, code: "BACKUP_CALLBACK_DENIED", .. } if actual == status)
             );
@@ -1728,7 +1731,7 @@ async fn configured_backup_callback_errors_preserve_factor_user_and_current_sess
                 before_sessions
             );
             assert_eq!(
-                ctx.require_session(&request).await.unwrap().1.token,
+                ctx.require_session(&regeneration).await.unwrap().1.token,
                 session.token
             );
         }

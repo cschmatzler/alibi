@@ -4,6 +4,29 @@
 
 use better_auth_core::entity::{AuthAccount, AuthUser};
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, CreateUser, UpdateUser};
+
+/// Source ordinary HTTP middleware admits the authenticated cache snapshot.
+/// Only the nested read is caught; subsequent storage and callback errors keep
+/// their own endpoint contract.
+pub(in crate::plugins) async fn ordinary_session<S: better_auth_core::AuthSchema>(
+    request: &AuthRequest,
+    ctx: &AuthContext<S>,
+) -> AuthResult<(
+    better_auth_core::AuthenticatedUser<S>,
+    better_auth_core::SessionView,
+)> {
+    ctx.require_cached_session(request).await.map_err(|error| {
+        if matches!(error, AuthError::Unauthenticated) {
+            AuthError::Upstream {
+                status: 401,
+                code: "UNAUTHORIZED",
+                message: "Unauthorized",
+            }
+        } else {
+            error
+        }
+    })
+}
 use chrono::Utc;
 
 /// Result of issuing a real session for a user.

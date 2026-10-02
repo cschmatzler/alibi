@@ -166,7 +166,7 @@ impl SessionManagementPlugin {
                 json_type(value.as_ref())
             )));
         };
-        let (_user, session) = match ctx.require_session(req).await {
+        let (_user, session) = match super::helpers::ordinary_session(req, ctx).await {
             Ok(session) => session,
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
                 return Ok(AuthResponse::json(
@@ -335,10 +335,7 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let (user, session) = ctx
-            .require_session(req)
-            .await
-            .map_err(session_authorization_error)?;
+        let (user, session) = super::helpers::ordinary_session(req, ctx).await?;
         if !ctx.session_manager().is_session_fresh(&session) {
             return Err(AuthError::Upstream {
                 status: 403,

@@ -41,7 +41,7 @@ pub(in crate::plugins) async fn add_member<S: AuthSchema>(
             .iter()
             .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
             .collect();
-        ctx.require_session(&resolution).await.ok()
+        ctx.require_cached_session(&resolution).await.ok()
     };
     let organization_id = body
         .organization_id
