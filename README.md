@@ -126,6 +126,17 @@ Already-issued reset proofs or committed email-change state remain stored after
 a delivery failure. This error policy intentionally differs from the pinned
 Better Auth 1.7.6 helper, which catches awaited callback errors too.
 
+The in-memory rate limiter defaults to 100 requests per 10 seconds, with tighter
+built-in rules for sign-in, sign-up, identity changes and email delivery.
+`RateLimitConfig::endpoint` supports exact paths and glob overrides; exact paths
+win, then the most specific glob (lexical order breaks ties). Set `max_buckets`
+to bound active client/path entries; the default is 100,000. Expired entries are
+removed automatically, and new buckets receive 429 at capacity rather than
+resetting active quotas. This limiter is per process; multi-instance deployments
+need a shared limiter upstream. Configure trusted IP headers and proxy CIDRs
+through `config.advanced.ip_address`; the limiter uses the same parsed address
+as session metadata. Auth mount paths are handled by `AuthBuilder`.
+
 ## Plugins
 
 Better Auth RS ships with a rich set of plugins. Enable only what you need:

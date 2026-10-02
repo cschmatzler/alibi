@@ -277,9 +277,10 @@ impl<S: AuthSchema> AuthBuilder<S> {
         // Transport and application request middleware precede router resolution.
         let transport_middlewares: Vec<Box<dyn Middleware>> = vec![
             Box::new(BodyLimitMiddleware::new(body_limit.clone())),
-            Box::new(RateLimitMiddleware::new(
-                self.rate_limit_config.unwrap_or_default(),
-            )),
+            Box::new(
+                RateLimitMiddleware::new(self.rate_limit_config.unwrap_or_default())
+                    .with_base_path(config.base_path.clone()),
+            ),
         ];
         let mut middlewares: Vec<Box<dyn Middleware>> = vec![Box::new(CorsMiddleware::new(
             self.cors_config.unwrap_or_default(),
