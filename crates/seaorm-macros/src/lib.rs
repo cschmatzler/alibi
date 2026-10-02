@@ -128,7 +128,7 @@ fn generate_auth_entity(input: &DeriveInput) -> TokenStream {
             &seaorm_root,
             &core_root,
         ),
-        EntityRole::Account => gen_account(ident, &extra_not_set, &seaorm_root, &core_root),
+        EntityRole::Account => gen_account(ident, fields, &extra_not_set, &seaorm_root, &core_root),
         EntityRole::Verification => {
             gen_verification(ident, &extra_not_set, &seaorm_root, &core_root)
         }
@@ -148,6 +148,11 @@ fn gen_user(
     seaorm_root: &TokenStream,
     core_root: &TokenStream,
 ) -> TokenStream {
+    let (additional_output, additional_bindings) =
+        match additional_model_fields(EntityRole::User, fields, seaorm_root, core_root) {
+            Ok(fields) => fields,
+            Err(error) => return error.to_compile_error(),
+        };
     let mut list_columns = Vec::new();
     for field in &fields.named {
         let Some(name) = field.ident.as_ref() else {
@@ -309,6 +314,7 @@ fn gen_user(
 
     quote! {
         impl #core_root::entity::AuthUser for #ident {
+            #additional_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
             fn email(&self) -> Option<&str> { self.email.as_deref() }
             fn name(&self) -> Option<&str> { self.name.as_deref() }
@@ -328,6 +334,7 @@ fn gen_user(
         }
 
         impl #seaorm_root::SeaOrmUserModel for #ident {
+            #additional_bindings
             type Id = ::std::string::String;
             type Entity = Entity;
             type ActiveModel = ActiveModel;
@@ -541,54 +548,42 @@ fn plugin_update_fields_user(
     out
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep the generated AuthSession implementation together as one quoted trait contract"
-)]
-fn gen_session(
-    ident: &Ident,
-    has: &dyn Fn(&str) -> bool,
+fn additional_model_fields(
+    role: EntityRole,
     fields: &syn::FieldsNamed,
-    extras: &[TokenStream],
     seaorm_root: &TokenStream,
     core_root: &TokenStream,
-) -> TokenStream {
+) -> syn::Result<(TokenStream, TokenStream)> {
     let mut additional_output = Vec::new();
     let mut additional_binding = Vec::new();
     let mut additional_stage = Vec::new();
-    let known = registry::core_field_names(EntityRole::Session)
+    let known = registry::core_field_names(role)
         .iter()
-        .chain(registry::plugin_field_names(EntityRole::Session).iter())
+        .chain(registry::plugin_field_names(role).iter())
         .copied()
         .collect::<Vec<_>>();
     for field in &fields.named {
         let Some(name) = &field.ident else {
             continue;
         };
-        let text = name.to_string();
-        let mut components = text.split('_');
-        let mut camel = components.next().unwrap_or_default().to_owned();
-        let mut pascal = String::new();
-        for component in text.split('_') {
-            let mut letters = component.chars();
-            if let Some(first) = letters.next() {
-                pascal.extend(first.to_uppercase());
-            }
-            pascal.extend(letters);
-        }
-        for component in components {
-            let mut letters = component.chars();
-            if let Some(first) = letters.next() {
-                camel.extend(first.to_uppercase());
-            }
-            camel.extend(letters);
-        }
-        let column = Ident::new(&pascal, name.span());
+        let (camel, column, physical) = additional_field_names(field)?;
         if !known.iter().any(|known| name == known) {
             additional_output.push(quote! {
                 if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
                     let _ = fields.insert(#camel.into(), value);
                 }
+            });
+        }
+        if let Some(physical) = physical.as_ref().filter(|physical| *physical != &camel) {
+            if !known.iter().any(|known| name == known) {
+                additional_output.push(quote! {
+                    if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
+                        let _ = fields.insert(#physical.into(), value);
+                    }
+                });
+            }
+            additional_binding.push(quote! {
+                #physical => (Column::#column, #seaorm_root::session_fields::raw_value(value)?),
             });
         }
         let ty = &field.ty;
@@ -604,7 +599,7 @@ fn gen_session(
         additional_stage.push(quote! {
             Column::#column => {
                 let value = <#ty as #seaorm_root::sea_orm::sea_query::ValueType>::try_from(value)
-                    .map_err(|_error| #core_root::AuthError::internal("session value cannot be represented by its model column"))?;
+                    .map_err(|_error| #core_root::AuthError::internal("field value cannot be represented by its model column"))?;
                 active.#name = #seaorm_root::sea_orm::ActiveValue::Set(#preparation);
             }
         });
@@ -612,6 +607,99 @@ fn gen_session(
             #camel => (Column::#column, #seaorm_root::session_fields::raw_value(value)?),
         });
     }
+    let output = quote! {
+        fn additional_fields(&self) -> #core_root::field_policy::FieldOutput {
+            let mut fields = #core_root::field_policy::FieldOutput::new();
+            #(#additional_output)*
+            fields
+        }
+    };
+    let bindings = quote! {
+        fn additional_field_bindings(fields: &#core_root::field_policy::FieldValues, _backend: #seaorm_root::sea_orm::DbBackend) -> #core_root::AuthResult<Vec<(Self::Column, #seaorm_root::sea_orm::Value)>> {
+            let mut bindings = Vec::new();
+            for (name, value) in fields {
+                bindings.push(match fields.binding_name(name) {
+                    #(#additional_binding)*
+                    _ => return Err(#core_root::AuthError::internal("configured field has no model column")),
+                });
+            }
+            Ok(bindings)
+        }
+        fn set_additional_field(active: &mut Self::ActiveModel, column: Self::Column, value: #seaorm_root::sea_orm::Value, backend: #seaorm_root::sea_orm::DbBackend) -> #core_root::AuthResult<()> {
+            let _ = backend;
+            match column { #(#additional_stage)* }
+            Ok(())
+        }
+    };
+    Ok((output, bindings))
+}
+
+fn additional_field_names(field: &syn::Field) -> syn::Result<(String, Ident, Option<String>)> {
+    let name = field
+        .ident
+        .as_ref()
+        .ok_or_else(|| syn::Error::new_spanned(field, "Expected a named field"))?;
+    let identifier = name.to_string();
+    let text = identifier.trim_start_matches("r#");
+    let mut components = text.split('_');
+    let mut camel = components.next().unwrap_or_default().to_owned();
+    let mut pascal = String::new();
+    for component in text.split('_') {
+        let mut letters = component.chars();
+        if let Some(first) = letters.next() {
+            pascal.extend(first.to_uppercase());
+        }
+        pascal.extend(letters);
+    }
+    for component in components {
+        let mut letters = component.chars();
+        if let Some(first) = letters.next() {
+            camel.extend(first.to_uppercase());
+        }
+        camel.extend(letters);
+    }
+    let mut column = Ident::new(&pascal, name.span());
+    let mut physical = None;
+    for attribute in field
+        .attrs
+        .iter()
+        .filter(|attribute| attribute.path().is_ident("sea_orm"))
+    {
+        attribute.parse_nested_meta(|meta| {
+            if meta.path.is_ident("enum_name") {
+                column = syn::parse_str::<Ident>(&meta.value()?.parse::<LitStr>()?.value())?;
+            } else if meta.path.is_ident("column_name") {
+                physical = Some(meta.value()?.parse::<LitStr>()?.value());
+            } else {
+                drop(
+                    meta.value()
+                        .and_then(syn::parse::ParseBuffer::parse::<syn::Expr>)
+                        .ok(),
+                );
+            }
+            Ok(())
+        })?;
+    }
+    Ok((camel, column, physical))
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep the generated AuthSession implementation together as one quoted trait contract"
+)]
+fn gen_session(
+    ident: &Ident,
+    has: &dyn Fn(&str) -> bool,
+    fields: &syn::FieldsNamed,
+    extras: &[TokenStream],
+    seaorm_root: &TokenStream,
+    core_root: &TokenStream,
+) -> TokenStream {
+    let (additional_output, additional_bindings) =
+        match additional_model_fields(EntityRole::Session, fields, seaorm_root, core_root) {
+            Ok(fields) => fields,
+            Err(error) => return error.to_compile_error(),
+        };
     let impersonated_by_impl = if has("impersonated_by") {
         quote! { fn impersonated_by(&self) -> Option<&str> { self.impersonated_by.as_deref() } }
     } else {
@@ -674,11 +762,7 @@ fn gen_session(
 
     quote! {
         impl #core_root::entity::AuthSession for #ident {
-            fn additional_fields(&self) -> #core_root::field_policy::FieldOutput {
-                let mut fields = #core_root::field_policy::FieldOutput::new();
-                #(#additional_output)*
-                fields
-            }
+            #additional_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
             fn expires_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.expires_at }
             fn token(&self) -> &str { &self.token }
@@ -694,21 +778,7 @@ fn gen_session(
         }
 
         impl #seaorm_root::SeaOrmSessionModel for #ident {
-            fn additional_field_bindings(fields: &#core_root::field_policy::FieldValues, _backend: #seaorm_root::sea_orm::DbBackend) -> #core_root::AuthResult<Vec<(Self::Column, #seaorm_root::sea_orm::Value)>> {
-                let mut bindings = Vec::new();
-                for (name, value) in fields {
-                    bindings.push(match name.as_str() {
-                        #(#additional_binding)*
-                        _ => return Err(#core_root::AuthError::internal("configured session field has no model column")),
-                    });
-                }
-                Ok(bindings)
-            }
-            fn set_additional_field(active: &mut Self::ActiveModel, column: Self::Column, value: #seaorm_root::sea_orm::Value, backend: #seaorm_root::sea_orm::DbBackend) -> #core_root::AuthResult<()> {
-                let _ = backend;
-                match column { #(#additional_stage)* }
-                Ok(())
-            }
+            #additional_bindings
             type Id = ::std::string::String;
             type UserId = ::std::string::String;
             type Entity = Entity;
@@ -773,13 +843,20 @@ fn gen_session(
 
 fn gen_account(
     ident: &Ident,
+    fields: &syn::FieldsNamed,
     extras: &[TokenStream],
     seaorm_root: &TokenStream,
     core_root: &TokenStream,
 ) -> TokenStream {
+    let (additional_output, additional_bindings) =
+        match additional_model_fields(EntityRole::Account, fields, seaorm_root, core_root) {
+            Ok(fields) => fields,
+            Err(error) => return error.to_compile_error(),
+        };
     // Account has no plugin-optional fields — all are core.
     quote! {
         impl #core_root::entity::AuthAccount for #ident {
+            #additional_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
             fn account_id(&self) -> &str { &self.account_id }
             fn provider_id(&self) -> &str { &self.provider_id }
@@ -796,6 +873,7 @@ fn gen_account(
         }
 
         impl #seaorm_root::SeaOrmAccountModel for #ident {
+            #additional_bindings
             type Id = ::std::string::String;
             type UserId = ::std::string::String;
             type Entity = Entity;

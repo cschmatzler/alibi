@@ -477,7 +477,7 @@ pub async fn handle_team_request<S: AuthSchema>(
                 if current.active_team_id.is_some() {
                     let updated = ctx
                         .database
-                        .update_session_active_team(&current.token, None)
+                        .update_session_active_team_record(&current.token, None)
                         .await?;
                     response.headers.append(
                         "set-cookie",
@@ -508,7 +508,7 @@ pub async fn handle_team_request<S: AuthSchema>(
                 }
                 let updated = ctx
                     .database
-                    .update_session_active_team(&current.token, Some(team_id))
+                    .update_session_active_team_record(&current.token, Some(team_id))
                     .await?;
                 AuthResponse::json(200, &team)?.with_header(
                     "set-cookie",

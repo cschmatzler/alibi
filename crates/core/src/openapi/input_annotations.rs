@@ -62,10 +62,7 @@ pub(super) fn apply(
             .cloned()
             .unwrap_or_default();
         for field in writable {
-            if field.required
-                && field.schema.get("default").is_none()
-                && !required.contains(&json!(field.name))
-            {
+            if field.required && !field.has_default && !required.contains(&json!(field.name)) {
                 required.push(json!(field.name));
             }
         }

@@ -202,6 +202,38 @@ impl<S: AuthSchema> AuthBuilder<S> {
                 Arc::new(adapter_fields),
             ));
         init_context.extensions.insert(session_fields);
+        let mut user_fields =
+            better_auth_core::field_policy::SessionFields(config.user.additional_fields.clone());
+        let mut account_fields =
+            better_auth_core::field_policy::SessionFields(config.account.additional_fields.clone());
+        let mut user_adapter = better_auth_core::field_policy::FieldConfigs::new();
+        let mut account_adapter = better_auth_core::field_policy::FieldConfigs::new();
+        for plugin in &self.plugins {
+            let fields = plugin.user_fields();
+            user_adapter.extend(fields.clone());
+            user_fields.0.extend(fields);
+            let fields = plugin.account_fields();
+            account_adapter.extend(fields.clone());
+            account_fields.0.extend(fields);
+        }
+        user_adapter.extend(config.user.additional_fields.clone());
+        account_adapter.extend(config.account.additional_fields.clone());
+        init_context
+            .extensions
+            .insert(better_auth_core::field_policy::UserFields(user_fields));
+        init_context
+            .extensions
+            .insert(better_auth_core::field_policy::AccountFields(
+                account_fields,
+            ));
+        init_context
+            .extensions
+            .insert(better_auth_core::field_policy::AdapterFieldPolicies {
+                user: better_auth_core::field_policy::SessionAdapterFields(Arc::new(user_adapter)),
+                account: better_auth_core::field_policy::SessionAdapterFields(Arc::new(
+                    account_adapter,
+                )),
+            });
         let mut openapi = OpenApiRegistry::configured(S::openapi_models(), &config);
         let core_routes = better_auth_core::openapi::annotations::core_routes();
         let core_metadata =
@@ -213,6 +245,9 @@ impl<S: AuthSchema> AuthBuilder<S> {
                 plugin.routes(),
                 plugin.openapi_metadata(&init_context),
             );
+            openapi.register_fields("User", &plugin.user_fields());
+            openapi.register_fields("Session", &plugin.session_fields());
+            openapi.register_fields("Account", &plugin.account_fields());
         }
         init_context.extensions.insert(openapi);
         let openapi_2 = init_context
@@ -738,6 +773,24 @@ impl<S: AuthSchema> BetterAuth<S> {
         let update_req: UpdateUserRequest =
             serde_json::from_value(serde_json::Value::Object(body.clone()))
                 .map_err(|e| AuthError::bad_request(format!("Invalid JSON: {e}")))?;
+        let additional_fields = self
+            .context
+            .parse_user_fields(
+                raw_body
+                    .as_object()
+                    .ok_or_else(|| AuthError::bad_request("Invalid JSON object"))?,
+                false,
+            )
+            .map_err(|error| match error {
+                better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
+                    AuthError::Api {
+                        status: 400,
+                        code: Some(code.into()),
+                        message,
+                    }
+                }
+                better_auth_core::field_policy::FieldInputError::Transform(error) => error,
+            })?;
         let (username, display_username) =
             normalize_username_fields(update_req.username, update_req.display_username);
 
@@ -780,7 +833,8 @@ impl<S: AuthSchema> BetterAuth<S> {
             .and_then(serde_json::Value::as_bool)
             == Some(true)
             && body.get("phoneNumber") == Some(&serde_json::Value::Null);
-        let has_changes = clear_phone
+        let has_changes = additional_fields.has_input_fields()
+            || clear_phone
             || update_req.name.is_some()
             || update_req.image.is_some()
             || username.is_some()
@@ -792,6 +846,7 @@ impl<S: AuthSchema> BetterAuth<S> {
         }
 
         let update_user = UpdateUser {
+            additional_fields,
             is_anonymous: None,
             phone_number: clear_phone.then_some(None),
             phone_number_verified: None,
@@ -812,7 +867,7 @@ impl<S: AuthSchema> BetterAuth<S> {
 
         let publication = match self
             .store
-            .update_user(&current_user.id(), update_user.clone())
+            .update_user_record(&current_user.id(), update_user.clone())
             .await
         {
             Ok(updated_user) => better_auth_core::CacheVersionContext::created(
@@ -842,6 +897,9 @@ impl<S: AuthSchema> BetterAuth<S> {
                 }
                 if let Some(metadata) = update_user.metadata {
                     user.metadata = metadata;
+                }
+                for (name, value) in update_user.additional_fields {
+                    drop(user.extension_fields.insert(name, value.to_json_value()?));
                 }
                 if let Some(phone_number) = update_user.phone_number {
                     user.phone_number = phone_number;

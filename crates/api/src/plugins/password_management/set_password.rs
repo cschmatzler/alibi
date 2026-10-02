@@ -93,7 +93,7 @@ pub async fn set_password<S: AuthSchema>(
         drop(
             context
                 .database
-                .update_account(
+                .update_account_record(
                     account.id().as_ref(),
                     UpdateAccount {
                         password: Some(password),
@@ -106,7 +106,8 @@ pub async fn set_password<S: AuthSchema>(
         drop(
             context
                 .database
-                .create_account(CreateAccount {
+                .create_account_record(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: user.id().into_owned(),
                     account_id: user.id().into_owned(),
                     provider_id: "credential".to_owned(),

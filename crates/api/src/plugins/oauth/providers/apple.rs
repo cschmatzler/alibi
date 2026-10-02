@@ -191,12 +191,15 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         };
         drop(object.insert("name".into(), name_value));
         let data = profile.to_json_value().map_err(|error| error.to_string())?;
+        let mut user_output = None;
         let user = if let Some(mapper) = self.map_profile_to_user {
             let mut mapped = mapper(data.clone())?;
+            user_output = Some(mapped.public_profile(true));
             mapped.id = id;
             mapped
         } else {
             OAuthUserInfo {
+                additional_fields: Default::default(),
                 id,
                 email,
                 name: Some(name),
@@ -204,7 +207,11 @@ impl OAuthUserInfoHandler for AppleUserInfo {
                 email_verified,
             }
         };
-        Ok(OAuthUserInfoResponse { user, data })
+        Ok(OAuthUserInfoResponse {
+            user_output,
+            user,
+            data,
+        })
     }
 }
 

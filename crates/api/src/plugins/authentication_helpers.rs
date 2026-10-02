@@ -412,9 +412,9 @@ pub(in crate::plugins) fn apply_creation_input_defaults(
 pub(in crate::plugins) async fn session_response<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
-    user_id: &str,
+    user: better_auth_core::AdapterRecord<S::User>,
 ) -> AuthResult<(Value, AuthResponse)> {
-    session_response_with_remember(ctx, req, user_id, None).await
+    session_response_with_remember(ctx, req, user, None).await
 }
 
 ///
@@ -423,7 +423,7 @@ pub(in crate::plugins) async fn session_response<S: AuthSchema>(
 pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
-    user_id: &str,
+    user: better_auth_core::AdapterRecord<S::User>,
     remember_me: Option<bool>,
 ) -> AuthResult<(Value, AuthResponse)> {
     use better_auth_core::utils::cookie_utils::{
@@ -449,9 +449,9 @@ pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
         extensions: ctx.extensions.clone(),
     };
     let meta = better_auth_core::RequestMeta::from_request(req);
-    let issued = crate::plugins::helpers::issue_user_session(
+    let issued = crate::plugins::helpers::issue_selected_user_session_record(
         &issuing_context,
-        user_id,
+        user,
         meta.ip_address,
         meta.user_agent,
     )
@@ -496,7 +496,7 @@ pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
 pub(in crate::plugins) async fn revoke_unproven_access<S: AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
-) -> AuthResult<Option<S::User>> {
+) -> AuthResult<Option<better_auth_core::AdapterRecord<S::User>>> {
     let identifier = format!("revoke-unproven-account-access:{user_id}");
     let reserved = ctx
         .verifications()
@@ -526,10 +526,10 @@ pub(in crate::plugins) async fn revoke_unproven_access<S: AuthSchema>(
             }
             tokio::time::sleep(std::time::Duration::from_millis(250)).await;
         }
-        return ctx.database.get_user_by_id(user_id).await;
+        return ctx.database.get_user_by_id_record(user_id).await;
     }
     let result = async {
-        let Some(user) = ctx.database.get_user_by_id(user_id).await? else {
+        let Some(user) = ctx.database.get_user_by_id_record(user_id).await? else {
             return Ok(None);
         };
         if user.email_verified() {
@@ -540,7 +540,7 @@ pub(in crate::plugins) async fn revoke_unproven_access<S: AuthSchema>(
         }
         ctx.database.delete_user_sessions(user_id).await?;
         ctx.database
-            .update_user(
+            .update_user_record(
                 user_id,
                 UpdateUser {
                     email_verified: Some(true),

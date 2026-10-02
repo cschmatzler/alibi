@@ -2,7 +2,7 @@ use super::StatusResponse;
 use better_auth_core::entity::{AuthAccount, AuthUser};
 use better_auth_core::{AuthContext, AuthError, AuthResult};
 use better_auth_core::{AuthRequest, AuthResponse};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use validator::Validate;
 
 /// Account management plugin for listing and unlinking user accounts.
@@ -21,28 +21,6 @@ pub struct AccountManagementConfig {
 struct UnlinkAccountRequest {
     #[serde(rename = "accountId")]
     account_id: String,
-}
-
-#[derive(Debug, Serialize)]
-pub(in crate::plugins) struct AccountResponse {
-    id: String,
-    #[serde(rename = "accountId")]
-    account_id: String,
-    #[serde(rename = "providerId")]
-    provider_id: String,
-    #[serde(rename = "userId")]
-    user_id: String,
-    #[serde(
-        rename = "createdAt",
-        serialize_with = "better_auth_core::utils::datetime::serialize"
-    )]
-    created_at: chrono::DateTime<chrono::Utc>,
-    #[serde(
-        rename = "updatedAt",
-        serialize_with = "better_auth_core::utils::datetime::serialize"
-    )]
-    updated_at: chrono::DateTime<chrono::Utc>,
-    scopes: Vec<String>,
 }
 
 better_auth_core::impl_auth_plugin! {
@@ -103,31 +81,26 @@ impl std::fmt::Debug for AccountManagementPlugin {
 pub(in crate::plugins) async fn list_accounts_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<Vec<AccountResponse>> {
-    let accounts = ctx.database.get_user_accounts(&user.id()).await?;
-
-    let filtered: Vec<AccountResponse> = accounts
+) -> AuthResult<Vec<serde_json::Map<String, serde_json::Value>>> {
+    let accounts = ctx.database.get_user_accounts_record(&user.id()).await?;
+    accounts
         .iter()
-        .map(|acc| AccountResponse {
-            id: acc.id().to_string(),
-            account_id: acc.account_id().to_owned(),
-            provider_id: acc.provider_id().to_owned(),
-            user_id: acc.user_id().to_string(),
-            created_at: acc.created_at(),
-            updated_at: acc.updated_at(),
-            scopes: acc
-                .scope()
-                .map(|s| {
-                    s.split([' ', ','])
-                        .filter(|s| !s.is_empty())
-                        .map(str::to_owned)
-                        .collect()
-                })
-                .unwrap_or_default(),
+        .map(|account| {
+            let mut output = ctx.account_view(account)?;
+            let scopes = match output.remove("scope") {
+                None | Some(serde_json::Value::Null) => Vec::new(),
+                Some(serde_json::Value::String(scope)) => scope
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|scope| !scope.is_empty())
+                    .map(str::to_owned)
+                    .collect(),
+                Some(_) => return Err(AuthError::internal("Account scope must be a string")),
+            };
+            drop(output.insert("scopes".into(), serde_json::to_value(scopes)?));
+            Ok(output)
         })
-        .collect::<Vec<_>>();
-
-    Ok(filtered)
+        .collect()
 }
 
 ///

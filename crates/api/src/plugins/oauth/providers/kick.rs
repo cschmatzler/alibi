@@ -142,9 +142,11 @@ impl OAuthUserInfoHandler for KickUserInfo {
             .mapper
             .map(|mapper| mapper(profile.clone()))
             .transpose()?;
+        let user_output = mapped.as_ref().map(|user| user.public_profile(true));
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: scalar(profile.get("user_id"))?.unwrap_or_default(),
                 name: scalar(profile.get("name"))?,
                 email: profile
@@ -157,6 +159,7 @@ impl OAuthUserInfoHandler for KickUserInfo {
             },
         };
         Ok(OAuthUserInfoResponse {
+            user_output,
             user,
             data: profile,
         })

@@ -188,8 +188,10 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
             .mapper
             .map(|mapper| mapper(profile.clone()))
             .transpose()?;
+        let user_output = mapped.as_ref().map(|user| user.public_profile(true));
         let id = subject(profile)?;
         let mut user = mapped.unwrap_or_else(|| OAuthUserInfo {
+            additional_fields: Default::default(),
             id: id.clone(),
             email: email.clone(),
             name: Some(if name.is_empty() { email } else { name }),
@@ -198,6 +200,7 @@ impl super::OAuthUserInfoHandler for CloudflareUserInfo {
         });
         user.id = id;
         Ok(super::OAuthUserInfoResponse {
+            user_output,
             user,
             data: profile.clone(),
         })

@@ -259,6 +259,7 @@ async fn test_spec_driven_endpoint_validation() {
     let account_info_account = auth
         .store()
         .create_account(CreateAccount {
+            additional_fields: Default::default(),
             user_id: ai_user_id.to_owned(),
             account_id: "mock-account-id".to_owned(),
             provider_id: "mock".to_owned(),

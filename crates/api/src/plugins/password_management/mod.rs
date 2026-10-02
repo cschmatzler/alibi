@@ -209,7 +209,7 @@ impl PasswordManagementPlugin {
         };
 
         let (user, _session) = ctx
-            .require_authoritative_session(req)
+            .require_authoritative_session_record(req)
             .await
             .map_err(|error| {
                 if matches!(

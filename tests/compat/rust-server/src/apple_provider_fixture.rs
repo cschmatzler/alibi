@@ -73,6 +73,7 @@ pub(super) async fn router(
         if mode == "mapped" {
             options.map_profile_to_user = Some(|profile| {
                 Ok(better_auth::plugins::oauth::OAuthUserInfo {
+                    additional_fields: Default::default(),
                     id: "cannot-replace-source-subject".into(),
                     name: Some(format!(
                         "Mapped {}",

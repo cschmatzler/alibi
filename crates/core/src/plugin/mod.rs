@@ -140,6 +140,14 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         indexmap::IndexMap::new()
     }
 
+    fn user_fields(&self) -> crate::field_policy::FieldConfigs {
+        crate::field_policy::FieldConfigs::new()
+    }
+
+    fn account_fields(&self) -> crate::field_policy::FieldConfigs {
+        crate::field_policy::FieldConfigs::new()
+    }
+
     /// Documentation annotations collected after all plugins initialize.
     /// Override this hook for custom endpoints and model field policies.
     fn openapi_metadata(&self, ctx: &AuthInitContext<S>) -> crate::openapi::PluginOpenApiMetadata {
@@ -475,6 +483,21 @@ impl<S: AuthSchema> AuthInitContext<S> {
         self.extensions.insert(callbacks);
     }
 
+    /// Observe genuine retained adapter output after a write, with transaction
+    /// callbacks deferred until commit. Existing typed physical hooks are separate.
+    pub fn register_adapter_after_hook(
+        &mut self,
+        callback: Arc<dyn crate::store::AdapterAfterHook<S>>,
+    ) {
+        let mut callbacks = self
+            .extensions
+            .get::<crate::store::AdapterCallbacks<S>>()
+            .map(|callbacks| (*callbacks).clone())
+            .unwrap_or_default();
+        callbacks.0.push(callback);
+        self.extensions.insert(callbacks);
+    }
+
     /// Finalize the instance's store without mutating a shared underlying adapter.
     #[must_use]
     pub fn database_with_registered_transforms(&self) -> Arc<dyn AuthStore<S>> {
@@ -493,6 +516,13 @@ impl<S: AuthSchema> AuthInitContext<S> {
             && transforms.updates.is_empty()
             && session_callbacks.callbacks.is_empty()
             && fields.is_none()
+            && self.config.user.additional_fields.is_empty()
+            && self.config.session.additional_fields.is_empty()
+            && self.config.account.additional_fields.is_empty()
+            && self
+                .extensions
+                .get::<crate::store::AdapterCallbacks<S>>()
+                .is_none_or(|callbacks| callbacks.0.is_empty())
             && self.config.user_validation.is_none()
         {
             return Arc::clone(&self.database);
@@ -502,11 +532,28 @@ impl<S: AuthSchema> AuthInitContext<S> {
             Arc::clone(&self.config),
             transforms,
             session_callbacks,
-            fields.map(|fields| (*fields).clone()).unwrap_or_default(),
+            fields.map_or_else(
+                || {
+                    crate::field_policy::SessionFields(
+                        self.config.session.additional_fields.clone(),
+                    )
+                },
+                |fields| (*fields).clone(),
+            ),
             self.extensions
                 .get::<crate::field_policy::SessionAdapterFields>()
                 .map(|fields_2| (*fields_2).clone())
-                .unwrap_or_default(),
+                .unwrap_or_else(|| {
+                    crate::field_policy::SessionAdapterFields(Arc::new(
+                        self.config.session.additional_fields.clone(),
+                    ))
+                }),
+            AuthContext::with_metadata(
+                Arc::clone(&self.config),
+                Arc::clone(&self.database),
+                self.metadata.clone(),
+            )
+            .with_extensions(self.extensions.clone()),
         ))
     }
 
@@ -529,6 +576,24 @@ impl<S: AuthSchema> AuthInitContext<S> {
 }
 
 impl<S: AuthSchema> AuthContext<S> {
+    /// Parse configured user fields at the endpoint boundary before creation
+    /// validation or adapter hooks. Unknown fields are ignored by this policy.
+    pub fn parse_user_fields(
+        &self,
+        input: &indexmap::IndexMap<String, crate::utils::json::JsValue>,
+        creation: bool,
+    ) -> Result<crate::field_policy::FieldValues, crate::field_policy::FieldInputError> {
+        let registered = self.extensions.get::<crate::field_policy::UserFields>();
+        let configured =
+            crate::field_policy::SessionFields(self.config.user.additional_fields.clone());
+        let fields = registered.as_ref().map_or(&configured, |fields| &fields.0);
+        if creation {
+            fields.parse_create(input)
+        } else {
+            fields.parse_update(input)
+        }
+    }
+
     /// Hash through initialized policies at the current actual endpoint.
     ///
     /// # Errors
@@ -627,6 +692,32 @@ impl<S: AuthSchema> AuthContext<S> {
     }
 
     pub fn user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {
+        self.project_user_view(user, true)
+    }
+
+    /// Project trusted adapter output without removing declared hidden fields.
+    /// Canonical identity accessors still refer to the physical model.
+    pub fn trusted_user_view(&self, user: &impl crate::entity::AuthUser) -> crate::wire::UserView {
+        self.project_user_view(user, false)
+    }
+
+    fn project_user_view(
+        &self,
+        user: &impl crate::entity::AuthUser,
+        public: bool,
+    ) -> crate::wire::UserView {
+        if let Some(view) = user.retained_user_view() {
+            let mut view = view.clone();
+            if public {
+                let registered = self.extensions.get::<crate::field_policy::UserFields>();
+                let fields = registered
+                    .as_ref()
+                    .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
+                view.extension_fields
+                    .retain(|name, _| fields.get(name).is_none_or(|field| field.returned));
+            }
+            return view;
+        }
         let mut view = crate::wire::UserView::from(user);
         if self.feature_enabled("username.enabled") {
             for (key, absent) in [
@@ -709,10 +800,150 @@ impl<S: AuthSchema> AuthContext<S> {
         } else {
             view.last_login_method = None;
         }
+        let registered = self.extensions.get::<crate::field_policy::UserFields>();
+        let fields = registered
+            .as_ref()
+            .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
+        let physical = user.additional_fields();
+        let values = user
+            .adapter_snapshot()
+            .map(crate::AdapterOutput::values)
+            .unwrap_or(&physical);
+        for (name, field) in fields {
+            drop(view.extension_fields.remove(name));
+            if (!public || field.returned)
+                && let Some(value) = values.get(name).or_else(|| {
+                    field
+                        .field_name
+                        .as_ref()
+                        .and_then(|physical| values.get(physical))
+                })
+            {
+                drop(view.extension_fields.insert(name.clone(), value.clone()));
+            }
+        }
         view
     }
 
+    /// Retain configured output for an already authenticated physical user.
+    pub(crate) async fn user_adapter_record(
+        &self,
+        user: S::User,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        use crate::AuthUser;
+        let registered = self
+            .extensions
+            .get::<crate::field_policy::AdapterFieldPolicies>();
+        let fields = registered.as_ref().map_or_else(
+            || {
+                crate::field_policy::SessionAdapterFields(Arc::new(
+                    self.config.user.additional_fields.clone(),
+                ))
+            },
+            |fields| fields.user.clone(),
+        );
+        let output = fields
+            .record_output(
+                serde_json::to_value(crate::UserView::from(&user))?,
+                user.additional_fields(),
+                serde_json::to_value(self.trusted_user_view(&user))?,
+            )
+            .await?;
+        Ok(crate::AdapterRecord::with_output(user, output))
+    }
+
+    /// Preserve the initialized adapter result's physical authority and declared
+    /// undefined presence while applying the public user field policy once.
+    #[must_use]
+    pub fn filter_user_record(
+        &self,
+        record: crate::AdapterRecord<S::User>,
+    ) -> crate::AdapterRecord<S::User> {
+        let registered = self.extensions.get::<crate::field_policy::UserFields>();
+        let fields = registered
+            .as_ref()
+            .map_or(&self.config.user.additional_fields, |fields| &fields.0.0);
+        let output = record.raw_snapshot().filter_returned(fields);
+        crate::AdapterRecord::with_output(record.into_stored(), output)
+    }
+
+    /// Public account output retains declared adapter projections and always
+    /// removes credentials, including explicitly returned additional fields.
+    ///
+    /// # Errors
+    /// Returns an error when the canonical account view cannot be serialized.
+    pub fn account_view(
+        &self,
+        account: &impl crate::entity::AuthAccount,
+    ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+        let serde_json::Value::Object(mut view) =
+            serde_json::to_value(crate::wire::AccountView::from(account))?
+        else {
+            return Err(AuthError::internal("Account view must be an object"));
+        };
+        let registered = self.extensions.get::<crate::field_policy::AccountFields>();
+        let fields = registered
+            .as_ref()
+            .map_or(&self.config.account.additional_fields, |fields| &fields.0.0);
+        let physical = account.additional_fields();
+        let values = account
+            .adapter_snapshot()
+            .map(crate::AdapterOutput::values)
+            .unwrap_or(&physical);
+        for (name, field) in fields {
+            drop(view.remove(name));
+            if field.returned
+                && let Some(value) = values.get(name).or_else(|| {
+                    field
+                        .field_name
+                        .as_ref()
+                        .and_then(|physical| values.get(physical))
+                })
+            {
+                drop(view.insert(name.clone(), value.clone()));
+            }
+        }
+        for credential in [
+            "accessToken",
+            "refreshToken",
+            "idToken",
+            "accessTokenExpiresAt",
+            "refreshTokenExpiresAt",
+            "password",
+        ] {
+            drop(view.remove(credential));
+        }
+        Ok(view)
+    }
+
     pub fn session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
+        self.project_session_view(session, true)
+    }
+
+    pub fn trusted_session_view(&self, session: &impl AuthSession) -> crate::wire::SessionView {
+        self.project_session_view(session, false)
+    }
+
+    fn project_session_view(
+        &self,
+        session: &impl AuthSession,
+        public: bool,
+    ) -> crate::wire::SessionView {
+        if let Some(view) = session.retained_session_view() {
+            let mut view = view.clone();
+            if public {
+                let registered = self.extensions.get::<crate::field_policy::SessionFields>();
+                let fields = registered
+                    .as_ref()
+                    .map_or(&self.config.session.additional_fields, |fields| &fields.0);
+                for (name, field) in fields {
+                    if !field.returned {
+                        let _ignored_clone = view.omitted_fields.insert(name.clone());
+                    }
+                }
+            }
+            return view;
+        }
         let mut view = crate::wire::SessionView::from(session);
         let registered = self.extensions.get::<crate::field_policy::SessionFields>();
         let fields = registered
@@ -720,8 +951,18 @@ impl<S: AuthSchema> AuthContext<S> {
             .map_or(&self.config.session.additional_fields, |fields| &fields.0);
         view.extension_fields
             .retain(|name, _| fields.contains_key(name));
+        if let Some(output) = session.adapter_snapshot().map(crate::AdapterOutput::values) {
+            for name in fields.keys() {
+                drop(view.extension_fields.remove(name));
+                if let Some(value) = output.get(name) {
+                    drop(view.extension_fields.insert(name.clone(), value.clone()));
+                } else {
+                    let _ignored_clone = view.omitted_fields.insert(name.clone());
+                }
+            }
+        }
         for (name, field) in fields {
-            if !field.returned {
+            if public && !field.returned {
                 let _ignored_clone = view.omitted_fields.insert(name.clone());
             }
         }
@@ -864,6 +1105,32 @@ impl<S: AuthSchema> AuthContext<S> {
         crate::cache::runtime::clear_established_session::<S>(req);
         let (user, session, _) = self.authenticated_session(req, false).await?;
         Ok((user, session))
+    }
+
+    /// Resolve physical signed-cookie authority while retaining the actual
+    /// initialized adapter output for downstream public and callback projections.
+    ///
+    /// # Errors
+    /// Propagates authentication, storage and output callback failures.
+    pub async fn require_authoritative_session_record(
+        &self,
+        req: &AuthRequest,
+    ) -> AuthResult<(crate::AdapterRecord<S::User>, crate::wire::SessionView)> {
+        crate::cache::runtime::clear_established_session::<S>(req);
+        let mut physical = req.clone();
+        physical.virtual_session = None;
+        drop(
+            physical
+                .query
+                .insert("disableCookieCache".into(), "true".into()),
+        );
+        let read = crate::cache::runtime::authenticated(self, &physical, false)
+            .await?
+            .ok_or(AuthError::Unauthenticated)?;
+        match read.user {
+            crate::AuthenticatedUser::Stored(user) => Ok((user, read.session)),
+            crate::AuthenticatedUser::Cached(_) => Err(AuthError::Unauthenticated),
+        }
     }
 
     async fn authenticated_session(

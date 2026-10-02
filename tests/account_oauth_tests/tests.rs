@@ -799,6 +799,7 @@ async fn test_unlink_non_last_account_always_allowed() {
     // Create two accounts
     let google_account = db
         .create_account(CreateAccount {
+            additional_fields: Default::default(),
             user_id: user_id.clone(),
             account_id: "google-id".to_owned(),
             provider_id: "google".to_owned(),
@@ -814,6 +815,7 @@ async fn test_unlink_non_last_account_always_allowed() {
         .unwrap();
 
     db.create_account(CreateAccount {
+        additional_fields: Default::default(),
         user_id: user_id.clone(),
         account_id: "github-id".to_owned(),
         provider_id: "github".to_owned(),
@@ -888,6 +890,7 @@ async fn test_account_linking_disabled_rejects_new_provider() {
         .unwrap();
 
     db.create_account(CreateAccount {
+        additional_fields: Default::default(),
         user_id: user.id().to_string(),
         account_id: "old-github-id".to_owned(),
         provider_id: "github".to_owned(),

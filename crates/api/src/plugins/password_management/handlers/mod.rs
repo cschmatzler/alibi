@@ -7,9 +7,7 @@ use super::types::{
     ResetPasswordTokenResult, VerifyPasswordRequest,
 };
 use super::{PasswordManagementConfig, StatusResponse};
-use crate::plugins::helpers::{
-    SessionIssueError, get_credential_account, get_credential_password_hash, issue_user_session,
-};
+use crate::plugins::helpers::{get_credential_account, get_credential_password_hash};
 use better_auth_core::utils::password as password_utils;
 use better_auth_core::wire::UserView;
 use better_auth_core::{
@@ -48,7 +46,7 @@ pub(in crate::plugins) async fn request_password_reset_core(
         message: PASSWORD_RESET_SUCCESS_MESSAGE.to_owned(),
     };
 
-    let Some(user) = ctx.database.get_user_by_email(&body.email).await? else {
+    let Some(user) = ctx.database.get_user_by_email_record(&body.email).await? else {
         drop(better_auth_core::utils::id::generate_id(24));
         drop(ctx.verifications().find("dummy-verification-token").await?);
         tracing::error!(email = %body.email, "Reset Password: User not found");
@@ -131,7 +129,7 @@ pub(in crate::plugins) async fn reset_password_core(
     let user_id = verification.value()?.to_owned();
     let user = ctx
         .database
-        .get_user_by_id(&user_id)
+        .get_user_by_id_record(&user_id)
         .await?
         .ok_or(AuthError::Upstream {
             status: 400,
@@ -148,7 +146,7 @@ pub(in crate::plugins) async fn reset_password_core(
     if let Some(account) = get_credential_account(ctx, &user_id).await? {
         drop(
             ctx.database
-                .update_account(
+                .update_account_record(
                     &account.id(),
                     UpdateAccount {
                         password: Some(password_hash),
@@ -160,7 +158,8 @@ pub(in crate::plugins) async fn reset_password_core(
     } else {
         drop(
             ctx.database
-                .create_account(CreateAccount {
+                .create_account_record(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: user_id.clone(),
                     account_id: user_id.clone(),
                     provider_id: "credential".to_owned(),
@@ -234,18 +233,22 @@ pub(in crate::plugins) async fn reset_password_token_core(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(in crate::plugins) async fn change_password_core(
+pub(in crate::plugins) async fn change_password_core<S: better_auth_core::AuthSchema>(
     body: &ChangePasswordRequest,
-    user: &impl AuthUser,
+    user: &better_auth_core::AdapterRecord<S::User>,
     config: &PasswordManagementConfig,
     meta: &RequestMeta,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<S>,
 ) -> AuthResult<(ChangePasswordResponse<UserView>, Option<String>)> {
+    let credential_account = get_credential_account(ctx, user.id())
+        .await?
+        .ok_or_else(|| AuthError::bad_request("Credential account not found"))?;
     let stored_hash = if config.require_current_password {
         Some(
-            get_credential_password_hash(ctx, user)
-                .await?
-                .ok_or_else(|| AuthError::bad_request("Credential account not found"))?,
+            credential_account
+                .password()
+                .ok_or_else(|| AuthError::bad_request("Credential account not found"))?
+                .to_owned(),
         )
     } else {
         None
@@ -272,12 +275,9 @@ pub(in crate::plugins) async fn change_password_core(
         .map_err(|_error| AuthError::bad_request("Invalid password"))?;
     }
 
-    let credential_account = get_credential_account(ctx, user.id())
-        .await?
-        .ok_or_else(|| AuthError::bad_request("Credential account not found"))?;
     drop(
         ctx.database
-            .update_account(
+            .update_account_record(
                 &credential_account.id(),
                 UpdateAccount {
                     password: Some(password_hash),
@@ -289,15 +289,13 @@ pub(in crate::plugins) async fn change_password_core(
 
     let new_token = if body.revoke_other_sessions == Some(true) {
         ctx.database.delete_user_sessions(&user.id()).await?;
-        let session = issue_user_session(
-            ctx,
-            &user.id(),
-            meta.ip_address.clone(),
-            meta.user_agent.clone(),
-        )
-        .await
-        .map_err(SessionIssueError::into_auth_error)?
-        .session;
+        let session = ctx
+            .session_manager()
+            .create_session_record(user, meta.ip_address.clone(), meta.user_agent.clone())
+            .await?;
+        let user = ctx.filter_user_record(user.clone());
+        better_auth_core::cache::runtime::emit_issuance(ctx, &user, &session).await?;
+        crate::plugins::helpers::record_completed_session_record::<S>(&user, &session);
         Some(session.token().to_owned())
     } else {
         None
@@ -305,12 +303,7 @@ pub(in crate::plugins) async fn change_password_core(
 
     let response = ChangePasswordResponse {
         token: new_token.clone(),
-        user: ctx
-            .database
-            .get_user_by_id(&user.id())
-            .await?
-            .map(|user| ctx.user_view(&user))
-            .ok_or(AuthError::UserNotFound)?,
+        user: ctx.user_view(user),
     };
 
     Ok((response, new_token))

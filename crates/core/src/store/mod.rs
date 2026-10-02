@@ -88,6 +88,43 @@ impl<S: AuthSchema> Clone for SessionCreatedCallbacks<S> {
     }
 }
 
+/// A persisted adapter result after declared output transforms. Hidden fields
+/// remain present; public response filtering has not run on this record.
+pub enum AdapterEvent<S: AuthSchema> {
+    UserCreated(crate::AdapterRecord<S::User>),
+    UserUpdated(crate::AdapterRecord<S::User>),
+    SessionCreated(crate::AdapterRecord<S::Session>),
+    SessionUpdated(crate::AdapterRecord<S::Session>),
+    AccountCreated(crate::AdapterRecord<S::Account>),
+    AccountUpdated(crate::AdapterRecord<S::Account>),
+}
+
+/// Record-aware application adapter after observer. Output errors prevent this
+/// observer; transaction observers run only after commit. Observer errors do not
+/// roll back committed writes. Typed physical storage hooks remain separate.
+#[async_trait]
+pub trait AdapterAfterHook<S: AuthSchema>: Send + Sync {
+    async fn after_write(
+        &self,
+        event: &AdapterEvent<S>,
+        database: &dyn AuthStore<S>,
+    ) -> AuthResult<()>;
+}
+
+pub(crate) struct AdapterCallbacks<S: AuthSchema>(pub(crate) Vec<Arc<dyn AdapterAfterHook<S>>>);
+
+impl<S: AuthSchema> Default for AdapterCallbacks<S> {
+    fn default() -> Self {
+        Self(Vec::new())
+    }
+}
+
+impl<S: AuthSchema> Clone for AdapterCallbacks<S> {
+    fn clone(&self) -> Self {
+        Self(self.0.clone())
+    }
+}
+
 pub(crate) struct PluginStore<S: AuthSchema> {
     inner: Arc<dyn AuthStore<S>>,
     config: Arc<crate::AuthConfig>,
@@ -95,6 +132,21 @@ pub(crate) struct PluginStore<S: AuthSchema> {
     session_callbacks: SessionCreatedCallbacks<S>,
     session_fields: crate::field_policy::SessionFields,
     adapter_fields: crate::field_policy::SessionAdapterFields,
+    projection_context: Arc<crate::AuthContext<S>>,
+}
+
+impl<S: AuthSchema> Clone for PluginStore<S> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: Arc::clone(&self.inner),
+            config: Arc::clone(&self.config),
+            transforms: self.transforms.clone(),
+            session_callbacks: self.session_callbacks.clone(),
+            session_fields: self.session_fields.clone(),
+            adapter_fields: self.adapter_fields.clone(),
+            projection_context: Arc::clone(&self.projection_context),
+        }
+    }
 }
 
 impl<S: AuthSchema> PluginStore<S> {
@@ -106,6 +158,7 @@ impl<S: AuthSchema> PluginStore<S> {
         session_callbacks: SessionCreatedCallbacks<S>,
         session_fields: crate::field_policy::SessionFields,
         adapter_fields: crate::field_policy::SessionAdapterFields,
+        projection_context: crate::AuthContext<S>,
     ) -> Self {
         Self {
             inner,
@@ -114,13 +167,222 @@ impl<S: AuthSchema> PluginStore<S> {
             session_callbacks,
             session_fields,
             adapter_fields,
+            projection_context: Arc::new(projection_context),
         }
+    }
+
+    fn field_policies(&self) -> crate::field_policy::AdapterFieldPolicies {
+        self.projection_context
+            .extensions
+            .get::<crate::field_policy::AdapterFieldPolicies>()
+            .map(|fields| (*fields).clone())
+            .unwrap_or_else(|| crate::field_policy::AdapterFieldPolicies {
+                user: crate::field_policy::SessionAdapterFields(Arc::new(
+                    self.config.user.additional_fields.clone(),
+                )),
+                account: crate::field_policy::SessionAdapterFields(Arc::new(
+                    self.config.account.additional_fields.clone(),
+                )),
+            })
+    }
+
+    async fn user_record(&self, user: S::User) -> AuthResult<crate::AdapterRecord<S::User>> {
+        self.projection_context.user_adapter_record(user).await
+    }
+
+    async fn session_record(
+        &self,
+        session: S::Session,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        use crate::AuthSession;
+        let output = self
+            .adapter_fields
+            .record_output(
+                serde_json::to_value(crate::SessionView::from(&session))?,
+                session.additional_fields(),
+                serde_json::to_value(self.projection_context.trusted_session_view(&session))?,
+            )
+            .await?;
+        Ok(crate::AdapterRecord::with_output(session, output))
+    }
+
+    async fn account_record(
+        &self,
+        account: S::Account,
+    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+        use crate::AuthAccount;
+        let serde_json::Value::Object(mut canonical) =
+            serde_json::to_value(crate::AccountView::from(&account))?
+        else {
+            return Err(AuthError::internal("Account output must be an object"));
+        };
+        drop(canonical.insert(
+            "password".into(),
+            account.password().map_or(serde_json::Value::Null, |value| {
+                serde_json::Value::String(value.into())
+            }),
+        ));
+        let output = self
+            .field_policies()
+            .account
+            .record_output(
+                serde_json::Value::Object(canonical.clone()),
+                account.additional_fields(),
+                serde_json::Value::Object(canonical),
+            )
+            .await?;
+        Ok(crate::AdapterRecord::with_output(account, output))
+    }
+
+    async fn observe(&self, event: AdapterEvent<S>) -> AuthResult<()> {
+        if let Some(callbacks) = self
+            .projection_context
+            .extensions
+            .get::<AdapterCallbacks<S>>()
+        {
+            for callback in &callbacks.0 {
+                callback.after_write(&event, self).await?;
+            }
+        }
+        Ok(())
     }
 }
 
 #[async_trait]
 impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
-    async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User> {
+    async fn create_user_record(
+        &self,
+        create_user: CreateUser,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        let record = self
+            .user_record(self.create_user(create_user).await?)
+            .await?;
+        self.observe(AdapterEvent::UserCreated(record.clone()))
+            .await?;
+        Ok(record)
+    }
+
+    async fn create_user_with_source_record(
+        &self,
+        create_user: CreateUser,
+        source: UserValidationSource,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        let record = self
+            .user_record(self.create_user_with_source(create_user, source).await?)
+            .await?;
+        self.observe(AdapterEvent::UserCreated(record.clone()))
+            .await?;
+        Ok(record)
+    }
+
+    async fn create_user_prepared_record(
+        &self,
+        prepared: PreparedUserCreation,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        let record = self
+            .user_record(self.create_user_prepared(prepared).await?)
+            .await?;
+        self.observe(AdapterEvent::UserCreated(record.clone()))
+            .await?;
+        Ok(record)
+    }
+
+    async fn get_user_by_id_record(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        let Some(model) = self.get_user_by_id(id).await? else {
+            return Ok(None);
+        };
+        let record = self.user_record(model).await?;
+        Ok(Some(record))
+    }
+
+    async fn get_user_by_email_record(
+        &self,
+        email: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        let Some(model) = self.get_user_by_email(email).await? else {
+            return Ok(None);
+        };
+        let record = self.user_record(model).await?;
+        Ok(Some(record))
+    }
+
+    async fn get_user_by_username_record(
+        &self,
+        username: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        let Some(model) = self.get_user_by_username(username).await? else {
+            return Ok(None);
+        };
+        let record = self.user_record(model).await?;
+        Ok(Some(record))
+    }
+
+    async fn get_user_by_phone_number_record(
+        &self,
+        phone_number: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        let Some(model) = self.get_user_by_phone_number(phone_number).await? else {
+            return Ok(None);
+        };
+        let record = self.user_record(model).await?;
+        Ok(Some(record))
+    }
+
+    async fn list_users_by_ids_record(
+        &self,
+        ids: &[String],
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
+        let mut records = Vec::new();
+        for model in self.list_users_by_ids(ids).await? {
+            records.push(self.user_record(model).await?);
+        }
+        Ok(records)
+    }
+
+    async fn list_users_by_ids_page_record(
+        &self,
+        ids: &[String],
+        limit: f64,
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
+        let mut records = Vec::new();
+        for model in self.list_users_by_ids_page(ids, limit).await? {
+            records.push(self.user_record(model).await?);
+        }
+        Ok(records)
+    }
+
+    async fn update_user_record(
+        &self,
+        id: &str,
+        update: UpdateUser,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        let record = self
+            .user_record(self.update_user(id, update).await?)
+            .await?;
+        self.observe(AdapterEvent::UserUpdated(record.clone()))
+            .await?;
+        Ok(record)
+    }
+
+    async fn list_users_record(
+        &self,
+        params: ListUsersParams,
+    ) -> AuthResult<(Vec<crate::AdapterRecord<S::User>>, usize)> {
+        let (models, count) = self.list_users(params).await?;
+        let mut records = Vec::new();
+        for model in models {
+            records.push(self.user_record(model).await?);
+        }
+        Ok((records, count))
+    }
+
+    async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<S::User> {
+        self.field_policies()
+            .user
+            .attach(&mut create_user.additional_fields, true);
         if self.config.user_validation.is_some() {
             let prepared = prepare_creation(&self.config, create_user, None).await?;
             return self.create_user_prepared(prepared).await;
@@ -140,7 +402,10 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
         self.create_user_prepared(prepared).await
     }
     async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
-        let data = create_data(prepared.into_data(), &self.transforms.creates)?;
+        let mut data = create_data(prepared.into_data(), &self.transforms.creates)?;
+        self.field_policies()
+            .user
+            .attach(&mut data.additional_fields, true);
         self.inner
             .create_user_prepared(
                 PreparedUserCreation::from_data(data)
@@ -171,6 +436,9 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
     }
     async fn update_user(&self, id: &str, update: UpdateUser) -> AuthResult<S::User> {
         let mut update = update;
+        self.field_policies()
+            .user
+            .attach(&mut update.additional_fields, false);
         for transform in &self.transforms.updates {
             update = transform(id, update)?;
         }
@@ -186,6 +454,108 @@ impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
+    async fn create_session_record(
+        &self,
+        create_session: CreateSession,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        let record = self
+            .session_record(self.create_session(create_session).await?)
+            .await?;
+        self.observe(AdapterEvent::SessionCreated(record.clone()))
+            .await?;
+        Ok(record)
+    }
+
+    async fn get_session_record(
+        &self,
+        token: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+        let Some(model) = self.get_session(token).await? else {
+            return Ok(None);
+        };
+        let record = self.session_record(model).await?;
+        Ok(Some(record))
+    }
+
+    async fn get_sessions_by_tokens_record(
+        &self,
+        tokens: &[String],
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+        let mut records = Vec::new();
+        for model in self.get_sessions_by_tokens(tokens).await? {
+            records.push(self.session_record(model).await?);
+        }
+        Ok(records)
+    }
+
+    async fn get_user_sessions_record(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+        let mut records = Vec::new();
+        for model in self.get_user_sessions(user_id).await? {
+            records.push(self.session_record(model).await?);
+        }
+        Ok(records)
+    }
+
+    async fn refresh_session_record(
+        &self,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+        let Some(model) = self.refresh_session(token, expires_at).await? else {
+            return Ok(None);
+        };
+        let record = self.session_record(model).await?;
+        self.observe(AdapterEvent::SessionUpdated(record.clone()))
+            .await?;
+        Ok(Some(record))
+    }
+
+    async fn update_session_fields_record(
+        &self,
+        token: &str,
+        fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+        let Some(model) = self.update_session_fields(token, fields).await? else {
+            return Ok(None);
+        };
+        let record = self.session_record(model).await?;
+        self.observe(AdapterEvent::SessionUpdated(record.clone()))
+            .await?;
+        Ok(Some(record))
+    }
+
+    async fn update_session_active_organization_record(
+        &self,
+        token: &str,
+        organization_id: Option<&str>,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        let record = self
+            .session_record(
+                self.update_session_active_organization(token, organization_id)
+                    .await?,
+            )
+            .await?;
+        self.observe(AdapterEvent::SessionUpdated(record.clone()))
+            .await?;
+        Ok(record)
+    }
+
+    async fn update_session_active_team_record(
+        &self,
+        token: &str,
+        team_id: Option<&str>,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        let record = self
+            .session_record(self.update_session_active_team(token, team_id).await?)
+            .await?;
+        self.observe(AdapterEvent::SessionUpdated(record.clone()))
+            .await?;
+        Ok(record)
+    }
+
     async fn update_session_fields(
         &self,
         token: &str,
@@ -219,7 +589,23 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<Option<S::Session>> {
-        self.inner.refresh_session(token, expires_at).await
+        self.refresh_session_with_fields(
+            token,
+            expires_at,
+            crate::field_policy::FieldValues::default(),
+        )
+        .await
+    }
+    async fn refresh_session_with_fields(
+        &self,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+        mut fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<S::Session>> {
+        self.adapter_fields.attach(&mut fields, false);
+        self.inner
+            .refresh_session_with_fields(token, expires_at, fields)
+            .await
     }
     async fn update_session_expiry(
         &self,
@@ -232,6 +618,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         self.inner.delete_session(token).await
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
+        // Source deleteManyWithHooks observes actual adapter outputs before
+        // deletion and ignores lookup/output failures in that observation phase.
+        drop(self.get_user_sessions_record(user_id).await);
         self.inner.delete_user_sessions(user_id).await
     }
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {
@@ -257,7 +646,76 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
-    async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account> {
+    async fn create_account_record(
+        &self,
+        create_account: CreateAccount,
+    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+        let record = self
+            .account_record(self.create_account(create_account).await?)
+            .await?;
+        self.observe(AdapterEvent::AccountCreated(record.clone()))
+            .await?;
+        Ok(record)
+    }
+
+    async fn get_account_record(
+        &self,
+        provider: &str,
+        provider_account_id: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+        let Some(model) = self.get_account(provider, provider_account_id).await? else {
+            return Ok(None);
+        };
+        let record = self.account_record(model).await?;
+        Ok(Some(record))
+    }
+
+    async fn get_credential_account_record(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+        use crate::AuthAccount;
+        let model = self
+            .get_user_accounts(user_id)
+            .await?
+            .into_iter()
+            .find(|account| {
+                account.provider_id() == "credential" && account.account_id() == user_id
+            });
+        match model {
+            Some(model) => self.account_record(model).await.map(Some),
+            None => Ok(None),
+        }
+    }
+
+    async fn get_user_accounts_record(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::Account>>> {
+        let mut records = Vec::new();
+        for model in self.get_user_accounts(user_id).await? {
+            records.push(self.account_record(model).await?);
+        }
+        Ok(records)
+    }
+
+    async fn update_account_record(
+        &self,
+        id: &str,
+        update: UpdateAccount,
+    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+        let record = self
+            .account_record(self.update_account(id, update).await?)
+            .await?;
+        self.observe(AdapterEvent::AccountUpdated(record.clone()))
+            .await?;
+        Ok(record)
+    }
+
+    async fn create_account(&self, mut create_account: CreateAccount) -> AuthResult<S::Account> {
+        self.field_policies()
+            .account
+            .attach(&mut create_account.additional_fields, true);
         self.inner.create_account(create_account).await
     }
     async fn get_account(
@@ -270,7 +728,10 @@ impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
     async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<S::Account>> {
         self.inner.get_user_accounts(user_id).await
     }
-    async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<S::Account> {
+    async fn update_account(&self, id: &str, mut update: UpdateAccount) -> AuthResult<S::Account> {
+        self.field_policies()
+            .account
+            .attach(&mut update.additional_fields, false);
         self.inner.update_account(id, update).await
     }
     async fn delete_account(&self, id: &str) -> AuthResult<()> {
@@ -869,10 +1330,108 @@ struct PluginTransaction<'a, S: AuthSchema> {
     pending_sessions: Arc<std::sync::Mutex<Vec<S::Session>>>,
     session_fields: crate::field_policy::SessionFields,
     adapter_fields: crate::field_policy::SessionAdapterFields,
+    record_store: PluginStore<S>,
+    pending_records: Arc<std::sync::Mutex<Vec<AdapterEvent<S>>>>,
+}
+
+impl<S: AuthSchema> PluginTransaction<'_, S> {
+    fn observe(&self, event: AdapterEvent<S>) -> AuthResult<()> {
+        self.pending_records
+            .lock()
+            .map_err(|_| AuthError::internal("Adapter callback queue poisoned"))?
+            .push(event);
+        Ok(())
+    }
 }
 
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    async fn create_user_record(
+        &self,
+        create_user: CreateUser,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        let model = self.create_user(create_user).await?;
+        let record = self.record_store.user_record(model).await?;
+        self.observe(AdapterEvent::UserCreated(record.clone()))?;
+        Ok(record)
+    }
+
+    async fn create_user_with_source_record(
+        &self,
+        create_user: CreateUser,
+        source: UserValidationSource,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        let model = self.create_user_with_source(create_user, source).await?;
+        let record = self.record_store.user_record(model).await?;
+        self.observe(AdapterEvent::UserCreated(record.clone()))?;
+        Ok(record)
+    }
+
+    async fn create_user_prepared_record(
+        &self,
+        prepared: PreparedUserCreation,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        let model = self.create_user_prepared(prepared).await?;
+        let record = self.record_store.user_record(model).await?;
+        self.observe(AdapterEvent::UserCreated(record.clone()))?;
+        Ok(record)
+    }
+
+    async fn get_user_by_id_record(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        let Some(model) = self.get_user_by_id(id).await? else {
+            return Ok(None);
+        };
+        let record = self.record_store.user_record(model).await?;
+        Ok(Some(record))
+    }
+
+    async fn create_account_record(
+        &self,
+        create_account: CreateAccount,
+    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+        let model = self.create_account(create_account).await?;
+        let record = self.record_store.account_record(model).await?;
+        self.observe(AdapterEvent::AccountCreated(record.clone()))?;
+        Ok(record)
+    }
+
+    async fn create_session_record(
+        &self,
+        create_session: CreateSession,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        let model = self.create_session(create_session).await?;
+        let record = self.record_store.session_record(model).await?;
+        self.observe(AdapterEvent::SessionCreated(record.clone()))?;
+        Ok(record)
+    }
+
+    async fn update_session_active_organization_record(
+        &self,
+        token: &str,
+        organization_id: Option<&str>,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        let model = self
+            .update_session_active_organization(token, organization_id)
+            .await?;
+        let record = self.record_store.session_record(model).await?;
+        self.observe(AdapterEvent::SessionUpdated(record.clone()))?;
+        Ok(record)
+    }
+
+    async fn update_session_active_team_record(
+        &self,
+        token: &str,
+        team_id: Option<&str>,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        let model = self.update_session_active_team(token, team_id).await?;
+        let record = self.record_store.session_record(model).await?;
+        self.observe(AdapterEvent::SessionUpdated(record.clone()))?;
+        Ok(record)
+    }
+
     async fn get_team(&self, organization_id: &str, team_id: &str) -> AuthResult<Option<Team>> {
         self.inner.get_team(organization_id, team_id).await
     }
@@ -916,7 +1475,11 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         self.inner.create_passkey(data).await
     }
 
-    async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User> {
+    async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<S::User> {
+        self.record_store
+            .field_policies()
+            .user
+            .attach(&mut create_user.additional_fields, true);
         if self.config.user_validation.is_some() {
             let prepared = prepare_creation(&self.config, create_user, None).await?;
             return self.create_user_prepared(prepared).await;
@@ -937,7 +1500,11 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         self.create_user_prepared(prepared).await
     }
     async fn create_user_prepared(&self, prepared: PreparedUserCreation) -> AuthResult<S::User> {
-        let data = create_data(prepared.into_data(), &self.creates)?;
+        let mut data = create_data(prepared.into_data(), &self.creates)?;
+        self.record_store
+            .field_policies()
+            .user
+            .attach(&mut data.additional_fields, true);
         self.inner
             .create_user_prepared(
                 PreparedUserCreation::from_data(data).with_defaults(self.adapter_defaults.clone()),
@@ -945,7 +1512,11 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .await
     }
 
-    async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account> {
+    async fn create_account(&self, mut create_account: CreateAccount) -> AuthResult<S::Account> {
+        self.record_store
+            .field_policies()
+            .account
+            .attach(&mut create_account.additional_fields, true);
         self.inner.create_account(create_account).await
     }
 
@@ -989,6 +1560,9 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
         let pending_in_transaction = Arc::clone(&pending_sessions);
         let session_fields = self.session_fields.clone();
         let adapter_fields = self.adapter_fields.clone();
+        let record_store = self.clone();
+        let pending_records = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let records_in_transaction = Arc::clone(&pending_records);
         let value = self
             .inner
             .transaction_boxed(Box::new(move |inner| {
@@ -1001,6 +1575,8 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
                         pending_sessions: pending_in_transaction,
                         session_fields,
                         adapter_fields,
+                        record_store,
+                        pending_records: records_in_transaction,
                     };
                     work(&transaction).await
                 })
@@ -1017,6 +1593,14 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
             for callback in &self.session_callbacks.callbacks {
                 callback.after_create(&session, self).await?;
             }
+        }
+        let records = std::mem::take(
+            &mut *pending_records
+                .lock()
+                .map_err(|_| AuthError::internal("Adapter callback queue poisoned"))?,
+        );
+        for record in records {
+            self.observe(record).await?;
         }
         Ok(value)
     }
@@ -1061,6 +1645,87 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn create_user_record(
+        &self,
+        create_user: CreateUser,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        crate::AdapterRecord::physical(self.create_user(create_user).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn create_user_with_source_record(
+        &self,
+        create_user: CreateUser,
+        source: UserValidationSource,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        crate::AdapterRecord::physical(self.create_user_with_source(create_user, source).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn create_user_prepared_record(
+        &self,
+        prepared: PreparedUserCreation,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        crate::AdapterRecord::physical(self.create_user_prepared(prepared).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn get_user_by_id_record(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        self.get_user_by_id(id)
+            .await?
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn create_account_record(
+        &self,
+        create_account: CreateAccount,
+    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+        crate::AdapterRecord::physical(self.create_account(create_account).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn create_session_record(
+        &self,
+        create_session: CreateSession,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        crate::AdapterRecord::physical(self.create_session(create_session).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn update_session_active_organization_record(
+        &self,
+        token: &str,
+        organization_id: Option<&str>,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        crate::AdapterRecord::physical(
+            self.update_session_active_organization(token, organization_id)
+                .await?,
+        )
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn update_session_active_team_record(
+        &self,
+        token: &str,
+        team_id: Option<&str>,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        crate::AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
+    }
+
     /// Create through before hooks, optional physical persistence, secondary
     /// publication, then after hooks. Unsupported adapters must fail closed.
     async fn create_verification_record(
@@ -1164,6 +1829,135 @@ pub enum NumericTextInput {
 
 #[async_trait]
 pub trait UserStore<S: AuthSchema>: Send + Sync {
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn create_user_record(
+        &self,
+        create_user: CreateUser,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        crate::AdapterRecord::physical(self.create_user(create_user).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn create_user_with_source_record(
+        &self,
+        create_user: CreateUser,
+        source: UserValidationSource,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        crate::AdapterRecord::physical(self.create_user_with_source(create_user, source).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn create_user_prepared_record(
+        &self,
+        prepared: PreparedUserCreation,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        crate::AdapterRecord::physical(self.create_user_prepared(prepared).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn get_user_by_id_record(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        self.get_user_by_id(id)
+            .await?
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn get_user_by_email_record(
+        &self,
+        email: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        self.get_user_by_email(email)
+            .await?
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn get_user_by_username_record(
+        &self,
+        username: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        self.get_user_by_username(username)
+            .await?
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn get_user_by_phone_number_record(
+        &self,
+        phone_number: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::User>>> {
+        self.get_user_by_phone_number(phone_number)
+            .await?
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn list_users_by_ids_record(
+        &self,
+        ids: &[String],
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
+        self.list_users_by_ids(ids)
+            .await?
+            .into_iter()
+            .map(crate::AdapterRecord::physical)
+            .collect()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn list_users_by_ids_page_record(
+        &self,
+        ids: &[String],
+        limit: f64,
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::User>>> {
+        self.list_users_by_ids_page(ids, limit)
+            .await?
+            .into_iter()
+            .map(crate::AdapterRecord::physical)
+            .collect()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn update_user_record(
+        &self,
+        id: &str,
+        update: UpdateUser,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        crate::AdapterRecord::physical(self.update_user(id, update).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn list_users_record(
+        &self,
+        params: ListUsersParams,
+    ) -> AuthResult<(Vec<crate::AdapterRecord<S::User>>, usize)> {
+        let (models, count) = self.list_users(params).await?;
+        Ok((
+            models
+                .into_iter()
+                .map(crate::AdapterRecord::physical)
+                .collect::<AuthResult<Vec<_>>>()?,
+            count,
+        ))
+    }
+
     async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User>;
     /// Create with endpoint-owned identity provenance, retaining the finalized
     /// instance's validation and database-hook ordering.
@@ -1219,6 +2013,102 @@ pub trait UserStore<S: AuthSchema>: Send + Sync {
 
 #[async_trait]
 pub trait SessionStore<S: AuthSchema>: Send + Sync {
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn create_session_record(
+        &self,
+        create_session: CreateSession,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        crate::AdapterRecord::physical(self.create_session(create_session).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn get_session_record(
+        &self,
+        token: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+        self.get_session(token)
+            .await?
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn get_sessions_by_tokens_record(
+        &self,
+        tokens: &[String],
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+        self.get_sessions_by_tokens(tokens)
+            .await?
+            .into_iter()
+            .map(crate::AdapterRecord::physical)
+            .collect()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn get_user_sessions_record(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::Session>>> {
+        self.get_user_sessions(user_id)
+            .await?
+            .into_iter()
+            .map(crate::AdapterRecord::physical)
+            .collect()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn refresh_session_record(
+        &self,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+        self.refresh_session(token, expires_at)
+            .await?
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn update_session_fields_record(
+        &self,
+        token: &str,
+        fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Session>>> {
+        self.update_session_fields(token, fields)
+            .await?
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn update_session_active_organization_record(
+        &self,
+        token: &str,
+        organization_id: Option<&str>,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        crate::AdapterRecord::physical(
+            self.update_session_active_organization(token, organization_id)
+                .await?,
+        )
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn update_session_active_team_record(
+        &self,
+        token: &str,
+        team_id: Option<&str>,
+    ) -> AuthResult<crate::AdapterRecord<S::Session>> {
+        crate::AdapterRecord::physical(self.update_session_active_team(token, team_id).await?)
+    }
+
     /// Persist already authorized fields for the currently authenticated token.
     async fn update_session_fields(
         &self,
@@ -1253,6 +2143,25 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
         token: &str,
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> AuthResult<()>;
+
+    /// Refresh expiry and configured fields in one physical update. Adapters
+    /// supporting additional values must override this operation so their actual
+    /// before hooks precede binding and their after hooks see the final row.
+    /// The fallback preserves plain refresh and fails closed on additional writes.
+    async fn refresh_session_with_fields(
+        &self,
+        token: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+        mut fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<S::Session>> {
+        fields.apply_adapter_transforms_async().await?;
+        if !fields.is_empty() {
+            return Err(AuthError::NotImplemented(
+                "The store does not support refresh field updates".into(),
+            ));
+        }
+        self.refresh_session(token, expires_at).await
+    }
 
     /// Refresh the persisted expiry and return the updated snapshot. A session
     /// removed before the update returns `None`, never its old credentials.
@@ -1293,6 +2202,68 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
 
 #[async_trait]
 pub trait AccountStore<S: AuthSchema>: Send + Sync {
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn create_account_record(
+        &self,
+        create_account: CreateAccount,
+    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+        crate::AdapterRecord::physical(self.create_account(create_account).await?)
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn get_account_record(
+        &self,
+        provider: &str,
+        provider_account_id: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+        self.get_account(provider, provider_account_id)
+            .await?
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    /// Retain the selected physical credential result. Initialization applies
+    /// output policy only to that selected row, never unrelated linked accounts.
+    async fn get_credential_account_record(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Option<crate::AdapterRecord<S::Account>>> {
+        use crate::AuthAccount;
+        self.get_user_accounts(user_id)
+            .await?
+            .into_iter()
+            .find(|account| {
+                account.provider_id() == "credential" && account.account_id() == user_id
+            })
+            .map(crate::AdapterRecord::physical)
+            .transpose()
+    }
+
+    async fn get_user_accounts_record(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Vec<crate::AdapterRecord<S::Account>>> {
+        self.get_user_accounts(user_id)
+            .await?
+            .into_iter()
+            .map(crate::AdapterRecord::physical)
+            .collect()
+    }
+
+    /// Return a retained adapter record. The default is the physical model's
+    /// serialized snapshot; initialized stores apply their declared output policy.
+    async fn update_account_record(
+        &self,
+        id: &str,
+        update: UpdateAccount,
+    ) -> AuthResult<crate::AdapterRecord<S::Account>> {
+        crate::AdapterRecord::physical(self.update_account(id, update).await?)
+    }
+
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account>;
     /// Resolve a global provider identity only when exactly one physical row matches.
     /// Duplicate rows (including duplicates owned by one user) must return

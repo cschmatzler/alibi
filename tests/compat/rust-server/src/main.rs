@@ -1,3 +1,5 @@
+mod additional_field_models;
+mod additional_fields_fixture;
 mod bearer_fixture;
 mod captcha_fixture;
 mod dispatch_fixture;
@@ -461,7 +463,9 @@ impl OAuthUserInfoHandler for CompatGoogleUserInfoHandler {
     ) -> Result<OAuthUserInfoResponse, String> {
         let profile = self.profile.lock().await.clone();
         Ok(OAuthUserInfoResponse {
+            user_output: None,
             user: OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: profile.sub.clone(),
                 email: profile.email.clone(),
                 name: Some(profile.name.clone()),
@@ -648,6 +652,7 @@ fn mock_oauth_plugin_at(
                 account_subject: None,
                 map_user_info: Some(|_value| {
                     Ok(OAuthUserInfo {
+                        additional_fields: Default::default(),
                         id: "mock-account-id".to_string(),
                         email: "mock@example.com".to_string(),
                         name: Some("Mock OAuth User".to_string()),
@@ -867,6 +872,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         kick_provider_fixture::router(&config, database.clone()).await?;
     let (cognito_router, cognito_reset) =
         cognito_provider_fixture::router(&config, database.clone()).await?;
+    let (additional_fields_router, additional_fields_reset) =
+        additional_fields_fixture::router(&config).await?;
     let (atlassian_router, atlassian_reset) =
         atlassian_provider_fixture::router(&config, database.clone()).await?;
     let (apple_router, apple_reset) =
@@ -1321,6 +1328,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let database = database_for_reset.clone();
                 let cloudflare_reset=cloudflare_reset.clone();
                 let cognito_reset=cognito_reset.clone();
+                let additional_fields_reset=additional_fields_reset.clone();
                 let dropbox_reset=dropbox_reset.clone();
                 let facebook_reset=facebook_reset.clone();
                 let figma_reset=figma_reset.clone();
@@ -1336,6 +1344,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 async move {
                     cloudflare_reset.reset().await;
                     cognito_reset.reset().await;
+                    if let Err(error) = additional_fields_reset.reset().await {
+                        return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"message":error.to_string()})));
+                    }
                     dropbox_reset.reset().await;
                     facebook_reset.reset().await;
                     figma_reset.reset().await;
@@ -1762,6 +1773,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     let account = match auth
                         .store()
                         .create_account(CreateAccount {
+            additional_fields: Default::default(),
                             user_id: user.id.to_string(),
                             account_id,
                             provider_id,
@@ -1955,6 +1967,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(auth)
         .merge(cloudflare_router)
         .merge(cognito_router)
+        .merge(additional_fields_router)
         .merge(dropbox_router)
         .merge(facebook_router)
         .merge(figma_router)

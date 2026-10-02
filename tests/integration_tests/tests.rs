@@ -949,6 +949,7 @@ async fn test_list_accounts_with_account() {
 
     // Create an account for the user
     let create_account = CreateAccount {
+        additional_fields: Default::default(),
         account_id: "12345".to_owned(),
         provider_id: "google".to_owned(),
         user_id: user_id.clone(),
@@ -987,9 +988,11 @@ async fn test_list_accounts_with_account() {
         .iter()
         .find(|account| account["providerId"] == "google")
         .expect("google account should be present");
+    // The pinned account parser splits stored scopes on commas; an embedded
+    // space remains part of one stored scope.
     assert_eq!(
         google_account["scopes"],
-        serde_json::json!(["email", "profile"])
+        serde_json::json!(["email profile"])
     );
     // Sensitive fields should NOT be present
     assert!(google_account.get("access_token").is_none());
@@ -1009,6 +1012,7 @@ async fn test_unlink_account_success() {
     // Create two accounts
     for provider in &["google", "github"] {
         let create_account = CreateAccount {
+            additional_fields: Default::default(),
             account_id: format!("id_{provider}"),
             provider_id: provider.to_string(),
             user_id: user_id.clone(),
@@ -1100,6 +1104,7 @@ async fn test_unlink_last_account_fails() {
 
     // Add one account
     let create_account = CreateAccount {
+        additional_fields: Default::default(),
         account_id: "id_google".to_owned(),
         provider_id: "google".to_owned(),
         user_id: user.id.clone(),

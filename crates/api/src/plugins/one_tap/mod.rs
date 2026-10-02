@@ -199,6 +199,7 @@ impl OneTapPlugin {
             return message(400, "invalid id token");
         };
         let user = OAuthUserInfo {
+            additional_fields: Default::default(),
             id: sub.into(),
             email: email.to_lowercase(),
             name: Some(

@@ -270,9 +270,11 @@ fn finish_profile(
     mapped: Option<OAuthUserInfo>,
 ) -> Result<OAuthUserInfoResponse, String> {
     let id = scalar(profile.get("sub"))?.unwrap_or_default();
+    let user_output = mapped.as_ref().map(|user| user.public_profile(true));
     let user = match mapped {
         Some(user) => user,
         None => OAuthUserInfo {
+            additional_fields: Default::default(),
             id: id.clone(),
             email: profile
                 .get("email")
@@ -288,6 +290,7 @@ fn finish_profile(
         },
     };
     Ok(OAuthUserInfoResponse {
+        user_output,
         user,
         data: profile,
     })

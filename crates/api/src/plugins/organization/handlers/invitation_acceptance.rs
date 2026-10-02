@@ -214,7 +214,7 @@ pub(super) async fn accept<S: AuthSchema>(
                 };
 
                 let updated = tx
-                    .update_session_active_team(&token, team_ids.first().copied())
+                    .update_session_active_team_record(&token, team_ids.first().copied())
                     .await?;
 
                 let preference = related_cookie_name(&auth_config, "dont_remember");
@@ -244,7 +244,7 @@ pub(super) async fn accept<S: AuthSchema>(
                 })
                 .await?;
             drop(
-                tx.update_session_active_organization(
+                tx.update_session_active_organization_record(
                     &token,
                     Some(&accepted_for_tx.organization_id),
                 )

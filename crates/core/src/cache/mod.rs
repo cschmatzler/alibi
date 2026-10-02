@@ -24,22 +24,25 @@ use std::{any::Any, fmt, sync::Arc};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CacheVersionSource {
     Created,
-    /// Physical lookup returned the source-filtered canonical views.
+    /// Physical lookup returned genuine adapter output.
     Stored,
     Cached,
 }
 
 /// Immutable inputs to the cache version policy.
 ///
-/// Created inputs retain the actual application models. Cached inputs contain
-/// only the authenticated public output. Physical reads likewise contain the
-/// source-filtered projection, without invented original models.
+/// Creation exposes raw trusted adapter output. Physical findSession reads and
+/// cache hits expose their already-filtered snapshots. Only the public projection
+/// enters signed cookie data; cached inputs have no original database models.
 #[derive(Clone)]
 pub struct CacheVersionContext {
     user: UserView,
     session: SessionView,
     originals: Option<(Arc<dyn Any + Send + Sync>, Arc<dyn Any + Send + Sync>)>,
     source: CacheVersionSource,
+    public_projection: Option<(UserView, SessionView)>,
+    user_output: Option<crate::AdapterOutput>,
+    session_output: Option<crate::AdapterOutput>,
 }
 
 impl fmt::Debug for CacheVersionContext {
@@ -61,10 +64,13 @@ impl CacheVersionContext {
         session_view: SessionView,
     ) -> Self {
         Self {
+            user_output: user.adapter_snapshot().cloned(),
+            session_output: session.adapter_snapshot().cloned(),
             user: user_view,
             session: session_view,
             originals: Some((Arc::new(user), Arc::new(session))),
             source: CacheVersionSource::Created,
+            public_projection: None,
         }
     }
     /// A cache hit has no original database models.
@@ -75,15 +81,40 @@ impl CacheVersionContext {
             session,
             originals: None,
             source: CacheVersionSource::Cached,
+            public_projection: None,
+            user_output: None,
+            session_output: None,
         }
     }
-    pub(crate) fn stored(user: UserView, session: SessionView) -> Self {
+    pub(crate) fn stored(
+        user: UserView,
+        session: SessionView,
+        user_output: Option<crate::AdapterOutput>,
+        session_output: Option<crate::AdapterOutput>,
+    ) -> Self {
         Self {
             user,
             session,
             originals: None,
             source: CacheVersionSource::Stored,
+            public_projection: None,
+            user_output,
+            session_output,
         }
+    }
+    pub(crate) fn with_public_projection(mut self, user: UserView, session: SessionView) -> Self {
+        self.public_projection = Some((user, session));
+        self
+    }
+    pub(crate) fn public_user(&self) -> &UserView {
+        self.public_projection
+            .as_ref()
+            .map_or(&self.user, |projection| &projection.0)
+    }
+    pub(crate) fn public_session(&self) -> &SessionView {
+        self.public_projection
+            .as_ref()
+            .map_or(&self.session, |projection| &projection.1)
     }
     #[must_use]
     pub const fn source(&self) -> CacheVersionSource {
@@ -97,13 +128,33 @@ impl CacheVersionContext {
     pub const fn session(&self) -> &SessionView {
         &self.session
     }
+    /// Actual callback-stage adapter values. Cache hits have no retained record;
+    /// their exact values remain available through `user()` and `session()`.
+    #[must_use]
+    pub const fn user_output(&self) -> Option<&crate::AdapterOutput> {
+        self.user_output.as_ref()
+    }
+    #[must_use]
+    pub const fn session_output(&self) -> Option<&crate::AdapterOutput> {
+        self.session_output.as_ref()
+    }
     #[must_use]
     pub fn stored_user<T: AuthUser>(&self) -> Option<&T> {
-        self.originals.as_ref()?.0.downcast_ref()
+        let original = &self.originals.as_ref()?.0;
+        original.downcast_ref().or_else(|| {
+            original
+                .downcast_ref::<crate::AdapterRecord<T>>()
+                .map(crate::AdapterRecord::stored)
+        })
     }
     #[must_use]
     pub fn stored_session<T: AuthSession>(&self) -> Option<&T> {
-        self.originals.as_ref()?.1.downcast_ref()
+        let original = &self.originals.as_ref()?.1;
+        original.downcast_ref().or_else(|| {
+            original
+                .downcast_ref::<crate::AdapterRecord<T>>()
+                .map(crate::AdapterRecord::stored)
+        })
     }
 }
 

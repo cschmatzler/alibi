@@ -159,7 +159,12 @@ pub(in crate::plugins) async fn change_email_core(
         || Duration::hours(1),
         |config| config.verification_token_expiry,
     );
-    if ctx.database.get_user_by_email(&new_email).await?.is_some() {
+    if ctx
+        .database
+        .get_user_by_email_record(&new_email)
+        .await?
+        .is_some()
+    {
         drop(create_email_verification_token(
             &ctx.config.secret,
             user.email().unwrap_or_default(),
@@ -174,7 +179,7 @@ pub(in crate::plugins) async fn change_email_core(
     if can_update {
         drop(
             ctx.database
-                .update_user(
+                .update_user_record(
                     &user.id(),
                     UpdateUser {
                         email: Some(new_email.clone()),
@@ -438,7 +443,7 @@ async fn perform_user_deletion(
         hook.before_delete(&snapshot).await?;
     }
     ctx.database.delete_user_sessions(&user.id()).await?;
-    for account in ctx.database.get_user_accounts(&user.id()).await? {
+    for account in ctx.database.get_user_accounts_record(&user.id()).await? {
         ctx.database.delete_account(&account.id()).await?;
     }
     ctx.database.delete_user(&user.id()).await?;

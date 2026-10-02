@@ -13,7 +13,7 @@ use super::webauthn::{
 };
 use super::{PasskeyConfig, PasskeyRegistrationUser};
 use crate::plugins::StatusResponse;
-use crate::plugins::helpers::{SessionIssueError, issue_user_session};
+use crate::plugins::helpers::{SessionIssueError, issue_user_session_record};
 use base64::Engine;
 use better_auth_core::entity::{AuthPasskey, AuthSession, AuthUser};
 use better_auth_core::types::UpdatePasskeyAuthentication;
@@ -521,17 +521,18 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
             .transaction_boxed(Box::new(move |transaction| {
                 Box::pin(async move {
                     input = apply_policy(input).await?;
-                    let user = transaction.get_user_by_id(&input.user_id).await?.ok_or(
-                        AuthError::Upstream {
+                    let user = transaction
+                        .get_user_by_id_record(&input.user_id)
+                        .await?
+                        .ok_or(AuthError::Upstream {
                             status: 500,
                             code: "USER_NOT_FOUND",
                             message: "User not found",
-                        },
-                    )?;
+                        })?;
                     let user_id = input.user_id.clone();
                     let passkey = transaction.create_passkey(input).await?;
                     let session = transaction
-                        .create_session(better_auth_core::CreateSession {
+                        .create_session_record(better_auth_core::CreateSession {
                             additional_fields: better_auth_core::field_policy::FieldValues::default(
                             ),
                             token: None,
@@ -827,11 +828,11 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         Err(_) => return passkey_authentication_failure(),
     }
 
-    let Some(user) = ctx.database.get_user_by_id(&verified_owner).await? else {
+    let Some(user) = ctx.database.get_user_by_id_record(&verified_owner).await? else {
         return response_message(500, "User not found");
     };
 
-    let session = match issue_user_session(ctx, &user.id(), ip_address, user_agent)
+    let session = match issue_user_session_record(ctx, &user.id(), ip_address, user_agent)
         .await
         .map_err(SessionIssueError::into_auth_error)
     {
@@ -839,7 +840,7 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         Err(error) => return Err(error),
     };
 
-    let Some(user) = ctx.database.get_user_by_id(&verified_owner).await? else {
+    let Some(user) = ctx.database.get_user_by_id_record(&verified_owner).await? else {
         return response_message(500, "User not found");
     };
     super::super::helpers::record_completed_session_user_view::<S>(

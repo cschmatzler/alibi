@@ -426,7 +426,9 @@ fn mock_oauth_plugin() -> OAuthPlugin {
             _request: OAuthUserInfoRequest,
         ) -> Result<OAuthUserInfoResponse, String> {
             Ok(OAuthUserInfoResponse {
+                user_output: None,
                 user: OAuthUserInfo {
+                    additional_fields: Default::default(),
                     id: "mock-account-id".to_owned(),
                     email: "mock@example.com".to_owned(),
                     name: Some("Mock OAuth User".to_owned()),
@@ -465,6 +467,7 @@ fn mock_oauth_plugin() -> OAuthPlugin {
             authorization_params: Vec::new(),
             map_user_info: Some(|_value| {
                 Ok(OAuthUserInfo {
+                    additional_fields: Default::default(),
                     id: "mock-account-id".to_owned(),
                     email: "mock@example.com".to_owned(),
                     name: Some("Mock OAuth User".to_owned()),

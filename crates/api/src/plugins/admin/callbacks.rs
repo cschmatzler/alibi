@@ -35,7 +35,7 @@ impl<U: AuthUser, H: AdminBannedUserMessage<U>> ErasedMessage for TypedMessage<U
         TypeId::of::<U>()
     }
     async fn message(&self, user: &(dyn Any + Send + Sync)) -> AuthResult<String> {
-        let user = user.downcast_ref::<U>().ok_or_else(|| AuthError::config(
+        let user = user.downcast_ref::<U>().or_else(|| user.downcast_ref::<better_auth_core::AdapterRecord<U>>().map(better_auth_core::AdapterRecord::stored)).ok_or_else(|| AuthError::config(
             "Admin banned-user message callback user type does not match the authentication schema"
         ))?;
         self.handler
@@ -69,7 +69,9 @@ impl AdminBannedUserMessageHandler {
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate<U: AuthUser>(&self) -> AuthResult<()> {
-        if self.0.user_type() != TypeId::of::<U>() {
+        if self.0.user_type() != TypeId::of::<U>()
+            && self.0.user_type() != TypeId::of::<better_auth_core::AdapterRecord<U>>()
+        {
             return Err(AuthError::config(
                 "Admin banned-user message callback user type does not match the authentication schema",
             ));

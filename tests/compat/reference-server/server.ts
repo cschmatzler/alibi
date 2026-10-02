@@ -48,6 +48,7 @@ import { createAdminBannedMessageFixture } from "./admin-banned-message-fixture"
 import { createAdminPermissionFixture } from "./admin-permission-fixture";
 import { createMultipleSessionFixture } from "./multiple-session-fixture";
 import { createSessionFieldsFixture } from "./session-fields-fixture";
+import { additionalFieldsFixture } from "./additional-fields-fixture";
 import { googleIdTokenProfiles } from "./google-id-token-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./one-tap-fixture";
 import { getMigrations } from "better-auth/db/migration";
@@ -486,9 +487,11 @@ const oauthProxyProfiles = await oauthProxyFixture(authOptions);
 const anonymousProfiles = await anonymousFixture(authOptions, database);
 const sessionCookieCacheProfiles = await sessionCookieCacheFixture(authOptions, database);
 const userLifecycleFixture = createUserLifecycleFixture(authOptions, database);
+const additionalFields = await additionalFieldsFixture(authOptions);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+for (const [path, instance] of additionalFields.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of userLifecycleFixture.profiles) verificationProfiles.set(path, instance);
 for(const [path,instance] of cloudflareFixture.profiles) verificationProfiles.set(path,instance);
 for(const [path,instance] of cognitoFixture.profiles) verificationProfiles.set(path,instance);
@@ -894,6 +897,8 @@ const server = Bun.serve({
       if(kickControl)return kickControl;
       const cognitoControl=await cognitoFixture.handle(request);
       if(cognitoControl)return cognitoControl;
+      const additionalControl = await additionalFields.handle(request);
+      if (additionalControl) return additionalControl;
       const atlassianControl=await atlassianFixture.handle(request);
       if(atlassianControl)return atlassianControl;
       const appleControl = await appleFixture.handle(request);
@@ -1221,6 +1226,7 @@ const server = Bun.serve({
         organizationInvitationFixture.reset();
         anonymousProfiles.reset();
         userValidationFixture.reset();
+        additionalFields.reset();
         verificationStorageFixture.reset();
         passkeyRegistration.reset();
         passkeyAuthentication.reset();

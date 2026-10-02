@@ -35,10 +35,15 @@ where
             }
         }
         let now = Utc::now();
-        let account = S::Account::new_active(None, create_account, now)
-            .insert(db)
-            .await
-            .map_err(map_db_err)?;
+        let mut fields = std::mem::take(&mut create_account.additional_fields);
+        fields.apply_adapter_transforms_async().await?;
+        let mut active = S::Account::new_active(None, create_account, now);
+        let backend = db.get_database_backend();
+        for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
+            let value = crate::session_fields::prepare_value(db, &column, value).await?;
+            S::Account::set_additional_field(&mut active, column, value, backend)?;
+        }
+        let account = active.insert(db).await.map_err(map_db_err)?;
         if tx.is_none() {
             for hook in self.hooks() {
                 hook.after_create_account(&account, &hook_context).await?;
@@ -123,7 +128,15 @@ where
         };
 
         let mut active = model.into_active_model();
+        let mut fields = std::mem::take(&mut update.additional_fields);
+        fields.apply_adapter_transforms_async().await?;
         S::Account::apply_update(&mut active, update, Utc::now());
+        let backend = self.connection().get_database_backend();
+        for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
+            let value =
+                crate::session_fields::prepare_value(self.connection(), &column, value).await?;
+            S::Account::set_additional_field(&mut active, column, value, backend)?;
+        }
 
         let account = active.update(self.connection()).await.map_err(map_db_err)?;
         for hook in self.hooks() {

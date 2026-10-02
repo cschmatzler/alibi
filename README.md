@@ -102,6 +102,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 Your app owns the auth entities and migrations — Better Auth adapts to whatever schema you define.
 
+Configure application fields through `config.user.additional_fields`,
+`config.session.additional_fields` and `config.account.additional_fields`.
+`FieldConfig` supports required/default/input/returned policies, logical-to-physical
+column names, input validation, awaited adapter transforms and `on_update`.
+Plugins can declare the same policies through their field registries. Promise-like
+asynchronous endpoint validation is explicitly rejected, matching the pinned
+runtime; asynchronous storage transforms are awaited.
+
+Record-aware store operations return `AdapterRecord<M>`: `stored()` retains the
+physical model and its identity/ownership/credential getters, while
+`raw_snapshot()` retains declared output, including hidden fields and undefined
+presence for trusted callbacks. Public user/session/account projection applies
+returned-field filtering separately, and public account output always removes
+credentials. Register `AdapterAfterHook` during initialization to observe retained
+write output after commit; transaction rollback discards those observations.
+Typed store methods and SeaORM hooks continue to expose physical models.
+
 ## Plugins
 
 Better Auth RS ships with a rich set of plugins. Enable only what you need:

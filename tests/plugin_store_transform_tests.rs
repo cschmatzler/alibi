@@ -11,6 +11,8 @@ mod tests;
 
 use async_trait::async_trait;
 use better_auth::{AuthBuilder, AuthConfig};
+use better_auth_core::store::{AccountStore, AdapterAfterHook, AdapterEvent, AuthStore};
+use better_auth_core::{AuthAccount, CreateAccount};
 use better_auth_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
     AuthUser, CreateUser, UpdateUser,
@@ -105,6 +107,41 @@ async fn store() -> (AuthConfig, Arc<SeaOrmStore<Schema>>) {
         .unwrap();
     let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
     (config, store)
+}
+
+struct DirectRecordObserver {
+    seen: Arc<Mutex<Vec<serde_json::Value>>>,
+}
+
+#[async_trait]
+impl AdapterAfterHook<Schema> for DirectRecordObserver {
+    async fn after_write(
+        &self,
+        event: &AdapterEvent<Schema>,
+        database: &dyn AuthStore<Schema>,
+    ) -> AuthResult<()> {
+        let observation = match event {
+            AdapterEvent::UserCreated(record) => {
+                let stored = database.get_user_by_id(&record.id()).await?.unwrap();
+                assert_eq!(stored.role(), record.role());
+                serde_json::json!({"entity":"user","id":stored.id(),"role":record.raw_snapshot().values().get("role")})
+            }
+            AdapterEvent::AccountCreated(record) => {
+                let stored = database.get_user_accounts(&record.user_id()).await?;
+                assert!(stored.iter().any(
+                    |account| account.id() == record.id() && account.scope() == record.scope()
+                ));
+                serde_json::json!({"entity":"account","id":record.id(),"scope":record.raw_snapshot().values().get("scope")})
+            }
+            _ => {
+                return Err(AuthError::internal(
+                    "Unexpected direct initialization write",
+                ));
+            }
+        };
+        self.seen.lock().unwrap().push(observation);
+        Ok(())
+    }
 }
 
 struct CommittedSessionObserver {

@@ -252,7 +252,7 @@ impl EmailVerificationPlugin {
         if self.config.send_verification_email.is_none()
             && let Some(sender) = ctx.email_verification_override()
         {
-            return sender.0.send(&ctx.user_view(user), None, ctx).await;
+            return sender.0.send(&ctx.trusted_user_view(user), None, ctx).await;
         }
         let verification_token = token::create_email_verification_token(
             &ctx.config.secret,
@@ -265,7 +265,7 @@ impl EmailVerificationPlugin {
 
         // Use custom sender if configured, otherwise fall back to EmailProvider
         if let Some(ref custom_sender) = self.config.send_verification_email {
-            let user = ctx.user_view(user);
+            let user = ctx.trusted_user_view(user);
             super::authentication_helpers::run_notification(custom_sender.send(
                 &user,
                 &verification_url,
@@ -352,7 +352,7 @@ impl EmailVerificationPlugin {
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn send_signup_verification<S: better_auth_core::AuthSchema>(
-    user: &S::User,
+    user: &impl AuthUser,
     callback_url: Option<&str>,
     required: bool,
     ctx: &AuthContext<S>,
@@ -366,7 +366,7 @@ pub(in crate::plugins) async fn send_signup_verification<S: better_auth_core::Au
     {
         return Ok(());
     }
-    let user = ctx.user_view(user);
+    let user = ctx.trusted_user_view(user);
     if config
         .as_ref()
         .is_none_or(|config| config.send_verification_email.is_none())

@@ -264,6 +264,8 @@ impl Index<&str> for Headers {
 /// User creation data
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateUser {
+    #[serde(flatten, default)]
+    pub additional_fields: crate::field_policy::FieldValues,
     pub id: Option<String>,
     /// Trusted creation timestamps; omitted values use the adapter's clock.
     pub created_at: Option<DateTime<Utc>>,
@@ -293,6 +295,8 @@ pub struct CreateUser {
 /// User update data
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct UpdateUser {
+    #[serde(flatten, default)]
+    pub additional_fields: crate::field_policy::FieldValues,
     pub email: Option<String>,
     pub name: Option<String>,
     pub image: Option<String>,
@@ -342,6 +346,7 @@ pub struct CreateSession {
 /// Account creation data
 #[derive(Debug, Clone)]
 pub struct CreateAccount {
+    pub additional_fields: crate::field_policy::FieldValues,
     pub user_id: String,
     pub account_id: String,
     pub provider_id: String,
@@ -357,6 +362,7 @@ pub struct CreateAccount {
 /// Account update data (for refreshing OAuth tokens)
 #[derive(Debug, Clone, Default)]
 pub struct UpdateAccount {
+    pub additional_fields: crate::field_policy::FieldValues,
     pub access_token: Option<String>,
     pub refresh_token: Option<String>,
     pub id_token: Option<String>,
@@ -382,8 +388,9 @@ pub struct UpdateVerification {
 
 impl CreateUser {
     #[must_use]
-    pub const fn new() -> Self {
+    pub fn new() -> Self {
         Self {
+            additional_fields: crate::field_policy::FieldValues::new(),
             id: None,
             created_at: None,
             updated_at: None,

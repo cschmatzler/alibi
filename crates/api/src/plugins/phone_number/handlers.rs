@@ -202,7 +202,7 @@ impl PhoneNumberPlugin {
         )?;
         let user = ctx
             .database
-            .get_user_by_phone_number(&body.phone_number)
+            .get_user_by_phone_number_record(&body.phone_number)
             .await?
             .ok_or_else(invalid_credentials)?;
         if self.config.require_verification && user.phone_number_verified() != Some(true) {
@@ -269,7 +269,7 @@ impl PhoneNumberPlugin {
         let (issued, mut response) = session_response_with_remember(
             ctx,
             req,
-            &user.id(),
+            user.clone(),
             Some(body.remember_me.unwrap_or(true)),
         )
         .await?;
@@ -363,7 +363,7 @@ impl PhoneNumberPlugin {
                     })?;
             if ctx
                 .database
-                .get_user_by_phone_number(&body.phone_number)
+                .get_user_by_phone_number_record(&body.phone_number)
                 .await?
                 .is_some()
             {
@@ -375,7 +375,7 @@ impl PhoneNumberPlugin {
             }
             let updated = ctx
                 .database
-                .update_user(
+                .update_user_record(
                     &user.id(),
                     UpdateUser {
                         phone_number: Some(Some(body.phone_number.clone())),
@@ -393,11 +393,11 @@ impl PhoneNumberPlugin {
         }
         let user = if let Some(user) = ctx
             .database
-            .get_user_by_phone_number(&body.phone_number)
+            .get_user_by_phone_number_record(&body.phone_number)
             .await?
         {
             ctx.database
-                .update_user(
+                .update_user_record(
                     &user.id(),
                     UpdateUser {
                         phone_number_verified: Some(true),
@@ -429,7 +429,7 @@ impl PhoneNumberPlugin {
             crate::plugins::helpers::apply_default_role(ctx, &mut user);
             prepare_additional_user_fields(ctx, &mut user).await?;
             ctx.database
-                .create_user_with_source(
+                .create_user_with_source_record(
                     user,
                     better_auth_core::user_validation::UserValidationSource::creation(
                         "phone-number",
@@ -445,7 +445,7 @@ impl PhoneNumberPlugin {
             )
             .map_err(AuthError::from);
         }
-        let (payload, mut response) = session_response(ctx, req, &user.id()).await?;
+        let (payload, mut response) = session_response(ctx, req, user).await?;
         response.body = serde_json::to_vec(
             &json!({"status":true,"token":payload.get("token"),"user":payload.get("user")}),
         )?;
@@ -465,7 +465,7 @@ impl PhoneNumberPlugin {
         };
         let user = ctx
             .database
-            .get_user_by_phone_number(&body.phone_number)
+            .get_user_by_phone_number_record(&body.phone_number)
             .await?;
         // Unlike email OTP anti-enumeration, upstream retains the issued reset
         // verification even when the phone has no registered user.
@@ -511,7 +511,7 @@ impl PhoneNumberPlugin {
         .await?;
         let user = ctx
             .database
-            .get_user_by_phone_number(&body.phone_number)
+            .get_user_by_phone_number_record(&body.phone_number)
             .await?
             .ok_or_else(|| phone_error(400, "UNEXPECTED_ERROR", "Unexpected error"))?;
         let settings = password_settings(ctx);
@@ -529,7 +529,7 @@ impl PhoneNumberPlugin {
         {
             drop(
                 ctx.database
-                    .update_account(
+                    .update_account_record(
                         &account.id(),
                         UpdateAccount {
                             password: Some(hash),
@@ -541,7 +541,8 @@ impl PhoneNumberPlugin {
         } else {
             drop(
                 ctx.database
-                    .create_account(CreateAccount {
+                    .create_account_record(CreateAccount {
+                        additional_fields: Default::default(),
                         user_id: user.id().to_string(),
                         account_id: user.id().to_string(),
                         provider_id: "credential".into(),

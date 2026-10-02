@@ -3,7 +3,7 @@ use super::{CacheValidation, CacheVersionContext};
 use crate::session::SessionRequest;
 use crate::types::RequestExtensions;
 use crate::utils::cookie_utils::{related_cookie_name, sign_cookie_value, verify_cookie_value};
-use crate::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthSession};
+use crate::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthSession, AuthUser};
 use indexmap::IndexMap;
 use std::sync::{Arc, Mutex};
 
@@ -22,7 +22,35 @@ pub struct SessionHookCacheMetadata {
 struct SessionHookCache(Option<SessionHookCacheMetadata>);
 
 #[derive(Debug)]
-struct PublishedSession(Option<(crate::UserView, crate::SessionView)>);
+struct PublishedSession(Option<PublishedSessionSnapshot>);
+
+/// One completed issuance with actual retained callback-stage output.
+/// Trusted hooks may observe it; it never establishes authentication.
+#[derive(Clone, Debug)]
+pub struct PublishedSessionSnapshot {
+    user: crate::UserView,
+    session: crate::SessionView,
+    user_output: Option<crate::AdapterOutput>,
+    session_output: Option<crate::AdapterOutput>,
+}
+impl PublishedSessionSnapshot {
+    #[must_use]
+    pub const fn user(&self) -> &crate::UserView {
+        &self.user
+    }
+    #[must_use]
+    pub const fn session(&self) -> &crate::SessionView {
+        &self.session
+    }
+    #[must_use]
+    pub const fn user_output(&self) -> Option<&crate::AdapterOutput> {
+        self.user_output.as_ref()
+    }
+    #[must_use]
+    pub const fn session_output(&self) -> Option<&crate::AdapterOutput> {
+        self.session_output.as_ref()
+    }
+}
 
 /// The snapshot whose session cookies completed successfully in this dispatch.
 /// Response hooks may observe it; it never establishes authentication.
@@ -30,6 +58,14 @@ struct PublishedSession(Option<(crate::UserView, crate::SessionView)>);
 pub fn published_session(
     request: &impl SessionRequest,
 ) -> Option<(crate::UserView, crate::SessionView)> {
+    published_session_snapshot(request).map(|snapshot| (snapshot.user, snapshot.session))
+}
+
+/// Observe immutable retained output without reconstructing a storage model.
+#[must_use]
+pub fn published_session_snapshot(
+    request: &impl SessionRequest,
+) -> Option<PublishedSessionSnapshot> {
     request
         .extensions()
         .get::<PublishedSession>()
@@ -47,15 +83,13 @@ pub fn discard_issuance(request: &impl SessionRequest) {
     }
 }
 
-fn record_publication(user: crate::UserView, session: crate::SessionView) {
+fn record_publication(snapshot: PublishedSessionSnapshot) {
     if let Some(endpoint) = crate::endpoint::current_endpoint_call_context() {
         endpoint
             .extensions()
-            .insert(PublishedSession(Some((user, session))));
+            .insert(PublishedSession(Some(snapshot)));
     } else if let Some(request) = crate::hooks::current_request_hook_context() {
-        request
-            .extensions
-            .insert(PublishedSession(Some((user, session))));
+        request.extensions.insert(PublishedSession(Some(snapshot)));
     }
 }
 
@@ -202,27 +236,45 @@ pub(super) fn browser_preference(
 /// Returns an error when validation, storage, or an application callback fails.
 pub async fn stored_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     ctx: &AuthContext<S>,
-    user: &S::User,
-    session: &S::Session,
+    user: &impl AuthUser,
+    session: &impl AuthSession,
     headers: &std::collections::HashMap<String, String, H>,
     dont_remember: bool,
 ) -> AuthResult<Vec<String>> {
     let context = CacheVersionContext::created(
         user.clone(),
         session.clone(),
-        ctx.user_view(user),
-        ctx.session_view(session),
-    );
+        ctx.trusted_user_view(user),
+        ctx.trusted_session_view(session),
+    )
+    .with_public_projection(ctx.user_view(user), ctx.session_view(session));
     build_headers(ctx, context, headers, dont_remember).await
 }
 
 async fn stored_read_headers<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    user: &S::User,
-    session: &S::Session,
+    user: &impl AuthUser,
+    session: &impl AuthSession,
     headers: &std::collections::HashMap<String, String>,
 ) -> AuthResult<Vec<String>> {
-    let context = CacheVersionContext::stored(ctx.user_view(user), ctx.session_view(session));
+    let user_fields = ctx.extensions.get::<crate::field_policy::UserFields>();
+    let user_fields = user_fields
+        .as_ref()
+        .map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
+    let session_fields = ctx.extensions.get::<crate::field_policy::SessionFields>();
+    let session_fields = session_fields
+        .as_ref()
+        .map_or(&ctx.config.session.additional_fields, |fields| &fields.0);
+    let context = CacheVersionContext::stored(
+        ctx.user_view(user),
+        ctx.session_view(session),
+        user.adapter_snapshot()
+            .map(|output| output.filter_returned(user_fields)),
+        session
+            .adapter_snapshot()
+            .map(|output| output.filter_returned(session_fields)),
+    )
+    .with_public_projection(ctx.user_view(user), ctx.session_view(session));
     build_headers(ctx, context, headers, false).await
 }
 
@@ -247,8 +299,8 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
         None => "1".into(),
     };
     let value = super::encode_compact(
-        context.user(),
-        context.session(),
+        context.public_user(),
+        context.public_session(),
         &version,
         chrono::Utc::now().timestamp_millis(),
         config.max_age,
@@ -300,17 +352,18 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
 /// Returns an error when validation, storage, or an application callback fails.
 pub async fn emit_issuance<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    user: &S::User,
-    session: &S::Session,
+    user: &impl AuthUser,
+    session: &impl AuthSession,
 ) -> AuthResult<()> {
     emit_issuance_snapshot(
         ctx,
         CacheVersionContext::created(
             user.clone(),
             session.clone(),
-            ctx.user_view(user),
-            ctx.session_view(session),
-        ),
+            ctx.trusted_user_view(user),
+            ctx.trusted_session_view(session),
+        )
+        .with_public_projection(ctx.user_view(user), ctx.session_view(session)),
     )
     .await
 }
@@ -330,7 +383,15 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
     ctx: &AuthContext<S>,
     context: CacheVersionContext,
 ) -> AuthResult<()> {
-    let published = (context.user().clone(), context.session().clone());
+    let public_user = ctx.user_view(context.user());
+    let public_session = ctx.session_view(context.session());
+    let context = context.with_public_projection(public_user, public_session);
+    let published = PublishedSessionSnapshot {
+        user: context.user().clone(),
+        session: context.session().clone(),
+        user_output: context.user_output().cloned(),
+        session_output: context.session_output().cloned(),
+    };
     if !ctx
         .config
         .session
@@ -338,7 +399,7 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
         .as_ref()
         .is_some_and(|config| config.enabled)
     {
-        record_publication(published.0, published.1);
+        record_publication(published);
         return Ok(());
     }
     let endpoint = crate::endpoint::current_endpoint_call_context();
@@ -406,7 +467,7 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
                 data.prior_headers.clear();
                 data.cache_headers.extend(cache_headers);
             }
-            record_publication(published.0, published.1);
+            record_publication(published);
             Ok(())
         }
         Err(error) => {
@@ -517,11 +578,11 @@ pub async fn authenticated<S: AuthSchema>(
         let nested = call.session_read_context();
         crate::endpoint::with_endpoint_call_context(
             nested.clone(),
-            authenticated_inner(ctx, &nested, false),
+            Box::pin(authenticated_inner(ctx, &nested, false)),
         )
         .await
     } else {
-        authenticated_inner(ctx, request, direct).await
+        Box::pin(authenticated_inner(ctx, request, direct)).await
     }
 }
 
@@ -552,9 +613,9 @@ async fn authenticated_inner<S: AuthSchema>(
     request.extensions().insert(SessionHookCache(None));
     if let Some(session) = request.virtual_session(ctx) {
         let user = if let Some(user) = request.authenticated_user::<S>(ctx) {
-            user
+            ctx.user_adapter_record(user).await?
         } else {
-            let Some(user) = ctx.database.get_user_by_id(&session.user_id).await? else {
+            let Some(user) = ctx.database.get_user_by_id_record(&session.user_id).await? else {
                 return Ok(None);
             };
             user
@@ -592,13 +653,13 @@ async fn authenticated_inner<S: AuthSchema>(
     let Some(token) = manager.extract_session_token(request) else {
         return Ok(None);
     };
-    let Some(original) = ctx.database.get_session(&token).await? else {
+    let Some(original) = ctx.database.get_session_record(&token).await? else {
         cleanup(ctx, request)?;
         return Ok(None);
     };
     let Some(user) = ctx
         .database
-        .get_user_by_id(original.user_id().as_ref())
+        .get_user_by_id_record(original.user_id().as_ref())
         .await?
     else {
         cleanup(ctx, request)?;
@@ -609,7 +670,7 @@ async fn authenticated_inner<S: AuthSchema>(
     let deferred = ctx.config.session.defer_session_refresh
         && !(direct && request.session_method() == &crate::HttpMethod::Post);
     let read = manager
-        .read_loaded_session(
+        .read_loaded_session_record(
             original,
             crate::session::SessionReadOptions {
                 allow_refresh: !suppressed && !deferred,
@@ -643,7 +704,10 @@ async fn authenticated_inner<S: AuthSchema>(
             )?,
         );
     }
-    if !suppressed {
+    if read.refreshed {
+        let user = ctx.filter_user_record(user.clone());
+        emit_issuance(ctx, &user, &session).await?;
+    } else if !suppressed {
         for header in stored_read_headers(ctx, &user, &session, request.session_headers()).await? {
             request.queue_response_header("Set-Cookie", header);
         }

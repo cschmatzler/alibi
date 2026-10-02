@@ -269,7 +269,7 @@ impl OrganizationPlugin {
                     if !body.keep_current_active_organization.unwrap_or(false) {
                         drop(
                             ctx.database
-                                .update_session_active_organization(
+                                .update_session_active_organization_record(
                                     &session.token,
                                     Some(response.organization.id.as_str()),
                                 )
@@ -278,7 +278,10 @@ impl OrganizationPlugin {
                         if let Some(team_id) = &response.default_team_id {
                             drop(
                                 ctx.database
-                                    .update_session_active_team(&session.token, Some(team_id))
+                                    .update_session_active_team_record(
+                                        &session.token,
+                                        Some(team_id),
+                                    )
                                     .await?,
                             );
                         }

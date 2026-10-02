@@ -177,6 +177,7 @@ async fn upgrades_populated_users_preserving_custom_schema_and_foreign_keys()
         .await?;
     let account = store
         .create_account(CreateAccount {
+            additional_fields: Default::default(),
             account_id: existing.id.clone(),
             provider_id: "credential".to_owned(),
             user_id: existing.id.clone(),

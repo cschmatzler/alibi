@@ -345,7 +345,7 @@ pub(in crate::plugins) async fn remove_member_core(
     if is_self_removal && session.active_organization_id() == Some(org_id) {
         drop(
             ctx.database
-                .update_session_active_organization(session.token(), None)
+                .update_session_active_organization_record(session.token(), None)
                 .await?,
         );
     }

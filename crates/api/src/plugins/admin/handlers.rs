@@ -163,7 +163,7 @@ pub(in crate::plugins) async fn set_role_core(
 ) -> AuthResult<UserResponse<AdminUserView>> {
     let _target = ctx
         .database
-        .get_user_by_id(&body.user_id)
+        .get_user_by_id_record(&body.user_id)
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
 
@@ -174,9 +174,12 @@ pub(in crate::plugins) async fn set_role_core(
         ..Default::default()
     };
 
-    let updated_user = ctx.database.update_user(&body.user_id, update).await?;
+    let updated_user = ctx
+        .database
+        .update_user_record(&body.user_id, update)
+        .await?;
     Ok(UserResponse {
-        user: AdminUserView::from(&updated_user),
+        user: AdminUserView::from_output(ctx, &updated_user)?,
     })
 }
 
@@ -189,10 +192,10 @@ pub(in crate::plugins) async fn get_user_core(
 ) -> AuthResult<AdminUserView> {
     let user = ctx
         .database
-        .get_user_by_id(&query.id)
+        .get_user_by_id_record(&query.id)
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
-    Ok(AdminUserView::from(&user))
+    AdminUserView::from_output(ctx, &user)
 }
 
 fn requested_create_role(body: &CreateUserRequest) -> AuthResult<Option<RoleInput>> {
@@ -242,7 +245,12 @@ pub(in crate::plugins) async fn create_user_core(
             message: "Password too long".into(),
         });
     }
-    if ctx.database.get_user_by_email(&email).await?.is_some() {
+    if ctx
+        .database
+        .get_user_by_email_record(&email)
+        .await?
+        .is_some()
+    {
         return Err(AuthError::bad_request(
             "User already exists. Use another email.",
         ));
@@ -271,7 +279,7 @@ pub(in crate::plugins) async fn create_user_core(
 
     let user = ctx
         .database
-        .create_user_with_source(
+        .create_user_with_source_record(
             create_user,
             better_auth_core::user_validation::UserValidationSource::creation("admin"),
         )
@@ -292,7 +300,8 @@ pub(in crate::plugins) async fn create_user_core(
             .await?;
         drop(
             ctx.database
-                .create_account(CreateAccount {
+                .create_account_record(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: user.id().to_string(),
                     account_id: user.id().to_string(),
                     provider_id: "credential".to_owned(),
@@ -399,8 +408,11 @@ pub(in crate::plugins) async fn update_user_core(
         update.metadata = Some(serde_json::Value::Object(value.clone()));
     }
 
-    let updated_user = ctx.database.update_user(&body.user_id, update).await?;
-    Ok(AdminUserView::from(&updated_user))
+    let updated_user = ctx
+        .database
+        .update_user_record(&body.user_id, update)
+        .await?;
+    AdminUserView::from_output(ctx, &updated_user)
 }
 
 ///
@@ -426,7 +438,7 @@ pub(in crate::plugins) async fn list_users_core(
     // Pinned list-users catches adapter query/count failures after authorization,
     // returning no pagination fields. Authentication and permission errors never
     // reach this boundary.
-    let Ok((users, total)) = ctx.database.list_users(params).await else {
+    let Ok((users, total)) = ctx.database.list_users_record(params).await else {
         return Ok(ListUsersResponse {
             users: Vec::new(),
             total: 0,
@@ -435,7 +447,10 @@ pub(in crate::plugins) async fn list_users_core(
         });
     };
     Ok(ListUsersResponse {
-        users: users.iter().map(AdminUserView::from).collect(),
+        users: users
+            .iter()
+            .map(|user| AdminUserView::from_output(ctx, user))
+            .collect::<AuthResult<_>>()?,
         total,
         limit: query.limit.filter(|limit| *limit > 0),
         offset: query.offset.filter(|offset| *offset > 0),
@@ -449,11 +464,12 @@ pub(in crate::plugins) async fn list_user_sessions_core(
     body: &UserIdRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<ListSessionsResponse<SessionView>> {
-    let session_manager = ctx.session_manager();
-    let sessions = session_manager.list_user_sessions(&body.user_id).await?;
+    let sessions = ctx.database.get_user_sessions_record(&body.user_id).await?;
+    let now = Utc::now();
     Ok(ListSessionsResponse {
         sessions: sessions
             .iter()
+            .filter(|session| session.expires_at() > now && session.active())
             .map(|session| ctx.session_view(session))
             .collect(),
     })
@@ -474,7 +490,7 @@ pub(in crate::plugins) async fn ban_user_core(
 
     let _target = ctx
         .database
-        .get_user_by_id(&body.user_id)
+        .get_user_by_id_record(&body.user_id)
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
 
@@ -501,14 +517,17 @@ pub(in crate::plugins) async fn ban_user_core(
         ..Default::default()
     };
 
-    let updated_user = ctx.database.update_user(&body.user_id, update).await?;
+    let updated_user = ctx
+        .database
+        .update_user_record(&body.user_id, update)
+        .await?;
     let _ignored_revoke_all_user_sessions = ctx
         .session_manager()
         .revoke_all_user_sessions(&body.user_id)
         .await?;
 
     Ok(UserResponse {
-        user: AdminUserView::from(&updated_user),
+        user: AdminUserView::from_output(ctx, &updated_user)?,
     })
 }
 
@@ -521,7 +540,7 @@ pub(in crate::plugins) async fn unban_user_core(
 ) -> AuthResult<UserResponse<AdminUserView>> {
     let _target = ctx
         .database
-        .get_user_by_id(&body.user_id)
+        .get_user_by_id_record(&body.user_id)
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
 
@@ -532,9 +551,12 @@ pub(in crate::plugins) async fn unban_user_core(
         ..Default::default()
     };
 
-    let updated_user = ctx.database.update_user(&body.user_id, update).await?;
+    let updated_user = ctx
+        .database
+        .update_user_record(&body.user_id, update)
+        .await?;
     Ok(UserResponse {
-        user: AdminUserView::from(&updated_user),
+        user: AdminUserView::from_output(ctx, &updated_user)?,
     })
 }
 
@@ -552,7 +574,7 @@ pub(in crate::plugins) async fn impersonate_user_core(
 ) -> Result<(SessionUserResponse<SessionView, UserView>, String), AdminDateOperationError> {
     let target = ctx
         .database
-        .get_user_by_id(&body.user_id)
+        .get_user_by_id_record(&body.user_id)
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
 
@@ -578,7 +600,7 @@ pub(in crate::plugins) async fn impersonate_user_core(
         {
             drop(
                 ctx.database
-                    .update_user(
+                    .update_user_record(
                         &body.user_id,
                         UpdateUser {
                             banned: Some(false),
@@ -613,7 +635,7 @@ pub(in crate::plugins) async fn impersonate_user_core(
         active_organization_id: None,
     };
 
-    let session = ctx.database.create_session(create_session).await?;
+    let session = ctx.database.create_session_record(create_session).await?;
     let token = session.token().to_owned();
     let response = SessionUserResponse {
         session: ctx.session_view(&session),
@@ -638,13 +660,13 @@ pub(in crate::plugins) async fn stop_impersonating_core(
 
     let admin_user = ctx
         .database
-        .get_user_by_id(&admin_id)
+        .get_user_by_id_record(&admin_id)
         .await?
         .ok_or_else(|| AuthError::internal(MESSAGE_FAILED_TO_FIND_USER))?;
 
     let admin_session = ctx
         .database
-        .get_session(&admin_cookie.session_token)
+        .get_session_record(&admin_cookie.session_token)
         .await?
         .ok_or_else(|| AuthError::internal(MESSAGE_FAILED_TO_FIND_ADMIN_SESSION))?;
 
@@ -707,13 +729,13 @@ pub(in crate::plugins) async fn remove_user_core(
 
     let _target = ctx
         .database
-        .get_user_by_id(&body.user_id)
+        .get_user_by_id_record(&body.user_id)
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
 
     ctx.database.delete_user_sessions(&body.user_id).await?;
 
-    let accounts = ctx.database.get_user_accounts(&body.user_id).await?;
+    let accounts = ctx.database.get_user_accounts_record(&body.user_id).await?;
     for account in &accounts {
         ctx.database.delete_account(&account.id()).await?;
     }
@@ -739,7 +761,7 @@ pub(in crate::plugins) async fn set_user_password_core(
 
     let target = ctx
         .database
-        .get_user_by_id(&body.user_id)
+        .get_user_by_id_record(&body.user_id)
         .await?
         .ok_or(AuthError::Upstream {
             status: 404,
@@ -762,7 +784,7 @@ pub(in crate::plugins) async fn set_user_password_core(
     {
         drop(
             ctx.database
-                .update_account(
+                .update_account_record(
                     &account.id(),
                     better_auth_core::UpdateAccount {
                         password: Some(password_hash),
@@ -774,7 +796,8 @@ pub(in crate::plugins) async fn set_user_password_core(
     } else {
         drop(
             ctx.database
-                .create_account(CreateAccount {
+                .create_account_record(CreateAccount {
+                    additional_fields: Default::default(),
                     user_id: body.user_id.clone(),
                     account_id: target.id().to_string(),
                     provider_id: "credential".into(),

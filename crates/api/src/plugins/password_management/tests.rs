@@ -50,6 +50,7 @@ async fn create_test_context_with_user() -> (AuthContext<TestSchema>, UserView, 
     drop(
         ctx.database
             .create_account(CreateAccount {
+                additional_fields: Default::default(),
                 user_id: user.id.clone(),
                 account_id: user.id.clone(),
                 provider_id: "credential".to_owned(),
@@ -81,6 +82,7 @@ async fn create_test_context_with_oauth_only_user()
     drop(
         ctx.database
             .create_account(CreateAccount {
+                additional_fields: Default::default(),
                 user_id: user.id.clone(),
                 account_id: "google-account-id".to_owned(),
                 provider_id: "google".to_owned(),

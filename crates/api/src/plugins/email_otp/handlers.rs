@@ -214,7 +214,13 @@ impl EmailOtpPlugin {
             Err(error) => return Err(error),
         };
         let should_send = body.otp_type == EmailOtpType::SignIn && !self.config.disable_sign_up;
-        if ctx.database.get_user_by_email(&email).await?.is_none() && !should_send {
+        if ctx
+            .database
+            .get_user_by_email_record(&email)
+            .await?
+            .is_none()
+            && !should_send
+        {
             ctx.verifications()
                 .delete(&identifier(body.otp_type, &email))
                 .await?;
@@ -269,7 +275,12 @@ impl EmailOtpPlugin {
             );
             return Err(invalid_otp());
         }
-        if ctx.database.get_user_by_email(&email).await?.is_none() {
+        if ctx
+            .database
+            .get_user_by_email_record(&email)
+            .await?
+            .is_none()
+        {
             return Err(user_not_found());
         }
         AuthResponse::json(200, &json!({"success":true})).map_err(AuthError::from)
@@ -296,7 +307,7 @@ impl EmailOtpPlugin {
         .await?;
         let user = ctx
             .database
-            .get_user_by_email(&email)
+            .get_user_by_email_record(&email)
             .await?
             .ok_or_else(user_not_found)?;
         let settings = self.verification_settings(ctx);
@@ -305,7 +316,7 @@ impl EmailOtpPlugin {
         }
         let updated = ctx
             .database
-            .update_user(
+            .update_user_record(
                 &user.id(),
                 UpdateUser {
                     email: Some(email),
@@ -318,7 +329,7 @@ impl EmailOtpPlugin {
             hook(&ctx.user_view(&updated)).await?;
         }
         if settings.auto_sign_in {
-            let (payload, mut response) = session_response(ctx, req, &updated.id()).await?;
+            let (payload, mut response) = session_response(ctx, req, updated).await?;
             response.body = serde_json::to_vec(
                 &json!({"status":true,"token":payload.get("token"),"user":payload.get("user")}),
             )?;
@@ -360,7 +371,7 @@ impl EmailOtpPlugin {
         let email = body.email.to_lowercase();
         self.consume_code(ctx, &identifier(EmailOtpType::SignIn, &email), &body.otp)
             .await?;
-        let user = match ctx.database.get_user_by_email(&email).await? {
+        let user = match ctx.database.get_user_by_email_record(&email).await? {
             Some(user) if !user.email_verified() => revoke_unproven_access(ctx, &user.id())
                 .await?
                 .ok_or_else(invalid_otp)?,
@@ -377,7 +388,7 @@ impl EmailOtpPlugin {
                 super::super::helpers::apply_default_role(ctx, &mut data);
                 prepare_additional_user_fields(ctx, &mut data).await?;
                 ctx.database
-                    .create_user_with_source(
+                    .create_user_with_source_record(
                         data,
                         better_auth_core::user_validation::UserValidationSource::creation(
                             "email-otp",
@@ -386,7 +397,7 @@ impl EmailOtpPlugin {
                     .await?
             }
         };
-        session_response(ctx, req, &user.id())
+        session_response(ctx, req, user)
             .await
             .map(|(_, response)| response)
     }
@@ -407,7 +418,12 @@ impl EmailOtpPlugin {
         let otp = self
             .resolve_code(ctx, &email, EmailOtpType::ForgetPassword)
             .await?;
-        if ctx.database.get_user_by_email(&email).await?.is_none() {
+        if ctx
+            .database
+            .get_user_by_email_record(&email)
+            .await?
+            .is_none()
+        {
             ctx.verifications()
                 .delete(&identifier(EmailOtpType::ForgetPassword, &email))
                 .await?;
@@ -447,7 +463,7 @@ impl EmailOtpPlugin {
         .await?;
         let user = ctx
             .database
-            .get_user_by_email(&email)
+            .get_user_by_email_record(&email)
             .await?
             .ok_or_else(user_not_found)?;
         let password = ctx
@@ -457,7 +473,7 @@ impl EmailOtpPlugin {
         {
             drop(
                 ctx.database
-                    .update_account(
+                    .update_account_record(
                         &account.id(),
                         UpdateAccount {
                             password: Some(password),
@@ -469,7 +485,8 @@ impl EmailOtpPlugin {
         } else {
             drop(
                 ctx.database
-                    .create_account(CreateAccount {
+                    .create_account_record(CreateAccount {
+                        additional_fields: Default::default(),
                         user_id: user.id().to_string(),
                         account_id: user.id().to_string(),
                         provider_id: "credential".to_owned(),
@@ -490,7 +507,7 @@ impl EmailOtpPlugin {
         if !user.email_verified() {
             drop(
                 ctx.database
-                    .update_user(
+                    .update_user_record(
                         &user.id(),
                         UpdateUser {
                             email_verified: Some(true),
@@ -548,7 +565,12 @@ impl EmailOtpPlugin {
                 Some(key.clone()),
             )
             .await?;
-        if ctx.database.get_user_by_email(&new_email).await?.is_some() {
+        if ctx
+            .database
+            .get_user_by_email_record(&new_email)
+            .await?
+            .is_some()
+        {
             ctx.verifications().delete(&key).await?;
         } else {
             self.deliver(&new_email, otp, EmailOtpType::ChangeEmail)
@@ -587,10 +609,15 @@ impl EmailOtpPlugin {
         .await?;
         let current = ctx
             .database
-            .get_user_by_email(&email)
+            .get_user_by_email_record(&email)
             .await?
             .ok_or_else(user_not_found)?;
-        if ctx.database.get_user_by_email(&new_email).await?.is_some() {
+        if ctx
+            .database
+            .get_user_by_email_record(&new_email)
+            .await?
+            .is_some()
+        {
             return Err(AuthError::bad_request("Email already in use"));
         }
         let settings = self.verification_settings(ctx);
@@ -599,7 +626,7 @@ impl EmailOtpPlugin {
         }
         let updated = ctx
             .database
-            .update_user(
+            .update_user_record(
                 &current.id(),
                 UpdateUser {
                     email: Some(new_email),

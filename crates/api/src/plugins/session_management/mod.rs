@@ -201,7 +201,7 @@ impl SessionManagementPlugin {
         }
         let updated = match ctx
             .database
-            .update_session_fields(session.token(), allowed)
+            .update_session_fields_record(session.token(), allowed)
             .await
         {
             Ok(updated) => updated,

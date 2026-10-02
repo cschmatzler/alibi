@@ -19,6 +19,18 @@ use std::borrow::Cow;
 /// The framework reads user fields through these getters. Custom types
 /// must provide all framework fields and may have additional fields.
 pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    /// A genuine retained adapter result, including declared undefined values.
+    fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
+        None
+    }
+    /// A chosen authenticated view is already projected and must remain exact.
+    fn retained_user_view(&self) -> Option<&crate::UserView> {
+        None
+    }
+    /// Physical application/plugin values; public policy is applied separately.
+    fn additional_fields(&self) -> crate::field_policy::FieldOutput {
+        crate::field_policy::FieldOutput::new()
+    }
     fn id(&self) -> Cow<'_, str>;
     fn email(&self) -> Option<&str>;
     fn name(&self) -> Option<&str>;
@@ -59,6 +71,12 @@ pub trait AuthUser: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static 
 
 /// Trait representing a session entity.
 pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
+        None
+    }
+    fn retained_session_view(&self) -> Option<&crate::SessionView> {
+        None
+    }
     fn additional_fields(&self) -> serde_json::Map<String, serde_json::Value> {
         serde_json::Map::new()
     }
@@ -80,6 +98,12 @@ pub trait AuthSession: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
 
 /// Trait representing an account entity (OAuth provider linking).
 pub trait AuthAccount: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    fn adapter_snapshot(&self) -> Option<&crate::AdapterOutput> {
+        None
+    }
+    fn additional_fields(&self) -> crate::field_policy::FieldOutput {
+        crate::field_policy::FieldOutput::new()
+    }
     fn id(&self) -> Cow<'_, str>;
     fn account_id(&self) -> &str;
     fn provider_id(&self) -> &str;

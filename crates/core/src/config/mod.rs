@@ -151,6 +151,9 @@ pub struct AuthConfig {
     /// Session configuration
     pub session: SessionConfig,
 
+    /// Application user-field input, adapter and public output policies.
+    pub user: UserConfig,
+
     /// Verification storage lifecycle settings.
     pub verification: VerificationConfig,
 
@@ -184,6 +187,7 @@ pub struct AuthConfig {
     reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
 )]
 pub struct AccountConfig {
+    pub additional_fields: crate::field_policy::FieldConfigs,
     /// Update OAuth tokens on every sign-in (default: true)
     pub update_account_on_sign_in: bool,
     /// Account linking settings
@@ -198,6 +202,11 @@ pub struct AccountConfig {
     ///
     /// This is security-sensitive and should stay disabled in normal use.
     pub skip_state_cookie_check: bool,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct UserConfig {
+    pub additional_fields: crate::field_policy::FieldConfigs,
 }
 
 /// Settings that control how OAuth accounts are linked to existing users.
@@ -405,6 +414,7 @@ impl Default for CookieCacheConfig {
 impl Default for AccountConfig {
     fn default() -> Self {
         Self {
+            additional_fields: crate::field_policy::FieldConfigs::new(),
             update_account_on_sign_in: true,
             account_linking: AccountLinkingConfig::default(),
             encrypt_oauth_tokens: false,
@@ -571,6 +581,7 @@ impl Default for AuthConfig {
             trusted_origins: Vec::new(),
             disabled_paths: Vec::new(),
             session: SessionConfig::default(),
+            user: UserConfig::default(),
             verification: VerificationConfig::default(),
             jwt: JwtConfig::default(),
             password: PasswordConfig::default(),

@@ -122,6 +122,7 @@ pub(super) async fn router(
                     })
                     .unwrap_or_default();
                 Ok(OAuthUserInfo {
+                    additional_fields: Default::default(),
                     id: "cannot-replace-raw-subject".into(),
                     name: Some(format!("Mapped {name}")),
                     email: "mapped-cognito@example.invalid".into(),
@@ -199,7 +200,9 @@ impl OAuthUserInfoHandler for ApplicationUserInfo {
             .ok_or("Missing application profile")?;
         self.0.user_info_receipts.lock().await.push(profile.clone());
         Ok(OAuthUserInfoResponse {
+            user_output: None,
             user: OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: "cannot-replace-raw-subject".into(),
                 name: Some("Application Cognito User".into()),
                 email: profile
