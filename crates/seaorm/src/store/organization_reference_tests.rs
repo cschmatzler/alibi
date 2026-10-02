@@ -21,6 +21,18 @@ async fn snapshot(database: &DatabaseConnection) -> Result<Vec<(String, String)>
             "SELECT json_group_array(json_object('rowid',rowid,'id',id,'org',organization_id,'role',role,'permission',permission,'created',created_at,'updated',updated_at,'note',app_note)) AS value FROM (SELECT rowid,* FROM organization_role ORDER BY rowid)",
         ),
         (
+            "application_scopes",
+            "SELECT json_group_array(json_object('rowid',rowid,'id',id)) AS value FROM (SELECT rowid,* FROM app_org_scope ORDER BY rowid)",
+        ),
+        (
+            "application_links",
+            "SELECT json_group_array(json_object('rowid',rowid,'team',team_id)) AS value FROM (SELECT rowid,* FROM team_link ORDER BY rowid)",
+        ),
+        (
+            "application_audit",
+            "SELECT json_group_array(json_object('rowid',rowid,'id',id)) AS value FROM (SELECT rowid,* FROM app_team_audit ORDER BY rowid)",
+        ),
+        (
             "ledger",
             "SELECT json_group_array(json_object('version',version,'applied',applied_at)) AS value FROM (SELECT * FROM better_auth_migrations ORDER BY version)",
         ),
@@ -33,8 +45,12 @@ async fn snapshot(database: &DatabaseConnection) -> Result<Vec<(String, String)>
     }
     Ok(rows)
 }
-async fn installed() -> Result<(DatabaseConnection, String), Box<dyn std::error::Error>> {
-    let database = Database::connect("sqlite::memory:").await?;
+async fn installed_at(
+    url: &str,
+) -> Result<(DatabaseConnection, String), Box<dyn std::error::Error>> {
+    let mut options = sea_orm::ConnectOptions::new(url);
+    let _configured = options.max_connections(1);
+    let database = Database::connect(options).await?;
     AuthMigrator::up(&database, None).await?;
     let store = SeaOrmStore::<BundledSchema>::new(
         AuthConfig::new("org-reference-upgrade-local-secret-at-least32"),
@@ -81,7 +97,7 @@ async fn installed() -> Result<(DatabaseConnection, String), Box<dyn std::error:
 )]
 async fn installed_organization_references_preserve_rows_and_unrelated_constraints()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (database, organization_id) = installed().await?;
+    let (database, organization_id) = installed_at("sqlite::memory:").await?;
     let before = snapshot(&database).await?;
     AuthMigrator::up(&database, None).await?;
     AuthMigrator::up(&database, None).await?;
@@ -182,7 +198,7 @@ async fn installed_organization_references_preserve_rows_and_unrelated_constrain
 )]
 async fn second_organization_reference_failure_rolls_back_first_table_and_settings()
 -> Result<(), Box<dyn std::error::Error>> {
-    let (database, _) = installed().await?;
+    let (database, _) = installed_at("sqlite::memory:").await?;
     for sql in [
         "PRAGMA ignore_check_constraints=ON",
         "UPDATE organization_role SET app_note='forbidden' WHERE id='installed-role'",
@@ -234,5 +250,201 @@ async fn second_organization_reference_failure_rolls_back_first_table_and_settin
         )
         .await?;
     AuthMigrator::up(&database, None).await?;
+    Ok(())
+}
+
+// A real application-owned driver delegates the installed migration, then pauses
+// before SeaORM owns the ledger insert. No production timing hook is needed.
+struct PausedMigration(std::sync::Arc<tokio::sync::Notify>);
+impl sea_orm_migration::MigrationName for PausedMigration {
+    fn name(&self) -> &str {
+        "m20261001_000014_detach_organization_references"
+    }
+}
+#[async_trait::async_trait]
+impl sea_orm_migration::MigrationTrait for PausedMigration {
+    fn use_transaction(&self) -> Option<bool> {
+        Some(false)
+    }
+    #[expect(
+        elided_lifetimes_in_paths,
+        reason = "SeaORM MigrationTrait requires the manager lifetime to remain late-bound"
+    )]
+    async fn up(&self, manager: &sea_orm_migration::SchemaManager) -> Result<(), sea_orm::DbErr> {
+        sea_orm_migration::MigrationTrait::up(
+            &super::organization_reference::DetachOrganizationReferences,
+            manager,
+        )
+        .await?;
+        self.0.notify_one();
+        std::future::pending().await
+    }
+}
+struct PausedDriver(std::sync::Arc<tokio::sync::Notify>);
+#[async_trait::async_trait]
+impl sea_orm_migration::MigratorTraitSelf for PausedDriver {
+    fn migrations(&self) -> Vec<Box<dyn sea_orm_migration::MigrationTrait>> {
+        <AuthMigrator as MigratorTrait>::migrations()
+            .into_iter()
+            .map(|migration| {
+                if migration.name() == "m20261001_000014_detach_organization_references" {
+                    Box::new(PausedMigration(self.0.clone()))
+                        as Box<dyn sea_orm_migration::MigrationTrait>
+                } else {
+                    migration
+                }
+            })
+            .collect()
+    }
+    fn migration_table_name(&self) -> sea_orm::DynIden {
+        <AuthMigrator as MigratorTrait>::migration_table_name()
+    }
+}
+fn require(condition: bool, message: &str) -> Result<(), Box<dyn std::error::Error>> {
+    if condition {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(message).into())
+    }
+}
+struct DatabaseFile(std::path::PathBuf);
+impl Drop for DatabaseFile {
+    fn drop(&mut self) {
+        let _removed = std::fs::remove_file(&self.0);
+    }
+}
+
+#[tokio::test]
+async fn committed_rebuild_recovers_after_real_ledger_veto_and_driver_cancellation()
+-> Result<(), Box<dyn std::error::Error>> {
+    for cancel in [false, true] {
+        let file = DatabaseFile(std::env::temp_dir().join(format!(
+            "better-auth-ledger-{}.sqlite",
+            uuid::Uuid::new_v4()
+        )));
+        let url = format!("sqlite://{}?mode=rwc", file.0.display());
+        let (database, _) = installed_at(&url).await?;
+        let before = snapshot(&database).await?;
+        if cancel {
+            let committed = std::sync::Arc::new(tokio::sync::Notify::new());
+            let driver = PausedDriver(committed.clone());
+            let worker_database = database.clone();
+            let worker = tokio::spawn(async move {
+                sea_orm_migration::MigratorTraitSelf::up(&driver, &worker_database, None).await
+            });
+            tokio::time::timeout(std::time::Duration::from_secs(10), committed.notified()).await?;
+            worker.abort();
+            require(
+                worker.await.is_err_and(|error| error.is_cancelled()),
+                "driver did not cancel after committed rebuild",
+            )?;
+        } else {
+            let _created = database.execute_unprepared("CREATE TRIGGER veto_auth_ledger BEFORE INSERT ON better_auth_migrations WHEN NEW.version='m20261001_000014_detach_organization_references' BEGIN SELECT RAISE(ABORT,'application ledger veto'); END").await?;
+            let failure = AuthMigrator::up(&database, None).await;
+            require(
+                failure.is_err_and(|error| error.to_string().contains("application ledger veto")),
+                "ledger SQL veto did not reach the actual migration driver",
+            )?;
+        }
+        // Reopen independently: observing the writer alone cannot prove commit.
+        let observer = Database::connect(&url).await?;
+        let completed = snapshot(&observer).await?;
+        require(
+            before
+                .iter()
+                .filter(|(name, _)| name != "schema")
+                .eq(completed.iter().filter(|(name, _)| name != "schema")),
+            "rebuild changed installed row bytes or recorded an uncompleted ledger entry",
+        )?;
+        require(
+            before != completed,
+            "failure happened before the schema rebuild committed",
+        )?;
+        for query in [
+            "PRAGMA foreign_key_list('team')",
+            "PRAGMA foreign_key_list('organization_role')",
+        ] {
+            let keys = observer
+                .query_all_raw(Statement::from_string(DatabaseBackend::Sqlite, query))
+                .await?;
+            require(
+                keys.len() == 1
+                    && keys.first().is_some_and(|key| {
+                        key.try_get::<String>("", "table")
+                            .is_ok_and(|name| name == "app_org_scope")
+                    }),
+                "completed rebuild failed to preserve the independent application foreign key",
+            )?;
+        }
+        for (query, name, expected) in [
+            ("PRAGMA foreign_keys", "foreign_keys", 1_i64),
+            ("PRAGMA legacy_alter_table", "legacy_alter_table", 0),
+        ] {
+            let row = database
+                .query_one_raw(Statement::from_string(DatabaseBackend::Sqlite, query))
+                .await?
+                .ok_or_else(|| std::io::Error::other("missing connection setting"))?;
+            require(
+                row.try_get::<i64>("", name)? == expected,
+                "committed helper returned an altered connection setting",
+            )?;
+        }
+        require(
+            database
+                .execute_unprepared("INSERT INTO team_link VALUES('missing-after-ledger-failure')")
+                .await
+                .is_err(),
+            "foreign-key enforcement was lost",
+        )?;
+        if !cancel {
+            let _dropped = database
+                .execute_unprepared("DROP TRIGGER veto_auth_ledger")
+                .await?;
+        }
+        AuthMigrator::up(&database, None).await?;
+        let retried = snapshot(&observer).await?;
+        require(
+            completed
+                .iter()
+                .filter(|(name, _)| name != "ledger")
+                .eq(retried.iter().filter(|(name, _)| name != "ledger")),
+            "retry rebuilt an already completed schema or changed application rows",
+        )?;
+        AuthMigrator::up(&database, None).await?;
+        require(
+            snapshot(&observer).await? == retried,
+            "second retry changed rows, schema or ledger",
+        )?;
+        let ledger = observer.query_one_raw(Statement::from_string(DatabaseBackend::Sqlite, "SELECT COUNT(*) AS count FROM better_auth_migrations WHERE version='m20261001_000014_detach_organization_references'")).await?.ok_or_else(|| std::io::Error::other("missing migration ledger"))?;
+        require(
+            ledger.try_get::<i64>("", "count")? == 1,
+            "completed retry did not record exactly one migration",
+        )?;
+        let _updated = database
+            .execute_unprepared(
+                "UPDATE team SET app_note='changed-after-retry' WHERE id='installed-team'",
+            )
+            .await?;
+        let trigger = observer
+            .query_one_raw(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "SELECT id FROM app_team_audit",
+            ))
+            .await?
+            .ok_or_else(|| std::io::Error::other("installed trigger disappeared"))?;
+        require(
+            trigger.try_get::<String>("", "id")? == "installed-team",
+            "installed trigger no longer observes application updates",
+        )?;
+        require(
+            database
+                .execute_unprepared("UPDATE team SET app_note='blocked' WHERE id='installed-team'")
+                .await
+                .is_err(),
+            "installed CHECK constraint disappeared",
+        )?;
+        observer.close().await?;
+        database.close().await?;
+    }
     Ok(())
 }
