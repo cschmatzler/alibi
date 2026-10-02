@@ -161,11 +161,15 @@ better_auth_core::impl_auth_plugin! {
                 ctx.extensions.insert(BannedUserMessagePolicy(handler.clone()));
             }
             let default_role = self.config.default_role.clone();
+            let validation_enabled = ctx.config.user_validation.is_some();
             ctx.register_user_create_transform(move |mut input| {
-                _ = input.banned.get_or_insert(false);
+                if !validation_enabled {_ = input.banned.get_or_insert(false);}
                 _ = input.role.get_or_insert_with(|| default_role.clone());
                 Ok(input)
             });
+            if validation_enabled {ctx.register_user_creation_adapter_default(|mut input| {
+                _ = input.banned.get_or_insert(false); Ok(input)
+            });}
             ctx.set_metadata("admin.enabled", serde_json::Value::Bool(true));
             ctx.set_metadata(
                 "admin.default_role",

@@ -229,9 +229,12 @@ impl OneTapPlugin {
             ..Default::default()
         };
         let result = process_oauth_sign_in(
-            "google",
+            super::oauth::handlers::OAuthIdentity {
+                provider_name: "google",
+                user: &user,
+                profile: &payload.to_json_value()?,
+            },
             &policy,
-            &user,
             &tokens,
             self.config.disable_signup || provider.is_some_and(|provider| provider.disable_sign_up),
             &better_auth_core::RequestMeta::from_request(req),
@@ -240,6 +243,10 @@ impl OneTapPlugin {
         .await;
         let outcome = match result {
             Ok(outcome) => outcome,
+            Err(OAuthSignInError::IdentityDenied { code, message }) => {
+                return AuthResponse::json(403, &json!({"code":code,"message":message}))
+                    .map_err(Into::into);
+            }
             Err(OAuthSignInError::AccountLookup(_)) => {
                 return Ok(
                     crate::plugins::oauth::handlers::ambiguous_account_sign_in_response(ctx),

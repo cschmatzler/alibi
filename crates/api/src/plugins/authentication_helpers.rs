@@ -336,6 +336,7 @@ pub(in crate::plugins) async fn prepare_additional_user_fields(
     ctx: &AuthContext<impl AuthSchema>,
     data: &mut CreateUser,
 ) -> AuthResult<()> {
+    apply_creation_input_defaults(ctx, data);
     use better_auth_core::utils::username::{
         UsernameValidationError, normalize_username, validate_username,
     };
@@ -385,6 +386,32 @@ pub(in crate::plugins) async fn prepare_additional_user_fields(
     }
     data.username = Some(username);
     Ok(())
+}
+
+/// Built-in schema defaults introduced by parsed create input, before identity
+/// validation. Direct identity creation instead receives adapter defaults after
+/// its database hooks. Application additional schemas are handled separately.
+pub(in crate::plugins) fn apply_creation_input_defaults(
+    ctx: &AuthContext<impl AuthSchema>,
+    data: &mut CreateUser,
+) {
+    if ctx.config.user_validation.is_none() {
+        return;
+    }
+    let enabled = |key| {
+        ctx.get_metadata(key)
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+    };
+    if enabled("admin.enabled") {
+        _ = data.banned.get_or_insert(false);
+    }
+    if enabled("anonymous.enabled") {
+        _ = data.is_anonymous.get_or_insert(false);
+    }
+    if enabled("two_factor.enabled") {
+        _ = data.two_factor_enabled.get_or_insert(false);
+    }
 }
 
 ///

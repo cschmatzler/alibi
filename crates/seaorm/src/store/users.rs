@@ -22,11 +22,11 @@ where
         db: &C,
         tx: Option<&DatabaseTransaction>,
         mut create_user: CreateUser,
+        defaults: better_auth_core::store::UserCreationDefaults,
     ) -> AuthResult<S::User>
     where
         C: ConnectionTrait,
     {
-        create_user.email = create_user.email.map(|email| normalize_user_email(&email));
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
             if hook
@@ -37,6 +37,7 @@ where
                 return Err(AuthError::UserCreationCancelled);
             }
         }
+        let mut create_user = defaults.apply(create_user)?;
         if let Some(username) = create_user.username.as_mut() {
             *username = username.to_lowercase();
         }
@@ -61,9 +62,25 @@ where
     pub(crate) async fn create_user_in_tx(
         &self,
         tx: &DatabaseTransaction,
-        create_user: CreateUser,
+        mut create_user: CreateUser,
     ) -> AuthResult<S::User> {
-        self.create_user_with_connection(tx, Some(tx), create_user)
+        create_user.email = create_user.email.map(|email| normalize_user_email(&email));
+        self.create_user_with_connection(
+            tx,
+            Some(tx),
+            create_user,
+            better_auth_core::store::UserCreationDefaults::default(),
+        )
+        .await
+    }
+
+    pub(crate) async fn create_user_prepared_in_tx(
+        &self,
+        tx: &DatabaseTransaction,
+        prepared: better_auth_core::user_validation::PreparedUserCreation,
+    ) -> AuthResult<S::User> {
+        let (data, defaults) = prepared.into_parts();
+        self.create_user_with_connection(tx, Some(tx), data, defaults)
             .await
     }
 }
@@ -74,8 +91,23 @@ where
     S: AuthSchema + Send + Sync,
     S::User: SeaOrmUserModel,
 {
-    async fn create_user(&self, create_user: CreateUser) -> AuthResult<S::User> {
-        self.create_user_with_connection(self.connection(), None, create_user)
+    async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<S::User> {
+        create_user.email = create_user.email.map(|email| normalize_user_email(&email));
+        self.create_user_with_connection(
+            self.connection(),
+            None,
+            create_user,
+            better_auth_core::store::UserCreationDefaults::default(),
+        )
+        .await
+    }
+
+    async fn create_user_prepared(
+        &self,
+        prepared: better_auth_core::user_validation::PreparedUserCreation,
+    ) -> AuthResult<S::User> {
+        let (data, defaults) = prepared.into_parts();
+        self.create_user_with_connection(self.connection(), None, data, defaults)
             .await
     }
 

@@ -265,6 +265,9 @@ impl Index<&str> for Headers {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateUser {
     pub id: Option<String>,
+    /// Trusted creation timestamps; omitted values use the adapter's clock.
+    pub created_at: Option<DateTime<Utc>>,
+    pub updated_at: Option<DateTime<Utc>>,
     pub email: Option<String>,
     pub name: Option<String>,
     pub image: Option<String>,
@@ -382,6 +385,8 @@ impl CreateUser {
     pub const fn new() -> Self {
         Self {
             id: None,
+            created_at: None,
+            updated_at: None,
             email: None,
             name: None,
             image: None,

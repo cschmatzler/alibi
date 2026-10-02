@@ -291,7 +291,13 @@ impl SiwePlugin {
             .with_name(profile.name.unwrap_or_else(|| address.to_owned()));
         create.image = Some(profile.avatar.unwrap_or_default());
         apply_default_role(ctx, &mut create);
-        let created = ctx.database.create_user(create.clone()).await;
+        let created = ctx
+            .database
+            .create_user_with_source(
+                create.clone(),
+                better_auth_core::user_validation::UserValidationSource::creation("siwe"),
+            )
+            .await;
         let created = match created {
             Ok(user) => Ok(user),
             Err(error) if Some(&user_email) == normalized_email.as_ref() => {
@@ -300,7 +306,12 @@ impl SiwePlugin {
                     Ok(Some(_)) => {
                         create.email = Some(wallet_email);
                         ctx.database
-                            .create_user(create)
+                            .create_user_with_source(
+                                create,
+                                better_auth_core::user_validation::UserValidationSource::creation(
+                                    "siwe",
+                                ),
+                            )
                             .await
                             .map_err(storage_error)
                     }

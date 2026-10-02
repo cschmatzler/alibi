@@ -121,7 +121,10 @@ impl AnonymousPlugin {
         apply_default_role(ctx, &mut create);
         let user = ctx
             .database
-            .create_user(create)
+            .create_user_with_source(
+                create,
+                better_auth_core::user_validation::UserValidationSource::creation("anonymous"),
+            )
             .await
             .map_err(|error| match error {
                 better_auth_core::AuthError::UserCreationCancelled => {
@@ -333,12 +336,17 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
     }
     async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
         ctx.set_metadata("anonymous.enabled", json!(true));
-        ctx.register_user_create_transform(|mut input| {
+        let default = |mut input: CreateUser| {
             if input.is_anonymous.is_none() {
                 input.is_anonymous = Some(false);
             }
             Ok(input)
-        });
+        };
+        if ctx.config.user_validation.is_some() {
+            ctx.register_user_creation_adapter_default(default);
+        } else {
+            ctx.register_user_create_transform(default);
+        }
         Ok(())
     }
     async fn on_request(

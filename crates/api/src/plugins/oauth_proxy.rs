@@ -472,10 +472,12 @@ impl OAuthProxyPlugin {
             }),
             ..Default::default()
         };
+        let profile = payload.profile.unwrap_or(Value::Null);
         if let Some(link) = state.link.as_ref() {
             return match complete_link_social(
                 &payload.account.provider_id,
                 &user,
+                &profile,
                 &tokens,
                 link,
                 ctx,
@@ -496,12 +498,15 @@ impl OAuthProxyPlugin {
             };
         }
         let outcome = match process_oauth_sign_in(
-            &payload.account.provider_id,
+            super::oauth::handlers::OAuthIdentity {
+                provider_name: &payload.account.provider_id,
+                user: &user,
+                profile: &profile,
+            },
             &OAuthProcessPolicy {
                 callback_url: Some(payload.callback_url.clone()),
                 ..Default::default()
             },
-            &user,
             &tokens,
             payload.disable_sign_up.unwrap_or(false),
             &better_auth_core::RequestMeta::from_request(req),

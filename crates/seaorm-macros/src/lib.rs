@@ -360,8 +360,8 @@ fn gen_user(
                     name: #seaorm_root::sea_orm::ActiveValue::Set(create_user.name),
                     image: #seaorm_root::sea_orm::ActiveValue::Set(create_user.image),
                     email_verified: #seaorm_root::sea_orm::ActiveValue::Set(create_user.email_verified.unwrap_or(false)),
-                    created_at: #seaorm_root::sea_orm::ActiveValue::Set(now),
-                    updated_at: #seaorm_root::sea_orm::ActiveValue::Set(now),
+                    created_at: #seaorm_root::sea_orm::ActiveValue::Set(create_user.created_at.unwrap_or(now)),
+                    updated_at: #seaorm_root::sea_orm::ActiveValue::Set(create_user.updated_at.unwrap_or(now)),
                     #(#plugin_new_active,)*
                     #(#extras,)*
                 }

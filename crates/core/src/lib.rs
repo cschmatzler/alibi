@@ -49,6 +49,8 @@ pub(crate) mod test_store;
 
 pub mod types;
 
+pub mod user_validation;
+
 mod types_org;
 
 mod types_plugin;

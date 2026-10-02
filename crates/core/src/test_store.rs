@@ -192,8 +192,19 @@ impl AuthTransaction<BundledSchema> for MemoryTransaction<'_> {
     async fn create_passkey(&self, data: CreatePasskey) -> AuthResult<Passkey> {
         self.store.create_passkey(data).await
     }
-    async fn create_user(&self, create_user: CreateUser) -> AuthResult<UserView> {
-        self.store.create_user(create_user).await
+    async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<UserView> {
+        create_user.email = create_user.email.map(|email| email.to_lowercase());
+        self.create_user_prepared(crate::user_validation::PreparedUserCreation::from_data(
+            create_user,
+        ))
+        .await
+    }
+
+    async fn create_user_prepared(
+        &self,
+        prepared: crate::user_validation::PreparedUserCreation,
+    ) -> AuthResult<UserView> {
+        self.store.create_user_prepared(prepared).await
     }
 
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<AccountView> {
@@ -213,7 +224,20 @@ impl AuthTransaction<BundledSchema> for MemoryTransaction<'_> {
 
 #[async_trait]
 impl UserStore<BundledSchema> for MemoryStore {
-    async fn create_user(&self, create_user: CreateUser) -> AuthResult<UserView> {
+    async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<UserView> {
+        create_user.email = create_user.email.map(|email| email.to_lowercase());
+        self.create_user_prepared(crate::user_validation::PreparedUserCreation::from_data(
+            create_user,
+        ))
+        .await
+    }
+
+    async fn create_user_prepared(
+        &self,
+        prepared: crate::user_validation::PreparedUserCreation,
+    ) -> AuthResult<UserView> {
+        let (create_user, defaults) = prepared.into_parts();
+        let create_user = defaults.apply(create_user)?;
         let now = Utc::now();
         let id = create_user
             .id
@@ -222,11 +246,11 @@ impl UserStore<BundledSchema> for MemoryStore {
         let user = UserView {
             id: id.clone(),
             name: create_user.name,
-            email: create_user.email.map(|email| email.to_lowercase()),
+            email: create_user.email,
             email_verified: create_user.email_verified.unwrap_or(false),
             image: create_user.image,
-            created_at: now,
-            updated_at: now,
+            created_at: create_user.created_at.unwrap_or(now),
+            updated_at: create_user.updated_at.unwrap_or(now),
             username,
             display_username: create_user.display_username,
             two_factor_enabled: create_user.two_factor_enabled,

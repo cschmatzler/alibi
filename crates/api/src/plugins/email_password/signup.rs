@@ -112,7 +112,7 @@ pub(super) fn synthetic_response(
     if enabled("phone-number.enabled") {
         defaults.extend([
             ("phoneNumber", Value::Null),
-            ("phoneNumberVerified", json!(false)),
+            ("phoneNumberVerified", Value::Null),
         ]);
     }
     if enabled("last-login-method.enabled") {

@@ -382,7 +382,14 @@ impl EmailOtpPlugin {
                 data.display_username = body.display_username;
                 super::super::helpers::apply_default_role(ctx, &mut data);
                 prepare_additional_user_fields(ctx, &mut data).await?;
-                ctx.database.create_user(data).await?
+                ctx.database
+                    .create_user_with_source(
+                        data,
+                        better_auth_core::user_validation::UserValidationSource::creation(
+                            "email-otp",
+                        ),
+                    )
+                    .await?
             }
         };
         session_response(ctx, req, &user.id())
