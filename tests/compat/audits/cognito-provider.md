@@ -58,7 +58,7 @@ re-admitting a new subject. Other factories retain their existing semantics.
 The raw data stays intact for identity validation. Existing whole provider
 struct literals explicitly preserve or set this optional resolver to None.
 
-## Measured proof and remaining publication
+## Measured proof and validation
 
 The current program passes **83 actual Source/native owners / 2,446 assertions**
 (`/tmp/issue142-83-owners-decoder-clientkey.log`, terminal exit 0). It covers
@@ -108,26 +108,52 @@ Native production all three owners failed at the actual browser callback
 (60 assertions, `/tmp/issue142-decode-before-owner.log`); the object check now
 selects the same fallback. Their signatures do not make them valid claims sets.
 
-All-target strict workspace/fixture Clippy and formatting passed after fixing
-three pre-existing whole OAuthProvider test constructors and the shared helper
-(`/tmp/issue142-current-strict-whole-literals.log`). The frozen cc6 canonical run passed strict default/optional Clippy, the
-Rustls matrix, 794 default and 845 optional native tests, two fixture tests,
-71 harness checks (754 assertions), 36 Axum checks, three endpoint checks and
-two inventory checks. Its SDK phase passed 1,005/1,010 owners with 68,292
-assertions (`/tmp/issue142-rebased-canonical.log`, terminal exit 100). The five
-failures are the API-key validator ten content-type paths, organization fixed
-membership four independently timed member/session aliases, and generated
-seed12648430 default/no-refresh/deferred owners at snapshots21/22/29 code and
-message. Separate parent proof establishes the two member-created aliases;
-earlier main-equivalent proof independently established session expiry timing.
-The cc6 run precedes the decoder/client-key repair and does not verify it. Capability
-requirements are appended only from actual passing, recorded public Cognito
-route/category cells, excluding foreign signup setup and callback denial traces
-that the unchanged collector cannot classify as rejection. All 3,433 parent
-requirements remain intact in their original order; 239 measured Cognito cells
-bring this pre-rebase ledger to 3,672. Final parent rebase,
-independent review, canonical/docs/browser and clean coverage remain pending;
-this draft does not claim a completed issue or a complete green gate.
+On frozen head 63d632ca, composed with main a632 (including user validation and
+API-key background processing), strict default/optional-feature workspace and
+fixture Clippy, Rustls checks, formatting and TypeScript checks passed. The real
+combined Cognito/user-validation program passed **97/97 owners / 4,904 assertions**
+(/tmp/issue142-main204-strict97.log, terminal exit 0). Documentation with warnings
+denied and the actual repository browser wrapper passed (two browser owners,
+22 assertions; /tmp/issue142-main204-docs.log and
+/tmp/issue142-main204-browser.log, terminal exit 0).
+
+The final canonical scripts/check.sh run passed 794 default native tests, 845
+optional native tests, two fixture tests, 71 harness checks / 754 assertions,
+36 Axum checks, three endpoint checks, two inventory checks and both strict
+compilation matrices. Its complete SDK phase passed **1,069/1,074 owners /
+76,020 assertions**, including all 83 Cognito owners
+(/tmp/issue142-main204-final-canonical-cache.log, terminal exit 100). The five
+remaining failures are independently timed organization membership (four
+created/expiry aliases at observation7), JWT keyring timestamps (40 aliases in
+corrupt/legacy/manual/private/recovered/rotated observations), and generated
+seed12648430 default/no-refresh/deferred snapshot22 code/message. The latter
+remains the public change-password Unauthorized guard owned by #221. Prior
+actual-parent evidence establishes the organization timing aliases and earlier
+runs establish keyring timing failures; the full current set of 40 aliases does
+not claim an exact parent counterfactual. There is no observed Cognito decision,
+profile, ownership, token-form or persistence drift. The canonical run stops at
+the SDK failures, so it is not claimed green; docs/browser and coverage are
+separately measured.
+
+Clean local native coverage ran all 845 optional native tests. Its first wrapper
+attempt failed only JWT clock comparisons; all five existing instrumented SDK
+groups then passed on the same frozen source with both explicit fixture and
+Cargo coverage targets (/tmp/issue142-main204-instrumented-five-groups.log,
+terminal exit 0, five groups / 134.793 seconds). The complete native-plus-fixture
+LLVM report covers **30,850/40,021 lines (77.084531%)** and passes the unchanged
+75% floor (/tmp/issue142-main204-coverage-report.log, terminal exit 0). A previous
+uninstrumented-fixture five-group run is retained only as SDK proof, not coverage.
+The ordinary canonical attempt with MBX disabled hit a read-only shared-cache
+artifact; its normal-cache restart is the final canonical run above. No cache
+artifact permissions, checks, thresholds or comparison rules were changed.
+
+Capability requirements are appended only from actual passing, recorded public
+Cognito route/category cells, excluding foreign signup setup and callback denial
+traces the unchanged collector cannot classify as rejection. All **3,522** parent
+requirements remain intact in their original order; **239** measured Cognito
+cells bring the ledger to **3,761**, with zero lost parent requirements or missing
+new evidence (/tmp/issue142-final-measured-capabilities.json). Independent
+provider authorization/persistence review found no remaining blocker.
 
 The typed native profile uses strings and booleans plus supported scalar
 coercions; complex user fields and arbitrary malformed callback results are not
