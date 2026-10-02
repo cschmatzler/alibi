@@ -18,7 +18,7 @@ use aes_gcm::{Aes256Gcm, Key, Nonce};
 use async_trait::async_trait;
 pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth_core::entity::{AuthSession, AuthTwoFactor, AuthUser, AuthVerification};
+use better_auth_core::entity::{AuthSession, AuthTwoFactor, AuthUser};
 use better_auth_core::utils::cookie_utils::{
     create_clear_cookie, create_session_cookie, create_session_cookie_with_max_age,
     create_session_like_cookie, related_cookie_name,
@@ -336,7 +336,7 @@ pub(in crate::plugins) struct TwoFactorRedirectResponse {
 
 struct PendingTwoFactorState<S: better_auth_core::AuthSchema> {
     user: S::User,
-    verification: S::Verification,
+    verification: better_auth_core::verification::VerificationSnapshot,
     key: String,
     dont_remember: bool,
 }
@@ -821,16 +821,14 @@ pub(in crate::plugins) async fn inspect_trusted_device(
         });
     };
 
-    if verification.value() != user.id().as_ref() || verification.expires_at() <= Utc::now() {
+    if verification.value()? != user.id().as_ref() || verification.expires_at()? <= Utc::now() {
         return Ok(TrustedDeviceCheck {
             trusted: false,
             set_cookie_headers: vec![clear_header],
         });
     }
 
-    ctx.database
-        .delete_verification(verification.id().as_ref())
-        .await?;
+    ctx.verifications().delete(trust_identifier).await?;
 
     let rotated_cookie = create_trust_device_cookie_header(user, ctx).await?;
     Ok(TrustedDeviceCheck {
@@ -850,8 +848,8 @@ pub(in crate::plugins) async fn begin_sign_in_challenge(
     let identifier = format!("2fa-{}", uuid::Uuid::new_v4());
     let expires_at = cookie_expiry(two_factor_cookie_max_age(ctx))?;
     drop(
-        ctx.database
-            .create_verification(CreateVerification {
+        ctx.verifications()
+            .create(CreateVerification {
                 identifier: identifier.clone(),
                 value: user.id().to_string(),
                 expires_at,
@@ -859,8 +857,8 @@ pub(in crate::plugins) async fn begin_sign_in_challenge(
             .await?,
     );
     drop(
-        ctx.database
-            .create_verification(CreateVerification {
+        ctx.verifications()
+            .create(CreateVerification {
                 identifier: format!("2fa-attempts-{identifier}"),
                 value: "0".to_owned(),
                 expires_at,
@@ -1148,9 +1146,7 @@ async fn disable_core(
         if let Some(trust_identifier) = trust_cookie.split('!').nth(1)
             && !trust_identifier.is_empty()
         {
-            ctx.database
-                .delete_verifications_by_identifier(trust_identifier)
-                .await?;
+            ctx.verifications().delete(trust_identifier).await?;
         }
         set_cookie_headers.push(clear_cookie_header(&ctx.config, TRUST_DEVICE_COOKIE_SUFFIX));
     }
@@ -1327,8 +1323,8 @@ async fn send_otp_core(
         .ok_or_else(|| AuthError::internal("Invalid two-factor OTP expiry"))?;
 
     drop(
-        ctx.database
-            .create_verification(CreateVerification {
+        ctx.verifications()
+            .create(CreateVerification {
                 identifier,
                 value: format!("{stored_otp}:0"),
                 expires_at,
@@ -1371,15 +1367,11 @@ async fn verify_otp_core(
         None
     };
     let identifier = otp_verification_identifier(state.key());
-    let Some(verification) = ctx
-        .database
-        .consume_verification_by_identifier(&identifier)
-        .await?
-    else {
+    let Some(verification) = ctx.verifications().consume(&identifier).await? else {
         return Err(AuthError::bad_request("OTP has expired").into());
     };
 
-    let mut parts = verification.value().split(':');
+    let mut parts = verification.value()?.split(':');
     let stored_otp = parts.next().unwrap_or_default();
     let counter = parts.next().unwrap_or_default();
     // parseInt(counter, 10) accepts a signed decimal prefix and ignores its suffix.
@@ -1442,11 +1434,11 @@ async fn verify_otp_core(
             .map_err(AuthError::from)?
         };
         let next_value = format!("{stored_otp}:{next_counter}");
-        let expires_at = verification.expires_at();
-        let verification_identifier = verification.identifier().to_owned();
+        let expires_at = verification.expires_at()?;
+        let verification_identifier = otp_verification_identifier(state.key());
         drop(
-            ctx.database
-                .create_verification(CreateVerification {
+            ctx.verifications()
+                .create(CreateVerification {
                     identifier: verification_identifier,
                     value: next_value,
                     expires_at,
@@ -1663,7 +1655,7 @@ async fn resolve_two_factor_state<S: better_auth_core::AuthSchema>(
 
     let user = ctx
         .database
-        .get_user_by_id(verification.value())
+        .get_user_by_id(verification.value()?)
         .await?
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
     let dont_remember = read_signed_cookie(req, DONT_REMEMBER_COOKIE_SUFFIX, ctx)
@@ -1686,25 +1678,20 @@ async fn begin_factor_attempt<S: better_auth_core::AuthSchema>(
     };
     let identifier = format!("2fa-attempts-{}", pending.key);
     let consumed = ctx
-        .database
-        .consume_verification_by_identifier(&identifier)
+        .verifications()
+        .consume(&identifier)
         .await
         .ok()
         .flatten()
         .ok_or_else(|| AuthError::authentication_failed("Invalid two factor cookie"))?;
-    let parsed = attempt_number(consumed.value());
+    let parsed = attempt_number(consumed.value()?);
     let count = if parsed.is_finite() && parsed.fract() == 0.0 && parsed >= 0.0 {
         parsed
     } else {
         5.0
     };
     if count >= 5.0 {
-        if ctx
-            .database
-            .consume_verification_by_identifier(&pending.key)
-            .await
-            .is_err()
-        {
+        if ctx.verifications().consume(&pending.key).await.is_err() {
             return Err(AuthError::Upstream {
                 status: 500,
                 code: "FAILED_TO_INVALIDATE_TWO_FACTOR_CHALLENGE",
@@ -1720,7 +1707,7 @@ async fn begin_factor_attempt<S: better_auth_core::AuthSchema>(
     Ok(Some(FactorAttempt {
         identifier,
         count,
-        expires_at: pending.verification.expires_at(),
+        expires_at: pending.verification.expires_at()?,
     }))
 }
 
@@ -1768,8 +1755,8 @@ async fn rearm_factor_attempt(
 ) {
     if let Some(attempt) = attempt {
         drop(
-            ctx.database
-                .create_verification(CreateVerification {
+            ctx.verifications()
+                .create(CreateVerification {
                     identifier: attempt.identifier.clone(),
                     value: (attempt.count + if failed { 1.0 } else { 0.0 }).to_string(),
                     expires_at: attempt.expires_at,
@@ -1982,11 +1969,12 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
     set_session_cookie: bool,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
-    let consumed = ctx
-        .database
-        .consume_verification_by_identifier(&pending.key)
-        .await?;
-    if consumed.is_none_or(|verification| verification.value() != pending.user.id().as_ref()) {
+    let consumed = ctx.verifications().consume(&pending.key).await?;
+    if consumed.is_none_or(|verification| {
+        !verification
+            .value()
+            .is_ok_and(|value| value == pending.user.id().as_ref())
+    }) {
         return Err(AuthError::Upstream {
             status: 401,
             code: "INVALID_TWO_FACTOR_COOKIE",
@@ -2336,8 +2324,8 @@ async fn create_trust_device_cookie_header(
     let value = format!("{token}!{identifier}");
     let expires_at = cookie_expiry(trust_device_max_age(ctx))?;
     drop(
-        ctx.database
-            .create_verification(CreateVerification {
+        ctx.verifications()
+            .create(CreateVerification {
                 identifier: identifier.clone(),
                 value: user.id().to_string(),
                 expires_at,

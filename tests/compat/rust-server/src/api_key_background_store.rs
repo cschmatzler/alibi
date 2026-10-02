@@ -80,6 +80,25 @@ delegate_store!(AccountStore<S>, {
     async fn delete_account(&self, id: &str) -> AuthResult<()>;
 });
 delegate_store!(VerificationStore<S>, {
+    async fn create_verification_record(
+        &self,
+        data: better_auth::__private_core::verification::VerificationCreation,
+        publication: better_auth::__private_core::verification::VerificationPublication,
+    ) -> AuthResult<Option<better_auth::__private_core::verification::VerificationSnapshot>>;
+    async fn consume_verification_snapshot(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>>;
+    async fn update_verification_by_identifier(
+        &self,
+        identifier: &str,
+        data: UpdateVerification,
+    ) -> AuthResult<Option<better_auth::__private_core::verification::VerificationSnapshot>>;
+    async fn reserve_verification_record(
+        &self,
+        logical_identifier: &str,
+        data: CreateVerification,
+    ) -> AuthResult<Option<S::Verification>>;
     async fn create_verification(
         &self,
         verification: CreateVerification,

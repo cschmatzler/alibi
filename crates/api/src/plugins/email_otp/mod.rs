@@ -206,17 +206,16 @@ impl EmailOtpPlugin {
         email: &str,
         otp_type: EmailOtpType,
     ) -> AuthResult<Option<String>> {
-        use better_auth_core::AuthVerification;
         let identifier = types::identifier(otp_type, &email.to_lowercase());
         let Some(value) =
             super::authentication_helpers::find_verification(ctx, &identifier).await?
         else {
             return Ok(None);
         };
-        if value.expires_at() < chrono::Utc::now() {
+        if value.is_expired() {
             return Ok(None);
         }
-        let (stored, _) = types::split_value(value.value());
+        let (stored, _) = types::split_value(value.value()?);
         self.config
             .storage
             .retrieve(stored, &ctx.config.secret)
@@ -324,7 +323,7 @@ impl<S: better_auth_core::AuthSchema> better_auth_core::VerificationEmailOverrid
         let (otp, value) = self
             .prepare_code(ctx, &email, EmailOtpType::EmailVerification, None)
             .await?;
-        drop(tx.create_verification(value).await?);
+        drop(ctx.verifications().create_in_transaction(tx, value).await?);
         self.deliver(&email, otp, EmailOtpType::EmailVerification)
             .await
     }

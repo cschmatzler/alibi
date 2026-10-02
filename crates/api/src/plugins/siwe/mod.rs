@@ -5,7 +5,7 @@ mod config;
 
 mod crypto;
 
-mod date;
+use better_auth_core::utils::datetime as date;
 
 mod parse;
 
@@ -63,8 +63,8 @@ impl SiwePlugin {
             )?);
         }
         drop(
-            ctx.database
-                .create_verification(CreateVerification {
+            ctx.verifications()
+                .create(CreateVerification {
                     identifier: format!("siwe:{nonce}"),
                     value: nonce.clone(),
                     expires_at: Utc::now() + Duration::seconds(900),
@@ -110,8 +110,8 @@ impl SiwePlugin {
             .filter(|nonce| parse::valid_nonce(nonce))
             .ok_or_else(mismatch)?;
         let consumed = ctx
-            .database
-            .consume_verification_by_identifier(&format!("siwe:{nonce}"))
+            .verifications()
+            .consume(&format!("siwe:{nonce}"))
             .await
             .map_err(storage_error)?;
         if consumed.is_none() {
@@ -259,8 +259,8 @@ impl SiwePlugin {
         {
             let identifier = format!("siwe-email-claim-{email_2}");
             let reserved = ctx
-                .database
-                .reserve_verification(CreateVerification {
+                .verifications()
+                .reserve(CreateVerification {
                     identifier: identifier.clone(),
                     value: address.to_owned(),
                     expires_at: Utc::now() + Duration::seconds(60),
@@ -322,11 +322,7 @@ impl SiwePlugin {
             Err(error) => Err(storage_error(error)),
         };
         if let Some(identifier) = claim {
-            drop(
-                ctx.database
-                    .consume_verification_by_identifier(&identifier)
-                    .await,
-            );
+            drop(ctx.verifications().consume(&identifier).await);
         }
         created
     }

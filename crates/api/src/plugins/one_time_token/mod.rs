@@ -16,7 +16,7 @@ use better_auth_core::utils::cookie_utils::{
 use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
-    AuthSchema, AuthSession, AuthVerification, CreateVerification, HttpMethod,
+    AuthSchema, AuthSession, CreateVerification, HttpMethod,
 };
 use chrono::{Duration, Utc};
 pub use endpoint::OneTimeTokenOutput;
@@ -156,8 +156,8 @@ impl OneTimeTokenPlugin {
         };
         let stored = self.stored_token(&token).await?;
         drop(
-            ctx.database
-                .create_verification(CreateVerification {
+            ctx.verifications()
+                .create(CreateVerification {
                     identifier: format!("one-time-token:{stored}"),
                     value: session.session.token.clone(),
                     expires_at: Utc::now() + self.config.expires_in,
@@ -218,15 +218,15 @@ impl OneTimeTokenPlugin {
     ) -> AuthResult<TokenSessionLookup<S>> {
         let stored = self.stored_token(token).await?;
         let Some(verification) = ctx
-            .database
-            .consume_verification_by_identifier(&format!("one-time-token:{stored}"))
+            .verifications()
+            .consume(&format!("one-time-token:{stored}"))
             .await?
         else {
             return Ok(TokenSessionLookup::Missing(
                 TokenSessionAbsence::InvalidToken,
             ));
         };
-        let Some(session) = ctx.database.get_session(verification.value()).await? else {
+        let Some(session) = ctx.database.get_session(verification.value()?).await? else {
             return Ok(TokenSessionLookup::Missing(
                 TokenSessionAbsence::SessionNotFound,
             ));

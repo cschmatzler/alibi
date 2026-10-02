@@ -49,7 +49,7 @@ async fn production_exchange_preserves_rows_then_preview_consumes_state_and_issu
         fixture
             .preview
             .store()
-            .get_verification_by_identifier(&format!("oauth:{original_state}"))
+            .get_verification_by_identifier(original_state)
             .await
             .unwrap()
             .is_none()

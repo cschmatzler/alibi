@@ -1,5 +1,6 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth_core::entity::AuthAccount;
+use better_auth_core::utils::cookie_utils::{sign_cookie_value, verify_cookie_value};
 use better_auth_core::{AuthConfig, AuthError, AuthRequest, AuthResult, OAuthStateStrategy};
 use chrono::{Duration, Utc};
 use hmac::{Hmac, Mac};
@@ -158,13 +159,6 @@ impl AccountCookiePayload {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct StateCookieClaims {
-    state: String,
-    exp: usize,
-    iat: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
 struct StatePayloadClaims {
     #[serde(flatten)]
     payload: OAuthStatePayload,
@@ -243,40 +237,18 @@ pub(super) fn account_cookie_name(config: &AuthConfig) -> String {
     related_cookie_name(config, "account_data")
 }
 
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub(super) fn create_database_state_cookie_value(secret: &str, state: &str) -> AuthResult<String> {
-    let now = Utc::now();
-    let claims = StateCookieClaims {
-        state: state.to_owned(),
-        exp: usize::try_from((now + Duration::minutes(10)).timestamp()).map_err(|_error| {
-            AuthError::internal("JWT timestamp exceeds the supported integer range")
-        })?,
-        iat: usize::try_from(now.timestamp()).map_err(|_error| {
-            AuthError::internal("JWT timestamp exceeds the supported integer range")
-        })?,
-    };
-    Ok(encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret(secret.as_bytes()),
-    )?)
+/// Sign the database-backed state's correlation cookie using Better Call's wire format.
+pub(super) fn create_database_state_cookie_value(secret: &str, state: &str) -> String {
+    sign_cookie_value(state, secret)
 }
 
 ///
 /// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
+/// Returns an error when the correlation cookie has no authenticated state.
 pub(super) fn decode_database_state_cookie_value(secret: &str, token: &str) -> AuthResult<String> {
-    let mut validation = Validation::new(Algorithm::HS256);
-    validation.validate_exp = true;
-    Ok(decode::<StateCookieClaims>(
-        token,
-        &DecodingKey::from_secret(secret.as_bytes()),
-        &validation,
-    )?
-    .claims
-    .state)
+    verify_cookie_value(token, secret)
+        .filter(|state| !state.is_empty())
+        .ok_or_else(|| AuthError::internal("Invalid OAuth state cookie"))
 }
 
 ///
