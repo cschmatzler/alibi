@@ -1,4 +1,6 @@
 mod client_ip;
+mod secrets;
+pub use secrets::ManagedSecrets;
 
 /// Well-known core route paths.
 ///
@@ -141,6 +143,10 @@ pub enum AwaitedNotificationErrorPolicy {
 pub struct AuthConfig {
     /// Secret key for signing tokens and sessions
     pub secret: String,
+
+    /// Versioned encryption keys. When present, its current key signs new tokens.
+    /// Bare encrypted values require an explicitly configured legacy key.
+    pub managed_secrets: Option<ManagedSecrets>,
 
     /// Application name, used for cookie prefixes, email templates, etc.
     ///
@@ -625,6 +631,7 @@ impl Default for AuthConfig {
     fn default() -> Self {
         Self {
             secret: String::new(),
+            managed_secrets: None,
             app_name: "Better Auth".to_owned(),
             base_url: "http://localhost:3000".to_owned(),
             base_path: "/api/auth".to_owned(),
@@ -866,6 +873,35 @@ impl AuthConfig {
         self
     }
 
+    /// Current key for signing tokens and cookies. Retained keys are encryption
+    /// readers; signed cookies and signed JWTs deliberately use only this key.
+    #[must_use]
+    pub fn current_secret(&self) -> &str {
+        self.managed_secrets
+            .as_ref()
+            .map_or(self.secret.as_str(), ManagedSecrets::current_secret)
+    }
+
+    /// Encryption readers in configured order, followed by a distinct legacy key.
+    pub fn verification_secrets(&self) -> impl Iterator<Item = &str> {
+        let keys = self
+            .managed_secrets
+            .as_ref()
+            .map(|secrets| secrets.verification_secrets());
+        keys.into_iter().flatten().chain(
+            self.managed_secrets
+                .is_none()
+                .then_some(self.secret.as_str()),
+        )
+    }
+
+    /// Enable managed encryption with an explicit current version and readers.
+    #[must_use]
+    pub fn managed_secrets(mut self, secrets: ManagedSecrets) -> Self {
+        self.managed_secrets = Some(secrets);
+        self
+    }
+
     /// Determine whether this request path opts out of origin validation.
     #[must_use]
     pub fn origin_check_disabled_for(&self, path: &str) -> bool {
@@ -963,6 +999,9 @@ impl AuthConfig {
     ///
     /// Returns a configuration error if the signing secret is empty or shorter than 32 bytes.
     pub fn validate(&self) -> Result<(), AuthError> {
+        if let Some(secrets) = &self.managed_secrets {
+            return secrets.validate();
+        }
         if self.secret.is_empty() {
             return Err(AuthError::config("Secret key cannot be empty"));
         }
