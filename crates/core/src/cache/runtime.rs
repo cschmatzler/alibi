@@ -657,11 +657,21 @@ async fn authenticated_inner<S: AuthSchema>(
         cleanup(ctx, request)?;
         return Ok(None);
     };
-    let Some(user) = ctx
-        .database
-        .get_user_by_id_record(original.user_id().as_ref())
-        .await?
-    else {
+    let user = match ctx.database.get_session_user_record(&token).await? {
+        Some(user) => Some(user),
+        None if ctx.config.session.secondary_storage.is_some()
+            && (!ctx.config.session.store_in_database
+                || ctx.config.session.preserve_in_database) =>
+        {
+            None
+        }
+        None => {
+            ctx.database
+                .get_user_by_id_record(original.user_id().as_ref())
+                .await?
+        }
+    };
+    let Some(user) = user else {
         cleanup(ctx, request)?;
         return Ok(None);
     };

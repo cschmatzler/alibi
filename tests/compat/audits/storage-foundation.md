@@ -14,7 +14,7 @@ Expiration cleanup snapshots the configured `advanced.database.default_find_many
 
 Reservation derives the pinned SHA-256 key from `reserve:` and the logical identifier. String and UUID verification schemas support this contract. Numeric schemas must provide a collision-resistant binding; the default returns an unsupported error and leaves no marker. Cleanup or explicit consumption releases an expired reservation.
 
-`CacheAdapter::get_and_delete` is atomic in the memory adapter and Redis adapter. Wiring secondary storage to complete auth persistence remains a separate capability boundary.
+`CacheAdapter::get_and_delete` is atomic in the memory adapter and Redis adapter. Session persistence is now wired through `SessionConfig::secondary_storage`, with secondary-only and combined SQL modes; see the README for opt-in typed snapshot support and transaction partial effects.
 
 ## Identity and session contracts
 
@@ -38,6 +38,6 @@ Meaningful focused tests cover independent-pool consumption/reservation/CAS race
 
 Independent review found and verified repairs for callback execution before commit, CAS snapshot races, and rejection tests that could pass at a later capacity check. Removing each recipient, session-owner, session-expiry, or session-active guard now fails its intended assertion with valid capacities. Focused validation on the isolated branch passed 596 default workspace tests and 635 optional-feature tests, core 147 plus SeaORM 27 tests, strict production Clippy for core/SeaORM with Redis, and the Rustls/Axum/SeaORM/Redis build. Existing ignored tests remain 20 and 22 in the workspace configurations. The coordinator runs the canonical compatibility and coverage gate after integration.
 
-This foundation does not implement secondary-storage-only sessions/verifications, configurable identifier hashing/cleanup, arbitrary additional schema fields/model renaming, JWT keyring persistence, wallet persistence, or capability endpoint hooks/configuration. Those boundaries must remain explicit in the parity audit and capability PRs.
+This foundation does not implement configurable identifier hashing/cleanup, arbitrary additional schema fields/model renaming, JWT keyring persistence, wallet persistence, or capability endpoint hooks/configuration. Those boundaries must remain explicit in the parity audit and capability PRs.
 
 Existing core list operations outside the new contracts still need an audit of the configured default query limit; this foundation does not establish that behavior for them. Millisecond timestamp wire serialization is handled by a separate capability change.

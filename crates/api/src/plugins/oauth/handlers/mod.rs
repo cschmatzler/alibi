@@ -1744,8 +1744,7 @@ async fn link_with_id_token_core(
     }
 
     let current_user = ctx
-        .database
-        .get_user_by_id(&session.user_id())
+        .session_user(session)
         .await?
         .ok_or(AuthError::UserNotFound)?;
     let current_email = current_user
@@ -1888,8 +1887,7 @@ async fn link_social_core(
     }
 
     let user = ctx
-        .database
-        .get_user_by_id(&session.user_id())
+        .session_user(session)
         .await?
         .ok_or(AuthError::UserNotFound)?;
     let email = user

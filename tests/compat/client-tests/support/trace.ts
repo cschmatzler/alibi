@@ -10,6 +10,8 @@ export type RequestWindow = {
   inputOwner?: { field: "id" | "token"; value: string };
   sessionCookie?: string;
   issuedSessionCookie?: string;
+  /** Complete multi-session Set-Cookie headers observed from the real response. */
+  issuedMultiSessionCookies?: string[];
   /** Exact email and signed challenge returned by the real password sign-in. */
   signInEmail?: string;
   issuedTwoFactorCookie?: string;
@@ -104,6 +106,8 @@ function sessionReceipt(request: Headers, response: Headers) {
   return {
     ...(sessionCookie ? { sessionCookie } : {}),
     ...(issuedSessionCookie ? { issuedSessionCookie } : {}),
+    issuedMultiSessionCookies: response.getSetCookie().filter(raw =>
+      /^(?:__Secure-)?better-auth\.session_token_multi-/.test(raw)),
   };
 }
 

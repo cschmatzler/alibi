@@ -62,6 +62,7 @@ pub struct EmailOtpConfig {
     /// Raw attempt budget compared with the persisted integer counter. Zero and
     /// NaN use three; negative values reject even an unused proof.
     pub allowed_attempts: f64,
+    pub rate_limit: better_auth_core::EndpointRateLimit,
     pub storage: EmailOtpStorage,
     pub resend_strategy: OtpResendStrategy,
     pub disable_sign_up: bool,
@@ -92,6 +93,10 @@ impl Default for EmailOtpConfig {
             otp_length: 6.0,
             expires_in: 300.0,
             allowed_attempts: 3.0,
+            rate_limit: better_auth_core::EndpointRateLimit {
+                window_seconds: 60.0,
+                max_requests: 3.0,
+            },
             storage: EmailOtpStorage::Plain,
             resend_strategy: OtpResendStrategy::Rotate,
             disable_sign_up: false,
@@ -263,6 +268,12 @@ better_auth_core::impl_auth_plugin! {
         post "/email-otp/change-email" => change_email, "changeEmailWithEmailOTP";
     }
     extra {
+        fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
+            vec![better_auth_core::PluginRateLimit { matches: |path| matches!(path, "/email-otp/send-verification-otp" | "/email-otp/check-verification-otp" | "/email-otp/verify-email" | "/sign-in/email-otp" | "/email-otp/request-password-reset" | "/email-otp/reset-password" | "/forget-password/email-otp" | "/email-otp/request-email-change" | "/email-otp/change-email"), limit: better_auth_core::EndpointRateLimit {
+                window_seconds: if self.config.rate_limit.window_seconds == 0.0 || self.config.rate_limit.window_seconds.is_nan() { 60.0 } else { self.config.rate_limit.window_seconds },
+                max_requests: if self.config.rate_limit.max_requests == 0.0 || self.config.rate_limit.max_requests.is_nan() { 3.0 } else { self.config.rate_limit.max_requests },
+            } }]
+        }
         fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> { endpoint::definitions() }
 
         fn validate_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointInput> { endpoint::validate(call) }

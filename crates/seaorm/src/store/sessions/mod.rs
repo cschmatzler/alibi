@@ -24,6 +24,8 @@ where
         db: &C,
         tx: Option<&DatabaseTransaction>,
         mut create_session: CreateSession,
+        persist: bool,
+        complete: bool,
     ) -> AuthResult<S::Session>
     where
         C: ConnectionTrait,
@@ -65,7 +67,9 @@ where
                 );
             }
         }
-        fields.apply_adapter_transforms_async().await?;
+        if persist {
+            fields.apply_adapter_transforms_async().await?;
+        }
         let mut active = S::Session::new_active(None, token, create_session, now);
         if !fields.is_empty() {
             for (column, value) in
@@ -80,8 +84,12 @@ where
                 )?;
             }
         }
-        let session = active.insert(db).await.map_err(map_db_err)?;
-        if tx.is_none() {
+        let session = if persist {
+            active.insert(db).await.map_err(map_db_err)?
+        } else {
+            S::Session::materialize_secondary(active)?
+        };
+        if tx.is_none() && complete {
             for hook in self.hooks() {
                 hook.after_create_session(&session, &hook_context).await?;
             }
@@ -89,12 +97,112 @@ where
         Ok(session)
     }
 
+    pub(crate) async fn prepare_secondary_update_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        tx: Option<&DatabaseTransaction>,
+        session: S::Session,
+        expires_at: Option<DateTime<Utc>>,
+        mut fields: better_auth_core::field_policy::FieldValues,
+    ) -> AuthResult<Option<(S::Session, better_auth_core::field_policy::FieldValues)>> {
+        use better_auth_core::AuthSession;
+        let hook_context = self.hook_context(tx);
+        for hook in self.hooks() {
+            if hook
+                .before_update_session(session.token(), &mut fields, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Ok(None);
+            }
+        }
+        // The cache stores hook output before SQL adapter input transformations.
+        let mut active = session.into_active_model();
+        let backend = db.get_database_backend();
+        for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
+            let value = crate::session_fields::prepare_value(db, &column, value).await?;
+            S::Session::set_additional_field(&mut active, column, value, backend)?;
+        }
+        if let Some(expiry) = expires_at {
+            S::Session::set_expires_at(&mut active, expiry);
+        }
+        S::Session::set_updated_at(&mut active, Utc::now());
+        let session = S::Session::materialize_secondary(active)?;
+        Ok(Some((session, fields)))
+    }
+
+    pub(crate) async fn complete_secondary_update_with_connection<C: ConnectionTrait>(
+        &self,
+        db: &C,
+        tx: Option<&DatabaseTransaction>,
+        session: S::Session,
+        expires_at: Option<DateTime<Utc>>,
+        mut fields: better_auth_core::field_policy::FieldValues,
+        persist: bool,
+    ) -> AuthResult<Option<S::Session>> {
+        use better_auth_core::AuthSession;
+        let context = self.hook_context(tx);
+        let session = if persist {
+            fields.apply_adapter_transforms_async().await?;
+            let Some(current) = <S::Session as SeaOrmSessionModel>::Entity::find()
+                .filter(S::Session::token_column().eq(session.token()))
+                .filter(S::Session::active_column().eq(true))
+                .one(db)
+                .await
+                .map_err(map_db_err)?
+            else {
+                for hook in self.hooks().iter().filter(|_| tx.is_none()) {
+                    hook.after_update_session_missing(session.token(), &context)
+                        .await?;
+                }
+                return Ok(None);
+            };
+            let mut active = current.into_active_model();
+            let backend = db.get_database_backend();
+            for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
+                let value = crate::session_fields::prepare_value(db, &column, value).await?;
+                S::Session::set_additional_field(&mut active, column, value, backend)?;
+            }
+            if let Some(expiry) = expires_at {
+                S::Session::set_expires_at(&mut active, expiry);
+            }
+            S::Session::set_updated_at(&mut active, session.updated_at());
+            match active.update(db).await {
+                Ok(model) => model,
+                Err(sea_orm::DbErr::RecordNotUpdated) => {
+                    for hook in self.hooks().iter().filter(|_| tx.is_none()) {
+                        hook.after_update_session_missing(session.token(), &context)
+                            .await?;
+                    }
+                    return Ok(None);
+                }
+                Err(error) => return Err(map_db_err(error)),
+            }
+        } else {
+            session
+        };
+        for hook in self.hooks().iter().filter(|_| tx.is_none()) {
+            hook.after_update_session(&session, &context).await?;
+        }
+        Ok(Some(session))
+    }
+
+    pub(crate) async fn prepare_secondary_session_in_tx(
+        &self,
+        tx: &DatabaseTransaction,
+        input: CreateSession,
+        persist: bool,
+    ) -> AuthResult<S::Session> {
+        self.create_session_with_connection(tx, Some(tx), input, persist, false)
+            .await
+    }
+
     pub(crate) async fn create_session_in_tx(
         &self,
         tx: &DatabaseTransaction,
         create_session: CreateSession,
     ) -> AuthResult<S::Session> {
-        self.create_session_with_connection(tx, Some(tx), create_session)
+        self.create_session_with_connection(tx, Some(tx), create_session, true, true)
             .await
     }
 }
@@ -204,8 +312,135 @@ where
     S: AuthSchema + Send + Sync,
     S::Session: SeaOrmSessionModel,
 {
+    async fn prepare_secondary_session_creation(
+        &self,
+        input: CreateSession,
+        persist: bool,
+    ) -> AuthResult<S::Session> {
+        self.create_session_with_connection(self.connection(), None, input, persist, false)
+            .await
+    }
+    async fn complete_secondary_session_creation(&self, session: &S::Session) -> AuthResult<()> {
+        let context = self.hook_context(None);
+        for hook in self.hooks() {
+            hook.after_create_session(session, &context).await?;
+        }
+        Ok(())
+    }
+
+    async fn prepare_secondary_session_update(
+        &self,
+        session: S::Session,
+        expires_at: Option<DateTime<Utc>>,
+        fields: better_auth_core::field_policy::FieldValues,
+    ) -> AuthResult<Option<(S::Session, better_auth_core::field_policy::FieldValues)>> {
+        self.prepare_secondary_update_with_connection(
+            self.connection(),
+            None,
+            session,
+            expires_at,
+            fields,
+        )
+        .await
+    }
+    async fn complete_secondary_session_update(
+        &self,
+        session: S::Session,
+        expires_at: Option<DateTime<Utc>>,
+        fields: better_auth_core::field_policy::FieldValues,
+        persist: bool,
+    ) -> AuthResult<Option<S::Session>> {
+        self.complete_secondary_update_with_connection(
+            self.connection(),
+            None,
+            session,
+            expires_at,
+            fields,
+            persist,
+        )
+        .await
+    }
+
+    async fn end_session_preserving(&self, token: &str) -> AuthResult<()> {
+        use better_auth_core::AuthSession;
+        let now = Utc::now();
+        let Some(session) = self
+            .get_session(token)
+            .await?
+            .filter(|session| session.expires_at() > now)
+        else {
+            return Ok(());
+        };
+        let context = self.hook_context(None);
+        for hook in self.hooks() {
+            if hook
+                .before_delete_session(&session, &context)
+                .await?
+                .is_cancelled()
+            {
+                return Err(cancelled_by_hook("session deletion"));
+            }
+        }
+        let _ended = <S::Session as SeaOrmSessionModel>::Entity::update_many()
+            .col_expr(
+                S::Session::expires_at_column(),
+                sea_orm::sea_query::Expr::value(now),
+            )
+            .filter(S::Session::token_column().eq(token))
+            .filter(S::Session::expires_at_column().gt(now))
+            .exec(self.connection())
+            .await
+            .map_err(map_db_err)?;
+        for hook in self.hooks() {
+            hook.after_delete_session(&session, &context).await?;
+        }
+        Ok(())
+    }
+    async fn end_user_sessions_preserving(&self, user_id: &str) -> AuthResult<()> {
+        let now = Utc::now();
+        let user_id = S::Session::parse_user_id(user_id)?;
+        let live = || {
+            <S::Session as SeaOrmSessionModel>::Entity::find()
+                .filter(S::Session::user_id_column().eq(user_id.clone()))
+                .filter(S::Session::expires_at_column().gt(now))
+        };
+        let sessions = live()
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
+            .all(self.connection())
+            .await
+            .map_err(map_db_err)?;
+        let context = self.hook_context(None);
+        for session in &sessions {
+            for hook in self.hooks() {
+                if hook
+                    .before_delete_session(session, &context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Err(cancelled_by_hook("session deletion"));
+                }
+            }
+        }
+        let _ended = <S::Session as SeaOrmSessionModel>::Entity::update_many()
+            .col_expr(
+                S::Session::expires_at_column(),
+                sea_orm::sea_query::Expr::value(now),
+            )
+            .filter(S::Session::user_id_column().eq(user_id))
+            .filter(S::Session::expires_at_column().gt(now))
+            .exec(self.connection())
+            .await
+            .map_err(map_db_err)?;
+        for session in &sessions {
+            for hook in self.hooks() {
+                hook.after_delete_session(session, &context).await?;
+            }
+        }
+        Ok(())
+    }
+
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session> {
-        self.create_session_with_connection(self.connection(), None, create_session)
+        self.create_session_with_connection(self.connection(), None, create_session, true, true)
             .await
     }
 

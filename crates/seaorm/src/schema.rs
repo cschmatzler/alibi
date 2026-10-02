@@ -120,6 +120,14 @@ pub trait SeaOrmUserModel:
 pub trait SeaOrmSessionModel:
     AuthSession + IntoActiveModel<Self::ActiveModel> + Clone + Send + Sync + 'static + FromQueryResult
 {
+    /// Materialize the application model without a database insert.
+    /// Custom schemas opt in to secondary-only sessions by implementing this binding.
+    fn materialize_secondary(_active: Self::ActiveModel) -> AuthResult<Self> {
+        Err(better_auth_core::AuthError::NotImplemented(
+            "Secondary session materialization is unsupported".into(),
+        ))
+    }
+
     /// Bind configured fields to actual model columns while retaining raw numbers.
     ///
     /// # Errors

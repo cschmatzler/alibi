@@ -100,8 +100,10 @@ pub use hooks::{
     CallbackContext, RequestHookContext, with_request_hook_context, with_request_hook_context_value,
 };
 pub use middleware::{
-    BodyLimitConfig, BodyLimitMiddleware, CorsConfig, CorsMiddleware, CsrfConfig, CsrfMiddleware,
-    EndpointRateLimit, Middleware, RateLimitConfig, RateLimitMiddleware,
+    BodyLimitConfig, BodyLimitMiddleware, CacheRateLimitStorage, CorsConfig, CorsMiddleware,
+    CsrfConfig, CsrfMiddleware, EndpointRateLimit, MemoryRateLimitStorage, Middleware,
+    PluginRateLimit, RateLimitConfig, RateLimitDecision, RateLimitMiddleware, RateLimitResolver,
+    RateLimitRule, RateLimitStorage,
 };
 pub use openapi::{
     OpenApiBuilder, OpenApiEndpoint, OpenApiField, OpenApiInfo, OpenApiModel, OpenApiOperation,

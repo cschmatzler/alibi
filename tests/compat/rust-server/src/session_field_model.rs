@@ -8,7 +8,7 @@ pub mod application_session {
     use seaorm::sea_orm::{self, Set, Statement};
     use serde::Serialize;
     #[derive(seaorm::AuthEntity, Clone, Debug, PartialEq, Serialize, DeriveEntityModel)]
-    #[auth(role = "session")]
+    #[auth(role = "session", secondary_storage)]
     #[sea_orm(table_name = "sessions")]
     pub struct Model {
         #[sea_orm(primary_key, auto_increment = false)]

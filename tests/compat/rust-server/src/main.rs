@@ -138,6 +138,7 @@ mod passkey_fixture;
 mod passkey_registration_fixture;
 mod passwordless_numeric_fixture;
 mod phone_profiles;
+mod rate_limit_fixture;
 mod session_field_model;
 mod session_fields_fixture;
 mod session_profiles;
@@ -1061,6 +1062,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jwt_keyring_router = jwt_keyring_fixture::router(&config, reset_database.clone()).await?;
     let jwt_remote_router = jwt_remote_fixture::router(&config, reset_database.clone()).await?;
     let device_profiles = device_fixture::profiles(&config, reset_database.clone()).await?;
+    let rate_limit_router =
+        rate_limit_fixture::router(&config, reset_database.clone(), otp_outbox.clone()).await?;
     let client_ip_router = client_ip_fixture::router(
         &config,
         reset_database.clone(),
@@ -1983,6 +1986,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(jwt_router)
         .merge(device_profiles)
         .merge(client_ip_router)
+        .merge(rate_limit_router)
         .merge(team_router)
         .merge(creation_router)
         .merge(creation_hooks_router)

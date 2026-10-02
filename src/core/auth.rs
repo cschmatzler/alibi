@@ -316,7 +316,13 @@ impl<S: AuthSchema> AuthBuilder<S> {
             Box::new(BodyLimitMiddleware::new(body_limit.clone())),
             Box::new(
                 RateLimitMiddleware::new(self.rate_limit_config.unwrap_or_default())
-                    .with_base_path(config.base_path.clone()),
+                    .with_base_path(config.base_path.clone())
+                    .with_plugin_rules(
+                        self.plugins
+                            .iter()
+                            .flat_map(|plugin| plugin.rate_limits())
+                            .collect(),
+                    ),
             ),
         ];
         let mut middlewares: Vec<Box<dyn Middleware>> = vec![Box::new(CorsMiddleware::new(

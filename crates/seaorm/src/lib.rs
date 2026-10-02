@@ -4,6 +4,9 @@ extern crate self as better_auth_seaorm;
 
 mod conversions;
 
+pub mod rate_limit;
+pub use rate_limit::SeaOrmRateLimitStorage;
+
 pub mod hooks;
 
 pub mod json_metadata;

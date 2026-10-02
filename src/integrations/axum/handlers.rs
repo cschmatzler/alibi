@@ -10,7 +10,6 @@ use axum::{
     routing::any,
 };
 #[cfg(feature = "axum")]
-use better_auth_core::AuthSession;
 #[cfg(feature = "axum")]
 use better_auth_core::middleware::BodyLimitConfig;
 use better_auth_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod, core_paths};
@@ -221,8 +220,8 @@ where
             .ok_or_else(|| AuthError::SessionNotFound.into_response())?;
 
         let user = auth
-            .store()
-            .get_user_by_id(&session.user_id())
+            .context()
+            .session_user(&session)
             .await
             .map_err(IntoResponse::into_response)?
             .ok_or_else(|| AuthError::UserNotFound.into_response())?;

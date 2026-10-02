@@ -706,6 +706,9 @@ better_auth_core::impl_auth_plugin! {
         post "/device/deny" => handle_device_deny, "device_deny";
     }
     extra {
+        fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
+            vec![better_auth_core::PluginRateLimit { matches: |path| path == "/device", limit: better_auth_core::EndpointRateLimit { window_seconds: self.config.expires_in.to_std().map_or(0.0, |duration| duration.as_secs_f64()), max_requests: 5.0 } }]
+        }
         fn allowed_media_types(&self, route: &better_auth_core::AuthRoute) -> Vec<&'static str> {
             if route.path == "/device/code" {
                 vec!["application/json", "application/x-www-form-urlencoded"]

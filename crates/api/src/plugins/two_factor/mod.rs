@@ -410,6 +410,9 @@ better_auth_core::impl_auth_plugin! {
         post "/two-factor/verify-backup-code" => handle_verify_backup_code, "verify_backup_code";
     }
     extra {
+        fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
+            vec![better_auth_core::PluginRateLimit { matches: |path| path.starts_with("/two-factor/"), limit: better_auth_core::EndpointRateLimit { window_seconds: 10.0, max_requests: 3.0 } }]
+        }
         fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> { endpoint::definitions() }
 
         fn validate_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointInput> { endpoint::validate(call) }
