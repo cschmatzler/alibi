@@ -39,8 +39,7 @@ pub(in crate::plugins) trait RequestBody: DeserializeOwned + 'static {
     const FIELDS: &'static [JsonField];
 }
 
-/// Observe a noncritical callback or an opted-in background notification.
-/// Delivery awaited by a request must instead propagate its error.
+/// Log a noncritical callback or a notification whose policy permits continuation.
 pub(in crate::plugins) async fn run_notification(
     notification: impl Future<Output = AuthResult<()>>,
 ) {
@@ -49,12 +48,13 @@ pub(in crate::plugins) async fn run_notification(
     }
 }
 
-/// Await a notification by default, or observe already running owned work when
-/// the application supplies a background-task handler. Both callback and
-/// observer errors retain the endpoint's issued state.
+/// Apply the awaited error policy, or observe already running owned work when
+/// the application supplies a background-task handler. Committed auth state is
+/// retained; the caller's transaction controls uncommitted writes.
 pub(in crate::plugins) async fn run_owned_notification(
     context: &AuthContext<impl AuthSchema>,
     notification: impl Future<Output = AuthResult<()>> + Send + 'static,
+    error_policy: better_auth_core::AwaitedNotificationErrorPolicy,
 ) -> AuthResult<()> {
     if let Some(handler) = &context.config.background_tasks {
         let completion = better_auth_core::start_background_task(async move {
@@ -66,7 +66,12 @@ pub(in crate::plugins) async fn run_owned_notification(
             tracing::error!(%error, "Failed to observe background task");
         }
     } else {
-        notification.await?;
+        match error_policy {
+            better_auth_core::AwaitedNotificationErrorPolicy::Propagate => notification.await?,
+            better_auth_core::AwaitedNotificationErrorPolicy::LogAndContinue => {
+                run_notification(notification).await
+            }
+        }
     }
     Ok(())
 }

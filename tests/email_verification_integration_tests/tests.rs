@@ -4,7 +4,13 @@ use super::*;
 // while a genuinely different mailbox must not receive its proof.
 #[tokio::test]
 async fn authenticated_verification_delivery_compares_normalized_mailboxes() {
-    let (auth, sender) = auth(false, Some(false), false).await;
+    let (auth, sender) = auth(
+        false,
+        Some(false),
+        false,
+        better_auth::AwaitedNotificationErrorPolicy::Propagate,
+    )
+    .await;
     let (registered, body) = post(&auth, "/sign-up/email", signup()).await;
     assert_eq!(registered.status, 200, "{body}");
     let cookie = registered
@@ -46,7 +52,13 @@ async fn authenticated_verification_delivery_compares_normalized_mailboxes() {
 // pinned core schema does, and cannot dispatch either username endpoint.
 #[tokio::test]
 async fn username_disabled_signup_ignores_additional_input_and_excludes_username_routes() {
-    let (auth, sender) = auth(false, Some(false), false).await;
+    let (auth, sender) = auth(
+        false,
+        Some(false),
+        false,
+        better_auth::AwaitedNotificationErrorPolicy::Propagate,
+    )
+    .await;
     for (email, username, display) in [
         (
             "username-disabled-short@verification.fixture.test",
@@ -110,7 +122,13 @@ async fn signup_configuration_controls_delivery_without_bypassing_required_verif
         (true, Some(false), false, false),
         (false, Some(true), true, true),
     ] {
-        let (auth, sender) = auth(required, send_on_signup, false).await;
+        let (auth, sender) = auth(
+            required,
+            send_on_signup,
+            false,
+            better_auth::AwaitedNotificationErrorPolicy::Propagate,
+        )
+        .await;
         let (response, payload) = post(&auth, "/sign-up/email", signup()).await;
         assert_eq!(response.status, 200, "{payload}");
         assert_eq!(payload.pointer("/user/email"), Some(&json!(EMAIL)));
@@ -144,105 +162,171 @@ async fn signup_configuration_controls_delivery_without_bypassing_required_verif
     }
 }
 
-// Upstream runInBackgroundOrAwait logs callback errors at signup/signin, while
-// sendVerificationEmailFn directly awaits and propagates the same callback error.
+// An awaited default failure rolls back uncommitted signup writes. Opt-in logging
+// completes signup and retains its proof. Both policies retain committed users
+// after sign-in notification errors and report direct delivery failure.
 #[tokio::test]
-async fn notification_failure_commits_signup_but_direct_delivery_reports_the_error() {
-    let (auth, sender) = auth(true, None, true).await;
-    let (registered, signup_body) = post(&auth, "/sign-up/email", signup()).await;
-    assert_eq!(registered.status, 200, "{signup_body}");
-    assert_eq!(signup_body.get("token"), Some(&Value::Null));
-    let user = auth
-        .store()
-        .get_user_by_email(EMAIL)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(!user.email_verified());
-    assert_eq!(
-        auth.store()
-            .get_user_accounts(&user.id())
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
-    assert_eq!(
-        auth.store()
-            .get_user_sessions(&user.id())
-            .await
-            .unwrap()
-            .len(),
-        0
-    );
-    assert_eq!(sender.calls.lock().unwrap().len(), 1);
-
-    let (denied, denied_body) = post(
-        &auth,
-        "/sign-in/email",
-        json!({"email":EMAIL,"password":PASSWORD}),
-    )
-    .await;
-    assert_eq!(denied.status, 403, "{denied_body}");
-    assert_eq!(denied_body.get("code"), Some(&json!("EMAIL_NOT_VERIFIED")));
-    assert_eq!(sender.calls.lock().unwrap().len(), 2);
-    assert_eq!(
-        auth.store()
-            .get_user_sessions(&user.id())
-            .await
-            .unwrap()
-            .len(),
-        0
-    );
-
-    let (direct, direct_body) =
-        post(&auth, "/send-verification-email", json!({"email":EMAIL})).await;
-    assert_eq!(direct.status, 400, "{direct_body}");
-    assert_eq!(
-        direct_body.get("message"),
-        Some(&json!("fixture delivery failed"))
-    );
-    assert_eq!(sender.calls.lock().unwrap().len(), 3);
-    assert!(
-        !auth
+async fn notification_error_policy_controls_signup_commit_and_preserves_direct_delivery_errors() {
+    for policy in [
+        better_auth::AwaitedNotificationErrorPolicy::Propagate,
+        better_auth::AwaitedNotificationErrorPolicy::LogAndContinue,
+    ] {
+        let (auth, sender) = auth(true, None, true, policy).await;
+        let (registered, signup_body) = post(&auth, "/sign-up/email", signup()).await;
+        if policy == better_auth::AwaitedNotificationErrorPolicy::Propagate {
+            assert_eq!(registered.status, 400, "{signup_body}");
+            assert_eq!(
+                signup_body.get("message"),
+                Some(&json!("fixture delivery failed"))
+            );
+        } else {
+            assert_eq!(registered.status, 200, "{signup_body}");
+            assert_eq!(signup_body.get("token"), Some(&Value::Null));
+        }
+        if policy == better_auth::AwaitedNotificationErrorPolicy::Propagate {
+            assert!(
+                auth.store()
+                    .get_user_by_email(EMAIL)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            let delivered_user = sender.calls.lock().unwrap().first().unwrap().0.id.clone();
+            assert!(
+                auth.store()
+                    .get_user_by_id(&delivered_user)
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            assert!(
+                auth.store()
+                    .get_user_accounts(&delivered_user)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+            assert!(
+                auth.store()
+                    .get_user_sessions(&delivered_user)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+            assert_eq!(sender.calls.lock().unwrap().len(), 1);
+            sender.fail.store(false, Ordering::SeqCst);
+            let (retry, retry_body) = post(&auth, "/sign-up/email", signup()).await;
+            assert_eq!(retry.status, 200, "{retry_body}");
+            sender.fail.store(true, Ordering::SeqCst);
+        }
+        let signup_deliveries = if policy == better_auth::AwaitedNotificationErrorPolicy::Propagate
+        {
+            2
+        } else {
+            1
+        };
+        let user = auth
             .store()
-            .get_user_by_id(&user.id())
+            .get_user_by_email(EMAIL)
             .await
             .unwrap()
-            .unwrap()
-            .email_verified()
-    );
+            .unwrap();
+        assert!(!user.email_verified());
+        assert_eq!(
+            auth.store()
+                .get_user_accounts(&user.id())
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            auth.store()
+                .get_user_sessions(&user.id())
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
+        assert_eq!(sender.calls.lock().unwrap().len(), signup_deliveries);
 
-    let token = sender.calls.lock().unwrap().first().unwrap().1.clone();
-    let mut proof = AuthRequest::new(HttpMethod::Get, "/api/auth/verify-email");
-    drop(proof.query.insert("token".into(), token));
-    let verified = auth.handle_request(proof).await.unwrap();
-    assert_eq!(verified.status, 200);
-    let verified_body: Value = serde_json::from_slice(&verified.body).unwrap();
-    assert_eq!(verified_body.get("user"), Some(&Value::Null));
-    assert!(
-        auth.store()
-            .get_user_by_id(&user.id())
-            .await
-            .unwrap()
-            .unwrap()
-            .email_verified()
-    );
+        let (denied, denied_body) = post(
+            &auth,
+            "/sign-in/email",
+            json!({"email":EMAIL,"password":PASSWORD}),
+        )
+        .await;
+        if policy == better_auth::AwaitedNotificationErrorPolicy::Propagate {
+            assert_eq!(denied.status, 400, "{denied_body}");
+            assert_eq!(
+                denied_body.get("message"),
+                Some(&json!("fixture delivery failed"))
+            );
+        } else {
+            assert_eq!(denied.status, 403, "{denied_body}");
+            assert_eq!(denied_body.get("code"), Some(&json!("EMAIL_NOT_VERIFIED")));
+        }
+        assert_eq!(sender.calls.lock().unwrap().len(), signup_deliveries + 1);
+        assert_eq!(
+            auth.store()
+                .get_user_sessions(&user.id())
+                .await
+                .unwrap()
+                .len(),
+            0
+        );
 
-    let (signed_in, signed_in_body) = post(
-        &auth,
-        "/sign-in/email",
-        json!({"email":EMAIL,"password":PASSWORD}),
-    )
-    .await;
-    assert_eq!(signed_in.status, 200, "{signed_in_body}");
-    let sessions = auth.store().get_user_sessions(&user.id()).await.unwrap();
-    assert_eq!(sessions.len(), 1);
-    assert_eq!(
-        signed_in_body.pointer("/user/id").and_then(Value::as_str),
-        Some(user.id().as_ref())
-    );
-    assert_eq!(sender.calls.lock().unwrap().len(), 3);
+        let (direct, direct_body) =
+            post(&auth, "/send-verification-email", json!({"email":EMAIL})).await;
+        assert_eq!(direct.status, 400, "{direct_body}");
+        assert_eq!(
+            direct_body.get("message"),
+            Some(&json!("fixture delivery failed"))
+        );
+        assert_eq!(sender.calls.lock().unwrap().len(), signup_deliveries + 2);
+        assert!(
+            !auth
+                .store()
+                .get_user_by_id(&user.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .email_verified()
+        );
+
+        let token = sender.calls.lock().unwrap()[signup_deliveries - 1]
+            .1
+            .clone();
+        let mut proof = AuthRequest::new(HttpMethod::Get, "/api/auth/verify-email");
+        drop(proof.query.insert("token".into(), token));
+        let verified = auth.handle_request(proof).await.unwrap();
+        assert_eq!(verified.status, 200);
+        let verified_body: Value = serde_json::from_slice(&verified.body).unwrap();
+        assert_eq!(verified_body.get("user"), Some(&Value::Null));
+        assert!(
+            auth.store()
+                .get_user_by_id(&user.id())
+                .await
+                .unwrap()
+                .unwrap()
+                .email_verified()
+        );
+
+        let (signed_in, signed_in_body) = post(
+            &auth,
+            "/sign-in/email",
+            json!({"email":EMAIL,"password":PASSWORD}),
+        )
+        .await;
+        assert_eq!(signed_in.status, 200, "{signed_in_body}");
+        let sessions = auth.store().get_user_sessions(&user.id()).await.unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(
+            signed_in_body.pointer("/user/id").and_then(Value::as_str),
+            Some(user.id().as_ref())
+        );
+        assert_eq!(sender.calls.lock().unwrap().len(), signup_deliveries + 2);
+    }
 }
 
 // Modern email-change proofs use initialized email-verification expiry in both

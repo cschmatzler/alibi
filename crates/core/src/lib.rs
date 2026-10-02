@@ -84,9 +84,9 @@ pub use cache::{
 };
 pub use config::{
     AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, AuthConfig,
-    CookieAttributes, CookieCacheConfig, CookieCacheStrategy, CookieOverride, CrossSubDomainConfig,
-    IpAddressConfig, JwtConfig, OAuthStateStrategy, PasswordConfig, SameSite, SessionConfig,
-    UserConfig, core_paths, extract_origin,
+    AwaitedNotificationErrorPolicy, CookieAttributes, CookieCacheConfig, CookieCacheStrategy,
+    CookieOverride, CrossSubDomainConfig, IpAddressConfig, JwtConfig, OAuthStateStrategy,
+    PasswordConfig, SameSite, SessionConfig, UserConfig, core_paths, extract_origin,
 };
 pub use email::{ConsoleEmailProvider, EmailProvider};
 pub use entity::{

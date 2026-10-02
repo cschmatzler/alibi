@@ -266,6 +266,7 @@ impl EmailVerificationPlugin {
                 user,
                 verification_url,
                 verification_token,
+                ctx.config.awaited_notification_errors,
             )
             .await?;
         } else if self.config.send_email_notifications {
@@ -279,9 +280,11 @@ impl EmailVerificationPlugin {
                 let text = format!("Verify your email address: {verification_url}");
 
                 let email = email.to_owned();
-                super::authentication_helpers::run_owned_notification(ctx, async move {
-                    provider.send(&email, subject, &html, &text).await
-                })
+                super::authentication_helpers::run_owned_notification(
+                    ctx,
+                    async move { provider.send(&email, subject, &html, &text).await },
+                    ctx.config.awaited_notification_errors,
+                )
                 .await?;
             } else {
                 tracing::warn!("No email provider configured, skipping verification email");
@@ -347,11 +350,14 @@ pub(in crate::plugins) async fn send_custom_verification_email(
     user: better_auth_core::wire::UserView,
     url: String,
     token: String,
+    error_policy: better_auth_core::AwaitedNotificationErrorPolicy,
 ) -> AuthResult<()> {
     let sender = Arc::clone(sender);
-    super::authentication_helpers::run_owned_notification(ctx, async move {
-        sender.send(&user, &url, &token).await
-    })
+    super::authentication_helpers::run_owned_notification(
+        ctx,
+        async move { sender.send(&user, &url, &token).await },
+        error_policy,
+    )
     .await
 }
 
@@ -400,7 +406,15 @@ pub(in crate::plugins) async fn send_signup_verification<S: better_auth_core::Au
         None,
     )?;
     let url = verification_url(&ctx.config, &token, callback_url);
-    send_custom_verification_email(ctx, sender, user, url, token).await
+    send_custom_verification_email(
+        ctx,
+        sender,
+        user,
+        url,
+        token,
+        ctx.config.awaited_notification_errors,
+    )
+    .await
 }
 
 // ---------------------------------------------------------------------------

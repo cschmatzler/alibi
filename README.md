@@ -120,11 +120,14 @@ write output after commit; transaction rollback discards those observations.
 Typed store methods and SeaORM hooks continue to expose physical models.
 
 Password-reset and email-verification delivery callbacks are awaited by default;
-their errors fail the request. Set `config.background_tasks` to observe delivery
-as background work and keep the request successful if that delivery fails.
-Already-issued reset proofs or committed email-change state remain stored after
-a delivery failure. This error policy intentionally differs from the pinned
-Better Auth 1.7.6 helper, which catches awaited callback errors too.
+their errors fail the request. Set
+`config.awaited_notification_errors(AwaitedNotificationErrorPolicy::LogAndContinue)`
+to log lifecycle delivery failures and continue the response, matching the pinned
+Better Auth 1.7.6 notification helper. Explicit verification delivery still
+propagates awaited errors. Set `config.background_tasks` to observe already
+running delivery as background work. Already-issued reset proofs or committed
+email-change state remain stored after a delivery failure; uncommitted signup
+writes roll back when the default propagation policy fails the request.
 
 The in-memory rate limiter defaults to 100 requests per 10 seconds, with tighter
 built-in rules for sign-in, sign-up, identity changes and email delivery.
