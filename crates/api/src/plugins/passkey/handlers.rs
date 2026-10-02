@@ -590,7 +590,11 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         match committed {
             Ok(value) => {
                 let (passkey, user, session) = *value
-                    .downcast::<(better_auth_core::Passkey, S::User, S::Session)>()
+                    .downcast::<(
+                        better_auth_core::Passkey,
+                        better_auth_core::AdapterRecord<S::User>,
+                        better_auth_core::AdapterRecord<S::Session>,
+                    )>()
                     .map_err(|_error| {
                         AuthError::internal("invalid passkey registration transaction result")
                     })?;
