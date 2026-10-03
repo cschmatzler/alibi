@@ -1,0 +1,10 @@
+{
+  "format": "passed: rustfmt --check on changed Rust files; oxfmt --check on four changed TypeScript files",
+  "typescript": "passed: client-tests tsc --noEmit",
+  "lint": "passed: oxlint on changed TypeScript files",
+  "diff": "passed: git diff --check",
+  "productionClippy": "passed: core/API/root libraries; final API compatibility predicate check",
+  "sourceMutation": "none; published better-auth/core bytes verified private and unchanged",
+  "fullSuite": "not run",
+  "CI": "GitHub Actions disabled; no result claimed"
+}

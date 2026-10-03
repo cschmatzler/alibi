@@ -132,3 +132,12 @@ cache authority versus physical selector authority and replay, Source capability
 selection, explicit override precedence and plugin initialization order. Shared
 cookie signing, JWT/JWE authenticated decode, list order, eviction limits, raw
 observations and exclusion policy remain intact. No nested reviewer was spawned.
+
+Final integration base: `dfd88d21` (#417). Its only incoming files are factor backup
+storage, the two-factor owner and its codec evidence. No builder, state strategy,
+multi-session, cache decoder, shared cookie helper or affected fixture changed.
+The three commits are unchanged by range-diff (`rebase-range-diff.txt`). Passing
+adapter checks were not replayed for this unrelated incoming update. The final
+post-proof edits are the already checked unresolved-context proxy predicate,
+store_arc default control, brace-only Source fixture lint fix and evidence/docs.
+Focused formatting, TypeScript, lint, Clippy and `git diff --check` are green.
