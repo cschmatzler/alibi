@@ -52,6 +52,8 @@ pub(crate) struct Fixture {
     provider: Arc<Mutex<Provider>>,
     preview: DatabaseConnection,
     production: DatabaseConnection,
+    key_modes: Arc<Mutex<[String; 2]>>,
+    initial_mode: &'static str,
 }
 fn profile() -> Value {
     json!({"id":777,"email":"proxy-owner@fixture.test","email_verified":true,"name":"Proxy Owner","avatar_url":"https://assets.fixture.test/avatar.png","state":"active","locked":false})
@@ -162,10 +164,28 @@ impl Fixture {
         provider.after_requests.clear();
         provider.tracking = false;
         provider.profile = profile();
+        *self.key_modes.lock().await = [self.initial_mode.into(), self.initial_mode.into()];
         Ok(())
     }
 }
 pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)> {
+    build_router(config, false).await
+}
+pub(crate) async fn managed_router(config: &AuthConfig) -> AuthResult<(Router, Fixture)> {
+    build_router(config, true).await
+}
+async fn build_router(config: &AuthConfig, managed: bool) -> AuthResult<(Router, Fixture)> {
+    let path = if managed {
+        "/__test/profiles/managed-proxy/api/auth"
+    } else {
+        PATH
+    };
+    let control = if managed {
+        "/__test/managed-proxy"
+    } else {
+        "/__test/oauth-proxy"
+    };
+    let initial_mode = if managed { "old" } else { "dedicated" };
     let preview = Database::connect("sqlite::memory:")
         .await
         .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
@@ -175,6 +195,8 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
     let fixture = Fixture {
         preview,
         production,
+        key_modes: Arc::new(Mutex::new([initial_mode.into(), initial_mode.into()])),
+        initial_mode,
         provider: Arc::new(Mutex::new(Provider {
             grants: HashMap::new(),
             receipts: vec![],
@@ -192,68 +214,98 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
             .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
     }
     let production_origin = config.base_url.replace("localhost", "127.0.0.1");
-    let mut routers = vec![];
-    for (origin, db) in [
-        (&config.base_url, &fixture.preview),
-        (&production_origin, &fixture.production),
+    let mut routers = HashMap::new();
+    for (index, origin, db) in [
+        (0, &config.base_url, &fixture.preview),
+        (1, &production_origin, &fixture.production),
     ] {
-        let settings = config
-            .clone()
-            .base_url(origin)
-            .base_path(PATH)
-            .trusted_origin(config.base_url.clone())
-            .trusted_origin(production_origin.clone());
-        let auth = Arc::new(
-            AuthBuilder::<TestSchema>::new(settings.clone())
-                .store(
-                    SeaOrmStore::<TestSchema>::new(settings, db.clone())
-                        .with_hooks(vec![Arc::new(SessionHooks(fixture.clone()))]),
-                )
-                .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(EmailPasswordPlugin::new().enable_username(false))
-                .plugin(SessionManagementPlugin::new())
-                .plugin(OAuthPlugin::new().add_provider(
-                    "gitlab",
-                    OAuthProvider::gitlab_with_issuer(
-                        "proxy-fixture-client",
-                        "proxy-fixture-secret",
-                        &format!("{}/__test/oauth-proxy/provider", config.base_url),
+        for mode in if managed {
+            vec!["old", "retained", "retired", "legacy", "bare"]
+        } else {
+            vec!["dedicated"]
+        } {
+            let mut settings = config
+                .clone()
+                .base_url(origin)
+                .base_path(path)
+                .trusted_origin(config.base_url.clone())
+                .trusted_origin(production_origin.clone());
+            if managed {
+                const OLD: &str = "managed-old-reader-key-at-least-32-characters";
+                const CURRENT: &str = "compat-test-only-key-not-real-minimum-32chars";
+                const LEGACY: &str = "managed-legacy-reader-key-at-least-32-characters";
+                settings.secret = LEGACY.into();
+                settings.managed_secrets = match mode {
+                    "old" => Some(better_auth_core::ManagedSecrets::new(0, OLD)),
+                    "retained" => {
+                        Some(better_auth_core::ManagedSecrets::new(2, CURRENT).retain(0, OLD))
+                    }
+                    "retired" => Some(better_auth_core::ManagedSecrets::new(2, CURRENT)),
+                    "legacy" => Some(
+                        better_auth_core::ManagedSecrets::new(2, CURRENT)
+                            .retain(0, OLD)
+                            .legacy(LEGACY),
                     ),
-                ))
-                .plugin(OAuthProxyPlugin::with_config(OAuthProxyConfig {
-                    current_url: Some(origin.clone()),
-                    production_url: Some(production_origin.clone()),
-                    secret: Some(SECRET.into()),
-                    ..Default::default()
-                }))
-                .plugin(CompletedRequests(fixture.clone()))
-                .build()
-                .await?,
-        );
-        routers.push(Router::new().nest(PATH, auth.clone().axum_router().with_state(auth)));
+                    _ => None,
+                };
+            }
+            let auth = Arc::new(
+                AuthBuilder::<TestSchema>::new(settings.clone())
+                    .store(
+                        SeaOrmStore::<TestSchema>::new(settings, db.clone())
+                            .with_hooks(vec![Arc::new(SessionHooks(fixture.clone()))]),
+                    )
+                    .rate_limit(RateLimitConfig::new().enabled(false))
+                    .plugin(EmailPasswordPlugin::new().enable_username(false))
+                    .plugin(SessionManagementPlugin::new())
+                    .plugin(OAuthPlugin::new().add_provider(
+                        "gitlab",
+                        OAuthProvider::gitlab_with_issuer(
+                            "proxy-fixture-client",
+                            "proxy-fixture-secret",
+                            &format!("{}{control}/provider", config.base_url),
+                        ),
+                    ))
+                    .plugin(OAuthProxyPlugin::with_config(OAuthProxyConfig {
+                        current_url: Some(origin.clone()),
+                        production_url: Some(production_origin.clone()),
+                        secret: (!managed).then(|| SECRET.into()),
+                        ..Default::default()
+                    }))
+                    .plugin(CompletedRequests(fixture.clone()))
+                    .build()
+                    .await?,
+            );
+            routers.insert(
+                (index, mode.to_owned()),
+                Router::new().nest(path, auth.clone().axum_router().with_state(auth)),
+            );
+        }
     }
-    let mut routers = routers.into_iter();
-    let preview_router = routers
-        .next()
-        .ok_or_else(|| better_auth::AuthError::internal("Missing preview router"))?;
-    let production_router = routers
-        .next()
-        .ok_or_else(|| better_auth::AuthError::internal("Missing production router"))?;
-    let router=Router::new().route(&format!("{PATH}/{{*rest}}"),any(move |request:Request|{
-        let selected=if request.headers().get("host").and_then(|host|host.to_str().ok()).is_some_and(|host|host.starts_with("127.0.0.1:")){production_router.clone()}else{preview_router.clone()};
-        async move {selected.oneshot(request).await}
+    let dispatch_modes = fixture.key_modes.clone();
+    let router=Router::new().route(&format!("{path}/{{*rest}}"),any(move |request:Request|{
+        let index=usize::from(request.headers().get("host").and_then(|host|host.to_str().ok()).is_some_and(|host|host.starts_with("127.0.0.1:")));
+        let modes=dispatch_modes.clone();let routers=routers.clone();
+        async move {let mode=modes.lock().await[index].clone();let selected=routers.get(&(index,mode)).expect("configured runtime").clone();selected.oneshot(request).await}
     }))
-    .route("/__test/oauth-proxy/state",get(state))
-    .route("/__test/oauth-proxy/control",post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{
+    .route(&format!("{control}/keys"),post({let preview=config.base_url.clone();let production=production_origin.clone();move |State(fixture):State<Fixture>,Json(value):Json<Value>|{let preview=preview.clone();let production=production.clone();async move{
+        let mode=value.get("mode").and_then(Value::as_str).unwrap_or("");let origin=value.get("origin").and_then(Value::as_str);
+        if !managed || !["old","retained","retired","legacy","bare"].contains(&mode) || origin.is_some_and(|origin|origin!=preview&&origin!=production){return (StatusCode::BAD_REQUEST,Json(json!({"error":"Unknown key runtime"}))).into_response();}
+        let mut modes=fixture.key_modes.lock().await;
+        for(index,origin_value)in [preview,production].iter().enumerate(){if origin.is_none_or(|origin|origin==origin_value){modes[index]=mode.into();}}
+        Json(json!({"status":true})).into_response()
+    }}}))
+    .route(&format!("{control}/state"),get(state))
+    .route(&format!("{control}/control"),post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{
         let mode=value.get("mode").and_then(Value::as_str).unwrap_or("none").to_owned();{let mut provider=fixture.provider.lock().await;provider.failure=mode.clone();provider.tracking=true;}let db=&fixture.preview;
         db.execute_raw(Statement::from_string(db.get_database_backend(),"DROP TRIGGER IF EXISTS proxy_delete_veto")).await.map_err(|e|e.to_string())?;
         if mode=="delete-veto" {db.execute_raw(Statement::from_string(db.get_database_backend(),"CREATE TRIGGER proxy_delete_veto BEFORE DELETE ON verifications BEGIN SELECT RAISE(ABORT, 'proxy delete veto'); END")).await.map_err(|e|e.to_string())?;}
         Ok::<_,String>(Json(json!({"status":true})))
     }))
-    .route("/__test/oauth-proxy/profile",post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{fixture.provider.lock().await.profile=value;Json(json!({"status":true}))}))
-    .route("/__test/oauth-proxy/provider/oauth/authorize",get(authorize))
-    .route("/__test/oauth-proxy/provider/oauth/token",post(token))
-    .route("/__test/oauth-proxy/provider/api/v4/user",get(|State(fixture):State<Fixture>,headers:HeaderMap|async move{
+    .route(&format!("{control}/profile"),post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{fixture.provider.lock().await.profile=value;Json(json!({"status":true}))}))
+    .route(&format!("{control}/provider/oauth/authorize"),get(authorize))
+    .route(&format!("{control}/provider/oauth/token"),post(token))
+    .route(&format!("{control}/provider/api/v4/user"),get(|State(fixture):State<Fixture>,headers:HeaderMap|async move{
         let mut provider=fixture.provider.lock().await;provider.receipts.push(json!({"stage":"userinfo","authorization":headers.get("authorization").and_then(|v|v.to_str().ok())}));Json(provider.profile.clone())
     })).with_state(fixture.clone());
     Ok((router, fixture))

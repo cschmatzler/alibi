@@ -10,7 +10,10 @@ export const OAUTH_PROXY_SECRET = "local-fixture-dedicated-oauth-proxy-secret-32
 export const OAUTH_PROXY_PATH = "/__test/profiles/oauth-proxy/api/auth";
 
 /** Two genuine auth stores on different transport origins; no copied profile/state. */
-export async function oauthProxyFixture(base: BetterAuthOptions) {
+export async function oauthProxyFixture(base: BetterAuthOptions, managed = false) {
+  const path = managed ? "/__test/profiles/managed-proxy/api/auth" : OAUTH_PROXY_PATH;
+  const control = managed ? "/__test/managed-proxy" : "/__test/oauth-proxy";
+  const modes = new Map<string, string>();
   const preview = String(base.baseURL);
   const production = preview.replace("localhost", "127.0.0.1");
   const records: unknown[] = [];
@@ -35,74 +38,98 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
   for (const origin of [preview, production]) {
     const database = new Database(":memory:");
     databases.set(origin, database);
-    const options: BetterAuthOptions = {
-      ...base,
-      database,
-      baseURL: origin,
-      basePath: OAUTH_PROXY_PATH,
-      trustedOrigins: [preview, production],
-      plugins: [
-        oAuthProxy({ currentURL: origin, productionURL: production, secret: OAUTH_PROXY_SECRET }),
-        {
-          id: "proxy-application-observer",
-          hooks: {
-            after: [
-              {
-                matcher: (ctx) =>
-                  tracking &&
-                  (ctx.path?.endsWith("/oauth-proxy") || ctx.path === "/oauth-proxy-callback"),
-                handler: createAuthMiddleware(async (ctx) => {
-                  const callbackURL = ctx.query?.callbackURL;
-                  if (typeof callbackURL !== "string") {
-                    throw new Error("actual completion callback required");
-                  }
-                  afterRequests.push({ callbackURL });
-                }),
-              },
-            ],
+    modes.set(origin, managed ? "old" : "dedicated");
+    for (const mode of managed ? ["old", "retained", "retired", "legacy", "bare"] : ["dedicated"]) {
+      const old = "managed-old-reader-key-at-least-32-characters";
+      const current = "compat-test-only-key-not-real-minimum-32chars";
+      const legacy = "managed-legacy-reader-key-at-least-32-characters";
+      const options: BetterAuthOptions = {
+        ...base,
+        ...(managed
+          ? {
+              secret: mode === "bare" || mode === "legacy" ? legacy : undefined,
+              secrets:
+                mode === "bare"
+                  ? undefined
+                  : mode === "old"
+                    ? [{ version: 0, value: old }]
+                    : [
+                        { version: 2, value: current },
+                        ...(mode !== "retired" ? [{ version: 0, value: old }] : []),
+                      ],
+            }
+          : {}),
+        database,
+        baseURL: origin,
+        basePath: path,
+        trustedOrigins: [preview, production],
+        plugins: [
+          oAuthProxy({
+            currentURL: origin,
+            productionURL: production,
+            ...(managed ? {} : { secret: OAUTH_PROXY_SECRET }),
+          }),
+          {
+            id: "proxy-application-observer",
+            hooks: {
+              after: [
+                {
+                  matcher: (ctx) =>
+                    tracking &&
+                    (ctx.path?.endsWith("/oauth-proxy") || ctx.path === "/oauth-proxy-callback"),
+                  handler: createAuthMiddleware(async (ctx) => {
+                    const callbackURL = ctx.query?.callbackURL;
+                    if (typeof callbackURL !== "string") {
+                      throw new Error("actual completion callback required");
+                    }
+                    afterRequests.push({ callbackURL });
+                  }),
+                },
+              ],
+            },
           },
-        },
-      ],
-      databaseHooks: {
-        session: {
-          create: {
-            before: async (session, context) => {
-              if (context?.path?.includes("oauth-proxy")) {
-                sessionHooks.push({ userId: session.userId, mode: failure });
+        ],
+        databaseHooks: {
+          session: {
+            create: {
+              before: async (session, context) => {
+                if (context?.path?.includes("oauth-proxy")) {
+                  sessionHooks.push({ userId: session.userId, mode: failure });
 
-                if (failure === "cancel-session") {
-                  return false;
-                }
+                  if (failure === "cancel-session") {
+                    return false;
+                  }
 
-                if (failure === "ordinary-session-error") {
-                  throw new Error("private proxy session failure");
-                }
+                  if (failure === "ordinary-session-error") {
+                    throw new Error("private proxy session failure");
+                  }
 
-                if (failure === "coded-session-error") {
-                  throw new APIError("INTERNAL_SERVER_ERROR", {
-                    code: "PROXY_SESSION_DENIED",
-                    message: "Configured proxy session denied",
-                  });
+                  if (failure === "coded-session-error") {
+                    throw new APIError("INTERNAL_SERVER_ERROR", {
+                      code: "PROXY_SESSION_DENIED",
+                      message: "Configured proxy session denied",
+                    });
+                  }
                 }
-              }
-              return { data: session };
+                return { data: session };
+              },
             },
           },
         },
-      },
-      emailAndPassword: { enabled: true },
-      socialProviders: {
-        gitlab: {
-          clientId: "proxy-fixture-client",
-          clientSecret: "proxy-fixture-secret",
-          issuer: `${preview}/__test/oauth-proxy/provider`,
-          disableImplicitSignUp: false,
-          disableSignUp: false,
+        emailAndPassword: { enabled: true },
+        socialProviders: {
+          gitlab: {
+            clientId: "proxy-fixture-client",
+            clientSecret: "proxy-fixture-secret",
+            issuer: `${preview}${control}/provider`,
+            disableImplicitSignUp: false,
+            disableSignUp: false,
+          },
         },
-      },
-    };
-    await (await getMigrations(options)).runMigrations();
-    instances.set(origin, betterAuth(options));
+      };
+      await (await getMigrations(options)).runMigrations();
+      instances.set(`${origin}:${mode}`, betterAuth(options));
+    }
   }
 
   async function state() {
@@ -111,7 +138,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
       ["preview", preview],
       ["production", production],
     ]) {
-      const { adapter } = await instances.get(origin!)!.$context;
+      const { adapter } = await instances.get(`${origin}:${modes.get(origin!)}`)!.$context;
       const [users, accounts, sessions, verification] = await Promise.all(
         ["user", "account", "session", "verification"].map((model) =>
           adapter.findMany<Record<string, unknown>>({
@@ -194,19 +221,31 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
         state: "active",
         locked: false,
       };
+      for (const origin of [preview, production]) modes.set(origin, managed ? "old" : "dedicated");
     },
     async handle(request: Request): Promise<Response | null> {
       const url = new URL(request.url);
 
-      if (url.pathname.startsWith(`${OAUTH_PROXY_PATH}/`)) {
-        return instances.get(url.origin)!.handler(request);
+      if (url.pathname.startsWith(`${path}/`)) {
+        return instances.get(`${url.origin}:${modes.get(url.origin)}`)!.handler(request);
       }
 
-      if (url.pathname === "/__test/oauth-proxy/state") {
+      if (url.pathname === `${control}/keys` && managed && request.method === "POST") {
+        const input = (await request.json()) as { mode: string; origin?: string };
+        if (
+          !["old", "retained", "retired", "legacy", "bare"].includes(input.mode) ||
+          (input.origin && ![preview, production].includes(input.origin))
+        )
+          return Response.json({ error: "Unknown key runtime" }, { status: 400 });
+        for (const origin of input.origin ? [input.origin] : [preview, production])
+          modes.set(origin, input.mode);
+        return Response.json({ status: true });
+      }
+      if (url.pathname === `${control}/state`) {
         return state();
       }
 
-      if (url.pathname === "/__test/oauth-proxy/control" && request.method === "POST") {
+      if (url.pathname === `${control}/control` && request.method === "POST") {
         const input = await request.json();
         failure = input.mode;
         tracking = true;
@@ -222,12 +261,12 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
         return Response.json({ status: true });
       }
 
-      if (url.pathname === "/__test/oauth-proxy/profile" && request.method === "POST") {
+      if (url.pathname === `${control}/profile` && request.method === "POST") {
         profile = await request.json();
         return Response.json({ status: true });
       }
 
-      if (url.pathname === "/__test/oauth-proxy/provider/oauth/authorize") {
+      if (url.pathname === `${control}/provider/oauth/authorize`) {
         records.push({ stage: "authorize", query: Object.fromEntries(url.searchParams) });
         const code = `proxy-fixture-code-${++count}`;
         grants.set(code, {
@@ -241,7 +280,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
         return new Response(null, { status: 302, headers: { location: callback.href } });
       }
 
-      if (url.pathname === "/__test/oauth-proxy/provider/oauth/token") {
+      if (url.pathname === `${control}/provider/oauth/token`) {
         const body = Object.fromEntries(new URLSearchParams(await request.text()));
         records.push({ stage: "token", body });
         const grant = grants.get(body.code!);
@@ -265,7 +304,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions) {
         });
       }
 
-      if (url.pathname === "/__test/oauth-proxy/provider/api/v4/user") {
+      if (url.pathname === `${control}/provider/api/v4/user`) {
         records.push({ stage: "userinfo", authorization: request.headers.get("authorization") });
         return Response.json(profile);
       }

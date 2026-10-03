@@ -36,6 +36,11 @@ export type ComparisonContext = {
   readonly compactSessionCacheSecret?: string;
   readonly managedAccountCookieProfiles?: Readonly<Record<string, ManagedAccountCookieProfile>>;
   readonly oauthProxyProfileSecret?: string;
+  /** Managed proxy fixtures select one declared envelope version, never try a key ring. */
+  readonly oauthProxyProfileManagedKeys?: {
+    readonly keys: Readonly<Record<number, string>>;
+    readonly legacySecret?: string;
+  };
   readonly leftBaseURL: string;
   readonly rightBaseURL: string;
   readonly leftOAuthURL?: string | undefined;
@@ -2420,17 +2425,25 @@ export function compareValues(
 
   function authenticatedProxyProfile(value: Record<string, unknown>): boolean {
     if (
-      !context.oauthProxyProfileSecret ||
       Object.keys(value).sort().join(",") !== "payload,token" ||
       typeof value.token !== "string" ||
-      !/^(?:[0-9a-f]{2}){40,}$/.test(value.token) ||
       !record(value.payload)
     ) {
       return false;
     }
     try {
-      const bytes = Buffer.from(value.token, "hex");
-      const key = createHash("sha256").update(context.oauthProxyProfileSecret).digest();
+      const envelope = /^\$ba\$(0|[1-9][0-9]*)\$([0-9a-f]+)$/.exec(value.token);
+      const encoded = envelope?.[2] ?? value.token;
+      const secret = context.oauthProxyProfileManagedKeys
+        ? envelope
+          ? context.oauthProxyProfileManagedKeys.keys[Number(envelope[1])]
+          : context.oauthProxyProfileManagedKeys.legacySecret
+        : envelope
+          ? undefined
+          : context.oauthProxyProfileSecret;
+      if (!secret || !/^(?:[0-9a-f]{2}){40,}$/.test(encoded)) return false;
+      const bytes = Buffer.from(encoded, "hex");
+      const key = createHash("sha256").update(secret).digest();
       const plaintext = xchacha20poly1305(key, bytes.subarray(0, 24)).decrypt(bytes.subarray(24));
       const text = new TextDecoder("utf-8", { fatal: true }).decode(plaintext);
       const parsed: unknown = JSON.parse(text);
@@ -3528,6 +3541,10 @@ export function compareValues(
           }
           return;
         }
+        const version = (token: unknown) =>
+          typeof token === "string" ? (/^\$ba\$([^$]+)\$/.exec(token)?.[1] ?? "legacy") : undefined;
+        if (version(a.token) !== version(b.token))
+          fail(`${path}.token`, "OAuth proxy encrypted envelope version differs");
 
         const providerAccountMatches = (payload: unknown) =>
           record(payload) &&
@@ -3662,8 +3679,16 @@ export function compareValues(
           return;
         }
         if (
-          !managedAccountCookieReceipt(a, context.leftRequestWindows) ||
-          !managedAccountCookieReceipt(b, context.rightRequestWindows)
+          !managedAccountCookieReceipt(
+            a,
+            context.leftRequestWindows,
+            context.managedAccountCookieProfiles?.[a.authPath],
+          ) ||
+          !managedAccountCookieReceipt(
+            b,
+            context.rightRequestWindows,
+            context.managedAccountCookieProfiles?.[b.authPath],
+          )
         ) {
           fail(
             path,

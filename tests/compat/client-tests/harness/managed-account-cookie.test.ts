@@ -16,7 +16,7 @@ const secret = "managed-cookie-harness-old-key-at-least-32-chars";
 const path = "/__test/profiles/managed-cookie-harness/api/auth";
 const encryption = { keys: new Map([[0, secret]]), currentVersion: 0 };
 const profile = {
-  currentVersion: 0,
+  credentialVersion: 0,
   secret,
   accessToken: "managed-fixture-access",
   refreshToken: "managed-fixture-refresh",
@@ -55,6 +55,7 @@ async function capture() {
     secrets: [{ version: 0, value: secret }],
     rateLimit: { enabled: false },
     account: { encryptOAuthTokens: true, storeAccountCookie: true },
+    session: { cookieCache: { enabled: true, strategy: "compact" } },
     plugins: [
       genericOAuth({
         config: [
@@ -112,11 +113,36 @@ async function capture() {
       accounts: Record<string, unknown>[];
     };
     const account = observed.accounts[0]!;
+    const fresh = await fetch(baseURL + path + "/get-session?disableCookieCache=true");
+    expect(fresh.status).toBe(200);
+    const renewedRaw = fresh.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith("better-auth.account_data="))!;
+    expect(renewedRaw).toBeDefined();
+    const renewedToken = decodeURIComponent(
+      renewedRaw.split(";")[0]!.slice("better-auth.account_data=".length),
+    );
+    const renewedPayload = await symmetricDecodeJWT(
+      renewedToken,
+      encryption,
+      "better-auth-account",
+    );
+    expect(renewedPayload).not.toBeNull();
+    const renewalState = (await (
+      await fetch(baseURL + "/__test/managed-secrets/state")
+    ).json()) as { accounts: Record<string, unknown>[] };
     return {
       baseURL,
       startedAt,
       finishedAt: Date.now(),
       windows: traces.map((trace) => trace[requestWindow]),
+      renewal: {
+        authPath: path,
+        token: renewedToken,
+        header: decodeProtectedHeader(renewedToken),
+        payload: renewedPayload,
+        account: renewalState.accounts[0]!,
+      } as Atom,
       atom: {
         authPath: path,
         token,
@@ -158,6 +184,37 @@ test("actual Source managed cookies bind authenticated inner plaintext version c
   const compare = (a: Atom, b: Atom, ctx = context) =>
     compareValues({ managedAccountCookie: a }, { managedAccountCookie: b }, ctx);
   expect(compare(left.atom, right.atom)).toEqual([]);
+  const renewalContext = {
+    ...context,
+    managedAccountCookieProfiles: { [path]: { ...profile, renewal: true } },
+  };
+  expect(compare(left.renewal, right.renewal, renewalContext)).toEqual([]);
+  expect(
+    compare(left.renewal, right.renewal, {
+      ...renewalContext,
+      rightRequestWindows: right.windows.slice(-2),
+    }),
+  ).toContainEqual({
+    path: "managedAccountCookie",
+    reason:
+      "managed account-cookie lacks actual issuance, physical read or valid snapshot chronology",
+  });
+  expect(
+    compare(left.renewal, right.renewal, {
+      ...renewalContext,
+      managedAccountCookieProfiles: {
+        [path]: {
+          ...profile,
+          renewal: true,
+          credentialSecret: "wrong-inner-reader-at-least-32-characters",
+        },
+      },
+    }),
+  ).toContainEqual({
+    path: "managedAccountCookie",
+    reason:
+      "managed account-cookie authentication, version, plaintext or physical row relationship differs",
+  });
   const rowMismatch = {
     ...right.atom,
     account: {

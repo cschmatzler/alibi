@@ -32,8 +32,16 @@ const keys = {
 const comparisonOptions = {
   managedAccountCookieProfiles: {
     [authProfilePath("managed-old")]: {
-      currentVersion: 0,
+      credentialVersion: 0,
       secret: old,
+      accessToken: "github-access-token",
+      refreshToken: "github-refresh-token",
+    },
+    [authProfilePath("managed-retained")]: {
+      credentialVersion: 0,
+      secret: current,
+      credentialSecret: old,
+      renewal: true,
       accessToken: "github-access-token",
       refreshToken: "github-refresh-token",
     },
@@ -172,6 +180,50 @@ compatScenario(
         after: after.map((row) => ({ ...row, value: { token: row.value } })),
       });
     }
+    for (const mode of ["wrong-key", "tampered", "missing-separator", "truncated"]) {
+      const email = ctx.uniqueEmail(`envelope-${mode}`),
+        otp = "654321";
+      let ciphertext = await symmetricEncrypt({
+        key: {
+          keys: new Map([
+            [0, mode === "wrong-key" ? "wrong-otp-context-key-at-least-32-characters" : old],
+          ]),
+          currentVersion: 0,
+        },
+        data: otp,
+      });
+      if (mode === "tampered") {
+        const bytes = Buffer.from(ciphertext.slice("$ba$0$".length), "hex");
+        bytes[bytes.length - 1]! ^= 1;
+        ciphertext = "$ba$0$" + bytes.toString("hex");
+      }
+      if (mode === "missing-separator") ciphertext = ciphertext.replace("$ba$0$", "$ba$0");
+      if (mode === "truncated") ciphertext = "$ba$0$ff";
+      const seeded = await ctx.rawRequest({
+        path: "/__test/verification-state",
+        method: "POST",
+        json: {
+          action: "seed",
+          identifier: `sign-in-otp-${email}`,
+          value: ciphertext + ":0",
+          expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        },
+      });
+      expect(seeded.status).toBe(200);
+      const before = await storedVerification(ctx, `sign-in-otp-${email}`);
+      expect(before).toHaveLength(1);
+      const rejected = await request(ctx, "managed-retained", "sign-in/email-otp", { email, otp });
+      expect(rejected.status).toBe(500);
+      const after = await storedVerification(ctx, `sign-in-otp-${email}`);
+      expect(after).toEqual([]);
+      results.push({
+        mode,
+        seeded,
+        before: before.map((row) => ({ ...row, value: { token: row.value } })),
+        rejected,
+        after,
+      });
+    }
     const account = client(ctx, "managed-old");
     const email = ctx.uniqueEmail("factor"),
       password = "password123";
@@ -305,7 +357,7 @@ compatScenario(
     const signup = await owner.client.signUp.email({
       email,
       password,
-      name: "Managed OAuth Owner",
+      name: "x".repeat(6000),
     });
     expect(signup.error).toBeNull();
     await ctx.setGitHubProfile({
@@ -376,11 +428,42 @@ compatScenario(
     expect(inherited.data).toBeNull();
     const login = await sdk.signIn.email({ email, password });
     expect(login.error).toBeNull();
+    const renewedRaw = loginHeaders
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith("better-auth.account_data="))!;
+    expect(renewedRaw).toBeDefined();
+    const renewedToken = decodeURIComponent(
+      renewedRaw.split(";")[0]!.slice("better-auth.account_data=".length),
+    );
+    const renewedPayload = await symmetricDecodeJWT(renewedToken, current, "better-auth-account");
+    expect(renewedPayload?.userId).toBe(signup.data!.user.id);
+    expect(renewedPayload?.accessToken).toBe(account.accessToken);
+    expect(renewedPayload?.refreshToken).toBe(account.refreshToken);
+    expect(await symmetricDecodeJWT(renewedToken, old, "better-auth-account")).toBeNull();
+    const renewalRows = await managedState(ctx, signup.data!.user.id);
+    expect(renewalRows.accounts).toEqual(before.accounts);
+    const renewal = {
+      managedAccountCookie: {
+        authPath: authProfilePath("managed-retained"),
+        token: renewedToken,
+        header: decodeProtectedHeader(renewedToken),
+        payload: renewedPayload,
+        account: renewalRows.accounts.find((row) => row.id === account.id)!,
+      },
+    };
     const cacheCookies = loginHeaders
       .getSetCookie()
-      .filter((value) => value.startsWith("better-auth.session_data="));
-    expect(cacheCookies).toHaveLength(1);
-    const cacheToken = cacheCookies[0]!.split(";")[0]!.slice("better-auth.session_data=".length);
+      .filter(
+        (value) =>
+          /^better-auth\.session_data(?:\.|=)/.test(value) && !/Max-Age=0(?:;|$)/i.test(value),
+      );
+    expect(cacheCookies.length).toBeGreaterThan(1);
+    expect(cacheCookies.every((cookie) => cookie.startsWith("better-auth.session_data."))).toBe(
+      true,
+    );
+    const cacheToken = cacheCookies
+      .map((cookie) => cookie.split(";")[0]!.slice(cookie.indexOf("=") + 1))
+      .join("");
     const observedAt = Date.now(),
       cacheEnvelope = JSON.parse(Buffer.from(cacheToken, "base64url").toString());
     const cached = await getCookieCache(
@@ -470,6 +553,7 @@ compatScenario(
       completed,
       managedAccountCookie: { ...accountCookie, account, authPath: authProfilePath("managed-old") },
       compactSessionCache,
+      renewal,
       before: rowsObservation(before),
       inherited,
       login,

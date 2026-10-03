@@ -143,15 +143,19 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
             better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, "account_data");
         let cache_name =
             better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, "session_data");
+        let account_chunks = format!("{account_name}.");
+        let cache_chunks = format!("{cache_name}.");
         let pending: Vec<_> = response
             .headers
             .get_all("set-cookie")
             .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
             .collect();
         if !ctx.config.account.store_account_cookie
-            || pending.iter().any(|cookie| cookie.name() == account_name)
+            || pending.iter().any(|cookie| {
+                cookie.name() == account_name || cookie.name().starts_with(&account_chunks)
+            })
             || !pending.iter().any(|cookie| {
-                cookie.name() == cache_name
+                (cookie.name() == cache_name || cookie.name().starts_with(&cache_chunks))
                     && !cookie.value().is_empty()
                     && cookie.max_age().is_none_or(|age| age.whole_seconds() != 0)
             })

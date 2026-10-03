@@ -5,8 +5,11 @@ import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import type { RequestWindow } from "./trace";
 
 export type ManagedAccountCookieProfile = {
-  readonly currentVersion: number;
+  readonly credentialVersion: number;
   readonly secret: string;
+  readonly credentialSecret?: string;
+  /** Renewal changes the JWE key while retaining an independently observed row. */
+  readonly renewal?: boolean;
   readonly accessToken: string;
   readonly refreshToken: string;
 };
@@ -32,6 +35,7 @@ export function managedAccountCookieReceipt(
     account: Record<string, unknown>;
   },
   windows: readonly (RequestWindow | undefined)[] | undefined,
+  profile: ManagedAccountCookieProfile | undefined,
 ): boolean {
   const issued = windows?.find((window) => {
     try {
@@ -66,14 +70,36 @@ export function managedAccountCookieReceipt(
   const snapshot = instant(value.payload.updatedAt),
     physical = instant(value.account.updatedAt),
     created = instant(value.payload.createdAt);
+  const writeWindow = profile?.renewal
+    ? windows?.find((earlier) => {
+        if (!earlier?.issuedAccountCookie || earlier.finishedAt > issued.startedAt) return false;
+        return windows?.some((observer) => {
+          const control = observer?.controlObservation;
+          return (
+            observer &&
+            observer.startedAt >= earlier.finishedAt &&
+            observer.finishedAt <= issued.startedAt &&
+            control?.kind === "managed-secrets" &&
+            record(control.body) &&
+            control.digest ===
+              createHash("sha256").update(JSON.stringify(control.body)).digest("hex") &&
+            Array.isArray(control.body.accounts) &&
+            control.body.accounts.some((account) => equal(account, value.account)) &&
+            physical >= earlier.startedAt &&
+            physical <= observer.finishedAt
+          );
+        });
+      })
+    : issued;
   return (
+    !!writeWindow &&
     Number.isFinite(snapshot) &&
     Number.isFinite(physical) &&
     Number.isFinite(created) &&
     created <= snapshot &&
     snapshot <= physical &&
     snapshot <= issued.finishedAt &&
-    physical >= issued.startedAt &&
+    physical >= writeWindow.startedAt &&
     physical <= read.finishedAt
   );
 }
@@ -161,12 +187,14 @@ export function authenticatedManagedAccountCookie(
     for (const field of ["accessToken", "refreshToken"] as const) {
       const data = payload[field];
       if (typeof data !== "string") return false;
-      const prefix = `$ba$${profile.currentVersion}$`;
+      const prefix = `$ba$${profile.credentialVersion}$`;
       if (!data.startsWith(prefix) || !/^[0-9a-f]+$/.test(data.slice(prefix.length))) return false;
       const bytes = Buffer.from(data.slice(prefix.length), "hex");
       if (bytes.length < 40) return false;
       const plain = xchacha20poly1305(
-        createHash("sha256").update(profile.secret).digest(),
+        createHash("sha256")
+          .update(profile.credentialSecret ?? profile.secret)
+          .digest(),
         bytes.subarray(0, 24),
       ).decrypt(bytes.subarray(24));
       if (new TextDecoder("utf-8", { fatal: true }).decode(plain) !== profile[field]) return false;

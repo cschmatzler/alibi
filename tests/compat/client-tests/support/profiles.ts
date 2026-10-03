@@ -13,7 +13,11 @@ function variants<P extends string, S extends string>(
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
- "managed-old", "managed-retained", "managed-retired", "managed-legacy", "managed-bare",
+  "managed-old",
+  "managed-retained",
+  "managed-retired",
+  "managed-legacy",
+  "managed-bare",
   "error-page",
   "custom-session",
   "custom-session-jwt",
@@ -325,6 +329,7 @@ export const FIXTURE_PROFILES = [
   "social-apple-mapped",
   "social-apple-empty-clients",
   "oauth-proxy",
+  "managed-proxy",
   "two-factor-pending-lookup",
   "two-factor-pending-lookup-disabled",
   "two-factor-pending-lookup-zero",
