@@ -1,0 +1,17 @@
+   Compiling better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-stateless-172/crates/core)
+   Compiling better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-stateless-172/crates/seaorm)
+   Compiling better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-stateless-172/crates/api)
+   Compiling better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-stateless-172/crates/sqlx)
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-stateless-172)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 19.36s
+     Running tests/integration/main.rs (/tmp/better-auth-stateless-172-target/debug/deps/integration-9af3ea3e45a4cebe)
+
+running 5 tests
+test storage::stateless::without_database_credential_issuance_and_restart ... ok
+test storage::stateless::on_seaorm::stateless_session_lifecycle ... ok
+test storage::stateless::on_sqlx::stateless_session_lifecycle ... ok
+test storage::stateless::on_seaorm::stateless_policy_boundaries ... ok
+test storage::stateless::on_sqlx::stateless_policy_boundaries ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 337 filtered out; finished in 1.04s
+

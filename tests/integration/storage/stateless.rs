@@ -1,8 +1,9 @@
 //! Stateless lifecycle owner: actual adapters protect cookie-only and durable modes.
 use super::{Backend, Db, TestResult, backend_tests};
+use better_auth::config::CookieRefreshCache;
 use better_auth::plugins::EmailPasswordPlugin;
 use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::{AuthRequest, AuthResponse, CookieRefreshCache, HttpMethod};
+use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -316,6 +317,8 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
         .await?;
     assert_eq!(login.status, 200, "{}", body(&login));
     assert_ne!(body(&signup)["token"], body(&login)["token"]);
+    config.session = config.session.stateless();
+    config.session.cookie_refresh_cache = CookieRefreshCache::Disabled;
     let restarted = AuthBuilder::without_database(config)
         .plugin(EmailPasswordPlugin::new())
         .build()
@@ -327,6 +330,18 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
                 .await?
         ),
         body(&first)
+    );
+    let disabled_renewal = restarted
+        .handle_request(request(
+            "/get-session",
+            None,
+            &cookie.replace(value, &short_cache),
+        ))
+        .await?;
+    assert_eq!(body(&disabled_renewal), body(&first));
+    assert!(
+        cookies(&disabled_renewal).is_empty(),
+        "no-database construction preserves explicit refreshCache=false"
     );
     let failed_login = restarted
         .handle_request(request(
@@ -576,6 +591,49 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
             > near_expiry + chrono::Duration::days(6)
     );
     assert!(cookies(&refreshed).contains("session_data="));
+    let login = auth
+        .handle_request(request(
+            "/sign-in/email",
+            Some(json!({"email":"deferred172@fixture.test","password":"Password123!"})),
+            "",
+        ))
+        .await?;
+    assert_eq!(login.status, 200, "{}", body(&login));
+    let other_cookie = cookies(&login);
+    let listed = auth
+        .handle_request(request("/list-sessions", None, &cookie))
+        .await?;
+    assert_eq!(body(&listed).as_array().unwrap().len(), 2);
+    let revoked = auth
+        .handle_request(request("/revoke-other-sessions", Some(json!({})), &cookie))
+        .await?;
+    assert_eq!(revoked.status, 200, "{}", body(&revoked));
+    assert!(
+        body(
+            &auth
+                .handle_request(request("/get-session", None, &other_cookie))
+                .await?
+        )
+        .is_object(),
+        "captured cached identity survives instance-local revocation"
+    );
+    let mut bypass = request("/get-session", None, &other_cookie);
+    drop(
+        bypass
+            .query
+            .insert("disableCookieCache".into(), "true".into()),
+    );
+    assert_eq!(body(&auth.handle_request(bypass).await?), Value::Null);
+    let revoke_all = auth
+        .handle_request(request("/revoke-sessions", Some(json!({})), &cookie))
+        .await?;
+    assert_eq!(revoke_all.status, 200, "{}", body(&revoke_all));
+    assert!(
+        auth.store()
+            .get_user_sessions(body(&signup)["user"]["id"].as_str().unwrap())
+            .await?
+            .is_empty()
+    );
     assert_eq!(db.count("sessions").await?, 0);
     B::close(connection).await?;
     Ok(())

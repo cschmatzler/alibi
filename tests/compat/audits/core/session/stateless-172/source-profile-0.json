@@ -1,0 +1,79 @@
+{
+  "version": "1.7.6",
+  "trace": [
+    {
+      "path": "/sign-up/email",
+      "skip": false,
+      "status": 200,
+      "body": "{\"token\":\"zJdYau1ovmV8Bq1mKDAfSlGK8StXCEBY\",\"user\":{\"name\":\"Stateless\",\"email\":\"native172@fixture.test\",\"emailVerified\":false,\"createdAt\":\"2026-10-03T15:07:37.178Z\",\"updatedAt\":\"2026-10-03T15:07:37.178Z\",\"id\":\"PoAiBcyfts0HQI6E5ezyhUvrBDFq6XHZ\"}}",
+      "cookies": [
+        "better-auth.session_token=zJdYau1ovmV8Bq1mKDAfSlGK8StXCEBY.CclvTgIuwzCWlaGCqCRFUHf2ctseX8mfLxtcRcFowsE%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.session_data=eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIiwia2lkIjoiTE9MWFFweExzSzNpenIxTlBoOHdHSXFZdUdzUGZjX0dHZTdZNmRXY1pFVSJ9..-uBbCcymwnS95CVB4gS0Tg.-nykNwP0g28KFZgXg1wjL5g-GBUsc-22rCGJSYaOCDJLm6FlbvwG0ulucVup56d-odYZhRpvRfYvaF8wb-8I7nVCZpIX6Rqb28bQpX7BjSnS9qc6I9_0qX-a-GizRGNQDCdsVcUqpoOGeBc6LXPV-kFoKFWNGlf3IybHBq_4e2V04jOhYJTX73AFBavQWIRMG1WGUhmrbd_rRGHWNsWniymHXxTbGzuJ8Il5aHNDDIrOJ59u-kYbpqErr_f0Tq1z9FxEG-fGhsUr6-pjGKFydHV0c0-Eb8a4rnKSrwWSpVQLlnCpRWYhvrPpRFKFIO3wMGosDnrR6UqsSdN4xg_IcqsUd-SwkrPAppMgOJE9AY-eL5uWQECyAeAICv0rd87EXtuyl467GIdlwXKB6BE7RXlwQ32203lB9VLzTAoeJoL27MLGK7qYaVb3TZvVNCEwYHwyDtPBWqzGkhL3z4ZdBP2lRbRImT8i2FJebUZgH8_D4ayvH1FzQ0UzwtozZdWsFDoFmp8HVmaW86vAPb9mbDo3k83Hz5qc3jugFwqxZfX8C8_Z7xYG156d3XlMiWDsy5bLS-Y9zJ8Wbh5qwXsw4Q2HVRSV1DaSW-ylRr3OSQxU3xwy5R1yZXMjqeSZejwDn1STXM31U6gzFX5NmvLA91-krvfQRgapA426boiO3PgzUCW7YZuXj2WFzQ-ViSlDnl5mgNDVOnA5yaY9Irhh3lsR9ZJf8srrucnA4z8b_7kMB2MFXxrvBFXBfo08ZvdF44aOR7cO8hAy88iEq_0QQD9SNDmqvzjZktVSer4T8_4.dS_pktib2Ry3AOfyOtvS6FZL-3sJgimRuQ8NXQKOr_c; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    {
+      "path": "/get-session?disableRefresh=true",
+      "skip": false,
+      "status": 200,
+      "body": "{\"session\":{\"id\":\"ZnKO9gVdCW0A7b2ChON0X96ukMVWBo0w\",\"createdAt\":\"2026-10-03T15:07:37.181Z\",\"updatedAt\":\"2026-10-03T15:07:37.181Z\",\"userId\":\"PoAiBcyfts0HQI6E5ezyhUvrBDFq6XHZ\",\"expiresAt\":\"2026-10-10T15:07:37.181Z\",\"token\":\"zJdYau1ovmV8Bq1mKDAfSlGK8StXCEBY\",\"ipAddress\":\"\",\"userAgent\":\"\"},\"user\":{\"id\":\"PoAiBcyfts0HQI6E5ezyhUvrBDFq6XHZ\",\"createdAt\":\"2026-10-03T15:07:37.178Z\",\"updatedAt\":\"2026-10-03T15:07:37.178Z\",\"email\":\"native172@fixture.test\",\"emailVerified\":false,\"name\":\"Stateless\"}}",
+      "cookies": [
+        "better-auth.session_data=eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIiwia2lkIjoiTE9MWFFweExzSzNpenIxTlBoOHdHSXFZdUdzUGZjX0dHZTdZNmRXY1pFVSJ9..99acDxkYRLo4uxZ_qQoa1w.YtM58REvM6s97i-IXWPR5LY4G6z1-NL3aEhRvT0J4AzqxFFC-Jm-TiUiox0TeCYYMnvl98ZBOlTz85qbMpbAQvaR5X_sFH2XPxB1JhHLgFfObmq83gbr0tpNYT3KuOwSSN0OQckTQdqarUkwxTAhgtEKgsbsLy0sEb0KY1XrDqAH5oxLmfOdoH_qbZ21SUz6So3cW0F9kXBz0v8QA9UbKBOGGBmUWIqBfhJp34KYibaFdj8MfVeEoUypOqfslj4bf9rgqh7ZzJBgmGCI34XoC4yNW9G41to_PX0o-OrEEZlBxwDu7PrMS0fnFGYaanC7ZQSWpXlt4ZVyrTYP6MGBh8CGZeQk8IA-IsYCbUNCrAeUpCWZje_xhdbiUyOHD3HcKnF3AzSuaZxqdyGMRWWp3_gqIViwTZJ1mxlkMz5UPlAFzWiFbGLtDnfdlukgavflUzmRXiViI0M9PkaMKNEHitjk9it9lTP7kU36rH3up7sGKDRfuVzXQ4HNdQXI8MwvKyPv-7KQHLNUOtPLM5Z024-_bTilw_CMYJvIv3JviexN8hsvcX7EvV27cxJmKK8yaiZ-MZIQLzWANziYmDxlhGHI0OqMoK6SuRco54mUEoGXYNYmZc2UeVueRTopY7WNDzGTk9NNWVmTnLJzb8qeV1CfN8clrd8NYsjTLoUVSEXSLvXC7WoaBOBINIL_xz2kZwY8nYzQ58Al72TQkXM9xaXM_3yW0pl-UMAv-vVEigN-7_guAPNzCZqZeSv8A9TZfxwiv-IRkjKhUWCggrFD7WvzqGiKzMiulvcWu0WYySg.HgFMBmoBvKsVnUI2E_Z5pV5xdm2qnigraBAqa8fxWW0; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.session_token=zJdYau1ovmV8Bq1mKDAfSlGK8StXCEBY.CclvTgIuwzCWlaGCqCRFUHf2ctseX8mfLxtcRcFowsE%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    {
+      "path": "/get-session?disableCookieCache=true",
+      "skip": false,
+      "status": 200,
+      "body": "{\"session\":{\"expiresAt\":\"2026-10-10T15:07:37.181Z\",\"token\":\"zJdYau1ovmV8Bq1mKDAfSlGK8StXCEBY\",\"createdAt\":\"2026-10-03T15:07:37.181Z\",\"updatedAt\":\"2026-10-03T15:07:37.181Z\",\"ipAddress\":\"\",\"userAgent\":\"\",\"userId\":\"PoAiBcyfts0HQI6E5ezyhUvrBDFq6XHZ\",\"id\":\"ZnKO9gVdCW0A7b2ChON0X96ukMVWBo0w\"},\"user\":{\"name\":\"Stateless\",\"email\":\"native172@fixture.test\",\"emailVerified\":false,\"createdAt\":\"2026-10-03T15:07:37.178Z\",\"updatedAt\":\"2026-10-03T15:07:37.178Z\",\"id\":\"PoAiBcyfts0HQI6E5ezyhUvrBDFq6XHZ\"},\"needsRefresh\":false}",
+      "cookies": [
+        "better-auth.session_data=eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIiwia2lkIjoiTE9MWFFweExzSzNpenIxTlBoOHdHSXFZdUdzUGZjX0dHZTdZNmRXY1pFVSJ9..U4wsIsWtCfkwsxr4KihLiQ.DWNmz4lN8iSxQtr0aTOEJ_5PSLHjbRvckUbUzXAP8BV0MVV-V13QJseKmtWm3PIHhneJDtKffF7rv1y6ScwuBM0Dfg9ThbOjIWNSzKbIhPVEB1NRZsP5fBWSrarJUncX4P28TniUiy2T_H4eGemFxRPik-zkpMlnvBN55bn79UWS8Vl-Bdc337hbvl_F8ZLCZxzJ4SLRglA2Twy2q-Evm2ZNZ16zAgC66vCl0j_l0jVDCa0k4nCJi33VFYODrp4HHxiUuX3NLEW7hXqgmdFjBW35Vw9bowVXBM6Zn5hoermNG48RjhOQ41zjxIUurxa3V7-AjLIyjMsNqrAEKxWGNvIkyBelZ9Y4ye9_njPf1nkqh3H0w87gIT03yC7Vgf_Rc1ZljhG3HfmynILjDLK4OSuKb979V3Ucg9W8xgMZFl1poPVlpfBvEuntZXC1mFPvvJ2ZxYaqs876Svy-g35rhqnIDMRvbCfeOI2b-nr5EH5r6-F9EdaSm7586VcJlkpFCu9TMDv5kPu6TkjsNIKsr45ZvoTsFt5spvM1SinxqJRoyA4fAvOQUIksYKbWBLy8i5Lrhu54faRLvFz6hyy404KR_2HOcJwqpFr8Z3RJ9Zjp0Z3Ko7cLlVJzmt4VFFm5iXT0Uj7Gb4KEcd2O-FWIaVoKIf6XqUHISfSNM6gUDpzK-3hs15aTCmlzWdHd-xGJ8XtJr4poPlJp6Mr4YhBt9q-0TPB4ga1q9MVS71i8VXHs-JVOpi3y6lZO2eXs8yz3b0Anz7tM6CEXUJxnqlvatEs5AN1dnc_LvP1WObgpXnU.FcnCgzc3e7gF-5n-jiWZTVbuoyvj8na0pKaY5CU7AfU; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    {
+      "path": "/get-session",
+      "skip": true,
+      "status": 200,
+      "body": "{\"session\":{\"id\":\"ZnKO9gVdCW0A7b2ChON0X96ukMVWBo0w\",\"createdAt\":\"2026-10-03T15:07:37.181Z\",\"updatedAt\":\"2026-10-03T15:07:37.181Z\",\"userId\":\"PoAiBcyfts0HQI6E5ezyhUvrBDFq6XHZ\",\"expiresAt\":\"2026-10-10T15:07:37.181Z\",\"token\":\"zJdYau1ovmV8Bq1mKDAfSlGK8StXCEBY\",\"ipAddress\":\"\",\"userAgent\":\"\"},\"user\":{\"id\":\"PoAiBcyfts0HQI6E5ezyhUvrBDFq6XHZ\",\"createdAt\":\"2026-10-03T15:07:37.178Z\",\"updatedAt\":\"2026-10-03T15:07:37.178Z\",\"email\":\"native172@fixture.test\",\"emailVerified\":false,\"name\":\"Stateless\"}}",
+      "cookies": []
+    },
+    {
+      "path": "/sign-out",
+      "skip": false,
+      "status": 200,
+      "body": "{\"success\":true}",
+      "cookies": [
+        "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.account_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.oauth_state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    {
+      "path": "/get-session",
+      "skip": false,
+      "status": 200,
+      "body": "{\"session\":{\"id\":\"ZnKO9gVdCW0A7b2ChON0X96ukMVWBo0w\",\"createdAt\":\"2026-10-03T15:07:37.181Z\",\"updatedAt\":\"2026-10-03T15:07:37.181Z\",\"userId\":\"PoAiBcyfts0HQI6E5ezyhUvrBDFq6XHZ\",\"expiresAt\":\"2026-10-10T15:07:37.181Z\",\"token\":\"zJdYau1ovmV8Bq1mKDAfSlGK8StXCEBY\",\"ipAddress\":\"\",\"userAgent\":\"\"},\"user\":{\"id\":\"PoAiBcyfts0HQI6E5ezyhUvrBDFq6XHZ\",\"createdAt\":\"2026-10-03T15:07:37.178Z\",\"updatedAt\":\"2026-10-03T15:07:37.178Z\",\"email\":\"native172@fixture.test\",\"emailVerified\":false,\"name\":\"Stateless\"}}",
+      "cookies": [
+        "better-auth.session_data=eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIiwia2lkIjoiTE9MWFFweExzSzNpenIxTlBoOHdHSXFZdUdzUGZjX0dHZTdZNmRXY1pFVSJ9..XTzJi6kmV-r70jJWNwO21w.YhrLwlp9TkU8VJFFe5BWhT0Exxw04zik23eeRsU6bxbZ4RCLX3XKqAcl7FBjS4E-D8OuoLmBjzr4YyZXaLnD-JqlNrAqx-N0BJkT_QTi1Ik0bYLbisMBXkutuNF7_BMffnrWGOcwPF7h9dmF2mdJU3_Ku0yIG0OLhTy4lA2RI52eKa6NHBiUmml3g3MTgxQWnEgGsNb4JXdd7auaRtMF0lp_Vjp6XAcdyKFWqvuPRYPE8Amu8562nbSMjA9zcRIGWz1v3p3Awze8A7q_VQuYwpudVltySRoix75_GAQyH684dncW83Zq1-vPLJ1armULIBFODrHsHEtYAymsMRcd-CWlMEWZHDrJTdAisrk6UXo_8b4A4E8F5WcK1Q27UXV2YSL6jxX473OoItEC-JUBdGp8-QFKKJm6DppUihOCkRQO_hW64fw9Z9mDKLqd67KczJFr5TWFrNJlZp_eE4XZvDJAaOKM6r1PGfBi3dgpTxS3PDB9FDLuCS_m5HokjGpIv9WQGqy-lUljIfRODdJfYW1QtJi9NtRQkR5mh-RpMrwfh-wV_DAIklW9omxsV1fiGn9qptkVFCK1zh0pQoJoGtwEc0-d1Xr7ha0HzD-PUp36VtDMeZkaf8_YxWwKrVTDVpCYIChxHnZDpL-a7yq_LUqTfrwTySEWM9Jf6VZAY5a80q6A3EhXvbT_3DliaEu_2oP05Fo83-KutK9aGnTGd1igJvFr3WRq9HxbEvdt04TBBGb_UQ-0peWEFDmxDzAg-1g46Q_p63et5RDRYIR4Fy7lzgb8mseWX1m6O956EvE.BrnqTCx-fdbBwGF93R-Pe8uzzWtqOOlBpNeNQ4e7P08; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.session_token=zJdYau1ovmV8Bq1mKDAfSlGK8StXCEBY.CclvTgIuwzCWlaGCqCRFUHf2ctseX8mfLxtcRcFowsE%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    },
+    {
+      "path": "/get-session?disableCookieCache=true",
+      "skip": false,
+      "status": 200,
+      "body": "null",
+      "cookies": [
+        "better-auth.session_token=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.account_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.oauth_state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+        "better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+      ]
+    }
+  ]
+}

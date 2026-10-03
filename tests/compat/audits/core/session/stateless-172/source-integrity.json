@@ -1,0 +1,26 @@
+{
+  "dist/api/routes/session.mjs": {
+    "installed": "1751e7c2a86169f89e2964a9e35475c0a761a09fa2e8efbc16176af51bdc6a01",
+    "published": "1751e7c2a86169f89e2964a9e35475c0a761a09fa2e8efbc16176af51bdc6a01"
+  },
+  "dist/context/store-capabilities.mjs": {
+    "installed": "d27a77df67199a263c618a1b20d71dc141324cd3ec86f66c5ae11e31bbb94838",
+    "published": "d27a77df67199a263c618a1b20d71dc141324cd3ec86f66c5ae11e31bbb94838"
+  },
+  "dist/context/create-context.mjs": {
+    "installed": "4b703a84f1b5c6285a74b064447afb7c041d3195212ffec7eabcb61b27f4ab33",
+    "published": "4b703a84f1b5c6285a74b064447afb7c041d3195212ffec7eabcb61b27f4ab33"
+  },
+  "dist/db/adapter-base.mjs": {
+    "installed": "88fe4ddd2ff914fed4b3e6468bdcd1a7b317335df053b25b64cef9573af6b36b",
+    "published": "88fe4ddd2ff914fed4b3e6468bdcd1a7b317335df053b25b64cef9573af6b36b"
+  },
+  "dist/db/internal-adapter.mjs": {
+    "installed": "ead6bf2c1a3358d030f142623fc2876f018adb207f58522abfba325ffb16e34d",
+    "published": "ead6bf2c1a3358d030f142623fc2876f018adb207f58522abfba325ffb16e34d"
+  },
+  "dist/cookies/index.mjs": {
+    "installed": "51757ee5897b568cfd5694d348dd1d5e5e5f72ce138ddd277a8861a20decf5f1",
+    "published": "51757ee5897b568cfd5694d348dd1d5e5e5f72ce138ddd277a8861a20decf5f1"
+  }
+}
