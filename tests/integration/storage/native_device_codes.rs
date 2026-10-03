@@ -1,0 +1,351 @@
+//! Device authorization through real handlers and all three native stores.
+use super::{Backend, Db, TestResult, backend_tests};
+use better_auth::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin};
+use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use better_auth_core::{AuthRequest, AuthResponse, AuthSession, HttpMethod};
+use chrono::{Duration, Utc};
+use serde_json::{Value, json};
+use std::sync::Arc;
+
+const SECRET: &str = "native-device-172-secret-at-least-32-characters";
+const ORIGIN: &str = "http://localhost:43176";
+backend_tests!(native_device_workflow);
+
+fn plugins<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthBuilder<S> {
+    builder
+        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(DeviceAuthorizationPlugin::new().interval(Duration::zero()))
+}
+fn body(response: &AuthResponse) -> Value {
+    serde_json::from_slice(&response.body).unwrap()
+}
+async fn call<S: AuthSchema>(
+    auth: &BetterAuth<S>,
+    trace: &mut Vec<Value>,
+    path: &str,
+    input: Option<Value>,
+    cookie: &str,
+    code: Option<&str>,
+) -> TestResult<AuthResponse> {
+    let mut req = AuthRequest::new(
+        if input.is_some() {
+            HttpMethod::Post
+        } else {
+            HttpMethod::Get
+        },
+        path,
+    );
+    drop(req.headers.insert("origin".into(), ORIGIN.into()));
+    drop(
+        req.headers
+            .insert("content-type".into(), "application/json".into()),
+    );
+    drop(req.headers.insert("cookie".into(), cookie.into()));
+    req.body = input.map(|value| serde_json::to_vec(&value).unwrap());
+    if let Some(code) = code {
+        drop(req.query.insert("user_code".into(), code.into()));
+    }
+    let response = auth.handle_request(req).await?;
+    trace.push(json!({"path":path,"status":response.status,"body":String::from_utf8(response.body.clone())?}));
+    Ok(response)
+}
+fn token(code: &str, client: &str) -> Value {
+    json!({"grant_type":"urn:ietf:params:oauth:grant-type:device_code","device_code":code,"client_id":client})
+}
+async fn native_device_workflow<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    config.session = config.session.stateless();
+    let auth =
+        plugins(AuthBuilder::new(config.clone()).store(B::store(Arc::new(config), &connection)))
+            .build()
+            .await?;
+    workflow(
+        &auth,
+        std::any::type_name::<B>().rsplit("::").next().unwrap(),
+    )
+    .await?;
+    assert_eq!(db.count("device_code").await?, 0);
+    assert_eq!(db.count("sessions").await?, 0);
+    B::close(connection).await
+}
+#[tokio::test]
+async fn without_database_native_device_workflow() -> TestResult {
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = plugins(AuthBuilder::without_database(config.clone()))
+        .build()
+        .await?;
+    workflow(&auth, "without-database").await?;
+    let mut trace = Vec::new();
+    let issued = call(
+        &auth,
+        &mut trace,
+        "/device/code",
+        Some(json!({"client_id":"restart"})),
+        "",
+        None,
+    )
+    .await?;
+    let code = body(&issued)["device_code"].as_str().unwrap().to_owned();
+    let restarted = plugins(AuthBuilder::without_database(config))
+        .build()
+        .await?;
+    let response = call(
+        &restarted,
+        &mut trace,
+        "/device/token",
+        Some(token(&code, "restart")),
+        "",
+        None,
+    )
+    .await?;
+    assert_eq!(body(&response)["error"], "invalid_grant");
+    assert!(
+        auth.store()
+            .get_device_code_by_device_code(&code)
+            .await?
+            .is_some()
+    );
+    Ok(())
+}
+async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestResult {
+    let mut trace = Vec::new();
+    let mut cookies = Vec::new();
+    for name in ["owner", "other"] {
+        let signup = call(auth, &mut trace, "/sign-up/email", Some(json!({"email":format!("{name}@example.com"),"name":name,"password":"Password123!"})), "", None).await?;
+        assert_eq!(signup.status, 200);
+        cookies.push(
+            signup
+                .headers
+                .get_all("set-cookie")
+                .map(|value| value.split(';').next().unwrap())
+                .collect::<Vec<_>>()
+                .join("; "),
+        );
+    }
+    for decision in ["approve", "deny"] {
+        let issued = call(
+            auth,
+            &mut trace,
+            "/device/code",
+            Some(json!({"client_id":"console","scope":"profile raw"})),
+            "",
+            None,
+        )
+        .await?;
+        assert_eq!(
+            issued.status,
+            200,
+            "native device issuance must work: {}",
+            body(&issued)
+        );
+        let issued = body(&issued);
+        let device = issued["device_code"].as_str().unwrap();
+        let user_code = issued["user_code"].as_str().unwrap();
+        let row = auth
+            .store()
+            .get_device_code_by_device_code(device)
+            .await?
+            .unwrap();
+        assert_eq!(row.scope.as_deref(), Some("profile raw"));
+        assert_eq!(row.client_id.as_deref(), Some("console"));
+        assert!(row.user_id.is_none());
+        let wrong_client = call(
+            auth,
+            &mut trace,
+            "/device/token",
+            Some(token(device, "other")),
+            "",
+            None,
+        )
+        .await?;
+        assert_eq!(body(&wrong_client)["error"], "invalid_grant");
+        assert!(
+            auth.store()
+                .get_device_code_by_device_code(device)
+                .await?
+                .unwrap()
+                .last_polled_at
+                .is_none()
+        );
+        let pending = call(
+            auth,
+            &mut trace,
+            "/device/token",
+            Some(token(device, "console")),
+            "",
+            None,
+        )
+        .await?;
+        assert_eq!(body(&pending)["error"], "authorization_pending");
+        let anonymous = call(auth, &mut trace, "/device", None, "", Some(user_code)).await?;
+        assert!(body(&anonymous).get("scope").is_none());
+        let unclaimed = call(
+            auth,
+            &mut trace,
+            "/device/approve",
+            Some(json!({"userCode":user_code})),
+            &cookies[0],
+            None,
+        )
+        .await?;
+        assert_eq!(body(&unclaimed)["error"], "invalid_request");
+        let claimed = call(
+            auth,
+            &mut trace,
+            "/device",
+            None,
+            &cookies[0],
+            Some(user_code),
+        )
+        .await?;
+        assert_eq!(body(&claimed)["scope"], "profile raw");
+        let owner = auth
+            .store()
+            .get_device_code_by_user_code(user_code)
+            .await?
+            .unwrap()
+            .user_id
+            .unwrap();
+        let other = call(
+            auth,
+            &mut trace,
+            "/device",
+            None,
+            &cookies[1],
+            Some(user_code),
+        )
+        .await?;
+        assert!(body(&other).get("scope").is_none());
+        let forbidden = call(
+            auth,
+            &mut trace,
+            &format!("/device/{decision}"),
+            Some(json!({"userCode":user_code})),
+            &cookies[1],
+            None,
+        )
+        .await?;
+        assert_eq!(forbidden.status, 403);
+        assert_eq!(
+            auth.store()
+                .get_device_code_by_user_code(user_code)
+                .await?
+                .unwrap()
+                .user_id
+                .as_deref(),
+            Some(owner.as_str())
+        );
+        let decided = call(
+            auth,
+            &mut trace,
+            &format!("/device/{decision}"),
+            Some(json!({"userCode":user_code})),
+            &cookies[0],
+            None,
+        )
+        .await?;
+        assert_eq!(decided.status, 200);
+        let repeated = call(
+            auth,
+            &mut trace,
+            "/device/deny",
+            Some(json!({"userCode":user_code})),
+            &cookies[0],
+            None,
+        )
+        .await?;
+        assert_eq!(body(&repeated)["error"], "invalid_request");
+        let redeemed = call(
+            auth,
+            &mut trace,
+            "/device/token",
+            Some(token(device, "console")),
+            "",
+            None,
+        )
+        .await?;
+        if decision == "approve" {
+            assert_eq!(redeemed.status, 200);
+            assert_eq!(body(&redeemed)["scope"], "profile raw");
+            let access = body(&redeemed)["access_token"].as_str().unwrap().to_owned();
+            assert_eq!(
+                auth.store().get_session(&access).await?.unwrap().user_id(),
+                owner
+            );
+        } else {
+            assert_eq!(body(&redeemed)["error"], "access_denied");
+        }
+        assert!(
+            auth.store()
+                .get_device_code_by_device_code(device)
+                .await?
+                .is_none()
+        );
+        let replay = call(
+            auth,
+            &mut trace,
+            "/device/token",
+            Some(token(device, "console")),
+            "",
+            None,
+        )
+        .await?;
+        assert_eq!(body(&replay)["error"], "invalid_grant");
+    }
+    // Seed an expired row through the public store, avoiding wall-clock sleeps.
+    let expired = auth
+        .store()
+        .create_device_code(better_auth_core::CreateDeviceCode {
+            device_code: "expired-device".into(),
+            user_code: "EXPIRED".into(),
+            user_id: None,
+            expires_at: Utc::now() - Duration::seconds(1),
+            status: "pending".into(),
+            last_polled_at: None,
+            polling_interval: Some(5000),
+            client_id: Some("console".into()),
+            scope: None,
+        })
+        .await?;
+    let expiry = call(
+        auth,
+        &mut trace,
+        "/device",
+        None,
+        &cookies[0],
+        Some("EXPIRED"),
+    )
+    .await?;
+    assert_eq!(body(&expiry)["error"], "expired_token", "{}", body(&expiry));
+    assert!(
+        !auth
+            .store()
+            .delete_device_code_if_status(&expired.id, "approved")
+            .await?
+    );
+    let expiry = call(
+        auth,
+        &mut trace,
+        "/device/token",
+        Some(token("expired-device", "console")),
+        "",
+        None,
+    )
+    .await?;
+    assert_eq!(body(&expiry)["error"], "expired_token", "{}", body(&expiry));
+    assert!(
+        auth.store()
+            .get_device_code_by_user_code("EXPIRED")
+            .await?
+            .is_none()
+    );
+    if let Ok(dir) = std::env::var("DEVICE_172_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&dir).join(format!("{backend}-workflow.json")),
+            serde_json::to_vec_pretty(&trace)?,
+        )?;
+    }
+    Ok(())
+}

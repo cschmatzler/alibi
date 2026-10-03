@@ -3,10 +3,11 @@
 //! This store has no database connection. The initialized store wrapper keeps
 //! ephemeral session records for cookie bypass and instance-local logout.
 //! User/account/verification provisioning is instance-local, as in the pinned
-//! no-database memory adapter. Native two-factor/passkey/API-key records share that
+//! no-database memory adapter. Native two-factor/passkey/API-key/device-code records share that
 //! instance-local lifetime; other optional records require an application store.
 //! Applications can also use cookie-only sessions with durable SQL user storage.
 mod api_keys;
+mod device_codes;
 mod optional_records;
 
 use super::*;
@@ -40,6 +41,7 @@ struct IdentityState {
     two_factors: indexmap::IndexMap<String, TwoFactor>,
     passkeys: indexmap::IndexMap<String, Passkey>,
     api_keys: indexmap::IndexMap<String, ApiKey>,
+    device_codes: indexmap::IndexMap<String, DeviceCode>,
 }
 
 impl StatelessStore {
@@ -95,21 +97,6 @@ unsupported_store!(InvitationStore, {
     async fn list_organization_invitations(org_id: &str) -> AuthResult<Vec<Invitation>>;
     async fn count_pending_organization_invitations(org_id: &str) -> AuthResult<i64>;
     async fn list_user_invitations(email: &str) -> AuthResult<Vec<Invitation>>;
-});
-
-unsupported_store!(DeviceCodeStore, {
-    async fn create_device_code(input: CreateDeviceCode) -> AuthResult<DeviceCode>;
-    async fn get_device_code_by_device_code(device_code: &str) -> AuthResult<Option<DeviceCode>>;
-    async fn get_device_code_by_user_code(user_code: &str) -> AuthResult<Option<DeviceCode>>;
-    async fn update_device_code(id: &str, update: UpdateDeviceCode) -> AuthResult<DeviceCode>;
-    async fn update_device_code_if_status(
-        id: &str,
-        current_status: &str,
-        update: UpdateDeviceCode,
-    ) -> AuthResult<bool>;
-    async fn claim_device_code(id: &str, user_id: &str) -> AuthResult<bool>;
-    async fn delete_device_code(id: &str) -> AuthResult<()>;
-    async fn delete_device_code_if_status(id: &str, status: &str) -> AuthResult<bool>;
 });
 
 impl TeamStore for StatelessStore {}
