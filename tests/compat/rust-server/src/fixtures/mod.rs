@@ -8,6 +8,7 @@ pub(crate) mod api_key_background_fixture;
 pub(crate) mod api_key_generation_fixture;
 pub(crate) mod api_key_hook_fixture;
 pub(crate) mod api_key_options_fixture;
+pub(crate) mod api_key_storage_fixture;
 pub(crate) mod apple_provider_fixture;
 pub(crate) mod atlassian_provider_fixture;
 pub(crate) mod bearer_fixture;
@@ -75,3 +76,4 @@ pub(crate) mod verification_storage_fixture;
 pub(crate) mod managed_secrets_fixture;
 
 pub(crate) mod microsoft_provider_fixture;
+pub(crate) mod linear_provider_fixture;

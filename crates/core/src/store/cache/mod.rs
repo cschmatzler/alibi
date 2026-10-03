@@ -47,6 +47,15 @@ pub mod redis_adapter {
             Ok(())
         }
 
+        async fn set_without_expiry(&self, key: &str, value: &str) -> AuthResult<()> {
+            let mut conn = self
+                .client
+                .get_connection()
+                .map_err(|e| AuthError::internal(format!("Redis connection error: {e}")))?;
+            conn.set::<_, _, ()>(key, value)
+                .map_err(|e| AuthError::internal(format!("Redis set error: {e}")))
+        }
+
         async fn get(&self, key: &str) -> AuthResult<Option<String>> {
             let mut conn = self
                 .client
@@ -157,6 +166,13 @@ pub trait CacheAdapter: Send + Sync {
     /// Set a value with expiration
     async fn set(&self, key: &str, value: &str, expires_in: Duration) -> AuthResult<()>;
 
+    /// Persist a value without expiration. Adapters must explicitly support this capability.
+    async fn set_without_expiry(&self, _key: &str, _value: &str) -> AuthResult<()> {
+        Err(AuthError::internal(
+            "persistent cache writes are unsupported by this adapter",
+        ))
+    }
+
     /// Get a value by key
     async fn get(&self, key: &str) -> AuthResult<Option<String>>;
 
@@ -203,7 +219,7 @@ impl std::fmt::Debug for MemoryCacheAdapter {
 #[derive(Debug, Clone)]
 struct CacheEntry {
     value: String,
-    expires_at: DateTime<Utc>,
+    expires_at: Option<DateTime<Utc>>,
 }
 
 impl MemoryCacheAdapter {
@@ -218,7 +234,7 @@ impl MemoryCacheAdapter {
     fn cleanup_expired(&self) {
         if let Ok(mut data) = self.data.lock() {
             let now = Utc::now();
-            data.retain(|_, entry| entry.expires_at > now);
+            data.retain(|_, entry| entry.expires_at.is_none_or(|expiration| expiration > now));
         }
     }
 }
@@ -237,7 +253,7 @@ impl CacheAdapter for MemoryCacheAdapter {
         let expires_at = Utc::now() + expires_in;
         let entry = CacheEntry {
             value: value.to_owned(),
-            expires_at,
+            expires_at: Some(expires_at),
         };
 
         let mut data = self
@@ -247,6 +263,21 @@ impl CacheAdapter for MemoryCacheAdapter {
         drop(data.insert(key.to_owned(), entry));
         drop(data);
 
+        Ok(())
+    }
+
+    async fn set_without_expiry(&self, key: &str, value: &str) -> AuthResult<()> {
+        let mut data = self
+            .data
+            .lock()
+            .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
+        drop(data.insert(
+            key.to_owned(),
+            CacheEntry {
+                value: value.to_owned(),
+                expires_at: None,
+            },
+        ));
         Ok(())
     }
 
@@ -260,7 +291,7 @@ impl CacheAdapter for MemoryCacheAdapter {
         let now = Utc::now();
 
         data.get(key).map_or(Ok(None), |entry| {
-            if entry.expires_at > now {
+            if entry.expires_at.is_none_or(|expiration| expiration > now) {
                 Ok(Some(entry.value.clone()))
             } else {
                 Ok(None)
@@ -286,7 +317,11 @@ impl CacheAdapter for MemoryCacheAdapter {
             .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
         Ok(data
             .remove(key)
-            .filter(|entry| entry.expires_at > Utc::now())
+            .filter(|entry| {
+                entry
+                    .expires_at
+                    .is_none_or(|expiration| expiration > Utc::now())
+            })
             .map(|entry| entry.value))
     }
 
@@ -301,7 +336,10 @@ impl CacheAdapter for MemoryCacheAdapter {
             .data
             .lock()
             .map_err(|_| AuthError::internal("Cache lock poisoned"))?;
-        if let Some(entry) = data.get_mut(key).filter(|entry| entry.expires_at > now) {
+        if let Some(entry) = data
+            .get_mut(key)
+            .filter(|entry| entry.expires_at.is_none_or(|expiration| expiration > now))
+        {
             let count =
                 entry.value.parse::<f64>().map_err(|_| {
                     AuthError::internal("Cache counter contains a non-numeric value")
@@ -313,7 +351,7 @@ impl CacheAdapter for MemoryCacheAdapter {
             key.to_owned(),
             CacheEntry {
                 value: "1".to_owned(),
-                expires_at,
+                expires_at: Some(expires_at),
             },
         ));
         drop(data);
@@ -329,8 +367,9 @@ impl CacheAdapter for MemoryCacheAdapter {
             .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
         let now = Utc::now();
 
-        data.get(key)
-            .map_or(Ok(false), |entry| Ok(entry.expires_at > now))
+        data.get(key).map_or(Ok(false), |entry| {
+            Ok(entry.expires_at.is_none_or(|expiration| expiration > now))
+        })
     }
 
     async fn expire(&self, key: &str, expires_in: Duration) -> AuthResult<()> {
@@ -340,7 +379,7 @@ impl CacheAdapter for MemoryCacheAdapter {
             .map_err(|_error| AuthError::internal("Cache lock poisoned"))?;
 
         if let Some(entry) = data.get_mut(key) {
-            entry.expires_at = Utc::now() + expires_in;
+            entry.expires_at = Some(Utc::now() + expires_in);
         }
         drop(data);
 
@@ -374,9 +413,7 @@ mod tests {
     async fn atomic_cache_consumption_has_one_winner_and_rejects_expired_values() -> AuthResult<()>
     {
         let cache = Arc::new(MemoryCacheAdapter::new());
-        cache
-            .set("token", "single-use", Duration::minutes(1))
-            .await?;
+        cache.set_without_expiry("token", "single-use").await?;
         let barrier = Arc::new(Barrier::new(8));
         let mut tasks = JoinSet::new();
         for _ in 0..8 {
@@ -402,6 +439,11 @@ mod tests {
             .await?;
         assert!(cache.get_and_delete("expired").await?.is_none());
         assert!(!cache.exists("expired").await?);
+        cache.set_without_expiry("expired", "renewed").await?;
+        assert!(cache.exists("expired").await?);
+        assert_eq!(cache.get("expired").await?.as_deref(), Some("renewed"));
+        cache.expire("expired", Duration::seconds(-1)).await?;
+        assert!(cache.get_and_delete("expired").await?.is_none());
         Ok(())
     }
 }

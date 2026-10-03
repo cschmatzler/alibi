@@ -1,4 +1,7 @@
 mod callbacks;
+mod secondary_usage;
+mod storage;
+pub use storage::{ApiKeyStorage, ApiKeyStorageMode};
 mod endpoint;
 pub use endpoint::{ApiKeyVerificationInput, ApiKeyVerificationOutput};
 
@@ -235,6 +238,15 @@ pub struct ApiKeyConfig {
     /// organization.
     pub references: ApiKeyReferences,
 
+    /// Database persistence (default) or application-owned secondary storage.
+    pub storage: ApiKeyStorageMode,
+    /// Use database rows for durable writes and admission in secondary mode.
+    pub fallback_to_database: bool,
+    /// Shared secondary cache for this plugin, independent of session persistence.
+    pub secondary_storage: Option<Arc<dyn better_auth_core::store::CacheAdapter>>,
+    /// Application storage overriding the plugin's secondary cache.
+    pub custom_storage: Option<Arc<dyn ApiKeyStorage>>,
+
     // -- key generation --
     /// Raw length excluding the prefix. Zero and NaN use 64; the built-in
     /// generator admits safely terminating fractions from 0.5 upward.
@@ -289,7 +301,8 @@ pub struct ApiKeyConfig {
 
     // -- session emulation --
     pub enable_session_for_api_keys: bool,
-    /// Register automatic cleanup with the application background handler.
+    /// Start secondary-only usage merges and automatic cleanup in background work.
+    /// The application background handler receives completion observations.
     /// Successful trusted verification launches cleanup only when enabled.
     /// Database quota and rate-limit admission remain atomic and awaited.
     pub defer_updates: bool,
@@ -330,6 +343,10 @@ impl std::fmt::Debug for ApiKeyConfig {
                 "enable_session_for_api_keys",
                 &self.enable_session_for_api_keys,
             )
+            .field("storage", &self.storage)
+            .field("fallback_to_database", &self.fallback_to_database)
+            .field("secondary_storage", &self.secondary_storage.is_some())
+            .field("custom_storage", &self.custom_storage.is_some())
             .field("defer_updates", &self.defer_updates)
             .finish_non_exhaustive()
     }
@@ -384,6 +401,10 @@ impl Default for RateLimitDefaults {
 impl Default for ApiKeyConfig {
     fn default() -> Self {
         Self {
+            storage: ApiKeyStorageMode::Database,
+            fallback_to_database: false,
+            custom_storage: None,
+            secondary_storage: None,
             config_id: "default".to_owned(),
             references: ApiKeyReferences::default(),
             key_length: 64.0,
@@ -433,6 +454,10 @@ impl ApiKeyPlugin {
     pub fn new(
         #[builder(default = "default".to_owned())] config_id: String,
         #[builder(default)] references: ApiKeyReferences,
+        #[builder(default)] storage: ApiKeyStorageMode,
+        #[builder(default)] fallback_to_database: bool,
+        custom_storage: Option<Arc<dyn ApiKeyStorage>>,
+        secondary_storage: Option<Arc<dyn better_auth_core::store::CacheAdapter>>,
         #[builder(default = 64.0, into)] key_length: f64,
         prefix: Option<String>,
         default_permissions: Option<ApiKeyPermissions>,
@@ -460,6 +485,10 @@ impl ApiKeyPlugin {
                 ApiKeyConfig {
                     config_id,
                     references,
+                    storage,
+                    fallback_to_database,
+                    custom_storage,
+                    secondary_storage,
                     key_length,
                     prefix,
                     default_permissions,
@@ -585,7 +614,7 @@ impl ApiKeyPlugin {
         &self,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<()> {
-        drop(Self::start_expired_cleanup(ctx).await?);
+        drop(self.start_configured_cleanup(ctx).await?);
         Ok(())
     }
 
@@ -596,7 +625,7 @@ impl ApiKeyPlugin {
         &self,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<()> {
-        let completion = Self::start_expired_cleanup(ctx).await?;
+        let completion = self.start_configured_cleanup(ctx).await?;
         if let Some(handler) = &ctx.config.background_tasks {
             handler.handle(completion)
         } else {
@@ -608,6 +637,17 @@ impl ApiKeyPlugin {
     ///
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
+    pub(super) async fn start_configured_cleanup(
+        &self,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> AuthResult<better_auth_core::BackgroundTaskCompletion> {
+        if self.configurations.iter().any(ApiKeyConfig::uses_database) {
+            Self::start_expired_cleanup(ctx).await
+        } else {
+            Ok(Box::pin(async { Ok(()) }))
+        }
+    }
+
     pub(super) async fn start_expired_cleanup(
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<better_auth_core::BackgroundTaskCompletion> {
@@ -642,6 +682,12 @@ impl ApiKeyPlugin {
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> DeleteExpiredApiKeysResponse {
         let _ignored_result = admit_expired_cleanup(true);
+        if !self.configurations.iter().any(ApiKeyConfig::uses_database) {
+            return DeleteExpiredApiKeysResponse {
+                success: true,
+                error: None,
+            };
+        }
         if let Err(error) = ctx.database.delete_expired_api_keys().await {
             tracing::error!(%error, "Failed to delete expired API keys");
         }
@@ -853,8 +899,7 @@ impl ApiKeyPlugin {
             .get("id")
             .ok_or_else(|| AuthError::bad_request("Query parameter 'id' is required"))?;
         let config_id = req.query.get("configId").map(String::as_str);
-        let response = get_key_core(id, config_id, user.id(), self, ctx).await?;
-        Ok(AuthResponse::json(200, &response)?)
+        key_json_response(get_key_core(id, config_id, user.id(), self, ctx).await)
     }
 
     async fn handle_list(
@@ -870,8 +915,7 @@ impl ApiKeyPlugin {
             Ok(query) => query,
             Err(response) => return Ok(response),
         };
-        let response = list_keys_core(user.id(), &query, self, ctx).await?;
-        Ok(AuthResponse::json(200, &response)?)
+        key_json_response(list_keys_core(user.id(), &query, self, ctx).await)
     }
 
     async fn handle_update(
@@ -944,6 +988,19 @@ impl ApiKeyPlugin {
         };
         let response = delete_key_core(&body, user.id(), self, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
+    }
+}
+
+fn key_json_response<T: serde::Serialize>(result: AuthResult<T>) -> AuthResult<AuthResponse> {
+    match result {
+        Ok(response) => Ok(AuthResponse::json(200, &response)?),
+        Err(error)
+            if error.status_code() >= 500
+                && !matches!(error, AuthError::Upstream { .. } | AuthError::Api { .. }) =>
+        {
+            Ok(AuthResponse::new(500))
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -3657,6 +3714,364 @@ mod crud_tests {
                 .unwrap(),
             owner
         );
+    }
+    struct ApplicationKeyStorage {
+        cache: Arc<better_auth_core::store::MemoryCacheAdapter>,
+        fail_writes: std::sync::atomic::AtomicBool,
+    }
+    #[async_trait::async_trait]
+    impl ApiKeyStorage for ApplicationKeyStorage {
+        async fn get(&self, key: &str) -> AuthResult<Option<String>> {
+            use better_auth_core::store::CacheAdapter as _;
+            self.cache.get(key).await
+        }
+        async fn set(&self, key: &str, value: &str, ttl: Option<Duration>) -> AuthResult<()> {
+            use better_auth_core::store::CacheAdapter as _;
+            if self.fail_writes.load(std::sync::atomic::Ordering::SeqCst) {
+                return Err(AuthError::internal("application storage unavailable"));
+            }
+            match ttl {
+                Some(ttl) => self.cache.set(key, value, ttl).await,
+                None => self.cache.set_without_expiry(key, value).await,
+            }
+        }
+        async fn delete(&self, key: &str) -> AuthResult<()> {
+            use better_auth_core::store::CacheAdapter as _;
+            self.cache.delete(key).await
+        }
+    }
+    #[derive(Default)]
+    struct ApplicationCompletions(
+        std::sync::Mutex<Vec<better_auth_core::BackgroundTaskCompletion>>,
+    );
+    impl better_auth_core::BackgroundTaskHandler for ApplicationCompletions {
+        fn handle(&self, completion: better_auth_core::BackgroundTaskCompletion) -> AuthResult<()> {
+            self.0.lock().unwrap().push(completion);
+            Ok(())
+        }
+    }
+    impl ApplicationCompletions {
+        async fn drain(&self) {
+            let tasks = std::mem::take(&mut *self.0.lock().unwrap());
+            for task in tasks {
+                task.await.unwrap();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn source_boxed_metadata_rows_list_successfully_without_mutating_storage() {
+        use better_auth_core::store::{CacheAdapter, MemoryCacheAdapter};
+        let (ctx, owner, token) = context().await;
+        let cache = Arc::new(MemoryCacheAdapter::new());
+        let plugin = ApiKeyPlugin::with_config(ApiKeyConfig {
+            storage: ApiKeyStorageMode::SecondaryStorage,
+            secondary_storage: Some(cache.clone()),
+            ..Default::default()
+        });
+        let mut rows = Vec::new();
+        let mut expected = std::collections::BTreeMap::new();
+        // Actual pinned Source trusted creation admits boxed String("10"),
+        // String("2"), Number(3), then serializes these primitive metadata
+        // values. Their relational comparator is cyclic. Listing still
+        // succeeds; no cross-engine total ordering is specified.
+        for index in 0..64 {
+            let created = server_key(&plugin, &ctx, &owner, "default").await;
+            let id = format!("api-key:by-id:{}", created.api_key.id);
+            let hash = format!("api-key:{}", ApiKeyPlugin::hash_key(&created.key));
+            let mut row: serde_json::Value =
+                serde_json::from_str(&cache.get(&id).await.unwrap().unwrap()).unwrap();
+            *row.get_mut("metadata").unwrap() = match index % 6 {
+                0 => json!("10"),
+                1 => json!("2"),
+                2 => json!(3),
+                3 => json!(null),
+                4 => json!("0"),
+                _ => json!({"literal":"object"}),
+            };
+            let value = serde_json::to_string(&row).unwrap();
+            cache.set_without_expiry(&id, &value).await.unwrap();
+            cache.set_without_expiry(&hash, &value).await.unwrap();
+            rows.push((id, value.clone()));
+            rows.push((hash, value));
+            expected.insert(
+                created.api_key.id,
+                [
+                    json!(10),
+                    json!(2),
+                    json!(3),
+                    json!(null),
+                    json!(0),
+                    json!({"literal":"object"}),
+                ]
+                .get(index % 6)
+                .unwrap()
+                .clone(),
+            );
+        }
+        let reference = format!("api-key:by-ref:{owner}");
+        let reference_before = cache.get(&reference).await.unwrap();
+        for direction in ["asc", "desc"] {
+            let mut req = request(&token, "/api-key/list", &json!(null));
+            req.method = HttpMethod::Get;
+            req.body = None;
+            req.query = HashMap::from([
+                ("sortBy".to_owned(), "metadata".to_owned()),
+                ("sortDirection".to_owned(), direction.to_owned()),
+            ]);
+            let response = plugin.handle_list(&req, &ctx).await.unwrap();
+            assert_eq!(response.status, 200);
+            let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            assert_eq!(body.get("total").unwrap(), 64);
+            let actual: std::collections::BTreeMap<_, _> = body
+                .get("apiKeys")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    (
+                        row.get("id").unwrap().as_str().unwrap().to_owned(),
+                        row.get("metadata").unwrap().clone(),
+                    )
+                })
+                .collect();
+            assert_eq!(actual, expected);
+            for (index, value) in &rows {
+                assert_eq!(
+                    cache.get(index).await.unwrap().as_deref(),
+                    Some(value.as_str())
+                );
+            }
+            assert_eq!(cache.get(&reference).await.unwrap(), reference_before);
+            assert!(
+                ctx.database
+                    .list_api_keys_by_reference(&owner)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn application_storage_preserves_authority_indexes_and_usage() {
+        use better_auth_core::store::{CacheAdapter, MemoryCacheAdapter};
+        // HTTP creation and trusted verification use the real plugin and stores;
+        // independent database reads prove secondary-only keys create no SQL rows.
+        for (fallback, custom, deferred) in [
+            (false, false, false),
+            (true, false, false),
+            (false, true, false),
+            (true, true, false),
+            (false, true, true),
+            (true, true, true),
+        ] {
+            let (mut ctx, owner, token) = context().await;
+            let completions = Arc::new(ApplicationCompletions::default());
+            Arc::make_mut(&mut ctx.config).background_tasks = Some(completions.clone());
+            let outsider = ctx
+                .database
+                .create_user(
+                    CreateUser::new()
+                        .with_email("outsider@example.com")
+                        .with_name("outsider"),
+                )
+                .await
+                .unwrap();
+            let cache = Arc::new(MemoryCacheAdapter::new());
+            let decoy = Arc::new(MemoryCacheAdapter::new());
+            let application = Arc::new(ApplicationKeyStorage {
+                cache: cache.clone(),
+                fail_writes: std::sync::atomic::AtomicBool::new(false),
+            });
+            let plugin = ApiKeyPlugin::with_config(ApiKeyConfig {
+                storage: ApiKeyStorageMode::SecondaryStorage,
+                secondary_storage: Some(
+                    if custom { decoy.clone() } else { cache.clone() } as Arc<dyn CacheAdapter>
+                ),
+                custom_storage: custom.then(|| application.clone() as Arc<dyn ApiKeyStorage>),
+                fallback_to_database: fallback,
+                defer_updates: deferred,
+                rate_limit: RateLimitDefaults {
+                    enabled: false,
+                    ..Default::default()
+                },
+                ..Default::default()
+            });
+            let response = plugin
+                .handle_create(
+                    &request(&token, "/api-key/create", &json!({"name":"stored"})),
+                    &ctx,
+                )
+                .await
+                .unwrap();
+            let created: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            let id = created.get("id").unwrap().as_str().unwrap();
+            let raw = created.get("key").unwrap().as_str().unwrap();
+            plugin
+                .update_key(
+                    &ctx,
+                    &UpdateKeyRequest {
+                        key_id: id.to_owned(),
+                        user_id: Some(owner.clone()),
+                        remaining: Some(2.0),
+                        ..Default::default()
+                    },
+                )
+                .await
+                .unwrap();
+            let hash = ApiKeyPlugin::hash_key(raw);
+            let by_id = format!("api-key:by-id:{id}");
+            let by_hash = format!("api-key:{hash}");
+            let by_ref = format!("api-key:by-ref:{owner}");
+            let initial = cache.get(&by_id).await.unwrap().unwrap();
+            assert_eq!(cache.get(&by_hash).await.unwrap(), Some(initial.clone()));
+            assert_eq!(
+                ctx.database.get_api_key_by_id(id).await.unwrap().is_some(),
+                fallback
+            );
+            assert_eq!(cache.get(&by_ref).await.unwrap().is_none(), fallback);
+            assert!(
+                get_key_core(id, None, &outsider.id().to_string(), &plugin, &ctx)
+                    .await
+                    .is_err()
+            );
+            assert_eq!(cache.get(&by_id).await.unwrap(), Some(initial.clone()));
+            assert!(
+                plugin
+                    .verify_api_key(
+                        &VerifyApiKey {
+                            key: raw,
+                            config_id: Some("wrong"),
+                            permissions: None
+                        },
+                        &ctx
+                    )
+                    .await
+                    .is_err()
+            );
+            assert_eq!(cache.get(&by_id).await.unwrap(), Some(initial));
+            let list = list_keys_core(&owner, &ListKeysQuery::default(), &plugin, &ctx)
+                .await
+                .unwrap();
+            assert_eq!(list.total, 1);
+            let input = VerifyApiKey {
+                key: raw,
+                config_id: None,
+                permissions: None,
+            };
+            assert_eq!(
+                plugin.verify_api_key(&input, &ctx).await.unwrap().remaining,
+                Some(1.0)
+            );
+            completions.drain().await;
+            assert!(decoy.get(&by_id).await.unwrap().is_none());
+            let row: better_auth_core::ApiKey =
+                serde_json::from_str(&cache.get(&by_id).await.unwrap().unwrap()).unwrap();
+            assert_eq!(row.remaining, Some(1.0));
+            assert_eq!(row.reference_id, owner);
+            assert_eq!(
+                cache.get(&by_hash).await.unwrap(),
+                cache.get(&by_id).await.unwrap()
+            );
+            if fallback {
+                let persisted = ctx.database.get_api_key_by_id(id).await.unwrap().unwrap();
+                let mut persisted_json = serde_json::to_value(&persisted).unwrap();
+                // The database model stores JSON text; the public application
+                // storage contract stores the actual metadata value.
+                *persisted_json.get_mut("metadata").unwrap() =
+                    serde_json::from_str(persisted.metadata.as_deref().unwrap_or("null")).unwrap();
+                assert_eq!(persisted_json, serde_json::to_value(&row).unwrap());
+                cache.delete(&by_id).await.unwrap();
+                cache.delete(&by_hash).await.unwrap();
+                assert_eq!(
+                    get_key_core(id, None, &owner, &plugin, &ctx)
+                        .await
+                        .unwrap()
+                        .remaining,
+                    Some(1.0)
+                );
+                assert_eq!(
+                    cache.get(&by_hash).await.unwrap(),
+                    cache.get(&by_id).await.unwrap()
+                );
+            }
+            assert_eq!(
+                plugin.verify_api_key(&input, &ctx).await.unwrap().remaining,
+                Some(0.0)
+            );
+            completions.drain().await;
+            assert!(plugin.verify_api_key(&input, &ctx).await.is_err());
+            completions.drain().await;
+            assert!(cache.get(&by_id).await.unwrap().is_none());
+            assert!(cache.get(&by_hash).await.unwrap().is_none());
+            assert!(cache.get(&by_ref).await.unwrap().is_none());
+            assert!(ctx.database.get_api_key_by_id(id).await.unwrap().is_none());
+            if custom {
+                let target = plugin
+                    .create_key(
+                        &ctx,
+                        &CreateKeyRequest {
+                            user_id: Some(owner.clone()),
+                            remaining: Some(4.0),
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .unwrap();
+                let raw = target.key.as_str();
+                let key_id = &target.api_key.id;
+                let id_index = format!("api-key:by-id:{key_id}");
+                let hash_index = format!("api-key:{}", ApiKeyPlugin::hash_key(raw));
+                let before = cache.get(&id_index).await.unwrap();
+                application
+                    .fail_writes
+                    .store(true, std::sync::atomic::Ordering::SeqCst);
+                let input = VerifyApiKey {
+                    key: raw,
+                    config_id: None,
+                    permissions: None,
+                };
+                let failed = plugin.verify_api_key(&input, &ctx).await;
+                assert_eq!(failed.is_ok(), deferred && !fallback);
+                completions.drain().await;
+                assert_eq!(cache.get(&id_index).await.unwrap(), before);
+                assert_eq!(cache.get(&hash_index).await.unwrap(), before);
+                if fallback {
+                    assert_eq!(
+                        ctx.database
+                            .get_api_key_by_id(key_id)
+                            .await
+                            .unwrap()
+                            .unwrap()
+                            .remaining,
+                        Some(3.0)
+                    );
+                } else {
+                    assert!(
+                        ctx.database
+                            .get_api_key_by_id(key_id)
+                            .await
+                            .unwrap()
+                            .is_none()
+                    );
+                }
+                application
+                    .fail_writes
+                    .store(false, std::sync::atomic::Ordering::SeqCst);
+                let retried = plugin.verify_api_key(&input, &ctx).await.unwrap();
+                assert_eq!(retried.remaining, Some(if fallback { 2.0 } else { 3.0 }));
+                completions.drain().await;
+                assert_eq!(
+                    cache.get(&hash_index).await.unwrap(),
+                    cache.get(&id_index).await.unwrap()
+                );
+                let row: better_auth_core::ApiKey =
+                    serde_json::from_str(&cache.get(&id_index).await.unwrap().unwrap()).unwrap();
+                assert_eq!(row.remaining, retried.remaining);
+            }
+        }
     }
 }
 // LCOV_EXCL_STOP
