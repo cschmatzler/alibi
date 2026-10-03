@@ -2,8 +2,9 @@ use better_auth_core::utils::username::UsernameConfig;
 use better_auth_core::{
     AuthConfig, AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse,
     AuthResult, AuthRoute, AuthSchema, AuthStore, BeforeRequestAction, EmailProvider,
-    ErrorCodeMessageResponse, HttpMethod, OkResponse, OpenApiBuilder, OpenApiRegistry, OpenApiSpec,
-    SessionManager, UpdateUser, UpdateUserRequest, core_paths,
+    ErrorCodeMessageResponse, HttpEndpointResponse, HttpMethod, HttpRequestAction, OkResponse,
+    OpenApiBuilder, OpenApiRegistry, OpenApiSpec, SessionManager, UpdateUser, UpdateUserRequest,
+    core_paths,
     entity::AuthUser,
     hooks::{RequestHookContext, with_request_hook_context_value},
     middleware::{
@@ -19,6 +20,7 @@ pub struct BetterAuth<S: AuthSchema> {
     pub(super) plugins: Vec<Box<dyn AuthPlugin<S>>>,
     transport_middlewares: Vec<Box<dyn Middleware>>,
     middlewares: Vec<Box<dyn Middleware>>,
+    cors: CorsMiddleware,
     request_protection: CsrfMiddleware,
     body_limit: BodyLimitConfig,
     store: Arc<dyn AuthStore<S>>,
@@ -374,11 +376,8 @@ impl<S: AuthSchema> AuthBuilder<S> {
                     ),
             ),
         ];
-        let mut middlewares: Vec<Box<dyn Middleware>> = vec![Box::new(CorsMiddleware::new(
-            self.cors_config.unwrap_or_default(),
-        ))];
-
-        middlewares.extend(self.custom_middlewares);
+        let cors = CorsMiddleware::new(self.cors_config.unwrap_or_default());
+        let middlewares = self.custom_middlewares;
 
         if self.telemetry.is_enabled() {
             self.telemetry
@@ -401,6 +400,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
             plugins: self.plugins,
             transport_middlewares,
             middlewares,
+            cors,
             request_protection,
             body_limit,
             store: store_2,
@@ -449,25 +449,8 @@ impl<S: AuthSchema> BetterAuth<S> {
     ///
     /// Propagates errors from after-response middleware. Route and plugin errors become error responses.
     pub async fn handle_request(&self, req: AuthRequest) -> AuthResult<AuthResponse> {
-        // Reset caller-supplied session context, typed extensions and queued headers.
-        // Only trusted handlers and hooks may establish them during dispatch.
-        let query_pairs = req
-            .query
-            .keys()
-            .flat_map(|name| {
-                req.query_values(name)
-                    .into_iter()
-                    .flatten()
-                    .map(|value| (name.clone(), value.clone()))
-            })
-            .collect::<Vec<_>>();
-        let request_url = req.url().cloned();
-        let mut req =
-            AuthRequest::from_parts(req.method, req.path, req.headers, req.body, req.query);
-        if let Some(url) = request_url {
-            req = req.with_url(url);
-        }
-        req.set_query_pairs(query_pairs);
+        // Incoming callers cannot carry trusted dispatch state into this instance.
+        let mut req = fresh_http_request(req);
         req.extensions()
             .insert(self.config.advanced.ip_address.clone());
 
@@ -481,6 +464,11 @@ impl<S: AuthSchema> BetterAuth<S> {
             },
             Err(error) => return Ok(error.to_auth_response()),
         };
+        // Source resolves request-local configuration before physical HTTP hooks.
+        // Replacements change routing, but do not resolve origins/providers again.
+        if let Some(response) = self.prepare_http_request(&mut req, &context).await? {
+            return middleware::run_after(&self.transport_middlewares, &req, response).await;
+        }
         let request_context = RequestHookContext::from_request(&req);
         better_auth_core::endpoint::without_endpoint_call_context(with_request_hook_context_value(
             request_context,
@@ -539,6 +527,27 @@ impl<S: AuthSchema> BetterAuth<S> {
                         .unwrap_or_else(|| req.path())
                         .to_owned();
                 }
+                if let Some(frame) = req.extensions().get::<super::endpoint::HttpEndpointFrame>() {
+                    if let Some(path) = frame.call.path() {
+                        hook_request.path = path.to_owned();
+                    }
+                    if let Some(method) = frame.call.method() {
+                        hook_request.method = method.clone();
+                    }
+                }
+                if run_after_hooks {
+                    response = match self
+                        .after_http_endpoint(&hook_request, &context, response)
+                        .await
+                    {
+                        Ok(response) => response,
+                        Err(error) => {
+                            run_after_hooks = false;
+                            drop(req.take_response_headers());
+                            error.to_auth_response()
+                        }
+                    };
+                }
                 for plugin in self.plugins.iter().filter(|_| run_after_hooks) {
                     let accumulated_headers = response.headers.clone();
                     response = match plugin
@@ -573,11 +582,59 @@ impl<S: AuthSchema> BetterAuth<S> {
                         }
                     }
                 }
-                let response = middleware::run_after(&self.middlewares, &req, response).await?;
+                let mut response = middleware::run_after(&self.middlewares, &req, response).await?;
+                for plugin in &self.plugins {
+                    if let Some(replacement) =
+                        plugin.on_http_response(&req, &context, &response).await?
+                    {
+                        response = replacement;
+                        break;
+                    }
+                }
+                let response = self.cors.after_request(&req, response).await?;
                 middleware::run_after(&self.transport_middlewares, &req, response).await
             },
         ))
         .await
+    }
+
+    async fn prepare_http_request(
+        &self,
+        req: &mut AuthRequest,
+        context: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        let base_path = self.config.base_path.trim_end_matches('/');
+        let requested_path = req
+            .path()
+            .strip_prefix(base_path)
+            .filter(|suffix| suffix.starts_with('/'))
+            .unwrap_or_else(|| req.path());
+        let disabled_path = requested_path.trim_end_matches('/');
+        if self.config.is_path_disabled(disabled_path) {
+            let mut response = AuthResponse::new(404);
+            response.body = b"Not Found".to_vec();
+            return Ok(Some(response));
+        }
+
+        // Run before-request middleware chain
+        if let Some(response) = middleware::run_before(&self.transport_middlewares, req).await? {
+            return Ok(Some(response));
+        }
+
+        for plugin in &self.plugins {
+            if let Some(action) = plugin.on_http_request_action(req, context).await? {
+                match action {
+                    HttpRequestAction::Respond(response) => return Ok(Some(response)),
+                    HttpRequestAction::ReplaceRequest(replacement) => {
+                        *req = fresh_http_request(*replacement);
+                        req.extensions()
+                            .insert(context.config.advanced.ip_address.clone());
+                    }
+                }
+            }
+        }
+
+        Ok(None)
     }
 
     /// Inner request handler that may return errors.
@@ -587,31 +644,9 @@ impl<S: AuthSchema> BetterAuth<S> {
         run_after_hooks: &mut bool,
         context: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
-        let base_path = self.config.base_path.trim_end_matches('/');
-        let requested_path = req
-            .path()
-            .strip_prefix(base_path)
-            .filter(|suffix| suffix.starts_with('/'))
-            .unwrap_or_else(|| req.path());
-        let disabled_path = requested_path.trim_end_matches('/');
-        if self.config.is_path_disabled(disabled_path) {
-            let mut response =
-                AuthResponse::new(404).with_header("content-type", "text/plain;charset=utf-8");
-            response.body = b"Not Found".to_vec();
+        if let Some(response) = self.cors.before_request(req).await? {
             return Ok(response);
         }
-
-        // Run before-request middleware chain
-        if let Some(response) = middleware::run_before(&self.transport_middlewares, req).await? {
-            return Ok(response);
-        }
-
-        for plugin in &self.plugins {
-            if let Some(response) = plugin.on_http_request(req, context).await? {
-                return Ok(response);
-            }
-        }
-
         if let Some(response) = middleware::run_before(&self.middlewares, req).await? {
             return Ok(response);
         }
@@ -699,6 +734,34 @@ impl<S: AuthSchema> BetterAuth<S> {
                 params,
             });
 
+        let global_route = plugin_route
+            .as_ref()
+            .map(|(_, route)| route.clone())
+            .unwrap_or_else(|| {
+                AuthRoute::new(
+                    internal_req.method.clone(),
+                    internal_req.path.clone(),
+                    match internal_req.path() {
+                        core_paths::OK => "ok",
+                        core_paths::ERROR => "error",
+                        core_paths::OPENAPI_SPEC => "generateOpenAPISchema",
+                        _ => "updateUser",
+                    },
+                )
+            });
+        if let Some(response) = self
+            .before_http_endpoint(&mut internal_req, &global_route, context)
+            .await?
+        {
+            return Ok(response);
+        }
+        if let Some(frame) = internal_req
+            .extensions()
+            .get::<super::endpoint::HttpEndpointFrame>()
+        {
+            req.extensions().insert((*frame).clone());
+        }
+
         // Run plugin before_request hooks (e.g. API-key → session emulation)
         // Plugins now see the normalised (base_path-stripped) path.
         for plugin in &self.plugins {
@@ -714,6 +777,14 @@ impl<S: AuthSchema> BetterAuth<S> {
                         internal_req.set_virtual_session(session);
                     }
                     BeforeRequestAction::ReplaceHeaders { headers } => {
+                        if let Some(frame) = internal_req
+                            .extensions()
+                            .get::<super::endpoint::HttpEndpointFrame>()
+                        {
+                            let mut frame = (*frame).clone();
+                            frame.legacy_headers = Some(headers.clone());
+                            internal_req.extensions().insert(frame);
+                        }
                         req.headers.clone_from(&headers);
                         internal_req.headers = headers;
                     }
@@ -721,25 +792,67 @@ impl<S: AuthSchema> BetterAuth<S> {
             }
         }
 
+        // Source accumulates returned context patches until all before hooks finish.
+        self.apply_http_endpoint_input(&mut internal_req)?;
+        req.headers.clone_from(&internal_req.headers);
+        req.body.clone_from(&internal_req.body);
+        req.set_query_pairs(internal_req.query.keys().flat_map(|name| {
+            internal_req
+                .query_values(name)
+                .into_iter()
+                .flatten()
+                .map(|value| (name.clone(), value.clone()))
+        }));
+
         // A before-hook response or rejection returns immediately upstream.
         // Only endpoint dispatch reaches the completed-response hook pipeline.
         *run_after_hooks = true;
 
-        // Handle core endpoints first
-        if let Some(response) = self.handle_core_request(&internal_req, context).await? {
-            return Ok(response);
-        }
-
-        // Dispatch only the resolved HTTP endpoint. A server-only handler from
-        // another plugin may share this path and must never receive the call.
-        if let Some((plugin, _route)) = plugin_route
-            && let Some(response) = plugin.on_request(&internal_req, context).await?
+        let handler = async {
+            if let Some(response) = self.handle_core_request(&internal_req, context).await? {
+                return Ok(response);
+            }
+            // Only the resolved installed HTTP endpoint can receive the call.
+            if let Some((plugin, _route)) = plugin_route
+                && let Some(response) = plugin.on_http_endpoint(&internal_req, context).await?
+            {
+                return match response {
+                    HttpEndpointResponse::Value(response) => Ok(response),
+                    HttpEndpointResponse::Raw(response) => {
+                        *run_after_hooks = false;
+                        // A raw endpoint response bypasses the dispatch accumulator.
+                        drop(internal_req.take_response_headers());
+                        drop(better_auth_core::cache::runtime::take_issuance(
+                            internal_req.extensions(),
+                        ));
+                        Ok(response)
+                    }
+                };
+            }
+            Err(AuthError::not_found("No handler found for this request"))
+        };
+        if let Some(frame) = internal_req
+            .extensions()
+            .get::<super::endpoint::HttpEndpointFrame>()
         {
-            return Ok(response);
+            let result = better_auth_core::endpoint::with_endpoint_call_context(
+                frame.call.clone(),
+                Box::pin(handler),
+            )
+            .await;
+            if let Err(error) = &result
+                && better_auth_core::endpoint::is_endpoint_api_error(error)
+            {
+                *frame
+                    .error
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) =
+                    Some(error.error_payload());
+            }
+            result
+        } else {
+            handler.await
         }
-
-        // No handler found
-        Err(AuthError::not_found("No handler found for this request"))
     }
 
     /// Get the configuration.
@@ -1284,4 +1397,32 @@ impl AuthBuilder<crate::store::StatelessSchema> {
         builder.has_external_store = false;
         builder
     }
+}
+
+/// Retain only physical request data across public dispatch and HTTP replacements.
+fn fresh_http_request(request: AuthRequest) -> AuthRequest {
+    let query_pairs = request
+        .query
+        .keys()
+        .flat_map(|name| {
+            request
+                .query_values(name)
+                .into_iter()
+                .flatten()
+                .map(|value| (name.clone(), value.clone()))
+        })
+        .collect::<Vec<_>>();
+    let url = request.url().cloned();
+    let mut fresh = AuthRequest::from_parts(
+        request.method,
+        request.path,
+        request.headers,
+        request.body,
+        request.query,
+    );
+    if let Some(url) = url {
+        fresh = fresh.with_url(url);
+    }
+    fresh.set_query_pairs(query_pairs);
+    fresh
 }

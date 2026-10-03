@@ -79,6 +79,25 @@ pub enum BeforeRequestAction {
     ReplaceHeaders { headers: HashMap<String, String> },
 }
 
+/// Physical HTTP hook control flow, before route selection and endpoint hooks.
+#[derive(Debug)]
+pub enum HttpRequestAction {
+    /// Finish transport processing without endpoint or HTTP response hooks.
+    Respond(AuthResponse),
+    /// Replace physical input for later HTTP hooks and route selection.
+    /// Dispatch discards session state, extensions and queued headers on this value.
+    ReplaceRequest(Box<AuthRequest>),
+}
+
+/// Endpoint output distinguishing a logical value from a native raw response.
+/// Raw responses bypass completed endpoint hooks, while HTTP response hooks
+/// still observe them, matching a Source endpoint returning a `Response`.
+#[derive(Debug)]
+pub enum HttpEndpointResponse {
+    Value(AuthResponse),
+    Raw(AuthResponse),
+}
+
 /// Plugin trait that all authentication plugins must implement.
 ///
 #[async_trait]
@@ -173,6 +192,33 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         Ok(None)
     }
 
+    /// Inspect or replace the physical request. The default preserves existing
+    /// `on_http_request` implementations. Request-local configuration has already
+    /// been resolved from the incoming request, matching the Source HTTP handler.
+    async fn on_http_request_action(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<HttpRequestAction>> {
+        Ok(self
+            .on_http_request(req, ctx)
+            .await?
+            .map(HttpRequestAction::Respond))
+    }
+
+    /// Observe the routed HTTP response before transport middleware (including CORS).
+    /// Hooks run in registration order; the first replacement stops this chain.
+    /// Early HTTP request-hook responses skip this stage. Errors escape dispatch;
+    /// they cannot reverse writes already committed by an endpoint.
+    async fn on_http_response(
+        &self,
+        _req: &AuthRequest,
+        _ctx: &AuthContext<S>,
+        _response: &AuthResponse,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+
     /// Called after route matching and before endpoint dispatch.
     ///
     /// Return `Some(BeforeRequestAction::Respond(..))` to short-circuit with a
@@ -194,6 +240,20 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>>;
+
+    /// Dispatch the resolved HTTP endpoint. Existing plugins return logical
+    /// values through `on_request`; plugins returning a native raw response can
+    /// override this method to bypass the endpoint after-hook pipeline.
+    async fn on_http_endpoint(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<HttpEndpointResponse>> {
+        Ok(self
+            .on_request(req, ctx)
+            .await?
+            .map(HttpEndpointResponse::Value))
+    }
 
     /// Transform a completed response, including redirects and rejections.
     ///

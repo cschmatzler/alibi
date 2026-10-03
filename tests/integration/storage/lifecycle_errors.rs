@@ -7,7 +7,10 @@ use better_auth_core::{
 };
 use std::sync::{Arc, Mutex};
 
-backend_tests!(endpoint_callback_errors_drop_headers_without_reversing_writes);
+backend_tests!(
+    endpoint_callback_errors_drop_headers_without_reversing_writes,
+    configured_endpoint_hooks_apply_to_http_before_plugin_hooks
+);
 
 struct Writer;
 
@@ -136,5 +139,72 @@ async fn endpoint_callback_errors_drop_headers_without_reversing_writes<B: Backe
         }
     }
     assert_eq!(*observed.lock().expect("observer mutex"), vec![403, 204]);
+    B::close(connection).await
+}
+
+struct ConfiguredHook;
+#[async_trait]
+impl<S: AuthSchema> better_auth_core::endpoint::EndpointHook<S> for ConfiguredHook {
+    async fn before(
+        &self,
+        call: &better_auth_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<better_auth_core::endpoint::BeforeEndpointAction>> {
+        if call
+            .headers()
+            .and_then(|headers| headers.get("x-mode"))
+            .map(String::as_str)
+            == Some("ordinary")
+        {
+            return Ok(Some(
+                better_auth_core::endpoint::BeforeEndpointAction::Respond(
+                    better_auth_core::endpoint::EndpointResponse::json(
+                        &serde_json::json!({"stopped":true}),
+                    )?,
+                ),
+            ));
+        }
+        Ok(None)
+    }
+    async fn after(
+        &self,
+        _call: &better_auth_core::endpoint::EndpointCall,
+        _ctx: &AuthContext<S>,
+        response: better_auth_core::endpoint::EndpointResponse,
+    ) -> AuthResult<better_auth_core::endpoint::EndpointResponse> {
+        Ok(response.with_header("x-global", "observed"))
+    }
+}
+
+async fn configured_endpoint_hooks_apply_to_http_before_plugin_hooks<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let secret = "close181-configured-hook-secret-32";
+    let (connection, store) = db.migrated::<B>(secret).await?;
+    let observed = Arc::new(Mutex::new(Vec::new()));
+    let auth = AuthBuilder::<B::Schema>::new(AuthConfig::new(secret))
+        .store(store)
+        .endpoint_hook(ConfiguredHook)
+        .plugin(Writer)
+        .plugin(Observer(Arc::clone(&observed)))
+        .build()
+        .await?;
+    let mut req = AuthRequest::new(HttpMethod::Get, "/api/auth/callback-error");
+    _ = req.headers.insert("x-mode".into(), "ordinary".into());
+    let stopped = auth.handle_request(req).await?;
+    assert_eq!(
+        stopped.status, 200,
+        "configured global before must prevent the endpoint write"
+    );
+    assert_eq!(db.count("users").await?, 0);
+    assert!(observed.lock().expect("observer mutex").is_empty());
+    let response = auth
+        .handle_request(AuthRequest::new(HttpMethod::Get, "/api/auth/ok"))
+        .await?;
+    assert_eq!(
+        response.headers.get("x-global").map(String::as_str),
+        Some("observed")
+    );
+    assert_eq!(*observed.lock().expect("observer mutex"), vec![200]);
     B::close(connection).await
 }
