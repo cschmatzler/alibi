@@ -256,8 +256,7 @@ where
             query = apply_member_sort(query, &legacy_filter);
         }
         let backend = self.connection().get_database_backend();
-        let statement =
-            super::numeric_page::bind_page(query.build(backend), params.limit, params.offset)?;
+        let statement = super::bind_page(query.build(backend), params.limit, params.offset)?;
         Entity::find()
             .from_raw_sql(statement)
             .all(self.connection())

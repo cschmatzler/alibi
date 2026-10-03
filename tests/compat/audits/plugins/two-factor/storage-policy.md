@@ -58,7 +58,7 @@ One core extension-contract test proves all unsupported security operations
 return 501 instead of succeeding. The real SQLite tests cannot exercise that
 custom-store default boundary. Existing nine native two-factor tests and three
 CLI generator tests remain passing. Focused storage tests, production workspace
-Clippy with seaorm2, formatting and diff checks pass. No dependency versions,
+Clippy with seaorm, formatting and diff checks pass. No dependency versions,
 locks, comparator, inventory or coverage policy changes occur. The coordinator
 owns canonical gates and independent review. Account/challenge enforcement,
 verified transitions, callbacks and official-client proofs follow separately.

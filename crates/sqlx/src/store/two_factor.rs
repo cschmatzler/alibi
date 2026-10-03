@@ -20,16 +20,16 @@ enum Assignment {
 /// Every factor column; SQLite INTEGER affinity retains integral storage, so the
 /// counter is projected as REAL for the typed `f64` decoder under its own name.
 fn factor_columns(sql: &mut Sql, qualified: bool) {
-    for (index, column) in Model::column_names().into_iter().enumerate() {
+    for (index, column) in Model::COLUMN_NAMES.iter().copied().enumerate() {
         if index > 0 {
             sql.push(", ");
         }
         if column == "failed_verification_count" {
             if qualified {
-                sql.push("CAST(")
-                    .column(Model::TABLE, column)
-                    .push(" AS DOUBLE PRECISION) AS ")
-                    .ident(column);
+                sql.push("CAST(");
+                sql.column(Model::TABLE, column);
+                sql.push(" AS DOUBLE PRECISION) AS ");
+                sql.ident(column);
             } else {
                 sql.push("CAST(\"failed_verification_count\" AS DOUBLE PRECISION) AS \"failed_verification_count\"");
             }
@@ -44,7 +44,8 @@ fn factor_columns(sql: &mut Sql, qualified: bool) {
 fn factor_select(sql: &mut Sql) {
     sql.push("SELECT ");
     factor_columns(sql, true);
-    sql.push(" FROM ").ident(Model::TABLE);
+    sql.push(" FROM ");
+    sql.ident(Model::TABLE);
 }
 
 impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
@@ -55,27 +56,28 @@ impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
         assignments: Vec<Assignment>,
         filters: Vec<(&'static str, &'static str, SqlValue)>,
     ) -> AuthResult<Option<TwoFactor>> {
-        let mut sql = Sql::with(self.exec().backend(), "UPDATE ");
-        sql.ident(Model::TABLE).push(" SET ");
+        let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(Model::TABLE);
+        sql.push(" SET ");
         for (index, assignment) in assignments.into_iter().enumerate() {
             if index > 0 {
                 sql.push(", ");
             }
             match assignment {
                 Assignment::Value(column, value) => {
-                    sql.ident(column).push(" = ").bind(value);
+                    sql.assign(column, value);
                 }
                 Assignment::Increment => {
-                    sql.ident("failed_verification_count")
-                        .push(" = \"failed_verification_count\" + 1");
+                    sql.ident("failed_verification_count");
+                    sql.push(" = \"failed_verification_count\" + 1");
                 }
             }
         }
         for (index, (column, operator, value)) in filters.into_iter().enumerate() {
-            sql.push(if index == 0 { " WHERE " } else { " AND " })
-                .column(Model::TABLE, column)
-                .push(operator)
-                .bind(value);
+            sql.push(if index == 0 { " WHERE " } else { " AND " });
+            sql.column(Model::TABLE, column);
+            sql.push(operator);
+            sql.bind(value);
         }
         sql.push(" RETURNING ");
         factor_columns(&mut sql, false);
@@ -87,12 +89,10 @@ impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
     }
 
     async fn find_factor(&self, column: &str, value: &str) -> AuthResult<Option<Model>> {
-        let mut sql = Sql::new(self.exec().backend());
+        let mut sql = Sql::new(self.exec().engine());
         factor_select(&mut sql);
-        sql.push(" WHERE ")
-            .column(Model::TABLE, column)
-            .push(" = ")
-            .bind(value);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, column, " = ", value);
         model::limit_one(&mut sql);
         self.exec().fetch_optional(sql).await
     }
@@ -118,13 +118,14 @@ where
         active.set("locked_until", two_factor.locked_until);
         active.set("created_at", now);
         active.set("updated_at", now);
-        let mut sql = Sql::with(self.exec().backend(), "INSERT INTO ");
-        sql.ident(Model::TABLE).push(" (");
+        let mut sql = Sql::with(self.exec().engine(), "INSERT INTO ");
+        sql.ident(Model::TABLE);
+        sql.push(" (");
         let present = active.present().collect::<Vec<_>>();
-        sql.column_list(&present.iter().map(|(name, _)| *name).collect::<Vec<_>>())
-            .push(") VALUES ")
-            .bind_list(present.into_iter().map(|(_, value)| value.clone()))
-            .push(" RETURNING ");
+        sql.column_list(&present.iter().map(|(name, _)| *name).collect::<Vec<_>>());
+        sql.push(") VALUES ");
+        sql.bind_list(present.into_iter().map(|(_, value)| value.clone()));
+        sql.push(" RETURNING ");
         factor_columns(&mut sql, false);
         self.exec()
             .fetch_optional::<Model>(sql)
@@ -264,12 +265,10 @@ where
     }
 
     async fn delete_two_factor(&self, user_id: &str) -> AuthResult<()> {
-        let mut sql = Sql::with(self.exec().backend(), "DELETE FROM ");
-        sql.ident(Model::TABLE)
-            .push(" WHERE ")
-            .column(Model::TABLE, "user_id")
-            .push(" = ")
-            .bind(user_id);
+        let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(Model::TABLE);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "user_id", " = ", user_id);
         self.exec().execute(sql).await.map(drop)
     }
 }

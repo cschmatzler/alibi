@@ -1,7 +1,7 @@
 //! `SQLx` model bindings for Better Auth schemas.
 
 use crate::model::{ActiveRow, SqlxModel};
-use crate::pool::SqlxBackend;
+use crate::pool::Engine;
 use crate::value::SqlValue;
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
 use better_auth_core::error::AuthResult;
@@ -19,7 +19,7 @@ pub trait SqlxUserModel: AuthUser + SqlxModel {
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
         fields: &better_auth_core::field_policy::FieldValues,
-        _backend: SqlxBackend,
+        _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
@@ -37,7 +37,7 @@ pub trait SqlxUserModel: AuthUser + SqlxModel {
         _active: &mut ActiveRow,
         _column: &'static str,
         _value: SqlValue,
-        _backend: SqlxBackend,
+        _backend: Engine,
     ) -> AuthResult<()> {
         Err(better_auth_core::AuthError::internal(
             "the user schema cannot stage additional fields",
@@ -94,7 +94,7 @@ pub trait SqlxUserModel: AuthUser + SqlxModel {
     /// # Errors
     ///
     /// Returns an error if metadata preparation fails.
-    fn prepare_json_metadata(_active: &mut ActiveRow, _backend: SqlxBackend) -> AuthResult<()> {
+    fn prepare_json_metadata(_active: &mut ActiveRow, _backend: Engine) -> AuthResult<()> {
         Ok(())
     }
 }
@@ -119,7 +119,7 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
         fields: &better_auth_core::field_policy::FieldValues,
-        _backend: SqlxBackend,
+        _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
@@ -137,7 +137,7 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
         _active: &mut ActiveRow,
         _column: &'static str,
         _value: SqlValue,
-        _backend: SqlxBackend,
+        _backend: Engine,
     ) -> AuthResult<()> {
         Err(better_auth_core::AuthError::internal(
             "the session schema cannot stage additional fields",
@@ -201,7 +201,7 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
         fields: &better_auth_core::field_policy::FieldValues,
-        _backend: SqlxBackend,
+        _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
@@ -219,7 +219,7 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
         _active: &mut ActiveRow,
         _column: &'static str,
         _value: SqlValue,
-        _backend: SqlxBackend,
+        _backend: Engine,
     ) -> AuthResult<()> {
         Err(better_auth_core::AuthError::internal(
             "the account schema cannot stage additional fields",

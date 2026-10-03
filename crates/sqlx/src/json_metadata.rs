@@ -2,15 +2,19 @@
 //!
 //! Use `JsonMetadata` for metadata fields which must retain arbitrary object
 //! keys on reads. Existing `serde_json::Value` fields remain supported but use
-//! `serde_json`'s ordinary decoder. `AuthEntity` prepares set metadata after
-//! application hooks and before the store write; manual models can override
-//! `SqlxUserModel::prepare_json_metadata` to choose their binding policy.
+//! `serde_json`'s ordinary decoder. `AuthEntity` calls [`SqlxValue::prepare`]
+//! on set metadata after application hooks and before the store write; manual
+//! models can override `SqlxUserModel::prepare_json_metadata` to choose their
+//! binding policy.
 
-use crate::pool::SqlxBackend;
+use crate::pool::Engine;
 use crate::value::{ColumnKind, SqlValue, SqlxValue, ValueTypeError};
+use better_auth_core::error::AuthResult;
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
+#[cfg(feature = "postgres")]
 use sqlx::postgres::{PgArgumentBuffer, PgTypeInfo, PgValueRef, Postgres};
+#[cfg(feature = "sqlite")]
 use sqlx::sqlite::{Sqlite, SqliteArgumentsBuffer, SqliteTypeInfo, SqliteValueRef};
 use sqlx::{Decode, Encode, Type};
 
@@ -33,9 +37,9 @@ pub struct JsonMetadata(serde_json::Value, #[serde(skip)] Option<String>);
 impl JsonMetadata {
     pub(crate) fn for_backend(
         value: serde_json::Value,
-        backend: SqlxBackend,
+        backend: Engine,
     ) -> Result<Self, serde_json::Error> {
-        let text = if backend == SqlxBackend::Sqlite {
+        let text = if backend == Engine::Sqlite {
             Some(better_auth_core::utils::json::to_string(&value)?)
         } else {
             None
@@ -43,6 +47,7 @@ impl JsonMetadata {
         Ok(Self(value, text))
     }
 
+    #[cfg(feature = "sqlite")]
     fn sqlite_text(&self) -> Result<String, serde_json::Error> {
         match &self.1 {
             Some(text) => Ok(text.clone()),
@@ -113,8 +118,13 @@ impl SqlxValue for JsonMetadata {
             | SqlValue::Uuid(_) => Err(ValueTypeError),
         }
     }
+    fn prepare(self, engine: Engine) -> AuthResult<Self> {
+        let value = better_auth_core::utils::json::to_value(&self.0)?;
+        Ok(Self::for_backend(value, engine)?)
+    }
 }
 
+#[cfg(feature = "sqlite")]
 impl Type<Sqlite> for JsonMetadata {
     fn type_info() -> SqliteTypeInfo {
         <sqlx::types::Json<Self> as Type<Sqlite>>::type_info()
@@ -124,18 +134,21 @@ impl Type<Sqlite> for JsonMetadata {
     }
 }
 
+#[cfg(feature = "sqlite")]
 impl<'r> Decode<'r, Sqlite> for JsonMetadata {
     fn decode(value: SqliteValueRef<'r>) -> Result<Self, BoxDynError> {
         <sqlx::types::Json<Self> as Decode<'r, Sqlite>>::decode(value).map(|json| json.0)
     }
 }
 
+#[cfg(feature = "sqlite")]
 impl Encode<'_, Sqlite> for JsonMetadata {
     fn encode_by_ref(&self, buf: &mut SqliteArgumentsBuffer) -> Result<IsNull, BoxDynError> {
         <String as Encode<'_, Sqlite>>::encode(self.sqlite_text()?, buf)
     }
 }
 
+#[cfg(feature = "postgres")]
 impl Type<Postgres> for JsonMetadata {
     fn type_info() -> PgTypeInfo {
         <sqlx::types::Json<Self> as Type<Postgres>>::type_info()
@@ -145,38 +158,16 @@ impl Type<Postgres> for JsonMetadata {
     }
 }
 
+#[cfg(feature = "postgres")]
 impl<'r> Decode<'r, Postgres> for JsonMetadata {
     fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
         <sqlx::types::Json<Self> as Decode<'r, Postgres>>::decode(value).map(|json| json.0)
     }
 }
 
+#[cfg(feature = "postgres")]
 impl Encode<'_, Postgres> for JsonMetadata {
     fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> Result<IsNull, BoxDynError> {
         <serde_json::Value as Encode<'_, Postgres>>::encode_by_ref(&self.0, buf)
-    }
-}
-
-/// Prepare a native metadata field for its configured database binding.
-///
-/// Existing Value fields remain supported; `JsonMetadata` additionally preserves arbitrary keys on
-/// reads and exact JavaScript JSON text on SQLite writes.
-///
-/// # Errors
-///
-/// Returns an error if metadata cannot be serialized for the selected backend.
-pub fn prepare_metadata_value<T>(value: T, backend: SqlxBackend) -> better_auth_core::AuthResult<T>
-where
-    T: Into<serde_json::Value> + From<serde_json::Value> + 'static,
-{
-    let value = better_auth_core::utils::json::to_value(&value.into())?;
-    if std::any::TypeId::of::<T>() == std::any::TypeId::of::<JsonMetadata>() {
-        let prepared: Box<dyn std::any::Any> = Box::new(JsonMetadata::for_backend(value, backend)?);
-        prepared
-            .downcast::<T>()
-            .map(|value_2| *value_2)
-            .map_err(|_error| better_auth_core::AuthError::internal("Invalid JSON metadata type"))
-    } else {
-        Ok(T::from(value))
     }
 }

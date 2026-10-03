@@ -3,6 +3,7 @@
 use crate::pool::Exec;
 use crate::sql::Sql;
 use crate::value::{ColumnKind, SqlValue};
+use better_auth_core::store::adapter::RawFieldValue;
 use better_auth_core::{AuthError, AuthResult, utils::json::JsValue};
 
 /// Called by generated model bindings before any backend affinity conversion.
@@ -10,28 +11,14 @@ use better_auth_core::{AuthError, AuthResult, utils::json::JsValue};
 /// # Errors
 ///
 /// Returns an error if an object or array cannot be serialized as JSON.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
-)]
 pub fn raw_value(value: &JsValue) -> AuthResult<SqlValue> {
-    Ok(match value {
-        JsValue::Null => SqlValue::Text(None),
-        JsValue::Bool(value) => SqlValue::Bool(Some(*value)),
-        JsValue::Number(value)
-            if value.is_finite()
-                && value.fract() == 0.0
-                && !(*value == 0.0 && value.is_sign_negative())
-                && (-9_223_372_036_854_776_000.0..9_223_372_036_854_776_000.0).contains(value) =>
-        {
-            SqlValue::BigInt(Some(*value as i64))
-        }
-        JsValue::Number(value) => SqlValue::Double(Some(*value)),
-        JsValue::String(value) => SqlValue::Text(Some(value.clone())),
-        JsValue::Array(_) | JsValue::Object(_) => {
-            SqlValue::Json(Some(Box::new(value.to_json_value()?)))
-        }
+    Ok(match RawFieldValue::from_js(value)? {
+        RawFieldValue::Null => SqlValue::Text(None),
+        RawFieldValue::Bool(value) => SqlValue::Bool(Some(value)),
+        RawFieldValue::Integer(value) => SqlValue::BigInt(Some(value)),
+        RawFieldValue::Number(value) => SqlValue::Double(Some(value)),
+        RawFieldValue::Text(value) => SqlValue::Text(Some(value)),
+        RawFieldValue::Json(value) => SqlValue::Json(Some(Box::new(value))),
     })
 }
 
@@ -47,8 +34,9 @@ pub(crate) async fn prepare_string_value(
             "object cannot bind to a scalar session field",
         ));
     }
-    let mut sql = Sql::with(exec.backend(), "SELECT CAST(");
-    sql.bind(value).push(" AS TEXT) AS value");
+    let mut sql = Sql::with(exec.engine(), "SELECT CAST(");
+    sql.bind(value);
+    sql.push(" AS TEXT) AS value");
     exec.fetch_scalar::<Option<String>>(sql)
         .await?
         .ok_or_else(|| AuthError::internal("session TEXT affinity returned no row"))
@@ -65,7 +53,7 @@ pub(crate) async fn prepare_value(
     kind: ColumnKind,
     value: SqlValue,
 ) -> AuthResult<SqlValue> {
-    let backend = exec.backend();
+    let backend = exec.engine();
     match kind {
         ColumnKind::Text => Ok(SqlValue::Text(prepare_string_value(exec, value).await?)),
         ColumnKind::Json => {

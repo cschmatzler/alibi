@@ -1,8 +1,9 @@
-use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
+use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmAccountModel};
 use async_trait::async_trait;
 use better_auth_core::error::AuthResult;
 use better_auth_core::store::AccountStore;
+use better_auth_core::store::adapter::cancelled_by_hook;
 use better_auth_core::types::{CreateAccount, UpdateAccount};
 use chrono::Utc;
 use sea_orm::{
@@ -40,7 +41,7 @@ where
         let mut active = S::Account::new_active(None, create_account, now);
         let backend = db.get_database_backend();
         for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
-            let value = crate::session_fields::prepare_value(db, &column, value).await?;
+            let value = crate::additional_fields::prepare_value(db, &column, value).await?;
             S::Account::set_additional_field(&mut active, column, value, backend)?;
         }
         let account = active.insert(db).await.map_err(map_db_err)?;
@@ -134,7 +135,7 @@ where
         let backend = self.connection().get_database_backend();
         for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
             let value =
-                crate::session_fields::prepare_value(self.connection(), &column, value).await?;
+                crate::additional_fields::prepare_value(self.connection(), &column, value).await?;
             S::Account::set_additional_field(&mut active, column, value, backend)?;
         }
 

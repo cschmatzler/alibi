@@ -12,7 +12,7 @@ use better_auth_core::{
     CreateUser, HttpMethod,
 };
 use better_auth_seaorm::{
-    Database, DatabaseHooks, HookControl, SeaOrm, SeaOrmHookContext, SeaOrmStore,
+    Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
 };
 use serde_json::{Value, json};
 use std::sync::{
@@ -119,7 +119,7 @@ impl AuthPlugin<Schema> for ApplicationContext {
 struct StorageContext(Arc<Mutex<Vec<(usize, String)>>>);
 
 #[async_trait]
-impl DatabaseHooks<Schema, SeaOrm> for StorageContext {
+impl DatabaseHooks<Schema, SeaOrmBackend> for StorageContext {
     async fn before_create_user(
         &self,
         user: &mut CreateUser,

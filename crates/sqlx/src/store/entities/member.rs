@@ -1,15 +1,13 @@
 use chrono::{DateTime, Utc};
 
-bundled_model! {
-    table = "member", primary_key = "id";
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    pub struct Model {
-        pub id: String = "id",
-        pub organization_id: String = "organization_id",
-        pub user_id: String = "user_id",
-        pub role: String = "role",
-        pub created_at: DateTime<Utc> = "created_at",
-    }
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, crate::SqlxModel)]
+#[auth(table = "member")]
+pub struct Model {
+    pub id: String,
+    pub organization_id: String,
+    pub user_id: String,
+    pub role: String,
+    pub created_at: DateTime<Utc>,
 }
 
 impl From<&Model> for better_auth_core::Member {

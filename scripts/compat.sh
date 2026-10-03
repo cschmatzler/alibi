@@ -16,7 +16,7 @@ done
 
 # Build both fixture backends up front so a compiler failure is not reported as a scenario failure.
 cargo build --locked --manifest-path tests/compat/rust-server/Cargo.toml
-cargo build --locked --manifest-path tests/compat/rust-server/Cargo.toml --features seaorm2
+cargo build --locked --manifest-path tests/compat/rust-server/Cargo.toml --features seaorm
 
 mkdir -p coverage
 bun tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json

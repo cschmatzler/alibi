@@ -1,14 +1,14 @@
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 use better_auth_seaorm::store::entities;
 
 /// The application-owned session schema the Rust fixture server also serves.
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 #[path = "../../../compat/rust-server/src/session_field_model.rs"]
 mod application_model;
 
 /// SeaORM model save hooks: record each save and override the native label,
 /// as an application's `ActiveModelBehavior` would.
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 #[async_trait::async_trait]
 impl better_auth_seaorm::sea_orm::ActiveModelBehavior
     for application_model::application_session::ActiveModel
@@ -55,9 +55,9 @@ impl better_auth_seaorm::sea_orm::ActiveModelBehavior
     }
 }
 
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 mod cookie_cache;
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 mod fields;
 mod policy_error;
 mod refresh;

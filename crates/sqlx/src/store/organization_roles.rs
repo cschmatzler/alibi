@@ -15,19 +15,15 @@ use uuid::Uuid;
 
 /// Append the organization scope and role selector.
 fn scope(sql: &mut Sql, organization_id: &str, selector: &OrganizationRoleSelector) {
-    sql.push(" WHERE ")
-        .column(Model::TABLE, "organization_id")
-        .push(" = ")
-        .bind(organization_id)
-        .push(" AND ");
+    sql.push(" WHERE ");
+    sql.compare(Model::TABLE, "organization_id", " = ", organization_id);
+    sql.push(" AND ");
     match selector {
         OrganizationRoleSelector::Id(id) => {
-            sql.column(Model::TABLE, "id").push(" = ").bind(id.as_str());
+            sql.compare(Model::TABLE, "id", " = ", id.as_str());
         }
         OrganizationRoleSelector::Name(name) => {
-            sql.column(Model::TABLE, "role")
-                .push(" = ")
-                .bind(name.as_str());
+            sql.compare(Model::TABLE, "role", " = ", name.as_str());
         }
     }
 }
@@ -68,12 +64,10 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
         organization_id: &str,
     ) -> AuthResult<Vec<OrganizationRole>> {
         let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(Model::TABLE, "organization_id")
-            .push(" = ")
-            .bind(organization_id)
-            .push(" LIMIT ")
-            .bind(self.find_many_limit());
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "organization_id", " = ", organization_id);
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
         self.exec()
             .fetch_all::<Model>(sql)
             .await?
@@ -82,12 +76,10 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
             .collect()
     }
     async fn count_organization_roles(&self, organization_id: &str) -> AuthResult<usize> {
-        let mut sql = Sql::with(self.exec().backend(), "SELECT COUNT(*) FROM ");
-        sql.ident(Model::TABLE)
-            .push(" WHERE ")
-            .column(Model::TABLE, "organization_id")
-            .push(" = ")
-            .bind(organization_id);
+        let mut sql = Sql::with(self.exec().engine(), "SELECT COUNT(*) FROM ");
+        sql.ident(Model::TABLE);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "organization_id", " = ", organization_id);
         let count = self
             .exec()
             .fetch_scalar::<i64>(sql)
@@ -102,16 +94,17 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
         role: &str,
     ) -> AuthResult<bool> {
         let mut sql = model::select_model::<member::Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(member::Model::TABLE, "organization_id")
-            .push(" = ")
-            .bind(organization_id)
-            .push(" AND ")
-            .column(member::Model::TABLE, "role")
-            .push(" LIKE ")
-            .bind(format!("%{role}%"))
-            .push(" LIMIT ")
-            .bind(self.find_many_limit());
+        sql.push(" WHERE ");
+        sql.compare(
+            member::Model::TABLE,
+            "organization_id",
+            " = ",
+            organization_id,
+        );
+        sql.push(" AND ");
+        sql.compare(member::Model::TABLE, "role", " LIKE ", format!("%{role}%"));
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
         let members: Vec<member::Model> = self.exec().fetch_all(sql).await?;
         Ok(members.iter().any(|member| {
             member
@@ -136,26 +129,23 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
             .await?
             .ok_or_else(|| AuthError::bad_request("Role not found"))?;
         let updated_at = Utc::now();
-        let mut sql = Sql::with(self.exec().backend(), "UPDATE ");
-        sql.ident(Model::TABLE)
-            .push(" SET ")
-            .ident("updated_at")
-            .push(" = ")
-            .bind(Some(updated_at));
+        let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(Model::TABLE);
+        sql.push(" SET ");
+        sql.assign("updated_at", Some(updated_at));
         if let Some(role) = update.role {
-            sql.push(", ").ident("role").push(" = ").bind(role.clone());
+            sql.push(", ");
+            sql.assign("role", role.clone());
             row.role = role;
         }
         if let Some(permission) = update.permission {
             let permission = serde_json::to_string(&permission)?;
-            sql.push(", ")
-                .ident("permission")
-                .push(" = ")
-                .bind(permission.clone());
+            sql.push(", ");
+            sql.assign("permission", permission.clone());
             row.permission = permission;
         }
         scope(&mut sql, organization_id, selector);
-        self.exec().execute(sql).await?;
+        _ = self.exec().execute(sql).await?;
         row.updated_at = Some(updated_at);
         row.try_into()
     }
@@ -164,7 +154,7 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
         organization_id: &str,
         selector: &OrganizationRoleSelector,
     ) -> AuthResult<bool> {
-        let mut sql = Sql::with(self.exec().backend(), "DELETE FROM ");
+        let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(Model::TABLE);
         scope(&mut sql, organization_id, selector);
         Ok(self.exec().execute(sql).await? > 0)

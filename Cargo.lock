@@ -4172,6 +4172,7 @@ dependencies = [
  "indexmap 2.13.0",
  "log",
  "memchr",
+ "native-tls",
  "percent-encoding",
  "rust_decimal",
  "rustls",

@@ -127,7 +127,7 @@ fn build_rust_compat_server() -> PathBuf {
     // every fixture from `SeaOrmStore` instead.
     match std::env::var("BETTER_AUTH_COMPAT_BACKEND").as_deref() {
         Ok("seaorm") => {
-            let _ = command.args(["--features", "seaorm2"]);
+            let _ = command.args(["--features", "seaorm"]);
         }
         Ok("sqlx") | Err(_) => {}
         Ok(other) => panic!("BETTER_AUTH_COMPAT_BACKEND must be seaorm or sqlx, not {other}"),

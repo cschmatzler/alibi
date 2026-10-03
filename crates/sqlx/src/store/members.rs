@@ -105,15 +105,13 @@ fn member_filter(params: &ListOrganizationMembersParams) -> Option<Filter> {
 }
 
 fn member_where(sql: &mut Sql, organization_id: &str, filter: Option<&Filter>) {
-    sql.push(" WHERE ")
-        .column(Model::TABLE, "organization_id")
-        .push(" = ")
-        .bind(organization_id);
+    sql.push(" WHERE ");
+    sql.compare(Model::TABLE, "organization_id", " = ", organization_id);
     if let Some(filter) = filter {
-        sql.push(" AND ")
-            .column(Model::TABLE, filter.column)
-            .push(filter.operator)
-            .bind(filter.value.clone());
+        sql.push(" AND ");
+        sql.column(Model::TABLE, filter.column);
+        sql.push(filter.operator);
+        sql.bind(filter.value.clone());
     }
 }
 
@@ -125,9 +123,9 @@ fn member_sort(sql: &mut Sql, params: &ListOrganizationMembersParams) {
         .unwrap_or("created_at");
     let descending = params.sort_by.as_deref().and_then(member_column).is_some()
         && matches!(params.sort_direction.as_deref(), Some("desc"));
-    sql.push(" ORDER BY ")
-        .column(Model::TABLE, column)
-        .push(if descending { " DESC" } else { " ASC" });
+    sql.push(" ORDER BY ");
+    sql.column(Model::TABLE, column);
+    sql.push(if descending { " DESC" } else { " ASC" });
 }
 
 impl<S: AuthSchema> SqlxStore<S> {
@@ -136,7 +134,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         organization_id: &str,
         filter: Option<&Filter>,
     ) -> AuthResult<i64> {
-        let mut sql = Sql::with(self.exec().backend(), "SELECT COUNT(*) FROM ");
+        let mut sql = Sql::with(self.exec().engine(), "SELECT COUNT(*) FROM ");
         sql.ident(Model::TABLE);
         member_where(&mut sql, organization_id, filter);
         Ok(self
@@ -159,14 +157,10 @@ where
 
     async fn get_member(&self, organization_id: &str, user_id: &str) -> AuthResult<Option<Member>> {
         let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(Model::TABLE, "organization_id")
-            .push(" = ")
-            .bind(organization_id)
-            .push(" AND ")
-            .column(Model::TABLE, "user_id")
-            .push(" = ")
-            .bind(user_id);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "organization_id", " = ", organization_id);
+        sql.push(" AND ");
+        sql.compare(Model::TABLE, "user_id", " = ", user_id);
         model::limit_one(&mut sql);
         Ok(self
             .exec()
@@ -211,24 +205,23 @@ where
 
     async fn delete_member(&self, member_id: &str) -> AuthResult<()> {
         let member_id = member_id.to_owned();
-        self.in_transaction(true, move |tx| {
-            Box::pin(async move {
-                let exec = Exec::Tx(tx);
-                let mut select = model::by_id::<Model>(exec, member_id.as_str());
-                model::limit_one(&mut select);
-                lock_exclusive(&mut select);
-                if let Some(member) = exec.fetch_optional::<Model>(select).await? {
-                    super::teams::remove_owned_team_members(
-                        tx,
-                        &member.user_id,
-                        Some(&member.organization_id),
-                    )
+        self.in_transaction(true, async move |tx| {
+            let exec = Exec::Tx(tx);
+            let mut select = model::by_id::<Model>(exec, member_id.as_str());
+            model::limit_one(&mut select);
+            lock_exclusive(&mut select);
+            if let Some(member) = exec.fetch_optional::<Model>(select).await? {
+                super::teams::remove_owned_team_members(
+                    tx,
+                    &member.user_id,
+                    Some(&member.organization_id),
+                )
+                .await?;
+                _ = exec
+                    .execute(model::delete_by_id::<Model>(exec, member_id))
                     .await?;
-                    exec.execute(model::delete_by_id::<Model>(exec, member_id))
-                        .await?;
-                }
-                Ok(())
-            })
+            }
+            Ok(())
         })
         .await
     }
@@ -236,9 +229,9 @@ where
     async fn list_organization_members(&self, org_id: &str) -> AuthResult<Vec<Member>> {
         let mut sql = model::select_model::<Model>(self.exec());
         member_where(&mut sql, org_id, None);
-        sql.push(" ORDER BY ")
-            .column(Model::TABLE, "created_at")
-            .push(" ASC");
+        sql.push(" ORDER BY ");
+        sql.column(Model::TABLE, "created_at");
+        sql.push(" ASC");
         Ok(self
             .exec()
             .fetch_all::<Model>(sql)
@@ -262,26 +255,27 @@ where
             organization_id.to_owned(),
             user_id.to_owned(),
         );
-        self.in_transaction(true, move |tx| {
-            Box::pin(async move {
-                let exec = Exec::Tx(tx);
-                exec.execute(model::delete_by_id::<Model>(exec, member_id))
-                    .await?;
-                if remove_team_members {
-                    let mut rooms = model::select_model::<team::Model>(exec);
-                    rooms
-                        .push(" WHERE ")
-                        .column(team::Model::TABLE, "organization_id")
-                        .push(" = ")
-                        .bind(organization_id)
-                        .push(" LIMIT ")
-                        .bind(limit);
-                    lock_exclusive(&mut rooms);
-                    let rooms = exec.fetch_all::<team::Model>(rooms).await?;
-                    super::teams::release_owned_team_members(tx, &user_id, rooms).await?;
-                }
-                Ok(())
-            })
+        self.in_transaction(true, async move |tx| {
+            let exec = Exec::Tx(tx);
+            _ = exec
+                .execute(model::delete_by_id::<Model>(exec, member_id))
+                .await?;
+            if remove_team_members {
+                let mut rooms = model::select_model::<team::Model>(exec);
+                rooms.push(" WHERE ");
+                rooms.compare(
+                    team::Model::TABLE,
+                    "organization_id",
+                    " = ",
+                    organization_id,
+                );
+                rooms.push(" LIMIT ");
+                rooms.bind(limit);
+                lock_exclusive(&mut rooms);
+                let rooms = exec.fetch_all::<team::Model>(rooms).await?;
+                super::teams::release_owned_team_members(tx, &user_id, rooms).await?;
+            }
+            Ok(())
         })
         .await
     }
@@ -295,7 +289,8 @@ where
             .map_err(|_error| AuthError::internal("Member page parameter exceeds u64"))?;
         let mut sql = model::select_model::<Model>(self.exec());
         member_where(&mut sql, organization_id, None);
-        sql.push(" LIMIT ").bind(limit);
+        sql.push(" LIMIT ");
+        sql.bind(limit);
         Ok(self
             .exec()
             .fetch_all::<Model>(sql)
@@ -320,13 +315,15 @@ where
         member_where(&mut sql, &params.organization_id, filter.as_ref());
         member_sort(&mut sql, params);
         if let Some(limit) = params.limit {
-            sql.push(" LIMIT ").bind(
+            sql.push(" LIMIT ");
+            sql.bind(
                 i64::try_from(limit)
                     .map_err(|_error| AuthError::internal("Member page parameter exceeds u64"))?,
             );
         }
         if let Some(offset) = params.offset {
-            sql.push(" OFFSET ").bind(
+            sql.push(" OFFSET ");
+            sql.bind(
                 i64::try_from(offset)
                     .map_err(|_error| AuthError::internal("Member page parameter exceeds u64"))?,
             );
@@ -366,7 +363,7 @@ where
         if params.sort_by.as_deref().and_then(member_column).is_some() {
             member_sort(&mut sql, &legacy_filter);
         }
-        super::numeric_page::bind_page(&mut sql, params.limit, params.offset);
+        super::bind_page(&mut sql, params.limit, params.offset);
         Ok((
             self.exec()
                 .fetch_all::<Model>(sql)

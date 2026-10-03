@@ -1,6 +1,7 @@
 //! Atomic rolling rate limits persisted independently of an application's auth schema.
 
 use async_trait::async_trait;
+use better_auth_core::middleware::rate_limit::bucket::{self, LongestWindow, Step};
 use better_auth_core::{AuthResult, EndpointRateLimit, RateLimitDecision, RateLimitStorage};
 use sea_orm::sea_query::{Alias, ColumnDef, DynIden, IntoIden, Table};
 use sea_orm::sea_query::{Expr, OnConflict};
@@ -8,10 +9,7 @@ use sea_orm::{ActiveValue::Set, ColumnTrait, DatabaseConnection, EntityTrait, Qu
 use sea_orm_migration::prelude::{
     DbErr, MigrationName, MigrationTrait, MigratorTrait, SchemaManager,
 };
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
-};
+use std::sync::Arc;
 
 pub mod entity {
     use sea_orm::entity::prelude::*;
@@ -38,7 +36,7 @@ pub mod entity {
 #[derive(Clone, Debug)]
 pub struct SeaOrmRateLimitStorage {
     database: DatabaseConnection,
-    longest_window: Arc<AtomicU64>,
+    longest_window: Arc<LongestWindow>,
 }
 
 impl SeaOrmRateLimitStorage {
@@ -46,26 +44,11 @@ impl SeaOrmRateLimitStorage {
     pub fn new(database: DatabaseConnection) -> Self {
         Self {
             database,
-            longest_window: Arc::new(AtomicU64::new(60.0_f64.to_bits())),
+            longest_window: Arc::new(LongestWindow::new()),
         }
     }
-    fn expires_at(now: i64, window: f64) -> Option<i64> {
-        if window <= 0.0 || window.is_nan() {
-            return Some(now);
-        }
-        std::time::Duration::try_from_secs_f64(window)
-            .ok()
-            .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-            .and_then(|milliseconds| now.checked_add(milliseconds))
-    }
-
     async fn prune(&self, now: i64) {
-        let window = f64::from_bits(self.longest_window.load(Ordering::Relaxed));
-        let Some(cutoff) = std::time::Duration::try_from_secs_f64(window)
-            .ok()
-            .and_then(|duration| i64::try_from(duration.as_millis()).ok())
-            .and_then(|milliseconds| now.checked_sub(milliseconds))
-        else {
+        let Some(cutoff) = self.longest_window.prune_cutoff(now) else {
             return;
         };
         // Pruning failures do not undo a successful quota consumption. The
@@ -96,13 +79,7 @@ impl better_auth_core::store::SchemaMigrator for SeaOrmRateLimitStorage {
 #[async_trait]
 impl RateLimitStorage for SeaOrmRateLimitStorage {
     fn observe_window(&self, window: f64) {
-        if window > 0.0 {
-            // Positive IEEE-754 bit patterns have the same ordering as
-            // their numeric values, so this is an atomic maximum in one step.
-            _ = self
-                .longest_window
-                .fetch_max(window.to_bits(), Ordering::Relaxed);
-        }
+        self.longest_window.observe(window);
     }
 
     async fn consume(&self, key: &str, rule: &EndpointRateLimit) -> AuthResult<RateLimitDecision> {
@@ -118,7 +95,7 @@ impl RateLimitStorage for SeaOrmRateLimitStorage {
                     key: Set(key.to_owned()),
                     count: Set(1.0),
                     last_request: Set(now),
-                    expires_at: Set(Self::expires_at(now, rule.window_seconds)),
+                    expires_at: Set(bucket::expires_at(now, rule.window_seconds)),
                 })
                 .on_conflict(
                     OnConflict::column(entity::Column::Key)
@@ -135,26 +112,19 @@ impl RateLimitStorage for SeaOrmRateLimitStorage {
                 }
                 continue;
             };
-            let elapsed = chrono::Duration::milliseconds(now.saturating_sub(observed.last_request))
-                .to_std()
-                .map_or(0.0, |duration| duration.as_secs_f64());
-            let expired = elapsed >= rule.window_seconds;
-            if !expired
-                && (rule.window_seconds.is_nan()
-                    || rule.max_requests.is_nan()
-                    || observed.count >= rule.max_requests)
-            {
-                return Ok(RateLimitDecision::Blocked {
-                    retry_after: (rule.window_seconds - elapsed).ceil(),
-                });
-            }
-            let next_count = if expired { 1.0 } else { observed.count + 1.0 };
+            let (next_count, reset) =
+                match bucket::step(observed.count, observed.last_request, now, rule) {
+                    Step::Blocked { retry_after } => {
+                        return Ok(RateLimitDecision::Blocked { retry_after });
+                    }
+                    Step::Allowed { count, reset } => (count, reset),
+                };
             let updated = entity::Entity::update_many()
                 .col_expr(entity::Column::Count, Expr::value(next_count))
                 .col_expr(entity::Column::LastRequest, Expr::value(now))
                 .col_expr(
                     entity::Column::ExpiresAt,
-                    Expr::value(Self::expires_at(now, rule.window_seconds)),
+                    Expr::value(bucket::expires_at(now, rule.window_seconds)),
                 )
                 .filter(entity::Column::Key.eq(key))
                 .filter(entity::Column::LastRequest.eq(observed.last_request))
@@ -163,7 +133,7 @@ impl RateLimitStorage for SeaOrmRateLimitStorage {
                 .await
                 .map_err(crate::store::map_db_err)?;
             if updated.rows_affected == 1 {
-                if expired {
+                if reset {
                     self.prune(now).await;
                 }
                 return Ok(RateLimitDecision::Allowed);

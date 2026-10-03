@@ -1,70 +1,89 @@
-//! Statement text and its typed arguments, rendered for one backend.
+//! Statement text and its typed arguments, rendered for one engine.
 
-use crate::pool::SqlxBackend;
+use crate::pool::Engine;
 use crate::value::SqlValue;
 use sqlx::Arguments;
 use sqlx::error::BoxDynError;
 use std::fmt::Write;
 
-/// SQL text with bound arguments. Placeholders follow the backend's syntax.
+/// SQL text with bound arguments. Placeholders follow the engine's syntax.
 #[derive(Clone, Debug)]
 pub(crate) struct Sql {
-    backend: SqlxBackend,
+    engine: Engine,
     text: String,
     args: Vec<SqlValue>,
 }
 
 impl Sql {
-    pub(crate) const fn new(backend: SqlxBackend) -> Self {
+    pub(crate) const fn new(engine: Engine) -> Self {
         Self {
-            backend,
+            engine,
             text: String::new(),
             args: Vec::new(),
         }
     }
 
-    pub(crate) fn with(backend: SqlxBackend, text: &str) -> Self {
-        let mut sql = Self::new(backend);
+    pub(crate) fn with(engine: Engine, text: &str) -> Self {
+        let mut sql = Self::new(engine);
         sql.push(text);
         sql
     }
 
-    pub(crate) const fn backend(&self) -> SqlxBackend {
-        self.backend
+    pub(crate) const fn engine(&self) -> Engine {
+        self.engine
     }
 
-    pub(crate) fn push(&mut self, text: &str) -> &mut Self {
+    pub(crate) fn push(&mut self, text: &str) {
         self.text.push_str(text);
-        self
     }
 
     /// Append a double-quoted identifier.
-    pub(crate) fn ident(&mut self, name: &str) -> &mut Self {
+    pub(crate) fn ident(&mut self, name: &str) {
         self.text.push('"');
         self.text.push_str(&name.replace('"', "\"\""));
         self.text.push('"');
-        self
     }
 
     /// Append `"table"."column"`.
-    pub(crate) fn column(&mut self, table: &str, column: &str) -> &mut Self {
-        self.ident(table).push(".").ident(column)
+    pub(crate) fn column(&mut self, table: &str, column: &str) {
+        self.ident(table);
+        self.push(".");
+        self.ident(column);
+    }
+
+    /// Append `"table"."column" <operator> ?`, the predicate of most lookups.
+    pub(crate) fn compare(
+        &mut self,
+        table: &str,
+        column: &str,
+        operator: &str,
+        value: impl Into<SqlValue>,
+    ) {
+        self.column(table, column);
+        self.push(operator);
+        self.bind(value);
+    }
+
+    /// Append `"column" = ?`, one `SET` assignment.
+    pub(crate) fn assign(&mut self, column: &str, value: impl Into<SqlValue>) {
+        self.ident(column);
+        self.push(" = ");
+        self.bind(value);
     }
 
     /// Append one placeholder bound to `value`.
-    pub(crate) fn bind(&mut self, value: impl Into<SqlValue>) -> &mut Self {
+    pub(crate) fn bind(&mut self, value: impl Into<SqlValue>) {
         self.args.push(value.into());
-        match self.backend {
-            SqlxBackend::Sqlite => self.text.push('?'),
-            SqlxBackend::Postgres => {
+        match self.engine {
+            Engine::Sqlite => self.text.push('?'),
+            Engine::Postgres => {
                 _ = write!(self.text, "${}", self.args.len());
             }
         }
-        self
     }
 
     /// Append `(?, ?, ...)` for a non-empty list.
-    pub(crate) fn bind_list<I>(&mut self, values: I) -> &mut Self
+    pub(crate) fn bind_list<I>(&mut self, values: I)
     where
         I: IntoIterator,
         I::Item: Into<SqlValue>,
@@ -76,29 +95,27 @@ impl Sql {
             }
             self.bind(value);
         }
-        self.push(")")
+        self.push(")");
     }
 
     /// Append the qualified select list `"t"."a", "t"."b"`.
-    pub(crate) fn select_list(&mut self, table: &str, columns: &[&str]) -> &mut Self {
+    pub(crate) fn select_list(&mut self, table: &str, columns: &[&str]) {
         for (index, column) in columns.iter().enumerate() {
             if index > 0 {
                 self.push(", ");
             }
             self.column(table, column);
         }
-        self
     }
 
     /// Append the unqualified list `"a", "b"`.
-    pub(crate) fn column_list(&mut self, columns: &[&str]) -> &mut Self {
+    pub(crate) fn column_list(&mut self, columns: &[&str]) {
         for (index, column) in columns.iter().enumerate() {
             if index > 0 {
                 self.push(", ");
             }
             self.ident(column);
         }
-        self
     }
 
     pub(crate) fn into_parts(self) -> (String, Vec<SqlValue>) {
@@ -107,15 +124,16 @@ impl Sql {
 }
 
 /// `SELECT "t"."a", ... FROM "t"`.
-pub(crate) fn select(backend: SqlxBackend, table: &str, columns: &[&str]) -> Sql {
-    let mut sql = Sql::new(backend);
-    sql.push("SELECT ")
-        .select_list(table, columns)
-        .push(" FROM ")
-        .ident(table);
+pub(crate) fn select(engine: Engine, table: &str, columns: &[&str]) -> Sql {
+    let mut sql = Sql::new(engine);
+    sql.push("SELECT ");
+    sql.select_list(table, columns);
+    sql.push(" FROM ");
+    sql.ident(table);
     sql
 }
 
+#[cfg(feature = "sqlite")]
 pub(crate) fn sqlite_arguments(
     values: Vec<SqlValue>,
 ) -> Result<sqlx::sqlite::SqliteArguments, BoxDynError> {
@@ -137,6 +155,7 @@ pub(crate) fn sqlite_arguments(
     Ok(args)
 }
 
+#[cfg(feature = "postgres")]
 pub(crate) fn postgres_arguments(
     values: Vec<SqlValue>,
 ) -> Result<sqlx::postgres::PgArguments, BoxDynError> {

@@ -25,4 +25,11 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 
-sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "tls-rustls", "sqlite", "postgres", "chrono", "json", "uuid", "derive"] }
+sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "chrono", "json", "uuid", "derive"] }
+
+[features]
+default = ["sqlite", "postgres"]
+sqlite = ["sqlx/sqlite"]
+postgres = ["sqlx/postgres"]
+tls-rustls = ["sqlx/tls-rustls"]
+tls-native-tls = ["sqlx/tls-native-tls"]

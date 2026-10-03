@@ -1,11 +1,10 @@
 //! Proc macros for the Better Auth `SQLx` integration.
 
-use better_auth_entity_codegen::{self as codegen, EntityRole};
+use better_auth_entity_codegen::{self as codegen, EntityRole, Insert};
 use proc_macro::TokenStream as ProcMacroTokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-use std::collections::HashMap;
 use syn::{DeriveInput, FieldsNamed, LitStr, parse_macro_input};
 
 fn found_crate_tokens(name: &str) -> Option<TokenStream> {
@@ -22,27 +21,39 @@ fn found_crate_tokens(name: &str) -> Option<TokenStream> {
     }
 }
 
-fn resolve_roots() -> (TokenStream, TokenStream) {
+/// Paths to the `SQLx` integration crate and to Better Auth core.
+struct Roots {
+    sqlx: TokenStream,
+    core: TokenStream,
+}
+
+fn resolve_roots() -> Roots {
     if let Some(better_auth_root) = found_crate_tokens("better-auth") {
-        return (
-            quote!(#better_auth_root::sqlx),
-            quote!(#better_auth_root::__private_core),
-        );
+        return Roots {
+            sqlx: quote!(#better_auth_root::sqlx),
+            core: quote!(#better_auth_root::__private_core),
+        };
     }
     match crate_name("better-auth-sqlx") {
-        Ok(FoundCrate::Itself) => (quote!(crate), quote!(crate::__private_core)),
+        Ok(FoundCrate::Itself) => Roots {
+            sqlx: quote!(crate),
+            core: quote!(crate::__private_core),
+        },
         Ok(FoundCrate::Name(name)) => {
             let ident = Ident::new(&name, Span::call_site());
-            (quote!(::#ident), quote!(::#ident::__private_core))
+            Roots {
+                sqlx: quote!(::#ident),
+                core: quote!(::#ident::__private_core),
+            }
         }
-        Err(_) => (
-            syn::Error::new(
+        Err(_) => Roots {
+            sqlx: syn::Error::new(
                 Span::call_site(),
                 "AuthEntity must be used through better_auth::sqlx with the `sqlx` feature enabled",
             )
             .to_compile_error(),
-            quote!(::core::compile_error!("unreachable")),
-        ),
+            core: quote!(::core::compile_error!("unreachable")),
+        },
     }
 }
 
@@ -90,8 +101,7 @@ fn apply_rename_all(rule: &str, name: &str) -> syn::Result<String> {
     Ok(match rule {
         "snake_case" => name.to_owned(),
         "lowercase" => name.to_lowercase(),
-        "UPPERCASE" => name.to_uppercase(),
-        "SCREAMING_SNAKE_CASE" => name.to_uppercase(),
+        "UPPERCASE" | "SCREAMING_SNAKE_CASE" => name.to_uppercase(),
         "kebab-case" => name.replace('_', "-"),
         "camelCase" => words
             .iter()
@@ -140,7 +150,7 @@ fn columns(input: &DeriveInput, fields: &FieldsNamed) -> syn::Result<Vec<Column>
                     || meta.path.is_ident("try_from")
                 {
                     Err(meta.error(
-                        "AuthEntity fields map one-to-one to columns; `skip`, `flatten`, `json` and `try_from` are unsupported",
+                        "model fields map one-to-one to columns; `skip`, `flatten`, `json` and `try_from` are unsupported",
                     ))
                 } else {
                     drop(
@@ -200,24 +210,40 @@ fn columns(input: &DeriveInput, fields: &FieldsNamed) -> syn::Result<Vec<Column>
     Ok(columns)
 }
 
-struct Roots {
-    sqlx: TokenStream,
-    core: TokenStream,
-}
-
-fn generate_auth_entity(input: &DeriveInput) -> TokenStream {
-    match try_generate(input) {
-        Ok(tokens) => tokens,
-        Err(error) => error.to_compile_error(),
+/// `#[auth(table = "...")]` on a plain `SqlxModel` derive.
+fn table_attribute(input: &DeriveInput) -> syn::Result<String> {
+    let mut table = None;
+    for attr in &input.attrs {
+        if !attr.path().is_ident("auth") {
+            continue;
+        }
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("table") {
+                table = Some(meta.value()?.parse::<LitStr>()?.value());
+                Ok(())
+            } else {
+                Err(meta.error("expected `table = \"...\"`"))
+            }
+        })?;
     }
+    table.ok_or_else(|| {
+        syn::Error::new_spanned(
+            input,
+            "missing #[auth(table = \"...\")] attribute for SqlxModel",
+        )
+    })
 }
 
-fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let (sqlx_root, core_root) = resolve_roots();
-    let roots = Roots {
-        sqlx: sqlx_root,
-        core: core_root,
-    };
+fn try_generate_model(input: &DeriveInput) -> syn::Result<TokenStream> {
+    let roots = resolve_roots();
+    let table = table_attribute(input)?;
+    let fields = codegen::named_fields(input)?;
+    let columns = columns(input, fields)?;
+    model_impl(&input.ident, &table, &columns, &roots)
+}
+
+fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
+    let roots = resolve_roots();
     let attributes = codegen::parse_auth_attributes(input, true)?;
     let fields = codegen::named_fields(input)?;
     codegen::validate_core_fields(input, attributes.role, fields)?;
@@ -257,12 +283,12 @@ fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
         EntityRole::Account => {
             let auth = codegen::auth_account_impl(ident, &entity_fields, core_root);
-            let model = account_impl(ident, &columns, &roots)?;
+            let model = account_impl(ident, fields, &columns, &roots)?;
             quote! { #auth #model }
         }
         EntityRole::Verification => {
             let auth = codegen::auth_verification_impl(ident, core_root);
-            let model = verification_impl(ident, &columns, &roots)?;
+            let model = verification_impl(ident, fields, &columns, &roots)?;
             quote! { #auth #model }
         }
     };
@@ -298,6 +324,7 @@ fn model_impl(
         );
         quote! { #sqlx_root::model::ColumnDef { name: #name, kind: #kind } }
     });
+    let names = columns.iter().map(|column| &column.physical);
     let unchanged = columns.iter().map(|column| {
         let name = &column.physical;
         let field = &column.ident;
@@ -327,6 +354,7 @@ fn model_impl(
         impl #sqlx_root::model::SqlxModel for #ident {
             const TABLE: &'static str = #table;
             const COLUMNS: &'static [#sqlx_root::model::ColumnDef] = &[#(#definitions),*];
+            const COLUMN_NAMES: &'static [&'static str] = &[#(#names),*];
             const PRIMARY_KEY: &'static str = #primary_key;
 
             fn into_active(self) -> #sqlx_root::model::ActiveRow {
@@ -356,32 +384,24 @@ fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStream {
         let field_ty = &column.ty;
         if column.renamed && name != camel {
             bindings.push(quote! {
-                #name => (#name, #sqlx_root::session_fields::raw_value(value)?),
+                #name => (#name, #sqlx_root::additional_fields::raw_value(value)?),
             });
         }
-        let ty = quote!(#field_ty).to_string();
-        let json_field = ty.contains("JsonMetadata");
-        let optional_json = json_field && ty.contains("Option");
-        let preparation = if optional_json {
-            quote! { if let Some(value) = value { Some(#sqlx_root::json_metadata::prepare_metadata_value(value, backend)?) } else { None } }
-        } else if json_field {
-            quote! { #sqlx_root::json_metadata::prepare_metadata_value(value, backend)? }
-        } else {
-            quote!(value)
-        };
         stages.push(quote! {
             #name => {
                 let value = <#field_ty as #sqlx_root::value::SqlxValue>::from_sql_value(value)
                     .map_err(|_error| #core_root::AuthError::internal("field value cannot be represented by its model column"))?;
-                active.set(#name, #sqlx_root::value::SqlxValue::into_sql_value(#preparation));
+                active.set(#name, #sqlx_root::value::SqlxValue::into_sql_value(
+                    #sqlx_root::value::SqlxValue::prepare(value, backend)?
+                ));
             }
         });
         bindings.push(quote! {
-            #camel => (#name, #sqlx_root::session_fields::raw_value(value)?),
+            #camel => (#name, #sqlx_root::additional_fields::raw_value(value)?),
         });
     }
     quote! {
-        fn additional_field_bindings(fields: &#core_root::field_policy::FieldValues, _backend: #sqlx_root::pool::SqlxBackend) -> #core_root::AuthResult<Vec<(&'static str, #sqlx_root::value::SqlValue)>> {
+        fn additional_field_bindings(fields: &#core_root::field_policy::FieldValues, _backend: #sqlx_root::pool::Engine) -> #core_root::AuthResult<Vec<(&'static str, #sqlx_root::value::SqlValue)>> {
             let mut bindings = Vec::new();
             for (name, value) in fields {
                 bindings.push(match fields.binding_name(name) {
@@ -391,8 +411,7 @@ fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStream {
             }
             Ok(bindings)
         }
-        fn set_additional_field(active: &mut #sqlx_root::model::ActiveRow, column: &'static str, value: #sqlx_root::value::SqlValue, backend: #sqlx_root::pool::SqlxBackend) -> #core_root::AuthResult<()> {
-            let _ = backend;
+        fn set_additional_field(active: &mut #sqlx_root::model::ActiveRow, column: &'static str, value: #sqlx_root::value::SqlValue, backend: #sqlx_root::pool::Engine) -> #core_root::AuthResult<()> {
             match column {
                 #(#stages)*
                 _ => return Err(#core_root::AuthError::internal("configured field has no model column")),
@@ -402,52 +421,61 @@ fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStream {
     }
 }
 
-/// A field value converted into the declared field type, as a model literal requires.
-fn typed(ty: &syn::Type, value: &TokenStream) -> TokenStream {
-    quote! { { let value: #ty = ::std::convert::Into::into(#value); value } }
-}
-
-/// The declared optional field type's `None`.
-fn typed_none(ty: &syn::Type) -> TokenStream {
-    quote! { { let value: #ty = ::std::option::Option::None; value } }
-}
-
-/// Emit staged values in model field order; fields without a value are omitted.
-fn staged(
-    columns: &[Column],
-    values: &HashMap<&str, TokenStream>,
-    roots: &Roots,
-) -> Vec<TokenStream> {
-    let sqlx_root = &roots.sqlx;
-    columns
-        .iter()
-        .map(|column| {
-            let name = &column.physical;
-            match values.get(column.ident.to_string().as_str()) {
-                Some(value) => {
-                    let value = typed(&column.ty, value);
-                    quote! {
-                        active.set(#name, #sqlx_root::value::SqlxValue::into_sql_value(#value));
-                    }
-                }
-                None => quote! { active.not_set(#name); },
+/// `active.set(column, value)` with `value` converted into the declared field
+/// type, so the staged `SqlValue` variant always matches the column.
+fn set_field(columns: &[Column], roots: &Roots) -> impl Fn(&Ident, &Insert) -> TokenStream {
+    let sqlx_root = roots.sqlx.clone();
+    move |field, insert| {
+        let Ok(column) = column_of(columns, &field.to_string()) else {
+            // `update_statements` only names fields the role validated.
+            return quote! {};
+        };
+        let name = &column.physical;
+        let ty = &column.ty;
+        let value = match insert {
+            Insert::Value(expr) => {
+                quote! { { let value: #ty = ::std::convert::Into::into(#expr); value } }
             }
-        })
-        .collect()
-}
-
-fn id_value(roots: &Roots) -> TokenStream {
-    let sqlx_root = &roots.sqlx;
-    let core_root = &roots.core;
-    quote! {
-        id.unwrap_or_else(|| #sqlx_root::value::SqlValue::Text(Some(#core_root::uuid::Uuid::new_v4().to_string())))
+            Insert::Null | Insert::Default => {
+                quote! { { let value: #ty = ::std::option::Option::None; value } }
+            }
+        };
+        quote! { active.set(#name, #sqlx_root::value::SqlxValue::into_sql_value(#value)); }
     }
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep the generated SqlxUserModel implementation together as one quoted trait contract"
-)]
+/// The `new_active` body: the identifier, then every other column in model
+/// order, staged or left to its database default.
+fn new_active(
+    role: EntityRole,
+    fields: &FieldsNamed,
+    columns: &[Column],
+    roots: &Roots,
+) -> syn::Result<TokenStream> {
+    let sqlx_root = &roots.sqlx;
+    let core_root = &roots.core;
+    let id_column = physical(columns, "id")?;
+    let set = set_field(columns, roots);
+    let staged = codegen::insert_values(role, fields)
+        .into_iter()
+        .map(|(field, insert)| match insert {
+            Insert::Default => {
+                let name = physical(columns, &field.to_string())?;
+                Ok(quote! { active.not_set(#name); })
+            }
+            insert => Ok(set(&field, &insert)),
+        })
+        .collect::<syn::Result<Vec<_>>>()?;
+    Ok(quote! {
+        let mut active = #sqlx_root::model::ActiveRow::new();
+        active.set(#id_column, id.unwrap_or_else(|| {
+            #sqlx_root::value::SqlValue::Text(Some(#core_root::uuid::Uuid::new_v4().to_string()))
+        }));
+        #(#staged)*
+        active
+    })
+}
+
 fn user_impl(
     ident: &Ident,
     fields: &FieldsNamed,
@@ -457,196 +485,19 @@ fn user_impl(
     let sqlx_root = &roots.sqlx;
     let core_root = &roots.core;
     let has = |name: &str| codegen::has_field(fields, name);
-    let optional = |name: &str| codegen::optional_field(fields, name);
-    let ty = |name: &str| column_of(columns, name).map(|column| column.ty.clone());
-
-    let mut values: HashMap<&str, TokenStream> = HashMap::new();
-    drop(values.insert("email", quote! { create_user.email }));
-    drop(values.insert("name", quote! { create_user.name }));
-    drop(values.insert("image", quote! { create_user.image }));
-    drop(values.insert(
-        "email_verified",
-        quote! { create_user.email_verified.unwrap_or(false) },
-    ));
-    drop(values.insert(
-        "created_at",
-        quote! { create_user.created_at.unwrap_or(now) },
-    ));
-    drop(values.insert(
-        "updated_at",
-        quote! { create_user.updated_at.unwrap_or(now) },
-    ));
-    if has("username") {
-        drop(values.insert("username", quote! { create_user.username }));
-    }
-    if has("display_username") {
-        drop(values.insert("display_username", quote! { create_user.display_username }));
-    }
-    if has("two_factor_enabled") {
-        drop(values.insert(
-            "two_factor_enabled",
-            if optional("two_factor_enabled") {
-                quote! { create_user.two_factor_enabled }
-            } else {
-                quote! { create_user.two_factor_enabled.unwrap_or(false) }
-            },
-        ));
-    }
-    if has("role") {
-        drop(values.insert("role", quote! { create_user.role }));
-    }
-    if has("banned") {
-        drop(values.insert(
-            "banned",
-            if optional("banned") {
-                quote! { create_user.banned }
-            } else {
-                quote! { create_user.banned.unwrap_or(false) }
-            },
-        ));
-    }
-    let mut none_fields = Vec::new();
-    if has("ban_reason") {
-        none_fields.push("ban_reason");
-    }
-    if has("ban_expires") {
-        none_fields.push("ban_expires");
-    }
-    if has("metadata") {
-        drop(values.insert(
-            "metadata",
-            quote! { create_user.metadata.unwrap_or(::serde_json::json!({})) },
-        ));
-    }
-    for name in [
-        "is_anonymous",
-        "phone_number",
-        "phone_number_verified",
-        "last_login_method",
-    ] {
-        if has(name) {
-            let field = Ident::new(name, Span::call_site());
-            drop(values.insert(name, quote! { create_user.#field }));
-        }
-    }
-    let id = id_value(roots);
-    let id_column = physical(columns, "id")?;
-    let mut new_active = staged(&without_id(columns), &values, roots);
-    for (index, column) in without_id(columns).iter().enumerate() {
-        if none_fields.iter().any(|name| column.ident == name) {
-            let name = &column.physical;
-            let value = typed_none(&column.ty);
-            if let Some(slot) = new_active.get_mut(index) {
-                *slot = quote! {
-                    active.set(#name, #sqlx_root::value::SqlxValue::into_sql_value(#value));
-                };
-            }
-        }
-    }
-
-    let set = |name: &str, value: TokenStream| -> syn::Result<TokenStream> {
-        let field = column_of(columns, name)?;
-        let column = &field.physical;
-        let value = typed(&field.ty, &value);
-        Ok(quote! { active.set(#column, #sqlx_root::value::SqlxValue::into_sql_value(#value)); })
-    };
-    let clear = |name: &str| -> syn::Result<TokenStream> {
-        let field = column_of(columns, name)?;
-        let column = &field.physical;
-        let value = typed_none(&field.ty);
-        Ok(quote! { active.set(#column, #sqlx_root::value::SqlxValue::into_sql_value(#value)); })
-    };
-    let mut updates = Vec::new();
-    for name in ["email", "name", "image"] {
-        let field = Ident::new(name, Span::call_site());
-        let assign = set(name, quote! { ::std::option::Option::Some(#field) })?;
-        updates.push(quote! {
-            if let ::std::option::Option::Some(#field) = update.#field { #assign }
-        });
-    }
-    let assign = set("email_verified", quote! { email_verified })?;
-    updates.push(quote! {
-        if let ::std::option::Option::Some(email_verified) = update.email_verified { #assign }
-    });
-    for name in ["username", "display_username", "role"] {
-        if has(name) {
-            let field = Ident::new(name, Span::call_site());
-            let assign = set(name, quote! { ::std::option::Option::Some(#field) })?;
-            updates.push(quote! {
-                if let ::std::option::Option::Some(#field) = update.#field { #assign }
-            });
-        }
-    }
-    if has("two_factor_enabled") {
-        let assign = set("two_factor_enabled", quote! { two_factor_enabled })?;
-        updates.push(quote! {
-            if let ::std::option::Option::Some(two_factor_enabled) = update.two_factor_enabled { #assign }
-        });
-    }
-    if has("metadata") {
-        let assign = set("metadata", quote! { metadata })?;
-        updates.push(quote! {
-            if let ::std::option::Option::Some(metadata) = update.metadata { #assign }
-        });
-    }
-    if has("banned") && has("ban_reason") && has("ban_expires") {
-        let banned = set("banned", quote! { banned })?;
-        let clear_reason = clear("ban_reason")?;
-        let clear_expires = clear("ban_expires")?;
-        let reason = set(
-            "ban_reason",
-            quote! { ::std::option::Option::Some(ban_reason) },
-        )?;
-        let expires = set("ban_expires", quote! { ban_expires })?;
-        updates.push(quote! {
-            if let ::std::option::Option::Some(banned) = update.banned {
-                #banned
-                if !banned {
-                    #clear_reason
-                    #clear_expires
-                }
-            }
-            if update.banned != ::std::option::Option::Some(false) {
-                if let ::std::option::Option::Some(ban_reason) = update.ban_reason { #reason }
-                if let ::std::option::Option::Some(ban_expires) = update.ban_expires { #expires }
-            }
-        });
-    } else if has("banned") {
-        let banned = set("banned", quote! { banned })?;
-        updates.push(quote! {
-            if let ::std::option::Option::Some(banned) = update.banned { #banned }
-        });
-    }
-    for name in ["is_anonymous", "phone_number_verified"] {
-        if has(name) {
-            let field = Ident::new(name, Span::call_site());
-            let assign = set(name, quote! { ::std::option::Option::Some(value) })?;
-            updates.push(quote! {
-                if let ::std::option::Option::Some(value) = update.#field { #assign }
-            });
-        }
-    }
-    for name in ["phone_number", "last_login_method"] {
-        if has(name) {
-            let field = Ident::new(name, Span::call_site());
-            let assign = set(name, quote! { value })?;
-            updates.push(quote! {
-                if let ::std::option::Option::Some(value) = update.#field { #assign }
-            });
-        }
-    }
-    let updated_at = set("updated_at", quote! { now })?;
-
+    let column = |name: &str| physical(columns, name);
+    let new_active = new_active(EntityRole::User, fields, columns, roots)?;
+    let updates = codegen::update_statements(EntityRole::User, fields, &set_field(columns, roots));
     let prepare_json_metadata = if has("metadata") {
-        let column = physical(columns, "metadata")?;
-        let field_ty = ty("metadata")?;
+        let metadata = column("metadata")?;
+        let field_ty = &column_of(columns, "metadata")?.ty;
         quote! {
-            fn prepare_json_metadata(active: &mut #sqlx_root::model::ActiveRow, backend: #sqlx_root::pool::SqlxBackend) -> #core_root::AuthResult<()> {
-                if let ::std::option::Option::Some(#sqlx_root::model::ActiveValue::Set(value)) = active.get(#column).cloned() {
+            fn prepare_json_metadata(active: &mut #sqlx_root::model::ActiveRow, backend: #sqlx_root::pool::Engine) -> #core_root::AuthResult<()> {
+                if let ::std::option::Option::Some(#sqlx_root::model::ActiveValue::Set(value)) = active.get(#metadata).cloned() {
                     let value = <#field_ty as #sqlx_root::value::SqlxValue>::from_sql_value(value)
                         .map_err(|_error| #core_root::AuthError::internal("Invalid JSON metadata value"))?;
-                    active.set(#column, #sqlx_root::value::SqlxValue::into_sql_value(
-                        #sqlx_root::json_metadata::prepare_metadata_value(value, backend)?
+                    active.set(#metadata, #sqlx_root::value::SqlxValue::into_sql_value(
+                        #sqlx_root::value::SqlxValue::prepare(value, backend)?
                     ));
                 }
                 Ok(())
@@ -656,14 +507,14 @@ fn user_impl(
         quote! {}
     };
     let username_column = if has("username") {
-        let column = physical(columns, "username")?;
-        quote! { fn username_column() -> Option<&'static str> { Some(#column) } }
+        let name = column("username")?;
+        quote! { fn username_column() -> Option<&'static str> { Some(#name) } }
     } else {
         quote! {}
     };
     let phone_number_column = if has("phone_number") {
-        let column = physical(columns, "phone_number")?;
-        quote! { fn phone_number_column() -> Option<&'static str> { Some(#column) } }
+        let name = column("phone_number")?;
+        quote! { fn phone_number_column() -> Option<&'static str> { Some(#name) } }
     } else {
         quote! {}
     };
@@ -672,9 +523,10 @@ fn user_impl(
         let name = &column.physical;
         quote! { #camel => Some(#name), }
     });
-    let email_column = physical(columns, "email")?;
-    let name_column = physical(columns, "name")?;
-    let created_at_column = physical(columns, "created_at")?;
+    let id_column = column("id")?;
+    let email_column = column("email")?;
+    let name_column = column("name")?;
+    let created_at_column = column("created_at")?;
     let additional = additional_fields(columns, roots);
 
     Ok(quote! {
@@ -699,10 +551,7 @@ fn user_impl(
                 create_user: #core_root::types::CreateUser,
                 now: ::chrono::DateTime<::chrono::Utc>,
             ) -> #sqlx_root::model::ActiveRow {
-                let mut active = #sqlx_root::model::ActiveRow::new();
-                active.set(#id_column, #id);
-                #(#new_active)*
-                active
+                #new_active
             }
 
             fn apply_update(
@@ -710,32 +559,12 @@ fn user_impl(
                 update: #core_root::types::UpdateUser,
                 now: ::chrono::DateTime<::chrono::Utc>,
             ) {
-                #(#updates)*
-                #updated_at
+                #updates
             }
         }
     })
 }
 
-fn without_id(columns: &[Column]) -> Vec<Column> {
-    columns
-        .iter()
-        .filter(|column| column.ident != "id")
-        .map(|column| Column {
-            ident: column.ident.clone(),
-            ty: column.ty.clone(),
-            camel: column.camel.clone(),
-            physical: column.physical.clone(),
-            renamed: column.renamed,
-            kind: column.kind.clone(),
-        })
-        .collect()
-}
-
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep the generated SqlxSessionModel implementation together as one quoted trait contract"
-)]
 fn session_impl(
     ident: &Ident,
     fields: &FieldsNamed,
@@ -745,55 +574,34 @@ fn session_impl(
     let sqlx_root = &roots.sqlx;
     let core_root = &roots.core;
     let has = |name: &str| codegen::has_field(fields, name);
-    let mut values: HashMap<&str, TokenStream> = HashMap::new();
-    drop(values.insert("user_id", quote! { create_session.user_id }));
-    drop(values.insert("token", quote! { token }));
-    drop(values.insert("expires_at", quote! { create_session.expires_at }));
-    drop(values.insert("created_at", quote! { now }));
-    drop(values.insert("updated_at", quote! { now }));
-    drop(values.insert("ip_address", quote! { create_session.ip_address }));
-    drop(values.insert("user_agent", quote! { create_session.user_agent }));
-    drop(values.insert("active", quote! { true }));
-    for name in [
-        "impersonated_by",
-        "active_organization_id",
-        "active_team_id",
-    ] {
-        if has(name) {
-            let field = Ident::new(name, Span::call_site());
-            drop(values.insert(name, quote! { create_session.#field }));
-        }
-    }
-    let id = id_value(roots);
-    let id_column = physical(columns, "id")?;
-    let new_active = staged(&without_id(columns), &values, roots);
     let column = |name: &str| physical(columns, name);
+    let new_active = new_active(EntityRole::Session, fields, columns, roots)?;
+    let set = set_field(columns, roots);
+    let id_column = column("id")?;
     let token_column = column("token")?;
     let user_id_column = column("user_id")?;
     let active_column = column("active")?;
     let expires_at_column = column("expires_at")?;
     let created_at_column = column("created_at")?;
-    let updated_at_column = column("updated_at")?;
-    let expires_at = typed(
-        &column_of(columns, "expires_at")?.ty,
-        &quote! { expires_at },
+    let set_expires_at = set(
+        &Ident::new("expires_at", Span::call_site()),
+        &Insert::Value(quote! { expires_at }),
     );
-    let updated_at = typed(
-        &column_of(columns, "updated_at")?.ty,
-        &quote! { updated_at },
+    let set_updated_at = set(
+        &Ident::new("updated_at", Span::call_site()),
+        &Insert::Value(quote! { updated_at }),
     );
     let set_active_org = if has("active_organization_id") {
-        let name = column("active_organization_id")?;
-        let value = typed(
-            &column_of(columns, "active_organization_id")?.ty,
-            &quote! { organization_id },
+        let assign = set(
+            &Ident::new("active_organization_id", Span::call_site()),
+            &Insert::Value(quote! { organization_id }),
         );
         quote! {
             fn set_active_organization_id(
                 active: &mut #sqlx_root::model::ActiveRow,
                 organization_id: ::std::option::Option<::std::string::String>,
             ) {
-                active.set(#name, #sqlx_root::value::SqlxValue::into_sql_value(#value));
+                #assign
             }
         }
     } else {
@@ -802,22 +610,21 @@ fn session_impl(
                 _active: &mut #sqlx_root::model::ActiveRow,
                 _organization_id: ::std::option::Option<::std::string::String>,
             ) {
-                // organization plugin not enabled — no-op
+                // The organization plugin's column is not declared.
             }
         }
     };
     let set_active_team = if has("active_team_id") {
-        let name = column("active_team_id")?;
-        let value = typed(
-            &column_of(columns, "active_team_id")?.ty,
-            &quote! { team_id },
+        let assign = set(
+            &Ident::new("active_team_id", Span::call_site()),
+            &Insert::Value(quote! { team_id }),
         );
         quote! {
             fn set_active_team_id(
                 active: &mut #sqlx_root::model::ActiveRow,
                 team_id: ::std::option::Option<::std::string::String>,
             ) -> #core_root::AuthResult<()> {
-                active.set(#name, #sqlx_root::value::SqlxValue::into_sql_value(#value));
+                #assign
                 Ok(())
             }
         }
@@ -850,24 +657,21 @@ fn session_impl(
                 create_session: #core_root::types::CreateSession,
                 now: ::chrono::DateTime<::chrono::Utc>,
             ) -> #sqlx_root::model::ActiveRow {
-                let mut active = #sqlx_root::model::ActiveRow::new();
-                active.set(#id_column, #id);
-                #(#new_active)*
-                active
+                #new_active
             }
 
             fn set_expires_at(
                 active: &mut #sqlx_root::model::ActiveRow,
                 expires_at: ::chrono::DateTime<::chrono::Utc>,
             ) {
-                active.set(#expires_at_column, #sqlx_root::value::SqlxValue::into_sql_value(#expires_at));
+                #set_expires_at
             }
 
             fn set_updated_at(
                 active: &mut #sqlx_root::model::ActiveRow,
                 updated_at: ::chrono::DateTime<::chrono::Utc>,
             ) {
-                active.set(#updated_at_column, #sqlx_root::value::SqlxValue::into_sql_value(#updated_at));
+                #set_updated_at
             }
 
             #set_active_org
@@ -876,60 +680,23 @@ fn session_impl(
     })
 }
 
-fn account_impl(ident: &Ident, columns: &[Column], roots: &Roots) -> syn::Result<TokenStream> {
+fn account_impl(
+    ident: &Ident,
+    fields: &FieldsNamed,
+    columns: &[Column],
+    roots: &Roots,
+) -> syn::Result<TokenStream> {
     let sqlx_root = &roots.sqlx;
     let core_root = &roots.core;
-    let mut values: HashMap<&str, TokenStream> = HashMap::new();
-    for name in [
-        "account_id",
-        "provider_id",
-        "user_id",
-        "access_token",
-        "refresh_token",
-        "id_token",
-        "access_token_expires_at",
-        "refresh_token_expires_at",
-        "scope",
-        "password",
-    ] {
-        let field = Ident::new(name, Span::call_site());
-        drop(values.insert(name, quote! { create_account.#field }));
-    }
-    drop(values.insert("created_at", quote! { now }));
-    drop(values.insert("updated_at", quote! { now }));
-    let id = id_value(roots);
-    let id_column = physical(columns, "id")?;
-    let new_active = staged(&without_id(columns), &values, roots);
-    let mut updates = Vec::new();
-    for name in [
-        "access_token",
-        "refresh_token",
-        "id_token",
-        "access_token_expires_at",
-        "refresh_token_expires_at",
-        "scope",
-        "password",
-    ] {
-        let field = Ident::new(name, Span::call_site());
-        let definition = column_of(columns, name)?;
-        let column = &definition.physical;
-        let value = typed(
-            &definition.ty,
-            &quote! { ::std::option::Option::Some(#field) },
-        );
-        updates.push(quote! {
-            if let ::std::option::Option::Some(#field) = update.#field {
-                active.set(#column, #sqlx_root::value::SqlxValue::into_sql_value(#value));
-            }
-        });
-    }
     let column = |name: &str| physical(columns, name);
+    let new_active = new_active(EntityRole::Account, fields, columns, roots)?;
+    let updates =
+        codegen::update_statements(EntityRole::Account, fields, &set_field(columns, roots));
+    let id_column = column("id")?;
     let provider_id_column = column("provider_id")?;
     let account_id_column = column("account_id")?;
     let user_id_column = column("user_id")?;
     let created_at_column = column("created_at")?;
-    let updated_at = typed(&column_of(columns, "updated_at")?.ty, &quote! { now });
-    let updated_at_column = column("updated_at")?;
     let additional = additional_fields(columns, roots);
     Ok(quote! {
         impl #sqlx_root::SqlxAccountModel for #ident {
@@ -951,10 +718,7 @@ fn account_impl(ident: &Ident, columns: &[Column], roots: &Roots) -> syn::Result
                 create_account: #core_root::types::CreateAccount,
                 now: ::chrono::DateTime<::chrono::Utc>,
             ) -> #sqlx_root::model::ActiveRow {
-                let mut active = #sqlx_root::model::ActiveRow::new();
-                active.set(#id_column, #id);
-                #(#new_active)*
-                active
+                #new_active
             }
 
             fn apply_update(
@@ -962,26 +726,23 @@ fn account_impl(ident: &Ident, columns: &[Column], roots: &Roots) -> syn::Result
                 update: #core_root::types::UpdateAccount,
                 now: ::chrono::DateTime<::chrono::Utc>,
             ) {
-                #(#updates)*
-                active.set(#updated_at_column, #sqlx_root::value::SqlxValue::into_sql_value(#updated_at));
+                #updates
             }
         }
     })
 }
 
-fn verification_impl(ident: &Ident, columns: &[Column], roots: &Roots) -> syn::Result<TokenStream> {
+fn verification_impl(
+    ident: &Ident,
+    fields: &FieldsNamed,
+    columns: &[Column],
+    roots: &Roots,
+) -> syn::Result<TokenStream> {
     let sqlx_root = &roots.sqlx;
     let core_root = &roots.core;
-    let mut values: HashMap<&str, TokenStream> = HashMap::new();
-    drop(values.insert("identifier", quote! { verification.identifier }));
-    drop(values.insert("value", quote! { verification.value }));
-    drop(values.insert("expires_at", quote! { verification.expires_at }));
-    drop(values.insert("created_at", quote! { now }));
-    drop(values.insert("updated_at", quote! { now }));
-    let id = id_value(roots);
-    let id_column = physical(columns, "id")?;
-    let new_active = staged(&without_id(columns), &values, roots);
     let column = |name: &str| physical(columns, name);
+    let new_active = new_active(EntityRole::Verification, fields, columns, roots)?;
+    let id_column = column("id")?;
     let identifier_column = column("identifier")?;
     let value_column = column("value")?;
     let expires_at_column = column("expires_at")?;
@@ -1004,10 +765,7 @@ fn verification_impl(ident: &Ident, columns: &[Column], roots: &Roots) -> syn::R
                 verification: #core_root::types::CreateVerification,
                 now: ::chrono::DateTime<::chrono::Utc>,
             ) -> #sqlx_root::model::ActiveRow {
-                let mut active = #sqlx_root::model::ActiveRow::new();
-                active.set(#id_column, #id);
-                #(#new_active)*
-                active
+                #new_active
             }
         }
     })
@@ -1042,5 +800,22 @@ fn verification_impl(ident: &Ident, columns: &[Column], roots: &Roots) -> syn::R
 #[proc_macro_derive(AuthEntity, attributes(auth))]
 pub fn derive_auth_entity(input: ProcMacroTokenStream) -> ProcMacroTokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    generate_auth_entity(&input).into()
+    try_generate_entity(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
+}
+
+/// Derive macro that implements `SqlxModel` for a table-backed row type.
+///
+/// `#[auth(table = "...")]` names the physical table; the `id` field is the
+/// primary key. Physical column names follow `#[sqlx(rename = "...")]` and
+/// `#[sqlx(rename_all = "...")]`, and `#[auth(column_type = "...")]`
+/// overrides a column's inferred category. The struct must also derive
+/// `sqlx::FromRow`.
+#[proc_macro_derive(SqlxModel, attributes(auth))]
+pub fn derive_sqlx_model(input: ProcMacroTokenStream) -> ProcMacroTokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    try_generate_model(&input)
+        .unwrap_or_else(syn::Error::into_compile_error)
+        .into()
 }

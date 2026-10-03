@@ -44,7 +44,7 @@ fails with missing organization in `/tmp/two-factor-disable-native-before.log`.
 After: ten focused native tests pass (`/tmp/two-factor-disable-native-final.log`)
 and all ten SDK scenarios / 112 assertions pass against both runtimes
 (`/tmp/two-factor-disable-sdk-final.log`). TypeScript, workspace library Clippy
-with `seaorm2`, formatting and diff checks pass. Independent coordinator review is clear. The integrated canonical gate passes:
+with `seaorm`, formatting and diff checks pass. Independent coordinator review is clear. The integrated canonical gate passes:
 259 SDK scenarios / 7,374 assertions, 37 harness tests / 210 assertions,
 two Chromium tests / 22 assertions and 79.21% source lines
 (23,646 / 29,853). Log: /tmp/two-factor-disable-selected-canonical.log.

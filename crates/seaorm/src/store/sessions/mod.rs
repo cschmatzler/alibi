@@ -1,8 +1,9 @@
-use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
+use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmSessionModel};
 use async_trait::async_trait;
 use better_auth_core::error::{AuthError, AuthResult};
 use better_auth_core::store::SessionStore;
+use better_auth_core::store::adapter::cancelled_by_hook;
 use better_auth_core::types::CreateSession;
 use chrono::{DateTime, Utc};
 use sea_orm::{
@@ -80,9 +81,9 @@ where
         // schemas with renamed columns and no generic additional-field bindings.
         for (name, destination) in typed_fields {
             if let Some(value) = fields.shift_remove(name) {
-                *destination = crate::session_fields::prepare_string_value(
+                *destination = crate::additional_fields::prepare_string_value(
                     db,
-                    crate::session_fields::raw_value(&value)?,
+                    crate::additional_fields::raw_value(&value)?,
                 )
                 .await?;
             }
@@ -92,7 +93,7 @@ where
             for (column, value) in
                 S::Session::additional_field_bindings(&fields, db.get_database_backend())?
             {
-                let value = crate::session_fields::prepare_value(db, &column, value).await?;
+                let value = crate::additional_fields::prepare_value(db, &column, value).await?;
                 S::Session::set_additional_field(
                     &mut active,
                     column,
@@ -137,7 +138,7 @@ where
         let mut active = session.into_active_model();
         let backend = db.get_database_backend();
         for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-            let value = crate::session_fields::prepare_value(db, &column, value).await?;
+            let value = crate::additional_fields::prepare_value(db, &column, value).await?;
             S::Session::set_additional_field(&mut active, column, value, backend)?;
         }
         if let Some(expiry) = expires_at {
@@ -177,7 +178,7 @@ where
             let mut active = current.into_active_model();
             let backend = db.get_database_backend();
             for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value = crate::session_fields::prepare_value(db, &column, value).await?;
+                let value = crate::additional_fields::prepare_value(db, &column, value).await?;
                 S::Session::set_additional_field(&mut active, column, value, backend)?;
             }
             if let Some(expiry) = expires_at {
@@ -268,7 +269,8 @@ where
         if !fields.is_empty() {
             for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
                 let value =
-                    crate::session_fields::prepare_value(self.connection(), &column, value).await?;
+                    crate::additional_fields::prepare_value(self.connection(), &column, value)
+                        .await?;
                 S::Session::set_additional_field(&mut active, column, value, backend)?;
             }
         }

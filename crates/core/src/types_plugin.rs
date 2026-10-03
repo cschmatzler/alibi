@@ -281,6 +281,40 @@ impl ApiKeyStartingCharacters {
     pub fn as_utf16(&self) -> &[u16] {
         &self.0
     }
+
+    /// The text a store persists: UTF-8 when the UTF-16 units are well
+    /// formed, otherwise the WTF-8 bytes the reference SQLite adapter writes.
+    #[must_use]
+    pub fn storage_text(&self) -> ApiKeyStartText {
+        if let Ok(text) = String::from_utf16(&self.0) {
+            return ApiKeyStartText::Utf8(text);
+        }
+        let mut bytes = Vec::new();
+        for scalar in char::decode_utf16(self.0.iter().copied()) {
+            match scalar {
+                Ok(scalar) => {
+                    bytes.extend_from_slice(scalar.encode_utf8(&mut [0_u8; 4]).as_bytes());
+                }
+                Err(error) => {
+                    let [high, low] = error.unpaired_surrogate().to_be_bytes();
+                    bytes.extend_from_slice(&[
+                        0xe0 | (high >> 4),
+                        0x80 | ((high & 0x0f) << 2) | (low >> 6),
+                        0x80 | (low & 0x3f),
+                    ]);
+                }
+            }
+        }
+        ApiKeyStartText::Wtf8(bytes)
+    }
+}
+
+/// How API-key starting characters are persisted.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ApiKeyStartText {
+    Utf8(String),
+    /// Unpaired surrogates encoded as WTF-8; only SQLite stores these.
+    Wtf8(Vec<u8>),
 }
 
 impl From<String> for ApiKeyStartingCharacters {

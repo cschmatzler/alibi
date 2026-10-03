@@ -29,22 +29,23 @@ impl<S: AuthSchema> SqlxStore<S> {
         sets: Vec<Set>,
         guards: Vec<Guard>,
     ) -> AuthResult<Option<Model>> {
-        let mut sql = Sql::with(self.exec().backend(), "UPDATE ");
-        sql.ident(Model::TABLE).push(" SET ");
+        let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(Model::TABLE);
+        sql.push(" SET ");
         for (index, set) in sets.into_iter().enumerate() {
             if index > 0 {
                 sql.push(", ");
             }
             match set {
                 Set::Value(column, value) => {
-                    sql.ident(column).push(" = ").bind(value);
+                    sql.assign(column, value);
                 }
                 Set::Offset(column, operator, value) => {
-                    sql.ident(column)
-                        .push(" = ")
-                        .ident(column)
-                        .push(operator)
-                        .bind(value);
+                    sql.ident(column);
+                    sql.push(" = ");
+                    sql.ident(column);
+                    sql.push(operator);
+                    sql.bind(value);
                 }
             }
         }
@@ -52,10 +53,13 @@ impl<S: AuthSchema> SqlxStore<S> {
             sql.push(if index == 0 { " WHERE " } else { " AND " });
             match guard {
                 Guard::Compare(column, operator, value) => {
-                    sql.column(Model::TABLE, column).push(operator).bind(value);
+                    sql.column(Model::TABLE, column);
+                    sql.push(operator);
+                    sql.bind(value);
                 }
                 Guard::IsNull(column) => {
-                    sql.column(Model::TABLE, column).push(" IS NULL");
+                    sql.column(Model::TABLE, column);
+                    sql.push(" IS NULL");
                 }
             }
         }

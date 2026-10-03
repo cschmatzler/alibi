@@ -61,8 +61,8 @@ doctests run separately with `cargo test --doc`; illustrative `ignore` examples
 remain excluded.
 Every dual-server comparison runs through the official client against both
 fixture servers on allocated ports started and stopped by the Rust orchestrator;
-there is no in-process shape-only comparison layer with tolerated differences. Default and `axum,seaorm2,redis-cache` configurations are tested;
-`rustls,axum,seaorm2,redis-cache` is also compiled without default features.
+there is no in-process shape-only comparison layer with tolerated differences. Default and `axum,seaorm,redis-cache` configurations are tested;
+`rustls,axum,seaorm,redis-cache` is also compiled without default features.
 The excluded Rust compatibility server is built, formatted, and tested. Its
 SQLite regression verifies that connection maintenance retains migrated tables
 and persisted user identity throughout the fixture lifetime.

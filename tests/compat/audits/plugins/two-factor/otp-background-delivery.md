@@ -104,7 +104,7 @@ two-factor family passes 71 owners/5884 assertions in
 in `/tmp/two-factor-otp-background-native-final.log`. Production Clippy and
 client/reference typechecking pass. Final strict fixture Clippy and locked build
 pass in `/tmp/two-factor-otp-background-fixture-{clippy,build}-final-corrected.log`;
-the default-feature-free `rustls,axum,seaorm2,redis-cache` consumer passes in
+the default-feature-free `rustls,axum,seaorm,redis-cache` consumer passes in
 `/tmp/two-factor-otp-background-consumer-rustls-final.log`. Final rebuilt-fixture
 primary differential passes 4/976 in
 `/tmp/two-factor-otp-background-sdk-final.log`. Edition-specific formatting and

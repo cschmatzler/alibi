@@ -3,17 +3,17 @@
 //! Each model derives the selected backend's `AuthEntity`; both read the same
 //! physical tables, created by `additional_fields_fixture`.
 pub(super) mod application_user {
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
     use chrono::{DateTime, Utc};
     use serde::Serialize;
     #[cfg_attr(
-        feature = "seaorm2",
+        feature = "seaorm",
         derive(better_auth::seaorm::AuthEntity, DeriveEntityModel),
         sea_orm(table_name = "app_user")
     )]
     #[cfg_attr(
-        not(feature = "seaorm2"),
+        not(feature = "seaorm"),
         derive(better_auth::sqlx::AuthEntity, sqlx::FromRow),
         auth(table = "app_user")
     )]
@@ -21,45 +21,45 @@ pub(super) mod application_user {
     #[auth(role = "user")]
     #[serde(rename_all = "camelCase")]
     pub struct Model {
-        #[cfg_attr(feature = "seaorm2", sea_orm(primary_key, auto_increment = false))]
+        #[cfg_attr(feature = "seaorm", sea_orm(primary_key, auto_increment = false))]
         pub id: String,
-        #[cfg_attr(feature = "seaorm2", sea_orm(column_name = "display_name"))]
-        #[cfg_attr(not(feature = "seaorm2"), sqlx(rename = "display_name"))]
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "display_name"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "display_name"))]
         pub name: Option<String>,
         pub email: Option<String>,
         pub email_verified: bool,
         pub image: Option<String>,
         pub created_at: DateTime<Utc>,
         pub updated_at: DateTime<Utc>,
-        #[cfg_attr(feature = "seaorm2", sea_orm(column_name = "user_label"))]
-        #[cfg_attr(not(feature = "seaorm2"), sqlx(rename = "user_label"))]
+        #[cfg_attr(feature = "seaorm", sea_orm(column_name = "user_label"))]
+        #[cfg_attr(not(feature = "seaorm"), sqlx(rename = "user_label"))]
         pub label: Option<String>,
         pub hidden: Option<String>,
         pub omitted: Option<String>,
         pub readonly: Option<String>,
         pub role: Option<String>,
-        #[cfg_attr(feature = "seaorm2", sea_orm(default_value = "physical-private"))]
+        #[cfg_attr(feature = "seaorm", sea_orm(default_value = "physical-private"))]
         #[serde(rename = "private_column")]
         pub private_column: String,
     }
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
     pub enum Relation {}
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     impl ActiveModelBehavior for ActiveModel {}
 }
 pub(super) mod application_session {
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
     use chrono::{DateTime, Utc};
     use serde::Serialize;
     #[cfg_attr(
-        feature = "seaorm2",
+        feature = "seaorm",
         derive(better_auth::seaorm::AuthEntity, DeriveEntityModel),
         sea_orm(table_name = "app_session")
     )]
     #[cfg_attr(
-        not(feature = "seaorm2"),
+        not(feature = "seaorm"),
         derive(better_auth::sqlx::AuthEntity, sqlx::FromRow),
         auth(table = "app_session")
     )]
@@ -67,7 +67,7 @@ pub(super) mod application_session {
     #[auth(role = "session")]
     #[serde(rename_all = "camelCase")]
     pub struct Model {
-        #[cfg_attr(feature = "seaorm2", sea_orm(primary_key, auto_increment = false))]
+        #[cfg_attr(feature = "seaorm", sea_orm(primary_key, auto_increment = false))]
         pub id: String,
         pub expires_at: DateTime<Utc>,
         pub token: String,
@@ -82,24 +82,24 @@ pub(super) mod application_session {
         pub hidden: Option<String>,
         pub omitted: Option<String>,
     }
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
     pub enum Relation {}
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     impl ActiveModelBehavior for ActiveModel {}
 }
 pub(super) mod application_account {
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
     use chrono::{DateTime, Utc};
     use serde::Serialize;
     #[cfg_attr(
-        feature = "seaorm2",
+        feature = "seaorm",
         derive(better_auth::seaorm::AuthEntity, DeriveEntityModel),
         sea_orm(table_name = "app_account")
     )]
     #[cfg_attr(
-        not(feature = "seaorm2"),
+        not(feature = "seaorm"),
         derive(better_auth::sqlx::AuthEntity, sqlx::FromRow),
         auth(table = "app_account")
     )]
@@ -107,7 +107,7 @@ pub(super) mod application_account {
     #[auth(role = "account")]
     #[serde(rename_all = "camelCase")]
     pub struct Model {
-        #[cfg_attr(feature = "seaorm2", sea_orm(primary_key, auto_increment = false))]
+        #[cfg_attr(feature = "seaorm", sea_orm(primary_key, auto_increment = false))]
         pub id: String,
         pub account_id: String,
         pub provider_id: String,
@@ -125,10 +125,10 @@ pub(super) mod application_account {
         pub hidden: Option<String>,
         pub omitted: Option<String>,
     }
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
     pub enum Relation {}
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     impl ActiveModelBehavior for ActiveModel {}
 }
 

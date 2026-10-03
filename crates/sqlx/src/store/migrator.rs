@@ -1,6 +1,6 @@
 //! The bundled auth schema as one migration, in the ledger `SeaORM` also uses.
 
-use crate::pool::{Exec, SqlxBackend, SqlxPool};
+use crate::pool::{Engine, Exec, SqlxPool};
 use crate::sql::Sql;
 use better_auth_core::error::{AuthError, AuthResult, DatabaseError};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -35,21 +35,21 @@ pub(crate) async fn apply(
     migrations: &[Migration],
 ) -> AuthResult<()> {
     let exec = Exec::Pool(pool);
-    let backend = pool.backend();
+    let backend = pool.engine();
     let applied_at = match backend {
-        SqlxBackend::Sqlite => "integer",
-        SqlxBackend::Postgres => "bigint",
+        Engine::Sqlite => "integer",
+        Engine::Postgres => "bigint",
     };
     let mut install = Sql::with(backend, "CREATE TABLE IF NOT EXISTS ");
-    install
-        .ident(ledger)
-        .push(" ( \"version\" varchar NOT NULL PRIMARY KEY, \"applied_at\" ")
-        .push(applied_at)
-        .push(" NOT NULL )");
-    exec.execute(install).await?;
+    install.ident(ledger);
+    install.push(" ( \"version\" varchar NOT NULL PRIMARY KEY, \"applied_at\" ");
+    install.push(applied_at);
+    install.push(" NOT NULL )");
+    _ = exec.execute(install).await?;
 
     let mut select = Sql::with(backend, "SELECT \"version\" FROM ");
-    select.ident(ledger).push(" ORDER BY \"version\" ASC");
+    select.ident(ledger);
+    select.push(" ORDER BY \"version\" ASC");
     let applied: Vec<String> = exec.fetch_all_scalar(select).await?;
     let missing: Vec<String> = applied
         .iter()
@@ -72,8 +72,8 @@ pub(crate) async fn apply(
         let transaction = pool.begin(false).await?;
         let exec = Exec::Tx(&transaction);
         exec.execute_script(match backend {
-            SqlxBackend::Sqlite => migration.sqlite,
-            SqlxBackend::Postgres => migration.postgres,
+            Engine::Sqlite => migration.sqlite,
+            Engine::Postgres => migration.postgres,
         })
         .await?;
         let applied_at = SystemTime::now()
@@ -81,14 +81,13 @@ pub(crate) async fn apply(
             .map_err(|_error| AuthError::internal("System time is before the Unix epoch"))?
             .as_secs();
         let mut record = Sql::with(backend, "INSERT INTO ");
-        record
-            .ident(ledger)
-            .push(" (\"version\", \"applied_at\") VALUES (")
-            .bind(migration.name)
-            .push(", ")
-            .bind(i64::try_from(applied_at).unwrap_or(i64::MAX))
-            .push(")");
-        exec.execute(record).await?;
+        record.ident(ledger);
+        record.push(" (\"version\", \"applied_at\") VALUES (");
+        record.bind(migration.name);
+        record.push(", ");
+        record.bind(i64::try_from(applied_at).unwrap_or(i64::MAX));
+        record.push(")");
+        _ = exec.execute(record).await?;
         transaction.commit().await?;
     }
     Ok(())
@@ -96,12 +95,12 @@ pub(crate) async fn apply(
 
 /// Whether a base table exists in the current schema.
 pub(crate) async fn has_table(exec: Exec<'_>, table: &str) -> AuthResult<bool> {
-    let mut sql = Sql::new(exec.backend());
-    match exec.backend() {
-        SqlxBackend::Sqlite => sql.push(
+    let mut sql = Sql::new(exec.engine());
+    match exec.engine() {
+        Engine::Sqlite => sql.push(
             "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name <> 'sqlite_sequence' AND name = ",
         ),
-        SqlxBackend::Postgres => sql.push(
+        Engine::Postgres => sql.push(
             "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_type = 'BASE TABLE' AND table_name = ",
         ),
     };

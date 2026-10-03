@@ -121,10 +121,10 @@ pub use store::{
     WalletAddressStore, transaction,
 };
 pub use types::{
-    ApiKey, ApiKeyStartingCharacters, AuthRequest, AuthResponse, CodeMessageResponse,
-    CreateAccount, CreateApiKey, CreateDeviceCode, CreateInvitation, CreateMember,
-    CreateOrganization, CreatePasskey, CreateSession, CreateTeam, CreateTwoFactor, CreateUser,
-    CreateVerification, CreateWalletAddress, DeviceCode, ErrorCodeMessageResponse,
+    ApiKey, ApiKeyStartText, ApiKeyStartingCharacters, AuthRequest, AuthResponse,
+    CodeMessageResponse, CreateAccount, CreateApiKey, CreateDeviceCode, CreateInvitation,
+    CreateMember, CreateOrganization, CreatePasskey, CreateSession, CreateTeam, CreateTwoFactor,
+    CreateUser, CreateVerification, CreateWalletAddress, DeviceCode, ErrorCodeMessageResponse,
     ErrorMessageResponse, Headers, HealthCheckResponse, HttpMethod, Invitation, InvitationStatus,
     ListUsersParams, Member, OkResponse, Organization, OrganizationPermissions, Passkey,
     RateLimitErrorResponse, RequestMeta, StatusMessageResponse, StatusResponse,

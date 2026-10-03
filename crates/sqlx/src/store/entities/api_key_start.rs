@@ -1,8 +1,10 @@
-use crate::pool::SqlxBackend;
+use crate::pool::Engine;
 use crate::value::{ColumnKind, SqlValue, SqlxValue, ValueTypeError};
-use better_auth_core::{ApiKeyStartingCharacters, AuthError, AuthResult};
+use better_auth_core::{ApiKeyStartText, ApiKeyStartingCharacters, AuthError, AuthResult};
 use sqlx::error::BoxDynError;
+#[cfg(feature = "postgres")]
 use sqlx::postgres::{PgTypeInfo, PgValueRef, Postgres};
+#[cfg(feature = "sqlite")]
 use sqlx::sqlite::{Sqlite, SqliteTypeInfo, SqliteValueRef};
 use sqlx::{Decode, Type};
 
@@ -15,38 +17,17 @@ pub struct ApiKeyStart {
 }
 
 impl ApiKeyStart {
-    pub(crate) fn prepare(
-        value: ApiKeyStartingCharacters,
-        backend: SqlxBackend,
-    ) -> AuthResult<Self> {
-        if let Ok(text) = String::from_utf16(value.as_utf16()) {
-            return Ok(Self {
+    pub(crate) fn prepare(value: ApiKeyStartingCharacters, backend: Engine) -> AuthResult<Self> {
+        match value.storage_text() {
+            ApiKeyStartText::Utf8(text) => Ok(Self {
                 text,
                 sqlite_bytes: None,
-            });
-        }
-        if backend != SqlxBackend::Sqlite {
-            return Err(AuthError::internal(
+            }),
+            ApiKeyStartText::Wtf8(bytes) if backend == Engine::Sqlite => Ok(Self::sqlite(bytes)),
+            ApiKeyStartText::Wtf8(_) => Err(AuthError::internal(
                 "UTF-16 API-key starting characters require SQLite storage",
-            ));
+            )),
         }
-        let mut bytes = Vec::new();
-        for scalar in char::decode_utf16(value.as_utf16().iter().copied()) {
-            match scalar {
-                Ok(scalar) => {
-                    bytes.extend_from_slice(scalar.encode_utf8(&mut [0_u8; 4]).as_bytes())
-                }
-                Err(error) => {
-                    let [high, low] = error.unpaired_surrogate().to_be_bytes();
-                    bytes.extend_from_slice(&[
-                        0xe0 | (high >> 4),
-                        0x80 | ((high & 0x0f) << 2) | (low >> 6),
-                        0x80 | (low & 0x3f),
-                    ]);
-                }
-            }
-        }
-        Ok(Self::sqlite(bytes))
     }
 
     fn sqlite(bytes: Vec<u8>) -> Self {
@@ -88,6 +69,7 @@ impl SqlxValue for ApiKeyStart {
     }
 }
 
+#[cfg(feature = "sqlite")]
 impl Type<Sqlite> for ApiKeyStart {
     fn type_info() -> SqliteTypeInfo {
         <Vec<u8> as Type<Sqlite>>::type_info()
@@ -97,12 +79,14 @@ impl Type<Sqlite> for ApiKeyStart {
     }
 }
 
+#[cfg(feature = "sqlite")]
 impl<'r> Decode<'r, Sqlite> for ApiKeyStart {
     fn decode(value: SqliteValueRef<'r>) -> Result<Self, BoxDynError> {
         <Vec<u8> as Decode<'r, Sqlite>>::decode(value).map(Self::sqlite)
     }
 }
 
+#[cfg(feature = "postgres")]
 impl Type<Postgres> for ApiKeyStart {
     fn type_info() -> PgTypeInfo {
         <String as Type<Postgres>>::type_info()
@@ -112,6 +96,7 @@ impl Type<Postgres> for ApiKeyStart {
     }
 }
 
+#[cfg(feature = "postgres")]
 impl<'r> Decode<'r, Postgres> for ApiKeyStart {
     fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
         <String as Decode<'r, Postgres>>::decode(value).map(|text| Self {

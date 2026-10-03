@@ -24,15 +24,11 @@ where
         chain_id: Option<f64>,
     ) -> AuthResult<Option<WalletAddress>> {
         let mut sql = model::select_model::<wallet_address::Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(wallet_address::Model::TABLE, "address")
-            .push(" = ")
-            .bind(address);
+        sql.push(" WHERE ");
+        sql.compare(wallet_address::Model::TABLE, "address", " = ", address);
         if let Some(chain_id) = chain_id {
-            sql.push(" AND ")
-                .column(wallet_address::Model::TABLE, "chain_id")
-                .push(" = ")
-                .bind(chain_id);
+            sql.push(" AND ");
+            sql.compare(wallet_address::Model::TABLE, "chain_id", " = ", chain_id);
         }
         model::limit_one(&mut sql);
         // The upstream adapter uses findOne without ordering. In SQLite this
@@ -49,29 +45,27 @@ where
         if !data.chain_id.is_finite() {
             return Err(AuthError::bad_request("Wallet chain ID must be finite"));
         }
-        self.in_transaction(true, move |tx| {
-            Box::pin(async move {
-                let exec = Exec::Tx(tx);
-                let owner = super::users::find_user_by_id::<S::User>(
-                    exec,
-                    &data.user_id,
-                    super::users::Lock::Shared,
-                )
-                .await?
-                .ok_or(AuthError::UserNotFound)?;
-                let mut active = ActiveRow::new();
-                active.set("id", Uuid::new_v4().to_string());
-                active.set("user_id", owner.id().into_owned());
-                active.set("address", data.address);
-                active.set(
-                    "chain_id",
-                    WalletChainId::from(data.chain_id).into_sql_value(),
-                );
-                active.set("is_primary", data.is_primary);
-                active.set("created_at", Utc::now());
-                let created = model::insert::<wallet_address::Model>(exec, &active).await?;
-                Ok(created.into())
-            })
+        self.in_transaction(true, async move |tx| {
+            let exec = Exec::Tx(tx);
+            let owner = super::users::find_user_by_id::<S::User>(
+                exec,
+                &data.user_id,
+                super::users::Lock::Shared,
+            )
+            .await?
+            .ok_or(AuthError::UserNotFound)?;
+            let mut active = ActiveRow::new();
+            active.set("id", Uuid::new_v4().to_string());
+            active.set("user_id", owner.id().into_owned());
+            active.set("address", data.address);
+            active.set(
+                "chain_id",
+                WalletChainId::from(data.chain_id).into_sql_value(),
+            );
+            active.set("is_primary", data.is_primary);
+            active.set("created_at", Utc::now());
+            let created = model::insert::<wallet_address::Model>(exec, &active).await?;
+            Ok(created.into())
         })
         .await
     }
@@ -82,12 +76,10 @@ pub(super) async fn remove_owned_wallets(tx: &SqlxTransaction, user_id: &str) ->
     if !super::migrator::has_table(exec, "wallet_address").await? {
         return Ok(());
     }
-    let mut sql = Sql::with(exec.backend(), "DELETE FROM ");
-    sql.ident(wallet_address::Model::TABLE)
-        .push(" WHERE ")
-        .column(wallet_address::Model::TABLE, "user_id")
-        .push(" = ")
-        .bind(user_id);
-    exec.execute(sql).await?;
+    let mut sql = Sql::with(exec.engine(), "DELETE FROM ");
+    sql.ident(wallet_address::Model::TABLE);
+    sql.push(" WHERE ");
+    sql.compare(wallet_address::Model::TABLE, "user_id", " = ", user_id);
+    _ = exec.execute(sql).await?;
     Ok(())
 }

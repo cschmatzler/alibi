@@ -14,10 +14,8 @@ use uuid::Uuid;
 impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
     async fn find_device_code(&self, column: &str, value: &str) -> AuthResult<Option<DeviceCode>> {
         let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(Model::TABLE, column)
-            .push(" = ")
-            .bind(value);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, column, " = ", value);
         model::limit_one(&mut sql);
         Ok(self
             .exec()
@@ -32,20 +30,22 @@ impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
         sets: Vec<(&'static str, SqlValue)>,
         guards: Vec<(&'static str, Option<SqlValue>)>,
     ) -> AuthResult<u64> {
-        let mut sql = Sql::with(self.exec().backend(), "UPDATE ");
-        sql.ident(Model::TABLE).push(" SET ");
+        let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(Model::TABLE);
+        sql.push(" SET ");
         for (index, (column, value)) in sets.into_iter().enumerate() {
             if index > 0 {
                 sql.push(", ");
             }
-            sql.ident(column).push(" = ").bind(value);
+            sql.assign(column, value);
         }
         for (index, (column, value)) in guards.into_iter().enumerate() {
-            sql.push(if index == 0 { " WHERE " } else { " AND " })
-                .column(Model::TABLE, column);
+            sql.push(if index == 0 { " WHERE " } else { " AND " });
+            sql.column(Model::TABLE, column);
             match value {
                 Some(value) => {
-                    sql.push(" = ").bind(value);
+                    sql.push(" = ");
+                    sql.bind(value);
                 }
                 None => {
                     sql.push(" IS NULL");
@@ -169,10 +169,8 @@ where
 
     async fn delete_device_code_if_status(&self, id: &str, status: &str) -> AuthResult<bool> {
         let mut sql = model::delete_by_id::<Model>(self.exec(), id);
-        sql.push(" AND ")
-            .column(Model::TABLE, "status")
-            .push(" = ")
-            .bind(status);
+        sql.push(" AND ");
+        sql.compare(Model::TABLE, "status", " = ", status);
         self.exec().execute(sql).await.map(|affected| affected == 1)
     }
 }

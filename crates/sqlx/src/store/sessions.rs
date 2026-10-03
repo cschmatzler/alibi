@@ -1,5 +1,5 @@
 use super::SqlxStore;
-use crate::error::{cancelled_by_hook, record_not_updated};
+use crate::error::record_not_updated;
 use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxSessionModel};
@@ -7,6 +7,7 @@ use crate::sql::Sql;
 use async_trait::async_trait;
 use better_auth_core::error::{AuthError, AuthResult};
 use better_auth_core::store::SessionStore;
+use better_auth_core::store::adapter::cancelled_by_hook;
 use better_auth_core::types::CreateSession;
 use chrono::{DateTime, Utc};
 
@@ -23,15 +24,11 @@ where
     fn active_session_by_token(exec: Exec<'_>, token: &str) -> Sql {
         let table = <S::Session as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::Session>(exec);
-        sql.push(" WHERE ")
-            .column(table, S::Session::token_column())
-            .push(" = ")
-            .bind(token)
-            .push(" AND ")
-            .column(table, S::Session::active_column())
-            .push(" = ")
-            .bind(true)
-            .push(" LIMIT 1");
+        sql.push(" WHERE ");
+        sql.compare(table, S::Session::token_column(), " = ", token);
+        sql.push(" AND ");
+        sql.compare(table, S::Session::active_column(), " = ", true);
+        sql.push(" LIMIT 1");
         sql
     }
 
@@ -93,23 +90,23 @@ where
         // schemas with renamed columns and no generic additional-field bindings.
         for (name, destination) in typed_fields {
             if let Some(value) = fields.shift_remove(name) {
-                *destination = crate::session_fields::prepare_string_value(
+                *destination = crate::additional_fields::prepare_string_value(
                     exec,
-                    crate::session_fields::raw_value(&value)?,
+                    crate::additional_fields::raw_value(&value)?,
                 )
                 .await?;
             }
         }
         let mut active = S::Session::new_active(None, token, create_session, now);
         if !fields.is_empty() {
-            for (column, value) in S::Session::additional_field_bindings(&fields, exec.backend())? {
-                let value = crate::session_fields::prepare_value(
+            for (column, value) in S::Session::additional_field_bindings(&fields, exec.engine())? {
+                let value = crate::additional_fields::prepare_value(
                     exec,
                     <S::Session as SqlxModel>::column_kind(column),
                     value,
                 )
                 .await?;
-                S::Session::set_additional_field(&mut active, column, value, exec.backend())?;
+                S::Session::set_additional_field(&mut active, column, value, exec.engine())?;
             }
         }
         let session = if persist {
@@ -146,9 +143,9 @@ where
         }
         // The cache stores hook output before SQL adapter input transformations.
         let mut active = session.into_active();
-        let backend = exec.backend();
+        let backend = exec.engine();
         for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-            let value = crate::session_fields::prepare_value(
+            let value = crate::additional_fields::prepare_value(
                 exec,
                 <S::Session as SqlxModel>::column_kind(column),
                 value,
@@ -188,9 +185,9 @@ where
                 return Ok(None);
             };
             let mut active = current.into_active();
-            let backend = exec.backend();
+            let backend = exec.engine();
             for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value = crate::session_fields::prepare_value(
+                let value = crate::additional_fields::prepare_value(
                     exec,
                     <S::Session as SqlxModel>::column_kind(column),
                     value,
@@ -269,17 +266,11 @@ where
         fields.apply_adapter_transforms_async().await?;
         let table = <S::Session as SqlxModel>::TABLE;
         let mut query = model::select_model::<S::Session>(self.exec());
-        query
-            .push(" WHERE ")
-            .column(table, S::Session::token_column())
-            .push(" = ")
-            .bind(token);
+        query.push(" WHERE ");
+        query.compare(table, S::Session::token_column(), " = ", token);
         if expires_at.is_some() {
-            query
-                .push(" AND ")
-                .column(table, S::Session::active_column())
-                .push(" = ")
-                .bind(true);
+            query.push(" AND ");
+            query.compare(table, S::Session::active_column(), " = ", true);
         }
         query.push(" LIMIT 1");
         let Some(model) = self.exec().fetch_optional::<S::Session>(query).await? else {
@@ -290,10 +281,10 @@ where
             return Ok(None);
         };
         let mut active = model.into_active();
-        let backend = self.exec().backend();
+        let backend = self.exec().engine();
         if !fields.is_empty() {
             for (column, value) in S::Session::additional_field_bindings(&fields, backend)? {
-                let value = crate::session_fields::prepare_value(
+                let value = crate::additional_fields::prepare_value(
                     self.exec(),
                     <S::Session as SqlxModel>::column_kind(column),
                     value,
@@ -424,21 +415,15 @@ where
             }
         }
         let table = <S::Session as SqlxModel>::TABLE;
-        let mut sql = Sql::with(self.exec().backend(), "UPDATE ");
-        sql.ident(table)
-            .push(" SET ")
-            .ident(S::Session::expires_at_column())
-            .push(" = ")
-            .bind(now)
-            .push(" WHERE ")
-            .column(table, S::Session::token_column())
-            .push(" = ")
-            .bind(token)
-            .push(" AND ")
-            .column(table, S::Session::expires_at_column())
-            .push(" > ")
-            .bind(now);
-        self.exec().execute(sql).await?;
+        let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(table);
+        sql.push(" SET ");
+        sql.assign(S::Session::expires_at_column(), now);
+        sql.push(" WHERE ");
+        sql.compare(table, S::Session::token_column(), " = ", token);
+        sql.push(" AND ");
+        sql.compare(table, S::Session::expires_at_column(), " > ", now);
+        _ = self.exec().execute(sql).await?;
         for hook in self.hooks() {
             hook.after_delete_session(&session, &context).await?;
         }
@@ -449,16 +434,12 @@ where
         let user_id = S::Session::parse_user_id(user_id)?;
         let table = <S::Session as SqlxModel>::TABLE;
         let mut live = model::select_model::<S::Session>(self.exec());
-        live.push(" WHERE ")
-            .column(table, S::Session::user_id_column())
-            .push(" = ")
-            .bind(user_id.clone())
-            .push(" AND ")
-            .column(table, S::Session::expires_at_column())
-            .push(" > ")
-            .bind(now)
-            .push(" LIMIT ")
-            .bind(self.find_many_limit());
+        live.push(" WHERE ");
+        live.compare(table, S::Session::user_id_column(), " = ", user_id.clone());
+        live.push(" AND ");
+        live.compare(table, S::Session::expires_at_column(), " > ", now);
+        live.push(" LIMIT ");
+        live.bind(self.find_many_limit());
         let sessions: Vec<S::Session> = self.exec().fetch_all(live).await?;
         let context = self.hook_context(None);
         for session in &sessions {
@@ -472,21 +453,15 @@ where
                 }
             }
         }
-        let mut sql = Sql::with(self.exec().backend(), "UPDATE ");
-        sql.ident(table)
-            .push(" SET ")
-            .ident(S::Session::expires_at_column())
-            .push(" = ")
-            .bind(now)
-            .push(" WHERE ")
-            .column(table, S::Session::user_id_column())
-            .push(" = ")
-            .bind(user_id)
-            .push(" AND ")
-            .column(table, S::Session::expires_at_column())
-            .push(" > ")
-            .bind(now);
-        self.exec().execute(sql).await?;
+        let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(table);
+        sql.push(" SET ");
+        sql.assign(S::Session::expires_at_column(), now);
+        sql.push(" WHERE ");
+        sql.compare(table, S::Session::user_id_column(), " = ", user_id);
+        sql.push(" AND ");
+        sql.compare(table, S::Session::expires_at_column(), " > ", now);
+        _ = self.exec().execute(sql).await?;
         for session in &sessions {
             for hook in self.hooks() {
                 hook.after_delete_session(session, &context).await?;
@@ -513,16 +488,14 @@ where
         if tokens.is_empty() {
             sql.push("1 = 2");
         } else {
-            sql.column(table, S::Session::token_column())
-                .push(" IN ")
-                .bind_list(tokens.iter().cloned());
+            sql.column(table, S::Session::token_column());
+            sql.push(" IN ");
+            sql.bind_list(tokens.iter().cloned());
         }
-        sql.push(" AND ")
-            .column(table, S::Session::active_column())
-            .push(" = ")
-            .bind(true)
-            .push(" LIMIT ")
-            .bind(self.find_many_limit());
+        sql.push(" AND ");
+        sql.compare(table, S::Session::active_column(), " = ", true);
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
         self.exec().fetch_all(sql).await
     }
 
@@ -530,17 +503,13 @@ where
         let user_id = <S::Session as SqlxSessionModel>::parse_user_id(user_id)?;
         let table = <S::Session as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::Session>(self.exec());
-        sql.push(" WHERE ")
-            .column(table, S::Session::user_id_column())
-            .push(" = ")
-            .bind(user_id)
-            .push(" AND ")
-            .column(table, S::Session::active_column())
-            .push(" = ")
-            .bind(true)
-            .push(" ORDER BY ")
-            .column(table, S::Session::created_at_column())
-            .push(" ASC");
+        sql.push(" WHERE ");
+        sql.compare(table, S::Session::user_id_column(), " = ", user_id);
+        sql.push(" AND ");
+        sql.compare(table, S::Session::active_column(), " = ", true);
+        sql.push(" ORDER BY ");
+        sql.column(table, S::Session::created_at_column());
+        sql.push(" ASC");
         self.exec().fetch_all(sql).await
     }
 
@@ -597,13 +566,11 @@ where
             }
         }
         let table = <S::Session as SqlxModel>::TABLE;
-        let mut sql = Sql::with(self.exec().backend(), "DELETE FROM ");
-        sql.ident(table)
-            .push(" WHERE ")
-            .column(table, S::Session::token_column())
-            .push(" = ")
-            .bind(token);
-        self.exec().execute(sql).await?;
+        let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(table);
+        sql.push(" WHERE ");
+        sql.compare(table, S::Session::token_column(), " = ", token);
+        _ = self.exec().execute(sql).await?;
         if let Some(session) = &session {
             for hook in self.hooks() {
                 hook.after_delete_session(session, &hook_context).await?;
@@ -615,27 +582,21 @@ where
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
         let user_id = <S::Session as SqlxSessionModel>::parse_user_id(user_id)?;
         let table = <S::Session as SqlxModel>::TABLE;
-        let mut sql = Sql::with(self.exec().backend(), "DELETE FROM ");
-        sql.ident(table)
-            .push(" WHERE ")
-            .column(table, S::Session::user_id_column())
-            .push(" = ")
-            .bind(user_id);
+        let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(table);
+        sql.push(" WHERE ");
+        sql.compare(table, S::Session::user_id_column(), " = ", user_id);
         self.exec().execute(sql).await.map(drop)
     }
 
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {
         let table = <S::Session as SqlxModel>::TABLE;
-        let mut sql = Sql::with(self.exec().backend(), "DELETE FROM ");
-        sql.ident(table)
-            .push(" WHERE ")
-            .column(table, S::Session::expires_at_column())
-            .push(" < ")
-            .bind(Utc::now())
-            .push(" OR ")
-            .column(table, S::Session::active_column())
-            .push(" = ")
-            .bind(false);
+        let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(table);
+        sql.push(" WHERE ");
+        sql.compare(table, S::Session::expires_at_column(), " < ", Utc::now());
+        sql.push(" OR ");
+        sql.compare(table, S::Session::active_column(), " = ", false);
         let deleted = self.exec().execute(sql).await?;
         usize::try_from(deleted)
             .map_err(|_error| AuthError::internal("Affected row count exceeds usize"))

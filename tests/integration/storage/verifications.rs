@@ -1187,6 +1187,7 @@ pub(crate) mod sqlx_uuid {
 
     impl SqlxModel for Model {
         const TABLE: &'static str = "uuid_verifications";
+        const COLUMN_NAMES: &'static [&'static str] = &COLUMNS;
         const COLUMNS: &'static [ColumnDef] = &[
             ColumnDef {
                 name: "id",

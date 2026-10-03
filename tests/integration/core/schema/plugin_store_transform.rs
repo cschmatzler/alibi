@@ -10,7 +10,7 @@ use better_auth_core::{
     store::{UserStore, transaction},
 };
 use better_auth_seaorm::{
-    Database, DatabaseHooks, HookControl, SeaOrm, SeaOrmHookContext, SeaOrmStore,
+    Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
 };
 use std::sync::{Arc, Mutex};
 
@@ -30,7 +30,7 @@ struct ApplicationDefaultsObserver {
 }
 
 #[async_trait]
-impl DatabaseHooks<Schema, SeaOrm> for ApplicationDefaultsObserver {
+impl DatabaseHooks<Schema, SeaOrmBackend> for ApplicationDefaultsObserver {
     async fn before_create_user(
         &self,
         input: &mut CreateUser,

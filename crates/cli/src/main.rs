@@ -213,7 +213,7 @@ fn sqlx_schema(selection: &Selection) -> TokenStream {
         .map(|(table, fields)| create_table(table, fields, SqlDialect::Postgres));
     quote! {
         use better_auth::AuthSchema;
-        use better_auth::sqlx::SqlxPool;
+        use better_auth::sqlx::{Engine, SqlxPool};
 
         #(#entities)*
         #(#extra)*
@@ -233,19 +233,11 @@ fn sqlx_schema(selection: &Selection) -> TokenStream {
         pub async fn run_app_migrations(
             pool: &SqlxPool,
         ) -> Result<(), better_auth::sqlx::sqlx::Error> {
-            match pool {
-                SqlxPool::Sqlite(pool) => {
-                    for statement in SQLITE_TABLES {
-                        let _ = better_auth::sqlx::sqlx::query(*statement).execute(pool).await?;
-                    }
-                }
-                SqlxPool::Postgres(pool) => {
-                    for statement in POSTGRES_TABLES {
-                        let _ = better_auth::sqlx::sqlx::query(*statement).execute(pool).await?;
-                    }
-                }
-            }
-            Ok(())
+            let statements = match pool.engine() {
+                Engine::Sqlite => SQLITE_TABLES,
+                Engine::Postgres => POSTGRES_TABLES,
+            };
+            pool.execute_batch(statements).await
         }
     }
 }

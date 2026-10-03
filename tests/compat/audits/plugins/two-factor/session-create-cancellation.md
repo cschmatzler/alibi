@@ -30,7 +30,7 @@ scenarios / 74 assertions pass (`/tmp/two-factor-session-cancel-sdk-after.log`).
 The existing native hook matrix is extended rather than duplicated. Its six
 cases independently inspect historical unverified generations and trusted
 org/team/admin/IP/agent fields through actual public plugin dispatch and real
-SeaOrmHooks. It confirms the same-message exception stays Forbidden and only
+DatabaseHooks. It confirms the same-message exception stays Forbidden and only
 the semantic cancellation returns empty 500; both retain the original factor
 and session after the accepted user update. The original user rejection cases
 retain false and APIError 400. This test fails before the mapper
@@ -48,4 +48,4 @@ capability. The coordinator owns independent review and canonical gates.
 Final focused validation: twenty-one distinct official SDK scenarios / 704
 assertions pass (`/tmp/two-factor-session-cancel-sdk-family-final.log`), ten
 native two-factor tests pass, and TypeScript, workspace library Clippy with
-seaorm2, formatting and diff checks pass.
+seaorm, formatting and diff checks pass.

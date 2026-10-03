@@ -1,3 +1,5 @@
+pub mod bucket;
+
 use super::Middleware;
 use crate::error::AuthResult;
 use crate::types::{AuthRequest, AuthResponse};

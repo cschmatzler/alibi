@@ -52,9 +52,9 @@ pub mod plugin;
 pub mod plugins;
 pub mod prelude;
 pub mod schema;
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 pub mod seaorm;
-#[cfg(feature = "sqlx")]
+#[cfg(any(feature = "sqlx-sqlite", feature = "sqlx-postgres"))]
 pub mod sqlx;
 pub mod store;
 pub mod telemetry;

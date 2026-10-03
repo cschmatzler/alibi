@@ -286,7 +286,7 @@ pub(crate) struct SeaOrm;
 #[async_trait]
 impl Backend for SeaOrm {
     type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-    type Hooks = better_auth_seaorm::SeaOrm;
+    type Hooks = better_auth_seaorm::SeaOrmBackend;
     type Connection = better_auth_seaorm::DatabaseConnection;
     type Store = better_auth_seaorm::SeaOrmStore<Self::Schema>;
     type RateLimit = better_auth_seaorm::SeaOrmRateLimitStorage;
@@ -332,7 +332,7 @@ pub(crate) struct Sqlx;
 #[async_trait]
 impl Backend for Sqlx {
     type Schema = better_auth_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
-    type Hooks = better_auth_sqlx::Sqlx;
+    type Hooks = better_auth_sqlx::SqlxBackend;
     type Connection = better_auth_sqlx::SqlxPool;
     type Store = better_auth_sqlx::SqlxStore<Self::Schema>;
     type RateLimit = better_auth_sqlx::SqlxRateLimitStorage;
