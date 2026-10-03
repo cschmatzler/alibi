@@ -1,0 +1,191 @@
+{
+  "callbacks": [
+    {
+      "case": "deny",
+      "start": {
+        "url": "http://127.0.0.1:40569/oauth/authorize?response_type=code&client_id=fixture-client&state=OK32hxYNiFFyMvEwUxcYyJ6eCrZOrBbQ&scope=read_user&redirect_uri=https%3A%2F%2Fa.example.test%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=67kIIxJSeIhwHicw_NqV13mRAUPCCv35O-ANp3iPpO0",
+        "redirect": false
+      },
+      "callbackLocation": "https://a.example.test/failed?error=account_not_linked",
+      "cookies": [
+        "__Secure-better-auth.state=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax"
+      ],
+      "replay": "https://a.example.test/api/auth/error?error=state_mismatch"
+    },
+    {
+      "case": "allow",
+      "start": {
+        "url": "http://127.0.0.1:40569/oauth/authorize?response_type=code&client_id=fixture-client&state=gYzBG5fCfdEKv17mIVWhSiRFEYYk0PBg&scope=read_user&redirect_uri=https%3A%2F%2Fa.example.test%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=bGal4Zw396Lxdsd632AtUFKtFJOS3Scu8LiW8svalcc",
+        "redirect": false
+      },
+      "callbackLocation": "https://a.example.test/done",
+      "cookies": [
+        "__Secure-better-auth.state=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+        "__Secure-better-auth.session_token=NjRroO8JMMjm4As8cctx5tO8uNU9k8Y5.%2B9XCHOgunqKGYZh9cdjH3YI75il4JvGcqkJY9KY7%2Fng%3D; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=Lax"
+      ],
+      "replay": "https://a.example.test/api/auth/error?error=state_mismatch"
+    },
+    {
+      "case": "foreign",
+      "start": {
+        "url": "http://127.0.0.1:40569/oauth/authorize?response_type=code&client_id=fixture-client&state=2lGqILPAeW4ybC7kXk_XGE4-_9bEjQL9&scope=read_user&redirect_uri=https%3A%2F%2Fa.example.test%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=r9jSJRStfQHRB3y1v3BNBdbKiiJWhM5DS1s4fHp-y7E",
+        "redirect": false
+      },
+      "callbackLocation": "https://a.example.test/failed?error=account_already_linked_to_different_user",
+      "physicalBefore": {
+        "id": "cKRl5IodczW7x7qaHHpkAFahhmHo6mMj",
+        "userId": "CFYULNzYjC7NfoWEUX7gy8AzGdoxtXf6",
+        "accountId": "actor",
+        "accessToken": "foreign-token",
+        "scope": "foreign-scope"
+      },
+      "physicalAfter": {
+        "id": "cKRl5IodczW7x7qaHHpkAFahhmHo6mMj",
+        "userId": "CFYULNzYjC7NfoWEUX7gy8AzGdoxtXf6",
+        "accountId": "actor",
+        "accessToken": "foreign-token",
+        "scope": "foreign-scope"
+      }
+    }
+  ],
+  "policyCalls": [
+    "init",
+    "/api/auth/sign-in/social:allow",
+    "/api/auth/callback/gitlab:deny",
+    "/api/auth/callback/gitlab:deny",
+    "/api/auth/sign-in/social:deny",
+    "/api/auth/callback/gitlab:allow",
+    "/api/auth/callback/gitlab:allow",
+    "/api/auth/sign-in/social:allow",
+    "/api/auth/sign-in/social:deny",
+    "/api/auth/callback/gitlab:deny",
+    "/api/auth/callback/gitlab:allow",
+    "/api/auth/link-social:allow",
+    "/api/auth/callback/gitlab:allow",
+    "/api/auth/sign-in/social:error",
+    "/api/auth/sign-in/social:api-error"
+  ],
+  "providerHTTP": [
+    {
+      "tokenForm": {
+        "grant_type": "authorization_code",
+        "code": "deny",
+        "code_verifier": "8hSPh2TqUgVa27V1yNBcu0-UJW2JY3qCqZ00nzJYzXDL593tXh4fkIhw4UmnW9XygpaoNAlMCHtCw-5_gci94yss6WpkfiRkcSRPBWS7BiL1L2g5CkipfMK2JPvsXHJx",
+        "redirect_uri": "https://a.example.test/api/auth/callback/gitlab",
+        "client_id": "fixture-client",
+        "client_secret": "fixture-secret"
+      }
+    },
+    {
+      "profile": {
+        "id": "deny",
+        "email": "deny@example.test",
+        "name": "deny",
+        "state": "active",
+        "locked": false,
+        "email_verified": false
+      }
+    },
+    {
+      "tokenForm": {
+        "grant_type": "authorization_code",
+        "code": "allow",
+        "code_verifier": "vrSAXktorAFz-Zrz-IB-p3TrNxsxJKrltpkdp8Sc8nZGHmmnQVCn8ToKtS_o0wKva55t0Zhlb2YBflcFNVG_CnkuwfVJsEY-SsFrjHKmuvAoz3EczM13iVnAN6dUVvtp",
+        "redirect_uri": "https://a.example.test/api/auth/callback/gitlab",
+        "client_id": "fixture-client",
+        "client_secret": "fixture-secret"
+      }
+    },
+    {
+      "profile": {
+        "id": "allow",
+        "email": "allow@example.test",
+        "name": "allow",
+        "state": "active",
+        "locked": false,
+        "email_verified": false
+      }
+    },
+    {
+      "tokenForm": {
+        "grant_type": "authorization_code",
+        "code": "parallel-deny",
+        "code_verifier": "Hxj5cEYc5kQn6JT7z1VTKRAGn_6ZHh2j8ZjIWLbXkY7ikFiWgByB0GQsQkYLxvW1evNH5e9KxdhkzpMhp19h6MOfQ89QrlXQbIHtnc6I8s1qosJDKd8jexlnEMwPRuTl",
+        "redirect_uri": "https://a.example.test/api/auth/callback/gitlab",
+        "client_id": "fixture-client",
+        "client_secret": "fixture-secret"
+      }
+    },
+    {
+      "tokenForm": {
+        "grant_type": "authorization_code",
+        "code": "parallel-allow",
+        "code_verifier": "tyPvSFKVVfSBRXzCqSjhoCd9FuJX7jvYJWNvmAbDT77zFkekL-VdmfYCJjgdqOV4ye5cOqvnVLGOuxa2_hhHi4MtBPnFA_mg78ZpHDSKXlHvoseudyMftLJaa1FbFitT",
+        "redirect_uri": "https://b.example.test/api/auth/callback/gitlab",
+        "client_id": "fixture-client",
+        "client_secret": "fixture-secret"
+      }
+    },
+    {
+      "profile": {
+        "id": "parallel-deny",
+        "email": "parallel-deny@example.test",
+        "name": "parallel-deny",
+        "state": "active",
+        "locked": false,
+        "email_verified": false
+      }
+    },
+    {
+      "profile": {
+        "id": "parallel-allow",
+        "email": "parallel-allow@example.test",
+        "name": "parallel-allow",
+        "state": "active",
+        "locked": false,
+        "email_verified": false
+      }
+    },
+    {
+      "tokenForm": {
+        "grant_type": "authorization_code",
+        "code": "actor",
+        "code_verifier": "JGKntifBLHGkvfWG1JJb0CY7dRyweb2stYMo4vYJStdGDGvzHA1kV-uRexZajGtfSub9DVCTp9ZArx4QmwNxl66aN3TKKzG7puyrO4R1JYdNwxicaRPAiQJqpDUpUN-l",
+        "redirect_uri": "https://a.example.test/api/auth/callback/gitlab",
+        "client_id": "fixture-client",
+        "client_secret": "fixture-secret"
+      }
+    },
+    {
+      "profile": {
+        "id": "actor",
+        "email": "actor@example.test",
+        "name": "actor",
+        "state": "active",
+        "locked": false,
+        "email_verified": false
+      }
+    }
+  ],
+  "physical": {
+    "users": 6,
+    "accounts": 3,
+    "sessions": 3
+  },
+  "factoryCalls": 1,
+  "factoryArgs": [
+    0
+  ],
+  "initError": "initial trust failure",
+  "apiError": {
+    "status": 403,
+    "message": "private-provider-api-error"
+  },
+  "errorStage": "handler promise rejects before router; no response or cookies",
+  "directAPI": {
+    "staticCalls": [
+      "init"
+    ],
+    "dynamicMissingSource": "Dynamic baseURL could not be resolved for this direct auth.api call. Pass `headers: request.headers` (or `request`) to the call, or add `fallback` to your baseURL config."
+  }
+}

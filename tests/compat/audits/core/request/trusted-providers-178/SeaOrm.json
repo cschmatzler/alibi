@@ -1,0 +1,175 @@
+{
+  "callbacks": [
+    {
+      "case": "deny",
+      "start": {
+        "url": "http://127.0.0.1:40905/oauth/authorize?response_type=code&client_id=fixture-client&state=vbqh2o0kxGG4ItJjht1tx2m1-WqyEonl&scope=read_user&redirect_uri=https%3A%2F%2Fa.example.test%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=dyJRgg8JZvkf6sWmE8cIu_DQ_YNFCgBBE_aikF3mRb8",
+        "redirect": false
+      },
+      "callbackLocation": "https://a.example.test/failed?error=account_not_linked",
+      "cookies": [
+        "__Secure-better-auth.state=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax"
+      ],
+      "replay": "https://a.example.test/api/auth/error?error=state_mismatch"
+    },
+    {
+      "case": "allow",
+      "start": {
+        "url": "http://127.0.0.1:40905/oauth/authorize?response_type=code&client_id=fixture-client&state=Wv_VPjR8qf0bbewJxXRAx5Hmtrp0vBsv&scope=read_user&redirect_uri=https%3A%2F%2Fa.example.test%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=iOjnmfX3iQlHDjSs80P3EwbzOeN7-YWkOPqf1LMBqVc",
+        "redirect": false
+      },
+      "callbackLocation": "https://a.example.test/done",
+      "cookies": [
+        "__Secure-better-auth.state=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+        "__Secure-better-auth.session_token=EVn1Rgg20emVjtHe0KZixZyLZrU3djws.3YdB5aJKW3RkFOgHHyWb34shPCDeknC7DKhDoF5xbaA%3D; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=Lax"
+      ],
+      "replay": "https://a.example.test/api/auth/error?error=state_mismatch"
+    },
+    {
+      "case": "foreign",
+      "start": {
+        "url": "http://127.0.0.1:40905/oauth/authorize?response_type=code&client_id=fixture-client&state=_Ne7fIHHGLu0cuOTHhFkM8QKu_s-mF7K&scope=read_user&redirect_uri=https%3A%2F%2Fa.example.test%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=VPhqgwYcCCSOEAUCEcTWNIL1JLmRaJfjrAZVeXDH0f8",
+        "redirect": false
+      },
+      "callbackLocation": "https://a.example.test/failed?error=account_already_linked_to_different_user",
+      "physicalBefore": {
+        "id": "0966cba0-2a52-49f0-937f-5ae8b463ed6a",
+        "userId": "2c5799cc-6cee-427d-a17c-622132c62189",
+        "accountId": "actor",
+        "accessToken": "foreign-token",
+        "scope": "foreign-scope"
+      },
+      "physicalAfter": {
+        "id": "0966cba0-2a52-49f0-937f-5ae8b463ed6a",
+        "userId": "2c5799cc-6cee-427d-a17c-622132c62189",
+        "accountId": "actor",
+        "accessToken": "foreign-token",
+        "scope": "foreign-scope"
+      }
+    }
+  ],
+  "policyCalls": [
+    "init",
+    "/api/auth/sign-in/social:allow",
+    "/api/auth/callback/gitlab:deny",
+    "/api/auth/callback/gitlab:deny",
+    "/api/auth/sign-in/social:deny",
+    "/api/auth/callback/gitlab:allow",
+    "/api/auth/callback/gitlab:allow",
+    "/api/auth/sign-in/social:allow",
+    "/api/auth/sign-in/social:deny",
+    "/api/auth/callback/gitlab:deny",
+    "/api/auth/callback/gitlab:allow",
+    "/api/auth/link-social:allow",
+    "/api/auth/callback/gitlab:allow",
+    "/api/auth/sign-in/social:error",
+    "/api/auth/sign-in/social:api-error"
+  ],
+  "providerHTTP": [
+    {
+      "tokenForm": {
+        "code_verifier": "ap6OxYt7T2LOOzpBtHLGy-mkUKIXA0NUDLJ5pIefUmyElkt3UYpDRvFpEGCmNPIM0aTaYbLH7IEp3LFR8UaPjx0LWYtji3E6g8VylMN9rcuKknZLP2_WnT7HXzb3dwiP",
+        "client_id": "fixture-client",
+        "client_secret": "fixture-secret",
+        "grant_type": "authorization_code",
+        "code": "deny",
+        "redirect_uri": "https://a.example.test/api/auth/callback/gitlab"
+      }
+    },
+    {
+      "profile": {
+        "id": "deny",
+        "email": "deny@example.test",
+        "name": "deny",
+        "state": "active",
+        "locked": false,
+        "email_verified": false
+      }
+    },
+    {
+      "tokenForm": {
+        "client_id": "fixture-client",
+        "client_secret": "fixture-secret",
+        "redirect_uri": "https://a.example.test/api/auth/callback/gitlab",
+        "grant_type": "authorization_code",
+        "code": "allow",
+        "code_verifier": "JUe7zKPrloghphwoggJ3CE8fEt0ZctyQ5hIu3WsSqvHlkzCFW8FvErAfDemVeQX9uFXsYy_W6AmMGP-bojqQ0YCcj6GOEOEEQJnqk2p4LJ8eaDQVwY_5FIGKuD-6gJHR"
+      }
+    },
+    {
+      "profile": {
+        "id": "allow",
+        "email": "allow@example.test",
+        "name": "allow",
+        "state": "active",
+        "locked": false,
+        "email_verified": false
+      }
+    },
+    {
+      "tokenForm": {
+        "code": "parallel-allow",
+        "code_verifier": "04CFbDQMBNCWUhZmnaTMd0JOcoochwT9wdsP5wWnqs4wBsuMKHvNcWfR9CrwwSouO48utg9DJ8KKgUFfFxIWPxBACMFpGcTVBbq0PyXohcQnVRVLsz7YDbxREhc5nzRg",
+        "client_id": "fixture-client",
+        "grant_type": "authorization_code",
+        "client_secret": "fixture-secret",
+        "redirect_uri": "https://b.example.test/api/auth/callback/gitlab"
+      }
+    },
+    {
+      "profile": {
+        "id": "parallel-allow",
+        "email": "parallel-allow@example.test",
+        "name": "parallel-allow",
+        "state": "active",
+        "locked": false,
+        "email_verified": false
+      }
+    },
+    {
+      "tokenForm": {
+        "code": "parallel-deny",
+        "redirect_uri": "https://a.example.test/api/auth/callback/gitlab",
+        "code_verifier": "9dkwiVS7WiBRj7xKf9d6zVOMf5uX9mMbIMkWxLM18rLGcw282CcyolUwg2ImnBXcSqZLQ6kxzJ11ykYPSukv0K4MavB2oDWWjmkJTiz8-_1XYEHj7gZHJQuiwp_PuXYC",
+        "grant_type": "authorization_code",
+        "client_secret": "fixture-secret",
+        "client_id": "fixture-client"
+      }
+    },
+    {
+      "profile": {
+        "id": "parallel-deny",
+        "email": "parallel-deny@example.test",
+        "name": "parallel-deny",
+        "state": "active",
+        "locked": false,
+        "email_verified": false
+      }
+    },
+    {
+      "tokenForm": {
+        "grant_type": "authorization_code",
+        "redirect_uri": "https://a.example.test/api/auth/callback/gitlab",
+        "code": "actor",
+        "code_verifier": "g50lJWqV80Y0RE9H4uh5IfFIEge0etq4RWK448kYBrWknSuXq3byCoBi9WClZiy_2PPP3qu6rdSIrXfPTLg-31OwJbyWd7SWIX4_KHkVux1z27qoc5pASQ8x83P6fbRn",
+        "client_id": "fixture-client",
+        "client_secret": "fixture-secret"
+      }
+    },
+    {
+      "profile": {
+        "id": "actor",
+        "email": "actor@example.test",
+        "name": "actor",
+        "state": "active",
+        "locked": false,
+        "email_verified": false
+      }
+    }
+  ],
+  "physical": {
+    "users": 6,
+    "accounts": 3,
+    "sessions": 3
+  }
+}

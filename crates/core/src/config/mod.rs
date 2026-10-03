@@ -139,7 +139,9 @@ pub enum AwaitedNotificationErrorPolicy {
 }
 
 mod origin;
-pub use origin::{BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver};
+pub use origin::{
+    BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver, TrustedProvidersResolver,
+};
 
 /// Main configuration for `BetterAuth`
 #[derive(Clone)]
@@ -275,8 +277,11 @@ pub struct UserConfig {
 pub struct AccountLinkingConfig {
     /// Enable account linking (default: true)
     pub enabled: bool,
-    /// Trusted providers that can auto-link (default: empty = all trusted)
+    /// Providers trusted for linking even when their email is unverified.
+    /// Empty does not bypass the provider email-verification requirement.
     pub trusted_providers: Vec<String>,
+    /// Optional async policy replacing the static list at init and per request.
+    pub trusted_providers_resolver: Option<std::sync::Arc<dyn TrustedProvidersResolver>>,
     /// Allow linking accounts with different emails (default: false) - SECURITY WARNING
     pub allow_different_emails: bool,
     /// Allow unlinking all accounts (default: false)
@@ -554,6 +559,7 @@ impl Default for AccountLinkingConfig {
         Self {
             enabled: true,
             trusted_providers: Vec::new(),
+            trusted_providers_resolver: None,
             allow_different_emails: false,
             allow_unlinking_all: false,
             disable_implicit_linking: false,

@@ -185,6 +185,19 @@ impl<S: AuthSchema> AuthBuilder<S> {
         }
         // Validate configuration
         self.config.validate()?;
+        if let Some(resolver) = &self
+            .config
+            .account
+            .account_linking
+            .trusted_providers_resolver
+        {
+            self.config.account.account_linking.trusted_providers = resolver
+                .resolve(None)
+                .await?
+                .into_iter()
+                .filter(|provider| !provider.is_empty())
+                .collect();
+        }
 
         // Authentication and every producer use the same initialized token
         // name; related-cookie overrides remain independently configured.

@@ -1,0 +1,35 @@
+2026-10-03T21:16:33.086Z ERROR [Better Auth]: account_not_linked
+2026-10-03T21:16:33.087Z ERROR [Better Auth]: Failed to parse state 116 | 			errorURL: parsedData.errorURL
+117 | 		});
+118 | 		expireCookie(c, stateCookie);
+119 | 	} else {
+120 | 		const data = await c.context.internalAdapter.findVerificationValue(state);
+121 | 		if (!data) throw new StateError("State mismatch: verification not found", {
+                             ^
+BetterAuthError: State mismatch: verification not found
+  details: {
+  state: "OK32hxYNiFFyMvEwUxcYyJ6eCrZOrBbQ",
+},
+ errorURL: undefined,
+     code: "state_mismatch"
+
+      at /tmp/better-auth-close178-source/node_modules/better-auth/dist/state.mjs:121:24
+
+2026-10-03T21:16:33.106Z ERROR [Better Auth]: Failed to parse state 116 | 			errorURL: parsedData.errorURL
+117 | 		});
+118 | 		expireCookie(c, stateCookie);
+119 | 	} else {
+120 | 		const data = await c.context.internalAdapter.findVerificationValue(state);
+121 | 		if (!data) throw new StateError("State mismatch: verification not found", {
+                             ^
+BetterAuthError: State mismatch: verification not found
+  details: {
+  state: "gYzBG5fCfdEKv17mIVWhSiRFEYYk0PBg",
+},
+ errorURL: undefined,
+     code: "state_mismatch"
+
+      at /tmp/better-auth-close178-source/node_modules/better-auth/dist/state.mjs:121:24
+
+2026-10-03T21:16:33.116Z ERROR [Better Auth]: account_not_linked
+Published 1.7.6 request trust, callbacks, concurrency, foreign ownership, init factory, error and direct API receipts passed
