@@ -1,0 +1,27 @@
+{
+  "baseline": "c90cf197",
+  "publishedVersion": "1.7.6",
+  "tarballSha256": {
+    "memory-adapter-1.7.6.tgz": "96520ab210c9cdd84f9724a2f9304493ac169554731a36a91b807db00299e3a7",
+    "better-auth-1.7.6.tgz": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99"
+  },
+  "nativeModes": [
+    "Sqlx",
+    "SeaOrm",
+    "without-database"
+  ],
+  "deviceResponsePairs": 78,
+  "actionsEnabled": false,
+  "hostedChecks": [],
+  "remainingIssues": [
+    172,
+    213
+  ],
+  "concurrencyClaim": false,
+  "sqlAdaptersChanged": false,
+  "coordinatorWorkspaceChanged": false,
+  "rebasedOnto": "8015b45d",
+  "productionAddedLines": 145,
+  "productionRemovedLines": 16,
+  "review": "self-review using test-audit and wrdn-authz; no nested delegation"
+}
