@@ -1,0 +1,59 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 16.6ms
+• Running devenv:files
+✓ Running devenv:files in 31.6ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 12.5ms
+bun test v1.4.2 (744846f84)
+
+tests/plugins/passkey/acceptance215.test.ts:
+459 |         if (clientDiffs.length) {
+460 |           throw new Error(formatDiffs(`Client-visible drift: ${scenarioName}`, clientDiffs));
+461 |         }
+462 | 
+463 |         if (rawDiffs.length) {
+464 |           throw new Error(formatDiffs(`Raw trace drift: ${scenarioName}`, rawDiffs));
+                          ^
+error: Raw trace drift: passkey transport metadata and missing response retain Source ceremony admission and writes
+- traces.8.responseBody.excludeCredentials.0.transports: array length differs
+- traces.8.responseBody.excludeCredentials.0.transports.0: value or type differs
+- traces.8.responseBodyShape.excludeCredentials.0.transports: array length differs
+- traces.8.responseBodyShape.excludeCredentials.0.transports.0: value or type differs
+- traces.14.responseBody.excludeCredentials.0.transports: array length differs
+- traces.14.responseBody.excludeCredentials.0.transports.0: value or type differs
+- traces.14.responseBody.excludeCredentials.1.transports: array length differs
+- traces.14.responseBody.excludeCredentials.1.transports.2: value or type differs
+- traces.14.responseBody.excludeCredentials.1.transports.3: value or type differs
+- traces.14.responseBody.excludeCredentials.1.transports.4: value or type differs
+- traces.14.responseBodyShape.excludeCredentials.0.transports: array length differs
+- traces.14.responseBodyShape.excludeCredentials.0.transports.0: value or type differs
+- traces.14.responseBodyShape.excludeCredentials.1.transports: array length differs
+- traces.14.responseBodyShape.excludeCredentials.1.transports.4: value or type differs
+- traces.21.responseBody.excludeCredentials.0.transports: array length differs
+- traces.21.responseBody.excludeCredentials.0.transports.0: value or type differs
+- traces.21.responseBody.excludeCredentials.1.transports: array length differs
+- traces.21.responseBody.excludeCredentials.1.transports.2: value or type differs
+- traces.21.responseBody.excludeCredentials.1.transports.3: value or type differs
+- traces.21.responseBody.excludeCredentials.1.transports.4: value or type differs
+- traces.21.responseBodyShape.excludeCredentials.0.transports: array length differs
+- traces.21.responseBodyShape.excludeCredentials.0.transports.0: value or type differs
+- traces.21.responseBodyShape.excludeCredentials.1.transports: array length differs
+- traces.21.responseBodyShape.excludeCredentials.1.transports.4: value or type differs
+- traces.28.responseBody.excludeCredentials.0.transports: array length differs
+- traces.28.responseBody.excludeCredentials.0.transports.0: value or type differs
+- traces.28.responseBody.excludeCredentials.1.transports: array length differs
+- traces.28.responseBody.excludeCredentials.1.transports.2: value or type differs
+- traces.28.responseBody.excludeCredentials.1.transports.3: value or type differs
+- traces.28.responseBody.excludeCredentials.1.transports.4: value or type differs
+- traces.28.responseBodyShape.excludeCredentials.0.transports: array length differs
+- traces.28.responseBodyShape.excludeCredentials.0.transports.0: value or type differs
+- traces.28.responseBodyShape.excludeCredentials.1.transports: array length differs
+- traces.28.responseBodyShape.excludeCredentials.1.transports.4: value or type differs
+      at <anonymous> (/tmp/better-auth-close215/tests/compat/client-tests/support/scenario.ts:464:21)
+(fail) passkey transport metadata and missing response retain Source ceremony admission and writes [2589.29ms]
+
+ 0 pass
+ 10 filtered out
+ 1 fail
+ 110 expect() calls
+Ran 1 test across 1 file. [2.71s]
