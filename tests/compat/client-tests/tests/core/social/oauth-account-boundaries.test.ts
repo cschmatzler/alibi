@@ -445,7 +445,7 @@ for (const mode of [
         const refresh = await actor.client.refreshToken({ accountId: account.id });
         expect(refresh.error).toBeNull();
         expect(
-          Math.abs(Date.parse(refresh.data!.accessTokenExpiresAt!) - Date.now() - 3600000),
+          Math.abs(new Date(refresh.data!.accessTokenExpiresAt!).getTime() - Date.now() - 3600000),
         ).toBeLessThan(2000);
       }
       await save(ctx, name, {

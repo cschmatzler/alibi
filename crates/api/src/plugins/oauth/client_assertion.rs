@@ -189,10 +189,10 @@ impl OAuthClientAssertionGetter for OAuthPrivateKeyJwtOptions {
                 .and_then(Value::as_str)
                 .map(str::to_owned)
         });
-        if let Some(kid) = kid.filter(|k| !k.is_empty()) {
-            if let Some(object) = header.as_object_mut() {
-                drop(object.insert("kid".into(), Value::String(kid)));
-            }
+        if let Some(kid) = kid.filter(|k| !k.is_empty())
+            && let Some(object) = header.as_object_mut()
+        {
+            drop(object.insert("kid".into(), Value::String(kid)));
         }
         let now = chrono::Utc::now().timestamp();
         let exp = now as f64 + self.expires_in.unwrap_or(120.0);
