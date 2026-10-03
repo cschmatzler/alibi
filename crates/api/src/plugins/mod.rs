@@ -1,3 +1,4 @@
+pub mod access;
 pub mod account_management;
 
 pub mod admin;

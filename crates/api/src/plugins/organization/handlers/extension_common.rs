@@ -275,19 +275,19 @@ pub fn role_has_permissions<H: std::hash::BuildHasher>(
     required: &OrganizationPermissions,
     roles: &HashMap<String, OrganizationPermissions, H>,
 ) -> bool {
-    !required.is_empty()
-        && role.split(',').any(|name| {
-            roles.get(name).is_some_and(|permissions| {
-                required.iter().all(|(resource, actions)| {
-                    !actions.is_empty()
-                        && actions.iter().all(|action| {
-                            permissions
-                                .get(resource)
-                                .is_some_and(|granted| granted.contains(action))
-                        })
-                })
-            })
+    use crate::plugins::access::{Connector, authorize};
+    role.split(',').any(|name| {
+        roles.get(name).is_some_and(|permissions| {
+            authorize(
+                |resource| permissions.get(resource).map(Vec::as_slice),
+                required.iter().map(|(resource, actions)| {
+                    (resource.as_str(), actions.as_slice(), Connector::And)
+                }),
+                Connector::And,
+            )
+            .success()
         })
+    })
 }
 
 ///

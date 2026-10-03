@@ -1,0 +1,327 @@
+{
+  "literal": " { \"team\" : [\"create\", \"create\"], \"member\":[\"update\"], \"empty\": [], \"Custom\": [\"publish\"] } ",
+  "cases": [
+    {
+      "name": "plain-and-success",
+      "request": {
+        "team": [
+          "create"
+        ],
+        "member": [
+          "update"
+        ]
+      },
+      "connector": "AND",
+      "expected": {
+        "success": true
+      }
+    },
+    {
+      "name": "resource-and-denial",
+      "request": {
+        "team": [
+          "create"
+        ],
+        "member": [
+          "delete"
+        ]
+      },
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "unauthorized to access resource \"member\""
+      }
+    },
+    {
+      "name": "resource-or-success",
+      "request": {
+        "team": [
+          "create"
+        ],
+        "member": [
+          "delete"
+        ]
+      },
+      "connector": "OR",
+      "expected": {
+        "success": true
+      }
+    },
+    {
+      "name": "action-and-denial",
+      "request": {
+        "team": [
+          "delete",
+          "create"
+        ]
+      },
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "unauthorized to access resource \"team\""
+      }
+    },
+    {
+      "name": "action-or-success",
+      "request": {
+        "team": {
+          "actions": [
+            "delete",
+            "create"
+          ],
+          "connector": "OR"
+        }
+      },
+      "connector": "AND",
+      "expected": {
+        "success": true
+      }
+    },
+    {
+      "name": "explicit-action-and-denial",
+      "request": {
+        "team": {
+          "actions": [
+            "delete",
+            "create"
+          ],
+          "connector": "AND"
+        }
+      },
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "unauthorized to access resource \"team\""
+      }
+    },
+    {
+      "name": "nested-or-success",
+      "request": {
+        "missing": [
+          "create"
+        ],
+        "team": {
+          "actions": [
+            "delete",
+            "create"
+          ],
+          "connector": "OR"
+        }
+      },
+      "connector": "OR",
+      "expected": {
+        "success": true
+      }
+    },
+    {
+      "name": "nested-and-denial",
+      "request": {
+        "member": [
+          "update"
+        ],
+        "team": {
+          "actions": [
+            "delete",
+            "create"
+          ],
+          "connector": "AND"
+        }
+      },
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "unauthorized to access resource \"team\""
+      }
+    },
+    {
+      "name": "empty-request-and",
+      "request": {},
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "Not authorized"
+      }
+    },
+    {
+      "name": "empty-request-or",
+      "request": {},
+      "connector": "OR",
+      "expected": {
+        "success": false,
+        "error": "Not authorized"
+      }
+    },
+    {
+      "name": "empty-array",
+      "request": {
+        "team": []
+      },
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "unauthorized to access resource \"team\""
+      }
+    },
+    {
+      "name": "empty-rule-or",
+      "request": {
+        "team": {
+          "actions": [],
+          "connector": "OR"
+        }
+      },
+      "connector": "OR",
+      "expected": {
+        "success": false,
+        "error": "Not authorized"
+      }
+    },
+    {
+      "name": "unknown-first-and",
+      "request": {
+        "missing": [
+          "create"
+        ],
+        "team": [
+          "create"
+        ]
+      },
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "You are not allowed to access resource: missing"
+      }
+    },
+    {
+      "name": "unknown-only-or",
+      "request": {
+        "missing": [
+          "create"
+        ]
+      },
+      "connector": "OR",
+      "expected": {
+        "success": false,
+        "error": "Not authorized"
+      }
+    },
+    {
+      "name": "empty-grant",
+      "request": {
+        "empty": [
+          "create"
+        ]
+      },
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "unauthorized to access resource \"empty\""
+      }
+    },
+    {
+      "name": "literal-resource",
+      "request": {
+        "Team": [
+          "create"
+        ]
+      },
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "You are not allowed to access resource: Team"
+      }
+    },
+    {
+      "name": "literal-action",
+      "request": {
+        "team": [
+          "Create"
+        ]
+      },
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "unauthorized to access resource \"team\""
+      }
+    },
+    {
+      "name": "duplicate-actions",
+      "request": {
+        "team": [
+          "create",
+          "create"
+        ]
+      },
+      "connector": "AND",
+      "expected": {
+        "success": true
+      }
+    },
+    {
+      "name": "additional-resource",
+      "request": {
+        "Custom": [
+          "publish"
+        ]
+      },
+      "connector": "AND",
+      "expected": {
+        "success": true
+      }
+    },
+    {
+      "name": "first-known-rejection",
+      "request": {
+        "member": [
+          "delete"
+        ],
+        "missing": [
+          "create"
+        ]
+      },
+      "connector": "AND",
+      "expected": {
+        "success": false,
+        "error": "unauthorized to access resource \"member\""
+      }
+    },
+    {
+      "name": "or-all-known-denied",
+      "request": {
+        "team": [
+          "delete"
+        ],
+        "member": [
+          "delete"
+        ]
+      },
+      "connector": "OR",
+      "expected": {
+        "success": false,
+        "error": "Not authorized"
+      }
+    },
+    {
+      "name": "empty-resource-or-skip",
+      "request": {
+        "team": [],
+        "member": [
+          "update"
+        ]
+      },
+      "connector": "OR",
+      "expected": {
+        "success": true
+      }
+    }
+  ],
+  "effects": [
+    "plain-and-success",
+    "resource-or-success",
+    "action-or-success",
+    "nested-or-success",
+    "duplicate-actions",
+    "additional-resource",
+    "empty-resource-or-skip"
+  ]
+}

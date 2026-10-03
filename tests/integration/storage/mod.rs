@@ -20,6 +20,7 @@
     reason = "storage contract tests fail fast on setup and assert persisted invariants directly"
 )]
 
+mod access_control;
 mod accounts;
 mod api_keys;
 #[cfg(all(feature = "sqlx", feature = "seaorm"))]
