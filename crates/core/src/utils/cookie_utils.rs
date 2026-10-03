@@ -261,7 +261,19 @@ pub fn create_account_cookie_header(
     max_age: f64,
     config: &AuthConfig,
 ) -> crate::AuthResult<String> {
-    if max_age > 34_560_000.0 {
+    create_numeric_cookie_header(name, base, value, Some(max_age), config)
+}
+
+// Cache cookies can omit Max-Age (browser sessions), while account writers
+// always supply a numeric age. Both resolve chunk attributes from the base.
+pub(crate) fn create_numeric_cookie_header(
+    name: &str,
+    base: &str,
+    value: &str,
+    max_age: Option<f64>,
+    config: &AuthConfig,
+) -> crate::AuthResult<String> {
+    if max_age.is_some_and(|age| age > 34_560_000.0) {
         return Err(crate::AuthError::internal(
             "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
         ));
@@ -269,7 +281,7 @@ pub fn create_account_cookie_header(
     let mut attributes = cookie_attributes(base, config);
     attributes.max_age = None;
     let header = render_encoded_cookie(name, value, &attributes);
-    if max_age >= 0.0 {
+    if let Some(max_age) = max_age.filter(|age| *age >= 0.0) {
         let (prefix, suffix) = header.split_once(';').unwrap_or((&header, ""));
         Ok(format!(
             "{prefix}; Max-Age={}{}{}",

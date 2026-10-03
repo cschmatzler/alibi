@@ -13,7 +13,7 @@ import {
 import { getCookieCache } from "better-auth/cookies";
 import { verifyPassword } from "better-auth/crypto";
 import { type JWK } from "jose";
-import { Cookie } from "tough-cookie";
+import { Cookie, CookieJar } from "tough-cookie";
 
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
@@ -1639,83 +1639,149 @@ compatScenario(
   ["GET /get-session", "GET /list-accounts", "GET /organization/list"],
 );
 
-compatScenario(
-  "compact cache chunking uses real writer limits and canonical server chunk indices with base-cookie precedence",
-  async (ctx) => {
-    await control(ctx, "standard", { action: "reset" });
-    const owner = client(ctx, "standard");
-    const signup = await owner.sdk.signUp.email({
-      email: ctx.uniqueEmail("compact-chunk"),
-      name: "x".repeat(6000),
-      password: "password123",
-    });
-    expect(signup.error).toBeNull();
+for (const mode of ["standard", "defaults", "attributes"] as const) {
+  compatScenario(
+    `compact cache chunking ${mode} uses real writer limits and canonical server chunk indices with base-cookie precedence`,
+    async (ctx) => {
+      await control(ctx, mode, { action: "reset" });
+      const owner = client(ctx, mode);
+      const signup = await owner.sdk.signUp.email({
+        email: ctx.uniqueEmail("compact-chunk"),
+        name: "x".repeat(6000),
+        password: "password123",
+      });
+      expect(signup.error).toBeNull();
 
-    const headers = owner.headers.at(-1)!;
-    const pairs = cookiePairs(headers);
-    const parts = headers.getSetCookie().filter((p) => p.startsWith(cookieName + "."));
-    expect(parts.length).toBeGreaterThan(1);
+      const headers = owner.headers.at(-1)!;
+      const pairs = cookiePairs(headers);
+      const parts = headers.getSetCookie().filter((p) => p.startsWith(cookieName + "."));
+      expect(parts.length).toBeGreaterThan(1);
 
-    for (const part of parts) {
-      expect(Buffer.byteLength(part)).toBeLessThanOrEqual(4050);
-    }
+      for (const part of parts) {
+        expect(Buffer.byteLength(part)).toBeLessThanOrEqual(4050);
+        const parsed = Cookie.parse(part)!;
+        expect(parsed.path).toBe(
+          mode !== "standard" ? authProfilePath(`session-cache-${mode}`) : "/",
+        );
+        expect(parsed.domain).toBe(mode !== "standard" ? "localhost" : null);
+        expect(parsed.httpOnly).toBe(mode === "standard");
+        expect(parsed.sameSite).toBe(mode !== "standard" ? "strict" : "lax");
+      }
 
-    const issued = await atom(headers);
-    const attributes = parts[0]!.slice(parts[0]!.indexOf(";"));
-    const capacity = 4050 - (cookieName + ".99=" + attributes).length;
-    const values = parts.map((part) => part.split(";")[0]!.slice(part.indexOf("=") + 1));
-    expect(values.join("")).toBe(issued.compactSessionCache.token);
+      // Independently apply real wire headers to a standards-aware browser jar.
+      // A null get-session response alone cannot prove stale chunks were retired.
+      const scopeJar = new CookieJar();
+      const scopeURL = ctx.baseURL + authProfilePath(`session-cache-${mode}`) + "/get-session";
+      for (const raw of headers.getSetCookie()) {
+        await scopeJar.setCookie(raw, scopeURL, { ignoreError: true });
+      }
+      expect(
+        (await scopeJar.getCookies(scopeURL)).filter((cookie) =>
+          cookie.key.startsWith(cookieName + "."),
+        ),
+      ).toHaveLength(parts.length);
+      if (mode !== "standard") {
+        expect(await scopeJar.getCookieString(ctx.baseURL + "/api/auth/get-session")).toBe("");
+      }
 
-    values.forEach((value, index) =>
-      expect(value.length).toBe(
-        Math.min(capacity, issued.compactSessionCache.token.length - index * capacity),
-      ),
-    );
-    await control(ctx, "standard", {
-      action: "rename",
-      userId: signup.data!.user.id,
-      name: "Stored Chunk Owner",
-    });
-    const token = pairs.find((p) => p.startsWith("better-auth.session_token="))!;
-    const chunks = pairs.filter((p) => p.startsWith(cookieName + "."));
-    const observations = [];
+      const issued = await atom(headers);
+      const attributes = parts[0]!.slice(parts[0]!.indexOf(";"));
+      const capacity = 4050 - (cookieName + ".99=" + attributes).length;
+      const values = parts.map((part) => part.split(";")[0]!.slice(part.indexOf("=") + 1));
+      expect(values.join("")).toBe(issued.compactSessionCache.token);
 
-    for (const [mode, cache, expected] of [
-      ["reverse", [...chunks].reverse(), "x".repeat(6000)],
-      [
-        "base-precedence",
-        [
-          cookieName + "=" + issued.compactSessionCache.token,
-          ...chunks.map((p) => p.replace(/=.*/, "=invalid")),
-        ],
-        "x".repeat(6000),
-      ],
-      [
-        "noncanonical",
-        chunks.map((p) => p.replace(cookieName + ".0=", cookieName + ".00=")),
-        "Stored Chunk Owner",
-      ],
-      ["missing", chunks.slice(1), "Stored Chunk Owner"],
-    ] as const) {
-      const r = await response(
-        await owner.fetch(
-          ctx.baseURL + authProfilePath("session-cache-standard") + "/get-session",
-          { credentials: "omit", headers: { cookie: [token, ...cache].join("; ") } },
+      values.forEach((value, index) =>
+        expect(value.length).toBe(
+          Math.min(capacity, issued.compactSessionCache.token.length - index * capacity),
         ),
       );
-      expect(r.status).toBe(200);
-      expect((r.body as any).user.name).toBe(expected);
+      await control(ctx, mode, {
+        action: "rename",
+        userId: signup.data!.user.id,
+        name: "Stored Chunk Owner",
+      });
+      const token = pairs.find((p) => p.startsWith("better-auth.session_token="))!;
+      const chunks = pairs.filter((p) => p.startsWith(cookieName + "."));
+      const observations = [];
 
-      observations.push({ mode, ...r });
-    }
+      for (const [input, cache, expected] of [
+        ["reverse", [...chunks].reverse(), "x".repeat(6000)],
+        [
+          "base-precedence",
+          [
+            cookieName + "=" + issued.compactSessionCache.token,
+            ...chunks.map((p) => p.replace(/=.*/, "=invalid")),
+          ],
+          "x".repeat(6000),
+        ],
+        [
+          "noncanonical",
+          chunks.map((p) => p.replace(cookieName + ".0=", cookieName + ".00=")),
+          "Stored Chunk Owner",
+        ],
+        ["missing", chunks.slice(1), "Stored Chunk Owner"],
+      ] as const) {
+        const r = await response(
+          await owner.fetch(
+            ctx.baseURL + authProfilePath(`session-cache-${mode}`) + "/get-session",
+            { credentials: "omit", headers: { cookie: [token, ...cache].join("; ") } },
+          ),
+        );
+        expect(r.status).toBe(200);
+        expect((r.body as any).user.name).toBe(expected);
 
-    const state = await ctx.readUserState({ userId: signup.data!.user.id });
-    expect((state as any).sessions.length).toBe(1);
+        observations.push({ mode: input, ...r });
+      }
 
-    return { signup: ctx.snapshot(signup), issued, chunkCount: parts.length, observations, state };
-  },
-  ["GET /get-session"],
-);
+      const state = await ctx.readUserState({ userId: signup.data!.user.id });
+      expect((state as any).sessions.length).toBe(1);
+
+      // The actor's standards-aware jar must send and retire the configured chunks.
+      const restored = await owner.sdk.getSession();
+      expect(restored.data!.user.id).toBe(signup.data!.user.id);
+      expect(restored.data!.user.name).toBe("x".repeat(6000));
+      const logout = await owner.sdk.signOut();
+      expect(logout.error).toBeNull();
+      const cleared = owner.headers
+        .at(-1)!
+        .getSetCookie()
+        .filter((raw) => raw.startsWith(cookieName + "."));
+      expect(cleared.length).toBe(parts.length);
+      for (const raw of cleared) {
+        const parsed = Cookie.parse(raw)!;
+        expect(parsed.value).toBe("");
+        expect(parsed.maxAge).toBe(0);
+        expect(parsed.path).toBe(
+          mode !== "standard" ? authProfilePath(`session-cache-${mode}`) : "/",
+        );
+        expect(parsed.domain).toBe(mode !== "standard" ? "localhost" : null);
+        expect(parsed.httpOnly).toBe(mode === "standard");
+        expect(parsed.sameSite).toBe(mode !== "standard" ? "strict" : "lax");
+      }
+      for (const raw of owner.headers.at(-1)!.getSetCookie()) {
+        await scopeJar.setCookie(raw, scopeURL, { ignoreError: true });
+      }
+      expect(await scopeJar.getCookieString(scopeURL)).toBe("");
+      const empty = await owner.sdk.getSession();
+      expect(empty.data).toBeNull();
+      const after = await ctx.readUserState({ userId: signup.data!.user.id });
+      expect((after as any).sessions).toHaveLength(0);
+      return {
+        signup: ctx.snapshot(signup),
+        issued,
+        chunkCount: parts.length,
+        observations,
+        state,
+        restored,
+        logout,
+        cleared,
+        empty,
+        after,
+      };
+    },
+    ["GET /get-session"],
+  );
+}
 
 compatScenario(
   "compact asynchronous version receives real stored private fields then filtered cache fields and invalidation falls back without mutating foreign state",

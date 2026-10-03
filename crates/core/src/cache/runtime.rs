@@ -227,7 +227,7 @@ fn cookie_values<H: std::hash::BuildHasher + Sync>(
     values
 }
 
-fn chunk_index(name: &str, base: &str) -> Option<u64> {
+pub(super) fn chunk_index(name: &str, base: &str) -> Option<u64> {
     let suffix = name.strip_prefix(base)?.strip_prefix('.')?;
     let index: u64 = suffix.parse().ok()?;
     (index <= 9_007_199_254_740_991 && index.to_string() == suffix).then_some(index)

@@ -349,18 +349,19 @@ impl SessionManagementPlugin {
         for cookie in delete_session_cookie_headers(&ctx.config) {
             response.headers.append("Set-Cookie", cookie);
         }
-        if ctx.config.account.store_account_cookie {
-            let base = better_auth_core::utils::cookie_utils::related_cookie_name(
-                &ctx.config,
-                "account_data",
-            );
+        for (logical, account) in [("session_data", false), ("account_data", true)] {
+            if account && !ctx.config.account.store_account_cookie {
+                continue;
+            }
+            let base =
+                better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, logical);
             for header in better_auth_core::cache::runtime::chunked_cookie_headers(
                 &base,
                 "",
                 Some(0.0),
                 &ctx.config,
                 &req.headers,
-                true,
+                account,
             )? {
                 if !header.starts_with(&format!("{base}=")) {
                     response.headers.append("Set-Cookie", header);
