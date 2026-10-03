@@ -8,13 +8,13 @@
 //! Applications can also use cookie-only sessions with durable SQL user storage.
 mod api_keys;
 mod device_codes;
+mod invitations;
 mod jwks;
+mod members;
 mod optional_records;
 mod organizations;
-mod members;
-mod invitations;
-mod teams;
 mod roles;
+mod teams;
 mod transaction;
 
 use super::*;
@@ -64,18 +64,26 @@ struct OrganizationState {
 }
 
 impl Default for StatelessStore {
-    fn default() -> Self { Self::with_find_many_limit(100) }
+    fn default() -> Self {
+        Self::with_find_many_limit(100)
+    }
 }
 
 impl StatelessStore {
     /// Use the configured adapter page bound for native organization rows.
     #[must_use]
     pub fn with_find_many_limit(find_many_limit: usize) -> Self {
-        Self { state: Default::default(), organizations: Default::default(), find_many_limit }
+        Self {
+            state: Default::default(),
+            organizations: Default::default(),
+            find_many_limit,
+        }
     }
 
     fn organization_state(&self) -> AuthResult<std::sync::MutexGuard<'_, OrganizationState>> {
-        self.organizations.lock().map_err(|_| AuthError::internal("No-database organization state poisoned"))
+        self.organizations
+            .lock()
+            .map_err(|_| AuthError::internal("No-database organization state poisoned"))
     }
 
     fn lock(&self) -> AuthResult<std::sync::MutexGuard<'_, IdentityState>> {
@@ -295,6 +303,22 @@ impl UserStore<StatelessSchema> for StatelessStore {
             .iter()
             .filter_map(|id| state.users.get(id).cloned())
             .collect())
+    }
+
+    async fn list_users_by_ids_page(
+        &self,
+        ids: &[String],
+        limit: f64,
+    ) -> AuthResult<Vec<UserView>> {
+        let mut users: Vec<_> = self
+            .lock()?
+            .users
+            .values()
+            .filter(|user| ids.contains(&user.id))
+            .cloned()
+            .collect();
+        users.truncate(members::slice_index(limit, users.len()));
+        Ok(users)
     }
 
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<UserView>> {
@@ -796,4 +820,3 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
         Ok(before - state.verifications.len())
     }
 }
-
