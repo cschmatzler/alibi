@@ -30,7 +30,7 @@ use fixtures::{
     organization_membership_policy_fixture, organization_timestamp_fixture,
     organization_transport_probe, organization_update_hooks_fixture,
     passkey_authentication_fixture, passkey_fixture, passkey_registration_fixture,
-    physical_cookie_fixture, rate_limit_fixture, server_endpoint_fixture,
+    paybin_provider_fixture, physical_cookie_fixture, rate_limit_fixture, server_endpoint_fixture,
     session_cookie_cache_fixture, session_fields_fixture, set_password_fixture,
     signup_policy_fixture, siwe_fixture, social_provider_fixture, team_fixture,
     two_factor_delivery_fixture, two_factor_otp_fixture, two_factor_pending_lookup_fixture,
@@ -886,6 +886,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         oauth_proxy_fixture::managed_router(&config).await?;
     let (notion_router, notion_reset) =
         notion_provider_fixture::router(&config, database.clone()).await?;
+    let (paybin_router, paybin_reset) =
+        paybin_provider_fixture::router(&config, database.clone()).await?;
     let (cloudflare_router, cloudflare_reset) =
         cloudflare_provider_fixture::router(&config, database.clone()).await?;
     let (facebook_router, facebook_reset) =
@@ -1409,6 +1411,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let social_id_token_valid = social_id_token_valid_for_reset.clone();
                 let database = database_for_reset.clone();
                 let notion_reset=notion_reset.clone();
+                let paybin_reset=paybin_reset.clone();
                 let cloudflare_reset=cloudflare_reset.clone();
                 let cognito_reset=cognito_reset.clone();
                 let additional_fields_reset=additional_fields_reset.clone();
@@ -1433,6 +1436,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 async move {
                     api_key_storage_reset.reset().await;
                     notion_reset.reset().await;
+                    paybin_reset.reset().await;
                     cloudflare_reset.reset().await;
                     cognito_reset.reset().await;
                     if let Err(error) = additional_fields_reset.reset().await {
@@ -2067,6 +2071,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(auth)
         .merge(error_page_router)
         .merge(notion_router)
+        .merge(paybin_router)
         .merge(cloudflare_router)
         .merge(cognito_router)
         .merge(additional_fields_router)

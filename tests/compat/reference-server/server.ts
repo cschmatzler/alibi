@@ -78,6 +78,7 @@ import { passkeyFixture } from "./fixtures/passkey-fixture";
 import { passkeyRegistrationFixture } from "./fixtures/passkey-registration-fixture";
 import { callbackSnapshot, capturePasswordlessRequest } from "./fixtures/passwordless-context";
 import { numericModes, numericOptions } from "./fixtures/passwordless-numeric";
+import { paybinProviderFixture } from "./fixtures/paybin-provider-fixture";
 import { createPhoneFixture } from "./fixtures/phone-fixture";
 import { physicalCookieProfiles } from "./fixtures/physical-cookie-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
@@ -617,6 +618,7 @@ const passkeyAuthentication = passkeyAuthenticationFixture(
   `http://localhost:${PORT}`,
 );
 const notionFixture = notionProviderFixture(authOptions);
+const paybinFixture = paybinProviderFixture(authOptions);
 const cloudflareFixture = cloudflareProviderFixture(authOptions);
 const cognitoFixture = cognitoProviderFixture(authOptions);
 const dropboxFixture = dropboxProviderFixture(authOptions);
@@ -649,6 +651,9 @@ for (const [path, instance] of userLifecycleFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of notionFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of paybinFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of cloudflareFixture.profiles) {
@@ -1688,7 +1693,9 @@ const server = Bun.serve({
       const managedProxyControl = await managedProxyProfiles.handle(request);
       if (managedProxyControl) return managedProxyControl;
       const notionControl = await notionFixture.handle(request);
+      const paybinControl = await paybinFixture.handle(request);
       if (notionControl) return notionControl;
+      if (paybinControl) return paybinControl;
       const cloudflareControl = await cloudflareFixture.handle(request);
       if (cloudflareControl) {
         return cloudflareControl;
@@ -2557,6 +2564,7 @@ const server = Bun.serve({
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         await apiKeyStorage.reset();
         notionFixture.reset();
+        paybinFixture.reset();
         cloudflareFixture.reset();
         cognitoFixture.reset();
         dropboxFixture.reset();

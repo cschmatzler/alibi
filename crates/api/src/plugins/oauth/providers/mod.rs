@@ -1,3 +1,6 @@
+mod paybin;
+pub use paybin::PaybinOptions;
+
 mod notion;
 pub use notion::NotionOptions;
 
