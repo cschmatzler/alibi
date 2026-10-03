@@ -32,6 +32,7 @@ pub(crate) mod kakao_provider_fixture;
 pub(crate) mod kick_provider_fixture;
 pub(crate) mod last_login_method_fixture;
 pub(crate) mod lifecycle_fixture;
+pub(crate) mod line_provider_fixture;
 pub(crate) mod multiple_session_fixture;
 pub(crate) mod oauth_proxy_fixture;
 pub(crate) mod one_tap_fixture;

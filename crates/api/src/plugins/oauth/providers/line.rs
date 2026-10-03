@@ -158,9 +158,11 @@ impl OAuthUserInfoHandler for LineUserInfo {
             .mapper
             .map(|mapper| mapper(profile.clone()))
             .transpose()?;
+        let user_output = mapped.as_ref().map(|user| user.public_profile(true));
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: scalar(profile.get("sub"))?.unwrap_or_default(),
                 name: Some(
                     scalar(profile.get("name").filter(|value| truthy(value)))?.unwrap_or_default(),
@@ -175,6 +177,7 @@ impl OAuthUserInfoHandler for LineUserInfo {
             },
         };
         Ok(OAuthUserInfoResponse {
+            user_output,
             user,
             data: profile,
         })

@@ -117,3 +117,20 @@ cells from68passing LINE owners=5,596. Every added cell is independently checked
 against the frozen passing artifacts, and the failing mapper-added-ID owner
 supplies no committed evidence. No Source/comparer edits, compatibility shims,
 timestamp tolerance, dependency patches, policy bypasses or hook bypasses.
+
+Current-main recovery preserves the historical checkpoints above. Rebased from
+6d994b48 onto actual main f48d546eb81b058afa32e67a7cc7c0068348e7e8; moved
+LINE's scenario and Source/native fixtures into the established social/fixtures
+layout without a registration exemption. The shared #184 mapped-public-output
+contract now captures mapper-added ID independently of original profile.sub;
+ordinary LINE still omits ID from account-info. The mapper uses the same
+public_profile(true) owner contract as sibling providers, with initialized
+additional fields retained. Existing factory, SDK, comparator and pin unchanged.
+
+Recovery typecheck passes. First native fixture Clippy stops at the moved
+fixture's pub(super) visibility; update to the established pub(crate) scope.
+The two independently started actual Source fixtures pass all 70 complete LINE
+scenarios and 2,450 assertions. Current harness passes all 86 negative-control
+tests and 2,314 assertions, including live Source publication/cookie controls.
+Log: /tmp/pr289-source-self-harness.log. Source-self creates no Rust capability
+evidence. Full Source/native and canonical gate proof are still pending.
