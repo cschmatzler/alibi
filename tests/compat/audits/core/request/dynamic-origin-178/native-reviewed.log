@@ -1,0 +1,35 @@
+   Compiling better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178/crates/core)
+   Compiling better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178/crates/seaorm)
+   Compiling better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178/crates/sqlx)
+   Compiling better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178/crates/api)
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.98s
+mbx[progress]: 15s elapsed; 0 hits, 0 misses, 0 bypassed, 7 not looked up; ~0s compiler work saved
+     Running tests/integration/main.rs (/tmp/origin178-target/debug/deps/integration-f90a0b968485d148)
+
+running 6 tests
+native-patterns=[{"url":"https://b.example.test:443/cb?q=1#fragment","pattern":"https://*.example.test","result":true},{"url":"https://user:pass@b.example.test/cb","pattern":"https://*.example.test","result":true},{"url":"https://b.example.test:444/cb","pattern":"https://*.example.test","result":false},{"url":"https://b.example.test.evil.test/cb","pattern":"https://*.example.test","result":false},{"url":"myapp://CLIENT/cb/sub?q=1#fragment","pattern":"myapp://client/cb","result":true},{"url":"myapp://client/cb/%2e%2e/evil","pattern":"myapp://client/cb","result":false},{"url":"myapp://client:123/cb","pattern":"myapp://client/cb","result":false},{"url":"myapp://user@client/cb","pattern":"myapp://client/cb","result":false},{"url":"myapp://client/cb?q=1","pattern":"myapp://client/cb","result":true},{"url":"myapp://client/cb?q=1","pattern":"myapp://*","result":false}]
+test core::dynamic_origin::dynamic_origin_pattern_contract ... ok
+native-resolutions=[{"host":"a.example.test","url":"https://a.example.test","trust":false,"result":"https://a.example.test/api/auth"},{"host":"a.example.test","url":"https://a.example.test","trust":true,"result":"https://fallback.test/api/auth"},{"host":"a.example.test.evil.test","url":"https://internal.test","trust":false,"result":"https://fallback.test/api/auth"},{"host":"a.example.test.evil.test","url":"https://internal.test","trust":true,"result":"http://b.example.test/api/auth"},{"host":"localhost:8080","url":"http://localhost:8080","trust":false,"result":"http://localhost:8080/api/auth"},{"host":"localhost:8080","url":"http://localhost:8080","trust":true,"result":"https://fallback.test/api/auth"}]
+
+thread 'core::dynamic_origin::dynamic_origin_resolution' (2194856) panicked at tests/integration/core/dynamic_origin.rs:342:9:
+assertion `left == right` failed
+  left: false
+ right: true
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test core::dynamic_origin::dynamic_origin_resolution ... FAILED
+test core::dynamic_origin::on_sqlx::dynamic_origin_magic_link ... ok
+test core::dynamic_origin::on_seaorm::dynamic_origin_magic_link ... ok
+test core::dynamic_origin::on_seaorm::dynamic_origin_dispatch ... ok
+test core::dynamic_origin::on_sqlx::dynamic_origin_dispatch ... ok
+
+failures:
+
+failures:
+    core::dynamic_origin::dynamic_origin_resolution
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 339 filtered out; finished in 0.37s
+
+error: test failed, to rerun pass `-p better-auth --test integration`
+mbx[cache]: 0 hits, 0 misses, 7 not looked up, 8 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: disposed of 1.8 TiB logical without being asked. that is rather the point.

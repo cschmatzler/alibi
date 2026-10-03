@@ -1,0 +1,49 @@
+   Compiling chrono v0.4.44
+   Compiling rust_decimal v1.40.0
+   Compiling atoi v2.0.0
+   Compiling better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178/crates/core)
+   Compiling sqlx-core v0.9.0
+   Compiling sqlx-postgres v0.9.0
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+   Compiling sqlx v0.9.0
+   Compiling sea-query-sqlx v0.9.1
+   Compiling sea-schema v0.18.1
+   Compiling sea-orm v2.0.4
+   Compiling sea-orm-migration v2.0.4
+warning: unused result of type `std::option::Option<&str>`
+   --> crates/core/src/config/origin.rs:289:17
+    |
+289 |                 segments.pop();
+    |                 ^^^^^^^^^^^^^^^
+    |
+    = note: requested on the command line with `-W unused-results`
+
+   Compiling better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178/crates/seaorm)
+   Compiling better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178/crates/sqlx)
+   Compiling better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178/crates/api)
+warning: `better-auth-core` (lib) generated 1 warning
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 11.49s
+     Running tests/integration/main.rs (/tmp/origin178-target/debug/deps/integration-f90a0b968485d148)
+
+running 1 test
+
+thread 'core::dynamic_origin::dynamic_origin_pattern_contract' (2182392) panicked at tests/integration/core/dynamic_origin.rs:383:9:
+assertion `left == right` failed: myapp://client/cb?q=1 against myapp://*
+  left: true
+ right: false
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test core::dynamic_origin::dynamic_origin_pattern_contract ... FAILED
+
+failures:
+
+failures:
+    core::dynamic_origin::dynamic_origin_pattern_contract
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 344 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p better-auth --test integration`
+mbx[cache]: 13 hits, 0 misses, 7 not looked up, 8 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: 1d 5h saved across 3179 builds. put it toward something with a progress bar.

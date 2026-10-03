@@ -1,0 +1,92 @@
+{
+  "resolutions": [
+    {
+      "host": "a.example.test",
+      "url": "https://a.example.test",
+      "trust": false,
+      "result": "https://a.example.test/api/auth"
+    },
+    {
+      "host": "a.example.test",
+      "url": "https://a.example.test",
+      "trust": true,
+      "result": "https://fallback.test/api/auth"
+    },
+    {
+      "host": "a.example.test.evil.test",
+      "url": "https://internal.test",
+      "trust": false,
+      "result": "https://fallback.test/api/auth"
+    },
+    {
+      "host": "a.example.test.evil.test",
+      "url": "https://internal.test",
+      "trust": true,
+      "result": "http://b.example.test/api/auth"
+    },
+    {
+      "host": "localhost:8080",
+      "url": "http://localhost:8080",
+      "trust": false,
+      "result": "http://localhost:8080/api/auth"
+    },
+    {
+      "host": "localhost:8080",
+      "url": "http://localhost:8080",
+      "trust": true,
+      "result": "https://fallback.test/api/auth"
+    }
+  ],
+  "patterns": [
+    {
+      "url": "https://b.example.test:443/cb?q=1#fragment",
+      "pattern": "https://*.example.test",
+      "result": true
+    },
+    {
+      "url": "https://user:pass@b.example.test/cb",
+      "pattern": "https://*.example.test",
+      "result": true
+    },
+    {
+      "url": "https://b.example.test:444/cb",
+      "pattern": "https://*.example.test",
+      "result": false
+    },
+    {
+      "url": "https://b.example.test.evil.test/cb",
+      "pattern": "https://*.example.test",
+      "result": false
+    },
+    {
+      "url": "myapp://CLIENT/cb/sub?q=1#fragment",
+      "pattern": "myapp://client/cb",
+      "result": true
+    },
+    {
+      "url": "myapp://client/cb/%2e%2e/evil",
+      "pattern": "myapp://client/cb",
+      "result": false
+    },
+    {
+      "url": "myapp://client:123/cb",
+      "pattern": "myapp://client/cb",
+      "result": false
+    },
+    {
+      "url": "myapp://user@client/cb",
+      "pattern": "myapp://client/cb",
+      "result": false
+    },
+    {
+      "url": "myapp://client/cb?q=1",
+      "pattern": "myapp://client/cb",
+      "result": true
+    },
+    {
+      "url": "myapp://client/cb?q=1",
+      "pattern": "myapp://*",
+      "result": false
+    }
+  ]
+}

@@ -407,6 +407,13 @@ async fn dynamic_origin_resolution() -> TestResult {
         );
     }
     let mut cfg = config();
+    cfg.dynamic_base_url.as_mut().unwrap().allowed_hosts.clear();
+    assert!(cfg.validate().is_err());
+    cfg.dynamic_base_url
+        .as_mut()
+        .unwrap()
+        .allowed_hosts
+        .push("a.example.test".into());
     cfg.dynamic_base_url.as_mut().unwrap().fallback = None;
     assert!(
         cfg.resolve_request(&request(
