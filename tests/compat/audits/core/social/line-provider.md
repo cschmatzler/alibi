@@ -167,3 +167,13 @@ formatter to LINE's scenario only after that invocation is terminal; the full
 294-file formatting check passes. No production, assertion or comparator change.
 Exact log: /tmp/pr289-canonical-check.log; repair: /tmp/pr289-format-repair.log.
 Restart the complete scripts/check.sh directly on the repaired frozen tree.
+
+The next canonical invocation on 1beb9c46 terminates 1 at the subsequent
+TypeScript lint stage: the preserved old LINE scenario/Source fixture used
+multi-variable declarations and multiline unbraced controls. Repair those two
+files only, with no assertion, registration, policy or dependency changes.
+Whole-project canonical format:check, lint and typecheck run together and all
+pass (/tmp/pr289-all-client-statics.log). The repaired scenario also passes
+70/70 genuine Source-self owners with the same 2,450 assertions
+(/tmp/pr289-source-self-final-style.log). Second early-stop log:
+/tmp/pr289-canonical-final.log. Restart the full gate on this validated style.

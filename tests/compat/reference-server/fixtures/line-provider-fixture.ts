@@ -4,13 +4,13 @@ import { jwtVerify } from "jose";
 /** Actual published factory with only its fixed HTTP destinations redirected. */
 export function lineProviderFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
-  const receipts: unknown[] = [],
-    mapperReceipts: unknown[] = [];
+  const receipts: unknown[] = [];
+  const mapperReceipts: unknown[] = [];
   const transport = Bun.serve({
     port: 0,
     async fetch(request) {
-      const path = new URL(request.url).pathname,
-        text = await request.text();
+      const path = new URL(request.url).pathname;
+      const text = await request.text();
       receipts.push({
         path,
         method: request.method,
@@ -20,7 +20,7 @@ export function lineProviderFixture(base: BetterAuthOptions) {
           ? Object.fromEntries(new URLSearchParams(text))
           : text,
       });
-      if (path === "/token")
+      if (path === "/token") {
         return Response.json(
           control.tokenResponse ?? {
             ...(control.idToken ? { id_token: control.idToken } : {}),
@@ -31,7 +31,8 @@ export function lineProviderFixture(base: BetterAuthOptions) {
           },
           { status: typeof control.tokenStatus === "number" ? control.tokenStatus : 200 },
         );
-      if (path === "/userinfo")
+      }
+      if (path === "/userinfo") {
         return Response.json(
           control.profile ?? {
             sub: "fixture-line-subject",
@@ -41,21 +42,24 @@ export function lineProviderFixture(base: BetterAuthOptions) {
           },
           { status: typeof control.userInfoStatus === "number" ? control.userInfoStatus : 200 },
         );
+      }
       if (path === "/verify") {
         const fields = Object.fromEntries(new URLSearchParams(text));
-        if (typeof control.verifyStatus === "number" && control.verifyStatus !== 200)
+        if (typeof control.verifyStatus === "number" && control.verifyStatus !== 200) {
           return Response.json(
             { error: "remote verification unavailable" },
             { status: control.verifyStatus },
           );
+        }
         try {
           const { payload } = await jwtVerify(
             fields.id_token!,
             new TextEncoder().encode("fixture-line-independent-hmac-key-32"),
             { algorithms: ["HS256"], issuer: "https://access.line.me", audience: fields.client_id },
           );
-          if (fields.nonce && payload.nonce !== fields.nonce)
+          if (fields.nonce && payload.nonce !== fields.nonce) {
             throw new Error("Remote nonce mismatch");
+          }
           return Response.json(control.verifyResponse ?? payload);
         } catch {
           return Response.json({ error: "invalid remote proof" }, { status: 400 });
@@ -66,8 +70,8 @@ export function lineProviderFixture(base: BetterAuthOptions) {
   });
   const previousFetch = globalThis.fetch.bind(globalThis);
   globalThis.fetch = (async (input, init) => {
-    const request = new Request(input, init),
-      url = new URL(request.url);
+    const request = new Request(input, init);
+    const url = new URL(request.url);
     const route =
       url.origin === "https://api.line.me" && url.pathname === "/oauth2/v2.1/token"
         ? "token"
