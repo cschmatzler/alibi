@@ -31,7 +31,7 @@ use fixtures::{
     organization_membership_policy_fixture, organization_timestamp_fixture,
     organization_transport_probe, organization_update_hooks_fixture,
     passkey_authentication_fixture, passkey_fixture, passkey_registration_fixture,
-    paybin_provider_fixture, physical_cookie_fixture, polar_provider_fixture,
+    paybin_provider_fixture, paypal_provider_fixture, physical_cookie_fixture, polar_provider_fixture,
     railway_provider_fixture, rate_limit_fixture, server_endpoint_fixture,
     session_cookie_cache_fixture, session_fields_fixture, set_password_fixture,
     signup_policy_fixture, siwe_fixture, social_provider_fixture, team_fixture,
@@ -890,6 +890,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         railway_provider_fixture::router(&config, database.clone()).await?;
     let (polar_router, polar_reset) =
         polar_provider_fixture::router(&config, database.clone()).await?;
+    let (paypal_router, paypal_reset) =
+        paypal_provider_fixture::router(&config, database.clone()).await?;
     let (notion_router, notion_reset) =
         notion_provider_fixture::router(&config, database.clone()).await?;
     let (paybin_router, paybin_reset) =
@@ -1422,6 +1424,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let railway_reset=railway_reset.clone();
                 let polar_reset=polar_reset.clone();
                 let notion_reset=notion_reset.clone();
+                let paypal_reset=paypal_reset.clone();
                 let paybin_reset=paybin_reset.clone();
                 let cloudflare_reset=cloudflare_reset.clone();
                 let cognito_reset=cognito_reset.clone();
@@ -1450,6 +1453,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     railway_reset.reset().await;
                     polar_reset.reset().await;
                     notion_reset.reset().await;
+                    paypal_reset.reset().await;
                     paybin_reset.reset().await;
                     cloudflare_reset.reset().await;
                     cognito_reset.reset().await;
@@ -2088,6 +2092,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(railway_router)
         .merge(polar_router)
         .merge(notion_router)
+        .merge(paypal_router)
         .merge(paybin_router)
         .merge(cloudflare_router)
         .merge(cognito_router)

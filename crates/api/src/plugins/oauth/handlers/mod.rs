@@ -215,6 +215,9 @@ fn build_authorization_url(
             )
         },
         |policy| {
+            if policy.omit_scopes {
+                return Vec::new();
+            }
             let mut effective = Vec::new();
             if !policy.disable_default_scopes {
                 effective.extend(provider.scopes.iter().map(String::as_str));

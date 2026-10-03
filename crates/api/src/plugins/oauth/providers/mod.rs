@@ -1,5 +1,8 @@
 mod railway;
 pub use railway::RailwayOptions;
+mod paypal;
+pub use paypal::{PayPalEnvironment, PayPalOptions};
+
 mod paybin;
 pub use paybin::PaybinOptions;
 mod polar;
@@ -380,6 +383,8 @@ pub enum OAuthTokenEndpointAuth {
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationPolicy {
     pub configured_scopes: Vec<String>,
+    /// Providers such as PayPal deliberately omit even configured/requested scopes.
+    pub omit_scopes: bool,
     pub scope_encoding: OAuthScopeEncoding,
     /// Retain the first occurrence of each scope, as Cloudflare requires.
     pub deduplicate_scopes: bool,
@@ -416,6 +421,7 @@ impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
             configured_scopes: Vec::new(),
+            omit_scopes: false,
             scope_encoding: OAuthScopeEncoding::Form,
             deduplicate_scopes: false,
             require_client_id: false,

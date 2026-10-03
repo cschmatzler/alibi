@@ -59,6 +59,7 @@ import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture"
 import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
+import { paypalProviderFixture } from "./fixtures/paypal-provider-fixture";
 import { notionProviderFixture } from "./fixtures/notion-provider-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./fixtures/one-tap-fixture";
@@ -632,6 +633,7 @@ const passkeyAuthentication = passkeyAuthenticationFixture(
 );
 const railwayFixture = railwayProviderFixture(authOptions);
 const polarFixture = polarProviderFixture(authOptions);
+const paypalFixture = paypalProviderFixture(authOptions);
 const notionFixture = notionProviderFixture(authOptions);
 const paybinFixture = paybinProviderFixture(authOptions);
 const cloudflareFixture = cloudflareProviderFixture(authOptions);
@@ -669,6 +671,9 @@ for (const [path, instance] of polarFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of railwayFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of paypalFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of notionFixture.profiles) {
@@ -1875,6 +1880,8 @@ const server = Bun.serve({
       if (railwayControl) return railwayControl;
       const polarControl = await polarFixture.handle(request);
       if (polarControl) return polarControl;
+      const paypalControl = await paypalFixture.handle(request);
+      if (paypalControl) return paypalControl;
       const notionControl = await notionFixture.handle(request);
       const paybinControl = await paybinFixture.handle(request);
       if (notionControl) return notionControl;
@@ -2769,6 +2776,7 @@ const server = Bun.serve({
         railwayFixture.reset();
         polarFixture.reset();
         notionFixture.reset();
+        paypalFixture.reset();
         paybinFixture.reset();
         cloudflareFixture.reset();
         cognitoFixture.reset();

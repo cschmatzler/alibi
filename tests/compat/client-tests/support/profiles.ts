@@ -13,6 +13,25 @@ function variants<P extends string, S extends string>(
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  ...variants("social-paypal-", [
+    "default",
+    "live",
+    "configured",
+    "disabled-scope",
+    "disabled-configured",
+    "public",
+    "empty-client",
+    "encoded",
+    "mapped",
+    "implicit-disabled",
+    "signup-disabled",
+    "required",
+    "configured-endpoint",
+    "client-key",
+    "shipping",
+    "prompt",
+    "empty-prompt",
+  ] as const),
   ...variants("social-naver-", [
     "default",
     "public",
