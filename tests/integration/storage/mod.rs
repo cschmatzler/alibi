@@ -28,6 +28,7 @@ mod invitations;
 mod jwks;
 mod members;
 mod migrations;
+mod optional_records;
 mod organizations;
 mod rate_limit;
 mod sessions;

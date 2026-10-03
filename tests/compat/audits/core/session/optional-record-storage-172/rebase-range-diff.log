@@ -1,0 +1,2 @@
+1:  b6d410b9 = 1:  b4689b04 Support native no-database two-factor and passkey records
+2:  28d6d7f3 = 2:  d4de08e7 Protect optional record lifetime and conditional updates

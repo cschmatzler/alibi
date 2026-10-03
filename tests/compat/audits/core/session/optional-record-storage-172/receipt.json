@@ -1,0 +1,31 @@
+{
+  "issue": 172,
+  "pr": "https://github.com/cschmatzler/better-auth-rs/pull/402",
+  "sourceVersion": "1.7.6",
+  "initialBase": "98bfe87690f5051c4a4fc850eb50320c6fb133b2",
+  "testedHead": "28d6d7f39f0ae4ae3bf8b91a1a7fa8f57df0788d",
+  "rebasedBase": "02ed80580e7511ae8553cc2a96dc263ad74f7489",
+  "rebasedProductionHead": "d4de08e7e254eb480fc52b997a122e452348b28c",
+  "checks": {
+    "focusedIntegration": "3 passed: SQLx, SeaORM, true without_database",
+    "coreClippy": "passed with -D warnings",
+    "integrationClippy": "strict run blocked by two existing unrelated lint categories; passed with those categories allowed",
+    "sourceFixtureLint": "passed",
+    "sourceModuleIntegrity": "364 published 1.7.6 .mjs modules match; private inodes, link count 1",
+    "rangeDiff": "both commits unchanged"
+  },
+  "actionsEnabled": false,
+  "unclaimed": [
+    "remaining optional organization/member/invitation/team/role, API-key, device-code and JWK storage",
+    "WebAuthn cryptographic registration/authentication differential execution",
+    "exhaustive concurrency or callback-failure campaign",
+    "independent second-agent review",
+    "full issue 172 closure",
+    "full suite/devenv test/coverage"
+  ],
+  "sha256": {
+    "crates/core/src/store/stateless.rs": "5d7037a9f5e7ecb5cc7a791e140a47fa8ed80be71d6bd8b77b7460c5abdb7bab",
+    "crates/core/src/store/stateless/optional_records.rs": "b87ce601792eec0464dea9e9fd089ddb2f721e04e8406d571380bf98971c1087",
+    "tests/integration/storage/optional_records.rs": "632f2305b08486046ab3201ceff607d46eed91cd510697296818690e5ca7e75c"
+  }
+}
