@@ -257,7 +257,7 @@ pub(super) fn create_cookie_state_value(
 
 /// # Errors
 /// Rejects unauthenticated or malformed state payloads.
-pub(super) fn decode_cookie_state_value(
+pub(in crate::plugins) fn decode_cookie_state_value(
     config: &AuthConfig,
     token: &str,
 ) -> AuthResult<OAuthStatePayload> {
@@ -289,7 +289,7 @@ pub(super) fn decode_account_cookie_value(
         .ok_or_else(|| AuthError::bad_request("Account not found"))
 }
 
-pub(super) fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
+pub(in crate::plugins) fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
     let header = req.headers.get("cookie")?;
     header.split(';').find_map(|cookie| {
         let trimmed = cookie.trim();

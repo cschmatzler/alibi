@@ -1,12 +1,13 @@
 //! OAuth code exchange on a production host, followed by stateful completion on
-//! the originating preview host. This implementation supports database state.
+//! the originating preview host with database or authenticated cookie state.
 use super::oauth::handlers::{
     OAuthSignInError, complete_link_social, create_account_cookie_header,
     fetch_user_info_from_provider, parse_callback_user_payload, process_oauth_sign_in,
     validate_authorization_code_via_provider,
 };
 use super::oauth::state::{
-    OAuthStatePayload, RecoveredOAuthServerContext, state_cookie_name, verified_server_context,
+    OAuthStatePayload, RecoveredOAuthServerContext, decode_cookie_state_value, get_cookie,
+    state_cookie_name, verified_server_context,
 };
 use super::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest,
@@ -421,14 +422,40 @@ impl OAuthProxyPlugin {
         if age > self.config.max_age_seconds || age < -10.0 {
             return error_redirect(error_url, "payload_expired", None);
         }
-        let Ok(Some(row)) = ctx.verifications().find(&payload.state).await else {
-            return error_redirect(error_url, "state_mismatch", None);
+        let cookie_name = state_cookie_name(&ctx.config);
+        let authenticated_cookie = get_cookie(req, &cookie_name);
+        let state: OAuthStatePayload = match ctx.config.account.store_state_strategy {
+            OAuthStateStrategy::Database => {
+                let Ok(Some(row)) = ctx.verifications().find(&payload.state).await else {
+                    return error_redirect(error_url, "state_mismatch", None);
+                };
+                let Ok(state) = better_auth_core::utils::json::from_slice(row.value()?.as_bytes())
+                else {
+                    return error_redirect(error_url, "state_mismatch", None);
+                };
+                state
+            }
+            OAuthStateStrategy::Cookie => {
+                // Proxy restoration only skips the database correlation cookie.
+                // Cookie state still requires the originating browser's full,
+                // authenticated state and an exact nonce match.
+                let Some(cookie) = authenticated_cookie.as_deref() else {
+                    return error_redirect(error_url, "state_mismatch", None);
+                };
+                let Ok(state) = decode_cookie_state_value(&ctx.config, cookie) else {
+                    return error_redirect(error_url, "state_mismatch", None);
+                };
+                if state
+                    .additional_data
+                    .get("oauthState")
+                    .and_then(Value::as_str)
+                    != Some(payload.state.as_str())
+                {
+                    return error_redirect(error_url, "state_mismatch", None);
+                }
+                state
+            }
         };
-        let state: OAuthStatePayload =
-            match better_auth_core::utils::json::from_slice(row.value()?.as_bytes()) {
-                Ok(state) => state,
-                Err(_) => return error_redirect(error_url, "state_mismatch", None),
-            };
         if state
             .additional_data
             .get("oauthState")
@@ -441,21 +468,28 @@ impl OAuthProxyPlugin {
             &ctx.config,
         );
         req.queue_response_header("Set-Cookie", clear);
-        if ctx.verifications().delete(&payload.state).await.is_err() {
+        if ctx.config.account.store_state_strategy == OAuthStateStrategy::Database
+            && ctx.verifications().delete(&payload.state).await.is_err()
+        {
             return error_redirect(error_url, "state_mismatch", None);
         }
         if state.is_expired() {
             return error_redirect(error_url, "state_mismatch", None);
         }
-        // This is the consumed server-owned state row, after authenticated
-        // profile admission, provider/nonce/expiry checks and one-use deletion.
-        // Reader keys retain its native proof; browser HMAC cookies still use
-        // only the current key.
-        if let Some(context) = ctx
-            .config
-            .verification_secrets()
-            .find_map(|secret| verified_server_context(&state, &payload.state, secret))
-        {
+        // Recover authority only from the admitted state. Cookie state uses
+        // the key that authenticated that cookie; database state retains its
+        // native proof across reader-key rotation.
+        let context = match ctx.config.account.store_state_strategy {
+            OAuthStateStrategy::Database => ctx
+                .config
+                .verification_secrets()
+                .find_map(|secret| verified_server_context(&state, &payload.state, secret)),
+            OAuthStateStrategy::Cookie => authenticated_cookie
+                .as_deref()
+                .and_then(|cookie| super::token_crypto::decryption_key(cookie, &ctx.config))
+                .and_then(|secret| verified_server_context(&state, &payload.state, secret)),
+        };
+        if let Some(context) = context {
             req.extensions()
                 .insert(RecoveredOAuthServerContext(context));
         }
@@ -657,14 +691,6 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
             AuthRoute::get("/callback/{provider}/oauth-proxy", "oauth_proxy"),
             AuthRoute::get("/oauth-proxy-callback", "oauth_proxy_legacy"),
         ]
-    }
-    async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
-        if ctx.config.account.store_state_strategy != OAuthStateStrategy::Database {
-            return Err(AuthError::config(
-                "OAuth proxy cookie-state support is not implemented",
-            ));
-        }
-        Ok(())
     }
     async fn before_request(
         &self,
