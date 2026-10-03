@@ -301,6 +301,10 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
 ) -> PasskeyHandlerResult<Value> {
     use super::registration::{PasskeyRegistrationContext, VerifiedPasskeyRegistration, trim_name};
 
+    let Some(response) = body.response.as_ref() else {
+        return response_null(400);
+    };
+
     let Some(origin) = resolve_origin(config, req) else {
         return response_null(400);
     };
@@ -344,7 +348,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         );
     }
 
-    let mut parsed_response = body.response.clone();
+    let mut parsed_response = response.clone();
     if matches!(stored_state.state, StoredRegistrationVerifier::Source(_)) {
         // Source treats transports as persistence metadata, never authenticator
         // admission. Keep the original callback input and signed bytes intact.
@@ -365,20 +369,17 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         StoredRegistrationVerifier::Source(StoredCoreRegistrationState::CoreRawNone {
             policy,
             ..
-        }) => {
-            match super::raw_none::register_raw_key(&registration, &body.response, policy, &origin)
-            {
-                Ok(value) => value,
-                Err(WebauthnError::AttestationStatementSigInvalid) => {
-                    return response_code(
-                        400,
-                        "FAILED_TO_VERIFY_REGISTRATION",
-                        "Failed to verify registration",
-                    );
-                }
-                Err(_) => return passkey_registration_failure(),
+        }) => match super::raw_none::register_raw_key(&registration, response, policy, &origin) {
+            Ok(value) => value,
+            Err(WebauthnError::AttestationStatementSigInvalid) => {
+                return response_code(
+                    400,
+                    "FAILED_TO_VERIFY_REGISTRATION",
+                    "Failed to verify registration",
+                );
             }
-        }
+            Err(_) => return passkey_registration_failure(),
+        },
         StoredRegistrationVerifier::Source(_) | StoredRegistrationVerifier::Legacy(_) => None,
     };
     let (snapshot, metadata, credential_id) = if let Some(raw) = raw_registration {
@@ -444,8 +445,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
 
     let transports = if matches!(stored_state.state, StoredRegistrationVerifier::Source(_)) {
         use better_auth_core::utils::json::JsValue;
-        match body
-            .response
+        match response
             .get("response")
             .and_then(|response| response.get("transports"))
         {
@@ -511,7 +511,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         aaguid: metadata.aaguid,
     };
     let callback = config.registration.after_verification.clone();
-    let client_data = body.response.clone();
+    let client_data = response.clone();
     let stored_context = stored_state.context;
     let authenticated_owner = authenticated_owner.map(str::to_owned);
     let request = req.clone();

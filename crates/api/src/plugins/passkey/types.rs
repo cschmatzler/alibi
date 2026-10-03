@@ -7,8 +7,8 @@ use validator::Validate;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::plugins) struct VerifyRegistrationRequest {
-    #[serde(default = "missing_response")]
-    pub(super) response: better_auth_core::utils::json::JsValue,
+    #[serde(default, deserialize_with = "optional_name")]
+    pub(super) response: Option<better_auth_core::utils::json::JsValue>,
     #[serde(default, deserialize_with = "optional_name")]
     pub(super) name: Option<better_auth_core::utils::json::JsValue>,
     #[serde(default = "no_registration_session")]
@@ -17,6 +17,15 @@ pub(in crate::plugins) struct VerifyRegistrationRequest {
 
 impl Validate for VerifyRegistrationRequest {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        if self.response.is_none() {
+            let mut errors = validator::ValidationErrors::new();
+            errors.add(
+                "response",
+                validator::ValidationError::new("nonoptional")
+                    .with_message("Invalid input: expected nonoptional, received undefined".into()),
+            );
+            return Err(errors);
+        }
         if let Some(name) = &self.name
             && !name.is_string()
         {
@@ -116,9 +125,6 @@ const fn no_registration_session() -> better_auth_core::utils::json::JsValue {
     better_auth_core::utils::json::JsValue::Bool(false)
 }
 
-fn missing_response() -> better_auth_core::utils::json::JsValue {
-    better_auth_core::utils::json::JsValue::Null
-}
 fn optional_name<'de, D: serde::Deserializer<'de>>(
     decoder: D,
 ) -> Result<Option<better_auth_core::utils::json::JsValue>, D::Error> {

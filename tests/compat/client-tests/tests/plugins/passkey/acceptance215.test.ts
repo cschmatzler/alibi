@@ -563,28 +563,48 @@ compatScenario(
     }
     const before = await physical(ctx, id);
     const options = await owner.$fetch("/passkey/generate-register-options", { method: "GET" });
+    const issued = await physical(ctx, id);
     const missing = await owner.$fetch("/passkey/verify-registration", {
       method: "POST",
       body: { createSession: true },
     });
-    expect((missing.error as any).status).toBe(500);
-    expect((missing.error as any).code).toBe("FAILED_TO_VERIFY_REGISTRATION");
-    expect(await physical(ctx, id)).toEqual(before);
+    expect((missing.error as any).status).toBe(400);
+    expect((missing.error as any).code).toBe("VALIDATION_ERROR");
+    expect(await physical(ctx, id)).toEqual(issued);
+    expect((await state(ctx, id)).challenges.count).toBe(1);
+    const proof = new CertificateDevice(ctx.uniqueEmail("missing-response-retry")).register(
+      options.data,
+      ctx.baseURL,
+      "packed",
+    );
+    const retry = await owner.$fetch("/passkey/verify-registration", {
+      method: "POST",
+      body: { response: proof, createSession: true },
+    });
+    expect(retry.error).toBeNull();
+    expect((await state(ctx, id)).challenges.count).toBe(0);
+    const after = await physical(ctx, id);
+    expect(after.passkey.passkeys.length).toBe(before.passkey.passkeys.length + 1);
+    expect(after.passkey.sessions.count).toBe(before.passkey.sessions.count + 1);
     const replay = await owner.$fetch("/passkey/verify-registration", {
       method: "POST",
-      body: { createSession: true },
+      body: { response: proof, createSession: true },
     });
     expect((replay.error as any).code).toBe("CHALLENGE_NOT_FOUND");
+    expect(await physical(ctx, id)).toEqual(after);
     await retain(ctx, "missing-response", {
       before,
       options,
       missing,
+      proof,
+      retry,
       replay,
-      after: await physical(ctx, id),
+      after,
     });
     return {
       cases,
       missing: ctx.snapshot(missing),
+      retry: ctx.snapshot(retry),
       replay: ctx.snapshot(replay),
       final: await physical(ctx, id),
     };
