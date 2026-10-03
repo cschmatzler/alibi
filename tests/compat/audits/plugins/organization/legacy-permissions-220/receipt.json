@@ -1,0 +1,44 @@
+{
+  "issue": 220,
+  "pr": "https://github.com/cschmatzler/better-auth-rs/pull/404",
+  "testedBase": "02ed80580e7511ae8553cc2a96dc263ad74f7489",
+  "testedProductionHead": "8db333f2bcfde67138a18d8d1f03e17e49f53255",
+  "rebasedBase": "f12408bb12e1be3cd713db96413b19ccb57e627a",
+  "rebasedProductionHead": "2f30160d2aec242ea726ecef269589c3cb9c0d05",
+  "beforeAfterPatchId": "fcee2f804168b456df4aa851f8c524eab7f59468",
+  "incomingAffectedDiffBytes": 0,
+  "finalRoleProof": {
+    "SQLx": {
+      "scenarios": 4,
+      "assertions": 518,
+      "log": "sqlx-final-roles-sdk.log"
+    },
+    "SeaORM": {
+      "scenarios": 4,
+      "assertions": 518,
+      "log": "seaorm-final-roles-sdk.log"
+    }
+  },
+  "ownerBeforeProof": [
+    "sqlx-pre-owner-sdk.log",
+    "seaorm-pre-owner-sdk.log"
+  ],
+  "focusedSiblingProof": [
+    "sqlx-after-bounded-sdk.log",
+    "seaorm-after-bounded-sdk.log",
+    "sqlx-final-api-key-sdk.log",
+    "seaorm-final-owner-sdk.log"
+  ],
+  "checks": [
+    "clippy-libs-final.log",
+    "clippy-fixture-final.log",
+    "typecheck-client-final.log",
+    "lint-ts.log"
+  ],
+  "actions": {
+    "enabled": false,
+    "sha_pinning_required": false
+  },
+  "comparison": "Existing scenario comparison, omissions/exclusions, raw trace collection and identity graph unchanged; no new allowances.",
+  "remaining": "Alternative public authorization operators and arbitrary custom-adapter values/model mapping; non-SQLite engines and unbounded shapes are not claimed."
+}
