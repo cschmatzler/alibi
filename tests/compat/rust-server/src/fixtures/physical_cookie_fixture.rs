@@ -30,6 +30,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         "https-default",
         "https-disabled",
         "secure-custom",
+        "secure-alias",
         "dynamic-https",
         "dynamic-http",
         "dynamic-auto",
@@ -38,7 +39,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         let mut config = base.clone().base_path(&path);
         config.advanced.use_secure_cookies = match mode {
             "https-default" | "dynamic-https" | "dynamic-http" | "dynamic-auto" => None,
-            "secure-prefix" | "secure-custom" => Some(true),
+            "secure-prefix" | "secure-custom" | "secure-alias" => Some(true),
             _ => Some(false),
         };
         if mode.starts_with("https-") {
@@ -56,6 +57,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             });
         }
         config.trusted_origins.push("https://localhost".into());
+        config.trusted_origins.push(base.base_url.clone());
         config.session.expires_in = Duration::seconds(if mode == "short" { 60 } else { 604_800 });
         if mode == "legacy" || mode == "legacy-alias" {
             config.session.cookie_name = if mode == "legacy" {
@@ -84,6 +86,15 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             },
             _ => CookieAttributes::default(),
         };
+        if mode == "secure-alias" {
+            config.advanced.cookies.insert(
+                "session_token".into(),
+                CookieOverride {
+                    name: Some("alias.session_token".into()),
+                    ..Default::default()
+                },
+            );
+        }
         if mode == "secure-custom" {
             config.advanced.cookie_prefix = Some("policy".into());
             config.advanced.default_cookie_attributes = CookieAttributes {

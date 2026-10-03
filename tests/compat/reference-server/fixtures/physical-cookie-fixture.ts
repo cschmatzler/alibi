@@ -17,6 +17,7 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
     "https-default",
     "https-disabled",
     "secure-custom",
+    "secure-alias",
     "dynamic-https",
     "dynamic-http",
     "dynamic-auto",
@@ -65,9 +66,15 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
           ...(mode === "https-default" || mode.startsWith("dynamic-")
             ? {}
             : {
-                useSecureCookies: mode === "secure-prefix" || mode === "secure-custom",
+                useSecureCookies:
+                  mode === "secure-prefix" || mode === "secure-custom" || mode === "secure-alias",
               }),
           defaultCookieAttributes: attributes,
+          ...(mode === "secure-alias"
+            ? {
+                cookies: { session_token: { name: "alias.session_token" } },
+              }
+            : {}),
           ...(mode === "secure-custom"
             ? {
                 cookiePrefix: "policy",

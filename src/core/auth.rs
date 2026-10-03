@@ -178,6 +178,16 @@ impl<S: AuthSchema> AuthBuilder<S> {
             .as_ref()
             .is_some_and(|p| !p.is_empty())
         {
+            if !self.config.advanced.cookies.contains_key("session_token")
+                && let Some(prefix) = self
+                    .config
+                    .session
+                    .cookie_name
+                    .strip_suffix(".session_token")
+                && prefix != "better-auth"
+            {
+                self.config.advanced.cookie_prefix = Some(prefix.to_owned());
+            }
             let entry = self
                 .config
                 .advanced

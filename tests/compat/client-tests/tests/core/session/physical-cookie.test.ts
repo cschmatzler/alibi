@@ -107,6 +107,7 @@ for (const mode of [
   "https-default",
   "https-disabled",
   "secure-custom",
+  "secure-alias",
   "dynamic-https",
   "dynamic-http",
   "dynamic-auto",
@@ -142,20 +143,23 @@ for (const mode of [
         "secure-prefix",
         "https-default",
         "secure-custom",
+        "secure-alias",
         "dynamic-https",
       ].includes(mode);
       const expectedTokenName =
-        mode === "secure-custom"
-          ? "__Secure-configured_session"
-          : prefixed
-            ? "__Secure-better-auth.session_token"
-            : mode === "attributes"
-              ? "physical_session"
-              : mode === "legacy"
-                ? "customsession"
-                : mode === "legacy-alias"
-                  ? "some.alias"
-                  : "better-auth.session_token";
+        mode === "secure-alias"
+          ? "__Secure-alias.session_token"
+          : mode === "secure-custom"
+            ? "__Secure-configured_session"
+            : prefixed
+              ? "__Secure-better-auth.session_token"
+              : mode === "attributes"
+                ? "physical_session"
+                : mode === "legacy"
+                  ? "customsession"
+                  : mode === "legacy-alias"
+                    ? "some.alias"
+                    : "better-auth.session_token";
       const expectedPreferenceName =
         mode === "attributes"
           ? "physical_preference"

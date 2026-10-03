@@ -184,7 +184,12 @@ pub fn related_cookie_name(config: &AuthConfig, suffix: &str) -> String {
             } else if suffix == "session_token" {
                 token_name.to_owned()
             } else {
-                token_name.strip_suffix("session_token").map_or_else(
+                let legacy = if config.advanced.cookies.contains_key("session_token") {
+                    None
+                } else {
+                    config.session.cookie_name.strip_suffix("session_token")
+                };
+                legacy.map_or_else(
                     || format!("better-auth.{suffix}"),
                     |prefix| format!("{prefix}{suffix}"),
                 )
@@ -216,12 +221,10 @@ fn secure_cookie_policy(config: &AuthConfig) -> bool {
 
 fn cookie_attributes(name: &str, config: &AuthConfig) -> CookieAttributes {
     let mut attributes = CookieAttributes {
-        secure: Some(
-            config
-                .advanced
-                .use_secure_cookies
-                .unwrap_or_else(|| secure_cookie_policy(config) || config.session.cookie_secure),
-        ),
+        secure: Some(config.advanced.use_secure_cookies.unwrap_or_else(|| {
+            secure_cookie_policy(config)
+                || (config.dynamic_base_url.is_none() && config.session.cookie_secure)
+        })),
         http_only: Some(config.session.cookie_http_only),
         same_site: Some(config.session.cookie_same_site.clone()),
         path: Some("/".into()),

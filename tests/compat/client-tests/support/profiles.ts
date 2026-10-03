@@ -713,6 +713,7 @@ export const FIXTURE_PROFILES = [
   "physical-cookie-https-default",
   "physical-cookie-https-disabled",
   "physical-cookie-secure-custom",
+  "physical-cookie-secure-alias",
   "physical-cookie-dynamic-https",
   "physical-cookie-dynamic-http",
   "physical-cookie-dynamic-auto",
