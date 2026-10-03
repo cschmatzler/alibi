@@ -213,6 +213,31 @@ for (const profile of ["custom-session-jwt", "custom-session-deferred"] as const
       });
       expect(clock.status).toBe(200);
 
+      // Source 1.7.6 getJwtToken floors iat to seconds. Its default EdDSA
+      // signature repeats for identical claims in that second, so sequential
+      // Source/Rust runs must not infer rotation from incidental request timing.
+      // Advance the real clock between publications; keep the raw bijection.
+      let previousJwt: string | undefined;
+      let previousIssuedAt: number | undefined;
+      async function nextJwtSecond() {
+        if (previousIssuedAt !== undefined) {
+          await Bun.sleep(Math.max(0, (previousIssuedAt + 1) * 1000 - Date.now() + 25));
+        }
+      }
+      function observeJwt(signed: string) {
+        const payload = JSON.parse(Buffer.from(signed.split(".")[1]!, "base64url").toString());
+        expect(payload.sub).toBe(signup.data!.user.id);
+        expect(payload.name).toBe("Refresh");
+        expect(Number.isInteger(payload.iat)).toBe(true);
+        expect(payload.exp - payload.iat).toBe(900);
+        if (previousIssuedAt !== undefined) {
+          expect(payload.iat).toBeGreaterThan(previousIssuedAt);
+          expect(signed).not.toBe(previousJwt);
+        }
+        previousIssuedAt = payload.iat;
+        previousJwt = signed;
+      }
+
       const headers: Array<Array<[string, string]>> = [];
       const read = await auth.getSession({
         fetchOptions: {
@@ -236,10 +261,13 @@ for (const profile of ["custom-session-jwt", "custom-session-deferred"] as const
 
       const jwtHeader = headers.flat().find(([name]) => name.toLowerCase() === "set-auth-jwt")?.[1];
       expect(jwtHeader).toBeDefined();
+      observeJwt(jwtHeader!);
 
+      await nextJwtSecond();
       const token = await auth.token();
       expect(token.error).toBeNull();
       expect(token.data?.token).toBeDefined();
+      observeJwt(token.data!.token);
 
       const failures = [];
 
@@ -257,6 +285,7 @@ for (const profile of ["custom-session-jwt", "custom-session-deferred"] as const
           ).status,
         ).toBe(200);
 
+        await nextJwtSecond();
         const failure = await ctx
           .actor("browser", profile)
           .fetch(`${ctx.baseURL}${authProfilePath(profile)}/get-session`, {
@@ -264,6 +293,8 @@ for (const profile of ["custom-session-jwt", "custom-session-deferred"] as const
           });
         expect(failure.status).toBe(mode === "error" ? 403 : 500);
         expect(failure.headers.getSetCookie()).toHaveLength(0);
+        const failureJwt = failure.headers.get("set-auth-jwt");
+        if (failureJwt) observeJwt(failureJwt);
 
         failures.push({
           status: failure.status,
@@ -272,15 +303,14 @@ for (const profile of ["custom-session-jwt", "custom-session-deferred"] as const
         });
       }
 
+      await nextJwtSecond();
       const filtered = await client(ctx, "browser", "filtered", profile).getSession({
         fetchOptions: {
           onSuccess: ({ response }) => {
             const signed = response.headers.get("set-auth-jwt");
             expect(signed).toBeDefined();
 
-            const payload = JSON.parse(Buffer.from(signed!.split(".")[1]!, "base64url").toString());
-            expect(payload.sub).toBe(signup.data!.user.id);
-            expect(payload.name).toBe("Refresh");
+            observeJwt(signed!);
           },
         },
       });
