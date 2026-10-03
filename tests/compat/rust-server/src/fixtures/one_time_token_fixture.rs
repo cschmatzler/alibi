@@ -8,7 +8,8 @@ use axum::{
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::one_time_token::{
-    OneTimeTokenConfig, OneTimeTokenPlugin, OneTimeTokenSession, OneTimeTokenStorage,
+    GenerateOneTimeToken, HashOneTimeToken, OneTimeTokenConfig, OneTimeTokenPlugin,
+    OneTimeTokenSession, OneTimeTokenStorage,
 };
 use better_auth::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
@@ -21,10 +22,14 @@ use better_auth_core::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
 use better_auth_seaorm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::json;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
 type Auth = Arc<BetterAuth<TestSchema>>;
 const PROFILES: &[&str] = &[
+    "ott-custom-callback",
     "ott-default",
     "ott-hashed",
     "ott-no-cookie",
@@ -32,6 +37,50 @@ const PROFILES: &[&str] = &[
     "ott-refresh-disabled",
     "ott-refresh-deferred",
 ];
+
+#[derive(Default)]
+struct CallbackState {
+    mode: String,
+    events: Vec<serde_json::Value>,
+}
+#[derive(Clone, Default)]
+struct CustomCallbacks(Arc<Mutex<CallbackState>>);
+
+fn callback_result(mode: &str, stage: &str) -> AuthResult<()> {
+    if mode == format!("{stage}-ordinary") {
+        Err(AuthError::internal("private OTT callback cause"))
+    } else if mode == format!("{stage}-veto") {
+        Err(AuthError::Api {
+            status: 403,
+            code: Some("OTT_VETO".into()),
+            message: "OTT callback veto".into(),
+        })
+    } else {
+        Ok(())
+    }
+}
+#[async_trait::async_trait]
+impl GenerateOneTimeToken for CustomCallbacks {
+    async fn generate(
+        &self,
+        session: &OneTimeTokenSession,
+        request: Option<&AuthRequest>,
+    ) -> AuthResult<String> {
+        let mut state = self.0.lock().unwrap();
+        state.events.push(json!({"stage":"generate", "userId":session.user.id, "session":{"id":session.session.id, "userId":session.session.user_id, "token":session.session.token, "expiresAt":session.session.expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)}, "request":request.map(|req| json!({"path":req.path(), "method":format!("{:?}", req.method()).to_uppercase(), "marker":req.headers.get("x-ott-marker")}))}));
+        callback_result(&state.mode, "generate")?;
+        Ok("ott-custom-token".into())
+    }
+}
+#[async_trait::async_trait]
+impl HashOneTimeToken for CustomCallbacks {
+    async fn hash(&self, token: &str) -> AuthResult<String> {
+        let mut state = self.0.lock().unwrap();
+        state.events.push(json!({"stage":"hash", "token":token}));
+        callback_result(&state.mode, "hash")?;
+        Ok(format!("digest-{token}"))
+    }
+}
 
 struct ExposedHeaderFixture(bool);
 
@@ -71,6 +120,7 @@ impl AuthPlugin<TestSchema> for ExposedHeaderFixture {
 struct ServerOperation {
     operation: String,
     profile: Option<String>,
+    mode: Option<String>,
 }
 fn failure(error: impl std::fmt::Display) -> axum::response::Response {
     tracing::error!(%error,"one-time-token fixture operation failed");
@@ -87,9 +137,14 @@ pub(crate) async fn router(
 ) -> AuthResult<Router<Auth>> {
     let mut router = Router::new();
     let mut profiles = HashMap::new();
+    let callbacks = CustomCallbacks::default();
     for name in PROFILES {
         let ott = OneTimeTokenPlugin::with_config(OneTimeTokenConfig {
-            storage: if *name == "ott-hashed" {
+            generator: (*name == "ott-custom-callback")
+                .then(|| Arc::new(callbacks.clone()) as Arc<dyn GenerateOneTimeToken>),
+            storage: if *name == "ott-custom-callback" {
+                OneTimeTokenStorage::Custom(Arc::new(callbacks.clone()))
+            } else if *name == "ott-hashed" {
                 OneTimeTokenStorage::Hashed
             } else {
                 OneTimeTokenStorage::Plain
@@ -142,8 +197,31 @@ pub(crate) async fn router(
         post(
             move |headers: HeaderMap, Json(body): Json<ServerOperation>| {
                 let profiles = profiles.clone();
+                let callbacks = callbacks.clone();
                 async move {
                     let operation = async {
+                        if body.operation == "callbacks" {
+                            let mut state = callbacks.0.lock().unwrap();
+                            if let Some(mode) = body.mode {
+                                state.mode = mode;
+                                state.events.clear();
+                            }
+                            return Ok(json!({"events":state.events}));
+                        }
+                        if body.operation == "generate-endpoint" {
+                            let (auth, _) = profiles.get("ott-custom-callback").unwrap();
+                            let result = auth.dispatch_endpoint(
+                                OneTimeTokenPlugin::generate_endpoint(),
+                                better_auth::endpoint::EndpointOptions {
+                                    headers: Some(headers.iter().filter_map(|(name,value)| value.to_str().ok().map(|value| (name.to_string(),value.to_owned()))).collect()),
+                                    ..Default::default()
+                                },
+                            ).await;
+                            return Ok(match result {
+                                Ok(response) => json!({"token":response.decode()?.token}),
+                                Err(error) => json!({"status":error.error.status_code(), "ordinary":matches!(error.error, AuthError::Internal(_) | AuthError::CallbackFailure(_)), "message":if matches!(error.error, AuthError::Api {..}) {Some(error.to_string())} else {None}}),
+                            });
+                        }
                         if body.operation != "generate" {
                             return Err(AuthError::bad_request("invalid server operation"));
                         }

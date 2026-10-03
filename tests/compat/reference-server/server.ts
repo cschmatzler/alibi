@@ -1,6 +1,4 @@
 #!/usr/bin/env bun
-import { genericDiscoveryFixture } from "./fixtures/generic-discovery-fixture";
-import { genericTokenParamsFixture } from "./fixtures/generic-token-params-fixture";
 import { Database } from "bun:sqlite";
 
 import { apiKey } from "@better-auth/api-key";
@@ -46,6 +44,8 @@ import { createDispatchFixture } from "./fixtures/dispatch-fixture";
 import { dropboxProviderFixture } from "./fixtures/dropbox-provider-fixture";
 import { facebookProviderFixture } from "./fixtures/facebook-provider-fixture";
 import { figmaProviderFixture } from "./fixtures/figma-provider-fixture";
+import { genericDiscoveryFixture } from "./fixtures/generic-discovery-fixture";
+import { genericTokenParamsFixture } from "./fixtures/generic-token-params-fixture";
 import { googleIdTokenProfiles } from "./fixtures/google-id-token-fixture";
 import { huggingfaceProviderFixture } from "./fixtures/huggingface-provider-fixture";
 import { createJwtKeyringFixture } from "./fixtures/jwt-keyring-fixture";
@@ -87,10 +87,10 @@ import { paypalProviderFixture } from "./fixtures/paypal-provider-fixture";
 import { createPhoneFixture } from "./fixtures/phone-fixture";
 import { physicalCookieProfiles } from "./fixtures/physical-cookie-fixture";
 import { polarProviderFixture } from "./fixtures/polar-provider-fixture";
-import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
-import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
 import { providerBatchFixture } from "./fixtures/provider-batch-fixture";
+import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
+import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
 import { createSessionFieldsFixture } from "./fixtures/session-fields-fixture";
@@ -668,7 +668,7 @@ const anonymousProfiles = await anonymousFixture(authOptions, database);
 const sessionCookieCacheProfiles = await sessionCookieCacheFixture(authOptions, database);
 const userLifecycleFixture = createUserLifecycleFixture(authOptions, database);
 const additionalFields = await additionalFieldsFixture(authOptions);
-const providerBatch = providerBatchFixture(authOptions,database);
+const providerBatch = providerBatchFixture(authOptions, database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -1049,7 +1049,14 @@ const serverEndpointVersionFixture = createServerEndpointFixture(
 verificationProfiles.set(serverEndpointVersionFixture.path, serverEndpointVersionFixture.auth);
 const userValidationFixture = await createUserValidationFixture(database, authOptions);
 
+const ottCallbackState = { mode: "success", events: [] as unknown[] };
+function ottCallbackResult(stage: string) {
+  if (ottCallbackState.mode === `${stage}-ordinary`) throw new Error("private OTT callback cause");
+  if (ottCallbackState.mode === `${stage}-veto`)
+    throw new APIError("FORBIDDEN", { code: "OTT_VETO", message: "OTT callback veto" });
+}
 const OTT_PROFILE_NAMES = [
+  "ott-custom-callback",
   "ott-default",
   "ott-hashed",
   "ott-no-cookie",
@@ -1086,7 +1093,44 @@ const ottProfiles = new Map(
         ...authOptions.plugins,
         ...(name === "ott-server-header" ? [ottExposedHeaderFixture] : []),
         oneTimeToken({
-          storeToken: name === "ott-hashed" ? "hashed" : "plain",
+          ...(name === "ott-custom-callback"
+            ? {
+                generateToken: async (session, ctx) => {
+                  ottCallbackState.events.push({
+                    stage: "generate",
+                    userId: session.user.id,
+                    session: {
+                      id: session.session.id,
+                      userId: session.session.userId,
+                      token: session.session.token,
+                      expiresAt: session.session.expiresAt,
+                    },
+                    request: ctx.request
+                      ? {
+                          path: ctx.path,
+                          method: ctx.request.method,
+                          marker: ctx.headers?.get("x-ott-marker") ?? null,
+                        }
+                      : null,
+                  });
+                  ottCallbackResult("generate");
+                  return "ott-custom-token";
+                },
+              }
+            : {}),
+          storeToken:
+            name === "ott-custom-callback"
+              ? {
+                  type: "custom-hasher",
+                  hash: async (token: string) => {
+                    ottCallbackState.events.push({ stage: "hash", token });
+                    ottCallbackResult("hash");
+                    return `digest-${token}`;
+                  },
+                }
+              : name === "ott-hashed"
+                ? "hashed"
+                : "plain",
           disableSetSessionCookie: name === "ott-no-cookie",
           disableClientRequest: name === "ott-server-header",
           setOttHeaderOnNewSession: name === "ott-server-header",
@@ -1894,6 +1938,25 @@ async function oneTimeTokenControl(request: Request, url: URL): Promise<Response
   if (!controlRecord(body)) {
     return jsonResponse({ message: "invalid server operation" }, { status: 400 });
   }
+  if (body.operation === "callbacks") {
+    if (typeof body.mode === "string") {
+      ottCallbackState.mode = body.mode;
+      ottCallbackState.events = [];
+    }
+    return jsonResponse({ events: ottCallbackState.events });
+  }
+  if (body.operation === "generate-endpoint") {
+    const selected = ottProfiles.get("ott-custom-callback")!.auth;
+    try {
+      return jsonResponse(await selected.api.generateOneTimeToken({ headers: request.headers }));
+    } catch (error) {
+      return jsonResponse(
+        error instanceof APIError
+          ? { status: error.statusCode, ordinary: false, message: error.message }
+          : { status: 500, ordinary: true, message: null },
+      );
+    }
+  }
   const selected = ottProfiles.get(
     typeof body.profile === "string"
       ? (body.profile as (typeof OTT_PROFILE_NAMES)[number])
@@ -1944,7 +2007,7 @@ const server = Bun.serve({
       if (managedProxyControl) return managedProxyControl;
       const railwayControl = await railwayFixture.handle(request);
       const redditControl = await redditFixture.handle(request);
-      const providerBatchControl=await providerBatch.handle(request);
+      const providerBatchControl = await providerBatch.handle(request);
       if (providerBatchControl) return providerBatchControl;
       if (railwayControl) return railwayControl;
       if (redditControl) return redditControl;

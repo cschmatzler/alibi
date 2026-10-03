@@ -1001,6 +1001,7 @@ export const FIXTURE_PROFILES = [
   "email-verification-required",
   "email-verification-no-signup-mail",
   "email-verification-failing-notifications",
+  "ott-custom-callback",
   "ott-default",
   "ott-hashed",
   "ott-no-cookie",
