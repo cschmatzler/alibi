@@ -1,0 +1,28 @@
+{"ok":true,"oauthBaseURL":"http://127.0.0.1:35899","upstreamVersion":"1.7.6"}
+{"ok":true,"upstreamVersion":"1.7.6"}
+bun test v1.4.2 (744846f84)
+
+tests/plugins/oauth-proxy/proxy.test.ts:
+1481 |     expect(selected.status).toBe(200);
+1482 |     const initial = await state(ctx);
+1483 |     const missing = await response(
+1484 |       await owner.fetch(`${ctx.baseURL}${path}/callback/gitlab`, { redirect: "manual" }),
+1485 |     );
+1486 |     expect(missing.location).toBe(`${ctx.baseURL}/configured-error?kept=yes&error=state_not_found`);
+       ^
+error: expect(received).toBe(expected)
+
+Expected: "http://localhost:55319/configured-error?kept=yes&error=state_not_found"
+Received: "http://localhost:55319/__test/profiles/oauth-proxy/api/auth/error?state=state_not_found"
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-close227/tests/compat/client-tests/tests/plugins/oauth-proxy/proxy.test.ts:1486:30
+      at runScenario (/tmp/better-auth-close227/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-close227/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) OAuth proxy remaining configured ordinary OAuth fallback preserves query and state consumption [447.88ms]
+
+ 0 pass
+ 10 filtered out
+ 1 fail
+ 24 expect() calls
+Ran 1 test across 1 file. [514.00ms]

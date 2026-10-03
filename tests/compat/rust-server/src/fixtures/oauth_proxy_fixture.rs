@@ -370,7 +370,6 @@ async fn build_router(
                         },
                         production_url: (mode != "environment").then(|| production_origin.clone()),
                         secret: (!managed).then(|| SECRET.into()),
-                        ..Default::default()
                     }))
                     .plugin(CompletedRequests(fixture.clone()))
                     .build()

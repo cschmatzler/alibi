@@ -1,0 +1,12 @@
+{"ok":true,"oauthBaseURL":"http://127.0.0.1:40965","upstreamVersion":"1.7.6"}
+{"ok":true,"upstreamVersion":"1.7.6"}
+bun test v1.4.2 (744846f84)
+
+tests/plugins/oauth-proxy/proxy.test.ts:
+(pass) OAuth proxy remaining signed preference cache and concurrent cookie restoration composition [1159.45ms]
+
+ 1 pass
+ 9 filtered out
+ 0 fail
+ 102 expect() calls
+Ran 1 test across 1 file. [1242.00ms]

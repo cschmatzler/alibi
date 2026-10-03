@@ -1263,13 +1263,44 @@ fn auth_base_url(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> String
     )
 }
 
+fn build_default_error_url(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> String {
+    ctx.config
+        .api_error_url
+        .as_ref()
+        .filter(|value| !value.is_empty())
+        .cloned()
+        .unwrap_or_else(|| format!("{}/error", auth_base_url(ctx)))
+}
+
+fn callback_failure_location(
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    error: &str,
+) -> String {
+    build_redirect_url(
+        &auth_base_url(ctx),
+        Some(&build_default_error_url(ctx)),
+        &[("error", error)],
+    )
+    .unwrap_or_else(|_| {
+        format!(
+            "{}/error?error={}",
+            auth_base_url(ctx),
+            urlencoding::encode(error)
+        )
+    })
+}
+
+fn callback_failure_redirect(
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    error: &str,
+) -> AuthResponse {
+    redirect_response(&callback_failure_location(ctx, error))
+}
+
 pub(in crate::plugins) fn ambiguous_account_sign_in_response(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResponse {
-    redirect_response(&format!(
-        "{}/error?error=internal_server_error",
-        auth_base_url(ctx)
-    ))
+    callback_failure_redirect(ctx, "internal_server_error")
 }
 
 async fn finish_oauth_session<S: better_auth_core::AuthSchema>(
@@ -2642,7 +2673,7 @@ pub(super) async fn handle_callback(
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let default_error_url = format!("{}/error", auth_base_url(ctx));
+    let default_error_url = build_default_error_url(ctx);
     let meta = better_auth_core::RequestMeta::from_request(req);
 
     let mut merged = HashMap::new();
@@ -2702,14 +2733,7 @@ pub(super) async fn handle_callback(
 
     let error = merged_2.get("error").cloned();
     let Some(state_param) = merged_2.get("state").cloned() else {
-        let separator = if default_error_url.contains('?') {
-            '&'
-        } else {
-            '?'
-        };
-        return Ok(redirect_response(&format!(
-            "{default_error_url}{separator}state=state_not_found"
-        )));
+        return Ok(callback_failure_redirect(ctx, "state_not_found"));
     };
     let payload = match ctx.config.account.store_state_strategy {
         better_auth_core::OAuthStateStrategy::Automatic
@@ -2717,13 +2741,15 @@ pub(super) async fn handle_callback(
             let verification = match ctx.verifications().find(&state_param).await {
                 Ok(Some(verification)) => verification,
                 Ok(None) => {
-                    return Ok(redirect_response(&format!(
-                        "{default_error_url}?error=state_mismatch"
+                    return Ok(redirect_response(&callback_failure_location(
+                        ctx,
+                        "state_mismatch",
                     )));
                 }
                 Err(_) => {
-                    return Ok(redirect_response(&format!(
-                        "{default_error_url}?error=internal_server_error"
+                    return Ok(redirect_response(&callback_failure_location(
+                        ctx,
+                        "internal_server_error",
                     )));
                 }
             };
@@ -2734,8 +2760,9 @@ pub(super) async fn handle_callback(
             }) {
                 Ok(payload) => payload,
                 Err(_) => {
-                    return Ok(redirect_response(&format!(
-                        "{default_error_url}?error=internal_server_error"
+                    return Ok(redirect_response(&callback_failure_location(
+                        ctx,
+                        "internal_server_error",
                     )));
                 }
             };
@@ -2747,7 +2774,7 @@ pub(super) async fn handle_callback(
                         Some(state_error_url),
                         &[("error", "state_mismatch")],
                     )
-                    .unwrap_or_else(|_| format!("{default_error_url}?error=state_mismatch")),
+                    .unwrap_or_else(|_| callback_failure_location(ctx, "state_mismatch")),
                 )
             };
             if payload
@@ -2767,8 +2794,9 @@ pub(super) async fn handle_callback(
                 }
             }
             if ctx.verifications().delete(&state_param).await.is_err() {
-                return Ok(redirect_response(&format!(
-                    "{default_error_url}?error=internal_server_error"
+                return Ok(redirect_response(&callback_failure_location(
+                    ctx,
+                    "internal_server_error",
                 ))
                 .with_appended_header(
                     "Set-Cookie",
@@ -2782,8 +2810,9 @@ pub(super) async fn handle_callback(
         }
         better_auth_core::OAuthStateStrategy::Cookie => {
             let Some(cookie_value) = get_cookie(req, &state_cookie_name(&ctx.config)) else {
-                return Ok(redirect_response(&format!(
-                    "{default_error_url}?error=please_restart_the_process"
+                return Ok(redirect_response(&callback_failure_location(
+                    ctx,
+                    "please_restart_the_process",
                 )));
             };
             match decode_cookie_state_value(&ctx.config, &cookie_value) {
@@ -2808,12 +2837,13 @@ pub(super) async fn handle_callback(
                             Some(error_url),
                             &[("error", "state_mismatch")],
                         )
-                        .unwrap_or_else(|_| format!("{default_error_url}?error=state_mismatch")),
+                        .unwrap_or_else(|_| callback_failure_location(ctx, "state_mismatch")),
                     ));
                 }
                 Err(_) => {
-                    return Ok(redirect_response(&format!(
-                        "{default_error_url}?error=please_restart_the_process"
+                    return Ok(redirect_response(&callback_failure_location(
+                        ctx,
+                        "please_restart_the_process",
                     )));
                 }
             }
@@ -2836,7 +2866,7 @@ pub(super) async fn handle_callback(
         }
         redirect_response(
             &build_redirect_url(&auth_base_url(ctx), Some(&error_url), &parameters)
-                .unwrap_or_else(|_error| format!("{default_error_url}?error={error_code}")),
+                .unwrap_or_else(|_error| callback_failure_location(ctx, error_code)),
         )
         .with_appended_header("Set-Cookie", clear_state_cookie.clone())
     };
@@ -3002,7 +3032,7 @@ pub(super) async fn handle_callback(
         return Ok(match existing_account {
             Ok(Some(_)) => AuthResponse::new(500),
             Ok(None) | Err(_) => {
-                redirect_response(&format!("{default_error_url}?error=internal_server_error"))
+                redirect_response(&callback_failure_location(ctx, "internal_server_error"))
                     .with_appended_header("Set-Cookie", clear_state_cookie.clone())
             }
         });
@@ -3040,8 +3070,9 @@ pub(super) async fn handle_callback(
         Ok(outcome) => outcome,
         Err(error_4) => {
             if error_4.is_ambiguous_account() {
-                return Ok(redirect_response(&format!(
-                    "{default_error_url}?error=internal_server_error"
+                return Ok(redirect_response(&callback_failure_location(
+                    ctx,
+                    "internal_server_error",
                 ))
                 .with_appended_header("Set-Cookie", clear_state_cookie.clone()));
             }

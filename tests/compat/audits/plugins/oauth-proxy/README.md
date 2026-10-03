@@ -97,27 +97,15 @@ errors outside this slice; it is not reported as a passing check. OAuth native
 siblings are recorded in `/tmp/oauth-proxy-native-oauth-siblings-final.log`.
 The coordinator owns full gates, inventories, shared dependencies and publication.
 
-## Remaining issue candidates
+## Configuration closure reconciliation
 
-- Pending cookie state across configuration/key changes remains unproved. Cookie
-  restoration, nonce/expiry, saved owner and browser replay are covered below.
-  Existing state codec differences remain tracked separately in #189.
-- Support secret rotation / managed `$ba$<version>$...` encrypted envelopes. The
-  measured explicit secret and default ordinary single-string secret use bare
-  hexadecimal ciphertext; no rotating-key claim.
-- Match Source environment/currentURL/productionURL and dynamic base URL resolution,
-  custom provider callback paths, POST callback query/body merging, and configured
-  errorURL fallback. Current proof uses explicit immutable origins and GET exchange.
-- Preserve Source's absent/false distinction for unset provider signup policies,
-  provider profile rejection versus thrown errors, custom account-key/profile
-  helpers and loose custom passthrough fields. Normal actual GitLab payloads are
-  covered; alternate accountId/userInfo.id relationships remain unproved.
-- Compose proxy issuance with signed browser preferences, cookie caches and their
-  failure ordering. The existing shared issuer behavior is reused; these cross-plugin
-  combinations require separate real lifecycle evidence.
-- Exercise fractional/nonfinite maximum-age settings, concurrent completion and
-  pending state across secret/config changes. Sequential replay is covered; no
-  universal concurrent single-winner claim.
+The initial bounded audit's remaining URL, callback, signup, account/profile,
+preference/cache, maxAge, concurrency and pending-configuration modes are now
+owned by [remaining-227/README.md](remaining-227/README.md). It records the
+production repairs, authentic Source/native physical receipts, independent
+review fix, and reused #397/managed-key proof. Historical bounded fix receipts
+below describe their original scope; the later closure receipt qualifies the
+completed supported acceptance. Existing state codecs remain #189.
 
 No OAuth authorization-server, MCP, CIMD, enterprise SSO/SCIM, Stripe, i18n,
 Expo or Electron integration is included.

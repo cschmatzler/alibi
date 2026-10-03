@@ -264,7 +264,7 @@ impl OAuthProxyPlugin {
         if let Some(error) = params.get("error").filter(|value| !value.is_empty()) {
             return Ok(Some(error_redirect(&error_url, error, None)?));
         }
-        let Some(code) = params.get("code") else {
+        let Some(code) = params.get("code").filter(|value| !value.is_empty()) else {
             return Ok(Some(error_redirect(&error_url, "no_code", None)?));
         };
         let oauth = ctx

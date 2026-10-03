@@ -972,6 +972,39 @@ compatScenario(
       await owner.fetch(issued.authorization, { redirect: "manual" }),
     );
     const approved = new URL(approval.location!);
+    const beforeEmptyCode = await state(ctx);
+    const emptyURL = new URL(approved);
+    emptyURL.searchParams.set("code", "");
+    const emptyCode = await response(
+      await owner.fetch(emptyURL, {
+        method: "POST",
+        redirect: "manual",
+        credentials: "omit",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ code: approved.searchParams.get("code")! }),
+      }),
+    );
+    const afterEmptyCode = await state(ctx);
+    // Retain the bounded pre-fix witness even when the regression assertion
+    // stops the comparison before its ordinary full-pair artifact is written.
+    if (process.env.COMPAT_OBSERVATIONS_DIR)
+      await Bun.write(
+        `${process.env.COMPAT_OBSERVATIONS_DIR}/empty-code-${new URL(ctx.baseURL).port}.json`,
+        JSON.stringify(
+          {
+            started: issued.started,
+            issuedState: issued.issuedState,
+            approval,
+            emptyCode,
+            before: beforeEmptyCode,
+            after: afterEmptyCode,
+          },
+          null,
+          2,
+        ),
+      );
+    expect(emptyCode.location).toBe(`${ctx.baseURL}/proxy-error?error=no_code`);
+    expect(afterEmptyCode).toEqual(beforeEmptyCode);
     const postURL = new URL(approved);
     postURL.searchParams.delete("state");
     postURL.searchParams.delete("code");
@@ -1045,7 +1078,11 @@ compatScenario(
     const negative = await response(await owner.fetch(bridge, { redirect: "manual" }));
     expect(new URL(negative.location!).searchParams.get("error")).toBe("payload_expired");
     const selectedNaN = await options("nan", ctx.baseURL);
-    const accepted = await response(await owner.fetch(bridge, { redirect: "manual" }));
+    const agedPayload = { ...payload, timestamp: payload.timestamp - 65000 };
+    const agedToken = await symmetricEncrypt({ key: secret, data: JSON.stringify(agedPayload) });
+    const agedBridge = new URL(bridge);
+    agedBridge.searchParams.set("profile", agedToken);
+    const accepted = await response(await owner.fetch(agedBridge, { redirect: "manual" }));
     expect(accepted.location).toBe(`${ctx.baseURL}/proxy-new`);
     const current = await owner.client.getSession();
     expect(current.data!.user.email).toBe("proxy-owner@fixture.test");
@@ -1059,7 +1096,17 @@ compatScenario(
     const second = await issue(ctx, owner);
     const forwarded = await forward(ctx, owner, second);
     const selectedInfinity = await options("infinity", ctx.baseURL);
-    const infinite = await response(await owner.fetch(forwarded.bridge, { redirect: "manual" }));
+    const infinitePayload = {
+      ...forwarded.atom.payload,
+      timestamp: forwarded.atom.payload.timestamp - 65000,
+    };
+    const infiniteToken = await symmetricEncrypt({
+      key: secret,
+      data: JSON.stringify(infinitePayload),
+    });
+    const infiniteBridge = new URL(forwarded.bridge);
+    infiniteBridge.searchParams.set("profile", infiniteToken);
+    const infinite = await response(await owner.fetch(infiniteBridge, { redirect: "manual" }));
     expect(infinite.location).toBe(`${ctx.baseURL}/proxy-done?application=kept`);
     const afterInfinity = await state(ctx);
     expect(afterInfinity.preview.sessions).toHaveLength(2);
@@ -1068,6 +1115,9 @@ compatScenario(
       selectedRequest,
       issuedState: issued.issuedState,
       approval,
+      beforeEmptyCode: observations(beforeEmptyCode),
+      emptyCode,
+      afterEmptyCode: observations(afterEmptyCode),
       posted,
       oauthProxyProfile: { token, payload },
       initial: observations(initial),
@@ -1085,12 +1135,14 @@ compatScenario(
       selectedNegative,
       negative,
       selectedNaN,
+      agedProfile: { oauthProxyProfile: { token: agedToken, payload: agedPayload } },
       accepted,
       current,
       final: observations(final),
       secondState: second.issuedState,
       secondProfile: { oauthProxyProfile: forwarded.atom },
       selectedInfinity,
+      infiniteProfile: { oauthProxyProfile: { token: infiniteToken, payload: infinitePayload } },
       infinite,
       afterInfinity: observations(afterInfinity),
     };
@@ -1449,4 +1501,87 @@ compatScenario(
   ["POST /sign-in/social", "GET /callback/{id}/oauth-proxy"],
   undefined,
   comparison,
+);
+
+compatScenario(
+  "OAuth proxy remaining configured ordinary OAuth fallback preserves query and state consumption",
+  async (ctx) => {
+    const owner = ctx.actor("remaining-ordinary-fallback", "oauth-proxy");
+    const selected = await ctx.rawRequest({
+      path: "/__test/oauth-proxy/options",
+      method: "POST",
+      json: { mode: "error" },
+    });
+    expect(selected.status).toBe(200);
+    const initial = await state(ctx);
+    const missing = await response(
+      await owner.fetch(`${ctx.baseURL}${path}/callback/gitlab`, { redirect: "manual" }),
+    );
+    expect(missing.location).toBe(`${ctx.baseURL}/configured-error?kept=yes&error=state_not_found`);
+    const unknown = await response(
+      await owner.fetch(`${ctx.baseURL}${path}/callback/gitlab?state=unknown-state`, {
+        redirect: "manual",
+      }),
+    );
+    expect(unknown.location).toBe(`${ctx.baseURL}/configured-error?kept=yes&error=state_mismatch`);
+    expect((await state(ctx)).preview).toEqual(initial.preview);
+    const start = await owner.fetch(`${ctx.baseURL}${path}/sign-in/social`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "x-skip-oauth-proxy": "true", "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "gitlab",
+        callbackURL: `${ctx.baseURL}/ordinary-done`,
+        disableRedirect: true,
+      }),
+    });
+    expect(start.status).toBe(200);
+    const started = await start.json();
+    const authorization = new URL(started.url);
+    const ordinaryState = authorization.searchParams.get("state")!;
+    expect(ordinaryState).toHaveLength(32);
+    const pending = await state(ctx);
+    expect(pending.preview.verification).toHaveLength(1);
+    const approved = await response(await owner.fetch(authorization, { redirect: "manual" }));
+    const callback = new URL(approved.location!);
+    callback.searchParams.set("error", "access_denied");
+    const rejected = await response(await owner.fetch(callback, { redirect: "manual" }));
+    expect(rejected.location).toBe(`${ctx.baseURL}/configured-error?kept=yes&error=access_denied`);
+    const after = await state(ctx);
+    expect(after.preview.verification).toEqual([]);
+    expect(after.preview.users).toEqual(initial.preview.users);
+    expect(after.preview.accounts).toEqual(initial.preview.accounts);
+    expect(after.preview.sessions).toEqual(initial.preview.sessions);
+    expect(after.receipts.filter((receipt) => receipt.stage === "token")).toEqual([]);
+    expect(after.production).toEqual(initial.production);
+    const replay = await response(await owner.fetch(callback, { redirect: "manual" }));
+    expect(replay.location).toBe(`${ctx.baseURL}/configured-error?kept=yes&error=state_mismatch`);
+    const selectedEmpty = await ctx.rawRequest({
+      path: "/__test/oauth-proxy/options",
+      method: "POST",
+      json: { mode: "empty-error" },
+    });
+    expect(selectedEmpty.status).toBe(200);
+    const empty = await response(
+      await owner.fetch(`${ctx.baseURL}${path}/callback/gitlab?state=unknown-state`, {
+        redirect: "manual",
+      }),
+    );
+    expect(empty.location).toBe(`${ctx.baseURL}${path}/error?error=state_mismatch`);
+    return {
+      selected,
+      initial: observations(initial),
+      missing,
+      unknown,
+      started,
+      pending: observations(pending),
+      approved,
+      rejected,
+      after: observations(after),
+      replay,
+      selectedEmpty,
+      empty,
+    };
+  },
+  ["POST /sign-in/social", "GET /callback/{id}"],
 );
