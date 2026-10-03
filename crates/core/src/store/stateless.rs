@@ -3,9 +3,10 @@
 //! This store has no database connection. The initialized store wrapper keeps
 //! ephemeral session records for cookie bypass and instance-local logout.
 //! User/account/verification provisioning is instance-local, as in the pinned
-//! no-database memory adapter. Native two-factor/passkey records share that
+//! no-database memory adapter. Native two-factor/passkey/API-key records share that
 //! instance-local lifetime; other optional records require an application store.
 //! Applications can also use cookie-only sessions with durable SQL user storage.
+mod api_keys;
 mod optional_records;
 
 use super::*;
@@ -38,6 +39,7 @@ struct IdentityState {
     verifications: indexmap::IndexMap<String, VerificationView>,
     two_factors: indexmap::IndexMap<String, TwoFactor>,
     passkeys: indexmap::IndexMap<String, Passkey>,
+    api_keys: indexmap::IndexMap<String, ApiKey>,
 }
 
 impl StatelessStore {
@@ -93,20 +95,6 @@ unsupported_store!(InvitationStore, {
     async fn list_organization_invitations(org_id: &str) -> AuthResult<Vec<Invitation>>;
     async fn count_pending_organization_invitations(org_id: &str) -> AuthResult<i64>;
     async fn list_user_invitations(email: &str) -> AuthResult<Vec<Invitation>>;
-});
-
-unsupported_store!(ApiKeyStore, {
-    async fn create_api_key(input: CreateApiKey) -> AuthResult<ApiKey>;
-    async fn get_api_key_by_id(id: &str) -> AuthResult<Option<ApiKey>>;
-    async fn get_api_key_by_hash(hash: &str) -> AuthResult<Option<ApiKey>>;
-    async fn list_api_keys_by_reference(reference_id: &str) -> AuthResult<Vec<ApiKey>>;
-    async fn update_api_key(id: &str, update: UpdateApiKey) -> AuthResult<ApiKey>;
-    async fn delete_api_key(id: &str) -> AuthResult<()>;
-    async fn delete_expired_api_keys() -> AuthResult<usize>;
-    async fn consume_api_key_usage(
-        id: &str,
-        global_rate_limit_enabled: bool,
-    ) -> AuthResult<ConsumeApiKeyResult>;
 });
 
 unsupported_store!(DeviceCodeStore, {

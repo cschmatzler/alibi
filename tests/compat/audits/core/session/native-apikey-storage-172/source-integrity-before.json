@@ -1,0 +1,26 @@
+{
+  "better-auth": {
+    "modules": 252,
+    "differences": [],
+    "tarball_sha256": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+    "max_links": 1
+  },
+  "@better-auth/core": {
+    "modules": 108,
+    "differences": [],
+    "tarball_sha256": "e77e869a604083abf292ba9045f5182bd25cc2e57697e8fc1e3965651613f908",
+    "max_links": 1
+  },
+  "@better-auth/memory-adapter": {
+    "modules": 1,
+    "differences": [],
+    "tarball_sha256": "96520ab210c9cdd84f9724a2f9304493ac169554731a36a91b807db00299e3a7",
+    "max_links": 1
+  },
+  "@better-auth/api-key": {
+    "modules": 4,
+    "differences": [],
+    "tarball_sha256": "609ed3f1ee443980a182e8c0c9a1de37fcf526ee6315348060c76b8b6bb6b9d5",
+    "max_links": 1
+  }
+}
