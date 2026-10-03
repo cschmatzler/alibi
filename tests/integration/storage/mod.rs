@@ -27,6 +27,7 @@ mod api_keys;
 mod character_ids;
 mod invitations;
 mod jwks;
+mod lifecycle_errors;
 mod members;
 mod migrations;
 mod native_api_keys;

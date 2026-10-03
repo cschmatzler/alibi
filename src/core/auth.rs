@@ -454,6 +454,7 @@ impl<S: AuthSchema> BetterAuth<S> {
             request_context,
             async {
                 let mut run_after_hooks = false;
+                let mut ordinary_handler_error = false;
                 // Keep the public request future bounded while scoped context
                 // and route-specific authentication retain their actual state.
                 let mut response = match Box::pin(self.handle_request_inner(
@@ -467,16 +468,20 @@ impl<S: AuthSchema> BetterAuth<S> {
                     Err(err) => {
                         if matches!(err, AuthError::CallbackFailure(_)) {
                             run_after_hooks = false;
+                            ordinary_handler_error = true;
                         }
                         err.to_auth_response()
                     }
                 };
-                let (cache_headers, ordinary_cache_error) =
+                let (mut cache_headers, ordinary_cache_error) =
                     better_auth_core::cache::runtime::take_issuance(req.extensions());
-                if ordinary_cache_error {
+                if ordinary_handler_error || ordinary_cache_error {
                     run_after_hooks = false;
                     response = AuthResponse::new(500);
+                    // Ordinary exceptions escape upstream dispatch before its header
+                    // accumulator is published. Committed writes remain untouched.
                     drop(req.take_response_headers());
+                    cache_headers.clear();
                 }
                 if better_auth_api::plugins::oauth_proxy::take_unhandled_error(&req) {
                     run_after_hooks = false;
