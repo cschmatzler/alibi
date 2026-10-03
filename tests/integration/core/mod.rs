@@ -6,6 +6,7 @@ mod http_flow;
 mod json_number;
 mod lifecycle_dispatch;
 mod oauth_account_transaction;
+mod oauth_state;
 mod rust_surface_auth;
 mod schema;
 mod session;

@@ -2686,10 +2686,20 @@ pub(super) async fn handle_callback(
                 {
                     payload
                 }
-                Ok(_) => {
-                    return Ok(redirect_response(&format!(
-                        "{default_error_url}?error=state_mismatch"
-                    )));
+                Ok(payload) => {
+                    let error_url = payload
+                        .error_url
+                        .as_deref()
+                        .filter(|url| !url.is_empty())
+                        .unwrap_or(&default_error_url);
+                    return Ok(redirect_response(
+                        &build_redirect_url(
+                            &auth_base_url(ctx),
+                            Some(error_url),
+                            &[("error", "state_mismatch")],
+                        )
+                        .unwrap_or_else(|_| format!("{default_error_url}?error=state_mismatch")),
+                    ));
                 }
                 Err(_) => {
                     return Ok(redirect_response(&format!(
