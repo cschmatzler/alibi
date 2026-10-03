@@ -82,6 +82,7 @@ import { paybinProviderFixture } from "./fixtures/paybin-provider-fixture";
 import { createPhoneFixture } from "./fixtures/phone-fixture";
 import { physicalCookieProfiles } from "./fixtures/physical-cookie-fixture";
 import { polarProviderFixture } from "./fixtures/polar-provider-fixture";
+import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
@@ -618,6 +619,7 @@ const passkeyAuthentication = passkeyAuthenticationFixture(
   authOptions,
   `http://localhost:${PORT}`,
 );
+const railwayFixture = railwayProviderFixture(authOptions);
 const polarFixture = polarProviderFixture(authOptions);
 const notionFixture = notionProviderFixture(authOptions);
 const paybinFixture = paybinProviderFixture(authOptions);
@@ -653,6 +655,9 @@ for (const [path, instance] of userLifecycleFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of polarFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of railwayFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of notionFixture.profiles) {
@@ -1697,6 +1702,8 @@ const server = Bun.serve({
       }
       const managedProxyControl = await managedProxyProfiles.handle(request);
       if (managedProxyControl) return managedProxyControl;
+      const railwayControl = await railwayFixture.handle(request);
+      if (railwayControl) return railwayControl;
       const polarControl = await polarFixture.handle(request);
       if (polarControl) return polarControl;
       const notionControl = await notionFixture.handle(request);
@@ -2570,6 +2577,7 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         await apiKeyStorage.reset();
+        railwayFixture.reset();
         polarFixture.reset();
         notionFixture.reset();
         paybinFixture.reset();

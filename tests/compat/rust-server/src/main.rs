@@ -30,12 +30,13 @@ use fixtures::{
     organization_membership_policy_fixture, organization_timestamp_fixture,
     organization_transport_probe, organization_update_hooks_fixture,
     passkey_authentication_fixture, passkey_fixture, passkey_registration_fixture,
-    paybin_provider_fixture, physical_cookie_fixture, polar_provider_fixture, rate_limit_fixture,
-    server_endpoint_fixture, session_cookie_cache_fixture, session_fields_fixture,
-    set_password_fixture, signup_policy_fixture, siwe_fixture, social_provider_fixture,
-    team_fixture, two_factor_delivery_fixture, two_factor_otp_fixture,
-    two_factor_pending_lookup_fixture, two_factor_policy_fixture, two_factor_totp_fixture,
-    user_lifecycle_fixture, user_validation_fixture, verification_storage_fixture,
+    paybin_provider_fixture, physical_cookie_fixture, polar_provider_fixture,
+    railway_provider_fixture, rate_limit_fixture, server_endpoint_fixture,
+    session_cookie_cache_fixture, session_fields_fixture, set_password_fixture,
+    signup_policy_fixture, siwe_fixture, social_provider_fixture, team_fixture,
+    two_factor_delivery_fixture, two_factor_otp_fixture, two_factor_pending_lookup_fixture,
+    two_factor_policy_fixture, two_factor_totp_fixture, user_lifecycle_fixture,
+    user_validation_fixture, verification_storage_fixture,
 };
 
 // Bun's Response.json adds UTF-8 to private control responses. Public auth
@@ -884,6 +885,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (oauth_proxy_router, oauth_proxy_reset) = oauth_proxy_fixture::router(&config).await?;
     let (managed_proxy_router, managed_proxy_reset) =
         oauth_proxy_fixture::managed_router(&config).await?;
+    let (railway_router, railway_reset) =
+        railway_provider_fixture::router(&config, database.clone()).await?;
     let (polar_router, polar_reset) =
         polar_provider_fixture::router(&config, database.clone()).await?;
     let (notion_router, notion_reset) =
@@ -1412,6 +1415,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let github_profile = github_profile_for_reset.clone();
                 let social_id_token_valid = social_id_token_valid_for_reset.clone();
                 let database = database_for_reset.clone();
+                let railway_reset=railway_reset.clone();
                 let polar_reset=polar_reset.clone();
                 let notion_reset=notion_reset.clone();
                 let paybin_reset=paybin_reset.clone();
@@ -1438,6 +1442,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
                     api_key_storage_reset.reset().await;
+                    railway_reset.reset().await;
                     polar_reset.reset().await;
                     notion_reset.reset().await;
                     paybin_reset.reset().await;
@@ -2074,6 +2079,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(error_page_router)
+        .merge(railway_router)
         .merge(polar_router)
         .merge(notion_router)
         .merge(paybin_router)
