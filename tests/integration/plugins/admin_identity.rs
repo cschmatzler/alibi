@@ -492,8 +492,14 @@ async fn exercise_query<S: AuthSchema>(
     let session = store
         .create_session(CreateSession {
             user_id: "1".into(),
-            expires_at: Utc::now() + chrono::Duration::hours(24),
-            ..Default::default()
+            expires_at: Utc::now() + chrono::Duration::days(7),
+            additional_fields: Default::default(),
+            token: None,
+            active_team_id: None,
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
         })
         .await?;
     let before = [
@@ -536,7 +542,7 @@ async fn exercise_query<S: AuthSchema>(
         let body: serde_json::Value = serde_json::from_slice(&response.body)?;
         println!(
             "{}",
-            serde_json::json!({"direction": direction, "status": response.status, "body": body})
+            serde_json::json!({"adapter": std::any::type_name::<S>(), "direction": direction, "status": response.status, "body": body, "before": before, "after": [rows(raw, "users").await?, rows(raw, "accounts").await?, rows(raw, "sessions").await?]})
         );
         assert_eq!(response.status, 200);
         let ids = body
@@ -555,13 +561,15 @@ async fn exercise_query<S: AuthSchema>(
         assert_eq!(body.get("offset"), Some(&serde_json::json!(1)));
         assert_eq!(body.get("limit"), Some(&serde_json::json!(2)));
     }
-    assert_eq!(
-        [
-            rows(raw, "users").await?,
-            rows(raw, "accounts").await?,
-            rows(raw, "sessions").await?
-        ],
-        before
+    let after = [
+        rows(raw, "users").await?,
+        rows(raw, "accounts").await?,
+        rows(raw, "sessions").await?,
+    ];
+    println!(
+        "{}",
+        serde_json::json!({"adapter": std::any::type_name::<S>(), "before": before, "after": after})
     );
+    assert_eq!(after, before);
     Ok(())
 }
