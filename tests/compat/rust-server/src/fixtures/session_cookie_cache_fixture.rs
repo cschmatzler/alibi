@@ -218,6 +218,8 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         "jwe",
         "managed",
         "standard",
+        "attributes",
+        "defaults",
         "exotic",
         "disabled",
         "version",
@@ -310,6 +312,47 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             "label".into(),
             FieldConfig::new(json!({"type":"string"})).default_value(json!("cache-public-label")),
         );
+        if mode == "defaults" {
+            use better_auth_core::{CookieAttributes, SameSite};
+            config.advanced.use_secure_cookies = Some(false);
+            config.advanced.default_cookie_attributes = CookieAttributes {
+                path: Some(path.clone()),
+                domain: Some("localhost".into()),
+                same_site: Some(SameSite::Strict),
+                http_only: Some(false),
+                ..Default::default()
+            };
+        }
+        if mode == "attributes" {
+            use better_auth_core::{CookieAttributes, CookieOverride, SameSite};
+            config.advanced.use_secure_cookies = Some(false);
+            config.advanced.default_cookie_attributes = CookieAttributes {
+                path: Some("/discarded".into()),
+                domain: Some("discarded.invalid".into()),
+                same_site: Some(SameSite::None),
+                http_only: Some(true),
+                ..Default::default()
+            };
+            for logical in ["session_token", "session_data"] {
+                config.advanced.cookies.insert(
+                    logical.into(),
+                    CookieOverride {
+                        attributes: CookieAttributes {
+                            path: Some(path.clone()),
+                            domain: Some("localhost".into()),
+                            same_site: Some(if logical == "session_data" {
+                                SameSite::Strict
+                            } else {
+                                SameSite::Lax
+                            }),
+                            http_only: Some(logical != "session_data"),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                );
+            }
+        }
         let mut store = crate::backend::store::<ApplicationSchema>(config.clone(), db.clone());
         if mode.ends_with("interactions") || mode == "exotic" {
             store = store.hook(SessionTokens(state.clone()));

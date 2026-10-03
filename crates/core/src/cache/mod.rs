@@ -565,7 +565,11 @@ pub fn cookie_header(
     let bases = ["session_data", "account_data"]
         .map(|logical| crate::utils::cookie_utils::related_cookie_name(config, logical));
     let base = (!bases.iter().any(|base| base == name))
-        .then(|| bases.iter().find(|base| runtime::chunk_index(name, base).is_some()))
+        .then(|| {
+            bases
+                .iter()
+                .find(|base| runtime::chunk_index(name, base).is_some())
+        })
         .flatten();
     let encoded = percent_encoding::utf8_percent_encode(value, COMPONENT).to_string();
     crate::utils::cookie_utils::create_numeric_cookie_header(

@@ -353,10 +353,8 @@ impl SessionManagementPlugin {
             if account && !ctx.config.account.store_account_cookie {
                 continue;
             }
-            let base = better_auth_core::utils::cookie_utils::related_cookie_name(
-                &ctx.config,
-                logical,
-            );
+            let base =
+                better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, logical);
             for header in better_auth_core::cache::runtime::chunked_cookie_headers(
                 &base,
                 "",

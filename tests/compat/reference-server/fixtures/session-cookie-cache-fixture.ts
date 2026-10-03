@@ -40,6 +40,8 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
     "jwe",
     "managed",
     "standard",
+    "attributes",
+    "defaults",
     "exotic",
     "disabled",
     "version",
@@ -116,6 +118,51 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
           }
         : {}),
       basePath: `/__test/profiles/session-cache-${mode}/api/auth`,
+      ...(mode === "defaults"
+        ? {
+            advanced: {
+              ...base.advanced,
+              useSecureCookies: false,
+              defaultCookieAttributes: {
+                path: `/__test/profiles/session-cache-${mode}/api/auth`,
+                domain: "localhost",
+                sameSite: "strict",
+                httpOnly: false,
+              },
+            },
+          }
+        : {}),
+      ...(mode === "attributes"
+        ? {
+            advanced: {
+              ...base.advanced,
+              useSecureCookies: false,
+              defaultCookieAttributes: {
+                path: "/discarded",
+                domain: "discarded.invalid",
+                sameSite: "none",
+                httpOnly: true,
+              },
+              cookies: {
+                session_token: {
+                  attributes: {
+                    path: `/__test/profiles/session-cache-${mode}/api/auth`,
+                    domain: "localhost",
+                    sameSite: "lax",
+                  },
+                },
+                session_data: {
+                  attributes: {
+                    path: `/__test/profiles/session-cache-${mode}/api/auth`,
+                    domain: "localhost",
+                    sameSite: "strict",
+                    httpOnly: false,
+                  },
+                },
+              },
+            },
+          }
+        : {}),
       ...(mode.endsWith("interactions") || mode === "exotic"
         ? {
             databaseHooks: {
