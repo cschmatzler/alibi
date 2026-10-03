@@ -226,6 +226,12 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
         ))
     }
 
+    /// Physical access, refresh and ID token columns for operator conversion.
+    /// Handwritten models opt in explicitly; absence fails closed.
+    fn oauth_token_columns() -> Option<[&'static str; 3]> {
+        None
+    }
+
     fn id_column() -> &'static str;
     fn provider_id_column() -> &'static str;
     fn account_id_column() -> &'static str;

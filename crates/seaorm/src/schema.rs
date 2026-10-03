@@ -263,6 +263,12 @@ pub trait SeaOrmAccountModel:
     type ActiveModel: ActiveModelTrait<Entity = Self::Entity> + ActiveModelBehavior + Send;
     type Column: ColumnTrait;
 
+    /// Physical access, refresh and ID token columns for operator conversion.
+    /// Handwritten models opt in explicitly; absence fails closed.
+    fn oauth_token_columns() -> Option<[Self::Column; 3]> {
+        None
+    }
+
     fn id_column() -> Self::Column;
     fn provider_id_column() -> Self::Column;
     fn account_id_column() -> Self::Column;

@@ -723,10 +723,16 @@ fn account_impl(
     let account_id_column = column("account_id")?;
     let user_id_column = column("user_id")?;
     let created_at_column = column("created_at")?;
+    let access_token_column = column("access_token")?;
+    let refresh_token_column = column("refresh_token")?;
+    let id_token_column = column("id_token")?;
     let additional = additional_fields(columns, roots);
     Ok(quote! {
         impl #sqlx_root::SqlxAccountModel for #ident {
             #additional
+            fn oauth_token_columns() -> Option<[&'static str; 3]> {
+                Some([#access_token_column, #refresh_token_column, #id_token_column])
+            }
             fn id_column() -> &'static str { #id_column }
             fn provider_id_column() -> &'static str { #provider_id_column }
             fn account_id_column() -> &'static str { #account_id_column }

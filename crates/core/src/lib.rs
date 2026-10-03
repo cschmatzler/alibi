@@ -40,6 +40,8 @@ pub mod middleware;
 
 pub mod openapi;
 
+pub mod oauth_token_conversion;
+
 pub mod plugin;
 
 pub mod schema;
