@@ -443,7 +443,8 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         (snapshot, metadata, credential_id)
     };
 
-    let transports = if matches!(stored_state.state, StoredRegistrationVerifier::Source(_)) {
+    let source_transports = matches!(stored_state.state, StoredRegistrationVerifier::Source(_));
+    let transports = if source_transports {
         use better_auth_core::utils::json::JsValue;
         match response
             .get("response")
@@ -558,7 +559,12 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
             }
         }
         // Source joins transport metadata after the verification callback.
-        input_2.transports = transports_to_csv(transports?.as_deref());
+        let transports = transports?;
+        input_2.transports = if source_transports {
+            Some(transports.unwrap_or_default().join(","))
+        } else {
+            transports_to_csv(transports.as_deref())
+        };
         if input_2.user_id.is_empty() {
             return Err(AuthError::Upstream {
                 status: 400,
