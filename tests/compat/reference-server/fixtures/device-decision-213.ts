@@ -30,18 +30,18 @@ for (const last of ["approved", "denied"]) {
       const adapter = memoryAdapter(physical)(options);
       return {
         ...adapter,
-        update: async (input) => {
+        update: async <T>(input: Parameters<typeof adapter.update>[0]): Promise<T | null> => {
           if (enabled && input.model === "deviceCode") {
             writes.push({ phase: "validated", input });
             await new Promise<void>((resolve) => {
               gates.set(input.update.status, resolve);
               if (gates.size === 2) ready();
             });
-            const result = await adapter.update(input);
+            const result = await adapter.update<T>(input);
             writes.push({ phase: "written", row: structuredClone(result) });
             return result;
           }
-          return adapter.update(input);
+          return adapter.update<T>(input);
         },
       };
     },

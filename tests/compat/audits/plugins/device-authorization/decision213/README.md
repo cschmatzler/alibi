@@ -27,13 +27,13 @@ The two writes' `where` clauses contain only the record ID. Sequential decisions
 are rejected after processing. Final approval creates exactly one owner session;
 final denial creates none; both consume the grant and reject replay. User and
 account records remain byte-equivalent. Full bodies, headers, writes and physical
-records are retained in `source.json`.
+records are retained in `source.json.gz`.
 
 Rust previously used a conditional pending-status write after validating the
 snapshot, imposing a stronger single-winner guarantee than Source. Both real
 native stores failed the delayed regression for that intended reason: SQLx
-returned `(400, 200)` and SeaORM `(200, 400)`. `native-before.log` and each
-`*-before.json` retain those responses and physical rows. The handler now uses
+returned `(400, 200)` and SeaORM `(200, 400)`. `native-before.log.gz` and each
+`*-before.json.gz` retain those responses and physical rows. The handler now uses
 its existing update-by-ID operation after the unchanged validation guards.
 No shared trait, storage implementation, session policy or schema was changed.
 
@@ -89,3 +89,31 @@ No full suite, `devenv test`, coverage gate or hosted CI was run. The current us
 instruction explicitly replaces that old issue-body gate with focused proof;
 existing comparisons and coverage requirements were not weakened. GitHub Actions
 are disabled. Final focused checks and review state are recorded below.
+
+Final validation: both delayed physical handler regressions passed, strict API
+Clippy and integration-test Clippy passed, scoped TypeScript checking and Oxlint
+passed, changed-file Rust/TypeScript formatting and diff checks passed. The Source
+fixture was rerun after its generic forwarding/timer cleanup and passed both
+controlled completion orders. `verify-published.py` verified all Better Auth,
+core and memory-adapter executable bytes against exact published 1.7.6 tarballs
+after that run as well; no tarball restoration was needed because no installed
+bytes were changed. `compare-decisions.py` independently compares literal
+status/body for the overlap decisions, sequential rejection, denial and replay,
+and binds every admitted native access token to its complete physical owner
+session. It introduces no harness aliases or comparator exceptions. Raw records
+and bounded logs are compressed losslessly to avoid a large textual inventory.
+
+Independent coordinator review completed against checkpoint
+`2e49fe71b35808618412b4f7a586734d7f77fa44`: no blocking production/security finding.
+The coordinator read the full decision handler, approved redemption branch,
+authentic Source update-by-ID routes and real delayed regression, confirming
+unchanged owner/claim/expiry/pending validation, conditional claim and conditional
+approved consumption before actual session admission. Subsequent changes are
+fixture generic typing/timer cleanup, lint-only SQLite guard error reporting,
+provenance, raw-pair comparison and receipt compression; production is unchanged.
+
+All three acceptance bullets of actual #213 are now supported by the combined
+#360, #407, earlier default lifecycle receipt and this delayed Source/native
+production repair. The old full-suite instruction is superseded only for this
+session by the user's explicit focused-check instruction. OAuth-provider grant
+extensions and unmeasured arbitrary-adapter behavior are not claims of #213.

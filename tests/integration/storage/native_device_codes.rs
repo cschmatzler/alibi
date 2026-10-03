@@ -483,7 +483,7 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
             .await?;
         let session_count = db.count("sessions").await?;
         let super::Raw::Sqlite(pool) = &db.raw else {
-            unreachable!()
+            return Err("delayed writer probe requires SQLite".into());
         };
         let mut writer = pool.acquire().await?;
         _ = sqlx::query(sqlx::AssertSqlSafe("BEGIN IMMEDIATE"))
