@@ -295,7 +295,7 @@ pub struct SessionConfig {
     pub stateless: bool,
     /// Stateless envelope renewal. Stateful deployments ignore this policy.
     pub cookie_refresh_cache: CookieRefreshCache,
-    /// Shared secondary session backend. Without one, sessions always use the database.
+    /// Shared secondary session backend for stateful deployments.
     pub secondary_storage: Option<Arc<dyn crate::store::CacheAdapter>>,
     /// Also persist session rows when a secondary backend is configured.
     pub store_in_database: bool,
@@ -468,8 +468,10 @@ impl SessionConfig {
     /// version, or renewal. Existing database defaults are unchanged.
     #[must_use]
     pub fn stateless(mut self) -> Self {
+        if !self.stateless {
+            self.cookie_refresh_cache = CookieRefreshCache::Automatic;
+        }
         self.stateless = true;
-        self.cookie_refresh_cache = CookieRefreshCache::Automatic;
         if self.cookie_cache.is_none() {
             self.cookie_cache = Some(CookieCacheConfig {
                 enabled: true,
@@ -481,7 +483,7 @@ impl SessionConfig {
         self
     }
 
-    /// Whether a server-side session record may authorize a request.
+    /// Whether deployment has durable server session storage.
     #[must_use]
     pub fn has_server_session_store(&self) -> bool {
         !self.stateless

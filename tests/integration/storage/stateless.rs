@@ -8,7 +8,11 @@ use std::sync::Arc;
 
 const SECRET: &str = "stateless-172-secret-minimum-32-characters";
 const ORIGIN: &str = "http://localhost:43172";
-backend_tests!(stateless_session_lifecycle, stateless_policy_boundaries);
+backend_tests!(
+    stateless_session_lifecycle,
+    stateless_policy_boundaries,
+    stateless_ephemeral_mutation_and_deferred_refresh
+);
 
 struct SkipRefresh;
 #[async_trait::async_trait]
@@ -254,6 +258,40 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
             .get_all("set-cookie")
             .any(|value| value.contains("session_data=") && value.contains("Max-Age=604800"))
     );
+    assert!(
+        cookies(&first).is_empty(),
+        "default refresh waits until the final 20% of cache lifetime"
+    );
+    let value = cookie
+        .split("; ")
+        .find_map(|part| part.strip_prefix("better-auth.session_data="))
+        .unwrap();
+    let claims = better_auth_core::utils::jwe::decode(SECRET, "better-auth-session", value)?;
+    let short_cache =
+        better_auth_core::utils::jwe::encode(SECRET, "better-auth-session", &claims, 30.0)?;
+    let renewed = auth
+        .handle_request(request(
+            "/get-session",
+            None,
+            &cookie.replace(value, &short_cache),
+        ))
+        .await?;
+    assert_eq!(
+        body(&renewed),
+        body(&first),
+        "automatic renewal retains fields, omissions, token and embedded expiry"
+    );
+    assert!(cookies(&renewed).contains("session_data="));
+    if let Ok(directory) = std::env::var("STATELESS_172_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&directory).join("without-database-issuance.json"),
+            serde_json::to_vec_pretty(&json!({
+                "signup": {"status":signup.status,"body":String::from_utf8_lossy(&signup.body),"cookies":signup.headers.get_all("set-cookie").collect::<Vec<_>>()},
+                "cached": {"status":first.status,"body":String::from_utf8_lossy(&first.body),"cookies":first.headers.get_all("set-cookie").collect::<Vec<_>>()},
+                "automaticRenewal": {"status":renewed.status,"body":String::from_utf8_lossy(&renewed.body),"cookies":renewed.headers.get_all("set-cookie").collect::<Vec<_>>()},
+            }))?,
+        )?;
+    }
     let mut bypass = request("/get-session", None, &cookie);
     drop(
         bypass
@@ -462,6 +500,83 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
         ),
         Value::Null
     );
+    B::close(connection).await?;
+    Ok(())
+}
+
+// Public mutation and deferred renewal must update ephemeral records, never SQL.
+// Existing durable refresh tests cannot catch this policy-routing failure.
+async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -> TestResult {
+    use better_auth_core::AuthSession;
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    config.session = config.session.stateless();
+    config.session.defer_session_refresh = true;
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .plugin(EmailPasswordPlugin::new())
+        .build()
+        .await?;
+    let signup = auth.handle_request(request("/sign-up/email", Some(json!({"email":"deferred172@fixture.test","password":"Password123!","name":"Deferred"})), "")).await?;
+    assert_eq!(signup.status, 200, "{}", body(&signup));
+    let cookie = cookies(&signup);
+    let token = body(&signup)["token"].as_str().unwrap().to_owned();
+    let organization = auth
+        .store()
+        .update_session_active_organization(&token, Some("memory-org"))
+        .await?;
+    assert_eq!(
+        better_auth_core::SessionView::from(&organization)
+            .active_organization_id
+            .as_deref(),
+        Some("memory-org")
+    );
+    let team = auth
+        .store()
+        .update_session_active_team(&token, Some("memory-team"))
+        .await?;
+    assert_eq!(
+        better_auth_core::SessionView::from(&team)
+            .active_team_id
+            .as_deref(),
+        Some("memory-team")
+    );
+    // Fixture state uses the real initialized store, as Source's internal adapter
+    // does; no sleeps, fake clocks or test-only production interfaces.
+    let near_expiry = chrono::Utc::now() + chrono::Duration::hours(1);
+    auth.store()
+        .update_session_expiry(&token, near_expiry)
+        .await?;
+    let mut get = request("/get-session", None, &cookie);
+    drop(get.query.insert("disableCookieCache".into(), "true".into()));
+    let deferred = auth.handle_request(get).await?;
+    assert_eq!(body(&deferred)["needsRefresh"], true);
+    assert_eq!(
+        auth.store()
+            .get_session(&token)
+            .await?
+            .unwrap()
+            .expires_at(),
+        near_expiry
+    );
+    let mut post = request("/get-session", Some(json!({})), &cookie);
+    drop(
+        post.query
+            .insert("disableCookieCache".into(), "true".into()),
+    );
+    let refreshed = auth.handle_request(post).await?;
+    assert_eq!(refreshed.status, 200, "{}", body(&refreshed));
+    assert_eq!(body(&refreshed)["session"]["token"], token);
+    assert!(
+        auth.store()
+            .get_session(&token)
+            .await?
+            .unwrap()
+            .expires_at()
+            > near_expiry + chrono::Duration::days(6)
+    );
+    assert!(cookies(&refreshed).contains("session_data="));
+    assert_eq!(db.count("sessions").await?, 0);
     B::close(connection).await?;
     Ok(())
 }

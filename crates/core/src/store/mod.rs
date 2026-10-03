@@ -876,7 +876,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session> {
-        if self.secondary().is_some() {
+        if self.config.session.stateless || self.secondary().is_some() {
             let mut fields = crate::field_policy::FieldValues::new();
             drop(fields.insert(
                 "activeOrganizationId".into(),
@@ -884,10 +884,12 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                     crate::utils::json::JsValue::String(value.to_owned())
                 }),
             ));
-            return self
-                .update_secondary_session(token, None, fields)
-                .await?
-                .ok_or(AuthError::SessionNotFound);
+            let updated = if self.config.session.stateless {
+                self.update_ephemeral_session(token, None, fields).await?
+            } else {
+                self.update_secondary_session(token, None, fields).await?
+            };
+            return updated.ok_or(AuthError::SessionNotFound);
         }
         self.inner
             .update_session_active_organization(token, organization_id)
@@ -898,7 +900,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         team_id: Option<&str>,
     ) -> AuthResult<S::Session> {
-        if self.secondary().is_some() {
+        if self.config.session.stateless || self.secondary().is_some() {
             let mut fields = crate::field_policy::FieldValues::new();
             drop(fields.insert(
                 "activeTeamId".into(),
@@ -906,10 +908,12 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                     crate::utils::json::JsValue::String(value.to_owned())
                 }),
             ));
-            return self
-                .update_secondary_session(token, None, fields)
-                .await?
-                .ok_or(AuthError::SessionNotFound);
+            let updated = if self.config.session.stateless {
+                self.update_ephemeral_session(token, None, fields).await?
+            } else {
+                self.update_secondary_session(token, None, fields).await?
+            };
+            return updated.ok_or(AuthError::SessionNotFound);
         }
         self.inner.update_session_active_team(token, team_id).await
     }
