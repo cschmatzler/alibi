@@ -60,6 +60,21 @@ compatScenario(
     const vendorState = JSON.parse(
       await symmetricDecrypt({ key: secret, data: vendorPack.stateCookie }),
     );
+    if (process.env.COMPAT_OBSERVATIONS_DIR)
+      await Bun.write(
+        `${process.env.COMPAT_OBSERVATIONS_DIR}/vendor-${new URL(ctx.baseURL).port}.json`,
+        JSON.stringify(
+          {
+            vendorBody,
+            vendorPack,
+            vendorState,
+            cookies: vendorStart.headers.getSetCookie(),
+            physical: await state(ctx),
+          },
+          null,
+          2,
+        ),
+      );
     expect(new URL(vendorState.callbackURL).origin).toBe(ctx.baseURL);
     const vendorApproved = await response(await owner.fetch(vendorURL, { redirect: "manual" }));
     const vendorTransfer = await response(
