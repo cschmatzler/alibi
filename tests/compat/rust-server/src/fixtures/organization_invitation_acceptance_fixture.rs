@@ -293,7 +293,7 @@ impl OrganizationInvitationAcceptanceHooks for Application {
 }
 #[async_trait]
 impl OrganizationLimitResolver for Application {
-    async fn maximum_team_members(&self, context: &TeamLimitContext) -> AuthResult<Option<usize>> {
+    async fn maximum_team_members(&self, context: &TeamLimitContext) -> AuthResult<Option<f64>> {
         let mode = self.mode.lock().await.clone();
         if mode != "off" {
             let email = context
@@ -310,7 +310,7 @@ impl OrganizationLimitResolver for Application {
             self.receipts.lock().await.push(json!({"phase":"team-limit","context":{"teamId":context.team_id,"session":{"session":context.session,"user":context.user},"organizationId":context.organization_id},"invitationStatus":statuses}));
             self.application_error("team-limit").await?;
         }
-        Ok(Some(if mode == "team-full" { 1 } else { 100 }))
+        Ok(Some(if mode == "team-full" { 1.0 } else { 100.0 }))
     }
 }
 #[derive(Clone)]

@@ -1201,7 +1201,7 @@ impl<S: AuthSchema> InvitationStore for PluginStore<S> {
         _invitation_id: &str,
         _user_id: &str,
         _session_token: &str,
-        _team_limits: &[(String, Option<usize>)],
+        _team_limits: &[(String, Option<f64>)],
         _membership_limit: Option<usize>,
     ) -> AuthResult<Option<(Invitation, Member)>> {
         self.inner
@@ -1444,7 +1444,7 @@ impl<S: AuthSchema> TeamStore for PluginStore<S> {
         &self,
         _team_id: &str,
         _user_id: &str,
-        _maximum: Option<usize>,
+        _maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         self.inner
             .add_team_member(_team_id, _user_id, _maximum)
@@ -1674,7 +1674,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         &self,
         team_id: &str,
         user_id: &str,
-        maximum: Option<usize>,
+        maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         self.inner.add_team_member(team_id, user_id, maximum).await
     }
@@ -2080,7 +2080,7 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         &self,
         _team_id: &str,
         _user_id: &str,
-        _maximum: Option<usize>,
+        _maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         Err(AuthError::NotImplemented(
             "Team admission in a transaction is not supported by this store".into(),
@@ -2996,7 +2996,7 @@ pub trait InvitationStore: Send + Sync {
         _invitation_id: &str,
         _user_id: &str,
         _session_token: &str,
-        _team_limits: &[(String, Option<usize>)],
+        _team_limits: &[(String, Option<f64>)],
         _membership_limit: Option<usize>,
     ) -> AuthResult<Option<(Invitation, Member)>> {
         Err(AuthError::NotImplemented(

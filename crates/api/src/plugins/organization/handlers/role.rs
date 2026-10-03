@@ -112,6 +112,10 @@ fn missing_permissions(
     clippy::too_many_lines,
     reason = "Keep role endpoint dispatch and each permission check adjacent to its persistence operation"
 )]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Source compares stored counts as ECMAScript Numbers"
+)]
 pub async fn handle_role_request<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
@@ -275,10 +279,9 @@ pub async fn handle_role_request<S: AuthSchema>(
         let maximum = match &config.dynamic_access_control.limit_resolver {
             Some(resolver) => resolver.maximum_roles(&org).await?,
             None => config.dynamic_access_control.maximum_roles_per_organization,
-        };
-        if let Some(limit) = maximum
-            && ctx.database.count_organization_roles(&org).await? >= limit
-        {
+        }
+        .unwrap_or(f64::INFINITY);
+        if ctx.database.count_organization_roles(&org).await? as f64 >= maximum {
             return Err(org_error(400, "TOO_MANY_ROLES"));
         }
         let missing = missing_permissions(&member.role, &permission, config, &org)?;

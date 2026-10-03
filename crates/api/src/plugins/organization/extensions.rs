@@ -18,15 +18,22 @@ pub struct TeamLimitContext {
     pub request: Option<AuthRequest>,
 }
 
+/// Application quota callbacks use raw ECMAScript Number policies.
+///
+/// Migration from integer callbacks: return `AuthResult<Option<f64>>` and
+/// `Some(3.0)` instead of `AuthResult<Option<usize>>` and `Some(3)`.
+/// `None` means no quota; it does not model a JavaScript callback returning
+/// non-numeric values. Callbacks keep the actual existing contexts and follow each Source endpoint
+/// ordering contract.
 #[async_trait]
 pub trait OrganizationLimitResolver: std::fmt::Debug + Send + Sync {
-    async fn maximum_teams(&self, _context: &TeamLimitContext) -> AuthResult<Option<usize>> {
+    async fn maximum_teams(&self, _context: &TeamLimitContext) -> AuthResult<Option<f64>> {
         Ok(None)
     }
-    async fn maximum_team_members(&self, _context: &TeamLimitContext) -> AuthResult<Option<usize>> {
+    async fn maximum_team_members(&self, _context: &TeamLimitContext) -> AuthResult<Option<f64>> {
         Ok(None)
     }
-    async fn maximum_roles(&self, _organization_id: &str) -> AuthResult<Option<usize>> {
+    async fn maximum_roles(&self, _organization_id: &str) -> AuthResult<Option<f64>> {
         Ok(None)
     }
 }
@@ -132,8 +139,16 @@ pub struct TeamsConfig {
     pub enabled: bool,
     pub create_default_team: bool,
     pub allow_removing_all_teams: bool,
-    pub maximum_teams: Option<usize>,
-    pub maximum_members_per_team: Option<usize>,
+    /// Raw team quota. Zero and NaN disable this quota; negative values deny
+    /// creation. Fractional values are compared to the Source adapter's list
+    /// length without rounding. `None` leaves the quota unset.
+    /// Integer configuration migrates from `Some(3)` to `Some(3.0)`.
+    pub maximum_teams: Option<f64>,
+    /// Raw durable seat quota, bound to the adapter's `member_count < maximum`
+    /// predicate. In SQLite zero, negative values, NaN and negative infinity
+    /// deny new seats; positive infinity admits them. Existing seats are retries.
+    /// Integer configuration migrates from `Some(3)` to `Some(3.0)`.
+    pub maximum_members_per_team: Option<f64>,
     pub limit_resolver: Option<Arc<dyn OrganizationLimitResolver>>,
     pub hooks: Option<Arc<dyn OrganizationTeamHooks>>,
     pub default_team_factory: Option<Arc<dyn DefaultTeamFactory>>,
@@ -156,7 +171,11 @@ impl Default for TeamsConfig {
 #[derive(Debug, Clone, Default)]
 pub struct DynamicAccessControlConfig {
     pub enabled: bool,
-    pub maximum_roles_per_organization: Option<usize>,
+    /// Raw role quota, compared to the full persisted count. `None` is the
+    /// Source nullish default of positive infinity; zero/negative values deny,
+    /// NaN/positive infinity admit, and fractions are never rounded.
+    /// Integer configuration migrates from `Some(3)` to `Some(3.0)`.
+    pub maximum_roles_per_organization: Option<f64>,
     pub limit_resolver: Option<Arc<dyn OrganizationLimitResolver>>,
 }
 

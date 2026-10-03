@@ -605,7 +605,7 @@ mod extension_tests {
         async fn maximum_teams(
             &self,
             context: &extensions::TeamLimitContext,
-        ) -> AuthResult<Option<usize>> {
+        ) -> AuthResult<Option<f64>> {
             let authenticated = context
                 .user
                 .as_ref()
@@ -618,13 +618,13 @@ mod extension_tests {
                 .as_ref()
                 .and_then(|request| request.header("x-team-policy").map(String::as_str))
                 == Some("expanded");
-            Ok(Some(if authenticated && expanded { 3 } else { 1 }))
+            Ok(Some(if authenticated && expanded { 3.0 } else { 1.0 }))
         }
 
         async fn maximum_team_members(
             &self,
             context: &extensions::TeamLimitContext,
-        ) -> AuthResult<Option<usize>> {
+        ) -> AuthResult<Option<f64>> {
             let authenticated = context
                 .user
                 .as_ref()
@@ -632,9 +632,7 @@ mod extension_tests {
                 .is_some_and(|(user, session)| {
                     user.id == session.user_id && user.name.as_deref() == Some("limit-owner")
                 });
-            Ok(Some(usize::from(
-                authenticated && context.team_id.is_some(),
-            )))
+            Ok(Some(f64::from(authenticated && context.team_id.is_some())))
         }
     }
 
@@ -801,8 +799,8 @@ mod extension_tests {
         let plugin = OrganizationPlugin::with_config(OrganizationConfig {
             teams: TeamsConfig {
                 enabled: true,
-                maximum_teams: Some(99),
-                maximum_members_per_team: Some(99),
+                maximum_teams: Some(99.0),
+                maximum_members_per_team: Some(99.0),
                 limit_resolver: Some(std::sync::Arc::new(RequestTeamLimits)),
                 ..Default::default()
             },
@@ -1888,8 +1886,8 @@ mod extension_tests {
             teams: TeamsConfig {
                 enabled: true,
                 create_default_team: false,
-                maximum_teams: Some(1),
-                maximum_members_per_team: Some(1),
+                maximum_teams: Some(1.0),
+                maximum_members_per_team: Some(1.0),
                 ..Default::default()
             },
             ..Default::default()
@@ -2521,12 +2519,12 @@ mod dynamic_role_tests {
 
     #[async_trait]
     impl OrganizationLimitResolver for PausingRoleLimits {
-        async fn maximum_roles(&self, _organization_id: &str) -> AuthResult<Option<usize>> {
+        async fn maximum_roles(&self, _organization_id: &str) -> AuthResult<Option<f64>> {
             if self.pause.swap(false, std::sync::atomic::Ordering::SeqCst) {
                 self.entered.notify_one();
                 self.release.notified().await;
             }
-            Ok(Some(100))
+            Ok(Some(100.0))
         }
     }
 
@@ -2535,11 +2533,17 @@ mod dynamic_role_tests {
 
     #[async_trait]
     impl OrganizationLimitResolver for RoleLimits {
-        async fn maximum_roles(&self, organization_id: &str) -> AuthResult<Option<usize>> {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "Migrate the existing integer application policy to a Source Number"
+        )]
+        async fn maximum_roles(&self, organization_id: &str) -> AuthResult<Option<f64>> {
             let policies = self.0.lock().map_err(|_error| {
                 better_auth_core::AuthError::internal("Role policy unavailable")
             })?;
-            Ok(Some(policies.get(organization_id).copied().unwrap_or(0)))
+            Ok(Some(
+                policies.get(organization_id).copied().unwrap_or(0) as f64
+            ))
         }
     }
 
@@ -3457,7 +3461,7 @@ mod dynamic_role_tests {
     async fn callback_role_limits_are_scoped_and_count_rows_beyond_the_list_page() -> TestResult {
         let policies = std::sync::Arc::new(std::sync::Mutex::new(HashMap::new()));
         let mut config = configuration();
-        config.dynamic_access_control.maximum_roles_per_organization = Some(99);
+        config.dynamic_access_control.maximum_roles_per_organization = Some(99.0);
         config.dynamic_access_control.limit_resolver = Some(std::sync::Arc::new(RoleLimits(
             std::sync::Arc::clone(&policies),
         )));

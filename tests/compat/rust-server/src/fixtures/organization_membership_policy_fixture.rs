@@ -143,10 +143,10 @@ impl OrganizationMembershipLimitResolver for Policy {
 }
 #[async_trait]
 impl OrganizationLimitResolver for Policy {
-    async fn maximum_team_members(&self, context: &TeamLimitContext) -> AuthResult<Option<usize>> {
+    async fn maximum_team_members(&self, context: &TeamLimitContext) -> AuthResult<Option<f64>> {
         tokio::task::yield_now().await;
         self.receipts.lock().await.push(json!({"phase":"team-limit","context":{"teamId":context.team_id,"organizationId":context.organization_id,"session":{"user":context.user,"session":context.session}},"snapshot":snapshot(&self.database).await?}));
-        Ok(Some(0))
+        Ok(Some(0.0))
     }
 }
 fn failure(error: AuthError) -> Response {

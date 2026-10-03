@@ -130,6 +130,10 @@ async fn hook_context<S: AuthSchema>(
 /// # Errors
 ///
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Source compares stored counts as ECMAScript Numbers"
+)]
 pub async fn create_team_core<S: AuthSchema>(
     mut data: CreateTeam,
     actor: Option<(&UserView, &SessionView)>,
@@ -171,12 +175,13 @@ pub async fn create_team_core<S: AuthSchema>(
         user: actor.map(|(user, _)| user.clone()),
         request: request.cloned(),
     };
+    let existing_teams = ctx.database.list_teams(&data.organization_id).await?;
     let maximum = match &config.teams.limit_resolver {
         Some(resolver) => resolver.maximum_teams(&limit_ctx).await?,
         None => config.teams.maximum_teams,
     };
-    if let Some(maximum) = maximum.filter(|limit| *limit != 0)
-        && ctx.database.list_teams(&data.organization_id).await?.len() >= maximum
+    if let Some(maximum) = maximum.filter(|limit| *limit != 0.0 && !limit.is_nan())
+        && existing_teams.len() as f64 >= maximum
     {
         return Err(org_error(
             400,
@@ -189,6 +194,12 @@ pub async fn create_team_core<S: AuthSchema>(
         actor.map(|(user, _)| user.clone()),
     )
     .await?;
+    // The HTTP endpoint's timestamp is chosen after the awaited policy and
+    // organization lookup, as Source constructs teamData at that point.
+    // Trusted native calls retain any explicitly supplied timestamp.
+    if request.is_some() {
+        data.updated_at = Some(chrono::Utc::now());
+    }
     if let Some(callback) = &config.teams.hooks {
         callback.before_create(&mut data, &hooks).await?;
     }

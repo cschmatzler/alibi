@@ -134,7 +134,7 @@ async fn staged_claim_survives_real_transaction_abort_and_reset_veto_then_retry_
                     .id,
                 tx_team
             );
-            drop(tx.add_team_member(&tx_team, &tx_user, Some(1)).await?);
+            drop(tx.add_team_member(&tx_team, &tx_user, Some(1.0)).await?);
             drop(
                 tx.update_session_active_team(&tx_token, Some(&tx_team))
                     .await?,
@@ -234,7 +234,7 @@ async fn staged_claim_survives_real_transaction_abort_and_reset_veto_then_retry_
         (user.clone(), org.clone(), team.clone(), token.clone());
     let created = transaction(&store, move |tx| {
         Box::pin(async move {
-            drop(tx.add_team_member(&tx_team, &tx_user, Some(1)).await?);
+            drop(tx.add_team_member(&tx_team, &tx_user, Some(1.0)).await?);
             drop(
                 tx.update_session_active_team(&tx_token, Some(&tx_team))
                     .await?,
