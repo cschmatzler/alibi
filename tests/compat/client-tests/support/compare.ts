@@ -265,7 +265,11 @@ export function compareValues(
         expectedSecret ?? issuedSignatureKeys.get(value) ?? context.sessionCookieSecret!;
       const expected = createHmac("sha256", signerSecret).update(token).digest();
 
-      if (signature.toString("base64") !== encodedSignature || signature.length !== expected.length || !timingSafeEqual(signature,expected)) {
+      if (
+        signature.toString("base64") !== encodedSignature ||
+        signature.length !== expected.length ||
+        !timingSafeEqual(signature, expected)
+      ) {
         return { error: "signed session cookie signature is invalid" };
       }
 
@@ -2426,9 +2430,10 @@ export function compareValues(
   ): boolean {
     if (
       Object.keys(value).sort().join(",") !==
-        (value.strategy === "managed"
-          ? "decoded,effectiveMaxAgeSeconds,header,jwks,payload,rawCookies,strategy,token"
-          : "decoded,effectiveMaxAgeSeconds,header,payload,rawCookies,strategy,token") ||
+        (Object.hasOwn(value, "authPath") ? "authPath," : "") +
+          (value.strategy === "managed"
+            ? "decoded,effectiveMaxAgeSeconds,header,jwks,payload,rawCookies,strategy,token"
+            : "decoded,effectiveMaxAgeSeconds,header,payload,rawCookies,strategy,token") ||
       !context.sessionCookieSecret ||
       typeof value.token !== "string" ||
       !record(value.header) ||
@@ -2439,6 +2444,11 @@ export function compareValues(
     ) {
       return false;
     }
+    const secret =
+      typeof value.authPath === "string"
+        ? context.sessionCookieSecretsByAuthPath?.[value.authPath]
+        : context.sessionCookieSecret;
+    if (!secret) return false;
     const parts = value.token.split(".");
     try {
       const header = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
@@ -2456,7 +2466,7 @@ export function compareValues(
         const key = Buffer.from(
           hkdfSync(
             "sha256",
-            context.sessionCookieSecret,
+            secret,
             "better-auth-session",
             "BetterAuth.js Generated Encryption Key",
             64,
@@ -2487,7 +2497,7 @@ export function compareValues(
         const signature = Buffer.from(parts[2]!, "base64url");
         if (value.strategy === "jwt") {
           if (header.alg !== "HS256" || Object.keys(header).join(",") !== "alg") return false;
-          const expected = createHmac("sha256", context.sessionCookieSecret).update(input).digest();
+          const expected = createHmac("sha256", secret).update(input).digest();
           if (signature.length !== expected.length || !timingSafeEqual(signature, expected)) {
             return false;
           }
@@ -2518,7 +2528,8 @@ export function compareValues(
         claims.updatedAt < start ||
         claims.updatedAt > end ||
         typeof claims.iat !== "number" ||
-        claims.iat !== Math.floor(claims.updatedAt / 1000) ||
+        claims.iat < Math.floor(claims.updatedAt / 1000) ||
+        claims.iat > Math.floor(end / 1000) ||
         typeof claims.exp !== "number" ||
         claims.exp - claims.iat !== 300 ||
         claims.user.id !== claims.session.userId ||
@@ -2543,6 +2554,20 @@ export function compareValues(
           ))
       ) {
         return false;
+      }
+      if (Object.hasOwn(value, "authPath")) {
+        const userId = claims.user.id;
+        const sessionToken = claims.session.token;
+        const ownIssuance = [...issuances.entries()].some(([pair, receipt]) => {
+          const [leftToken, rightToken] = JSON.parse(pair) as [string, string];
+          return (
+            receipt.authPath === value.authPath &&
+            signedCookieIssuances.has(pair) &&
+            ((receipt.leftUser === userId && leftToken === sessionToken) ||
+              (receipt.rightUser === userId && rightToken === sessionToken))
+          );
+        });
+        if (!ownIssuance) return false;
       }
       return exactCacheCopy(claims, value.decoded);
     } catch {
@@ -3920,19 +3945,58 @@ export function compareValues(
         return;
       }
 
-      if(key==="sessionCache"&&!applicationData&&!traceShape(path)) {
-        if(!authenticatedSessionCache(a,context.leftStartedAt,context.leftFinishedAt)||!authenticatedSessionCache(b,context.rightStartedAt,context.rightFinishedAt)){fail(path,"session-cache authentication or provenance differs");return;}
-        if(a.strategy!==b.strategy)fail(path,"session-cache strategy differs");
-        identity(String(a.token),String(b.token),`${path}.token`,"token");
-        visit(compactCookieHeaders(a),compactCookieHeaders(b),`${path}.rawCookies`,"");
-        visit(a.header,b.header,`${path}.header`,"",false,false,true);
-        const compareClaims=(left:Record<string,unknown>,right:Record<string,unknown>,target:string)=>{
-          for(const child of [...new Set([...Object.keys(left),...Object.keys(right)])].sort()) {
-            if(!Object.hasOwn(left,child)||!Object.hasOwn(right,child)){fail(`${target}.${child}`,"claim presence differs");continue;}
-            if(child==="updatedAt"&&typeof left[child]==="number"&&typeof right[child]==="number")cacheClock(left[child] as number,right[child] as number,`${target}.${child}`);
-            else if(["iat","exp"].includes(child))clock(Number(left[child]),Number(right[child]),`${target}.${child}`);
-            else if(child==="jti")identity(String(left[child]),String(right[child]),`${target}.${child}`,"encrypted-jwt-id");
-            else visit(left[child],right[child],`${target}.${child}`,child==="iss"?"issuerURL":child==="sid"?"token":child==="sub"?"userId":child);
+      if (key === "sessionCache" && !applicationData && !traceShape(path)) {
+        if (
+          !authenticatedSessionCache(a, context.leftStartedAt, context.leftFinishedAt) ||
+          !authenticatedSessionCache(b, context.rightStartedAt, context.rightFinishedAt)
+        ) {
+          fail(path, "session-cache authentication or provenance differs");
+          return;
+        }
+        if (a.strategy !== b.strategy) fail(path, "session-cache strategy differs");
+        if (a.authPath !== b.authPath)
+          fail(`${path}.authPath`, "session-cache issuer path differs");
+        identity(String(a.token), String(b.token), `${path}.token`, "token");
+        visit(compactCookieHeaders(a), compactCookieHeaders(b), `${path}.rawCookies`, "");
+        visit(a.header, b.header, `${path}.header`, "", false, false, true);
+        const compareClaims = (
+          left: Record<string, unknown>,
+          right: Record<string, unknown>,
+          target: string,
+        ) => {
+          for (const child of [...new Set([...Object.keys(left), ...Object.keys(right)])].sort()) {
+            if (!Object.hasOwn(left, child) || !Object.hasOwn(right, child)) {
+              fail(`${target}.${child}`, "claim presence differs");
+              continue;
+            }
+            if (
+              child === "updatedAt" &&
+              typeof left[child] === "number" &&
+              typeof right[child] === "number"
+            )
+              cacheClock(left[child] as number, right[child] as number, `${target}.${child}`);
+            else if (["iat", "exp"].includes(child))
+              clock(Number(left[child]), Number(right[child]), `${target}.${child}`);
+            else if (child === "jti")
+              identity(
+                String(left[child]),
+                String(right[child]),
+                `${target}.${child}`,
+                "encrypted-jwt-id",
+              );
+            else
+              visit(
+                left[child],
+                right[child],
+                `${target}.${child}`,
+                child === "iss"
+                  ? "issuerURL"
+                  : child === "sid"
+                    ? "token"
+                    : child === "sub"
+                      ? "userId"
+                      : child,
+              );
           }
         };
         compareClaims(

@@ -17,6 +17,7 @@ import {
   twoFactor,
   phoneNumber,
 } from "better-auth/plugins";
+import { createJwk } from "better-auth/plugins/jwt";
 export async function sessionCookieCacheFixture(base: BetterAuthOptions, database: Database) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const states = new Map<
@@ -92,7 +93,7 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
                   : 300;
     const options: BetterAuthOptions = {
       ...base,
-      ...(mode.startsWith("jwe-")
+      ...(["jwe-old", "jwe-retained", "jwe-retired"].includes(mode)
         ? {
             secret: undefined,
             secrets:
@@ -276,6 +277,10 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
         return Response.json({ error: "Unknown cache profile" }, { status: 400 });
       }
       const context = await auth.$context;
+      if (body.action === "rotate-cache-key") {
+        await createJwk({ context } as any);
+        return Response.json({ keys: await context.adapter.findMany({ model: "jwks" }) });
+      }
       if (body.action === "cache-keys") {
         return Response.json({ keys: await context.adapter.findMany({ model: "jwks" }) });
       }

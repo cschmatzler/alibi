@@ -1,17 +1,23 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
+import { hkdfSync } from "node:crypto";
 
+import { getCurrentAdapter } from "@better-auth/core/context";
 import { betterAuth } from "better-auth";
 import { getCookieCache } from "better-auth/cookies";
-import {
-  signJWT,
-  symmetricEncodeJWT,
-  symmetricDecrypt,
-  symmetricDecodeJWT,
-} from "better-auth/crypto";
+import { symmetricDecrypt, symmetricDecodeJWT } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { jwt } from "better-auth/plugins";
-import { decodeProtectedHeader, decodeJwt, importJWK, SignJWT, type JWK } from "jose";
+import {
+  decodeProtectedHeader,
+  decodeJwt,
+  importJWK,
+  SignJWT,
+  EncryptJWT,
+  jwtVerify,
+  jwtDecrypt,
+  type JWK,
+} from "jose";
 
 import { type ComparisonContext, compareValues } from "../support/compare";
 
@@ -30,7 +36,21 @@ async function observed(strategy: "jwt" | "jwe" | "managed", uuid: boolean) {
       useSecureCookies: false,
       ...(uuid ? { database: { generateId: () => crypto.randomUUID() } } : {}),
     },
-    plugins: strategy === "managed" ? [jwt({ sessionCookieCache: true })] : [],
+    plugins:
+      strategy === "managed"
+        ? [
+            jwt({
+              sessionCookieCache: true,
+              adapter: {
+                async createJwk(data, ctx) {
+                  await Bun.sleep(1100);
+                  const adapter = await getCurrentAdapter(ctx.context.adapter);
+                  return adapter.create({ model: "jwks", data });
+                },
+              },
+            }),
+          ]
+        : [],
     session: {
       cookieCache: {
         enabled: true,
@@ -60,7 +80,7 @@ async function observed(strategy: "jwt" | "jwe" | "managed", uuid: boolean) {
   const token = rawCookies
     .map((raw) => decodeURIComponent(raw.split(";")[0]!.slice(raw.indexOf("=") + 1)))
     .join("");
-  const keys =
+  const keys: Record<string, unknown>[] =
     strategy === "managed" ? await (await auth.$context).adapter.findMany({ model: "jwks" }) : [];
   const jwks = keys.map((row) => ({
     ...JSON.parse(row.publicKey as string),
@@ -120,9 +140,20 @@ for (const strategy of ["jwt", "jwe", "managed"] as const) {
     expect(left.signup.user.id.length).toBe(32);
     expect(right.signup.user.id.length).toBe(36);
     expect(right.sessionCache.rawCookies.length).toBeGreaterThan(1);
+    if (strategy === "managed") {
+      expect(Number(left.sessionCache.payload.iat)).toBeGreaterThan(
+        Math.floor(Number(left.sessionCache.payload.updatedAt) / 1000),
+      );
+      expect(Number(right.sessionCache.payload.iat)).toBeGreaterThan(
+        Math.floor(Number(right.sessionCache.payload.updatedAt) / 1000),
+      );
+    }
     expect(compareValues(a, b, ctx)).toEqual([]);
     const rejects = (changed: unknown) =>
-      expect(compareValues(a, changed, ctx).length).toBeGreaterThan(0);
+      expect(compareValues(a, changed, ctx)).toContainEqual({
+        path: "sessionCache",
+        reason: "session-cache authentication or provenance differs",
+      });
     expect(compareValues(a, b, { ...ctx, sessionCookieSecret: undefined }).length).toBeGreaterThan(
       0,
     );
@@ -153,67 +184,139 @@ for (const strategy of ["jwt", "jwe", "managed"] as const) {
       (raw: string[]) => raw.map((r) => r.replace("session_data.0=", "session_data.00=")),
     ])
       rejects(altered((c) => (c.rawCookies = mutate(c.rawCookies))));
-    for (const segment of strategy === "jwe" ? [0, 2, 3, 4] : [0, 1, 2])
-      rejects(
-        altered((c) => {
-          const parts = c.token.split("."),
-            bytes = Buffer.from(parts[segment], "base64url");
-          bytes[0] ^= 1;
-          parts[segment] = bytes.toString("base64url");
-          c.token = parts.join(".");
-        }),
+    const key =
+      strategy === "jwe"
+        ? Buffer.from(
+            hkdfSync(
+              "sha256",
+              secret,
+              "better-auth-session",
+              "BetterAuth.js Generated Encryption Key",
+              64,
+            ),
+          )
+        : strategy === "managed"
+          ? await importJWK(
+              JSON.parse(
+                await symmetricDecrypt({
+                  key: secret,
+                  data: JSON.parse(
+                    right.keys.find((row) => row.id === right.sessionCache.header.kid)!
+                      .privateKey as string,
+                  ),
+                }),
+              ),
+              "EdDSA",
+            )
+          : new TextEncoder().encode(secret);
+    const publicKey =
+      strategy === "managed"
+        ? await importJWK(
+            right.sessionCache.jwks!.find((row) => row.kid === right.sessionCache.header.kid)!,
+            "EdDSA",
+          )
+        : key;
+    function replaceToken(copy: typeof b, token: string) {
+      copy.sessionCache.token = token;
+      const encoded = encodeURIComponent(token);
+      const chunkSize = right.sessionCache.rawCookies[0]!.split(";")[0]!.split("=")[1]!.length;
+      copy.sessionCache.rawCookies = Array.from(
+        { length: Math.ceil(encoded.length / chunkSize) },
+        (_, i) =>
+          `${encoded.length <= chunkSize ? name : `${name}.${i}`}=${encoded.slice(i * chunkSize, (i + 1) * chunkSize)}; Max-Age=300; Path=/; HttpOnly; SameSite=Lax`,
       );
+    }
+    // Keep every non-cryptographic receipt consistent, so JOSE failure is the
+    // only reason these controls cannot establish authenticated evidence.
+    for (const segment of strategy === "jwe" ? [0, 2, 3, 4] : [0, 1, 2]) {
+      const copy = structuredClone(b);
+      const parts = copy.sessionCache.token.split(".");
+      if (segment === 0) {
+        parts[0] = Buffer.from(" " + JSON.stringify(copy.sessionCache.header)).toString(
+          "base64url",
+        );
+      } else if (segment === 1) {
+        const claims = structuredClone(copy.sessionCache.payload);
+        claims.user.name = "tampered-owner-name";
+        parts[1] = Buffer.from(JSON.stringify(claims)).toString("base64url");
+        copy.sessionCache.payload = claims;
+        copy.sessionCache.decoded = structuredClone(claims);
+      } else {
+        const bytes = Buffer.from(parts[segment]!, "base64url");
+        bytes[0] = bytes[0]! ^ 1;
+        parts[segment] = bytes.toString("base64url");
+      }
+      replaceToken(copy, parts.join("."));
+      let code: string | undefined;
+      try {
+        if (strategy === "jwe") await jwtDecrypt(copy.sessionCache.token, key);
+        else await jwtVerify(copy.sessionCache.token, publicKey);
+      } catch (error) {
+        code = (error as { code: string }).code;
+      }
+      expect(code).toBe(
+        strategy === "jwe" ? "ERR_JWE_DECRYPTION_FAILED" : "ERR_JWS_SIGNATURE_VERIFICATION_FAILED",
+      );
+      rejects(copy);
+    }
     const rewritten = async (change: (claims: any) => void) => {
       const copy = structuredClone(b),
         claims = structuredClone(copy.sessionCache.payload);
       change(claims);
-      let token: string;
-      if (strategy === "jwt") token = await signJWT(claims, secret, 300);
-      else if (strategy === "jwe")
-        token = await symmetricEncodeJWT(claims, secret, "better-auth-session", 300);
-      else {
-        const row = right.keys.find((row) => row.id === copy.sessionCache.header.kid)!;
-        const key = await importJWK(
-          JSON.parse(
-            await symmetricDecrypt({ key: secret, data: JSON.parse(row.privateKey as string) }),
-          ),
-          "EdDSA",
-        );
-        token = await new SignJWT(claims).setProtectedHeader(copy.sessionCache.header).sign(key);
-      }
-      copy.sessionCache.token = token;
-      copy.sessionCache.header = decodeProtectedHeader(token);
-      copy.sessionCache.payload =
+      // The public Source writers reset iat/exp and JWE jti. JOSE directly
+      // authenticates the full retained claims to isolate each changed field.
+      const token =
         strategy === "jwe"
-          ? JSON.parse(
-              JSON.stringify(await symmetricDecodeJWT(token, secret, "better-auth-session")),
-            )
-          : decodeJwt(token);
+          ? await new EncryptJWT(claims)
+              .setProtectedHeader({ ...copy.sessionCache.header, alg: "dir", enc: "A256CBC-HS512" })
+              .encrypt(key)
+          : await new SignJWT(claims)
+              .setProtectedHeader({
+                ...copy.sessionCache.header,
+                alg: strategy === "jwt" ? "HS256" : "EdDSA",
+              })
+              .sign(key);
+      replaceToken(copy, token);
+      copy.sessionCache.header = decodeProtectedHeader(token);
+      const decoded =
+        strategy === "jwe"
+          ? (await jwtDecrypt(token, key)).payload
+          : (await jwtVerify(token, publicKey)).payload;
+      copy.sessionCache.payload = JSON.parse(JSON.stringify(decoded));
       copy.sessionCache.decoded = structuredClone(copy.sessionCache.payload);
-      const encoded = encodeURIComponent(token),
-        chunkSize = right.sessionCache.rawCookies[0]!.split(";")[0]!.split("=")[1]!.length;
-      copy.sessionCache.rawCookies = Array.from(
-        { length: Math.ceil(encoded.length / chunkSize) },
-        (_, i) =>
-          `${name}.${i}=${encoded.slice(i * chunkSize, (i + 1) * chunkSize)}; Max-Age=300; Path=/; HttpOnly; SameSite=Lax`,
-      );
       return copy;
     };
+    // Cross a real second boundary: unchanged re-encryption must still pass,
+    // without silently failing because a writer refreshed the issuance clock.
+    await Bun.sleep(1100);
+    expect(compareValues(a, await rewritten(() => {}), ctx)).toEqual([]);
+    const changedName = await rewritten((c) => (c.user.name = "X" + c.user.name.slice(1)));
+    const nameDifferences = compareValues(a, changedName, ctx);
+    expect(nameDifferences).toEqual([
+      { path: "sessionCache.payload.user.name", reason: "value or type differs" },
+      { path: "sessionCache.decoded.user.name", reason: "value or type differs" },
+    ]);
     for (const change of [
-      (c: any) => (c.user.name = "authentic-foreign-name"),
       (c: any) => (c.user.id = "authentic-foreign-id"),
-      (c: any) => (c.session.token = "authentic-foreign-session"),
       (c: any) => (c.version = "2"),
       (c: any) => (c.updatedAt += 60000),
     ])
       rejects(await rewritten(change));
+    const foreignToken = await rewritten(
+      (c) =>
+        (c.session.token = (c.session.token[0] === "X" ? "Y" : "X") + c.session.token.slice(1)),
+    );
+    if (strategy === "managed") rejects(foreignToken);
+    else
+      expect(compareValues(a, foreignToken, ctx)).toEqual([
+        { path: "signup.token", reason: "identity relationship or token rotation differs" },
+      ]);
     if (strategy === "managed")
       for (const change of [
         (c: any) => (c.iss = "https://foreign.test"),
         (c: any) => (c.aud = "foreign"),
         (c: any) => (c.sub = "foreign"),
         (c: any) => (c.sid = "foreign"),
-        (c: any) => (c.exp += 60000),
       ])
         rejects(await rewritten(change));
     if (strategy === "managed") rejects(altered((c) => (c.jwks[0].x = "invalid-public-key")));

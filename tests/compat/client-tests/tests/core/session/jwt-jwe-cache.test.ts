@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect } from "bun:test";
 import { hkdfSync } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
@@ -37,7 +37,10 @@ async function control(ctx: ScenarioContext, mode: string, body: Record<string, 
     json: { mode, ...body },
   });
   expect(response.status).toBe(200);
-  const state = response.body as {
+  return normalizedState(response.body);
+}
+async function normalizedState(value: unknown) {
+  const state = value as {
     accounts?: Record<string, unknown>[];
     users: Record<string, any>[];
     sessions: Record<string, any>[];
@@ -105,12 +108,20 @@ async function observation(
   owner: ReturnType<typeof client>,
   strategy: "jwt" | "jwe" | "managed",
   headers: Headers,
+  cacheSecret = secret,
+  authPath?: string,
 ) {
   const token = assemble(headers);
   const header = decodeProtectedHeader(token);
   const jwks = strategy === "managed" ? ((await owner.sdk.jwks()).data!.keys as JWK[]) : undefined;
   const key = Buffer.from(
-    hkdfSync("sha256", secret, "better-auth-session", "BetterAuth.js Generated Encryption Key", 64),
+    hkdfSync(
+      "sha256",
+      cacheSecret,
+      "better-auth-session",
+      "BetterAuth.js Generated Encryption Key",
+      64,
+    ),
   );
   let payload;
   if (strategy === "jwe") {
@@ -121,8 +132,9 @@ async function observation(
       })
     ).payload;
   } else if (strategy === "jwt") {
-    payload = (await jwtVerify(token, new TextEncoder().encode(secret), { algorithms: ["HS256"] }))
-      .payload;
+    payload = (
+      await jwtVerify(token, new TextEncoder().encode(cacheSecret), { algorithms: ["HS256"] })
+    ).payload;
   } else {
     const { importJWK } = await import("jose");
     const jwk = jwks!.find((key) => key.kid === header.kid)!;
@@ -137,7 +149,7 @@ async function observation(
     expect(header.typ).toBe("better-auth.session-cache+jwt");
   }
   const decoded = await getCookieCache(new Headers({ cookie: cookies(headers).join("; ") }), {
-    secret,
+    secret: cacheSecret,
     strategy: strategy === "managed" ? "jwt" : strategy,
     ...(jwks
       ? { jwt: { jwks: { keys: jwks }, issuer: "https://session-cache.fixture.test" } }
@@ -150,6 +162,7 @@ async function observation(
   return {
     sessionCache: {
       strategy,
+      ...(authPath ? { authPath } : {}),
       token,
       header,
       payload,
@@ -294,86 +307,141 @@ for (const mode of ["jwt", "jwe", "managed"] as const) {
 
 // This owner crosses the two actual servers, so identity is literally shared;
 // it must not use a differential identity mapping or a synthetic signer receipt.
-test("managed session-cache cookies cross actual runtimes and rotate persisted keys without admitting foreign claims", async () => {
-  const source = process.env.AUTH_BASE_URL_TS!;
-  const native = process.env.AUTH_BASE_URL_RUST!;
-  expect(source).toBeDefined();
-  expect(native).toBeDefined();
-  const path = authProfilePath("session-cache-managed");
-  const send = async (base: string, route: string, body?: unknown, pairs: string[] = []) => {
-    const response = await fetch(base + route, {
-      method: body ? "POST" : "GET",
-      headers: {
-        origin: base,
-        cookie: pairs.join("; "),
-        ...(body ? { "content-type": "application/json" } : {}),
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
+compatScenario(
+  "managed session-cache cookies cross actual runtimes and rotate persisted keys without admitting foreign claims",
+  async (ctx) => {
+    const source = ctx.baseURL;
+    const native =
+      source === process.env.AUTH_BASE_URL_TS
+        ? process.env.AUTH_BASE_URL_RUST!
+        : process.env.AUTH_BASE_URL_TS!;
+    const transport = ctx.actor("cross-runtime", "session-cache-managed").fetch;
+    const reset = await transport(native + "/__test/reset-state", {
+      method: "POST",
+      credentials: "omit",
     });
-    const text = await response.text();
-    return {
-      status: response.status,
-      headers: response.headers,
-      body: text ? JSON.parse(text) : null,
+    expect(reset.status).toBe(200);
+    expect(source).toBeDefined();
+    expect(native).toBeDefined();
+    const path = authProfilePath("session-cache-managed");
+    const send = async (base: string, route: string, body?: unknown, pairs: string[] = []) => {
+      const response = await transport(base + route, {
+        credentials: "omit",
+        method: body ? "POST" : "GET",
+        headers: {
+          origin: "https://session-cache.fixture.test",
+          cookie: pairs.join("; "),
+          ...(body ? { "content-type": "application/json" } : {}),
+        },
+        ...(body ? { body: JSON.stringify(body) } : {}),
+      });
+      const text = await response.text();
+      return {
+        status: response.status,
+        headers: response.headers,
+        body: text ? JSON.parse(text) : null,
+      };
     };
-  };
-  const command = async (base: string, action: string, extra: Record<string, unknown> = {}) => {
-    const response = await send(base, "/__test/session-cookie-cache/control", {
-      mode: "managed",
-      action,
-      ...extra,
+    const command = async (base: string, action: string, extra: Record<string, unknown> = {}) => {
+      const response = await send(base, "/__test/session-cookie-cache/control", {
+        mode: "managed",
+        action,
+        ...extra,
+      });
+      expect(response.status).toBe(200);
+      return response.body as { keys: Record<string, unknown>[] };
+    };
+    const actual = await send(source, path + "/sign-up/email", {
+      email: ctx.uniqueEmail("source-cache"),
+      name: "Actual Source Cache Owner",
+      password: "password123",
     });
-    expect(response.status).toBe(200);
-    return response.body as { keys: Record<string, unknown>[] };
-  };
-  const actual = await send(source, path + "/sign-up/email", {
-    email: `source-cache-${crypto.randomUUID()}@test.com`,
-    name: "Actual Source Cache Owner",
-    password: "password123",
-  });
-  expect(actual.status).toBe(200);
-  const sourceCookies = cookies(actual.headers);
-  const sourceToken = assemble(actual.headers);
-  const sourceHeader = decodeProtectedHeader(sourceToken);
-  const sourceKeys = await command(source, "cache-keys");
-  const actualKey = sourceKeys.keys.find((key) => key.id === sourceHeader.kid)!;
-  expect(actualKey).toBeDefined();
-  await command(native, "import-cache-key", { key: actualKey });
-  const imported = await send(native, path + "/get-session", undefined, sourceCookies);
-  expect(imported.status).toBe(200);
-  expect(imported.body.user).toEqual(actual.body.user);
-  expect(imported.body.session.token).toBe(actual.body.token);
-  const { symmetricDecrypt } = await import("better-auth/crypto");
-  const { importJWK, SignJWT, decodeJwt } = await import("jose");
-  const privateKey = await importJWK(
-    JSON.parse(
-      await symmetricDecrypt({ key: secret, data: JSON.parse(actualKey.privateKey as string) }),
-    ),
-    "EdDSA",
-  );
-  const claims = decodeJwt(sourceToken);
-  const tokenPair = sourceCookies.find((pair) => pair.startsWith("better-auth.session_token="))!;
-  for (const change of [
-    { iss: "https://foreign-issuer.test" },
-    { aud: "foreign-audience" },
-    { sid: "foreign-session" },
-    { sub: "foreign-owner" },
-    { exp: Math.floor(Date.now() / 1000) - 30 },
-  ]) {
-    const invalid = await new SignJWT({ ...claims, ...change })
-      .setProtectedHeader({ ...sourceHeader, alg: "EdDSA" })
-      .sign(privateKey);
-    const denied = await send(native, path + "/get-session", undefined, [
-      tokenPair,
-      `${cookieName}=${invalid}`,
-    ]);
-    expect(denied.body).toBeNull();
-    expect(
-      await getCookieCache(new Headers({ cookie: `${cookieName}=${invalid}` }), {
+    expect(actual.status).toBe(200);
+    const originalObservation = await observation(
+      ctx,
+      client(ctx, "managed"),
+      "managed",
+      actual.headers,
+    );
+    const sourceCookies = cookies(actual.headers);
+    const sourceToken = assemble(actual.headers);
+    const sourceHeader = decodeProtectedHeader(sourceToken);
+    const sourceKeys = await command(source, "cache-keys");
+    const actualKey = sourceKeys.keys.find((key) => key.id === sourceHeader.kid)!;
+    expect(actualKey).toBeDefined();
+    await command(native, "import-cache-key", { key: actualKey });
+    const imported = await send(native, path + "/get-session", undefined, sourceCookies);
+    expect(imported.status).toBe(200);
+    expect(imported.body.user).toEqual(actual.body.user);
+    expect(imported.body.session.token).toBe(actual.body.token);
+    const { symmetricDecrypt } = await import("better-auth/crypto");
+    const { importJWK, SignJWT, decodeJwt } = await import("jose");
+    const privateKey = await importJWK(
+      JSON.parse(
+        await symmetricDecrypt({ key: secret, data: JSON.parse(actualKey.privateKey as string) }),
+      ),
+      "EdDSA",
+    );
+    const claims = decodeJwt(sourceToken);
+    const tokenPair = sourceCookies.find((pair) => pair.startsWith("better-auth.session_token="))!;
+    for (const change of [
+      { iss: "https://foreign-issuer.test" },
+      { aud: "foreign-audience" },
+      { sid: "foreign-session" },
+      { sub: "foreign-owner" },
+      { exp: Math.floor(Date.now() / 1000) - 30 },
+    ]) {
+      const invalid = await new SignJWT({ ...claims, ...change })
+        .setProtectedHeader({ ...sourceHeader, alg: "EdDSA" })
+        .sign(privateKey);
+      const denied = await send(native, path + "/get-session", undefined, [
+        tokenPair,
+        `${cookieName}=${invalid}`,
+      ]);
+      expect(denied.body).toBeNull();
+      expect(
+        await getCookieCache(new Headers({ cookie: `${cookieName}=${invalid}` }), {
+          strategy: "jwt",
+          jwt: {
+            jwks: {
+              keys: sourceKeys.keys.map((row) => ({
+                ...JSON.parse(row.publicKey as string),
+                kid: row.id,
+                alg: row.alg,
+              })),
+            },
+            issuer: "https://session-cache.fixture.test",
+          },
+        }),
+      ).toBeNull();
+    }
+    const priorKeys = (await command(native, "cache-keys")).keys;
+    const rotation = await command(native, "rotate-cache-key");
+    const newKey = rotation.keys.find((key) => !priorKeys.some((old) => old.id === key.id))!;
+    expect(newKey).toBeDefined();
+    await command(source, "import-cache-key", { key: newKey });
+    const nativeIssuance = await send(native, path + "/sign-up/email", {
+      email: ctx.uniqueEmail("native-cache"),
+      name: "Actual Native Cache Owner",
+      password: "password123",
+    });
+    expect(nativeIssuance.status).toBe(200);
+    const nativeObservation = await observation(
+      ctx,
+      client(ctx, "managed"),
+      "managed",
+      nativeIssuance.headers,
+    );
+    const nativeToken = assemble(nativeIssuance.headers);
+    expect(decodeProtectedHeader(nativeToken).kid).toEqual(String(newKey.id));
+    const nativeKeys = (await command(native, "cache-keys")).keys;
+    const decoded = await getCookieCache(
+      new Headers({ cookie: cookies(nativeIssuance.headers).join("; ") }),
+      {
         strategy: "jwt",
         jwt: {
           jwks: {
-            keys: sourceKeys.keys.map((row) => ({
+            keys: nativeKeys.map((row) => ({
               ...JSON.parse(row.publicKey as string),
               kid: row.id,
               alg: row.alg,
@@ -381,158 +449,166 @@ test("managed session-cache cookies cross actual runtimes and rotate persisted k
           },
           issuer: "https://session-cache.fixture.test",
         },
-      }),
-    ).toBeNull();
-  }
-  const priorKeys = (await command(native, "cache-keys")).keys;
-  const rotation = await command(native, "rotate-cache-key");
-  const newKey = rotation.keys.find((key) => !priorKeys.some((old) => old.id === key.id))!;
-  expect(newKey).toBeDefined();
-  await command(source, "import-cache-key", { key: newKey });
-  const nativeIssuance = await send(native, path + "/sign-up/email", {
-    email: `native-cache-${crypto.randomUUID()}@test.com`,
-    name: "Actual Native Cache Owner",
-    password: "password123",
-  });
-  expect(nativeIssuance.status).toBe(200);
-  const nativeToken = assemble(nativeIssuance.headers);
-  expect(decodeProtectedHeader(nativeToken).kid).toEqual(String(newKey.id));
-  const nativeKeys = (await command(native, "cache-keys")).keys;
-  const decoded = await getCookieCache(
-    new Headers({ cookie: cookies(nativeIssuance.headers).join("; ") }),
-    {
-      strategy: "jwt",
-      jwt: {
-        jwks: {
-          keys: nativeKeys.map((row) => ({
-            ...JSON.parse(row.publicKey as string),
-            kid: row.id,
-            alg: row.alg,
-          })),
-        },
-        issuer: "https://session-cache.fixture.test",
       },
-    },
-  );
-  expect(decoded!.session.token).toBe(nativeIssuance.body.token);
-  expect(JSON.parse(JSON.stringify(decoded!.user))).toEqual(nativeIssuance.body.user);
-  const exported = await send(
-    source,
-    path + "/get-session",
-    undefined,
-    cookies(nativeIssuance.headers),
-  );
-  expect(exported.body.user).toEqual(nativeIssuance.body.user);
-  expect(exported.body.session.token).toBe(nativeIssuance.body.token);
-  expect((await send(native, path + "/get-session", undefined, sourceCookies)).body.user.id).toBe(
-    actual.body.user.id,
-  );
-  await command(native, "retire-cache-key", { token: actualKey.id });
-  expect((await send(native, path + "/get-session", undefined, sourceCookies)).body).toBeNull();
-  const nativeBefore = await send(native, "/__test/session-cookie-cache/control", {
-    mode: "managed",
-    action: "rows",
-    userId: nativeIssuance.body.user.id,
-  });
-  expect(nativeBefore.body.sessions).toHaveLength(1);
-  expect(nativeBefore.body.sessions[0].token).toBe(nativeIssuance.body.token);
-});
-
-test("JWE cache rotation reads retained keys and rejects retired and wrong-kid envelopes across actual runtimes", async () => {
-  const current = "cache-managed-new-secret-at-least-32-characters";
-  const { makeSignature, symmetricDecodeJWT } = await import("better-auth/crypto");
-  const { EncryptJWT } = await import("jose");
-  for (const base of [process.env.AUTH_BASE_URL_TS!, process.env.AUTH_BASE_URL_RUST!]) {
-    const signup = await fetch(base + authProfilePath("session-cache-jwe-old") + "/sign-up/email", {
-      method: "POST",
-      headers: { origin: base, "content-type": "application/json" },
-      body: JSON.stringify({
-        email: `jwe-rotation-${crypto.randomUUID()}@test.com`,
-        name: "Retained JWE Owner",
-        password: "password123",
-      }),
+    );
+    expect(decoded!.session.token).toBe(nativeIssuance.body.token);
+    expect(JSON.parse(JSON.stringify(decoded!.user))).toEqual(nativeIssuance.body.user);
+    const exported = await send(
+      source,
+      path + "/get-session",
+      undefined,
+      cookies(nativeIssuance.headers),
+    );
+    expect(exported.body.user).toEqual(nativeIssuance.body.user);
+    expect(exported.body.session.token).toBe(nativeIssuance.body.token);
+    expect((await send(native, path + "/get-session", undefined, sourceCookies)).body.user.id).toBe(
+      actual.body.user.id,
+    );
+    await command(native, "retire-cache-key", { token: actualKey.id });
+    expect((await send(native, path + "/get-session", undefined, sourceCookies)).body).toBeNull();
+    const nativeBefore = await send(native, "/__test/session-cookie-cache/control", {
+      mode: "managed",
+      action: "rows",
+      userId: nativeIssuance.body.user.id,
     });
-    expect(signup.status).toBe(200);
-    const issued = (await signup.json()) as { token: string; user: { id: string } };
-    const oldToken = assemble(signup.headers);
-    const keys = {
-      currentVersion: 2,
-      keys: new Map([
-        [2, current],
-        [1, secret],
-      ]),
+    expect(nativeBefore.body.sessions).toHaveLength(1);
+    expect(nativeBefore.body.sessions[0].token).toBe(nativeIssuance.body.token);
+    return {
+      actual: actual.body,
+      imported: imported.body,
+      nativeIssuance: nativeIssuance.body,
+      originalObservation,
+      nativeObservation,
+      exported: exported.body,
+      nativeBefore: await normalizedState(nativeBefore.body),
     };
-    const decoded = await symmetricDecodeJWT(oldToken, keys, "better-auth-session");
-    expect(decoded!.session.token).toBe(issued.token);
-    // Cookie HMAC rotation intentionally invalidates old signatures. Independently
-    // sign the genuinely issued token through the pinned public signer to isolate
-    // the retained JWE reader from that separate current-only credential policy.
-    const signed = encodeURIComponent(
-      `${issued.token}.${await makeSignature(issued.token, current)}`,
-    );
-    const retained = await fetch(
-      base + authProfilePath("session-cache-jwe-retained") + "/get-session",
-      { headers: { cookie: `better-auth.session_token=${signed}; ${cookieName}=${oldToken}` } },
-    );
-    expect(retained.status).toBe(200);
-    expect(((await retained.json()) as any).user.id).toBe(issued.user.id);
-    // Remove the actual row so a retired envelope cannot be rescued by SQL fallback.
-    const revoke = await fetch(base + "/__test/session-cookie-cache/control", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mode: "jwe-old", action: "revoke", token: issued.token }),
-    });
-    expect(revoke.status).toBe(200);
-    const retired = await fetch(
-      base + authProfilePath("session-cache-jwe-retired") + "/get-session",
-      { headers: { cookie: `better-auth.session_token=${signed}; ${cookieName}=${oldToken}` } },
-    );
-    expect(await retired.json()).toBeNull();
-    const key = Buffer.from(
-      hkdfSync(
-        "sha256",
-        secret,
-        "better-auth-session",
-        "BetterAuth.js Generated Encryption Key",
-        64,
-      ),
-    );
-    const noKid = await new EncryptJWT(decoded!)
-      .setProtectedHeader({ alg: "dir", enc: "A256CBC-HS512" })
-      .encrypt(key);
-    const oldReader = await fetch(
-      base + authProfilePath("session-cache-jwe-retained") + "/get-session",
-      { headers: { cookie: `better-auth.session_token=${signed}; ${cookieName}=${noKid}` } },
-    );
-    expect(((await oldReader.json()) as any).user.id).toBe(issued.user.id);
-    const wrongKid = await new EncryptJWT(decoded!)
-      .setProtectedHeader({ alg: "dir", enc: "A256CBC-HS512", kid: "foreign-key" })
-      .encrypt(key);
-    const denied = await fetch(
-      base + authProfilePath("session-cache-jwe-retained") + "/get-session",
-      { headers: { cookie: `better-auth.session_token=${signed}; ${cookieName}=${wrongKid}` } },
-    );
-    expect(await denied.json()).toBeNull();
-    const currentWriter = await fetch(
-      base + authProfilePath("session-cache-jwe-retained") + "/sign-up/email",
-      {
+  },
+  ["POST /sign-up/email", "GET /get-session"],
+);
+
+compatScenario(
+  "JWE cache rotation reads retained keys and rejects retired and wrong-kid envelopes across actual runtimes",
+  async (ctx) => {
+    const current = "cache-managed-new-secret-at-least-32-characters";
+    const { makeSignature, symmetricDecodeJWT } = await import("better-auth/crypto");
+    const { EncryptJWT } = await import("jose");
+    const transport = ctx.actor("rotation", "session-cache-jwe-old").fetch;
+    const base = ctx.baseURL;
+    {
+      const signup = await transport(
+        base + authProfilePath("session-cache-jwe-old") + "/sign-up/email",
+        {
+          method: "POST",
+          headers: { origin: base, "content-type": "application/json" },
+          body: JSON.stringify({
+            email: ctx.uniqueEmail("jwe-rotation"),
+            name: "Retained JWE Owner",
+            password: "password123",
+          }),
+        },
+      );
+      expect(signup.status).toBe(200);
+      const issued = (await signup.json()) as { token: string; user: { id: string } };
+      const oldObservation = await observation(ctx, client(ctx, "jwe-old"), "jwe", signup.headers);
+      const oldToken = assemble(signup.headers);
+      const keys = {
+        currentVersion: 2,
+        keys: new Map([
+          [2, current],
+          [1, secret],
+        ]),
+      };
+      const decoded = await symmetricDecodeJWT(oldToken, keys, "better-auth-session");
+      expect(decoded!.session.token).toBe(issued.token);
+      // Cookie HMAC rotation intentionally invalidates old signatures. Independently
+      // sign the genuinely issued token through the pinned public signer to isolate
+      // the retained JWE reader from that separate current-only credential policy.
+      const signed = encodeURIComponent(
+        `${issued.token}.${await makeSignature(issued.token, current)}`,
+      );
+      const retained = await transport(
+        base + authProfilePath("session-cache-jwe-retained") + "/get-session",
+        { headers: { cookie: `better-auth.session_token=${signed}; ${cookieName}=${oldToken}` } },
+      );
+      expect(retained.status).toBe(200);
+      expect(((await retained.json()) as any).user.id).toBe(issued.user.id);
+      // Remove the actual row so a retired envelope cannot be rescued by SQL fallback.
+      const revoke = await transport(base + "/__test/session-cookie-cache/control", {
         method: "POST",
-        headers: { origin: base, "content-type": "application/json" },
-        body: JSON.stringify({
-          email: `jwe-current-${crypto.randomUUID()}@test.com`,
-          name: "Current JWE Owner",
-          password: "password123",
-        }),
-      },
-    );
-    expect(currentWriter.status).toBe(200);
-    const currentToken = assemble(currentWriter.headers);
-    expect(decodeProtectedHeader(currentToken).kid).not.toBe(decodeProtectedHeader(oldToken).kid);
-    const currentClaims = await symmetricDecodeJWT(currentToken, keys, "better-auth-session");
-    expect(currentClaims).not.toBeNull();
-    expect(await symmetricDecodeJWT(currentToken, secret, "better-auth-session")).toBeNull();
-  }
-});
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mode: "jwe-old", action: "revoke", token: issued.token }),
+      });
+      expect(revoke.status).toBe(200);
+      const retired = await transport(
+        base + authProfilePath("session-cache-jwe-retired") + "/get-session",
+        { headers: { cookie: `better-auth.session_token=${signed}; ${cookieName}=${oldToken}` } },
+      );
+      expect(await retired.json()).toBeNull();
+      const key = Buffer.from(
+        hkdfSync(
+          "sha256",
+          secret,
+          "better-auth-session",
+          "BetterAuth.js Generated Encryption Key",
+          64,
+        ),
+      );
+      const noKid = await new EncryptJWT(decoded!)
+        .setProtectedHeader({ alg: "dir", enc: "A256CBC-HS512" })
+        .encrypt(key);
+      const oldReader = await transport(
+        base + authProfilePath("session-cache-jwe-retained") + "/get-session",
+        { headers: { cookie: `better-auth.session_token=${signed}; ${cookieName}=${noKid}` } },
+      );
+      expect(((await oldReader.json()) as any).user.id).toBe(issued.user.id);
+      const wrongKid = await new EncryptJWT(decoded!)
+        .setProtectedHeader({ alg: "dir", enc: "A256CBC-HS512", kid: "foreign-key" })
+        .encrypt(key);
+      const denied = await transport(
+        base + authProfilePath("session-cache-jwe-retained") + "/get-session",
+        { headers: { cookie: `better-auth.session_token=${signed}; ${cookieName}=${wrongKid}` } },
+      );
+      expect(await denied.json()).toBeNull();
+      const currentWriter = await transport(
+        base + authProfilePath("session-cache-jwe-retained") + "/sign-up/email",
+        {
+          method: "POST",
+          headers: { origin: base, "content-type": "application/json" },
+          body: JSON.stringify({
+            email: ctx.uniqueEmail("jwe-current"),
+            name: "Current JWE Owner",
+            password: "password123",
+          }),
+        },
+      );
+      expect(currentWriter.status).toBe(200);
+      const currentToken = assemble(currentWriter.headers);
+      expect(decodeProtectedHeader(currentToken).kid).not.toBe(decodeProtectedHeader(oldToken).kid);
+      const currentClaims = await symmetricDecodeJWT(currentToken, keys, "better-auth-session");
+      expect(currentClaims).not.toBeNull();
+      expect(await symmetricDecodeJWT(currentToken, secret, "better-auth-session")).toBeNull();
+      const currentObservation = await observation(
+        ctx,
+        client(ctx, "jwe-retained"),
+        "jwe",
+        currentWriter.headers,
+        current,
+        authProfilePath("session-cache-jwe-retained"),
+      );
+      return { issued, oldObservation, currentObservation };
+    }
+  },
+  ["POST /sign-up/email", "GET /get-session"],
+  30_000,
+  {
+    sessionCookieSecretsByAuthPath: {
+      [authProfilePath("session-cache-jwe-retained")]:
+        "cache-managed-new-secret-at-least-32-characters",
+      [authProfilePath("session-cache-jwe-retired")]:
+        "cache-managed-new-secret-at-least-32-characters",
+    },
+  },
+);
 
 for (const strategy of ["jwt", "jwe"] as const) {
   compatScenario(

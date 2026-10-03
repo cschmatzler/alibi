@@ -276,7 +276,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                 version: Some(version),
                 ..Default::default()
             });
-        if mode.starts_with("jwe-") {
+        if matches!(mode, "jwe-old" | "jwe-retained" | "jwe-retired") {
             let keys = if mode == "jwe-old" {
                 better_auth_core::ManagedSecrets::new(1, base.current_secret())
             } else {
