@@ -1,0 +1,2 @@
+1:  ac6658f0 = 1:  09f7961d Resolve trusted generic OAuth discovery before provider registration
+2:  190f21f9 = 2:  49222869 Prove discovery resolution and guarded OAuth admission with both stores

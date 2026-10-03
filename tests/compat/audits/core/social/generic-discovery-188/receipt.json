@@ -1,0 +1,58 @@
+{
+  "issue": 188,
+  "pr": "https://github.com/cschmatzler/better-auth-rs/pull/403",
+  "testedBase": "02ed80580e7511ae8553cc2a96dc263ad74f7489",
+  "proofCheckpoint": "190f21f96ad078286717c450dd1e35b4e2bc9654",
+  "rebasedProductionHead": "49222869f57c8f1abddadc38d4db5e3ff90d6468",
+  "rebasedBase": "c90cf1979783352de79ff87bd4ab95132b54cda8",
+  "upstreamVersion": "1.7.6",
+  "archives": {
+    "better-auth-1.7.6.tgz": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+    "core-1.7.6.tgz": "e77e869a604083abf292ba9045f5182bd25cc2e57697e8fc1e3965651613f908"
+  },
+  "proof": {
+    "initialFinalBothAdapters": {
+      "SqlxStore": 17,
+      "SeaOrmStore": 17
+    },
+    "affectedScopeAndVerifierFinal": {
+      "SqlxStore": 12,
+      "SeaOrmStore": 12
+    },
+    "nonceComparatorAndExistingJWTControl": 2
+  },
+  "baseline": "Original base production files restored exactly; no discovery API exists on that base, so baseline fixture uses its public static provider with omitted endpoints. Source succeeds, native discovery-only start returns500 before any grant. baseline-production-sha.txt is empty.",
+  "reviewFixes": [
+    "requested scopes precede configured scopes (source-completing before failure retained)",
+    "JWT decoded-profile spread precedence",
+    "user-info picture projection",
+    "signature before claims and profile callback",
+    "existing RSA public-key/modulus guard reused",
+    "public JWKS key selection and advertised algorithm allowlist"
+  ],
+  "sourceRuntime": "Freshly downloaded published archives restored every Better Auth/core runtime file by replacing it with a private inode, in both runtime dependency copies; all files matched, nlink1.",
+  "rawRetention": "SDK pairs retain transport/status/header/body/state observations. Separate raw archives include original provider forms and original verification state rows. Metadata receipts retain mode/header and assert one initialization fetch.",
+  "comparisonExclusions": [
+    "metadata initialization receipt arrays are retained raw, not compared as a single list because native resolves before serving while Source initializes each provider lazily",
+    "original verification row JSON strings retained separately; asserted actual state nonce is paired with URL and JWT through idTokenNonce alias"
+  ],
+  "comparatorChange": "Only nonce opaque key and idTokenNonce alias added; bijection enforces equal and unequal relationships, missing fields remain visible.",
+  "lintOnlyFinalEdit": "Final clippy fix explicitly drops Vec::Splice at its statement boundary; this preserves the implicit drop in the tested code. Compiled with strict Clippy, no passing scenario replay for that behavior-preserving lint correction.",
+  "rebase": "range-diff reports both commits identical; upstream #402/#404 affect optional records/organization only, generic and shared token transports unchanged. No test or build replay for the unrelated rebase.",
+  "checks": [
+    "production cargo check",
+    "strict production Clippy",
+    "client TypeScript check",
+    "new reference fixture TypeScript check",
+    "focused TS lint/format",
+    "git diff --check"
+  ],
+  "ci": "GitHub Actions disabled; no CI results",
+  "review": "self-review using authz,data-exfil,test-audit; no delegated independent review",
+  "remaining": [
+    "dynamic refresh parameter context",
+    "RP-initiated provider logout",
+    "broader issue188 callback/expiry/concurrency acceptance beyond the bounded generic discovery modes"
+  ],
+  "issueClosed": false
+}

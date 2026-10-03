@@ -13,6 +13,17 @@ function variants<P extends string, S extends string>(
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  ...variants("generic-discovery-", [
+    "success",
+    "override",
+    "failed",
+    "fallback",
+    "invalid-issuer",
+    "invalid-jwks",
+    "required",
+    "oidc",
+    "mapped",
+  ] as const),
   ...variants("generic-token-", [
     "post",
     "basic",

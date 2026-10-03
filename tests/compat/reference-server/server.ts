@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { genericDiscoveryFixture } from "./fixtures/generic-discovery-fixture";
 import { genericTokenParamsFixture } from "./fixtures/generic-token-params-fixture";
 import { Database } from "bun:sqlite";
 
@@ -638,6 +639,7 @@ const passkeyAuthentication = passkeyAuthenticationFixture(
 const railwayFixture = railwayProviderFixture(authOptions);
 const redditFixture = redditProviderFixture(authOptions);
 const polarFixture = polarProviderFixture(authOptions);
+const genericDiscovery = genericDiscoveryFixture(authOptions);
 const genericTokenFixture = genericTokenParamsFixture(authOptions);
 const paypalFixture = paypalProviderFixture(authOptions);
 const notionFixture = notionProviderFixture(authOptions);
@@ -680,6 +682,9 @@ for (const [path, instance] of polarFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of railwayFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of genericDiscovery.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of genericTokenFixture.profiles) {
@@ -1945,6 +1950,8 @@ const server = Bun.serve({
       if (redditControl) return redditControl;
       const polarControl = await polarFixture.handle(request);
       if (polarControl) return polarControl;
+      const genericDiscoveryControl = await genericDiscovery.handle(request);
+      if (genericDiscoveryControl) return genericDiscoveryControl;
       const genericTokenControl = await genericTokenFixture.handle(request);
       if (genericTokenControl) return genericTokenControl;
       const paypalControl = await paypalFixture.handle(request);
@@ -2846,6 +2853,7 @@ const server = Bun.serve({
         polarFixture.reset();
         notionFixture.reset();
         paypalFixture.reset();
+        genericDiscovery.reset();
         genericTokenFixture.reset();
         paybinFixture.reset();
         cloudflareFixture.reset();

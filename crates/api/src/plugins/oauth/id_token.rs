@@ -342,7 +342,7 @@ fn remote_rsa_key_matches(key: &Value, kid: Option<&JsValue>) -> bool {
         })
 }
 
-fn remote_rsa_public_key(key: &Value) -> bool {
+pub(super) fn remote_rsa_public_key(key: &Value) -> bool {
     if key.get("d").is_some() {
         return false;
     }
