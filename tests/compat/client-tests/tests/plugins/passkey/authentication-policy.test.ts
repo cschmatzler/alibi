@@ -333,6 +333,42 @@ compatScenario(
     const listed = await fixture.owner.$fetch("/passkey/list-user-passkeys", { method: "GET" });
     expect(listed).toEqual(fixture.listed);
 
+    await fixture.owner.signOut();
+    const retryChallenge = await fixture.owner.$fetch("/passkey/generate-authenticate-options", {
+      method: "GET",
+    });
+    expect(retryChallenge.error).toBeNull();
+    const retryProof = fixture.device.authenticate(retryChallenge.data, ctx.baseURL, {
+      counter: 1,
+      tokenBinding: { status: "notSupported" },
+      userVerified: false,
+    });
+    const retry = await fixture.owner.$fetch("/passkey/verify-authentication", {
+      method: "POST",
+      body: { response: retryProof },
+    });
+    expect(retry.error).toBeNull();
+    expect(retry.data).toMatchObject({
+      user: { id: fixture.signup.data!.user.id },
+      session: { userId: fixture.signup.data!.user.id },
+    });
+    const retryState = await ctx.readUserState({ userId: fixture.signup.data!.user.id });
+    expect(savedSessions(retryState)).toHaveLength(1);
+    const retryListed = await fixture.owner.$fetch("/passkey/list-user-passkeys", {
+      method: "GET",
+    });
+    expect(retryListed.data).toMatchObject([{ userId: fixture.signup.data!.user.id, counter: 1 }]);
+    const retryReplay = await fixture.owner.$fetch("/passkey/verify-authentication", {
+      method: "POST",
+      body: { response: retryProof },
+    });
+    expect(retryReplay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
+    expect(await ctx.readUserState({ userId: fixture.signup.data!.user.id })).toEqual(retryState);
+    const replayListed = await fixture.owner.$fetch("/passkey/list-user-passkeys", {
+      method: "GET",
+    });
+    expect(replayListed).toEqual(retryListed);
+
     return {
       signup: fixture.signup,
       foreignSignup: fixture.foreignSignup,
@@ -340,7 +376,8 @@ compatScenario(
       before,
       foreignBefore: fixture.foreignBefore,
       outputs,
-      events: await fixture.events(),
+      recovery: { retryChallenge, retry, retryReplay, retryState, retryListed },
+      events: receipts(await fixture.events(), fixture),
       submitted: submitted(fixture),
       relogin,
       listed,
