@@ -71,6 +71,13 @@ resolved only the fixture router merge chain, retaining both cookie proxy and
 popup registrations. The popup production, fixture and owner files are byte-identical
 before/after rebase; the invariance diff is empty. Main only widened cookie-state
 helper visibility and changed proxy paths outside this database-state popup proof.
+A second rebase onto `45646568` includes #395 account-cookie compression/chunks
+and #399 configured legacy-token conversion. It retained both public plugin
+exports at their shared insertion point. Account cookies are disabled in this
+popup fixture; conversion is a separate configured path. The final popup
+invariance diff is again empty, and both fixture registrations and exports were
+reviewed against current main.
+
 The retained range/registration diffs were reviewed; no rebuild or adapter replay
 was performed for the integration-only rebase or these documentation changes.
 
@@ -81,3 +88,19 @@ provider, browser, cookie/stateless/managed-key configuration, OIDC discovery or
 ID-token nonce option; those remain their existing owners, including #188.
 The completion hook recognizes `/callback/` and `/oauth2/callback/`; the official
 popup/generic flow exercised here uses `/callback/local`.
+
+
+Reproduce this owner with the existing selected-path runner (one adapter at a
+time, with the matching `BETTER_AUTH_COMPAT_BACKEND=sqlx` or `seaorm`):
+
+```sh
+devenv shell -- env BETTER_AUTH_COMPAT_BACKEND=sqlx   CARGO_TARGET_DIR=/tmp/popup-owner-target   bash tests/compat/client-tests/run-against-both.sh   tests/plugins/oauth-popup/popup.test.ts
+```
+
+The retained runs instead launched the built adapter artifacts on owned ports
+41310/41320 and invoked only this Bun owner. Chromium was the Nix-provided browser;
+no other browser scenario was selected. Interactive T3 preview was opened first,
+but localhost/environment-port navigation returned browser-client failures. The
+automated owner still ran genuine Chromium, with the official client bundled
+from the restored pinned package. The failed preview is not claimed as browser
+proof.

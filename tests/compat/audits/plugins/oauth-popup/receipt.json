@@ -27,5 +27,8 @@
   "artifacts": {
     "sqlx": "fe645b34bfe29b3604995240592d36fb718b79fc476c06a03a611b5937b0c4b7",
     "seaorm": "0012d6122d828d4690b84ce7fbdcbeb4dfc3af5a12b74c66ed06075a76eeb8d2"
-  }
+  },
+  "finalReviewedBase": "4564656881ff0bdac07d29b008b228a5696a4ac0",
+  "finalReviewedHead": "65df512d80df41069ec2630bdb2629672c3f7301",
+  "finalPopupInvarianceBytes": 0
 }

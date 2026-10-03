@@ -1,0 +1,232 @@
+diff --git a/crates/api/src/plugins/oauth/handlers/mod.rs b/crates/api/src/plugins/oauth/handlers/mod.rs
+index 71ccc87e..2be43c63 100644
+--- a/crates/api/src/plugins/oauth/handlers/mod.rs
++++ b/crates/api/src/plugins/oauth/handlers/mod.rs
+@@ -931,29 +931,46 @@ fn redirect_response(location: &str) -> AuthResponse {
+ }
+ 
+ fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> f64 {
+-    better_auth_core::cache::effective_max_age(
+-        config
+-            .session
+-            .cookie_cache
+-            .as_ref()
+-            .map_or(300.0, |cache| cache.max_age),
+-    )
++    if let Some(age) = config.account.cookie_max_age {
++        return age;
++    }
++    config
++        .advanced
++        .cookies
++        .get("account_data")
++        .and_then(|cookie| cookie.attributes.max_age)
++        .map_or_else(
++            || {
++                better_auth_core::cache::effective_max_age(
++                    config
++                        .session
++                        .cookie_cache
++                        .as_ref()
++                        .map_or(300.0, |cache| cache.max_age),
++                )
++            },
++            |age| age as f64,
++        )
+ }
+ 
++/// Emit the encrypted account snapshot and clear stale incoming chunks.
+ ///
+ /// # Errors
+-/// Returns an error when validation, storage, or an application callback fails.
+-pub(in crate::plugins) fn create_account_cookie_header(
++/// Propagates encryption or cookie attribute errors.
++pub(in crate::plugins) fn create_account_cookie_headers(
+     config: &better_auth_core::AuthConfig,
+     payload: &AccountCookiePayload,
+-) -> AuthResult<String> {
++    req: &AuthRequest,
++) -> AuthResult<Vec<String>> {
+     let max_age = account_cookie_max_age(config);
+     let value = create_account_cookie_value(config, payload, max_age)?;
+-    better_auth_core::cache::cookie_header(
++    better_auth_core::cache::runtime::chunked_cookie_headers(
+         &account_cookie_name(config),
+         &value,
+         Some(max_age),
+         config,
++        &req.headers,
++        true,
+     )
+ }
+ 
+@@ -964,7 +981,10 @@ pub(super) fn decode_account_cookie(
+     req: &AuthRequest,
+     config: &better_auth_core::AuthConfig,
+ ) -> AuthResult<Option<AccountCookiePayload>> {
+-    let Some(value) = get_cookie(req, &account_cookie_name(config)) else {
++    let Some(value) = better_auth_core::cache::runtime::chunked_cookie_value(
++        &req.headers,
++        &account_cookie_name(config),
++    ) else {
+         return Ok(None);
+     };
+     decode_account_cookie_value(config, &value).map(Some)
+@@ -1426,6 +1446,7 @@ async fn process_oauth_sign_in_with_output(
+                 password: existing_account.password().map(str::to_owned),
+                 created_at: Some(existing_account.created_at()),
+                 updated_at: Some(existing_account.updated_at()),
++                ..AccountCookiePayload::from_account(&existing_account)
+             }
+         });
+ 
+@@ -1636,6 +1657,23 @@ async fn process_oauth_sign_in_with_output(
+                 }
+             })?;
+ 
++        if ctx.config.account.store_account_cookie {
++            let age = account_cookie_max_age(&ctx.config);
++            // Published registration commits the identity first, then catches
++            // account-cookie configuration failures before issuing a session.
++            if !age.is_finite()
++                || better_auth_core::utils::cookie_utils::create_account_cookie_header(
++                    &account_cookie_name(&ctx.config),
++                    &account_cookie_name(&ctx.config),
++                    "",
++                    age,
++                    &ctx.config,
++                )
++                .is_err()
++            {
++                return Err(OAuthSignInError::Generic("unable to create user".into()));
++            }
++        }
+         let issued = finish_oauth_session(&persisted_user, true, policy, meta, ctx).await?;
+         let account_cookie = ctx
+             .config
+@@ -2768,10 +2806,9 @@ pub(super) async fn handle_callback(
+             ),
+         );
+     if let Some(account_cookie) = outcome.account_cookie.as_ref() {
+-        response = response.with_appended_header(
+-            "Set-Cookie",
+-            create_account_cookie_header(&ctx.config, account_cookie)?,
+-        );
++        for header in create_account_cookie_headers(&ctx.config, account_cookie, req)? {
++            response.headers.append("Set-Cookie", header);
++        }
+     }
+     Ok(response)
+ }
+diff --git a/crates/api/src/plugins/oauth/mod.rs b/crates/api/src/plugins/oauth/mod.rs
+index 6e32367d..8e38cf39 100644
+--- a/crates/api/src/plugins/oauth/mod.rs
++++ b/crates/api/src/plugins/oauth/mod.rs
+@@ -19,7 +19,7 @@ use better_auth_core::AuthResult;
+ use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
+ use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
+ pub(in crate::plugins) use handlers::{
+-    OAuthProcessPolicy, OAuthSignInError, create_account_cookie_header, process_oauth_sign_in,
++    OAuthProcessPolicy, OAuthSignInError, create_account_cookie_headers, process_oauth_sign_in,
+ };
+ pub use id_token::{
+     HttpOAuthJwksSource, OAuthIdTokenClaimsVerifier, OAuthIdTokenConfig, OAuthJwksSelection,
+@@ -178,12 +178,21 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
+         let Ok(Some(account)) = handlers::decode_account_cookie(req, &ctx.config) else {
+             return Ok(response);
+         };
+-        let header = if account.user_id == user.id {
+-            handlers::create_account_cookie_header(&ctx.config, &account)?
++        let headers = if account.user_id == user.id {
++            handlers::create_account_cookie_headers(&ctx.config, &account, req)?
+         } else {
+-            better_auth_core::utils::cookie_utils::create_clear_cookie(&account_name, &ctx.config)
++            better_auth_core::cache::runtime::chunked_cookie_headers(
++                &account_name,
++                "",
++                Some(0.0),
++                &ctx.config,
++                &req.headers,
++                true,
++            )?
+         };
+-        response.headers.append("set-cookie", header);
++        for header in headers {
++            response.headers.append("set-cookie", header);
++        }
+         Ok(response)
+     }
+ }
+diff --git a/crates/api/src/plugins/oauth/state.rs b/crates/api/src/plugins/oauth/state.rs
+index fd72d756..0e2842ab 100644
+--- a/crates/api/src/plugins/oauth/state.rs
++++ b/crates/api/src/plugins/oauth/state.rs
+@@ -134,12 +134,18 @@ pub(in crate::plugins) struct AccountCookiePayload {
+         serialize_with = "better_auth_core::utils::datetime::serialize_optional"
+     )]
+     pub updated_at: Option<chrono::DateTime<Utc>>,
++    #[serde(flatten)]
++    pub additional: Map<String, Value>,
++    #[serde(skip)]
++    pub snapshot: Option<Map<String, Value>>,
++    #[serde(skip)]
++    pub original: Option<Map<String, Value>>,
+ }
+ 
+ impl AccountCookiePayload {
+     #[must_use]
+     pub(in crate::plugins) fn from_account(account: &impl AuthAccount) -> Self {
+-        Self {
++        let mut payload = Self {
+             id: Some(account.id().to_string()),
+             user_id: account.user_id().to_string(),
+             provider_id: account.provider_id().to_owned(),
+@@ -153,7 +159,39 @@ impl AccountCookiePayload {
+             password: account.password().map(str::to_owned),
+             created_at: Some(account.created_at()),
+             updated_at: Some(account.updated_at()),
++            additional: account.additional_fields(),
++            snapshot: account
++                .adapter_snapshot()
++                .map(|output| output.values().clone()),
++            original: None,
++        };
++        payload.original = serde_json::to_value(&payload)
++            .ok()
++            .and_then(|value| value.as_object().cloned());
++        payload
++    }
++
++    pub(in crate::plugins) fn wire_value(&self) -> AuthResult<Value> {
++        let Value::Object(current) = serde_json::to_value(self)? else {
++            return Err(AuthError::internal("Account cookie must be an object"));
++        };
++        let Some(snapshot) = &self.snapshot else {
++            return Ok(Value::Object(current));
++        };
++        let mut output = snapshot.clone();
++        // Retain raw projection values and omissions until a token field is
++        // actually changed by sign-in/refresh. Physical getters remain authority.
++        for (key, value) in current {
++            if self
++                .original
++                .as_ref()
++                .and_then(|original| original.get(&key))
++                != Some(&value)
++            {
++                drop(output.insert(key, value));
++            }
+         }
++        Ok(Value::Object(output))
+     }
+ }
+ 
+@@ -225,7 +263,7 @@ pub(in crate::plugins) fn state_cookie_name(config: &AuthConfig) -> String {
+ }
+ 
+ pub(super) fn account_cookie_name(config: &AuthConfig) -> String {
+-    related_cookie_name(config, "account_data")
++    better_auth_core::utils::cookie_utils::related_cookie_name(config, "account_data")
+ }
+ 
+ /// Sign the database-backed state's correlation cookie using Better Call's wire format.
