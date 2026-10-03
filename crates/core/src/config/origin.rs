@@ -114,7 +114,7 @@ impl AuthConfig {
                     if matches!(
                         dynamic.protocol,
                         Some(BaseUrlProtocol::Http | BaseUrlProtocol::Auto)
-                    ) || loopback(host)
+                    ) || trusted_loopback(host)
                     {
                         config.trusted_origins.push(format!("http://{host}"));
                     }
@@ -175,6 +175,34 @@ fn loopback(host: &str) -> bool {
         || hostname.starts_with("127.")
 }
 
+// Trusted-origin generation uses the server classifier, rather than the
+// deliberately permissive dev-scheme heuristic above (e.g. 127.example.test).
+fn trusted_loopback(host: &str) -> bool {
+    let host = host.trim().to_ascii_lowercase();
+    let hostname = if let Some(bracketed) = host.strip_prefix('[') {
+        bracketed.split(']').next().unwrap_or(bracketed)
+    } else if host.matches(':').count() == 1 {
+        host.split(':').next().unwrap_or(&host)
+    } else {
+        &host
+    };
+    let hostname = hostname
+        .split('%')
+        .next()
+        .unwrap_or(hostname)
+        .trim_end_matches('.');
+    hostname == "localhost"
+        || hostname.ends_with(".localhost")
+        || hostname
+            .parse::<std::net::IpAddr>()
+            .is_ok_and(|ip| match ip {
+                std::net::IpAddr::V4(ip) => ip.is_loopback(),
+                std::net::IpAddr::V6(ip) => {
+                    ip.is_loopback() || ip.to_ipv4_mapped().is_some_and(|ip| ip.is_loopback())
+                }
+            })
+}
+
 fn valid_host(host: &str) -> bool {
     // Source validateProxyHeader: DNS labels, IPv4 or bracketed IPv6 and a
     // one-to-five digit port; no whitespace, userinfo, path or delimiter tricks.
@@ -185,25 +213,50 @@ fn valid_host(host: &str) -> bool {
         .is_ok_and(|pattern| pattern.is_match(host))
 }
 
-// Source wildcardMatch with its default (no separator): only * and ? are
-// metacharacters and backslash escapes the following character.
+// Source wildcardMatch defaults to slash/backslash separators. `**` is
+// recursive only as a complete segment; ordinary `*` and `?` stay within it.
 fn wildcard(pattern: &str, value: &str) -> bool {
-    let mut regex = String::from("\\A");
-    let mut chars = pattern.chars();
-    while let Some(character) = chars.next() {
-        match character {
-            '*' => regex.push_str(".*?"),
-            '?' => regex.push('.'),
-            '\\' => {
-                if let Some(escaped) = chars.next() {
-                    regex.push_str(&regex::escape(&escaped.to_string()));
-                }
-            }
-            literal => regex.push_str(&regex::escape(&literal.to_string())),
+    let separator = r"[/\\]";
+    let wildcard = r"[^/\\]";
+    let segments: Vec<_> = pattern.split('/').collect();
+    let mut expression = String::from("\\A");
+    for (index, segment) in segments.iter().enumerate() {
+        if segment.is_empty() && index > 0 {
+            continue;
         }
+        let current_separator = if index + 1 == segments.len() {
+            format!("{separator}*?")
+        } else if segments.get(index + 1) != Some(&"**") {
+            format!("{separator}+?")
+        } else {
+            String::new()
+        };
+        if *segment == "**" {
+            if !current_separator.is_empty() {
+                if index > 0 {
+                    expression.push_str(&current_separator);
+                }
+                expression.push_str(&format!("(?:{wildcard}*?{current_separator})*?"));
+            }
+            continue;
+        }
+        let mut chars = segment.chars();
+        while let Some(character) = chars.next() {
+            match character {
+                '*' => expression.push_str(&format!("{wildcard}*?")),
+                '?' => expression.push_str(wildcard),
+                '\\' => {
+                    if let Some(escaped) = chars.next() {
+                        expression.push_str(&regex::escape(&escaped.to_string()));
+                    }
+                }
+                literal => expression.push_str(&regex::escape(&literal.to_string())),
+            }
+        }
+        expression.push_str(&current_separator);
     }
-    regex.push_str("\\z");
-    regex::Regex::new(&regex).is_ok_and(|compiled| compiled.is_match(value))
+    expression.push_str("\\z");
+    regex::Regex::new(&expression).is_ok_and(|compiled| compiled.is_match(value))
 }
 
 pub(super) fn matches_origin(value: &str, pattern: &str) -> bool {
@@ -286,7 +339,7 @@ fn custom_parts(value: &str) -> Option<(String, String, String)> {
     for segment in decoded.as_deref().unwrap_or(path).split('/') {
         match segment {
             ".." => {
-                segments.pop();
+                _ = segments.pop();
             }
             "." | "" => {}
             value => segments.push(value),

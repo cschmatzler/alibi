@@ -1009,15 +1009,12 @@ impl AuthConfig {
         self
     }
 
-    /// Check whether a given origin is trusted.
+    /// Check the resolved base origin or a configured trusted pattern.
     ///
-    /// An origin is trusted if it matches:
-    /// 1. The origin extracted from [`base_url`](Self::base_url), or
-    /// 2. Any pattern in [`trusted_origins`](Self::trusted_origins) (after
-    ///    extracting the origin portion from the pattern).
-    ///
-    /// Glob patterns are supported — `*` matches any characters except `/`,
-    /// `**` matches any characters including `/`.
+    /// Explicit patterns follow Better Auth 1.7.6: `*` and `?` match URL origins
+    /// (or hosts for patterns without a scheme), while custom schemes retain
+    /// authority and normalized path-prefix constraints. Resolve dynamic policies
+    /// with [`resolve_request`](Self::resolve_request) before evaluating them.
     #[must_use]
     pub fn is_origin_trusted(&self, origin: &str) -> bool {
         // Check base_url origin
