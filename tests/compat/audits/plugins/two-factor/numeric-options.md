@@ -44,3 +44,21 @@ nonfinite/TimeClip-invalid dates fail. Probes never request nonterminating
 lengths, massive arrays, or unbounded output. OAuth providers, organization
 configuration, raw quotas #378, schema, dependencies and comparisons are outside
 this change.
+
+Focused proof on base `25a034e68ab8307b84d8a58b08a3f82c1a0394f4`:
+SQLx passed 42 scenarios in the first grouped run and the remaining three
+invalid-TOTP scenarios after correcting their typed token observation;
+SeaORM passed all 45 scenarios / 6290 assertions in one grouped run. The OTP
+owner was checked after preserving Source's multiplication order. Only failed
+or affected cases were repeated. Raw Source/SeaORM pairs and SQLx error pairs,
+Source probes, pre-fix fractional-HMAC and cancellation failures, and all logs
+remain under `/tmp/issue201-evidence`. Formatting, TypeScript, scoped lint,
+production API Clippy and diff checks passed. Actions are disabled. No full
+suite, coverage campaign or dependency corruption was run. Published tarball
+bytes match all four inspected two-factor modules and both utility modules.
+
+The only comparator change registers the explicit numeric TOTP fixtures with
+the existing signed-challenge owner and fixed 600-second lifetime validation.
+It does not exempt a field, response, signature, owner, date or transport value.
+Token observations use the existing `{ token: value }` representation; their
+full local challenge/attempt state remains asserted before and after errors.

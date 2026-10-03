@@ -1309,7 +1309,6 @@ async fn mark_factor_verified(
     clippy::as_conversions,
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
-    clippy::cast_sign_loss,
     clippy::suboptimal_flops,
     reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
 )]
@@ -2111,10 +2110,11 @@ fn totp_counter(config: &TwoFactorConfig) -> f64 {
 }
 
 #[expect(
+    clippy::indexing_slicing,
     clippy::as_conversions,
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
-    reason = "Guarded IEEE754 remainder implements BigInt to unsigned 64-bit counter and padStart ToLength"
+    reason = "Guarded IEEE754 counter/length conversion; SHA1 is 20 bytes and every truncated digest index is in 0..=19"
 )]
 fn generate_totp_at(
     config: &TwoFactorConfig,

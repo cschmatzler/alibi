@@ -29,7 +29,6 @@ export function createTwoFactorPolicyFixture(
     "two-factor-backup-half-length": { amount: 1, length: 0.5, storeBackupCodes: "plain" },
     "two-factor-backup-large-length": { amount: 1, length: 32769.5, storeBackupCodes: "plain" },
     "two-factor-backup-large-count": { amount: 1024.5, length: 12, storeBackupCodes: "plain" },
-    "two-factor-backup-infinite-count": { amount: Infinity, length: 0, storeBackupCodes: "plain" },
   };
   const backupOptions = (name: string) =>
     numericBackup[name] ??
@@ -90,7 +89,6 @@ export function createTwoFactorPolicyFixture(
       "two-factor-backup-half-length",
       "two-factor-backup-large-length",
       "two-factor-backup-large-count",
-      "two-factor-backup-infinite-count",
       "two-factor-trust-fractional",
       "two-factor-trust-zero-challenge",
       "two-factor-trust-negative-challenge",

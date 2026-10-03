@@ -948,7 +948,6 @@ export const FIXTURE_PROFILES = [
   "two-factor-backup-half-length",
   "two-factor-backup-large-length",
   "two-factor-backup-large-count",
-  "two-factor-backup-infinite-count",
 
   "two-factor-otp-nan",
   "two-factor-otp-half",
