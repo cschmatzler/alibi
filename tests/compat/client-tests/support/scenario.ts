@@ -365,6 +365,7 @@ export function compatScenario(
     readonly oauthProxyProfileManagedKeys?: ComparisonContext["oauthProxyProfileManagedKeys"];
     readonly sessionCookieSecretsByAuthPath?: Readonly<Record<string, string>>;
     readonly managedAccountCookieProfiles?: ComparisonContext["managedAccountCookieProfiles"];
+    readonly remoteJwtSignerSecret?: ComparisonContext["remoteJwtSignerSecret"];
     /** Deliberate unrouted or failing reference requests; see `support/oracle.ts`. */
     readonly oracle?: OracleExpectations;
   } = {},

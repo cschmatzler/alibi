@@ -177,3 +177,73 @@ pass (/tmp/pr289-all-client-statics.log). The repaired scenario also passes
 70/70 genuine Source-self owners with the same 2,450 assertions
 (/tmp/pr289-source-self-final-style.log). Second early-stop log:
 /tmp/pr289-canonical-final.log. Restart the full gate on this validated style.
+
+After the T3 update, the complete gate on 5d9fb40b is interrupted by SIGTERM
+while the SDK browser fixture compiles; preserve /tmp/pr289-canonical-complete.log.
+A fresh unchanged canonical invocation with isolated /tmp/better-auth-pr289-target
+terminates 100 at the full SDK stage: 1,713/1,714 scenarios and 119,478 assertions.
+All 70 LINE owners pass; the sole failure is the current-main remote-JWT null
+application-signer owner, with four literal exp differences. Both strict Clippy
+configurations, rustls, format/lint/typecheck, native 788/788 and optional 841/841,
+fixture 2/2, doctests, route inventory, harness 89/2,367 and Chromium 2/22 pass
+first. Exact log: /tmp/pr289-resumed-canonical.log. The script stops before
+its documentation and coverage stages. An auxiliary warning-free documentation
+run passes; its coverage compile is deliberately interrupted before SDK work
+while the shared owner is investigated (/tmp/pr289-resumed-docs-coverage.log).
+Neither interrupted nor partial invocation supplies a canonical-pass claim.
+
+Actual unchanged pinned signJWT uses its 15-minute default for exp:null with
+nullish iat, retaining iat:null. Independently authenticated complete request,
+original signed response and callback receipts reproduce a one-second expiry
+difference three times with Source/Source and three with Source/native;
+explicit iat:100 controls produce exact exp:1000. Windows use actual HTTP start
+and finish times; no clock is substituted. Complete original proof remains at
+/tmp/pr289-null-exact-receipts.json. The exact unchanged owner repeats naturally
+12/12 Source-self and 10/12 Source/native; two native failures have the same
+four exp paths (/tmp/pr289-null-owner-repeat-results.json). Delaying only the
+second actual sign request across a natural second boundary makes the unchanged
+Source-self owner fail 3/3 with those four paths and 20 assertions per run:
+/tmp/pr289-null-source-self-boundary-{0,1,2}.log. Full original HTTP input,
+signed output and callback capture: /tmp/pr289-null-source-self-boundary-receipts.json.
+This is executable Source-self before proof, not a product mismatch or a
+provider-specific exemption.
+
+The reviewed repair preserves every original token, exp, iat and callback field.
+A private transport receipt binds the exact observed raw-profile POST sign input,
+null exp/iat, signing overrides and header to the original signed response and
+request interval. Independent HMAC verification retains the real HS256 signer
+and key policy. The full signed claims must equal the exact projected input and
+actual observer callback, including original ownKeys/header/options; proof copies
+must reference the original token. Only four complete producer-bound observation
+paths can admit the exact request-derived 900-second default. Unrelated claims,
+explicit caller expiry, other profiles and all other comparison paths remain
+literal. Production, installed Source, fixtures, dependency pins, main evidence
+requirements and coverage scripts/floors are unchanged.
+
+The new comparator owner uses the actual installed public signJWT and real
+application signing callback over HTTP, rather than a fixture supplying expiry.
+It first requires the four before-drift paths, then passes 33 assertions while
+rejecting coherent re-signed wrong expiry/outside-window claims, literal explicit
+expiry even at a coincidental signing epoch, changed iat/profile, altered copies,
+foreign signing keys/headers, missing receipts and unrelated application data.
+Authoring gate: this distinct owner protects comparator admission and original
+publication integrity, which LINE or JWT SDK success alone cannot enforce; it
+adds no production seam. Before failure: /tmp/pr289-null-harness-before.log.
+After proof: /tmp/pr289-null-harness-after.log and /tmp/pr289-null-focused-pass.log.
+The first formatting/typecheck iterations retain their terminal outcomes at
+/tmp/pr289-null-statics.log, /tmp/pr289-null-statics-repair.log and
+/tmp/pr289-null-statics-final.log; final format/lint/typecheck passes at
+/tmp/pr289-null-statics-pass.log. No source or test is edited during a running
+Bun scenario collection.
+
+Focused complete harness now passes 90/90 and 2,400 assertions. The exact natural
+boundary Source-self owner passes 3/3 with retained raw signed outputs:
+/tmp/pr289-null-source-self-after-boundary-{0,1,2}.log. Actual Source/native
+combined LINE and remote-JWT owners pass 85/85 with 2,908 assertions
+(/tmp/pr289-null-line-native-proof.log); another twelve Source-self and twelve
+Source/native exact-null runs all pass (/tmp/pr289-null-after-owner-repeat-results.json).
+Independent requirement recount preserves all 5,742 parent entries, including
+four existing parent duplicates, plus 262 actual LINE additions: 6,004 entries,
+6,000 distinct triples. Every addition is independently backed by the retained
+370 raw LINE trace cells (/tmp/pr289-independent-requirement-recount.json).
+The complete unchanged canonical gate is still required after this repair.
