@@ -248,7 +248,7 @@ pub async fn stored_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
         ctx.trusted_session_view(session),
     )
     .with_public_projection(ctx.user_view(user), ctx.session_view(session));
-    build_headers(ctx, context, headers, dont_remember).await
+    build_headers(ctx, context, headers, dont_remember, None).await
 }
 
 async fn stored_read_headers<S: AuthSchema>(
@@ -275,7 +275,7 @@ async fn stored_read_headers<S: AuthSchema>(
             .map(|output| output.filter_returned(session_fields)),
     )
     .with_public_projection(ctx.user_view(user), ctx.session_view(session));
-    build_headers(ctx, context, headers, false).await
+    build_headers(ctx, context, headers, false, None).await
 }
 
 async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
@@ -283,6 +283,7 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     context: CacheVersionContext,
     headers: &std::collections::HashMap<String, String, H>,
     dont_remember: bool,
+    transaction: Option<&dyn crate::store::AuthTransaction<S>>,
 ) -> AuthResult<Vec<String>> {
     let Some(config) = ctx
         .config
@@ -293,20 +294,50 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     else {
         return Ok(Vec::new());
     };
-    super::validate_config(config)?;
     let version = match &config.version {
         Some(policy) => policy.resolve(&context).await?,
         None => "1".into(),
     };
-    let value = super::encode_compact(
-        context.public_user(),
-        context.public_session(),
-        &version,
-        chrono::Utc::now().timestamp_millis(),
-        config.max_age,
-        dont_remember,
-        ctx.config.current_secret(),
-    )?;
+    let now = chrono::Utc::now().timestamp_millis();
+    let value = match config.strategy {
+        crate::CookieCacheStrategy::Compact => super::encode_compact(
+            context.public_user(),
+            context.public_session(),
+            &version,
+            now,
+            config.max_age,
+            dont_remember,
+            ctx.config.current_secret(),
+        )?,
+        crate::CookieCacheStrategy::Jwt | crate::CookieCacheStrategy::Jwe => {
+            let payload = super::jwt::payload(
+                context.public_user(),
+                context.public_session(),
+                &version,
+                now,
+            )?;
+            let max_age = if dont_remember {
+                300.0
+            } else {
+                super::effective_max_age(config.max_age)
+            };
+            if config.strategy == crate::CookieCacheStrategy::Jwe {
+                crate::utils::jwe::encode(
+                    ctx.config.current_secret(),
+                    "better-auth-session",
+                    &payload,
+                    max_age,
+                )?
+            } else if let Some(signer) = ctx
+                .extensions
+                .get::<super::jwt::CookieCacheSignerHandle<S>>()
+            {
+                signer.0.sign(payload, max_age, ctx, transaction).await?
+            } else {
+                super::jwt::encode(payload, ctx.config.current_secret(), max_age)?
+            }
+        }
+    };
     let name = related_cookie_name(&ctx.config, "session_data");
     let max_age = (!dont_remember).then(|| super::effective_max_age(config.max_age));
     let empty_header = super::cookie_header(&format!("{name}.99"), "", max_age, &ctx.config)?;
@@ -374,14 +405,36 @@ pub async fn emit_issuance<S: AuthSchema>(
 /// # Errors
 /// Propagates cookie encoding and configured cache-version callback errors.
 #[doc(hidden)]
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_precision_loss,
-    reason = "Preserve JavaScript Number rounding at the compatibility boundary"
-)]
 pub async fn emit_issuance_snapshot<S: AuthSchema>(
     ctx: &AuthContext<S>,
     context: CacheVersionContext,
+) -> AuthResult<()> {
+    emit_snapshot_inner(ctx, context, None).await
+}
+
+/// Publish a newly created session before committing its actual transaction.
+///
+/// # Errors
+/// Propagates transactional signing-key access and cookie encoding failures.
+pub async fn emit_issuance_in_transaction<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    user: &impl AuthUser,
+    session: &impl AuthSession,
+    transaction: &dyn crate::store::AuthTransaction<S>,
+) -> AuthResult<()> {
+    let context = CacheVersionContext::created(
+        user.clone(),
+        session.clone(),
+        ctx.trusted_user_view(user),
+        ctx.trusted_session_view(session),
+    );
+    emit_snapshot_inner(ctx, context, Some(transaction)).await
+}
+
+async fn emit_snapshot_inner<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    context: CacheVersionContext,
+    transaction: Option<&dyn crate::store::AuthTransaction<S>>,
 ) -> AuthResult<()> {
     let public_user = ctx.user_view(context.user());
     let public_session = ctx.session_view(context.session());
@@ -436,7 +489,11 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
                 ctx.config.current_secret(),
             ))
             .decode_utf8_lossy(),
-            (!dont_remember).then(|| ctx.config.session.expires_in.num_seconds() as f64),
+            (!dont_remember)
+                .then(|| {
+                    serde_json::Number::from(ctx.config.session.expires_in.num_seconds()).as_f64()
+                })
+                .flatten(),
             &ctx.config,
         )?;
         let mut data = pending
@@ -457,7 +514,7 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
             )?);
         }
     }
-    match build_headers(ctx, context, &headers, dont_remember).await {
+    match build_headers(ctx, context, &headers, dont_remember, transaction).await {
         Ok(cache_headers) => {
             if let Some(pending) = pending {
                 let mut data = pending
@@ -545,8 +602,33 @@ pub async fn read<S: AuthSchema>(
     };
     let config =
         enabled.ok_or_else(|| AuthError::internal("Missing enabled cache configuration"))?;
-    super::validate_config(config)?;
-    if let Some(cache) = super::decode_compact(&value, ctx.config.current_secret())
+    let decoded = match config.strategy {
+        crate::CookieCacheStrategy::Compact => {
+            super::decode_compact(&value, ctx.config.current_secret())
+        }
+        crate::CookieCacheStrategy::Jwt => {
+            if let Some(signer) = ctx
+                .extensions
+                .get::<super::jwt::CookieCacheSignerHandle<S>>()
+            {
+                signer
+                    .0
+                    .verify(&value, ctx)
+                    .await?
+                    .and_then(|claims| super::jwt::decode_payload(&claims.into(), 15.0))
+            } else {
+                super::jwt::decode(&value, ctx.config.current_secret())
+            }
+        }
+        crate::CookieCacheStrategy::Jwe => ctx
+            .config
+            .verification_secrets()
+            .find_map(|secret| {
+                crate::utils::jwe::decode(secret, "better-auth-session", &value).ok()
+            })
+            .and_then(|claims| super::jwt::decode_payload(&claims.into(), 15.0)),
+    };
+    if let Some(cache) = decoded
         && let CacheValidation::Hit(cache) = super::validate_compact(
             cache,
             &token,

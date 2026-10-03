@@ -576,6 +576,7 @@ dependencies = [
 name = "better-auth-core"
 version = "1.0.0-alpha.3"
 dependencies = [
+ "aes-gcm",
  "async-trait",
  "axum",
  "base64 0.22.1",
@@ -585,6 +586,7 @@ dependencies = [
  "cookie",
  "futures-util",
  "glob-match",
+ "hkdf 0.12.4",
  "hmac 0.12.1",
  "indexmap 2.13.0",
  "jsonwebtoken",

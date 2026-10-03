@@ -5,27 +5,42 @@ use async_trait::async_trait;
 use better_auth_core::error::AuthResult;
 use better_auth_core::store::JwkStore;
 use better_auth_core::types::{CreateJwk, Jwk};
-use sea_orm::{ActiveModelTrait, EntityTrait, QuerySelect, Set};
+use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, QuerySelect, Set};
 use sea_orm_migration::prelude::*;
 
-#[async_trait]
-impl<S: AuthSchema> JwkStore for SeaOrmStore<S> {
-    async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
+impl<S: AuthSchema> SeaOrmStore<S> {
+    pub(super) async fn list_jwks_with_connection<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+    ) -> AuthResult<Vec<Jwk>> {
+        let limit =
+            <u64 as TryFrom<_>>::try_from(self.config().advanced.database.default_find_many_limit)
+                .map_err(|_error| {
+                    better_auth_core::AuthError::config("Invalid keyring result limit")
+                })?;
         Entity::find()
-            .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .limit(limit)
+            .all(connection)
             .await
             .map(|rows| rows.into_iter().map(Into::into).collect())
             .map_err(map_db_err)
     }
-    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<Jwk>> {
+    pub(super) async fn get_jwk_with_connection<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        id: &str,
+    ) -> AuthResult<Option<Jwk>> {
         Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(connection)
             .await
             .map(|row| row.map(Into::into))
             .map_err(map_db_err)
     }
-    async fn create_jwk(&self, data: CreateJwk) -> AuthResult<Jwk> {
+    pub(super) async fn create_jwk_with_connection<C: ConnectionTrait>(
+        &self,
+        connection: &C,
+        data: CreateJwk,
+    ) -> AuthResult<Jwk> {
         ActiveModel {
             id: Set(data.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
             public_key: Set(data.public_key),
@@ -35,10 +50,23 @@ impl<S: AuthSchema> JwkStore for SeaOrmStore<S> {
             alg: Set(data.alg),
             crv: Set(data.crv),
         }
-        .insert(self.connection())
+        .insert(connection)
         .await
         .map(Into::into)
         .map_err(map_db_err)
+    }
+}
+#[async_trait]
+impl<S: AuthSchema> JwkStore for SeaOrmStore<S> {
+    async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
+        self.list_jwks_with_connection(self.connection()).await
+    }
+    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<Jwk>> {
+        self.get_jwk_with_connection(self.connection(), id).await
+    }
+    async fn create_jwk(&self, data: CreateJwk) -> AuthResult<Jwk> {
+        self.create_jwk_with_connection(self.connection(), data)
+            .await
     }
 }
 

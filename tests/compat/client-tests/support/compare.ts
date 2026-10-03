@@ -1,4 +1,12 @@
-import { createHash, createHmac, createPublicKey, timingSafeEqual, verify } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  timingSafeEqual,
+  hkdfSync,
+  createDecipheriv,
+  createPublicKey,
+  verify,
+} from "node:crypto";
 
 import { sessionSchema, userSchema } from "@better-auth/core/db";
 import { safeJSONParse } from "@better-auth/core/utils/json";
@@ -2766,9 +2774,206 @@ export function compareValues(
       }
     }
   }
-
   observedCompactHeaders(normalizedLeft, normalizedRight);
-
+  function authenticatedSessionCache(
+    value: Record<string, unknown>,
+    start: number,
+    end = start,
+  ): boolean {
+    if (
+      Object.keys(value).sort().join(",") !==
+        (Object.hasOwn(value, "authPath") ? "authPath," : "") +
+          (value.strategy === "managed"
+            ? "decoded,effectiveMaxAgeSeconds,header,jwks,payload,rawCookies,strategy,token"
+            : "decoded,effectiveMaxAgeSeconds,header,payload,rawCookies,strategy,token") ||
+      !context.sessionCookieSecret ||
+      typeof value.token !== "string" ||
+      !record(value.header) ||
+      !record(value.payload) ||
+      !record(value.decoded) ||
+      !compactCookieHeaders(value) ||
+      value.effectiveMaxAgeSeconds !== 300
+    ) {
+      return false;
+    }
+    const secret =
+      typeof value.authPath === "string"
+        ? context.sessionCookieSecretsByAuthPath?.[value.authPath]
+        : context.sessionCookieSecret;
+    if (!secret) return false;
+    const parts = value.token.split(".");
+    try {
+      const header = JSON.parse(Buffer.from(parts[0]!, "base64url").toString());
+      if (!exactCacheCopy(header, value.header)) return false;
+      let claims: unknown;
+      if (value.strategy === "jwe") {
+        if (
+          parts.length !== 5 ||
+          parts[1] !== "" ||
+          header.alg !== "dir" ||
+          header.enc !== "A256CBC-HS512"
+        ) {
+          return false;
+        }
+        const key = Buffer.from(
+          hkdfSync(
+            "sha256",
+            secret,
+            "better-auth-session",
+            "BetterAuth.js Generated Encryption Key",
+            64,
+          ),
+        );
+        const kid = createHash("sha256")
+          .update(JSON.stringify({ k: key.toString("base64url"), kty: "oct" }))
+          .digest("base64url");
+        if (header.kid !== kid) return false;
+        const iv = Buffer.from(parts[2]!, "base64url");
+        const ciphertext = Buffer.from(parts[3]!, "base64url");
+        const tag = Buffer.from(parts[4]!, "base64url");
+        const al = Buffer.alloc(8);
+        al.writeBigUInt64BE(BigInt(Buffer.byteLength(parts[0]!) * 8));
+        const expected = createHmac("sha512", key.subarray(0, 32))
+          .update(parts[0]!)
+          .update(iv)
+          .update(ciphertext)
+          .update(al)
+          .digest()
+          .subarray(0, 32);
+        if (tag.length !== 32 || !timingSafeEqual(tag, expected)) return false;
+        const cipher = createDecipheriv("aes-256-cbc", key.subarray(32), iv);
+        claims = JSON.parse(Buffer.concat([cipher.update(ciphertext), cipher.final()]).toString());
+      } else {
+        if (parts.length !== 3) return false;
+        const input = Buffer.from(`${parts[0]}.${parts[1]}`);
+        const signature = Buffer.from(parts[2]!, "base64url");
+        if (value.strategy === "jwt") {
+          if (header.alg !== "HS256" || Object.keys(header).join(",") !== "alg") return false;
+          const expected = createHmac("sha256", secret).update(input).digest();
+          if (signature.length !== expected.length || !timingSafeEqual(signature, expected)) {
+            return false;
+          }
+        } else if (value.strategy === "managed") {
+          if (
+            header.alg !== "EdDSA" ||
+            header.typ !== "better-auth.session-cache+jwt" ||
+            !Array.isArray(value.jwks)
+          ) {
+            return false;
+          }
+          const jwk = value.jwks.find((key) => record(key) && key.kid === header.kid);
+          if (
+            !record(jwk) ||
+            !verify(null, input, createPublicKey({ key: jwk, format: "jwk" }), signature)
+          ) {
+            return false;
+          }
+        } else return false;
+        claims = JSON.parse(Buffer.from(parts[1]!, "base64url").toString());
+      }
+      if (
+        !record(claims) ||
+        !exactCacheCopy(claims, value.payload) ||
+        !record(claims.user) ||
+        !record(claims.session) ||
+        typeof claims.updatedAt !== "number" ||
+        claims.updatedAt < start ||
+        claims.updatedAt > end ||
+        typeof claims.iat !== "number" ||
+        claims.iat < Math.floor(claims.updatedAt / 1000) ||
+        claims.iat > Math.floor(end / 1000) ||
+        typeof claims.exp !== "number" ||
+        claims.exp - claims.iat !== 300 ||
+        claims.user.id !== claims.session.userId ||
+        claims.version !== "1"
+      ) {
+        return false;
+      }
+      if (
+        value.strategy === "managed" &&
+        (claims.sub !== claims.user.id ||
+          claims.sid !== claims.session.token ||
+          claims.aud !== "better-auth:session-cache" ||
+          claims.iss !== "https://session-cache.fixture.test")
+      ) {
+        return false;
+      }
+      if (
+        value.strategy === "jwe" &&
+        (typeof claims.jti !== "string" ||
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+            claims.jti,
+          ))
+      ) {
+        return false;
+      }
+      if (Object.hasOwn(value, "authPath")) {
+        const userId = claims.user.id;
+        const sessionToken = claims.session.token;
+        const ownIssuance = [...issuances.entries()].some(([pair, receipt]) => {
+          const [leftToken, rightToken] = JSON.parse(pair) as [string, string];
+          return (
+            receipt.authPath === value.authPath &&
+            signedCookieIssuances.has(pair) &&
+            ((receipt.leftUser === userId && leftToken === sessionToken) ||
+              (receipt.rightUser === userId && rightToken === sessionToken))
+          );
+        });
+        if (!ownIssuance) return false;
+      }
+      return exactCacheCopy(claims, value.decoded);
+    } catch {
+      return false;
+    }
+  }
+  function observedSessionCache(a: unknown, b: unknown) {
+    if (Array.isArray(a) && Array.isArray(b)) {
+      a.forEach((child, index) => observedSessionCache(child, b[index]));
+      return;
+    }
+    if (!record(a) || !record(b)) return;
+    for (const [key, child] of Object.entries(a)) {
+      const other = b[key];
+      if (
+        key === "sessionCache" &&
+        record(child) &&
+        record(other) &&
+        authenticatedSessionCache(child, context.leftStartedAt, context.leftFinishedAt) &&
+        authenticatedSessionCache(other, context.rightStartedAt, context.rightFinishedAt)
+      ) {
+        const leftPayload = child.payload as Record<string, unknown>;
+        const rightPayload = other.payload as Record<string, unknown>;
+        const leftSession = leftPayload.session as Record<string, unknown>;
+        const rightSession = rightPayload.session as Record<string, unknown>;
+        const pair = JSON.stringify([leftSession.token, rightSession.token]);
+        const issuance = issuances.get(pair);
+        if (
+          !issuance ||
+          !signedCookieIssuances.has(pair) ||
+          issuance.leftUser !== leftSession.userId ||
+          issuance.rightUser !== rightSession.userId
+        ) {
+          continue;
+        }
+        const leftCookies = child.rawCookies as string[];
+        const rightCookies = other.rawCookies as string[];
+        if (leftCookies.length !== rightCookies.length) continue;
+        leftCookies.forEach((raw, index) => {
+          const lc = Cookie.parse(raw);
+          const rc = Cookie.parse(rightCookies[index]!);
+          if (lc && rc && lc.key === rc.key && lc.value && rc.value) {
+            compactHeaderIssuances.set(JSON.stringify([lc.value, rc.value]), [
+              String(leftSession.token),
+              String(rightSession.token),
+            ]);
+          }
+        });
+      } else if (!["metadata", "additionalFields", "custom", "applicationData"].includes(key)) {
+        observedSessionCache(child, other);
+      }
+    }
+  }
+  observedSessionCache(normalizedLeft, normalizedRight);
   function cacheClock(a: number, b: number, path: string) {
     if (a !== b && Math.abs(a - context.leftStartedAt - (b - context.rightStartedAt)) > 1500) {
       fail(path, "compact cache timestamp differs");
@@ -3015,21 +3220,32 @@ export function compareValues(
       fail(path, "signed session cookie does not match corresponding observed issuance");
       return true;
     }
-
     const cachePattern = setCookie
-      ? /(?:^|,\s*)(better-auth\.session_data)=([^;,\s]*)/g
-      : /(?:^|;\s*)(better-auth\.session_data)=([^;\s]*)/g;
-    const leftCache = [...a.matchAll(cachePattern)];
-    const rightCache = [...b.matchAll(cachePattern)];
-
+      ? /(?:^|,\s*)(better-auth\.session_data(?:\.\d+)?)=([^;,\s]*)/g
+      : /(?:^|;\s*)(better-auth\.session_data(?:\.\d+)?)=([^;\s]*)/g;
+    const effectiveCache = (raw: string) => {
+      const matches = [...raw.matchAll(cachePattern)];
+      const base = matches.filter((match) => match[1] === "better-auth.session_data");
+      // The live base cookie takes precedence. Unselected chunk bytes remain
+      // literal in the complete scaffold, including any duplicate or foreign data.
+      return base.length ? base : matches;
+    };
+    const leftCache = effectiveCache(a);
+    const rightCache = effectiveCache(b);
     if (leftCache.length || rightCache.length) {
-      const pair =
-        leftCache.length === 1 && rightCache.length === 1
-          ? compactHeaderIssuances.get(JSON.stringify([leftCache[0]![2], rightCache[0]![2]]))
-          : undefined;
-      if (!pair || pair[0] !== ac.token || pair[1] !== bc.token) {
+      if (leftCache.length !== rightCache.length) {
         fail(path, "compact cookie does not match authenticated corresponding session issuance");
         return true;
+      }
+      for (let index = 0; index < leftCache.length; index++) {
+        const lc = leftCache[index]!;
+        const rc = rightCache[index]!;
+        const pair =
+          lc[1] === rc[1] ? compactHeaderIssuances.get(JSON.stringify([lc[2], rc[2]])) : undefined;
+        if (!pair || pair[0] !== ac.token || pair[1] !== bc.token) {
+          fail(path, "compact cookie does not match authenticated corresponding session issuance");
+          return true;
+        }
       }
     }
 
@@ -4088,6 +4304,77 @@ export function compareValues(
         return;
       }
 
+      if (key === "sessionCache" && !applicationData && !traceShape(path)) {
+        if (
+          !authenticatedSessionCache(a, context.leftStartedAt, context.leftFinishedAt) ||
+          !authenticatedSessionCache(b, context.rightStartedAt, context.rightFinishedAt)
+        ) {
+          fail(path, "session-cache authentication or provenance differs");
+          return;
+        }
+        if (a.strategy !== b.strategy) fail(path, "session-cache strategy differs");
+        if (a.authPath !== b.authPath) {
+          fail(`${path}.authPath`, "session-cache issuer path differs");
+        }
+        identity(String(a.token), String(b.token), `${path}.token`, "token");
+        visit(compactCookieHeaders(a), compactCookieHeaders(b), `${path}.rawCookies`, "");
+        visit(a.header, b.header, `${path}.header`, "", false, false, true);
+        const compareClaims = (
+          left: Record<string, unknown>,
+          right: Record<string, unknown>,
+          target: string,
+        ) => {
+          for (const child of [...new Set([...Object.keys(left), ...Object.keys(right)])].sort()) {
+            if (!Object.hasOwn(left, child) || !Object.hasOwn(right, child)) {
+              fail(`${target}.${child}`, "claim presence differs");
+              continue;
+            }
+            if (
+              child === "updatedAt" &&
+              typeof left[child] === "number" &&
+              typeof right[child] === "number"
+            ) {
+              cacheClock(left[child] as number, right[child] as number, `${target}.${child}`);
+            } else if (["iat", "exp"].includes(child)) {
+              clock(Number(left[child]), Number(right[child]), `${target}.${child}`);
+            } else if (child === "jti") {
+              identity(
+                String(left[child]),
+                String(right[child]),
+                `${target}.${child}`,
+                "encrypted-jwt-id",
+              );
+            } else {
+              visit(
+                left[child],
+                right[child],
+                `${target}.${child}`,
+                child === "iss"
+                  ? "issuerURL"
+                  : child === "sid"
+                    ? "token"
+                    : child === "sub"
+                      ? "userId"
+                      : child,
+              );
+            }
+          }
+        };
+        compareClaims(
+          a.payload as Record<string, unknown>,
+          b.payload as Record<string, unknown>,
+          `${path}.payload`,
+        );
+        compareClaims(
+          a.decoded as Record<string, unknown>,
+          b.decoded as Record<string, unknown>,
+          `${path}.decoded`,
+        );
+        if (Object.hasOwn(a, "jwks") !== Object.hasOwn(b, "jwks")) {
+          fail(path, "JWKS presence differs");
+        } else if (a.jwks) visit(a.jwks, b.jwks, `${path}.jwks`, "");
+        return;
+      }
       if (key === "accountCookie" && !applicationData && !traceShape(path)) {
         if (!encryptedAccountCookie(a) || !encryptedAccountCookie(b)) {
           fail(path, "authenticated encrypted account-cookie envelope differs");
