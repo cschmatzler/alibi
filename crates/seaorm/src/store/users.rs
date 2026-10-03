@@ -618,7 +618,7 @@ where
                     operands.iter().cloned().map(Into::into).collect()
                 };
                 let tuple = || {
-                    Expr::tuple(bindings.iter().cloned().map(|value| {
+                    Expr::tuple(bindings.iter().map(|value| {
                         numeric_cast.map_or_else(
                             || column.save_as(Expr::val(value.clone())),
                             |cast| Expr::cust_with_values(format!("$1::{cast}"), [value.clone()]),

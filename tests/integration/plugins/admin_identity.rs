@@ -1373,17 +1373,25 @@ mod postgres_numeric_columns {
         }
     }
     async fn install(raw: &sqlx::PgPool) -> TestResult {
-        _ = sqlx::query("CREATE TABLE app_people (id text PRIMARY KEY, mailbox text UNIQUE, name text, email_verified boolean NOT NULL, image text, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL, score32 integer NOT NULL, score64 bigint NOT NULL, real32 real NOT NULL, real64 double precision NOT NULL)").execute(raw).await?;
+        _ = sqlx::query("CREATE TABLE app_people (id text PRIMARY KEY, mailbox text UNIQUE, name text, email_verified boolean NOT NULL, image text, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL, score32 integer NOT NULL DEFAULT 0, score64 bigint NOT NULL DEFAULT 0, real32 real NOT NULL DEFAULT 0, real64 double precision NOT NULL DEFAULT 0)").execute(raw).await?;
         _ = sqlx::query("INSERT INTO app_people SELECT n::text, n::text || '@numeric.fixture.test', n::text, false, NULL, '2020-01-01Z'::timestamptz, '2020-01-01Z'::timestamptz, n, n, n, n FROM generate_series(1,10000) n").execute(raw).await?;
         _ = sqlx::query("CREATE INDEX app_people_score64_idx ON app_people(score64)")
             .execute(raw)
             .await?;
+        _ = sqlx::query("CREATE TABLE app_dependents (user_id text PRIMARY KEY REFERENCES app_people(id), payload text NOT NULL CHECK (payload <> ''))").execute(raw).await?;
+        _ = sqlx::query("INSERT INTO app_dependents VALUES ('1', 'retained application data')")
+            .execute(raw)
+            .await?;
+        // Application-owned populated-schema migration, with an idempotent retry.
+        for _ in 0..2 {
+            _ = sqlx::query("ALTER TABLE app_people ADD COLUMN IF NOT EXISTS retained text NOT NULL DEFAULT 'application-default' CHECK (retained <> '')").execute(raw).await?;
+        }
         _ = sqlx::query("ANALYZE app_people").execute(raw).await?;
         Ok(())
     }
     async fn snapshot(raw: &sqlx::PgPool) -> TestResult<String> {
         Ok(
-            sqlx::query_scalar("SELECT json_agg(r ORDER BY id)::text FROM app_people r")
+            sqlx::query_scalar("SELECT json_build_object('users',(SELECT json_agg(r ORDER BY id) FROM app_people r),'dependents',(SELECT json_agg(r ORDER BY user_id) FROM app_dependents r),'constraints',(SELECT json_agg(pg_get_constraintdef(oid) ORDER BY conname) FROM pg_constraint WHERE conrelid IN ('app_people'::regclass,'app_dependents'::regclass)))::text")
                 .fetch_one(raw)
                 .await?,
         )
@@ -1393,6 +1401,34 @@ mod postgres_numeric_columns {
         raw: &sqlx::PgPool,
         native: &sqlx::PgPool,
     ) -> TestResult {
+        // Native writes preserve the application's omitted upgraded column;
+        // database defaults and dependent constraints remain physical contracts.
+        let created = store
+            .create_user(CreateUser::new().with_email("new@numeric.fixture.test"))
+            .await?;
+        let retained: String = sqlx::query_scalar("SELECT retained FROM app_people WHERE id=$1")
+            .bind(created.id().as_ref())
+            .fetch_one(raw)
+            .await?;
+        assert_eq!(retained, "application-default");
+        let updated = store
+            .update_user(
+                "1",
+                UpdateUser {
+                    name: Some("Updated application owner".into()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        assert_eq!(updated.name(), Some("Updated application owner"));
+        let dependent: (String, String) = sqlx::query_as("SELECT p.retained, d.payload FROM app_people p JOIN app_dependents d ON d.user_id=p.id WHERE p.id='1'").fetch_one(raw).await?;
+        assert_eq!(
+            dependent,
+            (
+                "application-default".into(),
+                "retained application data".into()
+            )
+        );
         let before = snapshot(raw).await?;
         // Distinct wire types, numeric aliases, physical fields and pagination.
         for field in ["small", "large", "real32", "real64"] {
@@ -1492,6 +1528,17 @@ mod postgres_numeric_columns {
                 .await,
             Err(better_auth_core::AuthError::Database(_))
         ));
+        let array_error = store
+            .list_users(ListUsersParams {
+                filter_field: Some("large".into()),
+                filter_value: Some(UserFilterValue::Multiple(vec!["1e0".into(), "NaN".into()])),
+                filter_operator: Some("in".into()),
+                ..Default::default()
+            })
+            .await
+            .err()
+            .ok_or("invalid integer array succeeded")?;
+        assert!(array_error.to_string().contains("\"1e0\""), "{array_error}");
         assert!(matches!(
             store
                 .list_users(ListUsersParams {

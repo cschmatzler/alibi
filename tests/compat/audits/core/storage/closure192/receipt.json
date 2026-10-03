@@ -1,0 +1,40 @@
+{
+  "issue": 192,
+  "pr": 427,
+  "source": "Better Auth 1.7.6",
+  "postgres": "18.6",
+  "mysql_source_only": "8.4.11",
+  "reviewed_page_seat": "f54eef5fbd0e10f8c4520e1c5484eb1f457ae685",
+  "reviewed_numeric": "697023d764901bd37bc65797d1498590434a537f",
+  "subsequent_production_delta": "SeaORM tuple iteration removes redundant intermediate clone only",
+  "proof": {
+    "postgres_page_sqlx": "pass",
+    "postgres_page_seaorm": "pass",
+    "postgres_seat_sqlx": "pass",
+    "postgres_seat_seaorm": "pass",
+    "postgres_numeric_sqlx": "pass",
+    "postgres_numeric_seaorm": "pass",
+    "baseline_owner_failures": "both adapters, each repair independently reverted",
+    "scoped_production_clippy": "pass",
+    "scoped_rustfmt": "pass",
+    "diff_check": "pass"
+  },
+  "bounds": [
+    "No native MySQL claim",
+    "No full suite or hosted Actions result",
+    "Prior valid receipts reused with backend limits in README"
+  ],
+  "production_sha256": {
+    "Cargo.lock": "0d2b72db69383fefbd91ea4a868d80ee5942a4168e26a32a16ef6a6659444a6e",
+    "crates/sqlx/Cargo.toml": "a0b3cb99fbd95c324a6f6094bd5b5dd0dbca2cc5cc250fe99efc5e6168fc10be",
+    "crates/seaorm/Cargo.toml": "50376b7f6ac1ad9e1750901c0842f662c037b16355aeda80708755504b3119c4",
+    "crates/sqlx/src/store/mod.rs": "df65f7c6936349c8c39472da5037905aa42b28ba5bf6c78b82349bc8faf0bd36",
+    "crates/seaorm/src/store/mod.rs": "dae846faf7ceec020b14ad77fcd322c1be5b4c4ca4d7944e1509707b58893006",
+    "crates/sqlx/src/store/teams.rs": "c12c53ced9295c85a75bc98127e6991c1b77ee02cc40f79d35a8d80062ffaff3",
+    "crates/seaorm/src/store/teams.rs": "4ffce28fa8420764588b5db98ba7aa061b4c2873043ba569d9d8c4a65a9177df",
+    "crates/sqlx/src/value.rs": "d0c5f59a88a507b9ef7857b9f8d7c519f99d761d87c0abd9d502a77a653222e6",
+    "crates/sqlx/src/additional_fields.rs": "aad13670343df2712009f0234b8323385be35f8b73076e52ac8aa88fd9a107a5",
+    "crates/sqlx/src/store/users.rs": "16ac5d0f6b0a8dfc6da4e2682a5d39e9e634f75ded7d49eb28c74d5c578473ea",
+    "crates/seaorm/src/store/users.rs": "4680ff5ece103af5595cc4cd3ea1b5d556fa6b32d7a0d6a1dfba81aa0a59ec60"
+  }
+}
