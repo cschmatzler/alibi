@@ -274,7 +274,9 @@ pub struct CurrentSession<S: AuthSchema> {
     pub user: S::User,
     pub session: S::Session,
 }
-/// Optional session; absent or invalid credentials yield `None`.
+/// Optional session; any extraction failure yields `None`, including missing
+/// auth data or a storage error, matching the Axum integration. Use
+/// [`CurrentSession`] when failures must be reported.
 #[derive(Debug, Clone)]
 pub struct OptionalSession<S: AuthSchema>(pub Option<CurrentSession<S>>);
 

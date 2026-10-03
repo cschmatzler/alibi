@@ -26,7 +26,7 @@ fn app(auth: Arc<BetterAuth<AppAuthSchema>>) -> impl Endpoint {
 }
 ```
 
-`CurrentSession` validates the session and loads its user. Missing or invalid sessions return HTTP 401; `OptionalSession` yields `None` instead. Install the same `Arc<BetterAuth<AppAuthSchema>>` with `.data(auth)` on routes using these extractors.
+`CurrentSession` validates the session and loads its user. Missing or invalid sessions return HTTP 401; `OptionalSession` yields `None` for any extraction failure, including missing auth data and storage errors, matching the Axum integration. Use `CurrentSession` when failures must be reported to the caller. Install the same `Arc<BetterAuth<AppAuthSchema>>` with `.data(auth)` on routes using these extractors.
 
 The endpoint preserves the original URL when nested, query parameters, request bytes, and repeated response headers including every `Set-Cookie`. Auth dispatch owns method matching, request protection, and plugin hooks. Request bodies are buffered within the configured body limit before dispatch.
 
