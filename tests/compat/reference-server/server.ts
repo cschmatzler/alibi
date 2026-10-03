@@ -59,6 +59,7 @@ import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture"
 import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
+import { notionProviderFixture } from "./fixtures/notion-provider-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./fixtures/one-tap-fixture";
 import { openApiProfiles } from "./fixtures/open-api-fixture";
@@ -615,6 +616,7 @@ const passkeyAuthentication = passkeyAuthenticationFixture(
   authOptions,
   `http://localhost:${PORT}`,
 );
+const notionFixture = notionProviderFixture(authOptions);
 const cloudflareFixture = cloudflareProviderFixture(authOptions);
 const cognitoFixture = cognitoProviderFixture(authOptions);
 const dropboxFixture = dropboxProviderFixture(authOptions);
@@ -644,6 +646,9 @@ for (const [path, instance] of additionalFields.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of userLifecycleFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of notionFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of cloudflareFixture.profiles) {
@@ -1682,6 +1687,8 @@ const server = Bun.serve({
       }
       const managedProxyControl = await managedProxyProfiles.handle(request);
       if (managedProxyControl) return managedProxyControl;
+      const notionControl = await notionFixture.handle(request);
+      if (notionControl) return notionControl;
       const cloudflareControl = await cloudflareFixture.handle(request);
       if (cloudflareControl) {
         return cloudflareControl;
@@ -2549,6 +2556,7 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         await apiKeyStorage.reset();
+        notionFixture.reset();
         cloudflareFixture.reset();
         cognitoFixture.reset();
         dropboxFixture.reset();
