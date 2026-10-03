@@ -4,21 +4,17 @@
 use crate::attestation::verify_attestation_ca_chain;
 use crate::error::*;
 pub use crate::internals::AttestationObject;
-use std::fmt;
-use webauthn_rs_proto::cose::*;
-use webauthn_rs_proto::extensions::*;
-use webauthn_rs_proto::options::*;
-
-pub use webauthn_attestation_ca::*;
-
 use base64urlsafedata::HumanBinaryData;
-
+use openssl::{bn, ec, nid, pkey, x509};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-
-use openssl::{bn, ec, nid, pkey, x509};
+use std::fmt;
 use uuid::Uuid;
+pub use webauthn_attestation_ca::*;
+use webauthn_rs_proto::cose::*;
+use webauthn_rs_proto::extensions::*;
+use webauthn_rs_proto::options::*;
 
 /// Representation of an AAGUID
 /// <https://www.w3.org/TR/webauthn/#aaguid>
@@ -186,7 +182,7 @@ pub struct COSERSAKey {
     /// An RSA modulus
     pub n: HumanBinaryData,
     /// An RSA exponent
-    pub e: [u8; 3],
+    pub e: Vec<u8>,
 }
 
 /// The type of Key contained within a COSE value. You should never need

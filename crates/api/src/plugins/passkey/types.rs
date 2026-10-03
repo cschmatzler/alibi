@@ -58,11 +58,29 @@ impl Validate for VerifyRegistrationRequest {
     }
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::plugins) struct VerifyAuthenticationRequest {
-    #[validate(custom(function = "validate_authentication_response"))]
-    pub(super) response: better_auth_core::utils::json::JsValue,
+    #[serde(default, deserialize_with = "optional_name")]
+    pub(super) response: Option<better_auth_core::utils::json::JsValue>,
+}
+impl Validate for VerifyAuthenticationRequest {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self.response.as_ref() {
+            Some(value) if value.is_object() => Ok(()),
+            value => {
+                let received = value.map_or("undefined", received_type);
+                let mut errors = validator::ValidationErrors::new();
+                errors.add(
+                    "response",
+                    validator::ValidationError::new("record").with_message(
+                        format!("Invalid input: expected record, received {received}").into(),
+                    ),
+                );
+                Err(errors)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -96,22 +114,6 @@ pub(in crate::plugins) struct PasskeyResponse {
 
 const fn no_registration_session() -> better_auth_core::utils::json::JsValue {
     better_auth_core::utils::json::JsValue::Bool(false)
-}
-
-fn validate_authentication_response(
-    value: &better_auth_core::utils::json::JsValue,
-) -> Result<(), validator::ValidationError> {
-    use better_auth_core::utils::json::JsValue;
-    let received = match value {
-        JsValue::Object(_) => return Ok(()),
-        JsValue::Array(_) => "array",
-        JsValue::Null => "null",
-        JsValue::Bool(_) => "boolean",
-        JsValue::Number(_) => "number",
-        JsValue::String(_) => "string",
-    };
-    Err(validator::ValidationError::new("record")
-        .with_message(format!("Invalid input: expected record, received {received}").into()))
 }
 
 fn missing_response() -> better_auth_core::utils::json::JsValue {

@@ -712,8 +712,11 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         }
         Err(_) => return passkey_authentication_failure(),
     };
+    let Some(response) = body.response.as_ref() else {
+        return passkey_authentication_failure();
+    };
     let authentication: PublicKeyCredential =
-        match serde_json::from_value(body.response.to_json_value()?) {
+        match serde_json::from_value(response.to_json_value()?) {
             Ok(authentication) => authentication,
             Err(_) => return passkey_authentication_failure(),
         };
@@ -767,7 +770,7 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         ) => super::raw_none::authenticate_raw(
             raw,
             &authentication,
-            &body.response,
+            response,
             &challenge,
             &super::webauthn::resolve_rp_id(config, &ctx.config)?,
             &origin,
@@ -837,7 +840,7 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
             rp_id: super::webauthn::resolve_rp_id(config, &ctx.config)?,
         };
         match callback
-            .after_verification(&context, &verified, &body.response)
+            .after_verification(&context, &verified, response)
             .await
         {
             Ok(()) => {}

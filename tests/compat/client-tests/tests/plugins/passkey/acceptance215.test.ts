@@ -90,6 +90,7 @@ for (const format of formats) {
         "wrong-origin",
         "wrong-root",
         "signature",
+        ...(format === "fido-u2f" ? ["nonzero-aaguid" as const] : []),
         ...(format === "apple" ||
         format === "android-key" ||
         format === "tpm" ||
@@ -339,6 +340,13 @@ compatScenario(
     const authOptions = await owner.$fetch("/passkey/generate-authenticate-options", {
       method: "GET",
     });
+    const beforeSchema = await physical(ctx, id);
+    const missingAuthentication = await owner.$fetch("/passkey/verify-authentication", {
+      method: "POST",
+      body: {},
+    });
+    expect((missingAuthentication.error as any).code).toBe("VALIDATION_ERROR");
+    expect(await physical(ctx, id)).toEqual(beforeSchema);
     const swapped = await ctx.rawRequest({
       method: "POST",
       path: "/__test/passkey-public-key",
@@ -416,6 +424,7 @@ compatScenario(
       renamed,
       authOptions,
       swapped,
+      missingAuthentication,
       prior,
       stale,
       denied,
@@ -428,6 +437,7 @@ compatScenario(
     return {
       registered: ctx.snapshot(registered),
       schema,
+      missingAuthentication: ctx.snapshot(missingAuthentication),
       invalidName: ctx.snapshot(invalidName),
       renamed: ctx.snapshot(renamed),
       denied: ctx.snapshot(denied),
@@ -620,6 +630,113 @@ compatScenario(
         result: ctx.snapshot(result),
         replay: ctx.snapshot(replay),
         physical: before,
+      });
+    }
+    return { results };
+  },
+);
+
+compatScenario(
+  "passkey signed short RSA exponent, Ed25519 U2F and opaque Apple nonce retain Source authority",
+  async (ctx) => {
+    const owner = client(ctx, "source-key-variants");
+    const signup = await owner.signUp.email({
+      email: ctx.uniqueEmail("key-variants"),
+      name: "Key variants",
+      password: "password123",
+    });
+    expect(signup.error).toBeNull();
+    const id = signup.data!.user.id;
+    const results = [];
+    for (const [label, format, mode, rsa, ed] of [
+      ["rsa-short-exponent", "packed", "valid", true, false],
+      ["u2f-ed25519", "fido-u2f", "valid", false, true],
+      ["apple-opaque", "apple", "apple-opaque", false, false],
+    ] as const) {
+      const device = new CertificateDevice(label, rsa, ed);
+      if (rsa) {
+        const before = await physical(ctx, id);
+        const options = await owner.$fetch("/passkey/generate-register-options", { method: "GET" });
+        const proof = device.register(options.data, ctx.baseURL, format, "signature");
+        const denied = await owner.$fetch("/passkey/verify-registration", {
+          method: "POST",
+          body: { response: proof, createSession: true },
+        });
+        expect((denied.error as any).status).toBe(400);
+        expect((denied.error as any).code).toBe("FAILED_TO_VERIFY_REGISTRATION");
+        expect(await physical(ctx, id)).toEqual(before);
+        const replay = await owner.$fetch("/passkey/verify-registration", {
+          method: "POST",
+          body: { response: proof },
+        });
+        expect((replay.error as any).code).toBe("CHALLENGE_NOT_FOUND");
+        await retain(ctx, "rsa-invalid", {
+          before,
+          options,
+          proof,
+          denied,
+          replay,
+          after: await physical(ctx, id),
+        });
+      }
+      const options = await owner.$fetch("/passkey/generate-register-options", { method: "GET" });
+      const proof = device.register(options.data, ctx.baseURL, format, mode);
+      const accepted = await owner.$fetch("/passkey/verify-registration", {
+        method: "POST",
+        body: { response: proof, name: "Source key variant", createSession: true },
+      });
+      expect(accepted.error).toBeNull();
+      expect((accepted.data as any).user.id).toBe(id);
+      await owner.signOut();
+      const before = await physical(ctx, id);
+      const badOptions = await owner.$fetch("/passkey/generate-authenticate-options", {
+        method: "GET",
+      });
+      const invalid = device.authenticate(badOptions.data, ctx.baseURL, 1, true);
+      const denied = await owner.$fetch("/passkey/verify-authentication", {
+        method: "POST",
+        body: { response: invalid },
+      });
+      expect((denied.error as any).code).toBe("AUTHENTICATION_FAILED");
+      expect(await physical(ctx, id)).toEqual(before);
+      const authOptions = await owner.$fetch("/passkey/generate-authenticate-options", {
+        method: "GET",
+      });
+      const assertion = device.authenticate(authOptions.data, ctx.baseURL);
+      const login = await owner.$fetch("/passkey/verify-authentication", {
+        method: "POST",
+        body: { response: assertion },
+      });
+      expect(login.error).toBeNull();
+      expect((login.data as any).user.id).toBe(id);
+      const final = await physical(ctx, id);
+      const replay = await owner.$fetch("/passkey/verify-authentication", {
+        method: "POST",
+        body: { response: assertion },
+      });
+      expect((replay.error as any).code).toBe("CHALLENGE_NOT_FOUND");
+      expect(await physical(ctx, id)).toEqual(final);
+      await retain(ctx, label, {
+        options,
+        proof,
+        accepted,
+        before,
+        badOptions,
+        invalid,
+        denied,
+        authOptions,
+        assertion,
+        login,
+        replay,
+        final,
+      });
+      results.push({
+        label,
+        accepted: ctx.snapshot(accepted),
+        denied: ctx.snapshot(denied),
+        login: ctx.snapshot(login),
+        replay: ctx.snapshot(replay),
+        final,
       });
     }
     return { results };

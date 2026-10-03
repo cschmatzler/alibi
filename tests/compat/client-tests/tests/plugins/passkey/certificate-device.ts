@@ -40,6 +40,32 @@ export const replacementPublicKey = Buffer.from(
     ]),
   ),
 );
+const edKeys = generateKeyPairSync("ed25519");
+const edJWK = edKeys.publicKey.export({ format: "jwk" });
+const edX = Buffer.from(edJWK.x!, "base64url");
+const edPublicKey = Buffer.from(
+  encodeCBOR(
+    new Map<number, CBORType>([
+      [1, 1],
+      [3, -8],
+      [-1, 6],
+      [-2, edX],
+    ]),
+  ),
+);
+const rsaKeys = generateKeyPairSync("rsa", { modulusLength: 2048, publicExponent: 3 });
+const rsaJWK = rsaKeys.publicKey.export({ format: "jwk" });
+export const shortExponentPublicKey = Buffer.from(
+  encodeCBOR(
+    new Map<number, CBORType>([
+      [1, 3],
+      [3, -258],
+      [-1, Buffer.from(rsaJWK.n!, "base64url")],
+      [-2, Buffer.from(rsaJWK.e!, "base64url")],
+    ]),
+  ),
+);
+const p384AttestationKeys = generateKeyPairSync("ec", { namedCurve: "secp384r1" });
 const attestationKeys = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const jwk = ecKeys.publicKey.export({ format: "jwk" });
 const x = Buffer.from(jwk.x!, "base64url");
@@ -146,11 +172,18 @@ export type CeremonyMode =
   | "duplicate"
   | "timestamp-omitted"
   | "timestamp-string"
-  | "version-number";
+  | "version-number"
+  | "u2f-p384"
+  | "apple-opaque"
+  | "nonzero-aaguid";
 
 /** Software certificates and attestation signatures; never a synthetic verified flag. */
 export class CertificateDevice {
-  constructor(readonly id: string) {}
+  constructor(
+    readonly id: string,
+    readonly rsa = false,
+    readonly ed = false,
+  ) {}
   register(options: any, origin: string, format: AttestationFormat, mode: CeremonyMode = "valid") {
     const credential = Buffer.from(this.id);
     const client = Buffer.from(
@@ -172,7 +205,7 @@ export class CertificateDevice {
             ),
           )
         : Buffer.alloc(0);
-    let credentialKey = publicKey;
+    let credentialKey = this.rsa ? shortExponentPublicKey : this.ed ? edPublicKey : publicKey;
     if (mode === "noncanonical") {
       credentialKey = Buffer.concat([Buffer.from([0xb8, 5]), publicKey.subarray(1)]);
     }
@@ -187,7 +220,7 @@ export class CertificateDevice {
       hash(mode === "wrong-rp" ? "wrong.example" : options.rp.id),
       Buffer.from([extension.length ? 0xc1 : 0x41]),
       Buffer.alloc(4),
-      Buffer.alloc(16),
+      Buffer.alloc(16, mode === "nonzero-aaguid" ? 1 : 0),
       sized(credential),
       credentialKey,
       extension,
@@ -196,7 +229,13 @@ export class CertificateDevice {
     let leaf: Buffer;
     const statement = new Map<string, CBORType>();
     let signature: Buffer;
-    if (format === "apple" || format === "android-key") {
+    if (this.rsa) {
+      if (format !== "packed") {
+        throw new Error("RSA fixture only implements genuine packed self-attestation");
+      }
+      leaf = Buffer.alloc(0);
+      signature = sign("sha384", signed, rsaKeys.privateKey);
+    } else if (format === "apple" || format === "android-key") {
       const nonce =
         mode === "wrong-nonce"
           ? Buffer.alloc(32, 1)
@@ -205,7 +244,9 @@ export class CertificateDevice {
             : hash(client);
       const description =
         format === "apple"
-          ? seq(der(0xa1, der(4, nonce)))
+          ? mode === "apple-opaque"
+            ? Buffer.concat([Buffer.alloc(6), nonce])
+            : seq(der(0xa1, der(4, nonce)))
           : seq(
               der(2, Buffer.from([3])),
               der(10, Buffer.from([1])),
@@ -285,8 +326,9 @@ export class CertificateDevice {
         Buffer.from(`${header}.${payload}.${signature.toString("base64url")}`),
       );
     } else {
+      const certificateKeys = mode === "u2f-p384" ? p384AttestationKeys : attestationKeys;
       leaf = certificate(
-        attestationKeys,
+        certificateKeys,
         format === "packed"
           ? "/C=US/O=Compatibility fixture/OU=Authenticator Attestation/CN=Public test authenticator"
           : "/CN=Public U2F test authenticator",
@@ -303,11 +345,9 @@ export class CertificateDevice {
               authData.subarray(0, 32),
               hash(client),
               credential,
-              Buffer.from([4]),
-              x,
-              y,
+              ...(this.ed ? [Buffer.from([4]), edX] : [Buffer.from([4]), x, y]),
             ]),
-        attestationKeys.privateKey,
+        certificateKeys.privateKey,
       );
     }
     if (format !== "android-safetynet") {
@@ -319,7 +359,7 @@ export class CertificateDevice {
         } else signature[signature.length - 1]! ^= 1;
       }
       if (format !== "apple") {
-        statement.set("alg", -7);
+        statement.set("alg", this.rsa ? -258 : -7);
         statement.set("sig", signature);
       }
     }
@@ -357,9 +397,15 @@ export class CertificateDevice {
     count.writeUInt32BE(counter);
     const data = Buffer.concat([hash(options.rpId), Buffer.from([1]), count]);
     const signature = sign(
-      "sha256",
+      this.rsa ? "sha384" : this.ed ? null : "sha256",
       Buffer.concat([data, hash(client)]),
-      replacement ? replacementKeys.privateKey : ecKeys.privateKey,
+      this.rsa
+        ? rsaKeys.privateKey
+        : this.ed
+          ? edKeys.privateKey
+          : replacement
+            ? replacementKeys.privateKey
+            : ecKeys.privateKey,
     );
     if (bad) signature[signature.length - 1]! ^= 1;
     return {

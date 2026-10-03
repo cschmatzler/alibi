@@ -180,15 +180,21 @@ impl SourcePolicy {
         &self,
         object: &AttestationObject<Registration>,
     ) -> Result<(), WebauthnError> {
-        if object.fmt == "packed" || object.fmt == "tpm" {
-            if let Cbor::Map(statement) = &object.att_stmt {
-                if let Some(Cbor::Array(chain)) = statement.get(&Cbor::Text("x5c".into())) {
-                    let Some(Cbor::Bytes(der)) = chain.first() else {
-                        return Err(malformed());
-                    };
-                    let leaf = X509::from_der(der)?;
-                    if !valid_now(&leaf)? {
-                        return Err(malformed());
+        if let Cbor::Map(statement) = &object.att_stmt {
+            if let Some(Cbor::Array(chain)) = statement.get(&Cbor::Text("x5c".into())) {
+                let Some(Cbor::Bytes(der)) = chain.first() else {
+                    return Err(malformed());
+                };
+                let leaf = X509::from_der(der)?;
+                if matches!(object.fmt.as_str(), "packed" | "tpm") && !valid_now(&leaf)? {
+                    return Err(malformed());
+                }
+                if object.fmt == "apple" {
+                    check_ec_certificate(&leaf, true)?;
+                } else {
+                    certificate_algorithm(&leaf)?;
+                    if object.fmt == "android-key" {
+                        check_ec_certificate(&leaf, false)?;
                     }
                 }
             }
@@ -271,6 +277,67 @@ impl SourcePolicy {
         Err(WebauthnError::AttestationNotVerifiable)
     }
 
+    pub(crate) fn verify_u2f(
+        &self,
+        acd: &AttestedCredentialData,
+        object: &AttestationObject<Registration>,
+        client_hash: &[u8],
+    ) -> Result<ParsedAttestationData, WebauthnError> {
+        if acd.aaguid != [0; 16] {
+            return Err(malformed());
+        }
+        let (chain, statement) = attestation_chain(object)?;
+        let Some(Cbor::Bytes(signature)) = statement.get(&Cbor::Text("sig".into())) else {
+            return Err(malformed());
+        };
+        let mut signed = vec![0];
+        signed.extend_from_slice(&object.auth_data.rp_id_hash);
+        signed.extend_from_slice(client_hash);
+        signed.extend_from_slice(&acd.credential_id);
+        signed.extend_from_slice(&source_pkcs(&acd.credential_pk)?);
+        if !verify_certificate_signature(
+            chain.first().ok_or_else(malformed)?,
+            signature,
+            &signed,
+            Some(COSEAlgorithm::ES256),
+        )? {
+            return Err(WebauthnError::AttestationStatementSigInvalid);
+        }
+        Ok(ParsedAttestationData::Basic(chain))
+    }
+
+    pub(crate) fn verify_apple(
+        &self,
+        acd: &AttestedCredentialData,
+        object: &AttestationObject<Registration>,
+        client_hash: &[u8],
+    ) -> Result<(ParsedAttestationData, AttestationMetadata), WebauthnError> {
+        let (chain, _) = attestation_chain(object)?;
+        let leaf = chain.first().ok_or_else(malformed)?;
+        let der = leaf.to_der()?;
+        let (_, certificate) =
+            x509_parser::parse_x509_certificate(&der).map_err(|_| malformed())?;
+        let extension = certificate
+            .extensions()
+            .iter()
+            .find(|extension| extension.oid.to_id_string() == "1.2.840.113635.100.8.2")
+            .ok_or_else(malformed)?;
+        let mut nonce = object.auth_data_bytes.clone();
+        nonce.extend_from_slice(client_hash);
+        if extension.value.get(6..) != Some(compute_sha256(&nonce).as_slice()) {
+            return Err(malformed());
+        }
+        if source_pkcs(&acd.credential_pk)?.as_slice()
+            != certificate.public_key().subject_public_key.data.as_ref()
+        {
+            return Err(WebauthnError::AttestationCredentialSubjectKeyMismatch);
+        }
+        Ok((
+            ParsedAttestationData::AnonCa(chain),
+            AttestationMetadata::None,
+        ))
+    }
+
     pub(crate) fn verify_android_key(
         &self,
         acd: &AttestedCredentialData,
@@ -339,7 +406,7 @@ impl SourcePolicy {
         self.verify_path("android-key", &attestation)?;
         let mut signed = object.auth_data_bytes.clone();
         signed.extend_from_slice(client_hash);
-        if !crate::crypto::verify_signature(algorithm, leaf, signature, &signed)? {
+        if !verify_certificate_signature(leaf, signature, &signed, Some(algorithm))? {
             return Err(WebauthnError::AttestationStatementSigInvalid);
         }
         Ok((attestation, AttestationMetadata::None))
@@ -435,24 +502,17 @@ impl SourcePolicy {
         if name != b"attest.android.com" {
             return Err(malformed());
         }
-        let public_key = leaf.public_key()?;
-        let hash = match statement.get(&Cbor::Text("alg".into())) {
-            Some(Cbor::Integer(-35 | -258 | -38)) => MessageDigest::sha384(),
-            Some(Cbor::Integer(-36 | -259 | -39)) => MessageDigest::sha512(),
-            None | Some(Cbor::Integer(-7 | -257 | -37)) => MessageDigest::sha256(),
+        let algorithm = match statement.get(&Cbor::Text("alg".into())) {
+            None | Some(Cbor::Null | Cbor::Bool(false) | Cbor::Integer(0)) => None,
+            Some(Cbor::Integer(algorithm)) => {
+                Some(COSEAlgorithm::try_from(*algorithm).map_err(|_| malformed())?)
+            }
             _ => return Err(malformed()),
         };
         let attestation = ParsedAttestationData::Basic(chain.clone());
         self.verify_path("android-safetynet", &attestation)?;
-        let mut verifier = if public_key.id() == Id::ED25519 {
-            Verifier::new_without_digest(&public_key)?
-        } else {
-            Verifier::new(hash, &public_key)?
-        };
-        // Source selects verification from the certificate public key, not the
-        // untrusted JWS alg header. The exact encoded header.payload is signed.
         let signed = format!("{header}.{payload}");
-        if !verifier.verify_oneshot(&decode(signature)?, signed.as_bytes())? {
+        if !verify_certificate_signature(leaf, &decode(signature)?, signed.as_bytes(), algorithm)? {
             return Err(WebauthnError::AttestationStatementSigInvalid);
         }
         Ok((attestation, AttestationMetadata::None))
@@ -579,4 +639,125 @@ fn js_number(value: Option<&Value>) -> f64 {
             }
         }
     }
+}
+
+fn check_ec_certificate(certificate: &X509, apple: bool) -> Result<(), WebauthnError> {
+    let der = certificate.to_der()?;
+    let (_, parsed) = x509_parser::parse_x509_certificate(&der).map_err(|_| malformed())?;
+    let public = certificate.public_key()?.ec_key()?;
+    let curve = public.group().curve_name();
+    if parsed.public_key().subject_public_key.data.first() != Some(&4)
+        || !(matches!(curve, Some(Nid::X9_62_PRIME256V1 | Nid::SECP384R1))
+            || apple && curve == Some(Nid::SECP521R1))
+    {
+        return Err(malformed());
+    }
+    Ok(())
+}
+fn certificate_algorithm(certificate: &X509) -> Result<COSEAlgorithm, WebauthnError> {
+    let der = certificate.to_der()?;
+    let (_, parsed) = x509_parser::parse_x509_certificate(&der).map_err(|_| malformed())?;
+    let algorithm = match parsed
+        .tbs_certificate
+        .signature
+        .algorithm
+        .to_id_string()
+        .as_str()
+    {
+        "1.2.840.10045.4.3.2" => COSEAlgorithm::ES256,
+        "1.2.840.10045.4.3.3" => COSEAlgorithm::ES384,
+        "1.2.840.10045.4.3.4" => COSEAlgorithm::ES512,
+        "1.2.840.113549.1.1.11" => COSEAlgorithm::RS256,
+        "1.2.840.113549.1.1.12" => COSEAlgorithm::RS384,
+        "1.2.840.113549.1.1.13" => COSEAlgorithm::RS512,
+        "1.2.840.113549.1.1.5" => COSEAlgorithm::INSECURE_RS1,
+        _ => return Err(malformed()),
+    };
+    match parsed
+        .public_key()
+        .algorithm
+        .algorithm
+        .to_id_string()
+        .as_str()
+    {
+        "1.2.840.10045.2.1" => check_ec_certificate(certificate, false)?,
+        "1.2.840.113549.1.1.1"
+            if matches!(
+                algorithm,
+                COSEAlgorithm::RS256
+                    | COSEAlgorithm::RS384
+                    | COSEAlgorithm::RS512
+                    | COSEAlgorithm::INSECURE_RS1
+            ) => {}
+        _ => return Err(malformed()),
+    }
+    Ok(algorithm)
+}
+/// Source gets the signature primitive from the certificate and only overrides
+/// its hash from attStmt.alg. In particular RSA x5c statements use PKCS#1 v1.5.
+pub(crate) fn verify_certificate_signature(
+    certificate: &X509,
+    signature: &[u8],
+    bytes: &[u8],
+    hash_override: Option<COSEAlgorithm>,
+) -> Result<bool, WebauthnError> {
+    let algorithm = hash_override.unwrap_or(certificate_algorithm(certificate)?);
+    let hash = match algorithm {
+        COSEAlgorithm::ES256 | COSEAlgorithm::PS256 | COSEAlgorithm::RS256 => {
+            MessageDigest::sha256()
+        }
+        COSEAlgorithm::ES384 | COSEAlgorithm::PS384 | COSEAlgorithm::RS384 => {
+            MessageDigest::sha384()
+        }
+        COSEAlgorithm::ES512
+        | COSEAlgorithm::PS512
+        | COSEAlgorithm::RS512
+        | COSEAlgorithm::EDDSA => MessageDigest::sha512(),
+        COSEAlgorithm::INSECURE_RS1 => MessageDigest::sha1(),
+        _ => return Err(malformed()),
+    };
+    let public = certificate.public_key()?;
+    let mut verifier = Verifier::new(hash, &public)?;
+    if public.id() == Id::RSA {
+        verifier.set_rsa_padding(openssl::rsa::Padding::PKCS1)?;
+    }
+    Ok(verifier.verify_oneshot(signature, bytes)?)
+}
+
+fn attestation_chain(
+    object: &AttestationObject<Registration>,
+) -> Result<(Vec<X509>, &std::collections::BTreeMap<Cbor, Cbor>), WebauthnError> {
+    let Cbor::Map(statement) = &object.att_stmt else {
+        return Err(malformed());
+    };
+    let Some(Cbor::Array(entries)) = statement.get(&Cbor::Text("x5c".into())) else {
+        return Err(malformed());
+    };
+    let chain = entries
+        .iter()
+        .map(|entry| {
+            let Cbor::Bytes(bytes) = entry else {
+                return Err(malformed());
+            };
+            X509::from_der(bytes).map_err(Into::into)
+        })
+        .collect::<Result<Vec<_>, WebauthnError>>()?;
+    Ok((chain, statement))
+}
+fn source_pkcs(key: &Cbor) -> Result<Vec<u8>, WebauthnError> {
+    let Cbor::Map(key) = key else {
+        return Err(malformed());
+    };
+    let Some(Cbor::Bytes(x)) = key.get(&Cbor::Integer(-2)) else {
+        return Err(malformed());
+    };
+    let mut bytes = vec![4];
+    bytes.extend_from_slice(x);
+    if let Some(y) = key.get(&Cbor::Integer(-3)) {
+        let Cbor::Bytes(y) = y else {
+            return Err(malformed());
+        };
+        bytes.extend_from_slice(y);
+    }
+    Ok(bytes)
 }

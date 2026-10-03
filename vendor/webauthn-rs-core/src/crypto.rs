@@ -5,11 +5,9 @@
 
 #![allow(non_camel_case_types)]
 
-use openssl::{bn, ec, hash, nid, pkey, rsa, sha, sign, x509};
-
 use super::error::*;
 use crate::proto::*;
-
+use openssl::{bn, ec, hash, nid, pkey, rsa, sha, sign, x509};
 use x509_parser::prelude::{X509Error, X509Name};
 
 // Why OpenSSL over another rust crate?
@@ -30,14 +28,23 @@ fn pkey_verify_signature(
         COSEAlgorithm::EDDSA => sign::Verifier::new_without_digest(pkey)?,
         algorithm => {
             let digest = match algorithm {
-                COSEAlgorithm::ES256 | COSEAlgorithm::RS256 | COSEAlgorithm::PS256 => hash::MessageDigest::sha256(),
-                COSEAlgorithm::ES384 | COSEAlgorithm::RS384 | COSEAlgorithm::PS384 => hash::MessageDigest::sha384(),
-                COSEAlgorithm::ES512 | COSEAlgorithm::RS512 | COSEAlgorithm::PS512 => hash::MessageDigest::sha512(),
+                COSEAlgorithm::ES256 | COSEAlgorithm::RS256 | COSEAlgorithm::PS256 => {
+                    hash::MessageDigest::sha256()
+                }
+                COSEAlgorithm::ES384 | COSEAlgorithm::RS384 | COSEAlgorithm::PS384 => {
+                    hash::MessageDigest::sha384()
+                }
+                COSEAlgorithm::ES512 | COSEAlgorithm::RS512 | COSEAlgorithm::PS512 => {
+                    hash::MessageDigest::sha512()
+                }
                 COSEAlgorithm::INSECURE_RS1 => hash::MessageDigest::sha1(),
                 _ => return Err(WebauthnError::COSEKeyInvalidType),
             };
             let mut verifier = sign::Verifier::new(digest, pkey)?;
-            if matches!(algorithm, COSEAlgorithm::PS256 | COSEAlgorithm::PS384 | COSEAlgorithm::PS512) {
+            if matches!(
+                algorithm,
+                COSEAlgorithm::PS256 | COSEAlgorithm::PS384 | COSEAlgorithm::PS512
+            ) {
                 verifier.set_rsa_padding(rsa::Padding::PKCS1_PSS)?;
                 verifier.set_rsa_mgf1_md(digest)?;
                 verifier.set_rsa_pss_saltlen(sign::RsaPssSaltlen::DIGEST_LENGTH)?;
@@ -208,9 +215,15 @@ pub(crate) fn only_hash_from_type(
     _input: &[u8],
 ) -> Result<Vec<u8>, WebauthnError> {
     let digest = match alg {
-        COSEAlgorithm::ES256 | COSEAlgorithm::RS256 | COSEAlgorithm::PS256 => hash::MessageDigest::sha256(),
-        COSEAlgorithm::ES384 | COSEAlgorithm::RS384 | COSEAlgorithm::PS384 => hash::MessageDigest::sha384(),
-        COSEAlgorithm::ES512 | COSEAlgorithm::RS512 | COSEAlgorithm::PS512 => hash::MessageDigest::sha512(),
+        COSEAlgorithm::ES256 | COSEAlgorithm::RS256 | COSEAlgorithm::PS256 => {
+            hash::MessageDigest::sha256()
+        }
+        COSEAlgorithm::ES384 | COSEAlgorithm::RS384 | COSEAlgorithm::PS384 => {
+            hash::MessageDigest::sha384()
+        }
+        COSEAlgorithm::ES512 | COSEAlgorithm::RS512 | COSEAlgorithm::PS512 => {
+            hash::MessageDigest::sha512()
+        }
         COSEAlgorithm::INSECURE_RS1 => hash::MessageDigest::sha1(),
         _ => return Err(WebauthnError::COSEKeyInvalidType),
     };
@@ -318,7 +331,18 @@ impl TryFrom<&serde_cbor_2::Value> for COSEKey {
             cose_key.validate()?;
             // return it
             Ok(cose_key)
-        } else if key_type == (COSEKeyTypeId::EC_RSA as i128) && matches!(type_, COSEAlgorithm::RS256 | COSEAlgorithm::RS384 | COSEAlgorithm::RS512 | COSEAlgorithm::PS256 | COSEAlgorithm::PS384 | COSEAlgorithm::PS512 | COSEAlgorithm::INSECURE_RS1) {
+        } else if key_type == (COSEKeyTypeId::EC_RSA as i128)
+            && matches!(
+                type_,
+                COSEAlgorithm::RS256
+                    | COSEAlgorithm::RS384
+                    | COSEAlgorithm::RS512
+                    | COSEAlgorithm::PS256
+                    | COSEAlgorithm::PS384
+                    | COSEAlgorithm::PS512
+                    | COSEAlgorithm::INSECURE_RS1
+            )
+        {
             // RSAKey
 
             // -37 -> PS256
@@ -341,16 +365,12 @@ impl TryFrom<&serde_cbor_2::Value> for COSEKey {
                 return Err(WebauthnError::COSEKeyRSANEInvalid);
             }
 
-            // Set the n and e, we know they are proper sizes.
-            let mut e_temp = [0; 3];
-            e_temp.copy_from_slice(e.as_slice());
-
             // Right, now build the struct.
             let cose_key = COSEKey {
                 type_,
                 key: COSEKeyType::RSA(COSERSAKey {
                     n: n.to_vec().into(),
-                    e: e_temp,
+                    e: e.to_vec(),
                 }),
             };
 
@@ -442,16 +462,16 @@ impl TryFrom<(COSEAlgorithm, &x509::X509)> for COSEKey {
                     .ok_or(WebauthnError::OpenSSLErrorNoCurveName)
                     .and_then(ECDSACurve::try_from)?;
 
-                if xbn.num_bytes() as usize != curve.coordinate_size()
-                    || ybn.num_bytes() as usize != curve.coordinate_size()
+                if xbn.num_bytes() as usize > curve.coordinate_size()
+                    || ybn.num_bytes() as usize > curve.coordinate_size()
                 {
                     return Err(WebauthnError::COSEKeyECDSAXYInvalid);
                 }
 
                 Ok(COSEKeyType::EC_EC2(COSEEC2Key {
+                    x: xbn.to_vec_padded(curve.coordinate_size() as i32)?.into(),
+                    y: ybn.to_vec_padded(curve.coordinate_size() as i32)?.into(),
                     curve,
-                    x: xbn.to_vec().into(),
-                    y: ybn.to_vec().into(),
                 }))
             }
             COSEAlgorithm::RS256
@@ -462,13 +482,7 @@ impl TryFrom<(COSEAlgorithm, &x509::X509)> for COSEKey {
             | COSEAlgorithm::PS512
             | COSEAlgorithm::EDDSA
             | COSEAlgorithm::PinUvProtocol
-            | COSEAlgorithm::INSECURE_RS1 => {
-                error!(
-                    "unsupported X509 to COSE conversion for COSE algorithm type {:?}",
-                    alg
-                );
-                Err(WebauthnError::COSEKeyInvalidType)
-            }
+            | COSEAlgorithm::INSECURE_RS1 => Err(WebauthnError::COSEKeyInvalidType),
         }?;
 
         Ok(COSEKey { type_: alg, key })
@@ -727,7 +741,9 @@ mod tests {
             COSEKeyType::EC_OKP(pkey) => {
                 assert_eq!(
                     pkey.x.as_ref(),
-                    hex!("0c04658f79c3fd86c4b3d676057b76353126e9b905a7e204c07846c1a2ab3791b02fc5e9c6930345ea7bf8524b944220d4bd711c010c9b2a80")
+                    hex!(
+                        "0c04658f79c3fd86c4b3d676057b76353126e9b905a7e204c07846c1a2ab3791b02fc5e9c6930345ea7bf8524b944220d4bd711c010c9b2a80"
+                    )
                 );
                 assert_eq!(pkey.curve, EDDSACurve::ED448);
             }

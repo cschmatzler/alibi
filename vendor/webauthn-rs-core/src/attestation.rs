@@ -3,7 +3,7 @@
 //! make attestation decisions.
 
 use crate::crypto::{
-    check_extension, compute_sha256, only_hash_from_type, verify_signature, TpmSanData,
+    TpmSanData, check_extension, compute_sha256, only_hash_from_type, verify_signature,
 };
 use crate::error::WebauthnError;
 use crate::internals::*;
@@ -47,7 +47,7 @@ pub(crate) struct AndroidKeyAttestationExtensionData;
 
 impl AttestationX509Extension for FidoGenCeAaguid {
     // If cert contains an extension with OID 1 3 6 1 4 1 45724 1 1 4 (id-fido-gen-ce-aaguid)
-    const OID: Oid<'static> = der_parser::oid!(1.3.6 .1 .4 .1 .45724 .1 .1 .4);
+    const OID: Oid<'static> = der_parser::oid!(1.3.6.1.4.1.45724.1.1.4);
 
     // verify that the value of this extension matches the aaguid in authenticatorData.
     type Output = Aaguid;
@@ -69,9 +69,8 @@ impl AttestationX509Extension for FidoGenCeAaguid {
 }
 
 pub(crate) mod android_key_attestation {
-    use der_parser::ber::BerObjectContent;
-
     use crate::proto::AttestationMetadata;
+    use der_parser::ber::BerObjectContent;
 
     #[derive(Clone, PartialEq, Eq)]
     pub struct Data {
@@ -216,12 +215,10 @@ pub(crate) mod android_key_attestation {
                         true
                     }
                     (None, None) => false,
-                    _ => {
-                        Err(der_parser::error::BerError::InvalidValue {
-                            tag: Tag(701),
-                            msg: "invalid key master values (software)".to_string(),
-                        })?
-                    }
+                    _ => Err(der_parser::error::BerError::InvalidValue {
+                        tag: Tag(701),
+                        msg: "invalid key master values (software)".to_string(),
+                    })?,
                 };
 
                 let tee_set = match (tee_enforced.origin, tee_enforced.purpose) {
@@ -231,12 +228,10 @@ pub(crate) mod android_key_attestation {
                         true
                     }
                     (None, None) => false,
-                    _ => {
-                        Err(der_parser::error::BerError::InvalidValue {
-                            tag: Tag(701),
-                            msg: "invalid key master values (tee)".to_string(),
-                        })?
-                    }
+                    _ => Err(der_parser::error::BerError::InvalidValue {
+                        tag: Tag(701),
+                        msg: "invalid key master values (tee)".to_string(),
+                    })?,
                 };
 
                 if !tee_set && !software_set {
@@ -259,7 +254,7 @@ pub(crate) mod android_key_attestation {
 
 impl AttestationX509Extension for AndroidKeyAttestationExtensionData {
     // If cert contains an extension with OID 1.3.6.1.4.1.11129.2.1.17 (android key attestation)
-    const OID: Oid<'static> = der_parser::oid!(1.3.6 .1 .4 .1 .11129 .2 .1 .17);
+    const OID: Oid<'static> = der_parser::oid!(1.3.6.1.4.1.11129.2.1.17);
 
     // verify that the value of this extension matches the aaguid in authenticatorData.
     type Output = Vec<u8>;
@@ -277,7 +272,7 @@ impl AttestationX509Extension for AppleAnonymousNonce {
     type Output = [u8; 32];
 
     // 4. Verify that nonce equals the value of the extension with OID ( 1.2.840.113635.100.8.2 ) in credCert. The nonce here is used to prove that the attestation is live and to protect the integrity of the authenticatorData and the client data.
-    const OID: Oid<'static> = der_parser::oid!(1.2.840 .113635 .100 .8 .2);
+    const OID: Oid<'static> = der_parser::oid!(1.2.840.113635.100.8.2);
 
     fn parse(i: &[u8]) -> der_parser::error::BerResult<'_, (Self::Output, AttestationMetadata)> {
         use der_parser::{der::*, error::BerError};
@@ -345,6 +340,7 @@ pub(crate) fn verify_packed_attestation(
     acd: &AttestedCredentialData,
     att_obj: &AttestationObject<Registration>,
     client_data_hash: &[u8],
+    source_policy: bool,
 ) -> Result<(ParsedAttestationData, AttestationMetadata), WebauthnError> {
     let att_stmt = &att_obj.att_stmt;
     let auth_data_bytes = &att_obj.auth_data_bytes;
@@ -415,7 +411,18 @@ pub(crate) fn verify_packed_attestation(
                 .get(&serde_cbor_2::Value::Text("sig".to_string()))
                 .ok_or(WebauthnError::AttestationStatementSigMissing)
                 .and_then(|s| cbor_try_bytes!(s))
-                .and_then(|sig| verify_signature(alg, attestn_cert, sig, &verification_data))?;
+                .and_then(|sig| {
+                    if source_policy {
+                        crate::source_policy::verify_certificate_signature(
+                            attestn_cert,
+                            sig,
+                            &verification_data,
+                            Some(alg),
+                        )
+                    } else {
+                        verify_signature(alg, attestn_cert, sig, &verification_data)
+                    }
+                })?;
 
             if !is_valid_signature {
                 trace!("packed x509 signature invalid");
@@ -675,6 +682,7 @@ pub(crate) fn verify_tpm_attestation(
     acd: &AttestedCredentialData,
     att_obj: &AttestationObject<Registration>,
     client_data_hash: &[u8],
+    source_policy: bool,
 ) -> Result<(ParsedAttestationData, AttestationMetadata), WebauthnError> {
     debug!("begin verify_tpm_attest");
 
@@ -875,15 +883,15 @@ pub(crate) fn verify_tpm_attestation(
             // Name contains two bytes at the start for what algo is used. The spec
             // says nothing about validating them, so instead we prepend the bytes into the hash
             // so we do enforce these are checked
-            let hname = match pubarea.name_alg {
-                TpmAlgId::Sha256 => {
-                    let mut v = vec![0, 11];
-                    let r = compute_sha256(pubarea_bytes);
-                    v.append(&mut r.to_vec());
-                    v
-                }
+            let (algorithm, identifier) = match pubarea.name_alg {
+                TpmAlgId::Sha1 => (COSEAlgorithm::INSECURE_RS1, 4),
+                TpmAlgId::Sha256 => (COSEAlgorithm::ES256, 11),
+                TpmAlgId::Sha384 => (COSEAlgorithm::ES384, 12),
+                TpmAlgId::Sha512 => (COSEAlgorithm::ES512, 13),
                 _ => return Err(WebauthnError::AttestationTpmPubAreaHashUnknown),
             };
+            let mut hname = vec![0, identifier];
+            hname.extend_from_slice(&only_hash_from_type(algorithm, pubarea_bytes)?);
             if hname != name {
                 return Err(WebauthnError::AttestationTpmPubAreaHashInvalid);
             }
@@ -907,7 +915,16 @@ pub(crate) fn verify_tpm_attestation(
         TpmtSignature::RawSignature(dsig) => {
             // Alg was pre-loaded into the x509 struct during parsing
             // so we should just be able to verify
-            verify_signature(alg, aik_cert, &dsig, certinfo_bytes)?
+            if source_policy {
+                crate::source_policy::verify_certificate_signature(
+                    aik_cert,
+                    &dsig,
+                    certinfo_bytes,
+                    Some(alg),
+                )?
+            } else {
+                verify_signature(alg, aik_cert, &dsig, certinfo_bytes)?
+            }
         }
     };
 
@@ -1005,7 +1022,7 @@ pub(crate) fn assert_tpm_attest_req(x509: &x509::X509) -> Result<(), WebauthnErr
             extended_key_usage
                 .value
                 .other
-                .contains(&der_parser::oid!(2.23.133 .8 .3))
+                .contains(&der_parser::oid!(2.23.133.8.3))
         },
     )?;
 

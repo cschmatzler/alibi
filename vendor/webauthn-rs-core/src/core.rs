@@ -15,10 +15,6 @@
 
 #![warn(missing_docs)]
 
-use rand::prelude::*;
-use std::time::Duration;
-use url::Url;
-
 use crate::attestation::{
     verify_android_key_attestation, verify_apple_anonymous_attestation,
     verify_attestation_ca_chain, verify_fidou2f_attestation, verify_packed_attestation,
@@ -29,6 +25,9 @@ use crate::crypto::compute_sha256;
 use crate::error::WebauthnError;
 use crate::internals::*;
 use crate::proto::*;
+use rand::prelude::*;
+use std::time::Duration;
+use url::Url;
 
 /// The Core Webauthn handler.
 ///
@@ -508,7 +507,10 @@ impl WebauthnCore {
         // ATM most browsers do not send this value, so we must default to
         // `false`. See [WebauthnConfig::allow_cross_origin] doc-comment for
         // more.
-        if self.source_policy.is_none() && !self.allow_cross_origin && data.client_data_json.cross_origin.unwrap_or(false) {
+        if self.source_policy.is_none()
+            && !self.allow_cross_origin
+            && data.client_data_json.cross_origin.unwrap_or(false)
+        {
             return Err(WebauthnError::CredentialCrossOrigin);
         }
 
@@ -611,6 +613,36 @@ impl WebauthnCore {
             .as_ref()
             .ok_or(WebauthnError::MissingAttestationCredentialData)?;
 
+        if self.source_policy.is_none() {
+            // Preserve the locked verifier's historical crypto admission. The
+            // expanded selectors and certificate key types belong to Source.
+            let key = COSEKey::try_from(&acd.credential_pk)?;
+            if matches!(&key.key, COSEKeyType::RSA(rsa) if key.type_ != COSEAlgorithm::RS256 || rsa.n.len() != 256 || rsa.e.len() != 3)
+            {
+                return Err(WebauthnError::COSEKeyInvalidType);
+            }
+            if matches!(attest_format, AttestationFormat::Tpm) {
+                return Err(WebauthnError::COSEKeyInvalidType);
+            }
+            if matches!(
+                attest_format,
+                AttestationFormat::AndroidKey | AttestationFormat::AppleAnonymous
+            ) && !matches!(key.key, COSEKeyType::EC_EC2(_))
+            {
+                return Err(WebauthnError::COSEKeyInvalidType);
+            }
+            let algorithm = match &data.attestation_object.att_stmt {
+                serde_cbor_2::Value::Map(statement) => {
+                    statement.get(&serde_cbor_2::Value::Text("alg".into()))
+                }
+                _ => None,
+            };
+            if matches!(algorithm, Some(serde_cbor_2::Value::Integer(value)) if !matches!(*value, -7 | -257 | -8))
+            {
+                return Err(WebauthnError::COSEKeyInvalidType);
+            }
+        }
+
         if let Some(policy) = &self.source_policy {
             policy.check_leaf(&data.attestation_object)?;
         }
@@ -621,32 +653,63 @@ impl WebauthnCore {
 
         let (attestation_data, attestation_metadata) = match attest_format {
             AttestationFormat::FIDOU2F => (
-                verify_fidou2f_attestation(acd, &data.attestation_object, &client_data_json_hash)?,
+                if let Some(policy) = &self.source_policy {
+                    policy.verify_u2f(acd, &data.attestation_object, &client_data_json_hash)?
+                } else {
+                    verify_fidou2f_attestation(
+                        acd,
+                        &data.attestation_object,
+                        &client_data_json_hash,
+                    )?
+                },
                 AttestationMetadata::None,
             ),
-            AttestationFormat::Packed => {
-                verify_packed_attestation(acd, &data.attestation_object, &client_data_json_hash)?
-            }
-            // AttestationMetadata::None,
-            AttestationFormat::Tpm => {
-                verify_tpm_attestation(acd, &data.attestation_object, &client_data_json_hash)?
-            }
-            // AttestationMetadata::None,
-            AttestationFormat::AppleAnonymous => verify_apple_anonymous_attestation(
+            AttestationFormat::Packed => verify_packed_attestation(
                 acd,
                 &data.attestation_object,
                 &client_data_json_hash,
+                self.source_policy.is_some(),
             )?,
+            // AttestationMetadata::None,
+            AttestationFormat::Tpm => verify_tpm_attestation(
+                acd,
+                &data.attestation_object,
+                &client_data_json_hash,
+                self.source_policy.is_some(),
+            )?,
+            // AttestationMetadata::None,
+            AttestationFormat::AppleAnonymous => {
+                if let Some(policy) = &self.source_policy {
+                    policy.verify_apple(acd, &data.attestation_object, &client_data_json_hash)?
+                } else {
+                    verify_apple_anonymous_attestation(
+                        acd,
+                        &data.attestation_object,
+                        &client_data_json_hash,
+                    )?
+                }
+            }
             // AttestationMetadata::None,
             AttestationFormat::AndroidKey => {
                 if let Some(policy) = &self.source_policy {
-                    policy.verify_android_key(acd, &data.attestation_object, &client_data_json_hash)?
+                    policy.verify_android_key(
+                        acd,
+                        &data.attestation_object,
+                        &client_data_json_hash,
+                    )?
                 } else {
-                    verify_android_key_attestation(acd, &data.attestation_object, &client_data_json_hash)?
+                    verify_android_key_attestation(
+                        acd,
+                        &data.attestation_object,
+                        &client_data_json_hash,
+                    )?
                 }
-            },
+            }
             AttestationFormat::AndroidSafetyNet => {
-                let policy = self.source_policy.as_ref().ok_or(WebauthnError::AttestationNotSupported)?;
+                let policy = self
+                    .source_policy
+                    .as_ref()
+                    .ok_or(WebauthnError::AttestationNotSupported)?;
                 policy.verify_safetynet(&data.attestation_object, &client_data_json_hash)?
             }
             AttestationFormat::None => (ParsedAttestationData::None, AttestationMetadata::None),
@@ -751,14 +814,18 @@ impl WebauthnCore {
 
         // OUT OF SPEC - Allow rejection of synchronised credentials if desired by the caller.
         if !allow_synchronised_authenticators && credential.backup_eligible {
-            error!("Credential counter is 0 - may indicate that it is a passkey and not bound to hardware.");
+            error!(
+                "Credential counter is 0 - may indicate that it is a passkey and not bound to hardware."
+            );
             return Err(WebauthnError::CredentialMayNotBeHardwareBound);
         }
 
         // OUT OF SPEC - It is invalid for a credential to indicate it is backed up
         // but not that it is elligible for backup
         if credential.backup_state && !credential.backup_eligible {
-            error!("Credential indicates it is backed up, but has not declared valid backup eligibility");
+            error!(
+                "Credential indicates it is backed up, but has not declared valid backup eligibility"
+            );
             return Err(WebauthnError::CredentialMayNotBeHardwareBound);
         }
 
@@ -808,7 +875,8 @@ impl WebauthnCore {
             AuthenticatorAssertionResponse::from_source(&rsp.response)
         } else {
             AuthenticatorAssertionResponse::try_from(&rsp.response)
-        }).map_err(|e| {
+        })
+        .map_err(|e| {
             debug!("AuthenticatorAssertionResponse::try_from -> {:?}", e);
             e
         })?;
@@ -886,7 +954,8 @@ impl WebauthnCore {
             }
             // Preserve the historical Preferred policy's established UV requirement.
             (_, UserVerificationPolicy::Preferred)
-                if cred.user_verified && !data.authenticator_data.user_verified => {
+                if cred.user_verified && !data.authenticator_data.user_verified =>
+            {
                 debug!("Token registered UV=preferred, enforcing UV policy.");
                 return Err(WebauthnError::UserNotVerified);
             }
@@ -916,7 +985,9 @@ impl WebauthnCore {
         // OUT OF SPEC - It is invalid for a credential to indicate it is backed up
         // but not that it is elligible for backup
         if data.authenticator_data.backup_state && !cred.backup_eligible {
-            error!("Credential indicates it is backed up, but has not declared valid backup eligibility");
+            error!(
+                "Credential indicates it is backed up, but has not declared valid backup eligibility"
+            );
             return Err(WebauthnError::CredentialMayNotBeHardwareBound);
         }
 
@@ -949,6 +1020,14 @@ impl WebauthnCore {
             .copied()
             .collect();
 
+        if self.source_policy.is_none()
+            && !matches!(
+                cred.cred.type_,
+                COSEAlgorithm::ES256 | COSEAlgorithm::RS256 | COSEAlgorithm::EDDSA
+            )
+        {
+            return Err(WebauthnError::COSEKeyInvalidType);
+        }
         let verified = cred
             .cred
             .verify_signature(&data.signature, &verification_data)?;
@@ -1278,16 +1357,15 @@ impl WebauthnCore {
 mod tests {
     #![allow(clippy::panic)]
 
+    use crate::WebauthnCore as Webauthn;
     use crate::constants::CHALLENGE_SIZE_BYTES;
     use crate::core::{CreationChallengeResponse, RegistrationState, WebauthnError};
     use crate::internals::*;
     use crate::proto::*;
-    use crate::WebauthnCore as Webauthn;
-    use base64::{engine::general_purpose::STANDARD, Engine};
+    use base64::{Engine, engine::general_purpose::STANDARD};
     use base64urlsafedata::{Base64UrlSafeData, HumanBinaryData};
     use std::time::Duration;
     use url::Url;
-
     use webauthn_rs_device_catalog::data::{
         android::ANDROID_SOFTWARE_ROOT_CA, apple::APPLE_WEBAUTHN_ROOT_CA_PEM,
         google::GOOGLE_SAFETYNET_CA_OLD,
