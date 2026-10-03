@@ -336,6 +336,8 @@ pub struct JwtPluginConfig {
     pub grace_period: Duration,
     pub disable_private_key_encryption: bool,
     pub disable_setting_jwt_header: bool,
+    /// Protect JWT session cookies using the managed local keyring.
+    pub session_cookie_cache: bool,
     pub claims: JwtClaimsConfig,
     pub define_payload: Option<Arc<dyn DefineJwtPayload>>,
     pub define_subject: Option<Arc<dyn DefineJwtSubject>>,
@@ -360,6 +362,7 @@ impl Default for JwtPluginConfig {
             grace_period: Duration::days(30),
             disable_private_key_encryption: false,
             disable_setting_jwt_header: false,
+            session_cookie_cache: false,
             claims: JwtClaimsConfig::default(),
             define_payload: None,
             define_subject: None,
@@ -441,6 +444,21 @@ impl JwtPlugin {
         self.keys_at_path(request, path, ctx).await
     }
 
+    async fn keys_in_transaction<S: AuthSchema>(
+        &self,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<S>,
+        transaction: Option<&dyn better_auth_core::store::AuthTransaction<S>>,
+    ) -> AuthResult<Vec<Jwk>> {
+        if self.config.keyring.is_none()
+            && let Some(transaction) = transaction
+        {
+            transaction.list_jwks().await
+        } else {
+            self.keys(request, ctx).await
+        }
+    }
+
     async fn keys_at_path(
         &self,
         request: Option<&AuthRequest>,
@@ -467,11 +485,22 @@ impl JwtPlugin {
     /// # Errors
     ///
     /// Returns an error if key generation, key serialization, or JWK storage fails.
-    pub async fn create_jwk(
+    pub async fn create_jwk<S: AuthSchema>(
         &self,
         config: Option<&JwtKeyPairConfig>,
         request: Option<&AuthRequest>,
-        ctx: &AuthContext<impl AuthSchema>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Jwk> {
+        self.create_jwk_in_transaction(config, request, ctx, None)
+            .await
+    }
+
+    async fn create_jwk_in_transaction<S: AuthSchema>(
+        &self,
+        config: Option<&JwtKeyPairConfig>,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<S>,
+        transaction: Option<&dyn better_auth_core::store::AuthTransaction<S>>,
     ) -> AuthResult<Jwk> {
         let config = config.unwrap_or(&self.config.key_pair);
         let (public, private) = crypto::generate(config)?;
@@ -512,7 +541,10 @@ impl JwtPlugin {
                     )
                     .await
             }
-            None => ctx.database.create_jwk(data).await,
+            None => match transaction {
+                Some(transaction) => transaction.create_jwk(data).await,
+                None => ctx.database.create_jwk(data).await,
+            },
         }
     }
 
@@ -521,11 +553,22 @@ impl JwtPlugin {
     /// # Errors
     ///
     /// Returns an error if a usable signing key cannot be loaded or generated.
-    pub async fn resolve_signing_key(
+    pub async fn resolve_signing_key<S: AuthSchema>(
         &self,
         options: &JwtSignOptions,
         request: Option<&AuthRequest>,
-        ctx: &AuthContext<impl AuthSchema>,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<ResolvedJwtSigningKey>> {
+        self.resolve_signing_key_in_transaction(options, request, ctx, None)
+            .await
+    }
+
+    async fn resolve_signing_key_in_transaction<S: AuthSchema>(
+        &self,
+        options: &JwtSignOptions,
+        request: Option<&AuthRequest>,
+        ctx: &AuthContext<S>,
+        transaction: Option<&dyn better_auth_core::store::AuthTransaction<S>>,
     ) -> AuthResult<Option<ResolvedJwtSigningKey>> {
         if self.config.remote_signer.is_some() {
             return Ok(None);
@@ -535,7 +578,7 @@ impl JwtPlugin {
         let mut keys = if options.signing_key_id.is_some() {
             Vec::new()
         } else {
-            self.keys(request, ctx).await?
+            self.keys_in_transaction(request, ctx, transaction).await?
         };
         keys.sort_by_key(|key| std::cmp::Reverse(key.created_at));
         let primary = self.config.key_pair.algorithm;
@@ -549,8 +592,8 @@ impl JwtPlugin {
         let mut minted_unpinned_key = false;
         let mut key = if let Some(id) = &options.signing_key_id {
             let key = match &self.config.keyring {
-                Some(_) => self.keys(request, ctx).await?.into_iter().find(|key| &key.id == id),
-                None => ctx.database.get_jwk_by_id(id).await?,
+                Some(_) => self.keys_in_transaction(request, ctx, transaction).await?.into_iter().find(|key| &key.id == id),
+                None => match transaction {Some(transaction)=>transaction.get_jwk_by_id(id).await?,None=>ctx.database.get_jwk_by_id(id).await?},
             }.ok_or_else(|| AuthError::config(format!("signJWT: signingKeyId \"{id}\" not found in JWKS. The key must be provisioned before it can be referenced.")))?;
             if let Some(algorithm) = options.signing_algorithm
                 && key_alg(&key)? != algorithm
@@ -582,7 +625,8 @@ impl JwtPlugin {
                             algorithm.as_str()
                         ))
                     })?;
-                self.create_jwk(Some(config), request, ctx).await?
+                self.create_jwk_in_transaction(Some(config), request, ctx, transaction)
+                    .await?
             }
         } else {
             if let Some(key) = keys
@@ -595,7 +639,7 @@ impl JwtPlugin {
             } else {
                 // Source performs a separate fallback lookup. An application
                 // keyring can observe it or return a changed key set.
-                let mut fallback = self.keys(request, ctx).await?;
+                let mut fallback = self.keys_in_transaction(request, ctx, transaction).await?;
                 fallback.sort_by_key(|key| std::cmp::Reverse(key.created_at));
                 if let Some(key) = fallback
                     .into_iter()
@@ -604,7 +648,8 @@ impl JwtPlugin {
                     key
                 } else {
                     minted_unpinned_key = true;
-                    self.create_jwk(None, request, ctx).await?
+                    self.create_jwk_in_transaction(None, request, ctx, transaction)
+                        .await?
                 }
             }
         };
@@ -614,7 +659,9 @@ impl JwtPlugin {
                     "signJWT: requested signing key is expired and an explicit kid/alg was provided; not auto-minting a replacement. Rotate the key explicitly.",
                 ));
             }
-            key = self.create_jwk(None, request, ctx).await?;
+            key = self
+                .create_jwk_in_transaction(None, request, ctx, transaction)
+                .await?;
         }
         let private = if self.config.disable_private_key_encryption {
             key.private_key
@@ -1126,7 +1173,7 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
         self.call_endpoint(call, ctx).await
     }
 
-    async fn on_init(&self, _ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
+    async fn on_init(&self, ctx: &mut AuthInitContext<S>) -> AuthResult<()> {
         if self.config.jwks_path.is_empty()
             || !self.config.jwks_path.starts_with('/')
             || self.config.jwks_path.contains("..")
@@ -1139,6 +1186,28 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
             return Err(AuthError::config(
                 "Remote JWKS URL must be set when using a custom JWT signer",
             ));
+        }
+        if self.config.session_cookie_cache {
+            if ctx
+                .config
+                .session
+                .cookie_cache
+                .as_ref()
+                .is_none_or(|cache| cache.strategy != better_auth_core::CookieCacheStrategy::Jwt)
+            {
+                return Err(AuthError::config(
+                    "Managed JWT session caching requires the JWT cookie-cache strategy",
+                ));
+            }
+            if self.config.remote_signer.is_some() {
+                return Err(AuthError::config(
+                    "Managed JWT session caching requires locally managed signing keys",
+                ));
+            }
+            ctx.extensions
+                .insert(better_auth_core::cache::jwt::CookieCacheSignerHandle::<S>(
+                    Arc::new(self.clone()),
+                ));
         }
         Ok(())
     }
@@ -1504,6 +1573,96 @@ const fn unauthorized() -> AuthError {
         status: 401,
         code: "UNAUTHORIZED",
         message: "Unauthorized",
+    }
+}
+
+#[async_trait]
+impl<S: AuthSchema> better_auth_core::cache::jwt::CookieCacheSigner<S> for JwtPlugin {
+    async fn sign(
+        &self,
+        payload: Value,
+        max_age: f64,
+        ctx: &AuthContext<S>,
+        transaction: Option<&dyn better_auth_core::store::AuthTransaction<S>>,
+    ) -> AuthResult<String> {
+        let key = self
+            .resolve_signing_key_in_transaction(&JwtSignOptions::default(), None, ctx, transaction)
+            .await?
+            .ok_or_else(|| {
+                AuthError::config(
+                    "Managed JWT session caching requires locally managed signing keys",
+                )
+            })?;
+        let mut payload = better_auth_core::cache::jwt::time_claims(payload, max_age)?;
+        let claims = payload
+            .as_object_mut()
+            .ok_or_else(|| AuthError::internal("Invalid session cache payload"))?;
+        let sid = claims
+            .get("session")
+            .and_then(|session| session.get("token"))
+            .cloned()
+            .ok_or_else(|| AuthError::internal("Missing session token"))?;
+        let sub = claims
+            .get("user")
+            .and_then(|user| user.get("id"))
+            .cloned()
+            .ok_or_else(|| AuthError::internal("Missing session owner"))?;
+        drop(claims.insert("sid".into(), sid));
+        drop(claims.insert("sub".into(), sub));
+        drop(claims.insert("iss".into(), json!(cache_issuer(ctx))));
+        drop(claims.insert("aud".into(), json!("better-auth:session-cache")));
+        let options = JwtSignOptions {
+            header: Some(serde_json::from_value(
+                json!({"typ":"better-auth.session-cache+jwt"}),
+            )?),
+            ..JwtSignOptions::default()
+        };
+        Self::sign_resolved(claims.clone(), &options, &key)
+    }
+
+    async fn verify(&self, token: &str, ctx: &AuthContext<S>) -> AuthResult<Option<Value>> {
+        let header = match token
+            .split('.')
+            .next()
+            .and_then(|header| decode_compact_json(header, false).ok())
+        {
+            Some(header) => header,
+            None => return Ok(None),
+        };
+        if header.get("typ").and_then(Value::as_str) != Some("better-auth.session-cache+jwt") {
+            return Ok(None);
+        }
+        let audience = JwtAudience::One("better-auth:session-cache".into());
+        let policy = JwtVerifyPolicy {
+            issuer: cache_issuer(ctx),
+            audience: &audience,
+            tolerance: 15,
+            require_nonempty_subject: true,
+        };
+        let Some(payload) = self
+            .verify_internal(token, &policy, None, ctx)
+            .await
+            .unwrap_or(None)
+        else {
+            return Ok(None);
+        };
+        if payload.get("sub") != payload.get("user").and_then(|user| user.get("id"))
+            || payload.get("sid")
+                != payload
+                    .get("session")
+                    .and_then(|session| session.get("token"))
+        {
+            return Ok(None);
+        }
+        Ok(Some(Value::Object(payload)))
+    }
+}
+
+fn cache_issuer<S: AuthSchema>(ctx: &AuthContext<S>) -> &str {
+    if ctx.config.base_url.is_empty() {
+        "better-auth:session-cache"
+    } else {
+        &ctx.config.base_url
     }
 }
 

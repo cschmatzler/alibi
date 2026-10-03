@@ -437,8 +437,7 @@ pub struct CookieCacheConfig {
 
     /// Strategy used to protect the cached cookie value.
     ///
-    /// The stateful HTTP implementation currently supports Compact. Enabling
-    /// Jwt or Jwe returns a configuration error during builder initialization.
+    /// JWT uses the auth secret unless a locally managed JWT plugin signer is installed.
     pub strategy: CookieCacheStrategy,
 
     /// Literal or asynchronous application-owned version policy.
@@ -452,7 +451,7 @@ pub enum CookieCacheStrategy {
     Compact,
     /// Standard JWT with HMAC signing.
     Jwt,
-    /// JWE with AES-256-GCM encryption.
+    /// JWE with direct-key AES-256-CBC/HMAC-SHA512 authenticated encryption.
     Jwe,
 }
 

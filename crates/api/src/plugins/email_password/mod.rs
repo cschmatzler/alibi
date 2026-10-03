@@ -1063,8 +1063,13 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
                     })
                     .await?;
                 let token = session.token().to_owned();
-                better_auth_core::cache::runtime::emit_issuance(&signup_context, &user, &session)
-                    .await?;
+                better_auth_core::cache::runtime::emit_issuance_in_transaction(
+                    &signup_context,
+                    &user,
+                    &session,
+                    tx,
+                )
+                .await?;
                 super::helpers::record_completed_session_record::<S>(&user, &session);
 
                 Ok((
