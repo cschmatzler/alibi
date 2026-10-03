@@ -24,5 +24,11 @@
       "privateInodes": true
     }
   },
-  "excludedOracle": "/tmp/.d774fec071c1d447-7.better-auth: modified purpose-key/auth-state code absent from published tarball; never used for comparisons"
+  "excludedOracle": "/tmp/.d774fec071c1d447-7.better-auth: modified purpose-key/auth-state code absent from published tarball; never used for comparisons",
+  "providerSource": {
+    "package": "@better-auth/core@1.7.6",
+    "path": "dist/social-providers/gitlab.mjs",
+    "sha256": "59d3ab050cefa24cbcdb0d7aea415c89de715e4804575621cd59ec5d9b24ec71",
+    "bothInstalledCopiesMatchFreshTarball": true
+  }
 }

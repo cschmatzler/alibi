@@ -1,0 +1,2 @@
+1:  fc31202d = 1:  fd6ea348 Restore OAuth proxy completion from authenticated cookie state
+2:  ccd12f64 = 2:  fefb7939 Prove cookie proxy restoration on SQLx and SeaORM hosts

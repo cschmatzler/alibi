@@ -1,0 +1,36 @@
+{
+  "testedBase": "822d104c0f294afdf19c09853f45f5f55fd6868a",
+  "testedCodeHeadFull": "ccd12f647df93abe9d0bd0cc271271978e528264",
+  "rebasedBase": "9220de08d6d3e91426481f1e427a269ebd07ac50",
+  "rebasedCodeHead": "fefb79394d7d453cf0b13c90e30c11df4db424f8",
+  "rebaseRangeDiff": "Both workpiece commits are identical (=); no conflicts or implementation delta.",
+  "upstreamChangesInspected": [
+    "#391 request-scoped dynamic base URL/trusted origin resolution",
+    "#396 licensing"
+  ],
+  "rebaseValidationDecision": "Read-only diff review only: cookie fixtures use static configured origins, no dynamic host/resolver/forwarded policy or wildcard matcher. #391 preserves these resolved settings and request extensions; licensing is unrelated. No passing adapter scenario or build repeated after rebase.",
+  "checks": {
+    "sqlx": "6 focused OAuth proxy scenarios / 930 assertions passed",
+    "seaorm": "6 focused OAuth proxy scenarios / 930 assertions passed",
+    "typescript": "client typecheck passed",
+    "apiClippy": "strict package-only --no-deps passed",
+    "fixtureClippy": "strict package-only --no-deps SeaORM fixture passed",
+    "format": "changed production/helper/fixture owners and client support/scenario/Source fixture passed; diff --check passed",
+    "baseline": "Old restore path, with init rejection removed only to reach completion, fails both new cookie owners at actual state_mismatch"
+  },
+  "excludedChecks": {
+    "fullSweepsCoverage": "Not requested; not run",
+    "dependencyInclusiveClippy": "Blocked by existing core endpoint.rs:553 double_must_use; recorded clippy-api.log",
+    "CI": "GitHub Actions permissions enabled=false; no CI checks"
+  },
+  "selfReview": {
+    "ownerAdmission": "Authenticated full state cookie exact nonce is required even when proxy skips database correlation. Saved link owner, profile/destination admission, state expiry and browser consumption checked.",
+    "reviewFixes": [
+      "Use .ok() for Result-returning authenticated decryption key selection",
+      "Use actual signed foreign session cookie and verify its session before/after linking",
+      "Return cookie fixture reset failure rather than logging and continuing"
+    ],
+    "dataExfil": "Existing origin admission and authenticated profile destination retained; no user URL fetch, field exposure or error-detail path added.",
+    "remainingIssue": "#227 remains open for alternate URLs/options/profile/cache/maxAge/concurrency/pending configuration branches."
+  }
+}
