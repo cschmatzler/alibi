@@ -104,6 +104,16 @@ const cases: Case[] = [
       )),
   },
   { name: "padding-tail", token: (s) => s + "=ignored-after-padding" },
+  {
+    name: "base64-nonzero-residual-bits",
+    token: (s) => {
+      const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+      // This original envelope ends with two unused bits. Change one unused
+      // bit while retaining every decoded byte and the original signed JSON.
+      if (s.length % 4 !== 3) throw new Error("Unexpected original envelope length");
+      return s.slice(0, -1) + alphabet[alphabet.indexOf(s.at(-1)!) ^ 1];
+    },
+  },
   { name: "base64-residual-bits", token: (s) => s + "A" },
   {
     name: "tampered",
