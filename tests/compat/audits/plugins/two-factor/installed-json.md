@@ -46,7 +46,7 @@ read and rebased; its numeric renderer refactor preserves the factor cookie
 writer's existing default behavior. Passing unrelated scenarios were not replayed.
 Actions are disabled; no CI, full suite, devenv-test or coverage claim is made.
 
-## Issue #202 reconciliation
+## Historical #417 reconciliation
 
 This work does not close #202. Prior fresh/legacy codec proof, trusted-cookie
 truthiness and Base64-bit aliases, pending lookup/error ordering, disable
@@ -85,3 +85,97 @@ published probes record calendar rollover (`2025-02-30` becomes `2025-03-02`)
 and parsed `1e400` serialization in `source-serializer-bounds.log`; these are
 remaining bounds, not native support claims. No new tests were added for
 unimplemented contracts, and no test-only follow-up PR was created.
+
+
+## Remaining acceptance completed in #419
+
+The remaining production contracts now follow the actual published 1.7.6
+runtime. `view_backup_codes` and `BackupCodesOutput.backup_codes` return
+`serde_json::Value`, allowing the truthy heterogeneous values Source returns.
+The SDK owner calls the installed typed server endpoint through the controlled
+view wrapper. Generated arrays keep their ordinary string-array representation;
+callers that require a string array can explicitly deserialize that JSON value.
+No public HTTP backup-view route is added.
+
+Backup parsing now uses the existing IEEE754 JSON utility without changing it.
+It retains the raw parsed value until truthiness/shape checks. The installed
+view distinguishes a missing factor from decoded null and malformed JSON, while
+truthy Infinity remains a successful view with a serialized null. Verification distinguishes
+truthy Infinity (a view serializes it as null; verification throws and restores
+an attempt) from literal null, invalid JSON, false, zero and an empty string.
+Actual code consumption serializes nonfinite array numbers as null, rounds
+integers at JavaScript double precision, and uses the existing exact ISO-Z date
+reviver grammar. Calendar rollover, 24:00, fractional truncation and revival
+past year 9999 are supported. Expanded-year input is an ordinary string under
+Source's four-digit grammar, including dates outside Chrono; the live proof
+retains it and accepts it as a string code. This matches that Source mode rather
+than excluding it. Recognized Date values cannot authenticate as string codes.
+Existing authenticated legacy readers and exact factor-ID/ciphertext CAS remain
+unchanged.
+
+All factor signed-cookie readers now share the local Better Call reader.
+It separately trims the first matching key, retains first duplicate precedence
+even for an invalid or empty value, trims/unwraps the value, and either decodes
+the whole URI component or retains the whole original value. Nonempty payload,
+44-character padded Base64 and constant-time authenticated bytes are required;
+unused Base64 bits retain their actual accepted meaning. URI, Unicode, unused
+bits, malformed URI UTF-8, quoted values and whitespace before '=' run through
+actual pending, preference and disable handlers. Later invalid duplicates prove
+first-cookie precedence. Malformed signatures fail before pending consumption,
+malformed preference proofs create normal persistent sessions, and malformed
+disable proofs preserve the trust row without emitting its deletion cookie.
+Valid aliases issue temporary sessions, retire pending/preference cookies and
+delete the actual trust row at disable. Foreign state stays unchanged. Global
+cookie/crypto helpers are not modified.
+
+Combined storage/error cases cover a truthy corrupted installed value followed
+by session cancellation, an explicit Forbidden and an ordinary same-message
+throw. After successful duplicate consumption, the actual session callback
+error retains its transport, emits no cookies, and leaves no newly created
+session or trust proof. Cipher callbacks independently cover decode and encode
+errors, including ordinary Internal, explicit public Forbidden and an explicit
+public API 500 with the same message. Only Internal is wrapped in the existing
+CallbackFailure variant (empty 500); explicit public errors retain their body.
+Decode failures restore the physical attempt row. Encoding exceptions consume
+that row entirely, retain the challenge, and deny a retry; a fresh sign-in then
+completes the unchanged proof and retires its new challenge. Original factor
+identity, secret, user and session ownership survive the failed stages.
+
+Fifteen remaining SDK cases have passing Source/SQLx and Source/SeaORM receipts.
+SQLx runs contain 12 cases/716 assertions, the new whitespace case/46 assertions,
+and two explicit public-500 cases/114 assertions. SeaORM first passed eight
+cases/466 assertions; the seven changed cases passed with 448 assertions, and
+the two explicit-500 cases passed with 114 assertions. The final affected
+absent-factor/heterogeneous view case passes with 110 assertions on each
+adapter. Passing unrelated
+factor/cookie inventory was reused from #417 rather than replayed. Six focused
+native view/preference/cipher tests pass, API Clippy with warnings denied passes,
+fixture-binary Clippy with warnings denied passes, and client types, the
+affected reference fixture types, scoped lint and format/diff checks pass. Actions are disabled; no CI, full-suite, devenv-test or
+coverage claim is made.
+
+Meaningful native before failures are preserved for heterogeneous view,
+malformed-URI pending admission, both ordinary cipher phases and whitespace
+before '='. The first cipher diagnostic had an incorrect encode-attempt
+expectation and is retained separately; the corrected before log demonstrates
+both intended ordinary-error body failures against successful Source cases.
+Complete raw paired observations, current/foreign state and exact transports
+remain at `/home/cschmatzler/.local/share/better-auth-evidence/close202`;
+#417 receipts remain at its original permanent path. Private frozen Bun
+installs were used, and installed factor modules match the authentic registry-
+verified published tarball bytes. No dependency mutation was performed.
+
+Independent coordinator review of checkpoint
+`5738780919ce3cf72a02c794f2ea2fe60147e1de` found the key-trimming discrepancy.
+The requested local repair and table extension are included. Independent
+coordinator review of final production head
+`8dcd98850d0c89b7f907736ff1d684b3254f8269` found no blocking findings.
+This is independent coordinator review, not outside-party certification.
+Rebasing onto `55243238` preserves both production commits exactly in
+`git range-diff`; unrelated incoming work was inspected without adapter replay.
+Subsequent explicit public-500 additions and the absent-factor view assertion
+change only the affected regression and application fixtures. The worker's
+separate final production/security
+review confirms the Source grammar, error stages, exact-row CAS, authenticated
+proof ownership and credential/session isolation. No residual acceptance item
+from #202 is excluded or claimed closed without its corresponding proof.

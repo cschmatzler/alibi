@@ -23,8 +23,8 @@ export function createTwoFactorPolicyFixture(
             (value: unknown) => value && typeof value === "object" && "reject" in value,
           )?.reject;
     if (mode === "ordinary") throw new Error("session creation cancelled by database hook");
-    if (mode === "explicit") {
-      throw new APIError("FORBIDDEN", {
+    if (mode === "explicit" || mode === "explicit500") {
+      throw new APIError(mode === "explicit500" ? "INTERNAL_SERVER_ERROR" : "FORBIDDEN", {
         code: "BACKUP_CALLBACK_DENIED",
         message: "session creation cancelled by database hook",
       });

@@ -141,6 +141,11 @@ impl BackupCipher {
                 code: "BACKUP_CALLBACK_DENIED",
                 message: "session creation cancelled by database hook",
             }),
+            Some("explicit500") => Err(better_auth_core::AuthError::Api {
+                status: 500,
+                code: Some("BACKUP_CALLBACK_DENIED".into()),
+                message: "session creation cancelled by database hook".into(),
+            }),
             _ => Ok(()),
         }
     }

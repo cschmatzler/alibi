@@ -411,6 +411,12 @@ compatScenario("two-factor remaining heterogeneous view and serializer contracts
   const signup = await owner.signUp.email({ email, password, name: "Remaining Owner" });
   expect(signup.error).toBeNull();
   const userId = signup.data!.user.id;
+  const absent = await ctx.rawRequest({
+    path: `/__test/view-backup-codes?userId=${userId}`,
+    method: "GET",
+  });
+  expect(absent.status).toBe(500);
+  expect(absent.body).toEqual({ message: "Backup codes aren't enabled" });
   expect((await owner.twoFactor.enable({ password })).error).toBeNull();
   const published = await publishedFactor(email);
   const code = published.enrollment.backupCodes[0]!;
@@ -504,7 +510,7 @@ compatScenario("two-factor remaining heterogeneous view and serializer contracts
   // Expanded-year strings are outside the actual reviver grammar and remain string proofs.
   const expanded = await owner.twoFactor.verifyBackupCode({ code: invalidDates[0]! });
   expect(expanded.error).toBeNull();
-  return ctx.snapshot({ observations, completed, expanded, plaintext });
+  return ctx.snapshot({ absent, observations, completed, expanded, plaintext });
 });
 
 for (const profile of [
@@ -887,7 +893,7 @@ for (const c of wireCases) {
 }
 
 for (const phase of ["decrypt", "encrypt"] as const) {
-  for (const mode of ["ordinary", "explicit"] as const) {
+  for (const mode of ["ordinary", "explicit", "explicit500"] as const) {
     compatScenario(
       `two-factor remaining custom cipher ${phase} ${mode} error with installed corruption`,
       async (ctx) => {
@@ -953,7 +959,7 @@ for (const phase of ["decrypt", "encrypt"] as const) {
           });
         const text = await response.text();
         expect(response.headers.getSetCookie()).toEqual([]);
-        expect(response.status).toBe(mode === "ordinary" ? 500 : 403);
+        expect(response.status).toBe(mode === "explicit" ? 403 : 500);
         if (mode === "ordinary") expect(text).toBe("");
         else {
           expect(JSON.parse(text)).toEqual({
