@@ -1,5 +1,7 @@
 mod account;
 
+pub(in crate::plugins) mod logout;
+
 mod account_cookie;
 
 pub mod encryption;
@@ -33,14 +35,14 @@ pub use providers::{
     NaverOptions, NotionOptions, OAuthAccountSubject, OAuthAuthorizationCodeCallback,
     OAuthAuthorizationCodeContext, OAuthAuthorizationCodeHandler, OAuthAuthorizationPolicy,
     OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthClientAssertion,
-    OAuthClientAssertionContext, OAuthClientAssertionGetter, OAuthConfig, OAuthIdTokenVerifier,
-    OAuthProfileMapper, OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeEncoding,
-    OAuthScopeOrder, OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet, OAuthUserInfo,
-    OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse, PayPalEnvironment,
-    PayPalOptions, PaybinOptions, PolarOptions, RailwayOptions, RedditOptions, RobloxOptions,
-    SalesforceEnvironment, SalesforceOptions, SlackOptions, SpotifyOptions, TikTokOptions,
-    TwitchOptions, TwitterOptions, VercelOptions, VkOptions, WeChatLanguage, WeChatOptions,
-    ZoomOptions,
+    OAuthClientAssertionContext, OAuthClientAssertionGetter, OAuthConfig, OAuthEndSessionConfig,
+    OAuthIdTokenVerifier, OAuthProfileMapper, OAuthProvider, OAuthRefreshTokenHandler,
+    OAuthScopeEncoding, OAuthScopeOrder, OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet,
+    OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
+    PayPalEnvironment, PayPalOptions, PaybinOptions, PolarOptions, RailwayOptions, RedditOptions,
+    RobloxOptions, SalesforceEnvironment, SalesforceOptions, SlackOptions, SpotifyOptions,
+    TikTokOptions, TwitchOptions, TwitterOptions, VercelOptions, VkOptions, WeChatLanguage,
+    WeChatOptions, ZoomOptions,
 };
 pub(in crate::plugins) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,

@@ -1,0 +1,26 @@
+{
+  "issue": 188,
+  "pr": 408,
+  "upstreamVersion": "1.7.6",
+  "testedInitialHead": "edc9c8e2",
+  "testedReviewHead": "38cd20e5",
+  "rebasedHead": "8b066f92ec46377c002b7063be19d1140c107acf",
+  "backends": [
+    "sqlx",
+    "seaorm"
+  ],
+  "initialScenariosPerBackend": 8,
+  "reviewedScenariosPerBackend": 2,
+  "distinctScenariosPerBackend": 9,
+  "reviewScope": "self-review: test-audit, wrdn-authz, wrdn-data-exfil; no nested delegation",
+  "actions": "disabled; no CI results",
+  "remainingIssueScope": [
+    "dynamic refresh parameter context",
+    "broader callback/expiry/concurrency acceptance"
+  ],
+  "productionHashes": {
+    "crates/api/src/plugins/oauth/logout.rs": "46a0b36d998129a6688ba29aa22a7632e7bc8ddbb8b5d8aae83af01a4946cb04",
+    "crates/api/src/plugins/session_management/mod.rs": "2d7a5348bd26531a428f2fcb744898aebb74578bf633630c90e2da229e8886db",
+    "crates/api/src/plugins/oauth/providers/generic.rs": "c63881b91726f4c37b5efd0cafa98b30091e4907a865222fef9cc7da01127d99"
+  }
+}

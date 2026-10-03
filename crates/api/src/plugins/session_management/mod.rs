@@ -316,8 +316,29 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
+        let body = if req.body.is_some() {
+            match parse_body::<super::oauth::logout::SignOutRequest>(req) {
+                Ok(body) => body,
+                Err(response) => return Ok(response),
+            }
+        } else {
+            super::oauth::logout::SignOutRequest::default()
+        };
+        let mut current_user = None;
         if let Some(token) = ctx.session_manager().extract_session_token(req) {
             if let Ok(Some(session)) = ctx.database.get_session(&token).await {
+                // A stored session and user own provider selection; request account IDs
+                // and cached account cookies never authorize disclosure of token hints.
+                if ctx
+                    .database
+                    .get_user_by_id(&session.user_id())
+                    .await
+                    .ok()
+                    .flatten()
+                    .is_some()
+                {
+                    current_user = Some(session.user_id().into_owned());
+                }
                 drop(sign_out_core(&session, ctx).await);
             } else {
                 drop(ctx.database.delete_session(&token).await);
@@ -344,6 +365,21 @@ impl SessionManagementPlugin {
                 if !header.starts_with(&format!("{base}=")) {
                     response.headers.append("Set-Cookie", header);
                 }
+            }
+        }
+        if let Some(user_id) = current_user
+            && let Some(url) = super::oauth::logout::provider_logout_url(&user_id, &body, ctx).await
+        {
+            let redirect = body.disable_redirect != Some(true);
+            response.body = AuthResponse::json(
+                200,
+                &serde_json::json!({
+                    "success": true, "url": url, "redirect": redirect,
+                }),
+            )?
+            .body;
+            if redirect {
+                drop(response.headers.insert("Location", url));
             }
         }
         Ok(response)

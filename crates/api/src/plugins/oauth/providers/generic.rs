@@ -22,6 +22,10 @@ pub struct GenericOAuthConfig {
     pub token_url: Option<String>,
     pub user_info_url: Option<String>,
     pub end_session_endpoint: Option<String>,
+    /// Default return URI, resolved against the auth base URL at sign-out.
+    pub post_logout_redirect_uri: Option<String>,
+    /// Keep local sign-out without a provider logout URL.
+    pub disable_provider_logout: bool,
     pub require_id_token_verification: bool,
     pub disable_id_token_nonce_binding: bool,
     pub map_profile: Option<Arc<dyn OAuthProfileMapper>>,
@@ -93,6 +97,8 @@ impl GenericOAuthConfig {
             token_url: None,
             user_info_url: None,
             end_session_endpoint: None,
+            post_logout_redirect_uri: None,
+            disable_provider_logout: false,
             require_id_token_verification: false,
             disable_id_token_nonce_binding: false,
             map_profile: None,
@@ -195,6 +201,17 @@ impl GenericOAuthConfig {
                 .configured_scopes
                 .splice(0..0, std::mem::take(&mut self.provider.scopes)),
         );
+        policy.end_session = if self.disable_provider_logout {
+            None
+        } else {
+            metadata
+                .end_session_endpoint
+                .clone()
+                .map(|endpoint| super::OAuthEndSessionConfig {
+                    endpoint,
+                    post_logout_redirect_uri: self.post_logout_redirect_uri,
+                })
+        };
         policy.verify_grant_id_token = metadata.jwks_url.is_some();
         policy.id_token_nonce_binding =
             policy.verify_grant_id_token && !self.disable_id_token_nonce_binding;
