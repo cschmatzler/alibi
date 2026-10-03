@@ -244,7 +244,7 @@ export function compareValues(
   };
   const isDate = (value: unknown): value is string =>
     typeof value === "string" &&
-    /^\d{4}-\d\d-\d\dT/.test(value) &&
+    /^(?:\d{4}|[+-]\d{6})-\d\d-\d\dT/.test(value) &&
     Number.isFinite(Date.parse(value));
   type ClockReceipt = {
     left: RequestWindow;
@@ -4241,6 +4241,12 @@ export function compareValues(
         return;
       }
 
+      // Published cache sessionSchema coerces [] to an empty userId. This is
+      // literal agreement at that field, never an empty identity bijection.
+      if (key === "userId" && /(?:^|\.)session\.userId$/.test(path) && a === "" && b === "") {
+        return;
+      }
+
       if (entityKeys.has(key) && !path.endsWith(".rp.id")) {
         if (urlQueryContext === "query" && !a.trim() && !b.trim()) {
           if (a !== b) {
@@ -4306,8 +4312,8 @@ export function compareValues(
         const bt = Date.parse(b);
 
         if (
-          !/^\d{4}-\d\d-\d\dT/.test(a) ||
-          !/^\d{4}-\d\d-\d\dT/.test(b) ||
+          !/^(?:\d{4}|[+-]\d{6})-\d\d-\d\dT/.test(a) ||
+          !/^(?:\d{4}|[+-]\d{6})-\d\d-\d\dT/.test(b) ||
           !Number.isFinite(at) ||
           !Number.isFinite(bt)
         ) {

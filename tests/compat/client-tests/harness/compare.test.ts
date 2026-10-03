@@ -1350,3 +1350,28 @@ test("actual admin ID filter URLs retain observed user identities and every lite
     ).length,
   ).toBeGreaterThan(0);
 });
+
+test("Source-coerced empty cached session userId compares literally without mapping empty identities", () => {
+  const observation = { session: { userId: "", token: "signed-session" } };
+  expect(compareValues(observation, observation, context)).toEqual([]);
+  expect(
+    compareValues(observation, { session: { userId: "foreign", token: "signed-session" } }, context)
+      .length,
+  ).toBeGreaterThan(0);
+  expect(compareValues({ user: { id: "" } }, { user: { id: "" } }, context).length).toBeGreaterThan(
+    0,
+  );
+});
+
+test("revived year rollover accepts Source's six-digit ISO output while malformed years and changed lifetimes still fail", () => {
+  const rollover = new Date("9999-12-31T24:00:00.000Z").toISOString();
+  expect(rollover).toBe("+010000-01-01T00:00:00.000Z");
+  const observation = { session: { expiresAt: rollover } };
+  expect(compareValues(observation, observation, context)).toEqual([]);
+  expect(
+    compareValues(observation, { session: { expiresAt: "+010001-01-01T00:00:00.000Z" } }, context)
+      .length,
+  ).toBeGreaterThan(0);
+  const malformed = { session: { expiresAt: "+10000-01-01T00:00:00.000Z" } };
+  expect(compareValues(malformed, malformed, context).length).toBeGreaterThan(0);
+});

@@ -218,6 +218,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         "jwe",
         "managed",
         "standard",
+        "exotic",
         "disabled",
         "version",
         "version-api",
@@ -250,15 +251,16 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             "negative-infinite" => f64::NEG_INFINITY,
             _ => 300.0,
         };
-        let version = if mode.starts_with("version") || mode.ends_with("interactions") {
-            CookieCacheVersion::Resolver(application.clone())
-        } else {
-            CookieCacheVersion::Literal(if mode == "date-version" {
-                "2026-10-01T00:00:00.000Z".into()
+        let version =
+            if mode.starts_with("version") || mode.ends_with("interactions") || mode == "exotic" {
+                CookieCacheVersion::Resolver(application.clone())
             } else {
-                "1".into()
-            })
-        };
+                CookieCacheVersion::Literal(if mode == "date-version" {
+                    "2026-10-01T00:00:00.000Z".into()
+                } else {
+                    "1".into()
+                })
+            };
         let mut config = base
             .clone()
             .base_path(&path)
@@ -309,7 +311,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             FieldConfig::new(json!({"type":"string"})).default_value(json!("cache-public-label")),
         );
         let mut store = crate::backend::store::<ApplicationSchema>(config.clone(), db.clone());
-        if mode.ends_with("interactions") {
+        if mode.ends_with("interactions") || mode == "exotic" {
             store = store.hook(SessionTokens(state.clone()));
         }
         let mut builder = AuthBuilder::<ApplicationSchema>::new(config.clone())

@@ -10,10 +10,7 @@ pub mod runtime;
 
 use crate::{AuthResult, AuthSession, AuthUser, SessionView, UserView};
 use async_trait::async_trait;
-use base64::{
-    Engine,
-    engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
-};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{SecondsFormat, Utc};
 use hmac::{Hmac, Mac};
 use serde_json::{Value, json};
@@ -274,42 +271,88 @@ fn signature(secret: &str, data: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
 }
 
+// Published base64 decoding stops at the first padding byte and discards
+// residual bits. It chooses one alphabet for the complete input.
+pub(crate) fn decode_base64(value: &str) -> Result<Vec<u8>, &'static str> {
+    let alphabet = if value.contains(['-', '_']) {
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_"
+    } else {
+        b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    };
+    let mut output = Vec::new();
+    let mut buffer = 0u32;
+    let mut bits = 0;
+    for byte in value.bytes().take_while(|byte| *byte != b'=') {
+        let digit = alphabet
+            .iter()
+            .position(|candidate| *candidate == byte)
+            .and_then(|digit| u32::try_from(digit).ok())
+            .ok_or("Invalid Base64 character")?;
+        buffer = buffer.wrapping_shl(6) | digit;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            output.push(u8::try_from((buffer >> bits) & 255).map_err(|_| "Invalid Base64 byte")?);
+        }
+    }
+    Ok(output)
+}
+
 /// Authenticate a compact envelope. Malformed data is a cache miss, allowing
 /// the caller's genuine storage fallback; it never supplies an identity.
 pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
-    let bytes = URL_SAFE_NO_PAD
-        .decode(value)
-        .or_else(|_| URL_SAFE.decode(value))
-        .ok()?;
-    let text = std::str::from_utf8(&bytes).ok()?;
-    let parsed = crate::utils::json::parse_value(text).ok()?;
+    decode_compact_http(value, secret).ok().flatten()
+}
+
+// HTTP preserves thrown alphabet errors; get-session maps these to its 500.
+// Parse and authenticate once, before reviving the typed payload projection.
+pub(crate) fn decode_compact_http(value: &str, secret: &str) -> AuthResult<Option<CompactCache>> {
+    let bytes = decode_base64(value).map_err(crate::AuthError::internal)?;
+    let text = String::from_utf8_lossy(&bytes);
+    let text = text.strip_prefix('\u{feff}').unwrap_or(&text);
+    let Ok(parsed) = crate::utils::json::parse_value(text) else {
+        return Ok(None);
+    };
+    let Some((payload, expires_at, signature)) = compact_envelope(&parsed) else {
+        return Ok(None);
+    };
+    let signature = decode_base64(signature).map_err(crate::AuthError::internal)?;
+    Ok(authenticate_compact(
+        payload, expires_at, &signature, secret,
+    ))
+}
+
+fn compact_envelope(
+    parsed: &crate::utils::json::JsValue,
+) -> Option<(&crate::utils::json::JsValue, f64, &str)> {
     let expires_at = parsed
         .get("expiresAt")?
         .as_f64()
-        .filter(|value_2| value_2.is_finite())?;
+        .filter(|value| value.is_finite())?;
     let signature = parsed.get("signature")?.as_str()?;
-    let payload = parsed.get("session")?.as_object()?;
-    let original_payload = payload;
-    let mut normalized = crate::utils::json::JsValue::Object(payload.clone());
+    let payload = parsed.get("session")?;
+    _ = payload.as_object()?;
+    Some((payload, expires_at, signature))
+}
+
+fn authenticate_compact(
+    original_payload: &crate::utils::json::JsValue,
+    expires_at: f64,
+    signature: &[u8],
+    secret: &str,
+) -> Option<CompactCache> {
+    let mut normalized = original_payload.clone();
     date::revive(&mut normalized);
-    let payload_2 = normalized.as_object()?;
-    let mut signed = payload_2.clone();
+    let mut signed = normalized.as_object()?.clone();
     drop(signed.insert(
         "expiresAt".into(),
         crate::utils::json::JsValue::Number(expires_at),
     ));
     let message = crate::utils::json::to_string(&signed).ok()?;
-    let signature = URL_SAFE_NO_PAD
-        .decode(signature)
-        .or_else(|_| URL_SAFE.decode(signature))
-        .ok()?;
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(message.as_bytes());
-    mac.verify_slice(&signature).ok()?;
-    parse_payload(
-        &crate::utils::json::JsValue::Object(original_payload.clone()),
-        expires_at,
-    )
+    mac.verify_slice(signature).ok()?;
+    parse_payload(original_payload, expires_at)
 }
 
 /// Validate and revive an authenticated session snapshot without granting storage authority.
@@ -366,7 +409,7 @@ pub(crate) fn parse_payload(
         return None;
     }
     let mut normalized = original_payload.clone();
-    date::revive(&mut normalized);
+    date::revive_parsed(&mut normalized);
     let payload_2 = normalized.as_object()?;
     let updated_at = payload_2
         .get("updatedAt")?
@@ -378,6 +421,12 @@ pub(crate) fn parse_payload(
     };
     let mut user = payload_2.get("user")?.to_json_value().ok()?;
     let mut session = payload_2.get("session")?.to_json_value().ok()?;
+    let user_id = date::coerce_id(original_payload.get("session")?.get("userId")?)?;
+    drop(
+        session
+            .as_object_mut()?
+            .insert("userId".into(), Value::String(user_id)),
+    );
     // The source schemas supply absent creation/update dates and a false
     // emailVerified value. Producer dates are canonical JavaScript Date JSON.
     for object in [&mut user, &mut session] {
@@ -415,6 +464,9 @@ pub(crate) fn parse_payload(
     .filter(|name| user.get(*name).is_some_and(Value::is_null))
     .collect();
     let mut user: UserView = serde_json::from_value(user).ok()?;
+    if original_payload.get("user")?.get("image").is_none() {
+        _ = user.omitted_fields.insert("image".into());
+    }
     for name in null_user_extensions {
         drop(user.extension_fields.insert(name.into(), Value::Null));
     }
@@ -423,6 +475,11 @@ pub(crate) fn parse_payload(
         .filter(|name| session.get(*name).is_some_and(Value::is_null))
         .collect();
     let mut session: SessionView = serde_json::from_value(session).ok()?;
+    for name in ["ipAddress", "userAgent"] {
+        if original_payload.get("session")?.get(name).is_none() {
+            _ = session.omitted_fields.insert(name.into());
+        }
+    }
     for name in null_extensions {
         drop(session.extension_fields.insert(name.into(), Value::Null));
     }

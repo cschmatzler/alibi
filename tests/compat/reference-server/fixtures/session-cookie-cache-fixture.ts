@@ -40,6 +40,7 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
     "jwe",
     "managed",
     "standard",
+    "exotic",
     "disabled",
     "version",
     "version-api",
@@ -115,7 +116,7 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
           }
         : {}),
       basePath: `/__test/profiles/session-cache-${mode}/api/auth`,
-      ...(mode.endsWith("interactions")
+      ...(mode.endsWith("interactions") || mode === "exotic"
         ? {
             databaseHooks: {
               session: {
@@ -244,7 +245,7 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
               : "compact",
           maxAge,
           version:
-            mode.startsWith("version") || mode.endsWith("interactions")
+            mode.startsWith("version") || mode.endsWith("interactions") || mode === "exotic"
               ? callback
               : mode === "date-version"
                 ? "2026-10-01T00:00:00.000Z"
