@@ -1,0 +1,11 @@
+{"ok":true,"oauthBaseURL":"http://127.0.0.1:44731","upstreamVersion":"1.7.6"}
+{"ok":true,"upstreamVersion":"1.7.6"}
+bun test v1.4.2 (744846f84)
+
+process-proofs/oauth-proxy-environment.test.ts:
+(pass) OAuth proxy remaining actual process vendor and production URL environment selection [994.13ms]
+
+ 1 pass
+ 0 fail
+ 24 expect() calls
+Ran 1 test across 1 file. [1078.00ms]

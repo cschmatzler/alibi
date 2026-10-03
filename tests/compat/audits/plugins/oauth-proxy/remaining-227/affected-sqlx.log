@@ -1,0 +1,13 @@
+{"ok":true,"oauthBaseURL":"http://127.0.0.1:42225","upstreamVersion":"1.7.6"}
+{"ok":true,"upstreamVersion":"1.7.6"}
+bun test v1.4.2 (744846f84)
+
+tests/plugins/oauth-proxy/proxy.test.ts:
+(pass) OAuth proxy remaining URL POST error and pending maxAge configuration contracts [1631.81ms]
+(pass) OAuth proxy remaining configured ordinary OAuth fallback preserves query and state consumption [389.06ms]
+
+ 2 pass
+ 9 filtered out
+ 0 fail
+ 210 expect() calls
+Ran 2 tests across 1 file. [2.10s]

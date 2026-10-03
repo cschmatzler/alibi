@@ -194,6 +194,9 @@ pub struct AuthConfig {
     /// upstream's explicit `onAPIError.customizeDefaultErrorPage` option.
     pub render_error_page: bool,
 
+    /// Default OAuth error destination, corresponding to `onAPIError.errorURL`.
+    pub api_error_url: Option<String>,
+
     /// Session configuration
     pub session: SessionConfig,
 
@@ -716,6 +719,7 @@ impl Default for AuthConfig {
             trusted_origins: Vec::new(),
             disabled_paths: Vec::new(),
             render_error_page: !std::env::var("NODE_ENV").is_ok_and(|value| value == "production"),
+            api_error_url: None,
             session: SessionConfig::default(),
             user: UserConfig::default(),
             verification: VerificationConfig::default(),
@@ -851,6 +855,14 @@ impl AuthConfig {
     #[must_use]
     pub fn account(mut self, account: AccountConfig) -> Self {
         self.account = account;
+        self
+    }
+
+    /// Configure the default OAuth error destination (`onAPIError.errorURL`).
+    /// An empty value uses the endpoint's ordinary fallback.
+    #[must_use]
+    pub fn api_error_url(mut self, url: impl Into<String>) -> Self {
+        self.api_error_url = Some(url.into());
         self
     }
 

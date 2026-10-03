@@ -1,0 +1,10 @@
+{
+  "better-auth": {
+    "filesEach": 465,
+    "mismatches": []
+  },
+  "@better-auth/core": {
+    "filesEach": 350,
+    "mismatches": []
+  }
+}

@@ -1,0 +1,45 @@
+{"ok":true,"oauthBaseURL":"http://127.0.0.1:43861","upstreamVersion":"1.7.6"}
+{"ok":true,"upstreamVersion":"1.7.6"}
+bun test v1.4.2 (744846f84)
+
+tests/plugins/oauth-proxy/proxy.test.ts:
+971 |     // from the form body, so GET-only forwarding cannot satisfy this owner.
+972 |     postURL.searchParams.set("code", approved.searchParams.get("code")!);
+973 |     const posted = await response(await owner.fetch(postURL, { method: "POST", redirect: "manual", credentials: "omit", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ state: approved.searchParams.get("state")!, code: "invalid-body-code" }) }));
+974 |     expect(posted.status).toBe(302);
+975 |     const bridge = new URL(posted.location!);
+976 |     expect(bridge.origin).toBe(ctx.baseURL);
+      ^
+error: expect(received).toBe(expected)
+
+Expected: "http://localhost:54807"
+Received: "http://127.0.0.1:54807"
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-close227/tests/compat/client-tests/tests/plugins/oauth-proxy/proxy.test.ts:976:27
+      at runScenario (/tmp/better-auth-close227/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-close227/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) OAuth proxy remaining URL POST error and pending maxAge configuration contracts [772.73ms]
+1040 |     const forwarded = await forward(ctx, owner, issued, true);
+1041 |     const selected = await ctx.rawRequest({ path: "/__test/oauth-proxy-cookie/options", method: "POST", json: { mode: "cache", origin: ctx.baseURL } });
+1042 |     expect(selected.status).toBe(200);
+1043 |     const raw = await owner.fetch(forwarded.bridge, { redirect: "manual", headers: { cookie: `${preference}; better-auth.oauth_state=${issued.issuedCookie!.token}` } });
+1044 |     const cookies = raw.headers.getSetCookie();
+1045 |     expect(cookies.find((cookie) => cookie.startsWith("better-auth.session_token="))).not.toContain("Max-Age");
+       ^
+error: expect(received).not.toContain(expected)
+
+Expected to not contain: "Max-Age"
+Received: "better-auth.session_token=ycjTfrSC6j5pAXkGEs3YaHCHOIig5qkv.vrM%2B3ARS2MuLzr5PmfJocMOuMqLXIV2NeVaisQ3Hzeo%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+
+      at toContain (unknown:1:1)
+      at /tmp/better-auth-close227/tests/compat/client-tests/tests/plugins/oauth-proxy/proxy.test.ts:1045:91
+      at runScenario (/tmp/better-auth-close227/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-close227/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) OAuth proxy remaining signed preference cache and concurrent cookie restoration composition [897.88ms]
+
+ 0 pass
+ 6 filtered out
+ 2 fail
+ 152 expect() calls
+Ran 2 tests across 1 file. [1.74s]

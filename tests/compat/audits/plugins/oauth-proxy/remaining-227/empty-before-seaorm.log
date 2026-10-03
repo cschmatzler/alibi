@@ -1,0 +1,28 @@
+{"ok":true,"oauthBaseURL":"http://127.0.0.1:45237","upstreamVersion":"1.7.6"}
+{"ok":true,"upstreamVersion":"1.7.6"}
+bun test v1.4.2 (744846f84)
+
+tests/plugins/oauth-proxy/proxy.test.ts:
+986 |     );
+987 |     const afterEmptyCode = await state(ctx);
+988 |     // Retain the bounded pre-fix witness even when the regression assertion
+989 |     // stops the comparison before its ordinary full-pair artifact is written.
+990 |     if (process.env.COMPAT_OBSERVATIONS_DIR) await Bun.write(`${process.env.COMPAT_OBSERVATIONS_DIR}/empty-code-${new URL(ctx.baseURL).port}.json`, JSON.stringify({ started: issued.started, issuedState: issued.issuedState, approval, emptyCode, before: beforeEmptyCode, after: afterEmptyCode }, null, 2));
+991 |     expect(emptyCode.location).toBe(`${ctx.baseURL}/proxy-error?error=no_code`);
+      ^
+error: expect(received).toBe(expected)
+
+Expected: "http://localhost:33465/proxy-error?error=no_code"
+Received: "http://localhost:33465/proxy-error?error=invalid_code"
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-close227/tests/compat/client-tests/tests/plugins/oauth-proxy/proxy.test.ts:991:32
+      at runScenario (/tmp/better-auth-close227/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-close227/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) OAuth proxy remaining URL POST error and pending maxAge configuration contracts [850.53ms]
+
+ 0 pass
+ 10 filtered out
+ 1 fail
+ 100 expect() calls
+Ran 1 test across 1 file. [931.00ms]

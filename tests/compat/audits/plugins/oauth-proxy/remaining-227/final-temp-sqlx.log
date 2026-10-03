@@ -1,0 +1,18 @@
+{"ok":true,"oauthBaseURL":"http://127.0.0.1:35181","upstreamVersion":"1.7.6"}
+{"ok":true,"upstreamVersion":"1.7.6"}
+bun test v1.4.2 (744846f84)
+
+process-proofs/oauth-proxy-environment.test.ts:
+(pass) OAuth proxy remaining actual process vendor and production URL environment selection [914.66ms]
+
+tests/plugins/oauth-proxy/proxy.test.ts:
+(pass) OAuth proxy remaining URL POST error and pending maxAge configuration contracts [1266.63ms]
+(pass) OAuth proxy remaining signed preference cache and concurrent cookie restoration composition [945.22ms]
+(pass) OAuth proxy remaining dynamic transport URL resolution [527.06ms]
+(pass) OAuth proxy remaining custom callback account authority loose profile and absent signup policies [1453.28ms]
+
+ 5 pass
+ 6 filtered out
+ 0 fail
+ 490 expect() calls
+Ran 5 tests across 2 files. [5.18s]
