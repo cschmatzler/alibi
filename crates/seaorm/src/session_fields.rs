@@ -32,6 +32,48 @@ pub fn raw_value(value: &JsValue) -> AuthResult<Value> {
     })
 }
 
+pub(crate) async fn prepare_string_value<C: ConnectionTrait>(
+    db: &C,
+    value: Value,
+) -> AuthResult<Option<String>> {
+    if let Value::String(value) = value {
+        return Ok(value);
+    }
+    let number = if let Value::Double(Some(number)) = &value {
+        Some(*number)
+    } else {
+        None
+    };
+    if matches!(&value, Value::Json(_)) {
+        return Err(AuthError::internal(
+            "object cannot bind to a scalar session field",
+        ));
+    }
+    let backend = db.get_database_backend();
+    let sql = match backend {
+        DbBackend::Sqlite => "SELECT CAST(? AS TEXT) AS value",
+        DbBackend::Postgres => "SELECT CAST($1 AS TEXT) AS value",
+        DbBackend::MySql => "SELECT CAST(? AS CHAR) AS value",
+        _ => {
+            return Err(AuthError::internal(
+                "session TEXT affinity is unsupported by this backend",
+            ));
+        }
+    };
+    let row = db
+        .query_one_raw(Statement::from_sql_and_values(backend, sql, [value]))
+        .await
+        .map_err(crate::store::map_db_err)?
+        .ok_or_else(|| AuthError::internal("session TEXT affinity returned no row"))?;
+    let actual: Option<String> = row.try_get("", "value").map_err(crate::store::map_db_err)?;
+    Ok(match (backend, number) {
+        (DbBackend::Sqlite, Some(number)) if number.is_finite() => {
+            Some(crate::store::sqlite_real_text(number))
+        }
+        _ => actual,
+    })
+}
+
 #[expect(
     clippy::as_conversions,
     clippy::cast_possible_truncation,
@@ -50,43 +92,7 @@ pub(crate) async fn prepare_value<C: ConnectionTrait>(
     let backend = db.get_database_backend();
     match column.def().get_column_type() {
         ColumnType::Char(_) | ColumnType::String(_) | ColumnType::Text => {
-            if let Value::String(_) = &value {
-                return Ok(value);
-            }
-            let number = if let Value::Double(Some(number)) = &value {
-                Some(*number)
-            } else {
-                None
-            };
-            if matches!(&value, Value::Json(_)) {
-                return Err(AuthError::internal(
-                    "object cannot bind to a scalar session field",
-                ));
-            }
-            let sql = match backend {
-                DbBackend::Sqlite => "SELECT CAST(? AS TEXT) AS value",
-                DbBackend::Postgres => "SELECT CAST($1 AS TEXT) AS value",
-                DbBackend::MySql => "SELECT CAST(? AS CHAR) AS value",
-                _ => {
-                    return Err(AuthError::internal(
-                        "session TEXT affinity is unsupported by this backend",
-                    ));
-                }
-            };
-            let row = db
-                .query_one_raw(Statement::from_sql_and_values(backend, sql, [value]))
-                .await
-                .map_err(crate::store::map_db_err)?
-                .ok_or_else(|| AuthError::internal("session TEXT affinity returned no row"))?;
-            let actual: Option<String> =
-                row.try_get("", "value").map_err(crate::store::map_db_err)?;
-            let text = match (backend, number) {
-                (DbBackend::Sqlite, Some(number)) if number.is_finite() => {
-                    Some(crate::store::sqlite_real_text(number))
-                }
-                _ => actual,
-            };
-            Ok(Value::String(text))
+            Ok(Value::String(prepare_string_value(db, value).await?))
         }
         ColumnType::Json | ColumnType::JsonBinary => {
             let json = match value {

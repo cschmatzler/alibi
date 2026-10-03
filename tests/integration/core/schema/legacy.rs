@@ -212,7 +212,9 @@ mod session {
         pub user_agent: Option<String>,
         pub user_id: i32,
         pub impersonated_by: Option<String>,
+        #[sea_orm(column_name = "active_event_id")]
         pub active_organization_id: Option<String>,
+        pub active_team_id: Option<String>,
         pub active: bool,
     }
 
@@ -251,6 +253,9 @@ mod session {
         }
         fn active_organization_id(&self) -> Option<&str> {
             self.active_organization_id.as_deref()
+        }
+        fn active_team_id(&self) -> Option<&str> {
+            self.active_team_id.as_deref()
         }
         fn active(&self) -> bool {
             self.active
@@ -312,6 +317,7 @@ mod session {
                 user_id: Set(user_id),
                 impersonated_by: Set(create_session.impersonated_by),
                 active_organization_id: Set(create_session.active_organization_id),
+                active_team_id: Set(create_session.active_team_id),
                 active: Set(true),
             }
         }
@@ -739,7 +745,139 @@ async fn seed_legacy_user(database: &DatabaseConnection) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use better_auth_core::field_policy::FieldValues;
+    use better_auth_core::{
+        field_policy::{FieldConfig, FieldValues},
+        utils::json::JsValue,
+    };
+
+    #[tokio::test]
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "Assertions report test failures; Result propagates storage and handler errors"
+    )]
+    async fn declared_typed_session_fields_use_manual_schema_bindings_and_preserve_policies()
+    -> Result<(), Box<dyn std::error::Error>> {
+        let database = test_database().await;
+        let user_id = seed_legacy_user(&database).await.to_string();
+        for (name, physical, native) in [
+            (
+                "activeOrganizationId",
+                "active_event_id",
+                "organization-native",
+            ),
+            ("activeTeamId", "active_team_id", "team-native"),
+            ("impersonatedBy", "impersonated_by", "admin-native"),
+        ] {
+            let transformed = format!("stored:{native}");
+            for (replacement, expected) in [
+                (None, Some(native)),
+                (
+                    Some(Some(JsValue::String(transformed.clone()))),
+                    Some(transformed.as_str()),
+                ),
+                (Some(None), None),
+                (Some(Some(JsValue::Null)), None),
+                (Some(Some(JsValue::Number(42.0))), Some("42")),
+            ] {
+                for hidden in [false, true] {
+                    let mut config = test_config();
+                    let field = FieldConfig::new(json!({"type":"string"})).read_only();
+                    let field = if let Some(replacement) = replacement.clone() {
+                        field.transform_adapter_input(move |value| {
+                            assert_eq!(value.as_ref().and_then(JsValue::as_str), Some(native));
+                            let replacement = replacement.clone();
+                            async move { Ok(replacement) }
+                        })
+                    } else {
+                        field
+                    };
+                    drop(config.session.additional_fields.insert(
+                        name.into(),
+                        if hidden {
+                            field.field_name(physical).hidden()
+                        } else {
+                            field
+                        },
+                    ));
+                    let auth = BetterAuth::<LegacySchema>::new(config.clone())
+                        .store(SeaOrmStore::<LegacySchema>::new(config, database.clone()))
+                        .plugin(SessionManagementPlugin::new())
+                        .build()
+                        .await?;
+                    let created = auth
+                        .store()
+                        .create_session(CreateSession {
+                            additional_fields: FieldValues::new(),
+                            token: None,
+                            user_id: user_id.clone(),
+                            expires_at: Utc::now() + chrono::Duration::hours(1),
+                            ip_address: None,
+                            user_agent: None,
+                            active_organization_id: Some("organization-native".into()),
+                            active_team_id: Some("team-native".into()),
+                            impersonated_by: Some("admin-native".into()),
+                        })
+                        .await?;
+                    let persisted = auth.store().get_session(&created.token).await?.unwrap();
+                    for (field_name, expected_native, actual) in [
+                        (
+                            "activeOrganizationId",
+                            "organization-native",
+                            persisted.active_organization_id(),
+                        ),
+                        ("activeTeamId", "team-native", persisted.active_team_id()),
+                        (
+                            "impersonatedBy",
+                            "admin-native",
+                            persisted.impersonated_by(),
+                        ),
+                    ] {
+                        let expected_value = if field_name == name {
+                            expected
+                        } else {
+                            Some(expected_native)
+                        };
+                        assert_eq!(actual, expected_value, "{field_name}");
+                    }
+                    let response = auth
+                        .handle_request(auth_request(
+                            HttpMethod::Get,
+                            "/api/auth/get-session",
+                            &created.token,
+                        ))
+                        .await?;
+                    assert_eq!(response.status, 200);
+                    let projection: serde_json::Value = serde_json::from_slice(&response.body)?;
+                    assert_eq!(
+                        projection["session"].get(name),
+                        (!hidden).then(|| json!(expected)).as_ref()
+                    );
+                    let mut update =
+                        auth_request(HttpMethod::Post, "/api/auth/update-session", &created.token);
+                    update.body = Some(serde_json::to_vec(&json!({(name): "client-controlled"}))?);
+                    drop(
+                        update
+                            .headers
+                            .insert("content-type".into(), "application/json".into()),
+                    );
+                    let response = auth.handle_request(update).await?;
+                    assert_eq!(response.status, 400);
+                    assert_eq!(
+                        serde_json::from_slice::<serde_json::Value>(&response.body)?["code"],
+                        "FIELD_NOT_ALLOWED"
+                    );
+                    let unchanged = auth.store().get_session(&created.token).await?.unwrap();
+                    assert_eq!(
+                        unchanged.active_organization_id,
+                        persisted.active_organization_id
+                    );
+                    assert_eq!(unchanged.active_team_id, persisted.active_team_id);
+                    assert_eq!(unchanged.impersonated_by, persisted.impersonated_by);
+                }
+            }
+        }
+        Ok(())
+    }
 
     #[tokio::test]
     #[expect(
