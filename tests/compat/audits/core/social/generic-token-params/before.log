@@ -1,0 +1,27 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/social/generic-token-params.test.ts:
+32 | }
+33 | function form(row: Receipt) {
+34 |   const fields = Object.fromEntries(row.body);
+35 |   expect(row.body.length).toBe(Object.keys(fields).length);
+36 |   expect(row.contentType).toBe("application/x-www-form-urlencoded");
+37 |   expect(fields.resource).toBe(resource);
+     ^
+error: expect(received).toBe(expected)
+
+Expected: "tenant :+&=/%é"
+Received: undefined
+
+      at toBe (unknown:1:1)
+      at form (/tmp/better-auth-oidc-188/tests/compat/client-tests/tests/core/social/generic-token-params.test.ts:37:27)
+      at /tmp/better-auth-oidc-188/tests/compat/client-tests/tests/core/social/generic-token-params.test.ts:123:20
+      at runScenario (/tmp/better-auth-oidc-188/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-oidc-188/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) generic token post configured forms preserve grant authority and persisted lifecycle [746.75ms]
+
+ 0 pass
+ 11 filtered out
+ 1 fail
+ 96 expect() calls
+Ran 1 test across 1 file. [811.00ms]

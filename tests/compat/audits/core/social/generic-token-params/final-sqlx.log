@@ -1,0 +1,20 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/social/generic-token-params.test.ts:
+(pass) generic token post configured forms preserve grant authority and persisted lifecycle [1318.74ms]
+(pass) generic token basic configured forms preserve grant authority and persisted lifecycle [1187.13ms]
+(pass) generic token none configured forms preserve grant authority and persisted lifecycle [1119.46ms]
+(pass) generic token manual configured forms preserve grant authority and persisted lifecycle [1159.90ms]
+(pass) generic token default-none configured forms preserve grant authority and persisted lifecycle [1163.30ms]
+(pass) generic token default-post configured forms preserve grant authority and persisted lifecycle [1139.15ms]
+(pass) generic token basic-secret conflicting static authentication fails before outbound grant [302.99ms]
+(pass) generic token none-secret conflicting static authentication fails before outbound grant [296.47ms]
+(pass) generic token incomplete conflicting static authentication fails before outbound grant [311.04ms]
+(pass) generic token conflict conflicting static authentication fails before outbound grant [327.12ms]
+(pass) generic token refresh-basic-secret conflicting static authentication fails before outbound grant [519.77ms]
+(pass) generic token refresh-none-secret conflicting static authentication fails before outbound grant [526.35ms]
+
+ 12 pass
+ 0 fail
+ 1042 expect() calls
+Ran 12 tests across 1 file. [9.44s]

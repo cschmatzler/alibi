@@ -682,7 +682,9 @@ for (const [path, instance] of polarFixture.profiles) {
 for (const [path, instance] of railwayFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
-for (const [path, instance] of genericTokenFixture.profiles) { verificationProfiles.set(path, instance); }
+for (const [path, instance] of genericTokenFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
 for (const [path, instance] of paypalFixture.profiles) {
   verificationProfiles.set(path, instance);
 }

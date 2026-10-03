@@ -36,32 +36,35 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     },
   });
   function params(mode: string, refresh: boolean): Record<string, string> {
-    if (mode.startsWith("refresh-"))
+    if (mode.startsWith("refresh-")) {
       return params(refresh ? mode.slice(8) : mode.slice(8).replace(/-secret$/, ""), refresh);
+    }
     const p: Record<string, string> = Object.assign(Object.create(null), {
       audience: "https://resource.example.invalid/a?x=1&y=two words",
       resource: "tenant :+&=/%é",
       client_id: "extra-client",
       grant_type: "extra-grant",
     });
-    if (refresh)
+    if (refresh) {
       Object.assign(
         p,
         JSON.parse(
           '{"refresh_token":"extra-refresh","scope":"rotated scope","__proto__":"blocked","constructor":"blocked","prototype":"blocked"}',
         ),
       );
-    else
+    } else {
       Object.assign(p, {
         code: "extra-code",
         redirect_uri: "https://wrong.example.invalid",
         code_verifier: "extra-verifier",
       });
+    }
     if (["post", "basic-secret", "none-secret"].includes(mode)) p.client_secret = "extra-secret";
     if (["manual", "incomplete", "conflict"].includes(mode)) {
       p.client_assertion = "trusted-assertion";
-      if (mode !== "incomplete")
+      if (mode !== "incomplete") {
         p.client_assertion_type = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
+      }
     }
     return p;
   }
@@ -84,7 +87,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     const configuredMode = mode.replace(/^refresh-/, "");
     profiles.set(
       path,
-      betterAuth({
+      betterAuth<BetterAuthOptions>({
         ...base,
         basePath: path,
         socialProviders: {},

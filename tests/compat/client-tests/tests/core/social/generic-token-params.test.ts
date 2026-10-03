@@ -51,7 +51,7 @@ function observed(rows: Receipt[]) {
   }));
 }
 async function save(ctx: ScenarioContext, name: string, result: unknown) {
-  if (process.env.GENERIC_TOKEN_EVIDENCE_DIR)
+  if (process.env.GENERIC_TOKEN_EVIDENCE_DIR) {
     await Bun.write(
       `${process.env.GENERIC_TOKEN_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
       JSON.stringify(
@@ -60,6 +60,7 @@ async function save(ctx: ScenarioContext, name: string, result: unknown) {
         2,
       ),
     );
+  }
   return result;
 }
 for (const mode of ["post", "basic", "none", "manual", "default-none", "default-post"] as const) {
@@ -175,8 +176,9 @@ for (const mode of ["post", "basic", "none", "manual", "default-none", "default-
       expect(refresh.scope).toBe("rotated scope");
       expect(refresh.client_id).toBe(code.client_id);
       expect(refresh.client_secret).toBe(code.client_secret);
-      for (const key of ["__proto__", "constructor", "prototype"])
+      for (const key of ["__proto__", "constructor", "prototype"]) {
         expect(Object.hasOwn(refresh, key)).toBe(false);
+      }
       expect((await receipts(ctx))[1]!.authorization).toBe(authorization);
       // A foreign owner's explicit link cannot take over the existing provider subject.
       const linker = foreign;
@@ -213,8 +215,9 @@ for (const mode of ["post", "basic", "none", "manual", "default-none", "default-
       expect(linked.users).toEqual(rotated.users);
       expect(linked.sessions).toEqual(rotated.sessions);
       expect(linked.accounts).toHaveLength(rotated.accounts.length + 1);
-      for (const row of rotated.accounts)
+      for (const row of rotated.accounts) {
         expect(linked.accounts.find((a) => a.id === row.id)).toEqual(row);
+      }
       expect(linked.accounts.find((row) => row.accountId === linkedSubject)).toMatchObject({
         userId: before.users[0]!.id,
         providerId: "generic",
