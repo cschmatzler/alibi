@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running unittests src/lib.rs (/tmp/role-operators220-target/debug/deps/better_auth_api-b9ce52ad46c0698e)
+
+running 1 test
+test plugins::admin::tests::test_custom_admin_role_can_use_permission_engine ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 334 filtered out; finished in 0.02s
+
