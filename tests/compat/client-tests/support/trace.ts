@@ -25,7 +25,7 @@ export type RequestWindow = {
   issuedTrustCookie?: string;
   /** Actual signed database-state cookie from the default OAuth issuing response. */
   issuedVerificationStateCookie?: string;
-  /** Exact input of admitted verification producers and explicit expiry controls. */
+  /** Exact input of verification producers, provider profile and explicit expiry controls. */
   verificationInput?: unknown;
   /** Integrity of the original complete parsed observer response, separate from compared output. */
   verificationObserverDigest?: string;
@@ -355,6 +355,7 @@ export function createTracingFetch(
               }
             : {}),
           ...(url.pathname === "/__test/verification-state" ||
+          url.pathname === "/__test/social-provider/profile" ||
           /\/(?:email-otp\/send-verification-otp|sign-in\/(?:magic-link|social)|one-time-token\/generate)$/.test(
             url.pathname,
           )
