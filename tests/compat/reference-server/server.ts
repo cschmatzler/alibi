@@ -42,7 +42,6 @@ import { createCompromisedPasswordFixture } from "./fixtures/compromised-passwor
 import { createCustomSessionFixture } from "./fixtures/custom-session-fixture";
 import { createDispatchFixture } from "./fixtures/dispatch-fixture";
 import { dropboxProviderFixture } from "./fixtures/dropbox-provider-fixture";
-import { microsoftProviderFixture } from "./microsoft-provider-fixture";
 import { facebookProviderFixture } from "./fixtures/facebook-provider-fixture";
 import { figmaProviderFixture } from "./fixtures/figma-provider-fixture";
 import { googleIdTokenProfiles } from "./fixtures/google-id-token-fixture";
@@ -54,6 +53,7 @@ import { kickProviderFixture } from "./fixtures/kick-provider-fixture";
 import { createLastLoginMethodFixture } from "./fixtures/last-login-method-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./fixtures/lifecycle-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
+import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./fixtures/one-tap-fixture";
@@ -183,8 +183,6 @@ const oauthServer = Bun.serve({
   port: 0,
   async fetch(request) {
     const url = new URL(request.url);
-      const microsoftControl = await microsoftFixture.handle(request);
-      if (microsoftControl) return microsoftControl;
 
     if (url.pathname === "/oauth/authorize" && request.method === "GET") {
       const redirectURI = url.searchParams.get("redirect_uri");
@@ -1589,6 +1587,8 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      const microsoftControl = await microsoftFixture.handle(request);
+      if (microsoftControl) return microsoftControl;
       if (url.pathname.startsWith("/__test/profiles/error-page/api/auth/")) {
         return errorPageAuth.handler(request);
       }

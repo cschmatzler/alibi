@@ -306,9 +306,34 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
                         || email_list_includes(profile.get("verified_secondary_email"), &email)?)
             }
         };
+        // Public provider output keeps the original JSON shape independently
+        // from the typed values used by account admission and persistence.
+        let user_output = Some(mapped.as_ref().map_or_else(
+            || {
+                let mut output = serde_json::Map::new();
+                for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")]
+                {
+                    if let Some(value) = profile.get(source) {
+                        drop(output.insert(target.into(), value.clone()));
+                    }
+                }
+                drop(
+                    output.insert(
+                        "emailVerified".into(),
+                        profile
+                            .get("email_verified")
+                            .cloned()
+                            .unwrap_or(Value::Bool(verified)),
+                    ),
+                );
+                output
+            },
+            |user| user.public_profile(true),
+        ));
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
+                additional_fields: Default::default(),
                 id,
                 email,
                 name: scalar(profile.get("name"))?,
@@ -317,6 +342,7 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
             },
         };
         Ok(OAuthUserInfoResponse {
+            user_output,
             user,
             data: profile,
         })

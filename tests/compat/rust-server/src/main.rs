@@ -104,13 +104,12 @@ use better_auth_seaorm::store::entities::{
     user, verification, wallet_address,
 };
 use chrono::{DateTime, Utc};
+use fixtures::microsoft_provider_fixture;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
-
-mod microsoft_provider_fixture;
 
 type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
@@ -887,7 +886,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         facebook_provider_fixture::router(&config, database.clone()).await?;
     let (dropbox_router, dropbox_reset) =
         dropbox_provider_fixture::router(&config, database.clone()).await?;
-    let (microsoft_router, microsoft_reset) = microsoft_provider_fixture::router(&config, database.clone()).await?;
+    let (microsoft_router, microsoft_reset) =
+        microsoft_provider_fixture::router(&config, database.clone()).await?;
     let (figma_router, figma_reset) =
         figma_provider_fixture::router(&config, database.clone()).await?;
     let (huggingface_router, huggingface_reset) =
@@ -1399,6 +1399,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let dropbox_reset=dropbox_reset.clone();
                 let facebook_reset=facebook_reset.clone();
                 let figma_reset=figma_reset.clone();
+                let microsoft_reset=microsoft_reset.clone();
                 let huggingface_reset=huggingface_reset.clone();
                 let kakao_reset=kakao_reset.clone();
                 let kick_reset=kick_reset.clone();

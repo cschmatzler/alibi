@@ -19,9 +19,9 @@ mod apple;
 pub use apple::AppleOptions;
 
 mod microsoft;
-pub use microsoft::{MicrosoftOptions, MicrosoftProfilePhotoSize};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+pub use microsoft::{MicrosoftOptions, MicrosoftProfilePhotoSize};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
