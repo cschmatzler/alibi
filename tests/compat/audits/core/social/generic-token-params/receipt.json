@@ -27,7 +27,6 @@
     "reference-typecheck-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "before.log": "0499da73305d2c723a20ab07742df3bf9f2132cbdd62f2819d9b98ab070d1be8",
     "token-handler-invariance.txt": "3996cfabef4a2a638822720469622e0537963905055dc4bfa7aac2e6efd2b6fe",
-    "rebase-range-diff.log": "82ceeedaa578f2cb2d345960999cd3193a4c2671ea1d520297e386cc759ac306",
     "final-seaorm.log": "dc88b36a73b341639f4c38343f99ae95a23242182c47a4c788f809db24a1df1b",
     "clippy.log": "82474c5e02309ab173c2bf4047b51a5d85d16df170de1d0dfdacf5786ca9c8fa",
     "rebased-production.diff": "7c969a8997712d938f631d4a3462ee321a722e87bf2306e9a738b60dc0f9eafb",
@@ -35,7 +34,8 @@
     "typecheck-final.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "before-source-raw.tar.gz": "2d97556af0e11f8ccc8f70d90a601dda0cec01e5f362951543f79445cae5288b",
     "final-sqlx.log": "001328faaec2c38eaaaa5c826f457bb8c8d423188da3c94f345c8f3a4af9fac6",
-    "sqlx-raw-pairs.tar.gz": "b7ac509205eb6b0d86774fa12df9e9ee5caa7a77a656ae6c8ef90463975cab61"
+    "sqlx-raw-pairs.tar.gz": "b7ac509205eb6b0d86774fa12df9e9ee5caa7a77a656ae6c8ef90463975cab61",
+    "rebase-range-diff.log.gz": "cf8dfffd4c42f3cfba9612ec435825d513f19be3f548f09bc6252f95caad9a19"
   },
   "exclusions": "No comparator exclusions or tolerance edits. Encoded raw strings retained separately; compared receipt fields are parsed and random PKCE values use existing token normalization.",
   "remaining": "Discovery/issuer/JWKS/nonce/audience and dynamic refresh context are outside this bounded static-parameter production change; #188 remains open."
