@@ -105,7 +105,7 @@ impl OAuthProvider {
             .filter(|v| !v.is_empty())
             .unwrap_or(provider.auth_url);
         provider.user_info_url = options.user_info_endpoint.or(provider.user_info_url);
-        let mut claims = serde_json::Map::new();
+        let mut claims = Vec::new();
         for claim in ["email", "email_verified"]
             .into_iter()
             .map(str::to_owned)
@@ -118,11 +118,26 @@ impl OAuthProvider {
                 ]
             }))
         {
-            drop(claims.insert(claim, Value::Null));
+            // Object assignment to __proto__ does not create an own JSON key.
+            if claim != "__proto__" && !claims.iter().any(|(key, _)| key == &claim) {
+                claims.push((claim, better_auth_core::utils::json::JsValue::Null));
+            }
         }
         provider.authorization_params.push((
             "claims".into(),
-            serde_json::json!({"id_token":claims}).to_string(),
+            better_auth_core::utils::json::to_string(
+                &better_auth_core::utils::json::JsValue::Object(
+                    [(
+                        "id_token".into(),
+                        better_auth_core::utils::json::JsValue::Object(
+                            claims.into_iter().collect(),
+                        ),
+                    )]
+                    .into_iter()
+                    .collect(),
+                ),
+            )
+            .expect("Twitch claim names and null values are JSON serializable"),
         ));
         policy.propagate_grant_profile_errors = true;
         provider.authorization = Some(policy);

@@ -156,6 +156,11 @@ pub type OAuthAccountSubject = fn(&Value) -> Result<String, String>;
 
 #[async_trait]
 pub trait OAuthUserInfoHandler: Send + Sync {
+    /// Retain factory-specific use of the original configured client array.
+    fn configured_client_ids(&self, _ids: &[String]) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        None
+    }
+
     /// Custom application callbacks throw on failure; factory transports can
     /// return a missing profile and tag only their uncaught projection failures.
     fn errors_are_exceptions(&self) -> bool {
@@ -217,6 +222,11 @@ pub(super) fn apply_application_mapping(
 
 #[async_trait]
 pub trait OAuthRefreshTokenHandler: Send + Sync {
+    /// Reconfigure a factory transport that directly interpolates client IDs.
+    fn configured_client_ids(&self, _ids: &[String]) -> Option<Arc<dyn OAuthRefreshTokenHandler>> {
+        None
+    }
+
     async fn refresh_access_token(&self, refresh_token: &str) -> Result<OAuthTokenSet, String>;
 }
 
@@ -468,6 +478,14 @@ pub struct OAuthAuthorizationCodeContext {
 
 #[async_trait]
 pub trait OAuthAuthorizationCodeHandler: Send + Sync {
+    /// Reconfigure a factory transport that directly interpolates client IDs.
+    fn configured_client_ids(
+        &self,
+        _ids: &[String],
+    ) -> Option<Arc<dyn OAuthAuthorizationCodeHandler>> {
+        None
+    }
+
     async fn validate_authorization_code(
         &self,
         context: OAuthAuthorizationCodeContext,
@@ -493,6 +511,12 @@ pub struct OAuthAuthorizationPolicy {
     pub authorization_code_pkce: Option<bool>,
     /// Name of the client identifier in custom authorization URLs.
     pub client_id_parameter: String,
+    /// Custom URL factories may interpolate the entire client array.
+    pub literal_client_id: Option<String>,
+    /// WeChat's custom factory constructs an expiry even for zero/null seconds.
+    pub token_expiry_always: bool,
+    /// Custom factory token objects can omit returned grant ID tokens.
+    pub token_response_omits_id_token: bool,
     pub scope_separator: String,
     pub emit_empty_scope: bool,
     pub authorization_fragment: Option<String>,
@@ -557,6 +581,9 @@ impl Default for OAuthAuthorizationPolicy {
             authorization_code: None,
             authorization_code_pkce: None,
             client_id_parameter: "client_id".into(),
+            literal_client_id: None,
+            token_expiry_always: false,
+            token_response_omits_id_token: false,
             scope_separator: " ".into(),
             emit_empty_scope: false,
             authorization_fragment: None,
@@ -655,6 +682,32 @@ impl OAuthProvider {
 
     #[must_use]
     pub fn with_client_ids(mut self, client_ids: Vec<String>) -> Self {
+        if let Some(handler) = self
+            .get_user_info
+            .as_ref()
+            .and_then(|handler| handler.configured_client_ids(&client_ids))
+        {
+            self.get_user_info = Some(handler);
+        }
+        if let Some(handler) = self
+            .refresh_access_token
+            .as_ref()
+            .and_then(|handler| handler.configured_client_ids(&client_ids))
+        {
+            self.refresh_access_token = Some(handler);
+        }
+        if let Some(policy) = self.authorization.as_mut() {
+            if policy.client_id_parameter == "appid" {
+                policy.literal_client_id = Some(client_ids.join(","));
+            }
+            if let Some(handler) = policy
+                .authorization_code
+                .as_ref()
+                .and_then(|callback| callback.0.configured_client_ids(&client_ids))
+            {
+                policy.authorization_code = Some(OAuthAuthorizationCodeCallback(handler));
+            }
+        }
         if let Some(policy) = self.id_token.as_mut() {
             policy.client_ids = Some(client_ids.clone());
         }

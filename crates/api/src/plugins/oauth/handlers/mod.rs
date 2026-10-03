@@ -272,7 +272,11 @@ fn build_authorization_url(
             .authorization
             .as_ref()
             .map_or("client_id", |policy| policy.client_id_parameter.as_str()),
-        &provider.client_id,
+        provider
+            .authorization
+            .as_ref()
+            .and_then(|policy| policy.literal_client_id.as_deref())
+            .unwrap_or(&provider.client_id),
     );
     set_authorization_param(&mut url, "state", state);
     if provider.authorization.is_none()
@@ -1249,8 +1253,17 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
     meta: &better_auth_core::RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
-    process_oauth_sign_in_with_output(identity, policy, tokens, disable_sign_up, meta, ctx, None)
-        .await
+    process_oauth_sign_in_with_output(
+        identity,
+        policy,
+        tokens,
+        disable_sign_up,
+        meta,
+        ctx,
+        None,
+        None,
+    )
+    .await
 }
 
 #[expect(
@@ -1265,6 +1278,7 @@ async fn process_oauth_sign_in_with_output(
     meta: &better_auth_core::RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     raw_output: Option<&better_auth_core::field_policy::FieldOutput>,
+    raw_policy: Option<&super::providers::OAuthAuthorizationPolicy>,
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
     let raw_verification = raw_output.and_then(|output| output.get("emailVerified"));
     let OAuthIdentity {
@@ -1282,7 +1296,7 @@ async fn process_oauth_sign_in_with_output(
         .await
         .map_err(OAuthSignInError::from_account_lookup)?;
 
-    let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_output.is_some())
+    let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_policy)
         .await
         .map_err(|error| error.to_string())?;
 
@@ -1308,10 +1322,7 @@ async fn process_oauth_sign_in_with_output(
                     .update_account_record(
                         &existing_account.id(),
                         UpdateAccount {
-                            provider_token_nulls: provider_token_nulls(
-                                tokens,
-                                raw_output.is_some(),
-                            ),
+                            provider_token_nulls: provider_token_nulls(tokens, raw_policy),
                             access_token: token_bundle.access_token.clone(),
                             refresh_token: token_bundle.refresh_token.clone(),
                             id_token: token_bundle.id_token.clone(),
@@ -1390,17 +1401,17 @@ async fn process_oauth_sign_in_with_output(
                 provider_id: provider_name.to_owned(),
                 account_id: existing_account.account_id().to_owned(),
                 access_token: token_bundle.access_token.or_else(|| {
-                    (!provider_token_nulls(tokens, raw_output.is_some())[0])
+                    (!provider_token_nulls(tokens, raw_policy)[0])
                         .then(|| existing_account.access_token().map(str::to_owned))
                         .flatten()
                 }),
                 refresh_token: token_bundle.refresh_token.or_else(|| {
-                    (!provider_token_nulls(tokens, raw_output.is_some())[1])
+                    (!provider_token_nulls(tokens, raw_policy)[1])
                         .then(|| existing_account.refresh_token().map(str::to_owned))
                         .flatten()
                 }),
                 id_token: token_bundle.id_token.or_else(|| {
-                    (!provider_token_nulls(tokens, raw_output.is_some())[2])
+                    (!provider_token_nulls(tokens, raw_policy)[2])
                         .then(|| existing_account.id_token().map(str::to_owned))
                         .flatten()
                 }),
@@ -1655,9 +1666,18 @@ pub(in crate::plugins) async fn complete_link_social(
     link: &OAuthStateLink,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> Result<(), OAuthSignInError> {
-    complete_link_social_with_raw_email(provider_name, user_info, profile, tokens, link, ctx, None)
-        .await
-        .map(|_| ())
+    complete_link_social_with_raw_email(
+        provider_name,
+        user_info,
+        profile,
+        tokens,
+        link,
+        ctx,
+        None,
+        None,
+    )
+    .await
+    .map(|_| ())
 }
 
 enum LinkSocialOutcome {
@@ -1673,6 +1693,7 @@ async fn complete_link_social_with_raw_email(
     link: &OAuthStateLink,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     raw_email: Option<&serde_json::Value>,
+    raw_policy: Option<&super::providers::OAuthAuthorizationPolicy>,
 ) -> Result<LinkSocialOutcome, OAuthSignInError> {
     // Explicit linking validates fresh provider data before its trust/email
     // guards or account lookup. The candidate retains the selected local ID.
@@ -1719,7 +1740,7 @@ async fn complete_link_social_with_raw_email(
             return Err("account_already_linked_to_different_user".to_owned().into());
         }
 
-        let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_email.is_some())
+        let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_policy)
             .await
             .map_err(|error| error.to_string())?;
 
@@ -1728,7 +1749,7 @@ async fn complete_link_social_with_raw_email(
                 .update_account_record(
                     &existing_account.id(),
                     UpdateAccount {
-                        provider_token_nulls: provider_token_nulls(tokens, raw_email.is_some()),
+                        provider_token_nulls: provider_token_nulls(tokens, raw_policy),
                         access_token: token_bundle.access_token,
                         refresh_token: token_bundle.refresh_token,
                         id_token: token_bundle.id_token,
@@ -1746,7 +1767,7 @@ async fn complete_link_social_with_raw_email(
         return Ok(LinkSocialOutcome::Linked);
     }
 
-    let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_email.is_some())
+    let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_policy)
         .await
         .map_err(|error| error.to_string())?;
 
@@ -2648,6 +2669,7 @@ pub(super) async fn handle_callback(
             link,
             ctx,
             raw_email,
+            provider.authorization.as_ref(),
         )
         .await;
         if matches!(link_result, Ok(LinkSocialOutcome::InvalidRawEmail)) {
@@ -2707,6 +2729,7 @@ pub(super) async fn handle_callback(
             .as_ref()
             .filter(|policy| policy.preserve_raw_profile_scalars)
             .and(user_info.user_output.as_ref()),
+        provider.authorization.as_ref(),
     )
     .await
     {

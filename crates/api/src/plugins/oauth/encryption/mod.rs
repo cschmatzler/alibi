@@ -154,15 +154,17 @@ pub fn encrypt_token_set(
 
 pub(super) fn provider_token_nulls(
     tokens: &super::providers::OAuthTokenSet,
-    preserve_raw: bool,
+    policy: Option<&super::providers::OAuthAuthorizationPolicy>,
 ) -> [bool; 3] {
     ["access_token", "refresh_token", "id_token"].map(|field| {
-        preserve_raw
-            && tokens
-                .raw
-                .as_ref()
-                .and_then(|raw| raw.get(field))
-                .is_some_and(serde_json::Value::is_null)
+        policy.is_some_and(|policy| {
+            policy.preserve_raw_profile_scalars
+                && (field != "id_token" || !policy.token_response_omits_id_token)
+        }) && tokens
+            .raw
+            .as_ref()
+            .and_then(|raw| raw.get(field))
+            .is_some_and(serde_json::Value::is_null)
     })
 }
 
@@ -172,9 +174,13 @@ pub(super) fn provider_token_nulls(
 pub(super) async fn encrypt_provider_token_set(
     ctx: &better_auth_core::AuthContext<impl better_auth_core::AuthSchema>,
     tokens: &super::providers::OAuthTokenSet,
-    preserve_raw: bool,
+    policy: Option<&super::providers::OAuthAuthorizationPolicy>,
 ) -> Result<EncryptedTokenSet, AuthError> {
-    let Some(raw) = tokens.raw.as_ref().filter(|_| preserve_raw) else {
+    let Some(raw) = tokens
+        .raw
+        .as_ref()
+        .filter(|_| policy.is_some_and(|policy| policy.preserve_raw_profile_scalars))
+    else {
         return encrypt_token_set(
             ctx,
             tokens.access_token.clone(),
@@ -186,10 +192,16 @@ pub(super) async fn encrypt_provider_token_set(
     // Typed Rust dates cannot carry it: reject it at persistence after userinfo,
     // instead of silently admitting an account with no expiry.
     for field in ["expires_in", "refresh_token_expires_in"] {
-        if raw.get(field).is_some_and(|value| {
-            super::providers::remaining_profile::truthy(value)
-                && super::providers::remaining_profile::grant_expiry(value, true).is_none()
-        }) {
+        let always =
+            field == "expires_in" && policy.is_some_and(|policy| policy.token_expiry_always);
+        let invalid = match raw.get(field) {
+            None => always,
+            Some(value) => {
+                (always || super::providers::remaining_profile::truthy(value))
+                    && super::providers::remaining_profile::grant_expiry(value, !always).is_none()
+            }
+        };
+        if invalid {
             return Err(AuthError::internal("Invalid provider token expiry"));
         }
     }
@@ -211,6 +223,10 @@ pub(super) async fn encrypt_provider_token_set(
         ),
         ("id_token", &mut result.id_token, false),
     ] {
+        if field == "id_token" && policy.is_some_and(|policy| policy.token_response_omits_id_token)
+        {
+            continue;
+        }
         let Some(value) = raw.get(field) else {
             continue;
         };

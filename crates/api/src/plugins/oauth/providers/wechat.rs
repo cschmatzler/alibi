@@ -89,6 +89,8 @@ impl OAuthProvider {
                 source_profile_exceptions: true,
                 authorization_code: Some(OAuthAuthorizationCodeCallback(grants.clone())),
                 client_id_parameter: "appid".into(),
+                token_expiry_always: true,
+                token_response_omits_id_token: true,
                 scope_separator: ",".into(),
                 emit_empty_scope: true,
                 authorization_fragment: Some("wechat_redirect".into()),
@@ -125,6 +127,7 @@ impl OAuthProvider {
         }
     }
 }
+#[derive(Clone)]
 struct WeChatGrants {
     client_id: String,
     client_secret: String,
@@ -176,6 +179,14 @@ async fn token_request(endpoint: &str, query: &[(&str, &str)]) -> Result<OAuthTo
 }
 #[async_trait::async_trait]
 impl OAuthAuthorizationCodeHandler for WeChatGrants {
+    fn configured_client_ids(
+        &self,
+        ids: &[String],
+    ) -> Option<Arc<dyn OAuthAuthorizationCodeHandler>> {
+        let mut handler = self.clone();
+        handler.client_id = ids.join(",");
+        Some(Arc::new(handler))
+    }
     async fn validate_authorization_code(
         &self,
         context: OAuthAuthorizationCodeContext,
@@ -194,6 +205,11 @@ impl OAuthAuthorizationCodeHandler for WeChatGrants {
 }
 #[async_trait::async_trait]
 impl OAuthRefreshTokenHandler for WeChatGrants {
+    fn configured_client_ids(&self, ids: &[String]) -> Option<Arc<dyn OAuthRefreshTokenHandler>> {
+        let mut handler = self.clone();
+        handler.client_id = ids.join(",");
+        Some(Arc::new(handler))
+    }
     async fn refresh_access_token(&self, refresh_token: &str) -> Result<OAuthTokenSet, String> {
         token_request(
             &self.refresh_endpoint,

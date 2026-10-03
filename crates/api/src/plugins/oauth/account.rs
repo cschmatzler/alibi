@@ -141,15 +141,8 @@ async fn persist_tokens(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     provider: &super::providers::OAuthProvider,
 ) -> AuthResult<()> {
-    let encrypted = encrypt_provider_token_set(
-        ctx,
-        tokens,
-        provider
-            .authorization
-            .as_ref()
-            .is_some_and(|policy| policy.preserve_raw_profile_scalars),
-    )
-    .await?;
+    let raw_policy = provider.authorization.as_ref();
+    let encrypted = encrypt_provider_token_set(ctx, tokens, raw_policy).await?;
     let preserve_raw = provider
         .authorization
         .as_ref()
@@ -170,11 +163,14 @@ async fn persist_tokens(
             .as_ref()
             .is_some_and(|token| !token.is_empty()),
         |raw| {
+            if raw_policy.is_some_and(|policy| policy.token_response_omits_id_token) {
+                return false;
+            }
             raw.get("id_token")
                 .is_some_and(super::providers::remaining_profile::truthy)
         },
     );
-    let nulls = provider_token_nulls(tokens, preserve_raw);
+    let nulls = provider_token_nulls(tokens, raw_policy);
     let update = UpdateAccount {
         provider_token_nulls: [nulls[0], false, false],
         access_token: encrypted
@@ -414,6 +410,12 @@ pub(super) async fn handle_refresh_token(
         }
         if let Some(value) = raw
             .get("id_token")
+            .filter(|_| {
+                !provider
+                    .authorization
+                    .as_ref()
+                    .is_some_and(|policy| policy.token_response_omits_id_token)
+            })
             .filter(|value| super::providers::remaining_profile::truthy(value))
         {
             drop(object.insert("idToken".into(), value.clone()));

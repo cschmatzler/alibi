@@ -267,6 +267,17 @@ fn placeholder(identifier: Option<&Value>, namespace: &str) -> Result<Value, Str
 
 #[async_trait::async_trait]
 impl OAuthUserInfoHandler for PublishedProfile {
+    fn configured_client_ids(
+        &self,
+        ids: &[String],
+    ) -> Option<std::sync::Arc<dyn OAuthUserInfoHandler>> {
+        if !matches!(self.kind, ProfileKind::Vk) {
+            return None;
+        }
+        let mut handler = self.clone();
+        handler.client_id = ids.join(",");
+        Some(std::sync::Arc::new(handler))
+    }
     fn errors_are_exceptions(&self) -> bool {
         false
     }
@@ -430,7 +441,11 @@ impl OAuthUserInfoHandler for PublishedProfile {
                 copy(
                     &mut output,
                     "image",
-                    images.get(0).and_then(|image| image.get("url")),
+                    images
+                        .as_array()
+                        .and_then(|images| images.first())
+                        .or_else(|| images.get("0"))
+                        .and_then(|image| image.get("url")),
                 );
                 drop(output.insert("emailVerified".into(), Value::Bool(false)));
             }
