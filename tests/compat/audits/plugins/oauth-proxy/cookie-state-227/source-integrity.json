@@ -1,0 +1,34 @@
+{
+  "version": "1.7.6",
+  "tarball": "https://registry.npmjs.org/better-auth/-/better-auth-1.7.6.tgz",
+  "tarballSha256": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+  "files": {
+    "plugins/oauth-proxy/index.mjs": {
+      "sha256": "87fe1b691ab21f2e7a1b7570d66e0f336b24f82b2c82aee840114e0d85a18e65",
+      "privateInodes": true
+    },
+    "plugins/oauth-proxy/utils.mjs": {
+      "sha256": "891dae786cba8dc4a0d7ec9566b77ece39be7b2383ecff3ec2f87d4d9f6de402",
+      "privateInodes": true
+    },
+    "state.mjs": {
+      "sha256": "b6a2f95a3ebd1ea4dd222d6717328c8858fd2320d3509a8a06679e6749da4f6d",
+      "privateInodes": true
+    },
+    "oauth2/link-account.mjs": {
+      "sha256": "c3b254c6e7d87867afb83c1c363effcd2db99a3bdf08bf88aba0761767489ac4",
+      "privateInodes": true
+    },
+    "oauth2/state.mjs": {
+      "sha256": "7ca45f3553e43d8605b9502a5bad3f184dd6fe993d6287a6a030d2fd311d1ac9",
+      "privateInodes": true
+    }
+  },
+  "excludedOracle": "/tmp/.d774fec071c1d447-7.better-auth: modified purpose-key/auth-state code absent from published tarball; never used for comparisons",
+  "providerSource": {
+    "package": "@better-auth/core@1.7.6",
+    "path": "dist/social-providers/gitlab.mjs",
+    "sha256": "59d3ab050cefa24cbcdb0d7aea415c89de715e4804575621cd59ec5d9b24ec71",
+    "bothInstalledCopiesMatchFreshTarball": true
+  }
+}

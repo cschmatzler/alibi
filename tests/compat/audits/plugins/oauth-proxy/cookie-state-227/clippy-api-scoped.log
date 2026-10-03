@@ -1,0 +1,5 @@
+   Compiling better-auth-macros v1.0.0-alpha.3 (/tmp/better-auth-oauth227-worktree/crates/derive)
+    Checking better-auth-schema-registry v1.0.0-alpha.3 (/tmp/better-auth-oauth227-worktree/crates/schema-registry)
+    Checking better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-oauth227-worktree/crates/core)
+    Checking better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-oauth227-worktree/crates/api)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.78s

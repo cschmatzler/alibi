@@ -10,9 +10,17 @@ export const OAUTH_PROXY_SECRET = "local-fixture-dedicated-oauth-proxy-secret-32
 export const OAUTH_PROXY_PATH = "/__test/profiles/oauth-proxy/api/auth";
 
 /** Two genuine auth stores on different transport origins; no copied profile/state. */
-export async function oauthProxyFixture(base: BetterAuthOptions, managed = false) {
-  const path = managed ? "/__test/profiles/managed-proxy/api/auth" : OAUTH_PROXY_PATH;
-  const control = managed ? "/__test/managed-proxy" : "/__test/oauth-proxy";
+export async function oauthProxyFixture(base: BetterAuthOptions, managed = false, cookie = false) {
+  const path = cookie
+    ? "/__test/profiles/oauth-proxy-cookie/api/auth"
+    : managed
+      ? "/__test/profiles/managed-proxy/api/auth"
+      : OAUTH_PROXY_PATH;
+  const control = cookie
+    ? "/__test/oauth-proxy-cookie"
+    : managed
+      ? "/__test/managed-proxy"
+      : "/__test/oauth-proxy";
   const modes = new Map<string, string>();
   const preview = String(base.baseURL);
   const production = preview.replace("localhost", "127.0.0.1");
@@ -60,6 +68,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
             }
           : {}),
         database,
+        ...(cookie ? { account: { ...base.account, storeStateStrategy: "cookie" as const } } : {}),
         baseURL: origin,
         basePath: path,
         trustedOrigins: [preview, production],

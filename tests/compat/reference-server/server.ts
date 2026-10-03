@@ -656,6 +656,7 @@ const atlassianFixture = atlassianProviderFixture(authOptions);
 const appleFixture = appleProviderFixture(authOptions);
 const socialProvidersFixture = socialProviderFixture(authOptions);
 const oauthProxyProfiles = await oauthProxyFixture(authOptions);
+const cookieProxyProfiles = await oauthProxyFixture(authOptions, false, true);
 const managedProxyProfiles = await oauthProxyFixture(authOptions, true);
 const anonymousProfiles = await anonymousFixture(authOptions, database);
 const sessionCookieCacheProfiles = await sessionCookieCacheFixture(authOptions, database);
@@ -1899,6 +1900,8 @@ const server = Bun.serve({
       if (proxyControl) {
         return proxyControl;
       }
+      const cookieProxyControl = await cookieProxyProfiles.handle(request);
+      if (cookieProxyControl) return cookieProxyControl;
       const managedProxyControl = await managedProxyProfiles.handle(request);
       if (managedProxyControl) return managedProxyControl;
       const railwayControl = await railwayFixture.handle(request);
@@ -2826,6 +2829,7 @@ const server = Bun.serve({
         appleFixture.reset();
         socialProvidersFixture.reset();
         await oauthProxyProfiles.reset();
+        await cookieProxyProfiles.reset();
         await managedProxyProfiles.reset();
         organizationInvitationFixture.reset();
         organizationInvitationLifecycle.reset();

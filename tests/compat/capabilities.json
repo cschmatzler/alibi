@@ -2218,15 +2218,26 @@
           "OAuth proxy linking follows the saved authenticated owner without creating any session",
           "OAuth proxy restoration and session failures preserve exact stages rows and retry",
           "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
+          "OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics",
+          "OAuth proxy cookie linking restores the saved owner across browser session changes"
         ],
-        "rejection": "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-        "authorization": "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+        "rejection": [
+          "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+          "OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics",
+          "OAuth proxy cookie linking restores the saved owner across browser session changes"
+        ],
+        "authorization": [
+          "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
+          "OAuth proxy cookie linking restores the saved owner across browser session changes"
+        ],
         "state": [
           "OAuth proxy linking follows the saved authenticated owner without creating any session",
           "OAuth proxy restoration and session failures preserve exact stages rows and retry",
           "OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion",
-          "OAuth proxy exchanges on production then consumes preview state for only the provider owner"
+          "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
+          "OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics",
+          "OAuth proxy cookie linking restores the saved owner across browser session changes"
         ]
       }
     },
@@ -4820,7 +4831,8 @@
           "linkedin explicit browser link missing-raw retains existing and foreign authority",
           "naver explicit browser link default-unverified retains existing and foreign authority",
           "naver explicit browser link mapped-verified retains existing and foreign authority",
-          "naver explicit browser link missing-raw retains existing and foreign authority"
+          "naver explicit browser link missing-raw retains existing and foreign authority",
+          "OAuth proxy cookie linking restores the saved owner across browser session changes"
         ],
         "rejection": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -4831,7 +4843,8 @@
           "social linking rejects missing tampered and revoked sessions without changing owners",
           "builtin social link authorization requires a session and retains configured scope additions",
           "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
-          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "OAuth proxy cookie linking restores the saved owner across browser session changes"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -4866,7 +4879,8 @@
           "linkedin explicit browser link missing-raw retains existing and foreign authority",
           "naver explicit browser link default-unverified retains existing and foreign authority",
           "naver explicit browser link mapped-verified retains existing and foreign authority",
-          "naver explicit browser link missing-raw retains existing and foreign authority"
+          "naver explicit browser link missing-raw retains existing and foreign authority",
+          "OAuth proxy cookie linking restores the saved owner across browser session changes"
         ]
       }
     },
@@ -7892,7 +7906,8 @@
           "provider batch vercel override updates only original owned profile",
           "provider batch vk override updates only original owned profile",
           "provider batch wechat override updates only original owned profile",
-          "provider batch zoom override updates only original owned profile"
+          "provider batch zoom override updates only original owned profile",
+          "OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -8799,7 +8814,8 @@
           "paypal zero token expiry has no fabricated default",
           "paypal zero-name profile preserves raw owner and account info",
           "paypal zero-subject profile preserves raw owner and account info",
-          "paypal zero-verified profile preserves raw owner and account info"
+          "paypal zero-verified profile preserves raw owner and account info",
+          "OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics"
         ]
       }
     },
@@ -12881,7 +12897,8 @@
           "paybin false-link-verified preserves callback error stage and consumed state without writes",
           "paybin numeric-link-unverified preserves callback error stage and consumed state without writes",
           "paybin numeric-link-verified preserves callback error stage and consumed state without writes",
-          "paybin zero-link-verified preserves callback error stage and consumed state without writes"
+          "paybin zero-link-verified preserves callback error stage and consumed state without writes",
+          "OAuth proxy cookie linking restores the saved owner across browser session changes"
         ],
         "rejection": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -12892,7 +12909,8 @@
           "social linking rejects missing tampered and revoked sessions without changing owners",
           "builtin social link authorization requires a session and retains configured scope additions",
           "GitLab authorization preserves hosted issuer ordered scopes and authenticated link PKCE",
-          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners"
+          "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
+          "OAuth proxy cookie linking restores the saved owner across browser session changes"
         ],
         "state": [
           "social linking rejects missing tampered and revoked sessions without changing owners",
@@ -12922,7 +12940,8 @@
           "paybin false-link-verified preserves callback error stage and consumed state without writes",
           "paybin numeric-link-unverified preserves callback error stage and consumed state without writes",
           "paybin numeric-link-verified preserves callback error stage and consumed state without writes",
-          "paybin zero-link-verified preserves callback error stage and consumed state without writes"
+          "paybin zero-link-verified preserves callback error stage and consumed state without writes",
+          "OAuth proxy cookie linking restores the saved owner across browser session changes"
         ]
       }
     },
@@ -14067,7 +14086,8 @@
           "provider batch vercel override updates only original owned profile",
           "provider batch vk override updates only original owned profile",
           "provider batch wechat override updates only original owned profile",
-          "provider batch zoom override updates only original owned profile"
+          "provider batch zoom override updates only original owned profile",
+          "OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -14892,7 +14912,8 @@
           "paypal zero token expiry has no fabricated default",
           "paypal zero-name profile preserves raw owner and account info",
           "paypal zero-subject profile preserves raw owner and account info",
-          "paypal zero-verified profile preserves raw owner and account info"
+          "paypal zero-verified profile preserves raw owner and account info",
+          "OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics"
         ]
       }
     },

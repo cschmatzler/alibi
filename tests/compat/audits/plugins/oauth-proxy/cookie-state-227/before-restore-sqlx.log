@@ -1,0 +1,45 @@
+{"ok":true,"oauthBaseURL":"http://127.0.0.1:44463","upstreamVersion":"1.7.6"}
+{"ok":true,"upstreamVersion":"1.7.6"}
+bun test v1.4.2 (744846f84)
+
+tests/plugins/oauth-proxy/proxy.test.ts:
+790 |         headers: mode === "missing" ? {} : { cookie: `${cookieName}=${token}` },
+791 |       });
+792 |       const cookies = r.headers.getSetCookie();
+793 |       const result = await response(r);
+794 |       expect(new URL(result.location!).searchParams.get("error")).toBe("state_mismatch");
+795 |       expect(cookies.some((value) => value.startsWith(`${cookieName}=`))).toBe(mode === "expired");
+      ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-oauth227-worktree/tests/compat/client-tests/tests/plugins/oauth-proxy/proxy.test.ts:795:75
+      at runScenario (/tmp/better-auth-oauth227-worktree/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-oauth227-worktree/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics [798.43ms]
+905 |         headers: {
+906 |           cookie: `better-auth.oauth_state=${issued.issuedCookie!.token}; ${foreignSession}`,
+907 |         },
+908 |       }),
+909 |     );
+910 |     expect(completed.location).toBe(`${ctx.baseURL}/proxy-done?application=kept`);
+      ^
+error: expect(received).toBe(expected)
+
+Expected: "http://localhost:51707/proxy-done?application=kept"
+Received: "http://localhost:51707/proxy-error?error=state_mismatch"
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-oauth227-worktree/tests/compat/client-tests/tests/plugins/oauth-proxy/proxy.test.ts:910:32
+      at runScenario (/tmp/better-auth-oauth227-worktree/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-oauth227-worktree/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) OAuth proxy cookie linking restores the saved owner across browser session changes [821.08ms]
+
+ 0 pass
+ 4 filtered out
+ 2 fail
+ 205 expect() calls
+Ran 2 tests across 1 file. [1.69s]
