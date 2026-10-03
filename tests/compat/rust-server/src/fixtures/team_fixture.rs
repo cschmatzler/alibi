@@ -545,6 +545,12 @@ enum TeamOperation {
         email: String,
         name: String,
     },
+    StoredRole {
+        #[serde(rename = "organizationId")]
+        organization_id: String,
+        #[serde(rename = "roleId")]
+        role_id: String,
+    },
     SeedRole {
         #[serde(rename = "organizationId")]
         organization_id: String,
@@ -733,6 +739,14 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                                 organization_id, user_id: user.id().into_owned(), role: "member".to_owned(),
                             }).await?;
                             Ok::<_, AuthError>(json!({"userId":user.id(),"memberId":member.id}))
+                        }.await
+                    },
+                    TeamOperation::StoredRole {organization_id,role_id} => {
+                        async {
+                            let row = organization_role::Entity::find_by_id(role_id)
+                                .filter(organization_role::Column::OrganizationId.eq(organization_id))
+                                .one(&database).await.map_err(|error| AuthError::internal(error.to_string()))?;
+                            Ok::<_, AuthError>(row.map_or(Value::Null, |row| json!({"role":row.role,"permission":row.permission,"updatedAt":row.updated_at})))
                         }.await
                     },
                     TeamOperation::SeedRole {organization_id,role,permission,permission_json} => {

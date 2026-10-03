@@ -392,14 +392,6 @@ impl StoredOrganizationPermissions {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-
-    /// Encode a validated permission record for a newly created or updated role.
-    ///
-    /// # Errors
-    /// Returns a JSON serialization error if encoding fails.
-    pub fn from_record(permission: &OrganizationPermissions) -> Result<Self, serde_json::Error> {
-        serde_json::to_string(permission).map(Self)
-    }
 }
 
 impl From<String> for StoredOrganizationPermissions {
