@@ -1,5 +1,8 @@
+import { createPrivateKeyJwtClientAssertionGetter } from "@better-auth/core/oauth2";
 import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { genericOAuth } from "better-auth/plugins";
+
+import assertionKeys from "../../fixtures/client-assertion-keys.json";
 export function genericTokenParamsFixture(base: BetterAuthOptions) {
   let control: Record<string, unknown> = {};
   const receipts: unknown[] = [];
@@ -86,6 +89,48 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "dynamic-none",
     "dynamic-error",
     "dynamic-custom",
+    "override",
+    "expiry-positive",
+    "expiry-zero",
+    "expiry-negative",
+    "custom-token",
+    "custom-token-error",
+
+    "jwt-RS256",
+    "jwt-RS384",
+    "jwt-RS512",
+    "jwt-PS256",
+    "jwt-PS384",
+    "jwt-PS512",
+    "jwt-ES256",
+    "jwt-ES384",
+    "jwt-ES512",
+    "jwt-EdDSA",
+    "jwt-pem",
+    "jwt-pem-ES256",
+    "jwt-pem-ES384",
+    "jwt-pem-ES512",
+    "jwt-pem-EdDSA",
+    "jwt-both",
+    "jwt-empty-kid",
+    "jwt-fractional",
+    "jwt-nan",
+    "jwt-infinity",
+    "subject-key",
+    "subject-error",
+    "subject-invalid",
+    "subject-default",
+
+    "jwt-embedded",
+    "jwt-expired",
+    "jwt-bad-key",
+    "jwt-padded",
+    "jwt-missing-crt",
+    "jwt-duplicate-ops",
+    "jwt-invalid-ext",
+    "jwt-secret",
+    "jwt-manual",
+    "jwt-getter-error",
   ]) {
     const path = `/__test/profiles/generic-token-${mode}/api/auth`;
     const configuredMode = mode.startsWith("dynamic") ? "post" : mode.replace(/^refresh-/, "");
@@ -100,6 +145,52 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
             config: [
               {
                 providerId: "generic",
+                overrideUserInfo: mode === "override",
+                ...(mode.startsWith("subject-") && mode !== "subject-default"
+                  ? {
+                      mapProfileToUser: async () => ({ name: "Mapped Subject" }),
+                      accountSubject: async ({ tokens, profile }: any) => {
+                        await Promise.resolve();
+                        receipts.push({ kind: "subject", tokens, profile });
+                        if (mode === "subject-error") throw new Error("subject resolver denied");
+                        return mode === "subject-invalid"
+                          ? (control.subject as string | number)
+                          : `${tokens.accessToken}:${profile.id}:${profile.raw_claim}`;
+                      },
+                    }
+                  : {}),
+                ...(mode.startsWith("expiry-") || mode.startsWith("custom-token")
+                  ? {
+                      accessTokenExpiresIn:
+                        mode === "expiry-zero" ? 0 : mode === "expiry-negative" ? -60 : 17,
+                    }
+                  : {}),
+                ...(mode.startsWith("custom-token")
+                  ? {
+                      getToken: async (data: {
+                        code: string;
+                        redirectURI: string;
+                        codeVerifier?: string;
+                      }) => {
+                        await Promise.resolve();
+                        receipts.push({
+                          kind: "custom-token",
+                          code: data.code,
+                          redirectURI: data.redirectURI,
+                          codeVerifier: data.codeVerifier,
+                        });
+                        if (mode === "custom-token-error") {
+                          throw new Error("custom token callback denied");
+                        }
+                        return {
+                          accessToken: "custom-access",
+                          refreshToken: "custom-refresh",
+                          scopes: ["custom-scope"],
+                        };
+                      },
+                    }
+                  : {}),
+
                 clientId: "client :+&",
                 ...(["post", "basic", "basic-secret", "default-post"].includes(configuredMode)
                   ? { clientSecret: "secret :+&" }
@@ -122,7 +213,85 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                 tokenUrl: `${transport.url}token`,
                 userInfoUrl: `${transport.url}user`,
                 scopes: ["profile"],
-                tokenUrlParams: params(mode, false),
+                ...(mode.startsWith("jwt-")
+                  ? {
+                      tokenEndpointAuth: {
+                        method: "private_key_jwt",
+                        getClientAssertion:
+                          mode === "jwt-getter-error"
+                            ? async () => {
+                                throw new Error("assertion getter denied");
+                              }
+                            : createPrivateKeyJwtClientAssertionGetter({
+                                ...(mode.startsWith("jwt-pem")
+                                  ? {
+                                      privateKeyPem:
+                                        assertionKeys[
+                                          (mode.slice(8) in assertionKeys
+                                            ? mode.slice(8)
+                                            : "RS256") as keyof typeof assertionKeys
+                                        ].pem,
+                                    }
+                                  : {
+                                      privateKeyJwk: {
+                                        ...assertionKeys[
+                                          (mode.slice(4) in assertionKeys
+                                            ? mode.slice(4)
+                                            : "RS256") as keyof typeof assertionKeys
+                                        ].private,
+                                        kid: "embedded-kid",
+                                        ...(mode === "jwt-embedded" ? { alg: "RS256" } : {}),
+                                        ...(mode === "jwt-bad-key" ? { kty: "EC" } : {}),
+                                        ...(mode === "jwt-padded"
+                                          ? { n: assertionKeys.RS256.private.n + "==" }
+                                          : {}),
+                                        ...(mode === "jwt-missing-crt"
+                                          ? { dp: undefined, dq: undefined, qi: undefined }
+                                          : {}),
+                                        ...(mode === "jwt-duplicate-ops"
+                                          ? { key_ops: ["sign", "sign"] }
+                                          : {}),
+                                        ...(mode === "jwt-invalid-ext"
+                                          ? { ext: "true" as any }
+                                          : {}),
+                                      } as JsonWebKey & { kid: string },
+                                    }),
+                                ...(mode === "jwt-both"
+                                  ? { privateKeyPem: "invalid PEM ignored" }
+                                  : {}),
+                                ...(mode === "jwt-embedded" || mode === "jwt-pem"
+                                  ? {}
+                                  : {
+                                      algorithm: ((mode.startsWith("jwt-pem-")
+                                        ? mode.slice(8)
+                                        : mode.slice(4)) in assertionKeys
+                                        ? mode.startsWith("jwt-pem-")
+                                          ? mode.slice(8)
+                                          : mode.slice(4)
+                                        : "RS256") as "RS256",
+                                    }),
+                                ...(mode === "jwt-embedded"
+                                  ? {}
+                                  : { kid: mode === "jwt-empty-kid" ? "" : "configured-kid" }),
+                                ...(mode === "jwt-expired"
+                                  ? { expiresIn: -1 }
+                                  : mode === "jwt-fractional"
+                                    ? { expiresIn: 17.5 }
+                                    : mode === "jwt-nan"
+                                      ? { expiresIn: NaN }
+                                      : mode === "jwt-infinity"
+                                        ? { expiresIn: Infinity }
+                                        : {}),
+                              }),
+                      } as const,
+                    }
+                  : {}),
+                tokenUrlParams:
+                  mode === "jwt-secret"
+                    ? { client_secret: "forbidden-secret" }
+                    : mode === "jwt-manual"
+                      ? { client_assertion: "manual", client_assertion_type: "manual" }
+                      : params(mode, false),
                 refreshTokenParams: mode.startsWith("dynamic")
                   ? async (ctx) => {
                       await Promise.resolve();
@@ -155,7 +324,11 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                         refresh_token: "wrong-refresh",
                       };
                     }
-                  : params(mode, true),
+                  : mode === "jwt-secret"
+                    ? { client_secret: "forbidden-secret" }
+                    : mode === "jwt-manual"
+                      ? { client_assertion: "manual", client_assertion_type: "manual" }
+                      : params(mode, true),
               },
             ],
           }),
@@ -206,6 +379,61 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
       const p = new URL(request.url).pathname;
       if (p === "/__test/generic-token/control" && request.method === "POST") {
         control = await request.json();
+        return Response.json({ status: true });
+      }
+      if (p === "/__test/generic-token/assertion-options" && request.method === "POST") {
+        const body = (await request.json()) as { mode: string };
+        let accepted = true;
+        try {
+          createPrivateKeyJwtClientAssertionGetter({
+            ...(body.mode === "missing-key"
+              ? {}
+              : {
+                  privateKeyJwk: {
+                    ...assertionKeys.RS256.private,
+                    ...(body.mode === "jwk-alg" ? { alg: "HS256" } : {}),
+                    ...(body.mode === "conflicting-alg" ? { alg: "RS384" } : {}),
+                  },
+                }),
+            ...(body.mode === "unsupported-alg"
+              ? { algorithm: "HS256" as "RS256" }
+              : body.mode === "conflicting-alg"
+                ? { algorithm: "RS256" as const }
+                : {}),
+          });
+        } catch {
+          accepted = false;
+        }
+        return Response.json({ accepted });
+      }
+      if (p === "/__test/generic-token/server-api" && request.method === "POST") {
+        const body = (await request.json()) as {
+          operation: string;
+          userId?: string;
+          accountId: string;
+        };
+        const instance = profiles.get("/__test/profiles/generic-token-none/api/auth")!;
+        const selection = {
+          accountId: body.accountId,
+          ...(body.userId ? { userId: body.userId } : {}),
+        };
+        if (body.operation === "get-access-token") {
+          return instance.api.getAccessToken({ body: selection, asResponse: true });
+        }
+        if (body.operation === "refresh-token") {
+          return instance.api.refreshToken({ body: selection, asResponse: true });
+        }
+        return instance.api.accountInfo({ query: selection, asResponse: true });
+      }
+      if (p === "/__test/generic-token/orphan" && request.method === "POST") {
+        const body = (await request.json()) as { accountId: string };
+        const db = base.database as import("bun:sqlite").Database;
+        db.exec("PRAGMA foreign_keys=OFF");
+        try {
+          db.query("UPDATE account SET userId='missing-owner' WHERE id=?").run(body.accountId);
+        } finally {
+          db.exec("PRAGMA foreign_keys=ON");
+        }
         return Response.json({ status: true });
       }
       if (p === "/__test/generic-token/receipts") return Response.json(receipts);

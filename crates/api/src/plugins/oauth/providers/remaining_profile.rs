@@ -207,7 +207,7 @@ pub(super) fn grant_id_token(request: &OAuthUserInfoRequest) -> Result<Option<St
     }
 }
 
-pub(super) fn raw_subject(value: Option<&Value>) -> Result<String, String> {
+pub(in crate::plugins::oauth) fn raw_subject(value: Option<&Value>) -> Result<String, String> {
     let subject = js_string(value.ok_or("Missing provider subject")?)?;
     if subject.trim_matches(js_whitespace).is_empty()
         || matches!(subject.as_str(), "null" | "undefined")

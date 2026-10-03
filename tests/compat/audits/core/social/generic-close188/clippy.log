@@ -1,0 +1,13 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 18.3ms
+• Running devenv:files
+✓ Running devenv:files in 26.0ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 10.0ms
+   Compiling better-auth-macros v1.0.0-alpha.3 (/tmp/better-auth-close188/crates/derive)
+    Checking better-auth-schema-registry v1.0.0-alpha.3 (/tmp/better-auth-close188/crates/schema-registry)
+    Checking better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-close188/crates/core)
+    Checking better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-close188/crates/api)
+    Finished `dev` profile [unoptimized] target(s) in 12.00s
+mbx[cache]: 2 hits, 1 misses, 1 not looked up, 2 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: linked 751.5 GiB into place. copying is for people with disk to spare.

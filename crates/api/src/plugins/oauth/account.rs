@@ -16,12 +16,13 @@ use better_auth_core::{
 };
 use chrono::Utc;
 
-enum AccountSelection {
+#[derive(Debug, Clone)]
+pub enum OAuthAccountSelection {
     Id(String),
     Cookie,
 }
 
-impl AccountSelection {
+impl OAuthAccountSelection {
     fn from_body(req: &AuthRequest) -> Result<Self, String> {
         let value = req
             .body_as_json()
@@ -171,7 +172,12 @@ async fn persist_tokens(
                 .is_some_and(super::providers::remaining_profile::truthy)
         },
     );
-    let nulls = provider_token_nulls(tokens, raw_policy);
+    let mut nulls = provider_token_nulls(tokens, raw_policy);
+    nulls[0] |= tokens
+        .raw
+        .as_ref()
+        .and_then(|raw| raw.get("access_token"))
+        .is_some_and(serde_json::Value::is_null);
     let update = UpdateAccount {
         provider_token_nulls: [nulls[0], false, false],
         access_token: encrypted
@@ -221,6 +227,7 @@ async fn valid_access_token(
             account.provider_id
         ))
     })?;
+    let original = account.clone();
     let encrypted = ctx.config.account.encrypt_oauth_tokens;
     let expired = account.access_token_expires_at.is_some_and(|expires_at| {
         expires_at.timestamp_millis() - Utc::now().timestamp_millis() < 5_000
@@ -249,24 +256,34 @@ async fn valid_access_token(
         persist_tokens(account, &tokens, ctx, provider)
             .await
             .map_err(|_error| access_token_failure())?;
-        true
+        Some(tokens)
     } else {
-        false
+        None
+    };
+    let access_token = match refreshed
+        .as_ref()
+        .and_then(|tokens| tokens.access_token.clone())
+    {
+        Some(token) => token,
+        None => maybe_decrypt_with_config(original.access_token.as_deref(), encrypted, &ctx.config)
+            .map_err(|_error| access_token_failure())?
+            .unwrap_or_default(),
     };
     Ok((
         AccessTokenResponse {
-            access_token: Some(
-                maybe_decrypt_with_config(account.access_token.as_deref(), encrypted, &ctx.config)
-                    .map_err(|_error| access_token_failure())?
-                    .unwrap_or_default(),
-            ),
-            access_token_expires_at: account
-                .access_token_expires_at
+            access_token: Some(access_token),
+            access_token_expires_at: refreshed
+                .as_ref()
+                .and_then(|tokens| tokens.access_token_expires_at)
+                .or(original.access_token_expires_at)
                 .map(|value| value.to_rfc3339()),
             scopes: scopes(account),
-            id_token: account.id_token.clone(),
+            id_token: refreshed
+                .as_ref()
+                .and_then(|tokens| tokens.id_token.clone())
+                .or(original.id_token),
         },
-        refreshed,
+        refreshed.is_some(),
     ))
 }
 
@@ -289,12 +306,13 @@ fn token_response(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(super) async fn handle_get_access_token(
+async fn handle_get_access_token_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    server_user: Option<&str>,
 ) -> AuthResult<AuthResponse> {
-    let selection = match AccountSelection::from_body(req) {
+    let selection = match OAuthAccountSelection::from_body(req) {
         Ok(selection) => selection,
         Err(message) => return invalid_selection("body", &message),
     };
@@ -304,14 +322,19 @@ pub(super) async fn handle_get_access_token(
             .query
             .insert("disableCookieCache".into(), "true".into()),
     );
-    let (_, session) = match ctx.require_cached_session(&session_request).await {
-        Ok(session) => session,
-        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
-            return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
-        }
-        Err(error) => return Err(error),
+    let user_id = if let Some(user_id) = server_user {
+        user_id.to_owned()
+    } else {
+        let (_, session) = match ctx.require_cached_session(&session_request).await {
+            Ok(session) => session,
+            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+                return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
+            }
+            Err(error) => return Err(error),
+        };
+        session.user_id
     };
-    let mut account = selection.resolve(req, &session.user_id, ctx).await?;
+    let mut account = selection.resolve(req, &user_id, ctx).await?;
     let (response, refreshed) = valid_access_token(&mut account, config, req, ctx).await?;
     token_response(&response, &account, refreshed, req, ctx)
 }
@@ -319,12 +342,13 @@ pub(super) async fn handle_get_access_token(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(super) async fn handle_refresh_token(
+async fn handle_refresh_token_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    server_user: Option<&str>,
 ) -> AuthResult<AuthResponse> {
-    let selection = match AccountSelection::from_body(req) {
+    let selection = match OAuthAccountSelection::from_body(req) {
         Ok(selection) => selection,
         Err(message) => return invalid_selection("body", &message),
     };
@@ -334,14 +358,19 @@ pub(super) async fn handle_refresh_token(
             .query
             .insert("disableCookieCache".into(), "true".into()),
     );
-    let (_, session) = match ctx.require_cached_session(&session_request).await {
-        Ok(session) => session,
-        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
-            return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
-        }
-        Err(error) => return Err(error),
+    let user_id = if let Some(user_id) = server_user {
+        user_id.to_owned()
+    } else {
+        let (_, session) = match ctx.require_cached_session(&session_request).await {
+            Ok(session) => session,
+            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+                return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
+            }
+            Err(error) => return Err(error),
+        };
+        session.user_id
     };
-    let mut account = selection.resolve(req, &session.user_id, ctx).await?;
+    let mut account = selection.resolve(req, &user_id, ctx).await?;
     let provider = config.providers.get(&account.provider_id).ok_or_else(|| {
         AuthError::bad_request(format!(
             "Provider {} is not supported.",
@@ -434,7 +463,7 @@ pub(super) async fn handle_refresh_token(
     token_response(
         &response,
         &account,
-        matches!(selection, AccountSelection::Cookie),
+        matches!(selection, OAuthAccountSelection::Cookie),
         req,
         ctx,
     )
@@ -443,12 +472,13 @@ pub(super) async fn handle_refresh_token(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(super) async fn handle_account_info(
+async fn handle_account_info_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    server_user: Option<&str>,
 ) -> AuthResult<AuthResponse> {
-    let selection = match AccountSelection::from_query(req) {
+    let selection = match OAuthAccountSelection::from_query(req) {
         Ok(selection) => selection,
         Err(message) => return invalid_selection("query", &(message)),
     };
@@ -460,14 +490,19 @@ pub(super) async fn handle_account_info(
             .query
             .insert("disableCookieCache".into(), "true".into()),
     );
-    let (_, session) = match ctx.require_cached_session(&session_request).await {
-        Ok(session) => session,
-        Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
-            return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
-        }
-        Err(error) => return Err(error),
+    let user_id = if let Some(user_id) = server_user {
+        user_id.to_owned()
+    } else {
+        let (_, session) = match ctx.require_cached_session(&session_request).await {
+            Ok(session) => session,
+            Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
+                return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
+            }
+            Err(error) => return Err(error),
+        };
+        session.user_id
     };
-    let mut account = selection.resolve(req, &session.user_id, ctx).await?;
+    let mut account = selection.resolve(req, &user_id, ctx).await?;
     let provider = config
         .providers
         .get(&account.provider_id)
@@ -511,4 +546,102 @@ pub(super) async fn handle_account_info(
         },
     };
     token_response(&response, &account, refreshed, req, ctx)
+}
+
+pub(super) async fn handle_get_access_token(
+    config: &OAuthConfig,
+    req: &AuthRequest,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<AuthResponse> {
+    handle_get_access_token_for_user(config, req, ctx, None).await
+}
+
+pub(super) async fn handle_refresh_token(
+    config: &OAuthConfig,
+    req: &AuthRequest,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<AuthResponse> {
+    handle_refresh_token_for_user(config, req, ctx, None).await
+}
+
+pub(super) async fn handle_account_info(
+    config: &OAuthConfig,
+    req: &AuthRequest,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<AuthResponse> {
+    handle_account_info_for_user(config, req, ctx, None).await
+}
+
+/// Trusted direct account operations. The caller supplies the authorized user;
+/// these methods are not HTTP routes. HTTP handlers always resolve the session
+/// first, and cannot select a principal with a `userId` body/query field.
+pub struct OAuthAccountApi;
+impl OAuthAccountApi {
+    /// # Errors
+    /// Returns storage, provider, selection, or token errors.
+    pub async fn get_access_token(
+        user_id: &str,
+        selection: OAuthAccountSelection,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        let (config, req) = server_request(user_id, selection, "/get-access-token", ctx)?;
+        handle_get_access_token_for_user(&config, &req, ctx, Some(user_id)).await
+    }
+    /// # Errors
+    /// Returns storage, provider, selection, or refresh errors.
+    pub async fn refresh_token(
+        user_id: &str,
+        selection: OAuthAccountSelection,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        let (config, req) = server_request(user_id, selection, "/refresh-token", ctx)?;
+        handle_refresh_token_for_user(&config, &req, ctx, Some(user_id)).await
+    }
+    /// # Errors
+    /// Returns storage, provider, selection, or profile errors.
+    pub async fn account_info(
+        user_id: &str,
+        selection: OAuthAccountSelection,
+        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ) -> AuthResult<AuthResponse> {
+        let (config, req) = server_request(user_id, selection, "/account-info", ctx)?;
+        handle_account_info_for_user(&config, &req, ctx, Some(user_id)).await
+    }
+}
+fn server_request(
+    user_id: &str,
+    selection: OAuthAccountSelection,
+    path: &str,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<(std::sync::Arc<OAuthConfig>, AuthRequest)> {
+    if user_id.is_empty() {
+        return Err(AuthError::Upstream {
+            status: 400,
+            code: "USER_ID_OR_SESSION_REQUIRED",
+            message: "Either userId or session is required",
+        });
+    }
+    let config = ctx
+        .extensions
+        .get::<OAuthConfig>()
+        .ok_or_else(|| AuthError::config("OAuth plugin is not initialized"))?;
+    let mut req = AuthRequest::new(
+        if path == "/account-info" {
+            better_auth_core::HttpMethod::Get
+        } else {
+            better_auth_core::HttpMethod::Post
+        },
+        path,
+    );
+    match selection {
+        OAuthAccountSelection::Id(id) => {
+            drop(req.query.insert("accountId".into(), id.clone()));
+            req.body = Some(
+                serde_json::to_vec(&serde_json::json!({"accountId":id}))
+                    .map_err(|e| AuthError::internal(e.to_string()))?,
+            );
+        }
+        OAuthAccountSelection::Cookie => return Err(AuthError::bad_request("Account not found")),
+    }
+    Ok((config, req))
 }

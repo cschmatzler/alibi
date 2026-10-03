@@ -88,7 +88,7 @@ pub(super) struct SocialSignInResponse {
 pub(super) struct AccessTokenResponse {
     #[serde(rename = "accessToken")]
     pub access_token: Option<String>,
-    #[serde(rename = "accessTokenExpiresAt")]
+    #[serde(rename = "accessTokenExpiresAt", skip_serializing_if = "Option::is_none")]
     pub access_token_expires_at: Option<String>,
     pub scopes: Vec<String>,
     #[serde(rename = "idToken", skip_serializing_if = "Option::is_none")]

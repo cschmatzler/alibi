@@ -1,0 +1,39 @@
+{
+  "issue": 188,
+  "pr": 420,
+  "sourceVersion": "1.7.6",
+  "testedProductionHead": "9c301d983dd7716427ea23e1f9f53ad0e2f194f6",
+  "rebasedProductionHead": "c2129f83000133af776f2242a53995c65ae59a17",
+  "rebaseBase": "b476f488ba2e8c9d06737fcc3beb3bfb8ca8a841",
+  "rebaseOwnerDiffBytes": 0,
+  "sqlxUniquePassingOwners": 54,
+  "seaormPassingOwners": 54,
+  "seaormAssertions": 2338,
+  "sqlxFinalAffectedOwners": 6,
+  "sqlxFinalAffectedAssertions": 168,
+  "review": "Independent coordinator reviewed production9c301d98; final owner tree is byte-identical after unrelated admin/device rebase. Finite expiry finding fixed; Ed25519 Source acceptance retained.",
+  "closureDependency": "PR421 api_error_url default/builder + ordinary configured callback failure and existing-query-safe URL consumers; actual proxy custom path/account key/signup absence/loose-userinfo helper consumers and Source pairs. #188 not closed by #420.",
+  "sourceIntegrity": [
+    {
+      "package": "better-auth",
+      "version": "1.7.6",
+      "tarballSha256": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+      "files": 465,
+      "mismatches": [],
+      "nonprivateInodes": []
+    },
+    {
+      "package": "@better-auth/core",
+      "version": "1.7.6",
+      "tarballSha256": "e77e869a604083abf292ba9045f5182bd25cc2e57697e8fc1e3965651613f908",
+      "files": 350,
+      "mismatches": [],
+      "nonprivateInodes": []
+    }
+  ],
+  "durableWorkerEvidence": "/home/cschmatzler/.local/share/better-auth-rs-evidence/issue188/20261003-close188-worker",
+  "rawProofSha256": "51afa8db482280b42478a62d162a5f49432e4bb109b5ae1a76e555be19738af9",
+  "actionsDisabled": true,
+  "fullSuiteRun": false,
+  "comparatorExclusionsChanged": false
+}

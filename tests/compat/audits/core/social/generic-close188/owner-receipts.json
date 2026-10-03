@@ -1,0 +1,286 @@
+{
+  "sqlx": [
+    {
+      "owner": "generic client assertion RS256 authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion RS256 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion RS384 authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion RS384 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion RS512 authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion RS512 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion PS256 authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion PS256 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion PS384 authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion PS384 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion PS512 authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion PS512 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion ES256 authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion ES256 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion ES384 authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion ES384 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion ES512 authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion ES512 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion EdDSA authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion EdDSA authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion pem authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion pem authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion pem-ES256 authenticates code and refresh at bound endpoint",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion pem-ES256 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion pem-ES384 authenticates code and refresh at bound endpoint",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion pem-ES384 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion pem-ES512 authenticates code and refresh at bound endpoint",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion pem-ES512 authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion pem-EdDSA authenticates code and refresh at bound endpoint",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion pem-EdDSA authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion both authenticates code and refresh at bound endpoint",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion both authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion empty-kid authenticates code and refresh at bound endpoint",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion empty-kid authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion fractional authenticates code and refresh at bound endpoint",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion fractional authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion nan rejects code and refresh before token transport",
+      "passingRun": "nonfinite-after",
+      "recordedOwner": "generic client assertion nan rejects code and refresh before token transport"
+    },
+    {
+      "owner": "generic client assertion infinity rejects code and refresh before token transport",
+      "passingRun": "final-sqlx-affected",
+      "recordedOwner": "generic client assertion infinity authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion embedded authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion embedded authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion expired authenticates code and refresh at bound endpoint",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion expired authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion bad-key rejects code and refresh before token transport",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion bad-key authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion padded authenticates code and refresh at bound endpoint",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion padded authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion missing-crt rejects code and refresh before token transport",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion missing-crt authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion duplicate-ops rejects code and refresh before token transport",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion duplicate-ops authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion invalid-ext rejects code and refresh before token transport",
+      "passingRun": "key-subject",
+      "recordedOwner": "generic client assertion invalid-ext authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion secret rejects code and refresh before token transport",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion secret authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion manual rejects code and refresh before token transport",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion manual authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion getter-error rejects code and refresh before token transport",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion getter-error authenticates code and refresh at bound endpoint"
+    },
+    {
+      "owner": "generic client assertion invalid options reject eagerly before a grant exists",
+      "passingRun": "after2",
+      "recordedOwner": "generic client assertion invalid options reject eagerly before a grant exists"
+    },
+    {
+      "owner": "oauth automatic /get-access-token null refresh keeps response distinct from stored grant",
+      "passingRun": "account3",
+      "recordedOwner": "oauth automatic /get-access-token null refresh keeps response distinct from stored grant"
+    },
+    {
+      "owner": "oauth automatic /get-access-token empty refresh keeps response distinct from stored grant",
+      "passingRun": "account3",
+      "recordedOwner": "oauth automatic /get-access-token empty refresh keeps response distinct from stored grant"
+    },
+    {
+      "owner": "oauth automatic /account-info null refresh keeps response distinct from stored grant",
+      "passingRun": "account3",
+      "recordedOwner": "oauth automatic /account-info null refresh keeps response distinct from stored grant"
+    },
+    {
+      "owner": "oauth automatic /account-info empty refresh keeps response distinct from stored grant",
+      "passingRun": "account3",
+      "recordedOwner": "oauth automatic /account-info empty refresh keeps response distinct from stored grant"
+    },
+    {
+      "owner": "oauth changed verified email override retains original account authority",
+      "passingRun": "account3",
+      "recordedOwner": "oauth changed verified email override retains original account authority"
+    },
+    {
+      "owner": "oauth account info guest cannot select a user through userId",
+      "passingRun": "account3",
+      "recordedOwner": "oauth account info guest cannot select a user through userId"
+    },
+    {
+      "owner": "oauth trusted server get-access-token selects only explicitly authorized account owner",
+      "passingRun": "account4",
+      "recordedOwner": "oauth trusted server get-access-token selects only explicitly authorized account owner"
+    },
+    {
+      "owner": "oauth trusted server refresh-token selects only explicitly authorized account owner",
+      "passingRun": "account4",
+      "recordedOwner": "oauth trusted server refresh-token selects only explicitly authorized account owner"
+    },
+    {
+      "owner": "oauth trusted server account-info selects only explicitly authorized account owner",
+      "passingRun": "account4",
+      "recordedOwner": "oauth trusted server account-info selects only explicitly authorized account owner"
+    },
+    {
+      "owner": "oauth orphan binding rejects callback without adopting same-email user",
+      "passingRun": "account3",
+      "recordedOwner": "oauth orphan binding rejects callback without adopting same-email user"
+    },
+    {
+      "owner": "oauth expiry absent determines automatic refresh without treating refresh expiry as local veto",
+      "passingRun": "account4",
+      "recordedOwner": "oauth expiry absent determines automatic refresh without treating refresh expiry as local veto"
+    },
+    {
+      "owner": "oauth expiry 2099-01-01T00:00:00.000Z determines automatic refresh without treating refresh expiry as local veto",
+      "passingRun": "account3",
+      "recordedOwner": "oauth expiry 2099-01-01T00:00:00.000Z determines automatic refresh without treating refresh expiry as local veto"
+    },
+    {
+      "owner": "oauth expiry 2020-01-01T00:00:00.000Z determines automatic refresh without treating refresh expiry as local veto",
+      "passingRun": "account3",
+      "recordedOwner": "oauth expiry 2020-01-01T00:00:00.000Z determines automatic refresh without treating refresh expiry as local veto"
+    },
+    {
+      "owner": "oauth concurrent refresh keeps persisted owner and scopes with both grants accepted",
+      "passingRun": "key-subject",
+      "recordedOwner": "oauth concurrent refresh keeps persisted owner and scopes with both grants accepted"
+    },
+    {
+      "owner": "oauth generic expiry-positive applies configured expiry only after real or custom grant",
+      "passingRun": "account3",
+      "recordedOwner": "oauth generic expiry-positive applies configured expiry only after real or custom grant"
+    },
+    {
+      "owner": "oauth generic expiry-zero applies configured expiry only after real or custom grant",
+      "passingRun": "account3",
+      "recordedOwner": "oauth generic expiry-zero applies configured expiry only after real or custom grant"
+    },
+    {
+      "owner": "oauth generic expiry-negative applies configured expiry only after real or custom grant",
+      "passingRun": "account3",
+      "recordedOwner": "oauth generic expiry-negative applies configured expiry only after real or custom grant"
+    },
+    {
+      "owner": "oauth generic custom-token applies configured expiry only after real or custom grant",
+      "passingRun": "account3",
+      "recordedOwner": "oauth generic custom-token applies configured expiry only after real or custom grant"
+    },
+    {
+      "owner": "oauth generic custom-token-error applies configured expiry only after real or custom grant",
+      "passingRun": "account3",
+      "recordedOwner": "oauth generic custom-token-error applies configured expiry only after real or custom grant"
+    },
+    {
+      "owner": "oauth generic subject key resolves original token and profile before account writes",
+      "passingRun": "final-sqlx-affected",
+      "recordedOwner": "oauth generic subject key resolves original token and profile before account writes"
+    },
+    {
+      "owner": "oauth generic subject error resolves original token and profile before account writes",
+      "passingRun": "final-sqlx-affected",
+      "recordedOwner": "oauth generic subject error resolves original token and profile before account writes"
+    },
+    {
+      "owner": "oauth generic subject invalid resolves original token and profile before account writes",
+      "passingRun": "final-sqlx-affected",
+      "recordedOwner": "oauth generic subject invalid resolves original token and profile before account writes"
+    },
+    {
+      "owner": "oauth generic subject default resolves original token and profile before account writes",
+      "passingRun": "final-sqlx-affected",
+      "recordedOwner": "oauth generic subject default resolves original token and profile before account writes"
+    }
+  ],
+  "seaorm": {
+    "passingRun": "final-seaorm",
+    "owners": 54,
+    "assertions": 2338
+  },
+  "finalSqlxAffected": {
+    "passingRun": "final-sqlx-affected",
+    "owners": 6,
+    "assertions": 168
+  },
+  "reusePolicy": "Newest passing SQLx owner receipt retained; unaffected passing owners not rerun for additive options/fixture modes or unrelated rebases.",
+  "evidenceOnlyRename": "Denial case names describe rejection; predicates are unchanged. Additional save runs before assertions to preserve negative-control physical rows."
+}
