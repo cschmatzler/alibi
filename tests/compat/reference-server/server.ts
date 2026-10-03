@@ -59,7 +59,6 @@ import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture"
 import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
-import { paypalProviderFixture } from "./fixtures/paypal-provider-fixture";
 import { notionProviderFixture } from "./fixtures/notion-provider-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./fixtures/one-tap-fixture";
@@ -81,6 +80,7 @@ import { passkeyRegistrationFixture } from "./fixtures/passkey-registration-fixt
 import { callbackSnapshot, capturePasswordlessRequest } from "./fixtures/passwordless-context";
 import { numericModes, numericOptions } from "./fixtures/passwordless-numeric";
 import { paybinProviderFixture } from "./fixtures/paybin-provider-fixture";
+import { paypalProviderFixture } from "./fixtures/paypal-provider-fixture";
 import { createPhoneFixture } from "./fixtures/phone-fixture";
 import { physicalCookieProfiles } from "./fixtures/physical-cookie-fixture";
 import { polarProviderFixture } from "./fixtures/polar-provider-fixture";
