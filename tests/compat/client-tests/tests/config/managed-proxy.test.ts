@@ -6,9 +6,9 @@ import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
-const old = "managed-old-reader-key-at-least-32-characters",
-  current = "compat-test-only-key-not-real-minimum-32chars",
-  legacy = "managed-legacy-reader-key-at-least-32-characters";
+const old = "managed-old-reader-key-at-least-32-characters";
+const current = "compat-test-only-key-not-real-minimum-32chars";
+const legacy = "managed-legacy-reader-key-at-least-32-characters";
 const ring = {
   keys: new Map([
     [2, current],
@@ -30,8 +30,8 @@ const tamperVector = symmetricEncrypt({
   key: ring,
   data: JSON.stringify({ authentic: "tamper-control" }),
 }).then((value) => {
-  const prefix = "$ba$2$",
-    bytes = Buffer.from(value.slice(prefix.length), "hex");
+  const prefix = "$ba$2$";
+  const bytes = Buffer.from(value.slice(prefix.length), "hex");
   bytes[bytes.length - 1]! ^= 1;
   return prefix + bytes.toString("hex");
 });
@@ -197,10 +197,11 @@ compatScenario(
       await keys(ctx, missing, ctx.baseURL);
       const deniedCompletion =
         index < 2 ? await response(await owner.fetch(bridge, { redirect: "manual" })) : null;
-      if (deniedCompletion)
+      if (deniedCompletion) {
         expect(new URL(deniedCompletion.location!).searchParams.get("error")).toBe(
           "invalid_profile",
         );
+      }
       const afterDeniedCompletion = await state(ctx);
       expect(afterDeniedCompletion.preview).toEqual(saved.preview);
       expect(afterDeniedCompletion.production).toEqual(saved.production);
@@ -216,8 +217,9 @@ compatScenario(
         const url = new URL(bridge);
         let rejectedToken = token;
         let submittedPayload = payload;
-        if (mode === "foreign-origin")
+        if (mode === "foreign-origin") {
           url.searchParams.set("callbackURL", "https://foreign.fixture.test/leak");
+        }
         if (mode === "wrong-key") rejectedToken = await wrongKeyVector;
         if (mode === "foreign-state") {
           submittedPayload = { ...payload, state: seeded.data!.token };
@@ -233,10 +235,11 @@ compatScenario(
         url.searchParams.set("profile", rejectedToken);
         const rejected = await response(await owner.fetch(url, { redirect: "manual" }));
         if (mode === "foreign-origin") expect(rejected.status).toBe(403);
-        else
+        else {
           expect(new URL(rejected.location!).searchParams.get("error")).toBe(
             mode === "foreign-state" ? "state_mismatch" : "invalid_profile",
           );
+        }
         const unchanged = await state(ctx);
         expect(unchanged.preview).toEqual(saved.preview);
         expect(unchanged.production).toEqual(saved.production);

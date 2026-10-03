@@ -16,13 +16,15 @@ export type ManagedAccountCookieProfile = {
 const record = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
 function equal(a: unknown, b: unknown): boolean {
-  if (Array.isArray(a) && Array.isArray(b))
+  if (Array.isArray(a) && Array.isArray(b)) {
     return a.length === b.length && a.every((child, index) => equal(child, b[index]));
-  if (record(a) && record(b))
+  }
+  if (record(a) && record(b)) {
     return (
       Object.keys(a).length === Object.keys(b).length &&
       Object.keys(a).every((key) => Object.hasOwn(b, key) && equal(a[key], b[key]))
     );
+  }
   return Object.is(a, b);
 }
 
@@ -67,9 +69,9 @@ export function managedAccountCookieReceipt(
     Number.isFinite(Date.parse(value))
       ? Date.parse(value)
       : NaN;
-  const snapshot = instant(value.payload.updatedAt),
-    physical = instant(value.account.updatedAt),
-    created = instant(value.payload.createdAt);
+  const snapshot = instant(value.payload.updatedAt);
+  const physical = instant(value.account.updatedAt);
+  const created = instant(value.payload.createdAt);
   const writeWindow = profile?.renewal
     ? windows?.find((earlier) => {
         if (!earlier?.issuedAccountCookie || earlier.finishedAt > issued.startedAt) return false;
@@ -121,8 +123,9 @@ export function authenticatedManagedAccountCookie(
     !record(value.header) ||
     !record(value.payload) ||
     !record(value.account)
-  )
+  ) {
     return false;
+  }
   const profile = profiles?.[value.authPath];
   if (!profile) return false;
   const parts = value.token.split(".");
@@ -146,11 +149,12 @@ export function authenticatedManagedAccountCookie(
       header.enc !== "A256CBC-HS512" ||
       header.kid !== kid ||
       !equal(header, value.header)
-    )
+    ) {
       return false;
-    const iv = Buffer.from(parts[2]!, "base64url"),
-      ciphertext = Buffer.from(parts[3]!, "base64url"),
-      tag = Buffer.from(parts[4]!, "base64url");
+    }
+    const iv = Buffer.from(parts[2]!, "base64url");
+    const ciphertext = Buffer.from(parts[3]!, "base64url");
+    const tag = Buffer.from(parts[4]!, "base64url");
     const al = Buffer.alloc(8);
     al.writeBigUInt64BE(BigInt(Buffer.byteLength(parts[0]!) * 8));
     const expected = createHmac("sha512", key.subarray(0, 32))
@@ -171,8 +175,8 @@ export function authenticatedManagedAccountCookie(
     // Source issues the pre-update account snapshot while its adapter advances
     // updatedAt; every ownership and credential field must still match exactly.
     for (const field of Object.keys(value.account).filter((field) => field !== "updatedAt")) {
-      const row = value.account[field],
-        claim = payload[field];
+      const row = value.account[field];
+      const claim = payload[field];
       if (equal(row, claim)) continue;
       if (
         ["createdAt", "accessTokenExpiresAt", "refreshTokenExpiresAt"].includes(field) &&
@@ -180,8 +184,9 @@ export function authenticatedManagedAccountCookie(
         typeof claim === "string" &&
         Number.isFinite(Date.parse(row)) &&
         Date.parse(row) === Date.parse(claim)
-      )
+      ) {
         continue;
+      }
       return false;
     }
     for (const field of ["accessToken", "refreshToken"] as const) {

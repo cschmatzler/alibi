@@ -685,8 +685,9 @@ const apiKeyOptionsFixture = createApiKeyOptionsFixture(database, authOptions);
 verificationProfiles.set(apiKeyOptionsFixture.path, apiKeyOptionsFixture.auth);
 const apiKeyHookFixture = createApiKeyHookFixture(database, authOptions);
 verificationProfiles.set(apiKeyHookFixture.path, apiKeyHookFixture.auth);
-for (const [path, instance] of managedSecretsFixture.profiles)
+for (const [path, instance] of managedSecretsFixture.profiles) {
   verificationProfiles.set(path, instance);
+}
 for (const [path, instance] of siweFixture.profiles) {
   verificationProfiles.set(path, instance);
 }

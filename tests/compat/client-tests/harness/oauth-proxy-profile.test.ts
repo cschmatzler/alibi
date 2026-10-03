@@ -136,8 +136,8 @@ test("published managed proxy envelopes use only their declared version and pres
     ]),
     currentVersion: 0,
   };
-  const left = await issue(leftBaseURL, managed),
-    right = await issue(rightBaseURL, managed);
+  const left = await issue(leftBaseURL, managed);
+  const right = await issue(rightBaseURL, managed);
   const ctx = {
     ...context(left, right),
     oauthProxyProfileSecret: undefined,
@@ -172,8 +172,8 @@ test("published managed proxy envelopes use only their declared version and pres
     path: "oauthProxyProfile",
     reason: "unverified or application OAuth proxy profile differs literally",
   });
-  const bareLeft = await issue(leftBaseURL),
-    bareRight = await issue(rightBaseURL);
+  const bareLeft = await issue(leftBaseURL);
+  const bareRight = await issue(rightBaseURL);
   expect(compareValues(values(bareLeft), values(bareRight), ctx)).toEqual([]);
   expect(
     compareValues(values(bareLeft), values(bareRight), {

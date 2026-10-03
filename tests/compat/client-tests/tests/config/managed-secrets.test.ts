@@ -18,9 +18,9 @@ import { compatScenario, type ScenarioContext } from "../../support/scenario";
 import { decodeBase32 } from "../../support/totp";
 import { storedVerification, verificationCount } from "../../support/verification";
 import { verifyWithOfficialJose } from "../plugins/jwt/helpers";
-const old = "managed-old-reader-key-at-least-32-characters",
-  current = "compat-test-only-key-not-real-minimum-32chars",
-  legacy = "managed-legacy-reader-key-at-least-32-characters";
+const old = "managed-old-reader-key-at-least-32-characters";
+const current = "compat-test-only-key-not-real-minimum-32chars";
+const legacy = "managed-legacy-reader-key-at-least-32-characters";
 const keys = {
   keys: new Map([
     [2, current],
@@ -117,8 +117,8 @@ compatScenario(
         type: "sign-in",
       });
       expect(sent.status).toBe(200);
-      const otp = await delivery(ctx, email),
-        before = await encryptedRows(ctx, email);
+      const otp = await delivery(ctx, email);
+      const before = await encryptedRows(ctx, email);
       if (version === null) expect(before.ciphertext).toMatch(/^[0-9a-f]+$/);
       else expect(before.ciphertext).toMatch(/^\$ba\$0\$[0-9a-f]+$/);
       expect(await symmetricDecrypt({ key: keys, data: before.ciphertext })).toBe(otp);
@@ -149,8 +149,8 @@ compatScenario(
       [4, "9", false],
       [5, "x", false],
     ] as const) {
-      const email = ctx.uniqueEmail(`version-${index}`),
-        otp = "654321";
+      const email = ctx.uniqueEmail(`version-${index}`);
+      const otp = "654321";
       const encrypted = await symmetricEncrypt({
         key: { keys: new Map([[0, old]]), currentVersion: 0 },
         data: otp,
@@ -181,8 +181,8 @@ compatScenario(
       });
     }
     for (const mode of ["wrong-key", "tampered", "missing-separator", "truncated"]) {
-      const email = ctx.uniqueEmail(`envelope-${mode}`),
-        otp = "654321";
+      const email = ctx.uniqueEmail(`envelope-${mode}`);
+      const otp = "654321";
       let ciphertext = await symmetricEncrypt({
         key: {
           keys: new Map([
@@ -225,8 +225,8 @@ compatScenario(
       });
     }
     const account = client(ctx, "managed-old");
-    const email = ctx.uniqueEmail("factor"),
-      password = "password123";
+    const email = ctx.uniqueEmail("factor");
+    const password = "password123";
     const signup = await account.client.signUp.email({ email, password, name: "Rotation owner" });
     expect(signup.error).toBeNull();
     const oldSession = await account.client.getSession();
@@ -351,8 +351,8 @@ async function callback(
 compatScenario(
   "managed OAuth credentials and account cookies retain readers and bind rotated sessions to their owners",
   async (ctx) => {
-    const password = "password123",
-      email = ctx.uniqueEmail("oauth-managed-owner");
+    const password = "password123";
+    const email = ctx.uniqueEmail("oauth-managed-owner");
     const owner = client(ctx, "managed-old", "oauth-owner");
     const signup = await owner.client.signUp.email({
       email,
@@ -464,8 +464,8 @@ compatScenario(
     const cacheToken = cacheCookies
       .map((cookie) => cookie.split(";")[0]!.slice(cookie.indexOf("=") + 1))
       .join("");
-    const observedAt = Date.now(),
-      cacheEnvelope = JSON.parse(Buffer.from(cacheToken, "base64url").toString());
+    const observedAt = Date.now();
+    const cacheEnvelope = JSON.parse(Buffer.from(cacheToken, "base64url").toString());
     const cached = await getCookieCache(
       new Headers({ cookie: `better-auth.session_data=${cacheToken}` }),
       { secret: current, strategy: "compact", isSecure: false },
@@ -589,8 +589,8 @@ compatScenario(
 compatScenario(
   "managed JWKS encryption retains private readers without exposing private keys and retires them before signing",
   async (ctx) => {
-    const password = "password123",
-      email = ctx.uniqueEmail("managed-jwk-owner");
+    const password = "password123";
+    const email = ctx.uniqueEmail("managed-jwk-owner");
     const owner = client(ctx, "managed-old", "jwk-owner");
     const signup = await owner.client.signUp.email({ email, password, name: "Managed JWK Owner" });
     expect(signup.error).toBeNull();

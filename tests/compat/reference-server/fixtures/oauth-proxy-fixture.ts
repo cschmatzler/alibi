@@ -235,10 +235,12 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
         if (
           !["old", "retained", "retired", "legacy", "bare"].includes(input.mode) ||
           (input.origin && ![preview, production].includes(input.origin))
-        )
+        ) {
           return Response.json({ error: "Unknown key runtime" }, { status: 400 });
-        for (const origin of input.origin ? [input.origin] : [preview, production])
+        }
+        for (const origin of input.origin ? [input.origin] : [preview, production]) {
           modes.set(origin, input.mode);
+        }
         return Response.json({ status: true });
       }
       if (url.pathname === `${control}/state`) {

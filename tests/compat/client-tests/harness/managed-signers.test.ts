@@ -68,8 +68,8 @@ test("managed profile signatures require the issuing runtime key and actual matc
       database.close();
     }
   }
-  const left = await observe(),
-    right = await observe();
+  const left = await observe();
+  const right = await observe();
   const context = {
     leftBaseURL: left.baseURL,
     rightBaseURL: right.baseURL,
@@ -93,7 +93,6 @@ test("managed profile signatures require the issuing runtime key and actual matc
       sessionCookieSecretsByAuthPath: { [path]: current, "/__test/profiles/foreign/api/auth": old },
     }).length,
   ).toBeGreaterThan(0);
-  const cookie = right.windows[0]!.issuedSessionCookie!;
   const token = right.value.observation.issued.data!.token!;
   const wrong = `better-auth.session_token=${encodeURIComponent(`${token}.${createHmac("sha256", current).update(token).digest("base64")}`)}`;
   const forged = structuredClone(right.value);

@@ -38,12 +38,13 @@ async function capture() {
     hostname: "127.0.0.1",
     port: 0,
     async fetch(request) {
-      if (new URL(request.url).pathname === "/__test/managed-secrets/state")
+      if (new URL(request.url).pathname === "/__test/managed-secrets/state") {
         return Response.json({
           accounts: await (
             await auth.$context
           ).adapter.findMany<Record<string, unknown>>({ model: "account" }),
         });
+      }
       return auth.handler(request);
     },
   });
@@ -83,8 +84,8 @@ async function capture() {
   try {
     await (await getMigrations(options)).runMigrations();
     auth = betterAuth(options);
-    const startedAt = Date.now(),
-      traces: TraceEntry[] = [];
+    const startedAt = Date.now();
+    const traces: TraceEntry[] = [];
     const fetch = createTracingFetch(baseURL, "owner", traces, path);
     const client = createAuthClient({
       baseURL: baseURL + path,
@@ -168,8 +169,8 @@ async function resignal(atom: Atom, payload: Record<string, unknown>, key = secr
 }
 
 test("actual Source managed cookies bind authenticated inner plaintext version context and physical rows while unrelated claims stay literal", async () => {
-  const left = await capture(),
-    right = await capture();
+  const left = await capture();
+  const right = await capture();
   const context: ComparisonContext = {
     leftBaseURL: left.baseURL,
     rightBaseURL: right.baseURL,

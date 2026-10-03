@@ -3543,8 +3543,9 @@ export function compareValues(
         }
         const version = (token: unknown) =>
           typeof token === "string" ? (/^\$ba\$([^$]+)\$/.exec(token)?.[1] ?? "legacy") : undefined;
-        if (version(a.token) !== version(b.token))
+        if (version(a.token) !== version(b.token)) {
           fail(`${path}.token`, "OAuth proxy encrypted envelope version differs");
+        }
 
         const providerAccountMatches = (payload: unknown) =>
           record(payload) &&
@@ -3696,13 +3697,14 @@ export function compareValues(
           );
           return;
         }
-        for (const field of ["accessToken", "refreshToken"])
+        for (const field of ["accessToken", "refreshToken"]) {
           identity(
             String(a.payload[field]),
             String(b.payload[field]),
             `${path}.payload.${field}`,
             "token",
           );
+        }
         identity(String(a.token), String(b.token), `${path}.token`, "token");
         visit(a.authPath, b.authPath, `${path}.authPath`, "authPath");
         visit(a.header, b.header, `${path}.header`, "", false, false, true);
