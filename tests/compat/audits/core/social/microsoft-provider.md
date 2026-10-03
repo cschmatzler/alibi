@@ -89,5 +89,17 @@ observed application assertion callbacks to fixed token requests. Claims do not
 select network authorities. No ownership or credential destination blocker was
 found. Trusted application overrides remain ordinary production configuration.
 
-Full unchanged `devenv shell -- ./scripts/check.sh` is still pending. No coverage
-floor, pin, comparator, harness control or comparison field has been relaxed.
+The first frozen full unchanged gate (`/tmp/pr296-canonical.log`) exited 100:
+native default 788, optional 841, fixture 2, harness 89 and browser 2 passed;
+SDK 1717/1719 passed with 119,622 assertions, including all 75 Microsoft owners.
+The two failed owners were generated RSA keyring and Discord provider timestamp
+provenance; documentation and coverage were not reached. The retained failure
+led to Source-backed exact producer repairs, including raw key/event/legacy
+dates bound to actual publication, SQL, signature and one-hour policy. See the
+keyring audit and `audits/harness/discord-callback-clocks.md` for intended Source
+before failures and denial controls. Composed harness 92/92 (2,559 assertions),
+focused Source/native keyring+Discord 10/10 (1,828), format, lint and types pass.
+
+A new full unchanged `devenv shell -- ./scripts/check.sh` is pending at the clean
+composed checkpoint. No coverage floor, package pin, harness control or raw
+comparison field has been relaxed or removed.
