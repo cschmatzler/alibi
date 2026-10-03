@@ -1,0 +1,62 @@
+---
+title: Better Auth for Rust
+description: Authentication that fits your Rust application. Your database, your models, your stack.
+template: splash
+hero:
+  title: Better Auth. Now in Rust.
+  tagline: Authentication that fits your application. Your database, your models, your stack.
+  actions:
+    - text: Get started
+      link: /installation/
+      icon: right-arrow
+    - text: Explore the plugins
+      link: /plugins/
+      variant: secondary
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+:::caution[Unreleased]
+This project is used directly from Git. APIs and schemas may change. The pinned Better Auth compatibility target is `1.7.6`.
+:::
+
+## One auth instance. The features you need.
+
+```rust
+use better_auth::plugins::EmailPasswordPlugin;
+use better_auth::{AuthBuilder, AuthResult, AuthSchema, BetterAuth};
+
+async fn with_passwords<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<S>> {
+    builder
+        .plugin(EmailPasswordPlugin::new().enable_signup(true))
+        .build()
+        .await
+}
+```
+
+Start with the [complete setup](/installation/), then add the plugins your application needs.
+
+<CardGrid>
+  <Card title="Your database" icon="database">
+    Use SQLx or SeaORM with application-owned models and migrations. Keep authentication alongside your application data.
+  </Card>
+  <Card title="Rust throughout" icon="approve-check">
+    Async APIs, typed schemas, and Axum session extractors. Compose authentication in the same language as your backend.
+  </Card>
+  <Card title="Room to grow" icon="puzzle">
+    Email/password, OAuth, passkeys, two-factor authentication, organizations, and API keys, configured with Rust plugins.
+  </Card>
+  <Card title="A familiar API" icon="seti:typescript">
+    Better Auth's HTTP semantics, tested against its pinned runtime and official client. Native APIs where Rust needs them.
+  </Card>
+</CardGrid>
+
+## Find your next step
+
+<CardGrid>
+  <LinkCard title="Installation" description="Build an auth instance and start an Axum server." href="/installation/" />
+  <LinkCard title="Basic usage" description="Sign up, sign in, read a session, and sign out." href="/basic-usage/" />
+  <LinkCard title="Plugin catalog" description="Add passwordless login, second factors, and more." href="/plugins/" />
+  <LinkCard title="Frontend documentation" description="Use the official Better Auth client and frontend guides." href="https://www.better-auth.com/docs/concepts/client" />
+  <LinkCard title="Compatibility" description="Understand the upstream target and native boundaries." href="/reference/compatibility/" />
+</CardGrid>

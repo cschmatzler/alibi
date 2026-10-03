@@ -1,0 +1,6 @@
+creation_rules:
+  - path_regex: ^secrets\.production\.sops\.json$
+    age: >-
+      age1smjjh7l5gchlp4zgfqcxaam506mudacsr37nqj690t0gktzlksvqskd2ek,
+      age1f9h725ewwwwwkelnrvdvrurg6fcsn3zxrxdt0v6v8ys0nzngcsvqu77nc8,
+      age15htql6wpwt8xky8gg6x7m28qk02tx7g4kaklput647f3lvsgtpsq7t8vr8
