@@ -123,7 +123,7 @@ pub enum EndpointPhase {
 /// carry a caller-populated virtual principal into this context.
 #[derive(Clone, Debug)]
 pub struct EndpointCall {
-    operation_id: &'static str,
+    operation_id: String,
     path: Option<String>,
     method: Option<HttpMethod>,
     body: Option<JsValue>,
@@ -145,7 +145,7 @@ impl EndpointCall {
         options: EndpointOptions,
     ) -> Self {
         Self {
-            operation_id: definition.operation_id,
+            operation_id: definition.operation_id.into(),
             path: definition.path.clone(),
             method: options.method,
             body,
@@ -164,9 +164,55 @@ impl EndpointCall {
         }
     }
 
+    /// Logical HTTP endpoint input after physical routing and body parsing.
+    /// The original physical request remains separate from normalized hook input.
     #[must_use]
-    pub const fn operation_id(&self) -> &'static str {
-        self.operation_id
+    pub fn from_http_request(request: &AuthRequest, route: &crate::AuthRoute) -> Self {
+        let body = request
+            .extensions()
+            .get::<crate::types::ParsedRequestBody>()
+            .and_then(|body| match body.as_ref() {
+                crate::types::ParsedRequestBody::Value(value) => Some(value.clone()),
+                crate::types::ParsedRequestBody::Opaque(_) => None,
+            });
+        let query = JsValue::Object(
+            request
+                .query
+                .keys()
+                .map(|name| {
+                    let values = request.query_values(name).unwrap_or_default();
+                    let value = if values.len() > 1 {
+                        JsValue::Array(values.iter().cloned().map(JsValue::String).collect())
+                    } else {
+                        JsValue::String(request.query.get(name).cloned().unwrap_or_default())
+                    };
+                    (name.clone(), value)
+                })
+                .collect(),
+        );
+        let definition = EndpointDefinition {
+            name: "http",
+            operation_id: "http",
+            path: Some(route.context_path.as_ref().unwrap_or(&route.path).clone()),
+            method: route.method.clone(),
+        };
+        let mut call = Self::new(
+            &definition,
+            body,
+            Some(query),
+            EndpointOptions {
+                headers: Some(request.headers.clone()),
+                request: Some(crate::hooks::current_request_hook_context().map_or_else(|| request.clone(), |context| context.request)),
+                method: Some(request.method.clone()),
+            },
+        );
+        call.operation_id.clone_from(&route.operation_id);
+        call
+    }
+
+    #[must_use]
+    pub fn operation_id(&self) -> &str {
+        &self.operation_id
     }
 
     #[must_use]

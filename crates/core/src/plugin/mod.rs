@@ -79,6 +79,16 @@ pub enum BeforeRequestAction {
     ReplaceHeaders { headers: HashMap<String, String> },
 }
 
+/// Physical HTTP hook control flow, before route selection and endpoint hooks.
+#[derive(Debug)]
+pub enum HttpRequestAction {
+    /// Finish transport processing without endpoint or HTTP response hooks.
+    Respond(AuthResponse),
+    /// Replace physical input for later HTTP hooks and route selection.
+    /// Dispatch discards session state, extensions and queued headers on this value.
+    ReplaceRequest(AuthRequest),
+}
+
 /// Plugin trait that all authentication plugins must implement.
 ///
 #[async_trait]
@@ -169,6 +179,33 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         &self,
         _req: &AuthRequest,
         _ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
+        Ok(None)
+    }
+
+    /// Inspect or replace the physical request. The default preserves existing
+    /// `on_http_request` implementations. Request-local configuration has already
+    /// been resolved from the incoming request, matching the Source HTTP handler.
+    async fn on_http_request_action(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<HttpRequestAction>> {
+        Ok(self
+            .on_http_request(req, ctx)
+            .await?
+            .map(HttpRequestAction::Respond))
+    }
+
+    /// Observe the routed HTTP response before transport middleware (including CORS).
+    /// Hooks run in registration order; the first replacement stops this chain.
+    /// Early HTTP request-hook responses skip this stage. Errors escape dispatch;
+    /// they cannot reverse writes already committed by an endpoint.
+    async fn on_http_response(
+        &self,
+        _req: &AuthRequest,
+        _ctx: &AuthContext<S>,
+        _response: &AuthResponse,
     ) -> AuthResult<Option<AuthResponse>> {
         Ok(None)
     }
