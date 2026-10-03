@@ -123,6 +123,15 @@ impl TwoFactorBackupCipher for BackupCipher {
 fn backup_config(name: &str, receipts: &BackupReceipts) -> TwoFactorConfig {
     let (amount, length, storage) = match name {
         "two-factor-backup-plain" => (2.5, 3.5, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-nan-count" => (f64::NAN, f64::INFINITY, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-negative-infinite-count" => {
+            (f64::NEG_INFINITY, 0.0, TwoFactorBackupStorage::Plain)
+        }
+        "two-factor-backup-nan-length" => (1.5, f64::NAN, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-half-length" => (1.0, 0.5, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-large-length" => (1.0, 32769.5, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-large-count" => (1024.5, 12.0, TwoFactorBackupStorage::Plain),
+        "two-factor-backup-infinite-count" => (f64::INFINITY, 0.0, TwoFactorBackupStorage::Plain),
         "two-factor-backup-zero" => (0.0, 0.0, TwoFactorBackupStorage::Plain),
         "two-factor-backup-negative" => (-1.0, -2.0, TwoFactorBackupStorage::Plain),
         "two-factor-backup-invalid-length" => (2.0, 0.0, TwoFactorBackupStorage::Plain),
@@ -196,6 +205,13 @@ pub(crate) async fn router(
         "two-factor-backup-encrypted",
         "two-factor-backup-invalid-length",
         "two-factor-backup-custom",
+        "two-factor-backup-nan-count",
+        "two-factor-backup-negative-infinite-count",
+        "two-factor-backup-nan-length",
+        "two-factor-backup-half-length",
+        "two-factor-backup-large-length",
+        "two-factor-backup-large-count",
+        "two-factor-backup-infinite-count",
         "two-factor-trust-fractional",
         "two-factor-trust-zero-challenge",
         "two-factor-trust-negative-challenge",

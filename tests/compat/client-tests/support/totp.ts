@@ -34,7 +34,7 @@ export async function generateCurrentTotp(totpURI: string) {
 
   const digits = Number(url.searchParams.get("digits") ?? "6");
   const period = Number(url.searchParams.get("period") ?? "30");
-  return hotpAtCounter(decodeBase32(secret), digits, Math.floor(Date.now() / 1000 / period));
+  return hotpAtCounter(decodeBase32(secret), digits, Math.floor(Date.now() / (period * 1000)));
 }
 
 export async function hotpAtCounter(
@@ -44,7 +44,7 @@ export async function hotpAtCounter(
 ) {
   const counterBytes = new Uint8Array(8);
   const view = new DataView(counterBytes.buffer);
-  view.setUint32(4, counter);
+  view.setBigUint64(0, BigInt(counter));
 
   const key = await crypto.subtle.importKey("raw", secret, { name: "HMAC", hash: "SHA-1" }, false, [
     "sign",

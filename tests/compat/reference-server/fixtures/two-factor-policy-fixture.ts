@@ -15,8 +15,25 @@ export function createTwoFactorPolicyFixture(
     rows.push({ phase, input });
     backupReceipts.set(profile, rows);
   };
+  const numericBackup: Record<
+    string,
+    { amount: number; length: number; storeBackupCodes: "plain" }
+  > = {
+    "two-factor-backup-nan-count": { amount: NaN, length: Infinity, storeBackupCodes: "plain" },
+    "two-factor-backup-negative-infinite-count": {
+      amount: -Infinity,
+      length: 0,
+      storeBackupCodes: "plain",
+    },
+    "two-factor-backup-nan-length": { amount: 1.5, length: NaN, storeBackupCodes: "plain" },
+    "two-factor-backup-half-length": { amount: 1, length: 0.5, storeBackupCodes: "plain" },
+    "two-factor-backup-large-length": { amount: 1, length: 32769.5, storeBackupCodes: "plain" },
+    "two-factor-backup-large-count": { amount: 1024.5, length: 12, storeBackupCodes: "plain" },
+    "two-factor-backup-infinite-count": { amount: Infinity, length: 0, storeBackupCodes: "plain" },
+  };
   const backupOptions = (name: string) =>
-    name === "two-factor-backup-plain"
+    numericBackup[name] ??
+    (name === "two-factor-backup-plain"
       ? { amount: 2.5, length: 3.5, storeBackupCodes: "plain" as const }
       : name === "two-factor-backup-zero"
         ? { amount: 0, length: 0, storeBackupCodes: "plain" as const }
@@ -46,7 +63,7 @@ export function createTwoFactorPolicyFixture(
                       },
                     },
                   }
-                : {};
+                : {});
   const profiles = new Map(
     [
       "two-factor-lockout-fractional",
@@ -67,6 +84,13 @@ export function createTwoFactorPolicyFixture(
       "two-factor-backup-encrypted",
       "two-factor-backup-invalid-length",
       "two-factor-backup-custom",
+      "two-factor-backup-nan-count",
+      "two-factor-backup-negative-infinite-count",
+      "two-factor-backup-nan-length",
+      "two-factor-backup-half-length",
+      "two-factor-backup-large-length",
+      "two-factor-backup-large-count",
+      "two-factor-backup-infinite-count",
       "two-factor-trust-fractional",
       "two-factor-trust-zero-challenge",
       "two-factor-trust-negative-challenge",

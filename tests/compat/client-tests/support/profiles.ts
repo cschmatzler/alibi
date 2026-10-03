@@ -932,6 +932,30 @@ export const FIXTURE_PROFILES = [
   "org-numeric-async-nan",
   "org-numeric-async-infinity",
   "org-numeric-async-negative-infinity",
+
+  "two-factor-totp-fraction",
+  "two-factor-totp-negative-period",
+  "two-factor-totp-infinite-period",
+  "two-factor-totp-negative-infinite-period",
+  "two-factor-totp-large-period",
+  "two-factor-totp-nan",
+  "two-factor-totp-invalid-digits",
+  "two-factor-totp-infinite-digits",
+  "two-factor-totp-tiny-period",
+  "two-factor-backup-nan-count",
+  "two-factor-backup-negative-infinite-count",
+  "two-factor-backup-nan-length",
+  "two-factor-backup-half-length",
+  "two-factor-backup-large-length",
+  "two-factor-backup-large-count",
+  "two-factor-backup-infinite-count",
+
+  "two-factor-otp-nan",
+  "two-factor-otp-half",
+  "two-factor-otp-large",
+  "two-factor-otp-infinite-digits",
+  "two-factor-otp-infinite-expiry",
+  "two-factor-otp-negative-expiry",
 ] as const;
 
 export type FixtureProfile = (typeof FIXTURE_PROFILES)[number];

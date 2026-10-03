@@ -36,7 +36,6 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::fmt::Write;
 use std::sync::Arc;
-use totp_rs::{Algorithm, TOTP};
 use validator::Validate;
 
 const TWO_FACTOR_COOKIE_SUFFIX: &str = "two_factor";
@@ -65,9 +64,9 @@ struct TwoFactorCookiePolicy {
     trust_max_age: f64,
 }
 
-const DEFAULT_TOTP_PERIOD_SECS: u64 = 30;
+const DEFAULT_TOTP_PERIOD_SECS: f64 = 30.0;
 
-const DEFAULT_TOTP_DIGITS: usize = 6;
+const DEFAULT_TOTP_DIGITS: f64 = 6.0;
 
 const ENCRYPTION_INFO: &[u8] = b"better-auth-two-factor-encryption";
 
@@ -143,12 +142,12 @@ pub struct TwoFactorConfig {
     /// Trusted proof lifetime in seconds; negative values omit cookie Max-Age.
     #[config(default = DEFAULT_TRUST_DEVICE_MAX_AGE_SECS)]
     pub trust_device_max_age: f64,
-    /// TOTP period in seconds.
+    /// TOTP period in seconds, retaining Source fractional and signed counters.
     #[config(default = DEFAULT_TOTP_PERIOD_SECS)]
-    pub totp_period: u64,
-    /// TOTP digit count.
+    pub totp_period: f64,
+    /// Raw TOTP digits. Fractional values retain Source decimal-remainder output.
     #[config(default = DEFAULT_TOTP_DIGITS)]
-    pub totp_digits: usize,
+    pub totp_digits: f64,
     /// Issuer used when retrieving an existing authenticator URI.
     #[config(default = None)]
     pub totp_issuer: Option<String>,
@@ -374,9 +373,7 @@ impl TwoFactorPlugin {
     /// Returns an error if the secret cannot be decoded or the TOTP configuration is invalid.
     pub fn generate_totp(&self, secret: &str) -> AuthResult<String> {
         require_totp_enabled(&self.config)?;
-        build_totp(&self.config, secret)?
-            .generate_current()
-            .map_err(|error| AuthError::internal(format!("Failed to generate TOTP: {error}")))
+        generate_totp_at(&self.config, secret, totp_counter(&self.config), 0.0)
     }
 
     /// Read the currently stored backup codes for a user.
@@ -576,7 +573,13 @@ impl TwoFactorPlugin {
         let (response, set_cookie_headers) =
             match verify_totp_core(req, &body, &self.config, ctx).await {
                 Ok(result) => result,
-                Err(error) => return verification_error_response(error, ctx),
+                Err(
+                    TotpVerificationError::InvalidGeneration
+                    | TotpVerificationError::SessionCreationCancelled,
+                ) => return Ok(AuthResponse::new(500)),
+                Err(TotpVerificationError::Auth(error)) => {
+                    return verification_error_response(error, ctx);
+                }
             };
         let mut auth_response = AuthResponse::json(200, &response)?;
         for cookie in set_cookie_headers {
@@ -597,7 +600,7 @@ impl TwoFactorPlugin {
         }
         let response = match send_otp_core(req, &self.config, ctx).await {
             Ok(response) => response,
-            Err(SendOtpError::NonpositiveLength) => return Ok(AuthResponse::new(500)),
+            Err(SendOtpError::InvalidGeneration) => return Ok(AuthResponse::new(500)),
             Err(SendOtpError::Auth(error)) => return Err(error),
         };
         AuthResponse::json(200, &response).map_err(AuthError::from)
@@ -684,10 +687,21 @@ impl TwoFactorPlugin {
     }
 }
 
+enum TotpVerificationError {
+    Auth(AuthError),
+    InvalidGeneration,
+    SessionCreationCancelled,
+}
+impl From<AuthError> for TotpVerificationError {
+    fn from(error: AuthError) -> Self {
+        Self::Auth(error)
+    }
+}
+
 enum SendOtpError {
     Auth(AuthError),
     // The pinned random-string generator throws before storage or delivery.
-    NonpositiveLength,
+    InvalidGeneration,
 }
 
 impl From<AuthError> for SendOtpError {
@@ -1194,13 +1208,13 @@ async fn verify_totp_core(
     body: &VerifyTotpRequest,
     config: &TwoFactorConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<(SessionTokenResponse<UserView>, Vec<String>)> {
+) -> Result<(SessionTokenResponse<UserView>, Vec<String>), TotpVerificationError> {
     require_totp_enabled(config)?;
     let state = resolve_two_factor_state(req, ctx).await?;
     let two_factor = load_two_factor_record(&state.user(), ctx).await?;
     let pending = matches!(state, ResolvedTwoFactorState::Pending(_));
     if pending && two_factor.verified() == Some(false) {
-        return Err(AuthError::bad_request("TOTP not enabled"));
+        return Err(AuthError::bad_request("TOTP not enabled").into());
     }
     if pending {
         assert_account_not_locked(config, &two_factor, ctx).await?;
@@ -1208,9 +1222,15 @@ async fn verify_totp_core(
     let attempt = begin_factor_attempt(&state, ctx).await?;
     let checked = (|| {
         let secret = decrypt_value(&ctx.config, two_factor.secret())?;
-        build_totp(config, &secret)?
-            .check_current(&body.code)
-            .map_err(|error| AuthError::internal(format!("Failed to verify TOTP: {error}")))
+        let counter = totp_counter(config);
+        let mut matched = false;
+        // Source evaluates every window entry even after a match.
+        for offset in [-1.0, 0.0, 1.0] {
+            let expected = generate_totp_at(config, &secret, counter, offset)
+                .map_err(|_error| TotpVerificationError::InvalidGeneration)?;
+            matched |= constant_time_totp_equal(&body.code, &expected);
+        }
+        Ok::<_, TotpVerificationError>(matched)
     })();
     let valid = match checked {
         Ok(valid) => valid,
@@ -1225,7 +1245,7 @@ async fn verify_totp_core(
         if pending {
             record_account_failure(config, &two_factor, ctx).await?;
         }
-        return Err(AuthError::authentication_failed("Invalid code"));
+        return Err(AuthError::authentication_failed("Invalid code").into());
     }
     if pending {
         reset_account_failures(config, &two_factor, ctx).await?;
@@ -1241,7 +1261,12 @@ async fn verify_totp_core(
                 ctx,
             )
             .await
-            .map_err(ExistingSessionFactorError::into_auth_error)?;
+            .map_err(|error| match error {
+                ExistingSessionFactorError::SessionCreationCancelled => {
+                    TotpVerificationError::SessionCreationCancelled
+                }
+                ExistingSessionFactorError::Auth(error) => TotpVerificationError::Auth(error),
+            })?;
             mark_factor_verified(&two_factor, ctx).await?;
             Ok(result)
         }
@@ -1255,6 +1280,7 @@ async fn verify_totp_core(
                 ctx,
             )
             .await
+            .map_err(TotpVerificationError::from)
         }
     }
 }
@@ -1298,17 +1324,8 @@ async fn send_otp_core(
         .ok_or_else(|| AuthError::bad_request("otp isn't configured"))?;
     let state = resolve_two_factor_state(req, ctx).await?;
 
-    // The upstream random-string loop produces ceil(digits) decimal characters.
-    let digits = config.otp_digits;
-    if digits <= 0.0 {
-        return Err(SendOtpError::NonpositiveLength);
-    }
-    if digits > 32768.5 || digits.is_infinite() {
-        return Err(AuthError::internal("Invalid two-factor OTP length").into());
-    }
-    let otp: String = (0..digits.ceil() as usize)
-        .map(|_| char::from(b'0' + rand::thread_rng().gen_range(0..10u8)))
-        .collect();
+    let otp =
+        generate_numeric_string(config.otp_digits, true).ok_or(SendOtpError::InvalidGeneration)?;
     let stored_otp = config.otp_storage.store(&otp, &ctx.config).await?;
     let identifier = otp_verification_identifier(state.key());
     let period = if config.otp_period_minutes == 0.0 || config.otp_period_minutes.is_nan() {
@@ -1316,12 +1333,12 @@ async fn send_otp_core(
     } else {
         config.otp_period_minutes
     };
-    let milliseconds = Utc::now().timestamp_millis() as f64 + period * 60000.0;
+    let milliseconds = Utc::now().timestamp_millis() as f64 + period * 60.0 * 1000.0;
     if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
-        return Err(AuthError::internal("Invalid two-factor OTP expiry").into());
+        return Err(SendOtpError::InvalidGeneration);
     }
     let expires_at = chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
-        .ok_or_else(|| AuthError::internal("Invalid two-factor OTP expiry"))?;
+        .ok_or(SendOtpError::InvalidGeneration)?;
 
     drop(
         ctx.verifications()
@@ -2068,38 +2085,94 @@ const fn require_totp_enabled(config: &TwoFactorConfig) -> AuthResult<()> {
     Ok(())
 }
 
-const fn totp_digits(config: &TwoFactorConfig) -> usize {
-    if config.totp_digits == 0 {
-        DEFAULT_TOTP_DIGITS
+fn totp_digits(config: &TwoFactorConfig) -> f64 {
+    truthy_number(config.totp_digits, DEFAULT_TOTP_DIGITS)
+}
+
+fn totp_period(config: &TwoFactorConfig) -> f64 {
+    truthy_number(config.totp_period, DEFAULT_TOTP_PERIOD_SECS)
+}
+
+fn truthy_number(value: f64, default: f64) -> f64 {
+    if value == 0.0 || value.is_nan() {
+        default
     } else {
-        config.totp_digits
+        value
     }
 }
 
-const fn totp_period(config: &TwoFactorConfig) -> u64 {
-    if config.totp_period == 0 {
-        DEFAULT_TOTP_PERIOD_SECS
-    } else {
-        config.totp_period
-    }
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    reason = "Source Date.now is an IEEE754 millisecond number"
+)]
+fn totp_counter(config: &TwoFactorConfig) -> f64 {
+    (Utc::now().timestamp_millis() as f64 / (totp_period(config) * 1000.0)).floor()
 }
 
-fn build_totp(config: &TwoFactorConfig, secret: &str) -> AuthResult<TOTP> {
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    reason = "Guarded IEEE754 remainder implements BigInt to unsigned 64-bit counter and padStart ToLength"
+)]
+fn generate_totp_at(
+    config: &TwoFactorConfig,
+    secret: &str,
+    counter: f64,
+    offset: f64,
+) -> AuthResult<String> {
     let digits = totp_digits(config);
-    if !(1..=8).contains(&digits) || secret.is_empty() {
+    let counter = counter + offset;
+    if !(1.0..=8.0).contains(&digits) || secret.is_empty() || !counter.is_finite() {
         return Err(AuthError::internal("Invalid TOTP HMAC input"));
     }
-    // The upstream UTF-8 HMAC accepts short nonempty keys. Validate the runtime
-    // constraints before bypassing the library's stronger 128-bit key policy.
-    Ok(TOTP::new_unchecked(
-        Algorithm::SHA1,
-        digits,
-        1,
-        totp_period(config),
-        secret.as_bytes().to_vec(),
-        None,
-        String::new(),
-    ))
+    // setBigUint64 wraps the integer BigInt modulo 2^64, including negatives.
+    // Taking the signed remainder before conversion avoids f64 rounding of
+    // negative small counters when adding 2^64.
+    let remainder = counter % 18_446_744_073_709_551_616.0;
+    let counter = if remainder < 0.0 {
+        (remainder.abs() as u64).wrapping_neg()
+    } else {
+        remainder as u64
+    };
+    let mut mac = <Hmac<sha1::Sha1> as Mac>::new_from_slice(secret.as_bytes())
+        .map_err(|_error| AuthError::internal("Invalid TOTP HMAC input"))?;
+    mac.update(&counter.to_be_bytes());
+    let digest = mac.finalize().into_bytes();
+    let offset = usize::from(digest[19] & 15);
+    let truncated = u32::from_be_bytes([
+        digest[offset] & 127,
+        digest[offset + 1],
+        digest[offset + 2],
+        digest[offset + 3],
+    ]);
+    let value = f64::from(truncated) % 10.0_f64.powf(digits);
+    let code = js_number_string(value);
+    let padding = (digits.trunc() as usize).saturating_sub(code.len());
+    Ok(format!("{}{code}", "0".repeat(padding)))
+}
+
+fn js_number_string(value: f64) -> String {
+    if value.is_nan() {
+        "NaN".into()
+    } else if value == f64::INFINITY {
+        "Infinity".into()
+    } else if value == f64::NEG_INFINITY {
+        "-Infinity".into()
+    } else {
+        ryu_js::Buffer::new().format(value).to_owned()
+    }
+}
+
+fn constant_time_totp_equal(input: &str, expected: &str) -> bool {
+    // Source compares UTF-16 code units and includes the original lengths.
+    let mut input_units = input.encode_utf16();
+    let mut difference = input_units.clone().count() ^ expected.encode_utf16().count();
+    for unit in expected.encode_utf16() {
+        difference |= usize::from(input_units.next().unwrap_or_default() ^ unit);
+    }
+    difference == 0
 }
 
 fn uri_component(value: &str) -> String {
@@ -2121,15 +2194,14 @@ fn totp_uri(
     let secret = totp_rs::Secret::Raw(secret.as_bytes().to_vec())
         .to_encoded()
         .to_string();
-    let digits = totp_digits(config).to_string();
+    let digits = js_number_string(totp_digits(config));
     // Enrollment forwards the configured period directly; the authenticator
     // provider and generator use the upstream truthy default for zero.
-    let period = if enrollment {
+    let period = js_number_string(if enrollment {
         config.totp_period
     } else {
         totp_period(config)
-    }
-    .to_string();
+    });
     let query = url::form_urlencoded::Serializer::new(String::new())
         .append_pair("secret", &secret)
         .append_pair("issuer", issuer)
@@ -2228,36 +2300,59 @@ async fn generate_backup_codes(
         let count = if amount.is_nan() || amount <= 0.0 {
             0
         } else {
-            if amount.is_infinite() || amount > 32768.5 {
+            // Array.from creates an ordinary JS array, with a 32-bit length.
+            if !amount.is_finite() || amount.floor() > f64::from(u32::MAX) {
                 return Err(BackupOperationError::InvalidGeneration);
             }
             amount.floor() as usize
         };
-        (0..count)
-            .map(|_| {
-                let length = config.backup_code_length;
-                if length <= 0.0
-                    || (length > 0.0 && length < 0.5)
-                    || length.is_infinite()
-                    || length > 32768.5
-                {
-                    return Err(BackupOperationError::InvalidGeneration);
-                }
-                let code: String = rand::thread_rng()
-                    .sample_iter(&Alphanumeric)
-                    .take(length.ceil() as usize)
-                    .map(char::from)
-                    .collect();
-                let split = code.len().min(5);
-                let (prefix, suffix) = code
-                    .split_at_checked(split)
-                    .ok_or(BackupOperationError::InvalidGeneration)?;
-                Ok(format!("{prefix}-{suffix}"))
-            })
-            .collect::<Result<Vec<_>, _>>()?
+        let mut codes = Vec::new();
+        codes
+            .try_reserve_exact(count)
+            .map_err(|_error| BackupOperationError::InvalidGeneration)?;
+        for _ in 0..count {
+            let code = generate_numeric_string(config.backup_code_length, false)
+                .ok_or(BackupOperationError::InvalidGeneration)?;
+            let split = code.len().min(5);
+            let (prefix, suffix) = code
+                .split_at_checked(split)
+                .ok_or(BackupOperationError::InvalidGeneration)?;
+            codes.push(format!("{prefix}-{suffix}"));
+        }
+        codes
     };
     let stored = config.backup_storage.store_codes(&codes, secret).await?;
     Ok((codes, stored))
+}
+
+#[expect(
+    clippy::as_conversions,
+    clippy::cast_possible_truncation,
+    clippy::cast_sign_loss,
+    clippy::cast_precision_loss,
+    reason = "Finite JS random lengths round up before checked native allocation"
+)]
+fn generate_numeric_string(length: f64, decimal: bool) -> Option<String> {
+    if length.is_nan() {
+        return Some(String::new());
+    }
+    // Sub-half-character Source buffers are empty and never terminate.
+    // The native API rejects them instead of reproducing that infinite loop.
+    if !length.is_finite() || length < 0.5 || length.ceil() >= usize::MAX as f64 {
+        return None;
+    }
+    let count = length.ceil() as usize;
+    let mut code = String::new();
+    code.try_reserve_exact(count).ok()?;
+    let mut random = rand::thread_rng();
+    for _ in 0..count {
+        code.push(if decimal {
+            char::from(b'0' + random.gen_range(0..10u8))
+        } else {
+            char::from(random.sample(Alphanumeric))
+        });
+    }
+    Some(code)
 }
 
 fn otp_verification_identifier(key: &str) -> String {
