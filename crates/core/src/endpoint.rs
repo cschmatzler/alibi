@@ -549,7 +549,6 @@ impl EndpointResponse {
         self.error_body.as_ref()
     }
 
-    #[must_use]
     pub const fn result(&self) -> &Result<JsValue, AuthError> {
         &self.result
     }

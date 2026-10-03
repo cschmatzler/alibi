@@ -1,5 +1,6 @@
 //! Managed keyring lifecycle through real handlers, with independent physical SQL checks.
 use super::{Backend, Db, TestResult, backend_tests};
+use base64::Engine as _;
 use better_auth::plugins::EmailPasswordPlugin;
 use better_auth::plugins::jwt::{JwtPlugin, JwtPluginConfig};
 use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
@@ -55,6 +56,15 @@ async fn call<S: AuthSchema>(
     let response = auth.handle_request(req).await?;
     trace.push(json!({"path":path,"status":response.status,"body":String::from_utf8(response.body.clone())?}));
     Ok(response)
+}
+fn token_key(token: &str) -> String {
+    let header = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(token.split('.').next().unwrap())
+        .unwrap();
+    serde_json::from_slice::<Value>(&header).unwrap()["kid"]
+        .as_str()
+        .unwrap()
+        .to_owned()
 }
 async fn verified<S: AuthSchema>(auth: &BetterAuth<S>, token: &str) -> TestResult<bool> {
     Ok(auth
@@ -171,13 +181,18 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestRes
     assert_eq!(issued.status, 200);
     let token = body(&issued)["token"].as_str().unwrap().to_owned();
     assert!(verified(auth, &token).await?);
+    assert_eq!(token_key(&token), id);
     assert_eq!(auth.store().list_jwks().await?.len(), 1);
     let reused = call(auth, &mut trace, "/token", None, &cookie).await?;
     assert_eq!(reused.status, 200);
+    assert_eq!(token_key(body(&reused)["token"].as_str().unwrap()), id);
     assert_eq!(auth.store().list_jwks().await?.len(), 1);
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
     let rotated = call(auth, &mut trace, "/token", None, &cookie).await?;
     assert_eq!(rotated.status, 200);
+    let rotated_token = body(&rotated)["token"].as_str().unwrap().to_owned();
+    assert_ne!(token_key(&rotated_token), id);
+    assert!(verified(auth, &rotated_token).await?);
     assert_eq!(auth.store().list_jwks().await?.len(), 2);
     let grace = call(auth, &mut trace, "/jwks", None, "").await?;
     assert_eq!(body(&grace)["keys"].as_array().unwrap().len(), 2);
