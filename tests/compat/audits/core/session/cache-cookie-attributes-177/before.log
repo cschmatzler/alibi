@@ -2,7 +2,7 @@ bun test v1.4.2 (744846f84)
 
 tests/core/session/cookie-cache.test.ts:
 1658 |     expect(parts.length).toBeGreaterThan(1);
-1659 | 
+1659 |
 1660 |     for (const part of parts) {
 1661 |       expect(Buffer.byteLength(part)).toBeLessThanOrEqual(4050);
 1662 |       const parsed = Cookie.parse(part)!;
