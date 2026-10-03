@@ -1,0 +1,3 @@
+{"mode":"api","status":403,"headers":[["content-type","application/json"],["x-queued","private-header"],["set-cookie","queued=value; Path=/; HttpOnly"],["set-cookie","second=value; Path=/; HttpOnly"]],"body":"{\"message\":\"explicit\"}","events":["committed","after"],"users":[{"email":"api@lifecycle.fixture.test"}]}
+{"mode":"ordinary","status":500,"headers":[],"body":"","events":["committed"],"users":[{"email":"api@lifecycle.fixture.test"},{"email":"ordinary@lifecycle.fixture.test"}]}
+{"mode":"success","status":204,"headers":[],"body":"","events":["after"],"users":[{"email":"api@lifecycle.fixture.test"},{"email":"ordinary@lifecycle.fixture.test"}]}

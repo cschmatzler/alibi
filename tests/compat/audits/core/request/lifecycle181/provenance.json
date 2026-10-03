@@ -1,0 +1,29 @@
+{
+  "name": "better-auth",
+  "version": "1.7.6",
+  "dist": {
+    "shasum": "5b2755c5844576df23ceb76e8d6d74310611cedc",
+    "tarball": "https://registry.npmjs.org/better-auth/-/better-auth-1.7.6.tgz",
+    "fileCount": 465,
+    "integrity": "sha512-WTMqOpmTTj+oBoX7zzPOzL85342Upyf+/v0IkH1kvGRA85lV4JGRFIYMIRKqvjZ6ShsuL5VX/c9C13jtoZXcKA==",
+    "signatures": [
+      {
+        "sig": "MEUCIQCBzTgveoKMcxEZkcvQDDp5x6e0B+oa/qM4FPklAXAufQIgd9whnQZrW3Ah5S3eG6entRvELoHCVGMCkCZT8T/QxBk=",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      },
+      {
+        "sig": "MEUCIQDnf3vB3Srll+dTd1C+pZNuejjxemJR3PEmXtNKYINFNgIgTmg6JDnngI8ngpTEGABfS0wvGPAF12UWMSuVc3p8RO8=",
+        "keyid": "SHA256:DhQ8wR5APBvFHLF/+Tc+AYvPOdTpcIDqOhxsBHRwC7U"
+      }
+    ],
+    "attestations": {
+      "url": "https://registry.npmjs.org/-/npm/v1/attestations/better-auth@1.7.6",
+      "provenance": {
+        "predicateType": "https://slsa.dev/provenance/v1"
+      }
+    },
+    "unpackedSize": 2072407
+  },
+  "baseline": "af221c99",
+  "packageBytes": "Fresh tarball equals recovered tarball; all installed package files equal fresh tarball files (nested dependency node_modules excluded). No published package files mutated."
+}
