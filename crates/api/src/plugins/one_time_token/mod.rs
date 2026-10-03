@@ -53,6 +53,9 @@ enum TokenSessionLookup<S: AuthSchema> {
 }
 
 /// Application-owned token generation, including asynchronous generators.
+///
+/// Return [`AuthError::Api`] or [`AuthError::Upstream`] for an explicit public
+/// veto. Other callback errors produce an empty HTTP 500 without exposing the cause.
 #[async_trait]
 pub trait GenerateOneTimeToken: Send + Sync {
     async fn generate(
@@ -63,6 +66,9 @@ pub trait GenerateOneTimeToken: Send + Sync {
 }
 
 /// Application-owned hashing applied consistently at issuance and consumption.
+///
+/// Errors follow the same public-veto/ordinary-failure contract as
+/// [`GenerateOneTimeToken`], before any verification is created or consumed.
 #[async_trait]
 pub trait HashOneTimeToken: Send + Sync {
     async fn hash(&self, token: &str) -> AuthResult<String>;
@@ -151,7 +157,10 @@ impl OneTimeTokenPlugin {
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<String> {
         let token = match &self.config.generator {
-            Some(generator) => generator.generate(session, request).await?,
+            Some(generator) => generator
+                .generate(session, request)
+                .await
+                .map_err(callback_error)?,
             None => random_token(),
         };
         let stored = self.stored_token(&token).await?;
@@ -190,7 +199,7 @@ impl OneTimeTokenPlugin {
             OneTimeTokenStorage::Hashed => {
                 Ok(URL_SAFE_NO_PAD.encode(Sha256::digest(token.as_bytes())))
             }
-            OneTimeTokenStorage::Custom(hasher) => hasher.hash(token).await,
+            OneTimeTokenStorage::Custom(hasher) => hasher.hash(token).await.map_err(callback_error),
         }
     }
 
@@ -460,6 +469,13 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
             );
         }
         Ok(response)
+    }
+}
+
+fn callback_error(error: AuthError) -> AuthError {
+    match error {
+        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
+        error => AuthError::CallbackFailure(Box::new(error)),
     }
 }
 

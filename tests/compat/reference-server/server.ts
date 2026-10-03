@@ -10,6 +10,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import {
   admin,
+  anonymous,
   deviceAuthorization,
   emailOTP,
   jwt,
@@ -1049,7 +1050,15 @@ const serverEndpointVersionFixture = createServerEndpointFixture(
 verificationProfiles.set(serverEndpointVersionFixture.path, serverEndpointVersionFixture.auth);
 const userValidationFixture = await createUserValidationFixture(database, authOptions);
 
+const ottCallbackState = { mode: "success", events: [] as unknown[], serial: 0 };
+function ottCallbackResult(stage: string) {
+  if (ottCallbackState.mode === `${stage}-ordinary`) throw new Error("private OTT callback cause");
+  if (ottCallbackState.mode === `${stage}-veto`)
+    throw new APIError("FORBIDDEN", { code: "OTT_VETO", message: "OTT callback veto" });
+}
 const OTT_PROFILE_NAMES = [
+  "ott-composed",
+  "ott-custom-callback",
   "ott-default",
   "ott-hashed",
   "ott-no-cookie",
@@ -1081,16 +1090,101 @@ const ottProfiles = new Map(
       session: {
         disableSessionRefresh: name === "ott-refresh-disabled",
         deferSessionRefresh: name === "ott-refresh-deferred",
+        ...(name === "ott-composed"
+          ? { cookieCache: { enabled: true, strategy: "compact" as const } }
+          : {}),
       },
+      ...(name === "ott-composed"
+        ? {
+            databaseHooks: {
+              ...authOptions.databaseHooks,
+              session: {
+                create: {
+                  before: async (session) => ({
+                    data: {
+                      ...session,
+                      token: String(++ottCallbackState.serial).padStart(32, "0"),
+                    },
+                  }),
+                },
+              },
+              verification: {
+                create: {
+                  before: async (verification) => {
+                    if (
+                      verification.identifier.startsWith("one-time-token:") &&
+                      ottCallbackState.mode === "verification-cancel"
+                    ) {
+                      ottCallbackState.events.push({
+                        stage: "verification-cancel",
+                        identifier: verification.identifier,
+                        value: verification.value,
+                      });
+                      return false;
+                    }
+                    return { data: verification };
+                  },
+                },
+              },
+            },
+          }
+        : {}),
       plugins: [
-        ...authOptions.plugins,
+        ...authOptions.plugins.filter(
+          (plugin) => name !== "ott-composed" || plugin.id !== "two-factor",
+        ),
+        ...(name === "ott-composed" ? [twoFactor()] : []),
         ...(name === "ott-server-header" ? [ottExposedHeaderFixture] : []),
         oneTimeToken({
-          storeToken: name === "ott-hashed" ? "hashed" : "plain",
+          ...(name === "ott-custom-callback"
+            ? {
+                generateToken: async (session, ctx) => {
+                  ottCallbackState.events.push({
+                    stage: "generate",
+                    userId: session.user.id,
+                    session: {
+                      id: session.session.id,
+                      userId: session.session.userId,
+                      token: session.session.token,
+                      expiresAt: session.session.expiresAt,
+                    },
+                    request: ctx.request
+                      ? {
+                          path: ctx.path,
+                          method: ctx.request.method,
+                          marker: ctx.headers?.get("x-ott-marker") ?? null,
+                        }
+                      : null,
+                  });
+                  ottCallbackResult("generate");
+                  return ctx.request ? "ott-custom-token" : "ott-custom-server-token";
+                },
+              }
+            : {}),
+          storeToken:
+            name === "ott-custom-callback"
+              ? {
+                  type: "custom-hasher",
+                  hash: async (token: string) => {
+                    ottCallbackState.events.push({ stage: "hash", token });
+                    ottCallbackResult("hash");
+                    return `digest-${token}`;
+                  },
+                }
+              : name === "ott-hashed"
+                ? "hashed"
+                : "plain",
           disableSetSessionCookie: name === "ott-no-cookie",
           disableClientRequest: name === "ott-server-header",
-          setOttHeaderOnNewSession: name === "ott-server-header",
+          setOttHeaderOnNewSession: name === "ott-server-header" || name === "ott-composed",
         }),
+        ...(name === "ott-composed"
+          ? [
+              anonymous({ generateRandomEmail: () => "ott-composed-anonymous@fixture.test" }),
+              multiSession(),
+              jwt(),
+            ]
+          : []),
       ],
     };
     return [name, { auth: betterAuth(options), options }] as const;
@@ -1893,6 +1987,25 @@ async function oneTimeTokenControl(request: Request, url: URL): Promise<Response
   const body: unknown = await readJson(request);
   if (!controlRecord(body)) {
     return jsonResponse({ message: "invalid server operation" }, { status: 400 });
+  }
+  if (body.operation === "callbacks") {
+    if (typeof body.mode === "string") {
+      ottCallbackState.mode = body.mode;
+      ottCallbackState.events = [];
+    }
+    return jsonResponse({ events: ottCallbackState.events });
+  }
+  if (body.operation === "generate-endpoint") {
+    const selected = ottProfiles.get("ott-custom-callback")!.auth;
+    try {
+      return jsonResponse(await selected.api.generateOneTimeToken({ headers: request.headers }));
+    } catch (error) {
+      return jsonResponse(
+        error instanceof APIError
+          ? { status: error.statusCode, ordinary: false, message: error.message }
+          : { status: 500, ordinary: true, message: null },
+      );
+    }
   }
   const selected = ottProfiles.get(
     typeof body.profile === "string"
