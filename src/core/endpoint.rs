@@ -185,11 +185,16 @@ fn merge_headers(target: &mut Headers, headers: Headers) {
     }
 }
 
+type HttpEndpointError = (u16, Option<String>, String);
+
 /// Frames retained by the real HTTP endpoint pipeline for configured hooks.
 #[derive(Clone)]
 pub(super) struct HttpEndpointFrame {
     pub call: EndpointCall,
     pub outer: EndpointCall,
+    pub header_patch: Option<std::collections::HashMap<String, String>>,
+    pub legacy_headers: Option<std::collections::HashMap<String, String>>,
+    pub error: std::sync::Arc<std::sync::Mutex<Option<HttpEndpointError>>>,
 }
 
 impl<S: AuthSchema> BetterAuth<S> {
@@ -242,6 +247,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                 None => {}
             }
         }
+        let header_patch = patch.headers.clone();
         patch.apply(&mut call);
         EndpointContextPatch {
             headers: call.headers().cloned(),
@@ -251,9 +257,13 @@ impl<S: AuthSchema> BetterAuth<S> {
         for (name, value) in headers {
             request.queue_response_header(name, value);
         }
-        request
-            .extensions()
-            .insert(HttpEndpointFrame { call, outer });
+        request.extensions().insert(HttpEndpointFrame {
+            call,
+            outer,
+            header_patch,
+            legacy_headers: None,
+            error: Default::default(),
+        });
         Ok(None)
     }
 
@@ -261,9 +271,23 @@ impl<S: AuthSchema> BetterAuth<S> {
         &self,
         request: &mut better_auth_core::AuthRequest,
     ) -> better_auth_core::AuthResult<()> {
-        let Some(frame) = request.extensions().get::<HttpEndpointFrame>() else { return Ok(()); };
+        let Some(frame) = request.extensions().get::<HttpEndpointFrame>() else {
+            return Ok(());
+        };
+        let mut frame = (*frame).clone();
+        if let Some(headers) = &frame.header_patch {
+            request.headers.extend(headers.clone());
+        }
+        if let Some(headers) = &frame.legacy_headers {
+            request.headers.extend(headers.clone());
+        }
+        frame.call.replace_headers(request.headers.clone());
+        EndpointContextPatch {
+            headers: Some(request.headers.clone()),
+            ..Default::default()
+        }
+        .apply(&mut frame.outer);
         let call = &frame.call;
-        request.headers = call.headers().cloned().unwrap_or_default();
         if let Some(path) = call.path() {
             request.path = path.to_owned();
         }
@@ -297,6 +321,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                 })
             }));
         }
+        request.extensions().insert(frame);
         Ok(())
     }
 
@@ -319,15 +344,34 @@ impl<S: AuthSchema> BetterAuth<S> {
             better_auth_core::utils::json::JsValue,
         >(&response.body)
         .unwrap_or(better_auth_core::utils::json::JsValue::Null);
-        let mut logical = EndpointResponse::value(original.clone()).with_status(response.status);
+        let mut logical = if let Some((status, code, message)) = frame
+            .error
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
+        {
+            EndpointResponse::error(AuthError::Api {
+                status,
+                code,
+                message,
+            })
+            .with_error_body(original.clone())
+        } else {
+            EndpointResponse::value(original.clone()).with_status(response.status)
+        };
         logical.merge_headers(std::mem::take(&mut response.headers));
         for hook in &self.endpoint_hooks {
             if !with_endpoint_call_context(frame.outer.clone(), async {
                 hook.matches_after(&frame.call, context, &logical)
             })
             .await
-            .map_err(ordinary_http_hook_error)?
-            {
+            .map_err(|error| {
+                if is_endpoint_api_error(&error) {
+                    error
+                } else {
+                    ordinary_http_hook_error(error)
+                }
+            })? {
                 continue;
             }
             let middleware = frame.call.middleware_context();

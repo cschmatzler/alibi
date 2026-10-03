@@ -86,7 +86,16 @@ pub enum HttpRequestAction {
     Respond(AuthResponse),
     /// Replace physical input for later HTTP hooks and route selection.
     /// Dispatch discards session state, extensions and queued headers on this value.
-    ReplaceRequest(AuthRequest),
+    ReplaceRequest(Box<AuthRequest>),
+}
+
+/// Endpoint output distinguishing a logical value from a native raw response.
+/// Raw responses bypass completed endpoint hooks, while HTTP response hooks
+/// still observe them, matching a Source endpoint returning a `Response`.
+#[derive(Debug)]
+pub enum HttpEndpointResponse {
+    Value(AuthResponse),
+    Raw(AuthResponse),
 }
 
 /// Plugin trait that all authentication plugins must implement.
@@ -231,6 +240,20 @@ pub trait AuthPlugin<S: AuthSchema>: Send + Sync {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>>;
+
+    /// Dispatch the resolved HTTP endpoint. Existing plugins return logical
+    /// values through `on_request`; plugins returning a native raw response can
+    /// override this method to bypass the endpoint after-hook pipeline.
+    async fn on_http_endpoint(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<HttpEndpointResponse>> {
+        Ok(self
+            .on_request(req, ctx)
+            .await?
+            .map(HttpEndpointResponse::Value))
+    }
 
     /// Transform a completed response, including redirects and rejections.
     ///

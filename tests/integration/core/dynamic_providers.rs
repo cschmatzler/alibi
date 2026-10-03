@@ -39,7 +39,7 @@ impl TrustedProvidersResolver for TrustPolicy {
             req.header("x-trust").unwrap()
         ));
         if req.header("x-overlap").is_some() {
-            self.barrier.wait().await;
+            let _ = self.barrier.wait().await;
         }
         match req.header("x-trust").map(String::as_str) {
             Some("allow") => Ok(vec!["gitlab".into(), String::new()]),
@@ -364,7 +364,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
             password: None,
         })
         .await?;
-    let foreign_before = physical_account(&db, &foreign_account.id().to_string()).await?;
+    let foreign_before = physical_account(&db, foreign_account.id().as_ref()).await?;
     let actor = auth
         .store()
         .get_user_by_email("actor@example.test")
@@ -397,12 +397,12 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
     assert_eq!(unchanged.user_id(), foreign.id());
     assert_eq!(unchanged.access_token(), Some("foreign-token"));
     assert_eq!(unchanged.scope(), Some("foreign-scope"));
-    let foreign_after = physical_account(&db, &foreign_account.id().to_string()).await?;
+    let foreign_after = physical_account(&db, foreign_account.id().as_ref()).await?;
     assert_eq!(foreign_before, foreign_after);
     receipts.push(json!({"case":"foreign","start":start,"callbackLocation":foreign_result.headers.get("location"),"physicalBefore":foreign_before,"physicalAfter":foreign_after}));
     assert_eq!(db.count_where(
         "SELECT COUNT(*) FROM accounts WHERE id=$1 AND user_id=$2 AND access_token='foreign-token' AND scope='foreign-scope'",
-        &[&foreign_account.id().to_string(), &foreign.id().to_string()],
+        &[foreign_account.id().as_ref(), foreign.id().as_ref()],
     ).await?, 1);
     for mode in ["error", "api-error"] {
         let calls_before = policy.calls.lock().unwrap().len();

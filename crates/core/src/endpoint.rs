@@ -202,7 +202,10 @@ impl EndpointCall {
             Some(query),
             EndpointOptions {
                 headers: Some(request.headers.clone()),
-                request: Some(crate::hooks::current_request_hook_context().map_or_else(|| request.clone(), |context| context.request)),
+                request: Some(
+                    crate::hooks::current_request_hook_context()
+                        .map_or_else(|| request.clone(), |context| context.request),
+                ),
                 method: Some(request.method.clone()),
             },
         );
@@ -238,6 +241,12 @@ impl EndpointCall {
     #[must_use]
     pub const fn headers(&self) -> Option<&HashMap<String, String>> {
         self.headers.as_ref()
+    }
+
+    /// Replace logical headers after a physical/plugin header transformation.
+    /// Session state and the distinct physical Request are retained.
+    pub fn replace_headers(&mut self, headers: HashMap<String, String>) {
+        self.headers = Some(headers);
     }
 
     #[must_use]

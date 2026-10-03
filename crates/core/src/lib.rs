@@ -114,7 +114,8 @@ pub use openapi::{
 };
 pub use plugin::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRoute, BeforeRequestAction, ContextExtensions,
-    HttpRequestAction, VerificationEmailOverride, VerificationEmailOverrideHandle,
+    HttpEndpointResponse, HttpRequestAction, VerificationEmailOverride,
+    VerificationEmailOverrideHandle,
 };
 pub use schema::AuthSchema;
 pub use session::SessionManager;

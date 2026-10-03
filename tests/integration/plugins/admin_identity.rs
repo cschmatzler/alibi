@@ -1,5 +1,9 @@
 //! Numeric application IDs must use resolved identity for admin authorization.
 #![allow(
+    clippy::indexing_slicing,
+    reason = "contract assertions inspect public JSON fields directly"
+)]
+#![allow(
     unreachable_pub,
     reason = "SeaORM requires public entity types in private fixtures"
 )]
@@ -839,8 +843,8 @@ impl AdmissionEvents {
         if mode == failure {
             return Err(better_auth_core::AuthError::Upstream {
                 status: 409,
-                code: "HOOK_REFUSED".into(),
-                message: "configured hook refused".into(),
+                code: "HOOK_REFUSED",
+                message: "configured hook refused",
             });
         }
         if (mode == 2 && event == "session-before")
@@ -1134,6 +1138,10 @@ async fn exercise_admission<S: AuthSchema>(
 // This guards the shared sign-in ban check independently of impersonation.
 #[tokio::test]
 #[ignore = "requires CLOCK_REALTIME proof clock; see admin closure audit"]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "contract assertions fail fast while fixture setup propagates errors"
+)]
 async fn no_database_strict_expiry() -> TestResult {
     let clock = Utc::now();
     assert_eq!(clock.timestamp_millis(), 1893456000000);

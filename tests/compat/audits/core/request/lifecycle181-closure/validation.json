@@ -1,0 +1,19 @@
+{
+  "reference": "better-auth@1.7.6",
+  "rebaseBase": "599d413b1140545d2af8485ce9e460debb442a97",
+  "sourceObservations": 17,
+  "sqlxObservations": 17,
+  "seaormObservations": 17,
+  "nativeOnly": "configured CORS transport ordering and final decoration",
+  "passingTests": {
+    "composition": 2,
+    "lifecycleErrors": 4,
+    "lifecycleDispatch": 11,
+    "databaseHooks": 4
+  },
+  "clippy": "affected library and integration target, -D warnings",
+  "fullSuiteRun": false,
+  "coverageRun": false,
+  "actionsEnabled": false,
+  "review": "Coordinator rejected3ae3b191 on explicit handler error identity and plugin header precedence; fixed inline, final exact-head qualification required."
+}
