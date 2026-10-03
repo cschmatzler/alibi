@@ -12,7 +12,7 @@ Install dependencies with `pnpm install` and enter `devenv shell` for Bun and SO
 pnpm docs:secrets:edit
 ```
 
-Use a Railway account token; the stack creates its own project. Cloudflare hosts Alchemy's encrypted state under the `better-auth-rs` profile. Keep this profile and the `prod` stage consistent when planning, deploying, and destroying.
+Use a Railway account token; the stack manages the `better-auth-rs` project. Cloudflare hosts Alchemy's encrypted state under the `better-auth-rs` profile. Keep this profile and the `prod` stage consistent when planning, deploying, and destroying.
 
 ## Deploy
 
@@ -25,7 +25,7 @@ pnpm docs:plan
 pnpm docs:deploy
 ```
 
-The first command that accesses remote state may bootstrap Alchemy's Cloudflare state store. Deployment creates the Railway project and docs service. This setup has not been deployed yet.
+The first command that accesses remote state may bootstrap Alchemy's Cloudflare state store. Deployment creates the Railway project and docs service. The docs are live at [betterauw2n43ibxrvdioxbqmvfbcm7r-production.up.railway.app](https://betterauw2n43ibxrvdioxbqmvfbcm7r-production.up.railway.app).
 
 Railway generates a public hostname by default. To use a custom hostname, set `DOCS_DOMAIN=docs.example.com` in `.env.production.local` before planning. Alchemy attaches the domain and uses it as Astro's canonical site URL. Add the DNS records Railway requests to verify ownership and enable HTTPS. Use the same domain configuration on later deployments.
 
