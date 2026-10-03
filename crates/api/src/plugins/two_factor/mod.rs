@@ -1573,9 +1573,10 @@ async fn verify_backup_code_core(
         }
     };
     let Some(mut backup_codes) = codes.filter(|codes| {
-        codes
-            .iter()
-            .any(|code| code.as_str() == Some(body.code.as_str()))
+        codes.iter().any(|code| {
+            code.as_str()
+                .is_some_and(|text| text == body.code && backup_storage::json_date(text).is_none())
+        })
     }) else {
         rearm_factor_attempt(attempt.as_ref(), true, ctx).await;
         if pending {

@@ -9,7 +9,7 @@ try/catch. Shape exceptions restore a pending attempt; invalid JSON spends it.
 
 Verification now reads the JSON value, accepts only exact string matches within
 arrays, removes every duplicate matching string, and re-encodes the other
-values. Truthy non-arrays restore the attempt and return an empty 500. Invalid
+values. Canonical, Chrono-representable ISO dates are normalized as Source JSON Dates and cannot authenticate as string proofs. Truthy non-arrays restore the attempt and return an empty 500. Invalid
 JSON, falsy values and wrong proofs retain the invalid-proof branch. Default
 cipher authentication, legacy readers, exact factor-ID/ciphertext CAS and
 callback error identity remain unchanged. No global decoder, cookie helper,
@@ -20,7 +20,7 @@ starts with an actual published enrollment, imports Source-encrypted malformed
 storage through the existing controlled fixture, and exercises the official
 client against real SQLx and SeaORM SQLite stores. It checks four truthy shapes,
 invalid JSON, exact numeric-versus-string proof identity, a mixed array with
-Unicode object content and duplicate valid codes, reset, challenge retirement,
+Unicode object content, duplicate valid codes and ISO-date revival, reset, challenge retirement,
 full factor-row preservation, foreign factor/user/session state and replay.
 All original transport/cookie observations remain in the strict comparator.
 The opaque challenge observation uses the existing `{ token: identifier }`
@@ -58,11 +58,10 @@ truthy object backup JSON is returned as an object by `viewBackupCodes`, whereas
 the native public view and endpoint output require `Vec<String>`; and an ISO
 string installed as a backup code is revived into a Date by Source's parser,
 so it is not equal to a submitted string proof. Source's view normalizes that
-date to milliseconds. Native's JSON-value comparison retains the string.
-These outputs are recorded in `source-unsupported-boundaries.log`. Arbitrary
+date to milliseconds. The initial native JSON-value comparison retained the string; the final repair normalizes ordinary ISO dates and excludes them from string proofs.
+These Source outputs are recorded in `source-unsupported-boundaries.log`. The ordinary ISO-date proof mismatch was then fixed inline: `before-date-sqlx.log` demonstrates Source rejection and native success before the date repair. Both affected backend pairs include native rejection, account-failure spending and retained `.000Z` serialization after repair. Arbitrary
 malformed server-only output would require a public native return-type contract
-change. Date revival, extended Date/Chrono limits and nonfinite parsed numeric
-JSON are not claimed supported by this repair.
+change. Canonical date revival is supported by the same workpiece. Noncanonical calendar rollover forms, extended Date/Chrono limits and nonfinite parsed numeric JSON are not claimed supported.
 
 Pending/preference/disable URI and Unicode alias admission, together with their
 exact malformed-value retirement stages, remains unproved by the landed HTTP

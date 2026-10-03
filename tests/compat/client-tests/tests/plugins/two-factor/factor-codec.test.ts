@@ -328,7 +328,16 @@ compatScenario(
     expect(invalid.error?.code).toBe("INVALID_BACKUP_CODE");
     expect((await pending()).attempts).toBe("1");
     expect(await read()).toEqual({ ...malformed, failedVerificationCount: 1 });
-    const mixed = [code, 7, null, false, { keep: ["雪", true] }, code, remaining];
+    const mixed = [
+      code,
+      7,
+      null,
+      false,
+      { keep: ["雪", true] },
+      code,
+      remaining,
+      "2025-01-02T03:04:05Z",
+    ];
     const installed = await read(JSON.stringify(mixed));
     expect(installed.id).toBe(original.id);
     expect(installed.userId).toBe(userId);
@@ -340,6 +349,10 @@ compatScenario(
     expect(numericProof.error?.code).toBe("INVALID_BACKUP_CODE");
     expect((await pending()).attempts).toBe("2");
     expect(await read()).toEqual({ ...installed, failedVerificationCount: 2 });
+    const dateProof = await owner.twoFactor.verifyBackupCode({ code: "2025-01-02T03:04:05Z" });
+    expect(dateProof.error?.code).toBe("INVALID_BACKUP_CODE");
+    expect((await pending()).attempts).toBe("3");
+    expect(await read()).toEqual({ ...installed, failedVerificationCount: 3 });
     const completed = await owner.twoFactor.verifyBackupCode({ code });
     expect(completed.error).toBeNull();
     expect(completed.data?.user.id).toBe(userId);
@@ -352,7 +365,14 @@ compatScenario(
       failedVerificationCount: 0,
     });
     const decoded = JSON.parse(await symmetricDecrypt({ key: secret, data: consumed.backupCodes }));
-    expect(decoded).toEqual([7, null, false, { keep: ["雪", true] }, remaining]);
+    expect(decoded).toEqual([
+      7,
+      null,
+      false,
+      { keep: ["雪", true] },
+      remaining,
+      "2025-01-02T03:04:05.000Z",
+    ]);
     const retired = await pending(start.key);
     expect(retired.challenge).toBe(false);
     expect(retired.attempts).toBeNull();
@@ -365,6 +385,7 @@ compatScenario(
     return ctx.snapshot({
       errors,
       numericProof,
+      dateProof,
       invalid,
       wrongOwner,
       completed,
