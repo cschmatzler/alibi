@@ -37,7 +37,14 @@ impl TwoFactorBackupStorage {
         codes: &[String],
         secret: &better_auth_core::AuthConfig,
     ) -> AuthResult<String> {
-        let json = serde_json::to_string(codes)?;
+        self.store_json(serde_json::to_string(codes)?, secret).await
+    }
+
+    pub(in crate::plugins) async fn store_json(
+        &self,
+        json: String,
+        secret: &better_auth_core::AuthConfig,
+    ) -> AuthResult<String> {
         match self {
             Self::Encrypted => super::encrypt_value(secret, &json),
             Self::Plain => Ok(json),
@@ -53,6 +60,19 @@ impl TwoFactorBackupStorage {
         stored: &str,
         secret: &better_auth_core::AuthConfig,
     ) -> AuthResult<Option<Vec<String>>> {
+        Ok(self
+            .load_value(stored, secret)
+            .await?
+            .and_then(|value| serde_json::from_value(value).ok()))
+    }
+
+    // Verification must retain non-string elements in installed arrays. The
+    // typed server-only view continues to require an array of strings.
+    pub(in crate::plugins) async fn load_value(
+        &self,
+        stored: &str,
+        secret: &better_auth_core::AuthConfig,
+    ) -> AuthResult<Option<serde_json::Value>> {
         let json = match self {
             Self::Encrypted => super::decrypt_value(secret, stored)?,
             Self::Plain => stored.to_owned(),
