@@ -45,19 +45,21 @@ async function receipts(ctx: ScenarioContext) {
   return response.body as Receipt[];
 }
 async function foreign(ctx: ScenarioContext) {
-  const actor = ctx.actor("foreign"),
-    signup = await actor.client.signUp.email({
-      email: ctx.uniqueEmail("foreign"),
-      password: "Password123!",
-      name: "Foreign",
-    });
+  const actor = ctx.actor("foreign");
+  const signup = await actor.client.signUp.email({
+    email: ctx.uniqueEmail("foreign"),
+    password: "Password123!",
+    name: "Foreign",
+  });
   expect(signup.error).toBeNull();
   return { actor, before: await state(ctx) };
 }
 function unchangedForeign(before: Stored, after: Stored) {
-  for (const table of ["users", "accounts", "sessions"] as const)
-    for (const row of before[table])
+  for (const table of ["users", "accounts", "sessions"] as const) {
+    for (const row of before[table]) {
       expect(after[table].find((candidate) => candidate.id === row.id)).toEqual(row);
+    }
+  }
 }
 function profile(ctx: ScenarioContext): Row {
   return {
@@ -74,17 +76,17 @@ async function callback(
   mode: FixtureProfile = "social-naver-default",
   requestSignUp = false,
 ) {
-  const actor = ctx.actor("naver", mode),
-    start = await actor.client.signIn.social({
-      provider: "naver",
-      callbackURL: "/dashboard",
-      requestSignUp,
-    });
+  const actor = ctx.actor("naver", mode);
+  const start = await actor.client.signIn.social({
+    provider: "naver",
+    callbackURL: "/dashboard",
+    requestSignUp,
+  });
   expect(start.error).toBeNull();
-  const url = new URL(start.data!.url!),
-    path =
-      authProfilePath(mode) +
-      `/callback/naver?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`;
+  const url = new URL(start.data!.url!);
+  const path =
+    authProfilePath(mode) +
+    `/callback/naver?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`;
   return {
     actor,
     start,
@@ -104,20 +106,18 @@ for (const mode of [
   compatScenario(
     `naver published ${mode} authorization retains ordered scopes and absent PKCE`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        fixture: FixtureProfile = `social-naver-${mode}`;
-      const result = await ctx
-        .actor("naver", fixture)
-        .client.signIn.social({
-          provider: "naver",
-          callbackURL: "/dashboard",
-          scopes: ["requested-scope", "profile"],
-          loginHint: "ignored@example.invalid",
-          additionalParams: { custom: "value with space" },
-        });
+      const other = await foreign(ctx);
+      const fixture: FixtureProfile = `social-naver-${mode}`;
+      const result = await ctx.actor("naver", fixture).client.signIn.social({
+        provider: "naver",
+        callbackURL: "/dashboard",
+        scopes: ["requested-scope", "profile"],
+        loginHint: "ignored@example.invalid",
+        additionalParams: { custom: "value with space" },
+      });
       expect(result.error).toBeNull();
-      const url = new URL(result.data!.url!),
-        configured = ["configured", "disabled-configured"].includes(mode);
+      const url = new URL(result.data!.url!);
+      const configured = ["configured", "disabled-configured"].includes(mode);
       expect(url.origin).toBe(
         mode === "configured-endpoint"
           ? "https://alternate-naver.example.invalid"
@@ -167,21 +167,22 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
   compatScenario(
     `naver ${mode} real secret or public exchange and original profile refresh replay and local logout preserve foreign authority`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        original = profile(ctx);
+      const other = await foreign(ctx);
+      const original = profile(ctx);
       await control(ctx, { profile: original });
-      const fixture: FixtureProfile = `social-naver-${mode}`,
-        flow = await callback(ctx, fixture);
+      const fixture: FixtureProfile = `social-naver-${mode}`;
+      const flow = await callback(ctx, fixture);
       expect(flow.response.status).toBe(302);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
-      const session = await flow.actor.client.getSession(),
-        after = await state(ctx);
+      const session = await flow.actor.client.getSession();
+      const after = await state(ctx);
       expect(session.error).toBeNull();
       unchangedForeign(other.before, after);
-      for (const table of ["users", "accounts", "sessions"] as const)
+      for (const table of ["users", "accounts", "sessions"] as const) {
         expect(after[table]).toHaveLength(other.before[table].length + 1);
-      const user = after.users.find((row) => !other.before.users.some((old) => old.id === row.id))!,
-        account = after.accounts.find((row) => row.userId === user.id)!;
+      }
+      const user = after.users.find((row) => !other.before.users.some((old) => old.id === row.id))!;
+      const account = after.accounts.find((row) => row.userId === user.id)!;
       expect(user).toMatchObject({
         name: mode === "mapped" ? "Mapped Naver User" : "Naver User",
         email: mode === "mapped" ? "mapped-naver@example.invalid" : original.email,
@@ -201,8 +202,8 @@ for (const mode of ["default", "public", "mapped", "configured-endpoint", "clien
       });
       expect(account.accessTokenExpiresAt).toBeTruthy();
       expect(session.data?.user.id).toBe(user.id);
-      const raw = (await ctx.rawRequest({ path: "/__test/naver/receipts" })).body as Receipt[],
-        exchange = raw[0]!.body as Record<string, string>;
+      const raw = (await ctx.rawRequest({ path: "/__test/naver/receipts" })).body as Receipt[];
+      const exchange = raw[0]!.body as Record<string, string>;
       expect(exchange).toEqual({
         grant_type: "authorization_code",
         code: "fixture-code",
@@ -325,21 +326,21 @@ const mappings: Array<{
     expectedImage: "7",
   },
 ];
-for (const mapping of mappings)
+for (const mapping of mappings) {
   compatScenario(
     `naver ${mapping.name} original profile retains original raw account and typed persistence`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        original = { ...profile(ctx), ...mapping.patch };
+      const other = await foreign(ctx);
+      const original = { ...profile(ctx), ...mapping.patch };
       await control(ctx, { profile: original });
       const flow = await callback(ctx);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
       const stored = await state(ctx);
       unchangedForeign(other.before, stored);
       const user = stored.users.find(
-          (row) => !other.before.users.some((old) => old.id === row.id),
-        )!,
-        account = stored.accounts.find((row) => row.userId === user.id)!;
+        (row) => !other.before.users.some((old) => old.id === row.id),
+      )!;
+      const account = stored.accounts.find((row) => row.userId === user.id)!;
       expect(user).toMatchObject({
         name: mapping.expectedName,
         email: original.email,
@@ -386,8 +387,9 @@ for (const mapping of mappings)
     },
     ["POST /sign-in/social", "GET /callback/{}"],
   );
+}
 
-for (const expiry of ["absent", "zero", "fractional"] as const)
+for (const expiry of ["absent", "zero", "fractional"] as const) {
   compatScenario(
     `naver ${expiry} access expiry follows actual token helper`,
     async (ctx) => {
@@ -419,6 +421,7 @@ for (const expiry of ["absent", "zero", "fractional"] as const)
     },
     ["POST /sign-in/social", "GET /callback/{}"],
   );
+}
 
 for (const variant of [
   "wrong-state",
@@ -431,12 +434,12 @@ for (const variant of [
   "missing-email",
   "signup-disabled",
   "implicit-disabled",
-] as const)
+] as const) {
   compatScenario(
     `naver browser ${variant} denies before any owned or foreign identity write`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        original = profile(ctx);
+      const other = await foreign(ctx);
+      const original = profile(ctx);
       if (variant === "missing-subject") delete original.id;
       if (variant === "null-subject") original.id = null;
       if (variant === "blank-subject") original.id = " ";
@@ -447,33 +450,31 @@ for (const variant of [
         ...(variant === "userinfo-http-error" ? { userInfoStatus: 503 } : {}),
       });
       const fixture: FixtureProfile =
-          variant === "signup-disabled"
-            ? "social-naver-signup-disabled"
-            : variant === "implicit-disabled"
-              ? "social-naver-implicit-disabled"
-              : "social-naver-default",
-        actor = ctx.actor("naver", fixture),
-        start = await actor.client.signIn.social({
-          provider: "naver",
-          callbackURL: "/dashboard",
-          requestSignUp: variant === "signup-disabled",
-        });
+        variant === "signup-disabled"
+          ? "social-naver-signup-disabled"
+          : variant === "implicit-disabled"
+            ? "social-naver-implicit-disabled"
+            : "social-naver-default";
+      const actor = ctx.actor("naver", fixture);
+      const start = await actor.client.signIn.social({
+        provider: "naver",
+        callbackURL: "/dashboard",
+        requestSignUp: variant === "signup-disabled",
+      });
       expect(start.error).toBeNull();
-      const url = new URL(start.data!.url!),
-        callbackState =
-          variant === "wrong-state"
-            ? ctx.uniqueToken("wrong-state")
-            : url.searchParams.get("state")!,
-        provider = variant === "wrong-provider" ? "unknown-naver" : "naver",
-        response = await actor.fetch(
-          ctx.baseURL +
-            authProfilePath(fixture) +
-            `/callback/${provider}?code=fixture-code&state=${encodeURIComponent(callbackState)}`,
-          { redirect: "manual" },
-        );
+      const url = new URL(start.data!.url!);
+      const callbackState =
+        variant === "wrong-state" ? ctx.uniqueToken("wrong-state") : url.searchParams.get("state")!;
+      const provider = variant === "wrong-provider" ? "unknown-naver" : "naver";
+      const response = await actor.fetch(
+        ctx.baseURL +
+          authProfilePath(fixture) +
+          `/callback/${provider}?code=fixture-code&state=${encodeURIComponent(callbackState)}`,
+        { redirect: "manual" },
+      );
       expect(response.status).toBe(302);
-      const location = response.headers.get("location")!,
-        error = new URL(location, ctx.baseURL).searchParams.get("error");
+      const location = response.headers.get("location")!;
+      const error = new URL(location, ctx.baseURL).searchParams.get("error");
       expect(error).toBe(
         variant === "wrong-state"
           ? "state_mismatch"
@@ -507,14 +508,15 @@ for (const variant of [
     },
     ["GET /callback/{}"],
   );
+}
 
 compatScenario(
   "naver disabled default scope omits an empty scope parameter",
   async (ctx) => {
-    const before = await state(ctx),
-      result = await ctx
-        .actor("naver", "social-naver-disabled-scope")
-        .client.signIn.social({ provider: "naver" });
+    const before = await state(ctx);
+    const result = await ctx
+      .actor("naver", "social-naver-disabled-scope")
+      .client.signIn.social({ provider: "naver" });
     expect(result.error).toBeNull();
     expect(new URL(result.data!.url!).searchParams.has("scope")).toBeFalse();
     expect(await state(ctx)).toEqual(before);
@@ -530,8 +532,9 @@ compatScenario(
     const flow = await callback(ctx, "social-naver-implicit-disabled", true);
     expect(flow.response.headers.get("location")).toBe("/dashboard");
     const stored = await state(ctx);
-    for (const table of ["users", "accounts", "sessions"] as const)
+    for (const table of ["users", "accounts", "sessions"] as const) {
       expect(stored[table]).toHaveLength(1);
+    }
     expect((await flow.actor.client.getSession()).data?.user.id).toBe(stored.users[0]!.id);
     return {
       start: ctx.snapshot(flow.start),
@@ -545,59 +548,61 @@ compatScenario(
 compatScenario(
   "naver rejects direct ID-token sign-in without remote verification or identity writes",
   async (ctx) => {
-    const other = await foreign(ctx),
-      result = await ctx
-        .actor("naver", "social-naver-default")
-        .client.signIn.social({ provider: "naver", idToken: { token: "unsupported-proof" } });
+    const other = await foreign(ctx);
+    const result = await ctx
+      .actor("naver", "social-naver-default")
+      .client.signIn.social({ provider: "naver", idToken: { token: "unsupported-proof" } });
     expect(result.error?.code).toBe("ID_TOKEN_NOT_SUPPORTED");
     expect(await state(ctx)).toEqual(other.before);
     expect(await receipts(ctx)).toEqual([]);
     return { result: ctx.snapshot(result), before: other.before, after: await state(ctx) };
   },
 );
-for (const mode of ["empty-clients"] as const)
+for (const mode of ["empty-clients"] as const) {
   compatScenario(`naver ${mode} requires a real client before identity writes`, async (ctx) => {
-    const other = await foreign(ctx),
-      result = await ctx
-        .actor("naver", `social-naver-${mode}`)
-        .client.signIn.social({ provider: "naver" });
+    const other = await foreign(ctx);
+    const result = await ctx
+      .actor("naver", `social-naver-${mode}`)
+      .client.signIn.social({ provider: "naver" });
     expect(result.error?.status).toBe(500);
     expect(await state(ctx)).toEqual(other.before);
     expect(await receipts(ctx)).toEqual([]);
     return { result: ctx.snapshot(result), before: other.before, after: await state(ctx) };
   });
+}
 
-for (const variant of ["default-unverified", "mapped-verified", "missing-raw"] as const)
+for (const variant of ["default-unverified", "mapped-verified", "missing-raw"] as const) {
   compatScenario(
     `naver explicit browser link ${variant} retains existing and foreign authority`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        fixture = variant === "default-unverified" ? "social-naver-default" : "social-naver-mapped",
-        actor = ctx.actor("naver", fixture),
-        email =
-          variant === "default-unverified"
-            ? ctx.uniqueEmail("naver-link")
-            : "mapped-naver@example.invalid";
+      const other = await foreign(ctx);
+      const fixture =
+        variant === "default-unverified" ? "social-naver-default" : "social-naver-mapped";
+      const actor = ctx.actor("naver", fixture);
+      const email =
+        variant === "default-unverified"
+          ? ctx.uniqueEmail("naver-link")
+          : "mapped-naver@example.invalid";
       const signup = await actor.client.signUp.email({
         email,
         password: "Password123!",
         name: "Existing local user",
       });
       expect(signup.error).toBeNull();
-      const before = await state(ctx),
-        original: Row = { ...profile(ctx), email };
+      const before = await state(ctx);
+      const original: Row = { ...profile(ctx), email };
       if (variant === "missing-raw") delete original.id;
       await control(ctx, { profile: original });
       const start = await actor.client.linkSocial({ provider: "naver", callbackURL: "/linked" });
       expect(start.error).toBeNull();
-      const url = new URL(start.data!.url!),
-        path =
-          authProfilePath(fixture) +
-          `/callback/naver?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`,
-        response = await actor.fetch(ctx.baseURL + path, { redirect: "manual" });
+      const url = new URL(start.data!.url!);
+      const path =
+        authProfilePath(fixture) +
+        `/callback/naver?code=fixture-code&state=${encodeURIComponent(url.searchParams.get("state")!)}`;
+      const response = await actor.fetch(ctx.baseURL + path, { redirect: "manual" });
       expect(response.status).toBe(302);
-      const location = response.headers.get("location")!,
-        after = await state(ctx);
+      const location = response.headers.get("location")!;
+      const after = await state(ctx);
       unchangedForeign(other.before, after);
       expect(after.users).toEqual(before.users);
       expect(after.sessions).toEqual(before.sessions);
@@ -633,18 +638,19 @@ for (const variant of ["default-unverified", "mapped-verified", "missing-raw"] a
     },
     ["POST /link-social", "GET /callback/{}"],
   );
+}
 
 compatScenario(
   "naver existing account info uses real bearer GET without readmitting a changed raw account subject",
   async (ctx) => {
-    const other = await foreign(ctx),
-      original = profile(ctx);
+    const other = await foreign(ctx);
+    const original = profile(ctx);
     await control(ctx, { profile: original });
     const flow = await callback(ctx);
     expect(flow.response.headers.get("location")).toBe("/dashboard");
-    const before = await state(ctx),
-      user = before.users.find((row) => !other.before.users.some((old) => old.id === row.id))!,
-      account = before.accounts.find((row) => row.userId === user.id)!;
+    const before = await state(ctx);
+    const user = before.users.find((row) => !other.before.users.some((old) => old.id === row.id))!;
+    const account = before.accounts.find((row) => row.userId === user.id)!;
     delete original.id;
     await control(ctx, { profile: original });
     const denied = await other.actor.client.$fetch("/account-info", {
@@ -686,19 +692,19 @@ for (const mapping of [
   { name: "numeric nickname", value: null, nickname: 7, expected: "7" },
   { name: "zero nickname", value: "", nickname: 0, expected: "" },
   { name: "false nickname", value: "", nickname: false, expected: "" },
-])
+]) {
   compatScenario(
     `naver ${mapping.name} uses published truthy name fallback`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        original: Row = { ...profile(ctx), name: mapping.value, nickname: mapping.nickname };
+      const other = await foreign(ctx);
+      const original: Row = { ...profile(ctx), name: mapping.value, nickname: mapping.nickname };
       await control(ctx, { profile: original });
       const flow = await callback(ctx);
       expect(flow.response.headers.get("location")).toBe("/dashboard");
       const after = await state(ctx);
       unchangedForeign(other.before, after);
-      const account = after.accounts.find((row) => row.providerId === "naver")!,
-        user = after.users.find((row) => row.id === account.userId)!;
+      const account = after.accounts.find((row) => row.providerId === "naver")!;
+      const user = after.users.find((row) => row.id === account.userId)!;
       expect(account.accountId).toBe(original.id);
       expect(user).toMatchObject({
         name: mapping.expected,
@@ -736,6 +742,7 @@ for (const mapping of [
     },
     ["POST /sign-in/social", "GET /callback/{}"],
   );
+}
 for (const variant of [
   "error",
   "empty",
@@ -744,13 +751,13 @@ for (const variant of [
   "false",
   "null",
   "missing",
-] as const)
+] as const) {
   compatScenario(
     `naver ${variant} resultcode rejects before mapper and all identity writes`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        envelope: Row = { message: "success", response: profile(ctx) };
-      if (variant !== "missing")
+      const other = await foreign(ctx);
+      const envelope: Row = { message: "success", response: profile(ctx) };
+      if (variant !== "missing") {
         envelope.resultcode =
           variant === "error"
             ? "024"
@@ -763,6 +770,7 @@ for (const variant of [
                   : variant === "false"
                     ? false
                     : null;
+      }
       await control(ctx, { envelope });
       const flow = await callback(ctx, "social-naver-mapped");
       expect(flow.response.status).toBe(302);
@@ -788,15 +796,17 @@ for (const variant of [
     },
     ["GET /callback/{}"],
   );
-for (const variant of ["missing", "null", "array", "string"] as const)
+}
+for (const variant of ["missing", "null", "array", "string"] as const) {
   compatScenario(
     `naver valid resultcode ${variant} response retains mapper before raw identity denial`,
     async (ctx) => {
-      const other = await foreign(ctx),
-        envelope: Row = { resultcode: "00", message: "success" };
-      if (variant !== "missing")
+      const other = await foreign(ctx);
+      const envelope: Row = { resultcode: "00", message: "success" };
+      if (variant !== "missing") {
         envelope.response =
           variant === "null" ? null : variant === "array" ? [] : "nonobject-response";
+      }
       await control(ctx, { envelope });
       const flow = await callback(ctx, "social-naver-mapped");
       expect(flow.response.status).toBe(302);
@@ -822,23 +832,24 @@ for (const variant of ["missing", "null", "array", "string"] as const)
     },
     ["GET /callback/{}"],
   );
+}
 compatScenario(
   "naver valid resultcode ignores message as an admission policy and retains full envelope",
   async (ctx) => {
-    const other = await foreign(ctx),
-      original = profile(ctx),
-      envelope = {
-        resultcode: "00",
-        message: "Original remote message without a success policy",
-        response: original,
-      };
+    const other = await foreign(ctx);
+    const original = profile(ctx);
+    const envelope = {
+      resultcode: "00",
+      message: "Original remote message without a success policy",
+      response: original,
+    };
     await control(ctx, { envelope });
     const flow = await callback(ctx, "social-naver-mapped");
     expect(flow.response.headers.get("location")).toBe("/dashboard");
     const after = await state(ctx);
     unchangedForeign(other.before, after);
-    const account = after.accounts.find((row) => row.providerId === "naver")!,
-      user = after.users.find((row) => row.id === account.userId)!;
+    const account = after.accounts.find((row) => row.providerId === "naver")!;
+    const user = after.users.find((row) => row.id === account.userId)!;
     expect(account.accountId).toBe(original.id);
     expect(user).toBeDefined();
     expect((await flow.actor.client.getSession()).data?.user.id).toBe(user.id);
