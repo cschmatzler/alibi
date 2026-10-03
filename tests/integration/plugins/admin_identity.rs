@@ -376,10 +376,24 @@ async fn exercise<S: AuthSchema>(
         if status == 200 {
             let body: serde_json::Value = serde_json::from_slice(&response.body)?;
             let canonical = target.parse::<i64>()?.to_string();
-            assert_eq!(body["user"]["id"], canonical);
-            assert_eq!(body["session"]["userId"], canonical);
-            assert_eq!(body["session"]["impersonatedBy"], actor);
-            let token = body["session"]["token"].as_str().ok_or("no token")?;
+            assert_eq!(
+                body.pointer("/user/id").and_then(serde_json::Value::as_str),
+                Some(canonical.as_str())
+            );
+            assert_eq!(
+                body.pointer("/session/userId")
+                    .and_then(serde_json::Value::as_str),
+                Some(canonical.as_str())
+            );
+            assert_eq!(
+                body.pointer("/session/impersonatedBy")
+                    .and_then(serde_json::Value::as_str),
+                Some(actor)
+            );
+            let token = body
+                .pointer("/session/token")
+                .and_then(serde_json::Value::as_str)
+                .ok_or("no token")?;
             let session = store
                 .get_session(token)
                 .await?
@@ -390,12 +404,12 @@ async fn exercise<S: AuthSchema>(
         } else {
             let body: serde_json::Value = serde_json::from_slice(&response.body)?;
             assert_eq!(
-                body["message"],
-                if actor == "3" {
+                body.get("message").and_then(serde_json::Value::as_str),
+                Some(if actor == "3" {
                     "You are not allowed to impersonate users"
                 } else {
                     "You cannot impersonate admins"
-                }
+                })
             );
         }
         assert_eq!(

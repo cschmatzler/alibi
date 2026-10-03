@@ -44,12 +44,13 @@ for (const [id, role] of [
     )
     .run(id, `User ${id}`, `id-${id}@identity.fixture.test`, Date.now(), Date.now(), role);
 }
-for (const id of [1, 2, 3, 42, 43])
+for (const id of [1, 2, 3, 42, 43]) {
   database
     .query(
       "INSERT INTO account(id,accountId,providerId,userId,password,createdAt,updatedAt) VALUES (?,?,?, ?,?,?,?)",
     )
     .run(id, String(id), "credential", id, "fixture-password", Date.now(), Date.now());
+}
 assert.equal(
   database.query("SELECT typeof(id) AS type FROM user WHERE id=42").get().type,
   "integer",
@@ -96,11 +97,12 @@ for (const [actor, target, status] of [
   assert.deepEqual(after.user, before.user);
   assert.deepEqual(after.account, before.account);
   assert.equal(after.session.length, before.session.length + (status === 200 ? 1 : 0));
-  for (const row of before.session)
+  for (const row of before.session) {
     assert.deepEqual(
       after.session.find((other) => other.id === row.id),
       row,
     );
+  }
   if (status === 200) {
     assert.equal(body.user.id, String(Number(target)));
     assert.equal(body.session.userId, String(Number(target)));

@@ -52,3 +52,20 @@ access-control operators, and strict ban-expiry equality/mutation-hook ordering
 have not been completed here. No broader acceptance or expiry-clock parity is
 claimed. Full sweeps were explicitly excluded. GitHub Actions is disabled;
 there are no hosted-check results for this change.
+
+Final focused proof: `before-final.log` fails both adapters at selector `00042`
+(200 versus required 403); `after-final.log` passes both final scenarios.
+`source-committed.log` passes all five authentic Source cases, including nonempty
+account snapshots. Strict `cargo clippy --no-deps -p better-auth-api --lib`
+passes. The regression module also passes strict Clippy through a temporary
+isolated target containing only this module; that validation target was removed
+from the manifest. Source control formatting and lint pass. An initial broader
+lint attempt hit existing core `double_must_use` and unrelated integration
+warnings; those are excluded from the focused passing claims.
+
+Self-review followed the actual public route: authoritative session lookup,
+base actor `user:impersonate` authorization, resolved target lookup, configured
+ID/role classification, elevated actor permission, and canonical session
+creation. The repair occurs before ban mutation or session creation and changes
+only the target identity supplied to the existing predicate. No new production
+seam, permission grant, metadata projection or fail-open path was introduced.
