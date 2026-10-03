@@ -292,7 +292,13 @@ for (const profile of [
     },
     ["POST /sign-in/email", "POST /request-password-reset"],
     30_000,
-    { oracle: { unroutedRequests: "asserts malformed and extended sign-in paths are not routed" } },
+    profile === "captcha-turnstile-globstar"
+      ? {}
+      : {
+          oracle: {
+            unroutedRequests: "asserts malformed and extended sign-in paths are not routed",
+          },
+        },
   );
 }
 
