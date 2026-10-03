@@ -227,7 +227,7 @@ export function compareValues(
   const signedCookieIssuances = new Set<string>();
   const issuedMultiNames = new Map<
     string,
-    { right: string; leftToken: string; rightToken: string }
+    { right: string; leftToken: string; rightToken: string; leftScope: string; rightScope: string }
   >();
   const emailOwners = new Map<string, { leftUser: string; rightUser: string }>();
   const verificationIssuances = new Map<
@@ -2850,7 +2850,7 @@ export function compareValues(
       const leftWindow = context.leftRequestWindows?.[index];
       const rightWindow = context.rightRequestWindows?.[index];
       const leftCookies = leftWindow?.issuedMultiSessionCookies ?? [];
-      const rightCookies = rightWindow?.issuedMultiSessionCookies ?? [];
+      let rightCookies = rightWindow?.issuedMultiSessionCookies ?? [];
 
       if (leftCookies.length || rightCookies.length) {
         if (leftCookies.length !== rightCookies.length) {
@@ -2859,6 +2859,88 @@ export function compareValues(
 
         const remainingLeft = { ...a };
         const remainingRight = { ...b };
+        const scope = (cookie: Cookie) =>
+          `${cookie.key};${cookie.domain ?? ""};${cookie.path ?? "/"}`;
+        const parsedLeft = leftCookies.map((raw) => Cookie.parse(raw));
+        const parsedRight = rightCookies.map((raw) => Cookie.parse(raw));
+        const duplicate = (cookies: (Cookie | undefined)[]) => {
+          const scopes = cookies.filter((cookie): cookie is Cookie => !!cookie).map(scope);
+          const names = cookies
+            .filter((cookie): cookie is Cookie => !!cookie)
+            .map((cookie) => cookie.key);
+          return new Set(scopes).size !== scopes.length || new Set(names).size !== names.length;
+        };
+        if (duplicate(parsedLeft) || duplicate(parsedRight)) {
+          fail(path, "multi-session cookie scope is duplicated");
+        }
+        const logout = (value: unknown) => {
+          if (!record(value) || !Array.isArray(value.traces)) return false;
+          const trace = value.traces[index];
+          return (
+            record(trace) &&
+            trace.method === "POST" &&
+            trace.responseStatus === 200 &&
+            typeof trace.path === "string" &&
+            /^\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth)\/sign-out$/.test(trace.path)
+          );
+        };
+        // Source verifies logout cookies concurrently and publishes each unique
+        // retirement on completion. Align only the complete, authenticated
+        // retirement set; all live, mixed, unknown and duplicate arrays retain
+        // their original positional comparison.
+        if (
+          leftCookies.length > 1 &&
+          leftCookies.length === rightCookies.length &&
+          logout(normalizedLeft) &&
+          logout(normalizedRight) &&
+          !duplicate(parsedLeft) &&
+          !duplicate(parsedRight) &&
+          parsedLeft.every((cookie) => cookie?.value === "" && cookie.maxAge === 0) &&
+          parsedRight.every((cookie) => cookie?.value === "" && cookie.maxAge === 0)
+        ) {
+          const rightByName = new Map(
+            parsedRight.map((cookie, position) => [cookie!.key, position]),
+          );
+          for (const cookie of parsedLeft) {
+            const retired = issuedMultiNames.get(cookie!.key);
+            if (retired && scope(cookie!) !== retired.leftScope) {
+              fail(path, "multi-session retirement scope differs from observed issuance");
+            }
+          }
+          for (const cookie of parsedRight) {
+            const retired = [...issuedMultiNames.values()].find(
+              (issued) => issued.right === cookie!.key,
+            );
+            if (retired && scope(cookie!) !== retired.rightScope) {
+              fail(path, "multi-session retirement scope differs from observed issuance");
+            }
+          }
+          const aligned: string[] = [];
+          const used = new Set<number>();
+          for (const cookie of parsedLeft) {
+            const retired = issuedMultiNames.get(cookie!.key);
+            const position = retired && rightByName.get(retired.right);
+            const other = position === undefined ? undefined : parsedRight[position];
+            const pair = retired && JSON.stringify([retired.leftToken, retired.rightToken]);
+            if (
+              !retired ||
+              position === undefined ||
+              !other ||
+              used.has(position) ||
+              scope(cookie!) !== retired.leftScope ||
+              scope(other) !== retired.rightScope ||
+              !cookie!.key.endsWith(`_multi-${retired.leftToken.toLowerCase()}`) ||
+              !other.key.endsWith(`_multi-${retired.rightToken.toLowerCase()}`) ||
+              !signedCookieIssuances.has(pair!) ||
+              identities.get(`token:${retired.leftToken}`) !== `token:${retired.rightToken}`
+            ) {
+              break;
+            }
+            used.add(position);
+            aligned.push(rightCookies[position]!);
+          }
+          if (aligned.length === leftCookies.length) rightCookies = aligned;
+        }
 
         for (
           let position = 0;
@@ -2935,6 +3017,8 @@ export function compareValues(
               right: rightCookie.key,
               leftToken: leftSigned.token,
               rightToken: rightSigned.token,
+              leftScope: scope(leftCookie),
+              rightScope: scope(rightCookie),
             });
           }
 
@@ -2945,8 +3029,8 @@ export function compareValues(
             fail(path, "multi-session cookie bytes, order or attributes differ");
           }
 
-          const leftKey = `${leftCookie.key};${leftCookie.domain ?? ""};${leftCookie.path ?? "/"}`;
-          const rightKey = `${rightCookie.key};${rightCookie.domain ?? ""};${rightCookie.path ?? "/"}`;
+          const leftKey = scope(leftCookie);
+          const rightKey = scope(rightCookie);
 
           if (!Object.hasOwn(a, leftKey) || !Object.hasOwn(b, rightKey)) {
             fail(path, "multi-session cookie scope observation is missing");

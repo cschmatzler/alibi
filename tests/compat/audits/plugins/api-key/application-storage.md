@@ -244,3 +244,57 @@ and full output in `/tmp/pr350-resumed-canonical.log`. The PR body records its
 actual outcome; the focused passes above do not claim a complete gate. The
 pinned oracle, negative controls, complete observations, capability obligations
 and 75% production line coverage floor remain unchanged.
+
+## Independent multi-session retirement comparator repair
+
+The frozen `260627a7` replacement gate's managed parent was interrupted during
+handoff. Its surviving SDK child reached its actual terminal result: **1,692
+passes, one failure / 124,928 assertions**. All 49 storage scenarios passed. The
+sole failure was the existing multiple-session browser-account-limit owner,
+where two authentic logout tombstones were paired by header position rather
+than corresponding previously signed cookie names. Documentation and coverage
+did not run under that interrupted canonical parent, so this is not a complete
+gate pass. The full original output remains `/tmp/pr350-resumed-canonical.log`.
+
+Unchanged pinned Source sign-out verifies the presented multi-session cookies
+concurrently and publishes each retirement from its completing verification.
+The actual Source-self SDK repeat reproduces the same two credential-name
+failures in `/tmp/pr350-multi-source-repeat-2.log`. The strongest existing
+Source rotation harness owner now captures two genuine Source-issued signed
+credentials, their actual logout request and raw response, every real stored
+owner/foreign user/account/session column, and unchanged foreign state. A
+naturally reordered independent capture pair is retained completely in
+`/tmp/pr350-multi-source-natural-reordering.json`: retirement issuance indices
+are `[0, 2]` versus `[2, 0]`. The exact frozen pre-repair comparator fails these
+same complete observations at the intended cookie-name checks, and the repaired
+comparator returns no differences, in
+`/tmp/pr350-multi-natural-before-after.log`; the executable probe remains
+`/tmp/pr350-multi-before-probe/probe.ts`.
+
+Only a complete unique set of empty `Max-Age=0` multi-session cookies on a
+successful public POST sign-out can align by previously observed signed name
+pairs. Prior issuance must prove the credential HMAC, owner identity mapping,
+exact name suffix and original scope; right-side correspondence is bijective.
+Every actual header byte/attribute and complete cookie-scope observation still
+compares. Live, mixed, malformed, unknown and duplicate arrays retain positional
+comparison and denials. Same-name/scope duplicates and retirement scopes that
+differ from observed issuance are independently rejected.
+
+The authoring gate extends the existing primary real-Source owner: concurrent
+valid retirement completion is the credible regression, the old one-cookie
+rotation owner could not expose it, and no production seam was added. All
+original 15 negative controls remain. Thirteen additional semantic controls
+exercise changed names, signer corruption, live expiry, Expires/HttpOnly/path,
+missing scope, count, duplicates, authentic foreign live input and unrelated
+cookies, including matching duplicates/wrong scopes on both sides. They require
+the precise intended cookie comparison reason rather than an unrelated failure.
+The extended owner passes **106 assertions**. All **90 harness controls / 2,468
+assertions**, format/lint/typing and both actual Source-only and native SDK
+multiple-session families **3 / 212** pass in
+`/tmp/pr350-multi-{harness-controls,full-harness,sdk-source,sdk-native}.log`.
+
+The next frozen canonical gate uses a detached session with redirected stdin and
+an atomic task-specific exit marker so its parent survives handoff. Its exact
+head, full log and terminal exit status are recorded separately; no complete
+pass is claimed until documentation and the fresh unchanged 75% production
+coverage floor finish successfully.
