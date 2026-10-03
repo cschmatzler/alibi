@@ -158,3 +158,12 @@ real delegated verifier checks signature, issuer, expiry and nonce; the LINE
 factory binds its returned audience/nonce and retains Source's separate trusted
 code-grant decode behavior. No review blocker found. The canonical current-main
 scripts/check.sh gate and its clean instrumented coverage remain pending.
+
+The first current-main canonical invocation on frozen 1302eb24 terminates 1
+at TypeScript formatting after both workspace strict Clippy configurations and
+the rustls build pass. The prior formatting command ran from the repository
+root and missed tests/compat/.oxfmtrc.json. Apply the canonical compatibility
+formatter to LINE's scenario only after that invocation is terminal; the full
+294-file formatting check passes. No production, assertion or comparator change.
+Exact log: /tmp/pr289-canonical-check.log; repair: /tmp/pr289-format-repair.log.
+Restart the complete scripts/check.sh directly on the repaired frozen tree.

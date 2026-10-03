@@ -108,15 +108,13 @@ for (const mode of [
     async (ctx) => {
       const other = await foreign(ctx),
         fixture: FixtureProfile = `social-line-${mode}`;
-      const result = await ctx
-        .actor("line", fixture)
-        .client.signIn.social({
-          provider: "line",
-          callbackURL: "/dashboard",
-          scopes: ["requested-scope", "openid"],
-          loginHint: "ignored@example.invalid",
-          additionalParams: { custom: "value with space" },
-        });
+      const result = await ctx.actor("line", fixture).client.signIn.social({
+        provider: "line",
+        callbackURL: "/dashboard",
+        scopes: ["requested-scope", "openid"],
+        loginHint: "ignored@example.invalid",
+        additionalParams: { custom: "value with space" },
+      });
       expect(result.error).toBeNull();
       const url = new URL(result.data!.url!),
         configured = ["configured", "disabled-configured"].includes(mode);
