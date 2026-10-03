@@ -746,9 +746,11 @@ fn discord_user_info(profile: Value) -> Result<OAuthUserInfo, String> {
 mod huggingface;
 mod kakao;
 mod kick;
+mod line;
 pub use huggingface::HuggingFaceOptions;
 pub use kakao::KakaoOptions;
 pub use kick::KickOptions;
+pub use line::LineOptions;
 
 // LCOV_EXCL_START
 #[cfg(test)]
