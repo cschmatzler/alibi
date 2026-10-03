@@ -93,5 +93,26 @@ pub(crate) async fn router(
         );
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    let path = "/__test/profiles/multi-session-stateless/api/auth";
+    let config =
+        config
+            .clone()
+            .base_path(path)
+            .session_cookie_cache(better_auth_core::CookieCacheConfig {
+                enabled: true,
+                strategy: better_auth_core::CookieCacheStrategy::Jwe,
+                max_age: 300.0,
+                ..Default::default()
+            });
+    let auth = Arc::new(
+        AuthBuilder::without_database(config)
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new().enable_username(false))
+            .plugin(SessionManagementPlugin::new())
+            .plugin(MultiSessionPlugin::new())
+            .build()
+            .await?,
+    );
+    router = router.nest(path, auth.clone().axum_router().with_state(auth));
     Ok(router)
 }

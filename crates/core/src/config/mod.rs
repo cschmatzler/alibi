@@ -249,7 +249,8 @@ pub struct AccountConfig {
     /// maxAge attribute; takes precedence over the integer advanced override.
     /// None inherits the session cache lifetime (or 300 seconds).
     pub cookie_max_age: Option<f64>,
-    /// Where to persist OAuth state during the authorization flow.
+    /// Where to persist OAuth state during the authorization flow. Automatic
+    /// selects database state with a server store, cookie state without one.
     pub store_state_strategy: OAuthStateStrategy,
     /// Skip state-cookie verification during callback processing.
     ///
@@ -289,8 +290,12 @@ pub struct AccountLinkingConfig {
 /// Strategy for persisting OAuth state between the sign-in and callback steps.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum OAuthStateStrategy {
-    /// Persist state in an encrypted cookie.
+    /// Select the deployment default during builder initialization. Initialized
+    /// contexts never retain this variant. Low-level uninitialized contexts
+    /// keep the historical database fallback for compatibility.
     #[default]
+    Automatic,
+    /// Persist state in an encrypted cookie.
     Cookie,
     /// Persist state in the verification store plus a signed state cookie.
     Database,
@@ -535,7 +540,7 @@ impl Default for AccountConfig {
             encrypt_oauth_tokens: false,
             store_account_cookie: false,
             cookie_max_age: None,
-            store_state_strategy: OAuthStateStrategy::Database,
+            store_state_strategy: OAuthStateStrategy::Automatic,
             skip_state_cookie_check: false,
         }
     }

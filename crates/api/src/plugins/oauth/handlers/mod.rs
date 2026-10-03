@@ -2385,7 +2385,8 @@ async fn initiate_oauth_flow_core(
     }
 
     match ctx.config.account.store_state_strategy {
-        better_auth_core::OAuthStateStrategy::Database => {
+        better_auth_core::OAuthStateStrategy::Automatic
+        | better_auth_core::OAuthStateStrategy::Database => {
             let created = ctx
                 .verifications()
                 .create(CreateVerification {
@@ -2500,7 +2501,8 @@ pub(in crate::plugins) async fn handle_social_sign_in(
     }
 
     match ctx.config.account.store_state_strategy {
-        better_auth_core::OAuthStateStrategy::Database => {
+        better_auth_core::OAuthStateStrategy::Automatic
+        | better_auth_core::OAuthStateStrategy::Database => {
             if response.token.is_some() {
                 return Ok(auth_response);
             }
@@ -2603,7 +2605,8 @@ pub(super) async fn handle_callback(
         )));
     };
     let payload = match ctx.config.account.store_state_strategy {
-        better_auth_core::OAuthStateStrategy::Database => {
+        better_auth_core::OAuthStateStrategy::Automatic
+        | better_auth_core::OAuthStateStrategy::Database => {
             let verification = match ctx.verifications().find(&state_param).await {
                 Ok(Some(verification)) => verification,
                 Ok(None) => {
@@ -2749,7 +2752,8 @@ pub(super) async fn handle_callback(
                 .ok_or_else(|| AuthError::internal("Authenticated state cookie disappeared"))?,
             &ctx.config,
         )?,
-        better_auth_core::OAuthStateStrategy::Database => ctx.config.current_secret(),
+        better_auth_core::OAuthStateStrategy::Automatic
+        | better_auth_core::OAuthStateStrategy::Database => ctx.config.current_secret(),
     };
     if let Some(context) = verified_server_context(&payload, &state_param, context_secret) {
         req.extensions()
@@ -3042,7 +3046,8 @@ pub(super) async fn handle_link_social(
     }
 
     match ctx.config.account.store_state_strategy {
-        better_auth_core::OAuthStateStrategy::Database => attach_state_cookie(
+        better_auth_core::OAuthStateStrategy::Automatic
+        | better_auth_core::OAuthStateStrategy::Database => attach_state_cookie(
             auth_response,
             &ctx.config,
             ctx.config.current_secret(),

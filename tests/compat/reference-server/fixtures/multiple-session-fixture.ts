@@ -65,6 +65,18 @@ export function createMultipleSessionFixture(base: BetterAuthOptions) {
     );
   }
 
+  const statelessPath = "/__test/profiles/multi-session-stateless/api/auth";
+  profiles.set(
+    statelessPath,
+    betterAuth({
+      ...base,
+      database: undefined,
+      basePath: statelessPath,
+      session: { cookieCache: { enabled: true, strategy: "jwe", maxAge: 300 } },
+      plugins: [multiSession()],
+    }),
+  );
+
   return {
     profiles,
     reset() {

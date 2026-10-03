@@ -265,7 +265,9 @@ pub(in crate::plugins) fn verified_server_context(
 pub(in crate::plugins) fn state_cookie_name(config: &AuthConfig) -> String {
     match config.account.store_state_strategy {
         OAuthStateStrategy::Cookie => related_cookie_name(config, "oauth_state"),
-        OAuthStateStrategy::Database => related_cookie_name(config, "state"),
+        OAuthStateStrategy::Automatic | OAuthStateStrategy::Database => {
+            related_cookie_name(config, "state")
+        }
     }
 }
 
