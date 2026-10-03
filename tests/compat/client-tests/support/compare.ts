@@ -763,7 +763,7 @@ export function compareValues(
 
   function controlBody(
     window: RequestWindow,
-    kind: "member-addition" | "social-provider" | "user-validation" | "managed-secrets",
+    kind: NonNullable<RequestWindow["controlObservation"]>["kind"],
   ) {
     const observation = window.controlObservation;
     return observation?.kind === kind &&
@@ -773,6 +773,236 @@ export function compareValues(
       ? observation.body
       : undefined;
   }
+
+  // This external keyring publishes freshly generated RSA keys through the real
+  // JWKS route. Its creation clock follows asynchronous key generation, not the
+  // scenario start. Bind each complete copy to immutable application SQL/event
+  // receipts, the public key and a genuine signature before admitting its dates.
+  const keyringPath = "/__test/profiles/jwt-keyring-plain/api/auth";
+  const keyringReceipts: { left: Record<string, unknown>; right: Record<string, unknown> }[] = [];
+  const keyringBodies: { left: Record<string, unknown>; right: Record<string, unknown> }[] = [];
+  const sameKeyringValue = (a: unknown, b: unknown): boolean => {
+    if (a === b) {
+      return true;
+    }
+    if (Array.isArray(a) && Array.isArray(b)) {
+      return a.length === b.length && a.every((child, index) => sameKeyringValue(child, b[index]));
+    }
+    return (
+      record(a) &&
+      record(b) &&
+      Object.keys(a).length === Object.keys(b).length &&
+      Object.entries(a).every(
+        ([field, value]) => Object.hasOwn(b, field) && sameKeyringValue(value, b[field]),
+      )
+    );
+  };
+  for (const observer of tracePairs) {
+    if (
+      observer.path !== "/__test/jwt-keyring" ||
+      observer.a.method !== "POST" ||
+      observer.a.responseStatus !== 200 ||
+      observer.b.responseStatus !== 200 ||
+      observer.left.jwtKeyringInput?.profile !== "jwt-keyring-plain" ||
+      observer.right.jwtKeyringInput?.profile !== "jwt-keyring-plain" ||
+      !["state", "legacy"].includes(observer.left.jwtKeyringInput.operation) ||
+      observer.left.jwtKeyringInput.operation !== observer.right.jwtKeyringInput.operation
+    ) {
+      continue;
+    }
+    const a = controlBody(observer.left, "jwt-keyring");
+    const b = controlBody(observer.right, "jwt-keyring");
+    if (
+      a &&
+      b &&
+      Array.isArray(a.keys) &&
+      Array.isArray(b.keys) &&
+      Array.isArray(a.events) &&
+      Array.isArray(b.events)
+    ) {
+      keyringBodies.push({ left: a, right: b });
+    }
+  }
+  function keyringSignature(
+    row: Record<string, unknown>,
+    side: "a" | "b",
+    baseURL: string | undefined,
+  ) {
+    if (!record(row.publicKey) || !baseURL) {
+      return false;
+    }
+    const publicKey = row.publicKey;
+    return tracePairs.some((trace) => {
+      const response = trace[side];
+      if (
+        trace.path !== `${keyringPath}/token` ||
+        response.method !== "GET" ||
+        response.responseStatus !== 200 ||
+        !record(response.responseBody) ||
+        typeof response.responseBody.token !== "string"
+      ) {
+        return false;
+      }
+      try {
+        const [header, payload, signature] = response.responseBody.token.split(".");
+        if (!header || !payload || !signature) {
+          return false;
+        }
+        const h = JSON.parse(Buffer.from(header, "base64url").toString());
+        const p = JSON.parse(Buffer.from(payload, "base64url").toString());
+        return (
+          h.alg === "RS256" &&
+          h.kid === row.id &&
+          p.iss === baseURL &&
+          p.aud === baseURL &&
+          verify(
+            "RSA-SHA256",
+            Buffer.from(`${header}.${payload}`),
+            createPublicKey({ key: publicKey, format: "jwk" }),
+            Buffer.from(signature, "base64url"),
+          )
+        );
+      } catch {
+        return false;
+      }
+    });
+  }
+  for (const producer of tracePairs) {
+    if (
+      producer.path !== `${keyringPath}/jwks` ||
+      producer.a.method !== "GET" ||
+      producer.a.responseStatus !== 200 ||
+      producer.b.responseStatus !== 200 ||
+      !record(producer.a.responseBody) ||
+      !record(producer.b.responseBody) ||
+      !Array.isArray(producer.a.responseBody.keys) ||
+      !Array.isArray(producer.b.responseBody.keys)
+    ) {
+      continue;
+    }
+    for (const body of keyringBodies) {
+      (body.left.keys as unknown[]).forEach((a, index) => {
+        const b = (body.right.keys as unknown[])[index];
+        if (
+          !record(a) ||
+          !record(b) ||
+          !record(a.publicKey) ||
+          !record(b.publicKey) ||
+          !isDate(a.createdAt) ||
+          !isDate(b.createdAt) ||
+          !isDate(a.expiresAt) ||
+          !isDate(b.expiresAt) ||
+          !inWindows(
+            Date.parse(a.createdAt),
+            Date.parse(b.createdAt),
+            producer.left,
+            producer.right,
+          ) ||
+          ![a, b].every((row) => {
+            const lifetime =
+              Date.parse(row.expiresAt as string) - Date.parse(row.createdAt as string);
+            return lifetime >= 3600000 && lifetime <= 3600005;
+          })
+        ) {
+          return;
+        }
+        const published = (response: Record<string, unknown>, row: Record<string, unknown>) =>
+          (response.keys as unknown[]).some(
+            (key) =>
+              record(key) &&
+              key.kid === row.id &&
+              key.alg === "RS256" &&
+              key.kty === "RSA" &&
+              record(row.publicKey) &&
+              key.n === row.publicKey.n &&
+              key.e === row.publicKey.e &&
+              key.d === undefined,
+          );
+        const created = (state: Record<string, unknown>, row: Record<string, unknown>) =>
+          (state.events as unknown[]).some(
+            (event) =>
+              record(event) &&
+              event.operation === "create" &&
+              event.profile === "jwt-keyring-plain" &&
+              record(event.context) &&
+              event.context.path === "/jwks" &&
+              event.context.method === "GET" &&
+              record(event.key) &&
+              event.key.alg === "RS256" &&
+              event.key.createdAt === row.createdAt &&
+              event.key.expiresAt === row.expiresAt &&
+              sameKeyringValue(event.key.publicKey, row.publicKey),
+          );
+        if (
+          published(producer.a.responseBody as Record<string, unknown>, a) &&
+          published(producer.b.responseBody as Record<string, unknown>, b) &&
+          created(body.left, a) &&
+          created(body.right, b) &&
+          keyringSignature(a, "a", context.leftBaseURL) &&
+          keyringSignature(b, "b", context.rightBaseURL)
+        ) {
+          keyringReceipts.push({ left: a, right: b });
+        }
+      });
+    }
+  }
+  function collectKeyringCopies(a: unknown, b: unknown) {
+    if (Array.isArray(a) && Array.isArray(b)) {
+      a.forEach((child, index) => collectKeyringCopies(child, b[index]));
+    } else if (record(a) && record(b)) {
+      if (
+        record(a.publicKey) &&
+        record(b.publicKey) &&
+        isDate(a.createdAt) &&
+        isDate(b.createdAt)
+      ) {
+        const receipt = keyringReceipts.find(
+          (item) =>
+            sameKeyringValue(item.left.publicKey, a.publicKey) &&
+            sameKeyringValue(item.right.publicKey, b.publicKey),
+        );
+        if (receipt) {
+          const observed = keyringBodies.some((body) => {
+            const copies = (state: Record<string, unknown>) => [
+              ...(state.keys as unknown[]),
+              ...(state.events as unknown[]).flatMap((event) =>
+                record(event) && event.operation === "create" ? [event.key] : [],
+              ),
+            ];
+            return (
+              copies(body.left).some((copy) => sameKeyringValue(copy, a)) &&
+              copies(body.right).some((copy) => sameKeyringValue(copy, b))
+            );
+          });
+          for (const field of ["createdAt", "expiresAt"] as const) {
+            if (!isDate(a[field]) || !isDate(b[field])) {
+              continue;
+            }
+            if (observed && a[field] === receipt.left[field] && b[field] === receipt.right[field]) {
+              approveDate([physicalOwner(a, b)], field, a[field], b[field]);
+            } else {
+              invalidPhysicalDates.add(dateKey(physicalOwner(a, b), field, a[field], b[field]));
+            }
+          }
+        }
+      }
+      for (const [field, child] of Object.entries(a)) {
+        if (
+          ![
+            "requestBodyShape",
+            "responseBodyShape",
+            "metadata",
+            "custom",
+            "additionalFields",
+            "applicationData",
+          ].includes(field)
+        ) {
+          collectKeyringCopies(child, b[field]);
+        }
+      }
+    }
+  }
+  collectKeyringCopies(normalizedLeft, normalizedRight);
 
   for (const [index, observer] of tracePairs.entries()) {
     if (

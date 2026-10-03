@@ -1,8 +1,8 @@
 use super::encryption::encrypt_token_set;
 use super::providers::{
-    OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthConfig, OAuthProvider, OAuthScopeOrder,
-    OAuthTokenEndpointAuth, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest,
-    OAuthUserInfoResponse,
+    OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthClientAssertionContext, OAuthConfig,
+    OAuthProvider, OAuthScopeOrder, OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet,
+    OAuthUserInfo, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use super::state::{
     AccountCookiePayload, OAuthStateLink, OAuthStatePayload, RecoveredOAuthServerContext,
@@ -421,9 +421,15 @@ pub(super) async fn refresh_tokens_via_provider(
         ("grant_type", "refresh_token"),
         ("refresh_token", refresh_token),
     ];
-    let request = provider_token_request(provider, &mut form)?;
+    if let Some(scope) = provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.refresh_scope.as_deref())
+    {
+        form.push(("scope", scope));
+    }
+    let request = provider_token_request(provider, &form, OAuthTokenGrant::RefreshToken).await?;
     let token_resp = request
-        .form(&form)
         .send()
         .await
         .map_err(|e| AuthError::internal(format!("Token refresh failed: {e}")))?;
@@ -446,27 +452,32 @@ pub(super) async fn refresh_tokens_via_provider(
     parse_token_response(token_data)
 }
 
-fn provider_token_request<'a>(
-    provider: &'a OAuthProvider,
-    form: &mut Vec<(&'a str, &'a str)>,
+async fn provider_token_request(
+    provider: &OAuthProvider,
+    fields: &[(&str, &str)],
+    grant_type: OAuthTokenGrant,
 ) -> AuthResult<reqwest::RequestBuilder> {
+    let mut form: Vec<_> = fields
+        .iter()
+        .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+        .collect();
     let request = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|error| AuthError::internal(format!("Token HTTP client failed: {error}")))?
         .post(&provider.token_url)
         .header("Accept", "application/json");
-    match provider
+    let request = match provider
         .authorization
         .as_ref()
         .and_then(|policy| policy.token_endpoint_auth)
     {
         None => {
             form.extend([
-                ("client_id", provider.client_id.as_str()),
-                ("client_secret", provider.client_secret.as_str()),
+                ("client_id".into(), provider.client_id.clone()),
+                ("client_secret".into(), provider.client_secret.clone()),
             ]);
-            Ok(request)
+            request
         }
         Some(OAuthTokenEndpointAuth::None) => {
             if provider.client_id.is_empty() || !provider.client_secret.is_empty() {
@@ -474,8 +485,37 @@ fn provider_token_request<'a>(
                     "Public token authentication requires client ID and no secret",
                 ));
             }
-            form.push(("client_id", &provider.client_id));
-            Ok(request)
+            form.push(("client_id".into(), provider.client_id.clone()));
+            request
+        }
+        Some(OAuthTokenEndpointAuth::PrivateKeyJwt) => {
+            if provider.client_id.is_empty() || !provider.client_secret.is_empty() {
+                return Err(AuthError::config(
+                    "Client assertion requires client ID and no secret",
+                ));
+            }
+            let assertion = provider
+                .authorization
+                .as_ref()
+                .and_then(|policy| policy.client_assertion.as_ref())
+                .ok_or_else(|| AuthError::config("Client assertion callback is required"))?
+                .0
+                .get_client_assertion(OAuthClientAssertionContext {
+                    client_id: provider.client_id.clone(),
+                    token_endpoint: provider.token_url.clone(),
+                    grant_type,
+                })
+                .await
+                .map_err(AuthError::internal)?;
+            form.extend([
+                ("client_id".into(), provider.client_id.clone()),
+                ("client_assertion".into(), assertion),
+                (
+                    "client_assertion_type".into(),
+                    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer".into(),
+                ),
+            ]);
+            request
         }
         Some(method) => {
             if provider.client_id.is_empty() || provider.client_secret.is_empty() {
@@ -489,19 +529,20 @@ fn provider_token_request<'a>(
                         .append_key_only(value)
                         .finish()
                 };
-                Ok(request.basic_auth(
+                request.basic_auth(
                     encode(&provider.client_id),
                     Some(encode(&provider.client_secret)),
-                ))
+                )
             } else {
                 form.extend([
-                    ("client_id", provider.client_id.as_str()),
-                    ("client_secret", provider.client_secret.as_str()),
+                    ("client_id".into(), provider.client_id.clone()),
+                    ("client_secret".into(), provider.client_secret.clone()),
                 ]);
-                Ok(request)
+                request
             }
         }
-    }
+    };
+    Ok(request.form(&form))
 }
 
 fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenSet> {
@@ -600,9 +641,9 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
         form.push(("device_id", device_id));
     }
 
-    let request = provider_token_request(provider, &mut form)?;
+    let request =
+        provider_token_request(provider, &form, OAuthTokenGrant::AuthorizationCode).await?;
     let token_resp = request
-        .form(&form)
         .send()
         .await
         .map_err(|e| AuthError::internal(format!("Token exchange failed: {e}")))?;

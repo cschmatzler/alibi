@@ -117,6 +117,7 @@ impl OAuthProvider {
             algorithm: None,
             selection: OAuthJwksSelection::ExactKid,
             nonce_comparison: OAuthNonceComparison::Exact,
+            verify_claims: None,
         };
         let mut clients = options.client_ids.into_iter();
         let token_endpoint_auth = if options

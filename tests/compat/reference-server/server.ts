@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-
 import { Database } from "bun:sqlite";
 
 import { apiKey } from "@better-auth/api-key";
@@ -53,9 +52,11 @@ import { kakaoProviderFixture } from "./fixtures/kakao-provider-fixture";
 import { kickProviderFixture } from "./fixtures/kick-provider-fixture";
 import { createLastLoginMethodFixture } from "./fixtures/last-login-method-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./fixtures/lifecycle-fixture";
+import { linkedinProviderFixture } from "./fixtures/linkedin-provider-fixture";
 import { lineProviderFixture } from "./fixtures/line-provider-fixture";
 import { linearProviderFixture } from "./fixtures/linear-provider-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
+import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
@@ -618,8 +619,10 @@ const cloudflareFixture = cloudflareProviderFixture(authOptions);
 const cognitoFixture = cognitoProviderFixture(authOptions);
 const dropboxFixture = dropboxProviderFixture(authOptions);
 const facebookFixture = facebookProviderFixture(authOptions);
+const microsoftFixture = microsoftProviderFixture(authOptions);
 const figmaFixture = figmaProviderFixture(authOptions);
 const huggingfaceFixture = huggingfaceProviderFixture(authOptions);
+const linkedinFixture = linkedinProviderFixture(authOptions);
 const kakaoFixture = kakaoProviderFixture(authOptions);
 const lineFixture = lineProviderFixture(authOptions);
 const linearFixture = linearProviderFixture(authOptions);
@@ -655,12 +658,14 @@ for (const [path, instance] of dropboxFixture.profiles) {
 for (const [path, instance] of facebookFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
+for (const [path, instance] of microsoftFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of figmaFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of huggingfaceFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
+for (const [path, instance] of linkedinFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of kakaoFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
@@ -1601,6 +1606,8 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      const microsoftControl = await microsoftFixture.handle(request);
+      if (microsoftControl) return microsoftControl;
       if (url.pathname.startsWith("/__test/profiles/error-page/api/auth/")) {
         return errorPageAuth.handler(request);
       }
@@ -1643,6 +1650,8 @@ const server = Bun.serve({
       if (huggingfaceControl) {
         return huggingfaceControl;
       }
+      const linkedinControl = await linkedinFixture.handle(request);
+      if (linkedinControl) return linkedinControl;
       const kakaoControl = await kakaoFixture.handle(request);
       if (kakaoControl) {
         return kakaoControl;
@@ -2493,7 +2502,9 @@ const server = Bun.serve({
         dropboxFixture.reset();
         facebookFixture.reset();
         figmaFixture.reset();
+        microsoftFixture.reset();
         huggingfaceFixture.reset();
+        linkedinFixture.reset();
         kakaoFixture.reset();
         lineFixture.reset();
         linearFixture.reset();

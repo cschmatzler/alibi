@@ -19,20 +19,20 @@ use fixtures::{
     facebook_provider_fixture, figma_provider_fixture, google_id_token_fixture,
     huggingface_provider_fixture, invitation_fixture, jwt_fixture, jwt_keyring_fixture,
     jwt_remote_fixture, kakao_provider_fixture, kick_provider_fixture, last_login_method_fixture,
-    lifecycle_fixture, line_provider_fixture, linear_provider_fixture, multiple_session_fixture, naver_provider_fixture,
-    oauth_proxy_fixture, one_tap_fixture, one_time_token_fixture, open_api_fixture,
-    organization_creation_fixture, organization_creation_hooks_fixture,
-    organization_deletion_hooks_fixture, organization_invitation_acceptance_fixture,
-    organization_member_addition_fixture, organization_member_removal_hooks_fixture,
-    organization_member_role_hooks_fixture, organization_membership_policy_fixture,
-    organization_timestamp_fixture, organization_transport_probe,
-    organization_update_hooks_fixture, passkey_authentication_fixture, passkey_fixture,
-    passkey_registration_fixture, physical_cookie_fixture, rate_limit_fixture,
-    server_endpoint_fixture, session_cookie_cache_fixture, session_fields_fixture,
-    set_password_fixture, signup_policy_fixture, siwe_fixture, social_provider_fixture,
-    team_fixture, two_factor_delivery_fixture, two_factor_otp_fixture,
-    two_factor_pending_lookup_fixture, two_factor_policy_fixture, two_factor_totp_fixture,
-    user_lifecycle_fixture, user_validation_fixture, verification_storage_fixture,
+    lifecycle_fixture, line_provider_fixture, linear_provider_fixture, linkedin_provider_fixture, multiple_session_fixture, naver_provider_fixture, oauth_proxy_fixture,
+    one_tap_fixture, one_time_token_fixture, open_api_fixture, organization_creation_fixture,
+    organization_creation_hooks_fixture, organization_deletion_hooks_fixture,
+    organization_invitation_acceptance_fixture, organization_member_addition_fixture,
+    organization_member_removal_hooks_fixture, organization_member_role_hooks_fixture,
+    organization_membership_policy_fixture, organization_timestamp_fixture,
+    organization_transport_probe, organization_update_hooks_fixture,
+    passkey_authentication_fixture, passkey_fixture, passkey_registration_fixture,
+    physical_cookie_fixture, rate_limit_fixture, server_endpoint_fixture,
+    session_cookie_cache_fixture, session_fields_fixture, set_password_fixture,
+    signup_policy_fixture, siwe_fixture, social_provider_fixture, team_fixture,
+    two_factor_delivery_fixture, two_factor_otp_fixture, two_factor_pending_lookup_fixture,
+    two_factor_policy_fixture, two_factor_totp_fixture, user_lifecycle_fixture,
+    user_validation_fixture, verification_storage_fixture,
 };
 
 // Bun's Response.json adds UTF-8 to private control responses. Public auth
@@ -104,6 +104,7 @@ use better_auth_seaorm::store::entities::{
     user, verification, wallet_address,
 };
 use chrono::{DateTime, Utc};
+use fixtures::microsoft_provider_fixture;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -887,10 +888,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         facebook_provider_fixture::router(&config, database.clone()).await?;
     let (dropbox_router, dropbox_reset) =
         dropbox_provider_fixture::router(&config, database.clone()).await?;
+    let (microsoft_router, microsoft_reset) =
+        microsoft_provider_fixture::router(&config, database.clone()).await?;
     let (figma_router, figma_reset) =
         figma_provider_fixture::router(&config, database.clone()).await?;
     let (huggingface_router, huggingface_reset) =
         huggingface_provider_fixture::router(&config, database.clone()).await?;
+    let (linkedin_router, linkedin_reset) =
+        linkedin_provider_fixture::router(&config, database.clone()).await?;
     let (kakao_router, kakao_reset) =
         kakao_provider_fixture::router(&config, database.clone()).await?;
     let (line_router, line_reset) =
@@ -1405,7 +1410,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let dropbox_reset=dropbox_reset.clone();
                 let facebook_reset=facebook_reset.clone();
                 let figma_reset=figma_reset.clone();
+                let microsoft_reset=microsoft_reset.clone();
                 let huggingface_reset=huggingface_reset.clone();
+                let linkedin_reset=linkedin_reset.clone();
                 let kakao_reset=kakao_reset.clone();
                 let line_reset = line_reset.clone();
                 let linear_reset=linear_reset.clone();
@@ -1428,7 +1435,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     dropbox_reset.reset().await;
                     facebook_reset.reset().await;
                     figma_reset.reset().await;
+                    microsoft_reset.reset().await;
                     huggingface_reset.reset().await;
+                    linkedin_reset.reset().await;
                     kakao_reset.reset().await;
                     line_reset.reset().await;
                     linear_reset.reset().await;
@@ -2057,7 +2066,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(dropbox_router)
         .merge(facebook_router)
         .merge(figma_router)
+        .merge(microsoft_router)
         .merge(huggingface_router)
+        .merge(linkedin_router)
         .merge(kakao_router)
         .merge(line_router)
         .merge(linear_router)

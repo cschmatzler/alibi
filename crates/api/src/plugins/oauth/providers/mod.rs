@@ -17,8 +17,11 @@ pub use atlassian::AtlassianOptions;
 
 mod apple;
 pub use apple::AppleOptions;
+
+mod microsoft;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+pub use microsoft::{MicrosoftOptions, MicrosoftProfilePhotoSize};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
@@ -128,6 +131,40 @@ pub trait OAuthRefreshTokenHandler: Send + Sync {
 #[async_trait]
 pub trait OAuthIdTokenVerifier: Send + Sync {
     async fn verify_id_token(&self, token: &str, nonce: Option<&str>) -> Result<bool, String>;
+}
+
+/// The actual token grant for an application's asynchronous client assertion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OAuthTokenGrant {
+    AuthorizationCode,
+    RefreshToken,
+}
+
+#[derive(Debug, Clone)]
+pub struct OAuthClientAssertionContext {
+    pub client_id: String,
+    pub token_endpoint: String,
+    pub grant_type: OAuthTokenGrant,
+}
+
+/// Produces a fresh application credential for the actual bound token request.
+#[async_trait]
+pub trait OAuthClientAssertionGetter: Send + Sync {
+    async fn get_client_assertion(
+        &self,
+        context: OAuthClientAssertionContext,
+    ) -> Result<String, String>;
+}
+
+/// Cloneable application callback whose Debug output never prints credentials.
+#[derive(Clone)]
+pub struct OAuthClientAssertion(pub Arc<dyn OAuthClientAssertionGetter>);
+
+impl std::fmt::Debug for OAuthClientAssertion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthClientAssertion")
+            .finish_non_exhaustive()
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -323,6 +360,7 @@ pub enum OAuthScopeEncoding {
 pub enum OAuthTokenEndpointAuth {
     ClientSecretBasic,
     ClientSecretPost,
+    PrivateKeyJwt,
     None,
 }
 
@@ -340,6 +378,10 @@ pub struct OAuthAuthorizationPolicy {
     pub token_endpoint_auth: Option<OAuthTokenEndpointAuth>,
     /// Optional application client key sent in authorization-code forms only.
     pub authorization_code_client_key: Option<String>,
+    /// Required by private_key_jwt; invoked afresh for each real token grant.
+    pub client_assertion: Option<OAuthClientAssertion>,
+    /// Exact configured refresh scope, including an explicitly empty value.
+    pub refresh_scope: Option<String>,
     pub response_type: String,
     /// Application callback URI overrides the generated provider callback.
     pub redirect_uri: Option<String>,
@@ -365,6 +407,8 @@ impl Default for OAuthAuthorizationPolicy {
             require_client_id: false,
             token_endpoint_auth: None,
             authorization_code_client_key: None,
+            client_assertion: None,
+            refresh_scope: None,
             response_type: "code".into(),
             redirect_uri: None,
             response_mode: None,
@@ -958,5 +1002,7 @@ mod tests {
 }
 // LCOV_EXCL_STOP
 
+mod linkedin;
+pub use linkedin::LinkedInOptions;
 mod linear;
 pub use linear::LinearOptions;
