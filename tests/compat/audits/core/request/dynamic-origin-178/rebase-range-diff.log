@@ -1,0 +1,56 @@
+1:  5bad9a44 ! 1:  59056155 Resolve dynamic base URLs and trusted origins per request
+    @@ src/config.rs
+      pub use better_auth_core::background_tasks::{BackgroundTaskCompletion, BackgroundTaskHandler};
+      pub use better_auth_core::config::{
+     -    AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, CookieAttributes,
+    --    CookieCacheConfig, CookieCacheStrategy, CookieOverride, CrossSubDomainConfig, IpAddressConfig,
+    --    JwtConfig, OAuthStateStrategy, PasswordConfig, SameSite, SessionConfig, VerificationConfig,
+    --    core_paths, extract_origin,
+    +-    CookieCacheConfig, CookieCacheStrategy, CookieOverride, CookieRefreshCache,
+    +-    CrossSubDomainConfig, IpAddressConfig, JwtConfig, OAuthStateStrategy, PasswordConfig, SameSite,
+    +-    SessionConfig, VerificationConfig, core_paths, extract_origin,
+     +    AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, BaseUrlProtocol,
+    -+    CookieAttributes, CookieCacheConfig, CookieCacheStrategy, CookieOverride, CrossSubDomainConfig,
+    -+    DynamicBaseUrl, IpAddressConfig, JwtConfig, OAuthStateStrategy, PasswordConfig, SameSite,
+    -+    SessionConfig, TrustedOriginsResolver, VerificationConfig, core_paths, extract_origin,
+    ++    CookieAttributes, CookieCacheConfig, CookieCacheStrategy, CookieOverride, CookieRefreshCache,
+    ++    CrossSubDomainConfig, DynamicBaseUrl, IpAddressConfig, JwtConfig, OAuthStateStrategy,
+    ++    PasswordConfig, SameSite, SessionConfig, TrustedOriginsResolver, VerificationConfig,
+    ++    core_paths, extract_origin,
+      };
+     
+      ## src/core/auth.rs ##
+2:  14fad78d = 2:  a424f5fe Match published origin patterns and verify request-local adapter dispatch
+3:  1d095df8 ! 3:  1e26cf15 Validate dynamic host policies and retain focused published-source receipts
+    @@ Commit message
+     
+      ## crates/core/src/config/mod.rs ##
+     @@ crates/core/src/config/mod.rs: impl AuthConfig {
+    -     ///
+    -     /// Returns a configuration error if the signing secret is empty or shorter than 32 bytes.
+    -     pub fn validate(&self) -> Result<(), AuthError> {
+    -+        if self
+    -+            .dynamic_base_url
+    -+            .as_ref()
+    -+            .is_some_and(|policy| policy.allowed_hosts.is_empty())
+    -+        {
+    -+            return Err(AuthError::config(
+    -+                "Dynamic base URL allowed hosts cannot be empty",
+    -+            ));
+    +                 || self.session.store_in_database
+    +                 || self.session.preserve_in_database)
+    +         {
+    +-            return Err(AuthError::config(
+    +-                "Stateless sessions cannot use server session storage",
+    +-            ));
+    ++            return Err(AuthError::config("Stateless sessions cannot use server session storage"));
+     +        }
+    ++        if self.dynamic_base_url.as_ref().is_some_and(|policy| policy.allowed_hosts.is_empty()) {
+    ++            return Err(AuthError::config("Dynamic base URL allowed hosts cannot be empty"));
+    +         }
+              if let Some(secrets) = &self.managed_secrets {
+                  return secrets.validate();
+    -         }
+     
+      ## tests/compat/audits/core/request/dynamic-origin-178/README.md (new) ##
+     @@

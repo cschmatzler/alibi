@@ -1,0 +1,4 @@
+1:  59056155 = 1:  f6666186 Resolve dynamic base URLs and trusted origins per request
+2:  a424f5fe = 2:  b30af047 Match published origin patterns and verify request-local adapter dispatch
+3:  1e26cf15 = 3:  a206eaf2 Validate dynamic host policies and retain focused published-source receipts
+4:  43787e0c = 4:  a9074f04 Preserve stateless config during rebase and record affected validation

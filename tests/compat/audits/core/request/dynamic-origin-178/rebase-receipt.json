@@ -1,0 +1,28 @@
+{
+  "originalBase": "adb9a9c780023c4df04c4bf1006bad7d44b14238",
+  "originalProductionCheckpoint": "5bad9a443f61a8b4e0d4204e7ccb6c8f7fc65398",
+  "testedPreRebaseHead": "1d095df85080a36969a5f4e53dfb777a380a99ec",
+  "rebaseBase": "822d104c0f294afdf19c09853f45f5f55fd6868a",
+  "replayedHead": "1e26cf15ffd542af0db866ee87021b02ff2eb1dc",
+  "unchangedOriginCsrfTests": [
+    "crates/core/src/config/origin.rs",
+    "crates/core/src/middleware/csrf/mod.rs",
+    "tests/integration/core/dynamic_origin.rs"
+  ],
+  "dispatchChangeIdentical": true,
+  "conflictsResolved": [
+    "src/config.rs: union retains CookieRefreshCache and dynamic-origin exports",
+    "crates/core/src/config/mod.rs: retain stateless guard and dynamic-host guard"
+  ],
+  "affectedRebaseCheck": "cargo test -p better-auth-core --lib --locked config::tests::validate -- --nocapture: 3 passed",
+  "adapterAndSourceChecksReused": true,
+  "actionsEnabled": false,
+  "sourceFiles": {
+    "crates/core/src/config/origin.rs": "a9db73dd30be095702c23867aa4529ee97fc512e00e876d552eb00c73f931173",
+    "crates/core/src/middleware/csrf/mod.rs": "53ebe5eabf24e12f2c33e183bf5878d0648c7f3ab01da391c0967e5204891393",
+    "tests/integration/core/dynamic_origin.rs": "b817d4a8f028dc1185f8d2cbe73421330303f9e25bfe2bbc766321a69fdd7590",
+    "src/core/auth.rs": "ede9e10eca9996b4f304fd77ca0ceac423ba99f4311e7d56e5459a7f9a449c03",
+    "crates/core/src/config/mod.rs": "0e770ee16bbabab148cd0c41181bfd6969fadaf6859410ef5e4dc9a088afbb92",
+    "src/config.rs": "5ef93aa702655a0978fa6867642f32efc5e1d44ae07ca3677f11e3fed6fd7c8d"
+  }
+}

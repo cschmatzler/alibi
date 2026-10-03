@@ -1,0 +1,14 @@
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 9.26s
+     Running tests/integration/main.rs (/tmp/origin178-target/debug/deps/integration-f90a0b968485d148)
+
+running 2 tests
+integration::storage::Sqlx: dispatch users=1 sessions=4
+test core::dynamic_origin::on_sqlx::dynamic_origin_dispatch ... ok
+integration::storage::SeaOrm: dispatch users=1 sessions=4
+test core::dynamic_origin::on_seaorm::dynamic_origin_dispatch ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 343 filtered out; finished in 0.35s
+
+mbx[cache]: 0 hits, 0 misses, 1 not looked up, 1 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: 1.3 TiB logical of target/ had outlived its checkouts. it has been dealt with.
