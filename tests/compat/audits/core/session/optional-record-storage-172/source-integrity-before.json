@@ -1,0 +1,32 @@
+[
+  {
+    "package": "better-auth",
+    "version": "1.7.6",
+    "file": "dist/db/adapter-base.mjs",
+    "actual": "88fe4ddd2ff914fed4b3e6468bdcd1a7b317335df053b25b64cef9573af6b36b",
+    "published": "88fe4ddd2ff914fed4b3e6468bdcd1a7b317335df053b25b64cef9573af6b36b",
+    "inode": 4999883,
+    "links": 1,
+    "match": true
+  },
+  {
+    "package": "better-auth",
+    "version": "1.7.6",
+    "file": "dist/plugins/two-factor/verify-two-factor.mjs",
+    "actual": "2145c9898216a35efecffe3f59e5ace6f9d4561a4e3c709f6cf7137b801de211",
+    "published": "2145c9898216a35efecffe3f59e5ace6f9d4561a4e3c709f6cf7137b801de211",
+    "inode": 5000286,
+    "links": 1,
+    "match": true
+  },
+  {
+    "package": "@better-auth/memory-adapter",
+    "version": "1.7.6",
+    "file": "dist/index.mjs",
+    "actual": "edd1040f94be383b71fb655320c32ab50f1f7efd7796d8234982f977f3f93dbc",
+    "published": "edd1040f94be383b71fb655320c32ab50f1f7efd7796d8234982f977f3f93dbc",
+    "inode": 5000367,
+    "links": 1,
+    "match": true
+  }
+]

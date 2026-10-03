@@ -1,0 +1,190 @@
+diff --git a/crates/core/src/config/mod.rs b/crates/core/src/config/mod.rs
+index b4907d46..4a2e569e 100644
+--- a/crates/core/src/config/mod.rs
++++ b/crates/core/src/config/mod.rs
+@@ -595,6 +595,11 @@ pub struct AdvancedConfig {
+     /// Admit trailing slashes while resolving the original registered endpoint.
+     pub skip_trailing_slashes: bool,
+ 
++    /// Select the secure cookie name prefix and initial Secure attribute.
++    /// None uses the configured base URL protocol. Attribute overrides do not
++    /// change this choice; the serializer enforces Secure for reserved prefixes.
++    pub use_secure_cookies: Option<bool>,
++
+     /// Cross-subdomain cookie sharing configuration.
+     pub cross_sub_domain_cookies: Option<CrossSubDomainConfig>,
+ 
+diff --git a/crates/core/src/config/origin.rs b/crates/core/src/config/origin.rs
+index cf036d1f..0fef1f90 100644
+--- a/crates/core/src/config/origin.rs
++++ b/crates/core/src/config/origin.rs
+@@ -104,6 +104,13 @@ impl AuthConfig {
+                 fallback.clone()
+             };
+             config.session.cookie_secure = config.base_url.starts_with("https://");
++            if self.advanced.cross_sub_domain_cookies.is_some()
++                && self.advanced.use_secure_cookies.is_none()
++            {
++                config.advanced.use_secure_cookies = Some(config.session.cookie_secure);
++            }
++            config.session.cookie_name =
++                crate::utils::cookie_utils::related_cookie_name(&config, "session_token");
+             for host in &dynamic.allowed_hosts {
+                 if host.contains("://") {
+                     config.trusted_origins.push(host.clone());
+diff --git a/crates/core/src/utils/cookie_utils.rs b/crates/core/src/utils/cookie_utils.rs
+index 5e603a6f..f2c17681 100644
+--- a/crates/core/src/utils/cookie_utils.rs
++++ b/crates/core/src/utils/cookie_utils.rs
+@@ -159,39 +159,72 @@ pub fn create_clear_cookie(name: &str, config: &AuthConfig) -> String {
+ /// `better-auth.session_data`.
+ #[must_use]
+ pub fn related_cookie_name(config: &AuthConfig, suffix: &str) -> String {
+-    if let Some(name) = config
++    let token_name = config
++        .advanced
++        .cookies
++        .get("session_token")
++        .and_then(|entry| entry.name.as_deref())
++        .filter(|name| !name.is_empty())
++        .unwrap_or(&config.session.cookie_name);
++    let name = config
+         .advanced
+         .cookies
+         .get(suffix)
+         .and_then(|entry| entry.name.as_ref())
+         .filter(|name| !name.is_empty())
+-    {
+-        return name.clone();
+-    }
+-    if let Some(prefix) = config
+-        .advanced
+-        .cookie_prefix
+-        .as_ref()
+-        .filter(|p| !p.is_empty())
+-    {
+-        return format!("{prefix}.{suffix}");
+-    }
+-    if suffix == "session_token" {
+-        return config.session.cookie_name.clone();
++        .cloned()
++        .unwrap_or_else(|| {
++            if let Some(prefix) = config
++                .advanced
++                .cookie_prefix
++                .as_ref()
++                .filter(|p| !p.is_empty())
++            {
++                format!("{prefix}.{suffix}")
++            } else if suffix == "session_token" {
++                token_name.to_owned()
++            } else {
++                let legacy = if config.advanced.cookies.contains_key("session_token") {
++                    None
++                } else {
++                    config.session.cookie_name.strip_suffix("session_token")
++                };
++                legacy.map_or_else(
++                    || format!("better-auth.{suffix}"),
++                    |prefix| format!("{prefix}{suffix}"),
++                )
++            }
++        });
++    if secure_cookie_policy(config) {
++        format!("__Secure-{name}")
++    } else {
++        name
+     }
+-    config
+-        .session
+-        .cookie_name
+-        .strip_suffix("session_token")
+-        .map_or_else(
+-            || format!("better-auth.{suffix}"),
+-            |prefix| format!("{prefix}{suffix}"),
+-        )
++}
++
++// This is createCookieGetter's initial selection, not the final attributes.
++// Dynamic URLs retain that selection unless cross-subdomain request resolution
++// rebuilds cookies using the resolved origin (as in the published context).
++fn secure_cookie_policy(config: &AuthConfig) -> bool {
++    config.advanced.use_secure_cookies.unwrap_or_else(|| {
++        if let Some(dynamic) = &config.dynamic_base_url {
++            match dynamic.protocol {
++                Some(crate::config::BaseUrlProtocol::Https) => true,
++                Some(crate::config::BaseUrlProtocol::Http) => false,
++                _ => std::env::var("NODE_ENV").is_ok_and(|env| env == "production"),
++            }
++        } else {
++            config.base_url.starts_with("https://")
++        }
++    })
+ }
+ 
+ fn cookie_attributes(name: &str, config: &AuthConfig) -> CookieAttributes {
+     let mut attributes = CookieAttributes {
+-        secure: Some(config.session.cookie_secure),
++        secure: Some(config.advanced.use_secure_cookies.unwrap_or_else(|| {
++            secure_cookie_policy(config)
++                || (config.dynamic_base_url.is_none() && config.session.cookie_secure)
++        })),
+         http_only: Some(config.session.cookie_http_only),
+         same_site: Some(config.session.cookie_same_site.clone()),
+         path: Some("/".into()),
+diff --git a/src/core/auth.rs b/src/core/auth.rs
+index caeb9709..97591703 100644
+--- a/src/core/auth.rs
++++ b/src/core/auth.rs
+@@ -169,20 +169,40 @@ impl<S: AuthSchema> AuthBuilder<S> {
+ 
+         // Authentication and every producer use the same initialized token
+         // name; related-cookie overrides remain independently configured.
+-        if self.config.advanced.cookies.contains_key("session_token")
+-            || self
++        // Retain the unprefixed legacy name before storing the resolved name.
++        // This keeps name resolution stable across producers and request clones.
++        if !self
++            .config
++            .advanced
++            .cookie_prefix
++            .as_ref()
++            .is_some_and(|p| !p.is_empty())
++        {
++            if !self.config.advanced.cookies.contains_key("session_token")
++                && let Some(prefix) = self
++                    .config
++                    .session
++                    .cookie_name
++                    .strip_suffix(".session_token")
++                && prefix != "better-auth"
++            {
++                self.config.advanced.cookie_prefix = Some(prefix.to_owned());
++            }
++            let entry = self
+                 .config
+                 .advanced
+-                .cookie_prefix
+-                .as_ref()
+-                .is_some_and(|prefix| !prefix.is_empty())
+-        {
+-            self.config.session.cookie_name =
+-                better_auth_core::utils::cookie_utils::related_cookie_name(
+-                    &self.config,
+-                    "session_token",
+-                );
++                .cookies
++                .entry("session_token".into())
++                .or_default();
++            if entry.name.as_ref().is_none_or(|name| name.is_empty()) {
++                entry.name = Some(self.config.session.cookie_name.clone());
++            }
+         }
++        self.config.session.cookie_name =
++            better_auth_core::utils::cookie_utils::related_cookie_name(
++                &self.config,
++                "session_token",
++            );
+ 
+         // Core modules exist on every instance. Explicit modules keep their own
+         // configuration and priority; defaults never enable credential login.

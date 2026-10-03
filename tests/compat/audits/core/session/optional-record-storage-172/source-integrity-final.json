@@ -1,0 +1,30 @@
+[
+  {
+    "package": "better-auth",
+    "version": "1.7.6",
+    "compared_modules": 252,
+    "mismatch": [],
+    "max_links": 1
+  },
+  {
+    "package": "@better-auth/memory-adapter",
+    "version": "1.7.6",
+    "compared_modules": 1,
+    "mismatch": [],
+    "max_links": 1
+  },
+  {
+    "package": "@better-auth/core",
+    "version": "1.7.6",
+    "compared_modules": 108,
+    "mismatch": [],
+    "max_links": 1
+  },
+  {
+    "package": "@better-auth/passkey",
+    "version": "1.7.6",
+    "compared_modules": 3,
+    "mismatch": [],
+    "max_links": 1
+  }
+]
