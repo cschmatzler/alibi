@@ -29,6 +29,9 @@ pub struct GenericOAuthConfig {
     pub require_id_token_verification: bool,
     pub disable_id_token_nonce_binding: bool,
     pub map_profile: Option<Arc<dyn OAuthProfileMapper>>,
+    /// Fallback expiry in seconds when a default or custom grant omits it.
+    pub access_token_expires_in: Option<f64>,
+    pub account_key: Option<super::OAuthAccountKey>,
 }
 /// Metadata retained independently from the chosen endpoint overrides.
 #[derive(Debug, Clone, Default)]
@@ -102,6 +105,8 @@ impl GenericOAuthConfig {
             require_id_token_verification: false,
             disable_id_token_nonce_binding: false,
             map_profile: None,
+            access_token_expires_in: None,
+            account_key: None,
         }
     }
     /// Failed discovery falls back to configured endpoints. `Ok(None)` skips an
@@ -169,6 +174,11 @@ impl GenericOAuthConfig {
             .provider
             .authorization
             .get_or_insert_with(Default::default);
+        if self.account_key.is_some() {
+            policy.account_key = self.account_key;
+        }
+        policy.allow_missing_access_token = true;
+        policy.default_access_token_expires_in = self.access_token_expires_in;
         if self.discovery_url.is_some()
             && (self.authorization_url.as_ref().is_none_or(String::is_empty)
                 || self.token_url.as_ref().is_none_or(String::is_empty)
@@ -264,10 +274,10 @@ async fn fetch_discovery(url: &str, headers: &[(String, String)]) -> Option<Valu
     Some(document)
 }
 fn oauth_subject(profile: &Value) -> Result<String, String> {
-    Ok(string(profile, "id").unwrap_or_default())
+    super::remaining_profile::raw_subject(profile.get("id"))
 }
 fn oidc_subject(profile: &Value) -> Result<String, String> {
-    Ok(string(profile, "sub").unwrap_or_default())
+    super::remaining_profile::raw_subject(profile.get("sub"))
 }
 struct GenericUserInfo {
     url: Option<String>,
@@ -308,8 +318,9 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                 let _entry = object.entry("id").or_insert(id);
                 let verified = object.get("email_verified").cloned().unwrap_or(Value::Null);
                 let _entry = object.entry("emailVerified").or_insert(verified);
-                let image = object.get("picture").cloned().unwrap_or(Value::Null);
-                let _entry = object.entry("image").or_insert(image);
+                if let Some(image) = object.get("picture").cloned() {
+                    let _entry = object.entry("image").or_insert(image);
+                }
             }
             profile
         } else {
@@ -338,10 +349,11 @@ impl OAuthUserInfoHandler for GenericUserInfo {
                             .unwrap_or(Value::Bool(false)),
                     ),
                 );
-                drop(object.insert(
-                    "image".into(),
-                    object.get("picture").cloned().unwrap_or(Value::Null),
-                ));
+                if let Some(image) = object.get("picture").cloned() {
+                    drop(object.insert("image".into(), image));
+                } else {
+                    drop(object.remove("image"));
+                }
             }
             profile
         };

@@ -48,6 +48,7 @@ k256 = { workspace = true }
 aes-gcm = { workspace = true }
 ed25519-dalek = { workspace = true }
 p256 = { workspace = true }
+p384 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 p521 = { workspace = true }
 rsa = { workspace = true }
 chacha20poly1305 = { workspace = true }

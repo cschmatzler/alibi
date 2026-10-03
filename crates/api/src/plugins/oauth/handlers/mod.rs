@@ -469,7 +469,8 @@ pub(super) async fn refresh_tokens_via_provider(
         return handler
             .refresh_access_token_with_context(refresh_token, context)
             .await
-            .map_err(AuthError::internal);
+            .map_err(AuthError::internal)
+            .and_then(|tokens| with_default_access_expiry(provider, tokens));
     }
 
     // Resolve once per real grant, without mutating the shared provider config.
@@ -525,12 +526,15 @@ pub(super) async fn refresh_tokens_via_provider(
         .await
         .map_err(|e| AuthError::internal(format!("Failed to parse refresh response: {e}")))?;
 
-    parse_token_response(
-        token_data,
-        provider
-            .authorization
-            .as_ref()
-            .is_some_and(|policy| policy.allow_missing_access_token),
+    with_default_access_expiry(
+        provider,
+        parse_token_response(
+            token_data,
+            provider
+                .authorization
+                .as_ref()
+                .is_some_and(|policy| policy.allow_missing_access_token),
+        )?,
     )
 }
 
@@ -659,6 +663,7 @@ async fn provider_token_request(
         }
         Some(OAuthTokenEndpointAuth::PrivateKeyJwt) => {
             if provider.client_id.is_empty()
+                || provider.token_url.is_empty()
                 || !provider.client_secret.is_empty()
                 || has_field("client_secret")
             {
@@ -730,6 +735,27 @@ async fn provider_token_request(
         }
     };
     Ok(request.form(&form))
+}
+
+fn with_default_access_expiry(
+    provider: &OAuthProvider,
+    mut tokens: OAuthTokenSet,
+) -> AuthResult<OAuthTokenSet> {
+    if tokens.access_token_expires_at.is_none()
+        && let Some(seconds) = provider
+            .authorization
+            .as_ref()
+            .and_then(|policy| policy.default_access_token_expires_in)
+        && seconds != 0.0
+        && !seconds.is_nan()
+    {
+        tokens.access_token_expires_at =
+            super::providers::remaining_profile::grant_expiry(&serde_json::json!(seconds), false);
+        if tokens.access_token_expires_at.is_none() {
+            return Err(AuthError::internal("Invalid provider token expiry"));
+        }
+    }
+    Ok(tokens)
 }
 
 fn parse_token_response(
@@ -822,7 +848,8 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
                 device_id: device_id.map(str::to_owned),
             })
             .await
-            .map_err(AuthError::internal);
+            .map_err(AuthError::internal)
+            .and_then(|tokens| with_default_access_expiry(provider, tokens));
     }
     let mut form: Vec<(&str, &str)> = vec![
         ("grant_type", "authorization_code"),
@@ -865,12 +892,15 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
         .json()
         .await
         .map_err(|e| AuthError::internal(format!("Failed to parse token response: {e}")))?;
-    parse_token_response(
-        token_data,
-        provider
-            .authorization
-            .as_ref()
-            .is_some_and(|policy| policy.allow_missing_access_token),
+    with_default_access_expiry(
+        provider,
+        parse_token_response(
+            token_data,
+            provider
+                .authorization
+                .as_ref()
+                .is_some_and(|policy| policy.allow_missing_access_token),
+        )?,
     )
 }
 
@@ -984,14 +1014,59 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
     Ok(response)
 }
 
-fn resolve_account_subject(
+pub async fn resolve_oauth_account_key(
     provider: &OAuthProvider,
+    tokens: &OAuthTokenSet,
     response: &mut OAuthUserInfoResponse,
 ) -> AuthResult<()> {
-    if let Some(subject) = provider.account_subject {
+    if let Some(resolver) = provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.account_key.as_ref())
+    {
+        let subject = resolver
+            .0
+            .resolve(super::providers::OAuthAccountKeyContext {
+                tokens: tokens.clone(),
+                profile: response.data.clone(),
+            })
+            .await
+            .map_err(AuthError::internal)?;
+        response.user.id = super::providers::remaining_profile::raw_subject(Some(&subject))
+            .map_err(AuthError::internal)?;
+    } else if let Some(subject) = provider.account_subject {
         response.user.id = subject(&response.data).map_err(AuthError::internal)?;
     }
+    if response
+        .user
+        .id
+        .trim_matches(super::providers::remaining_profile::js_whitespace)
+        .is_empty()
+        || matches!(response.user.id.as_str(), "null" | "undefined")
+    {
+        return Err(AuthError::internal("Invalid provider subject"));
+    }
     Ok(())
+}
+
+pub fn oauth_callback_path(provider_id: &str, provider: &OAuthProvider) -> String {
+    match provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.callback_path.as_deref())
+        .filter(|path| !path.is_empty())
+    {
+        Some(path) if path.starts_with('/') => path.to_owned(),
+        Some(path) => format!("/{path}"),
+        None => format!("/callback/{provider_id}"),
+    }
+}
+pub fn oauth_disable_sign_up_option(provider: &OAuthProvider) -> Option<bool> {
+    provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.disable_sign_up_option)
+        .or(provider.disable_sign_up.then_some(true))
 }
 
 pub(in crate::plugins) fn parse_callback_user_payload(
@@ -1395,7 +1470,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
     clippy::too_many_lines,
     reason = "Keep OAuth account matching, linking policy, and signup branches together for review"
 )]
-async fn process_oauth_sign_in_with_output(
+pub(in crate::plugins) async fn process_oauth_sign_in_with_output(
     identity: OAuthIdentity<'_>,
     policy: &OAuthProcessPolicy,
     tokens: &OAuthTokenSet,
@@ -1433,7 +1508,7 @@ async fn process_oauth_sign_in_with_output(
             .get_user_by_id_record(&existing_account.user_id())
             .await
             .map_err(|error| error.to_string())?
-            .ok_or_else(|| "user not found".to_owned())?;
+            .ok_or_else(|| "unable to link account".to_owned())?;
         validate_provider_identity(
             provider_name,
             profile,
@@ -1501,9 +1576,10 @@ async fn process_oauth_sign_in_with_output(
                         additional_fields,
                         email_verified: Some(verification.as_ref().map_or_else(
                             || {
-                                user.email().is_some_and(|email| {
+                                (user.email().is_some_and(|email| {
                                     email.eq_ignore_ascii_case(&user_info.email)
-                                }) && (user.email_verified() || user_info.email_verified)
+                                }) && user.email_verified())
+                                    || user_info.email_verified
                             },
                             raw_truthy,
                         )),
@@ -1675,9 +1751,10 @@ async fn process_oauth_sign_in_with_output(
                         additional_fields,
                         email_verified: Some(verification.as_ref().map_or_else(
                             || {
-                                linked_user.email().is_some_and(|email| {
+                                (linked_user.email().is_some_and(|email| {
                                     email.eq_ignore_ascii_case(&user_info.email)
-                                }) && (linked_user.email_verified() || user_info.email_verified)
+                                }) && linked_user.email_verified())
+                                    || user_info.email_verified
                             },
                             raw_truthy,
                         )),
@@ -1995,7 +2072,19 @@ async fn sign_in_with_id_token_core(
         });
     }
 
-    resolve_account_subject(provider, &mut user_info).map_err(|_error| AuthError::Upstream {
+    resolve_oauth_account_key(
+        provider,
+        &OAuthTokenSet {
+            access_token: id_token.access_token.clone(),
+            refresh_token: id_token.refresh_token.clone(),
+            id_token: Some(id_token.token.clone()),
+            scopes: id_token.scopes.clone().unwrap_or_default(),
+            ..Default::default()
+        },
+        &mut user_info,
+    )
+    .await
+    .map_err(|_error| AuthError::Upstream {
         status: 401,
         code: "FAILED_TO_GET_USER_INFO",
         message: "Failed to get user info",
@@ -2014,7 +2103,7 @@ async fn sign_in_with_id_token_core(
             ..Default::default()
         },
         provider.disable_implicit_sign_up && !body.request_sign_up.unwrap_or(false)
-            || (provider.disable_sign_up
+            || (oauth_disable_sign_up_option(provider).unwrap_or(false)
                 && provider
                     .authorization
                     .as_ref()
@@ -2115,7 +2204,19 @@ async fn link_with_id_token_core(
         });
     }
 
-    resolve_account_subject(provider, &mut response).map_err(|_error| AuthError::Upstream {
+    resolve_oauth_account_key(
+        provider,
+        &OAuthTokenSet {
+            access_token: id_token.access_token.clone(),
+            refresh_token: id_token.refresh_token.clone(),
+            id_token: Some(id_token.token.clone()),
+            scopes: id_token.scopes.clone().unwrap_or_default(),
+            ..Default::default()
+        },
+        &mut response,
+    )
+    .await
+    .map_err(|_error| AuthError::Upstream {
         status: 401,
         code: "FAILED_TO_GET_USER_INFO",
         message: "Failed to get user info",
@@ -2405,12 +2506,12 @@ async fn initiate_oauth_flow_core(
     let mut url = build_authorization_url(
         request.provider,
         &format!(
-            "{}/callback/{}",
+            "{}{}",
             proxy.as_ref().map_or_else(
                 || auth_base_url(ctx),
                 |flow| flow.effective_auth_base_url.clone()
             ),
-            request.provider_name
+            oauth_callback_path(request.provider_name, request.provider)
         ),
         request.scopes,
         &state,
@@ -2770,7 +2871,11 @@ pub(super) async fn handle_callback(
     let Ok(tokens) = validate_authorization_code_via_provider(
         provider,
         &code,
-        &format!("{}/callback/{}", auth_base_url(ctx), provider_name),
+        &format!(
+            "{}{}",
+            auth_base_url(ctx),
+            oauth_callback_path(provider_name, provider)
+        ),
         provider
             .authorization
             .as_ref()
@@ -2838,7 +2943,10 @@ pub(super) async fn handle_callback(
         }
     };
 
-    if resolve_account_subject(provider, &mut user_info).is_err() {
+    if resolve_oauth_account_key(provider, &tokens, &mut user_info)
+        .await
+        .is_err()
+    {
         return Ok(redirect_on_error("unable_to_get_user_info", None));
     }
 
@@ -2896,7 +3004,7 @@ pub(super) async fn handle_callback(
 
     let disable_sign_up = provider.disable_implicit_sign_up
         && !payload.request_sign_up.unwrap_or(false)
-        || (provider.disable_sign_up
+        || (oauth_disable_sign_up_option(provider).unwrap_or(false)
             && provider
                 .authorization
                 .as_ref()

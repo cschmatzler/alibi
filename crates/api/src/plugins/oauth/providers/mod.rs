@@ -546,11 +546,35 @@ impl std::fmt::Debug for OAuthAuthorizationCodeCallback {
     }
 }
 
+/// Raw provider profile and actual grant tokens for application account authority.
+#[derive(Debug, Clone)]
+pub struct OAuthAccountKeyContext {
+    pub tokens: OAuthTokenSet,
+    pub profile: Value,
+}
+#[async_trait]
+pub trait OAuthAccountKeyResolver: Send + Sync {
+    async fn resolve(&self, context: OAuthAccountKeyContext) -> Result<Value, String>;
+}
+#[derive(Clone)]
+pub struct OAuthAccountKey(pub Arc<dyn OAuthAccountKeyResolver>);
+impl std::fmt::Debug for OAuthAccountKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OAuthAccountKey").finish_non_exhaustive()
+    }
+}
+
 /// Immutable authorization configuration used by the built-in social providers.
 /// Scope entries retain their original order and whitespace; providers may
 /// opt into removing exact duplicates.
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationPolicy {
+    /// Optional application subject resolver; precedes the profile-only factory subject.
+    pub account_key: Option<OAuthAccountKey>,
+    /// Application callback path, normalized relative to the authentication base.
+    pub callback_path: Option<String>,
+    /// Preserve explicit false separately from absent provider signup configuration.
+    pub disable_sign_up_option: Option<bool>,
     /// RP-initiated logout from trusted generic-provider configuration.
     pub end_session: Option<OAuthEndSessionConfig>,
     /// Verify code-grant ID tokens against trusted discovery metadata before profile admission.
@@ -580,6 +604,8 @@ pub struct OAuthAuthorizationPolicy {
     pub supports_profile_mapper: bool,
     /// Published social factories pass through omitted access tokens to userinfo.
     pub allow_missing_access_token: bool,
+    /// Generic-provider fallback, applied only when a grant omits actual expiry.
+    pub default_access_token_expires_in: Option<f64>,
     pub configured_scopes: Vec<String>,
     /// Providers such as PayPal deliberately omit even configured/requested scopes.
     pub omit_scopes: bool,
@@ -644,6 +670,9 @@ pub struct OAuthAuthorizationPolicy {
 impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
+            account_key: None,
+            callback_path: None,
+            disable_sign_up_option: None,
             end_session: None,
             verify_grant_id_token: false,
             id_token_nonce_binding: false,
@@ -659,6 +688,7 @@ impl Default for OAuthAuthorizationPolicy {
             authorization_fragment: None,
             supports_refresh: true,
             supports_profile_mapper: true,
+            default_access_token_expires_in: None,
             allow_missing_access_token: false,
             configured_scopes: Vec::new(),
             omit_scopes: false,

@@ -1,4 +1,7 @@
 mod account;
+pub use account::{OAuthAccountApi, OAuthAccountSelection};
+mod client_assertion;
+pub use client_assertion::OAuthPrivateKeyJwtOptions;
 
 pub(in crate::plugins) mod logout;
 
@@ -23,6 +26,7 @@ use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 pub(in crate::plugins) use handlers::{
     OAuthProcessPolicy, OAuthSignInError, create_account_cookie_headers, process_oauth_sign_in,
 };
+pub use handlers::{oauth_callback_path, oauth_disable_sign_up_option, resolve_oauth_account_key};
 pub use id_token::{
     HttpOAuthJwksSource, OAuthIdTokenClaimsVerifier, OAuthIdTokenConfig, OAuthJwksSelection,
     OAuthJwksSource, OAuthNonceComparison,
@@ -32,18 +36,18 @@ pub use providers::{
     DropboxOptions, FacebookOptions, FigmaOptions, GenericOAuthConfig, GenericOAuthError,
     GenericOAuthMetadata, GenericOAuthResolved, HuggingFaceOptions, KakaoOptions, KickOptions,
     LineOptions, LinearOptions, LinkedInOptions, MicrosoftOptions, MicrosoftProfilePhotoSize,
-    NaverOptions, NotionOptions, OAuthAccountSubject, OAuthAuthorizationCodeCallback,
-    OAuthAuthorizationCodeContext, OAuthAuthorizationCodeHandler, OAuthAuthorizationPolicy,
-    OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthClientAssertion,
-    OAuthClientAssertionContext, OAuthClientAssertionGetter, OAuthConfig, OAuthEndSessionConfig,
-    OAuthIdTokenVerifier, OAuthProfileMapper, OAuthProvider, OAuthRefreshContext,
-    OAuthRefreshTokenHandler, OAuthRefreshTokenParams, OAuthRefreshTokenParamsResolver,
-    OAuthScopeEncoding, OAuthScopeOrder, OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet,
-    OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
-    PayPalEnvironment, PayPalOptions, PaybinOptions, PolarOptions, RailwayOptions, RedditOptions,
-    RobloxOptions, SalesforceEnvironment, SalesforceOptions, SlackOptions, SpotifyOptions,
-    TikTokOptions, TwitchOptions, TwitterOptions, VercelOptions, VkOptions, WeChatLanguage,
-    WeChatOptions, ZoomOptions,
+    NaverOptions, NotionOptions, OAuthAccountKey, OAuthAccountKeyContext, OAuthAccountKeyResolver,
+    OAuthAccountSubject, OAuthAuthorizationCodeCallback, OAuthAuthorizationCodeContext,
+    OAuthAuthorizationCodeHandler, OAuthAuthorizationPolicy, OAuthCallbackUserName,
+    OAuthCallbackUserPayload, OAuthClientAssertion, OAuthClientAssertionContext,
+    OAuthClientAssertionGetter, OAuthConfig, OAuthEndSessionConfig, OAuthIdTokenVerifier,
+    OAuthProfileMapper, OAuthProvider, OAuthRefreshContext, OAuthRefreshTokenHandler,
+    OAuthRefreshTokenParams, OAuthRefreshTokenParamsResolver, OAuthScopeEncoding, OAuthScopeOrder,
+    OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse, PayPalEnvironment, PayPalOptions, PaybinOptions,
+    PolarOptions, RailwayOptions, RedditOptions, RobloxOptions, SalesforceEnvironment,
+    SalesforceOptions, SlackOptions, SpotifyOptions, TikTokOptions, TwitchOptions, TwitterOptions,
+    VercelOptions, VkOptions, WeChatLanguage, WeChatOptions, ZoomOptions,
 };
 pub(in crate::plugins) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,
