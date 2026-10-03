@@ -4334,7 +4334,8 @@ export function compareValues(
         urlKeys.has(key) ||
         key.endsWith("URL") ||
         key.endsWith("Url") ||
-        key === "redirect_uri"
+        key === "redirect_uri" ||
+        key === "post_logout_redirect_uri"
       ) {
         const ap = urlParts(a, context.leftBaseURL, context.leftOAuthURL);
         const bp = urlParts(b, context.rightBaseURL, context.rightOAuthURL);

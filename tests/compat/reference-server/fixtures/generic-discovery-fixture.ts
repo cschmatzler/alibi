@@ -83,6 +83,11 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
     "required",
     "oidc",
     "mapped",
+    "logout",
+    "logout-configured",
+    "logout-disabled",
+    "logout-invalid",
+    "logout-no-return",
   ]) {
     const path = `/__test/profiles/generic-discovery-${mode}/api/auth`;
     profiles.set(
@@ -107,7 +112,17 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
                       userInfoUrl: `${transport.url}user/configured`,
                     }
                   : {}),
-                disableProviderLogout: true,
+                disableProviderLogout: !mode.startsWith("logout") || mode === "logout-disabled",
+                ...(mode.startsWith("logout") && mode !== "logout-no-return"
+                  ? { postLogoutRedirectURI: "/signed-out" }
+                  : {}),
+                ...(mode === "logout-configured"
+                  ? {
+                      endSessionEndpoint:
+                        "https://configured.example.invalid/logout?keep=1&id_token_hint=old&id_token_hint=duplicate",
+                    }
+                  : {}),
+                ...(mode === "logout-invalid" ? { endSessionEndpoint: "http://[bad" } : {}),
                 requireIdTokenVerification: mode === "required",
                 scopes: ["profile"],
                 tokenUrlParams: { resource: "discovery-resource" },
@@ -129,6 +144,20 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
                     }
                   : {}),
               },
+              ...(mode === "logout"
+                ? ["invalid", "backup"].map((providerId) => ({
+                    providerId,
+                    clientId: "discovery-client",
+                    clientSecret: "discovery-secret",
+                    authorizationUrl: "https://unused.example.invalid/authorize",
+                    tokenUrl: `${transport.url}token/configured`,
+                    endSessionEndpoint:
+                      providerId === "invalid"
+                        ? "http://[bad"
+                        : "https://backup.example.invalid/logout",
+                    postLogoutRedirectURI: "/signed-out",
+                  }))
+                : []),
             ],
           }),
         ],

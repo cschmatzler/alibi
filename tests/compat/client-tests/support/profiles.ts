@@ -23,6 +23,11 @@ export const FIXTURE_PROFILES = [
     "required",
     "oidc",
     "mapped",
+    "logout",
+    "logout-configured",
+    "logout-disabled",
+    "logout-invalid",
+    "logout-no-return",
   ] as const),
   ...variants("generic-token-", [
     "post",

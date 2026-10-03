@@ -71,6 +71,13 @@ use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+/// Trusted OIDC logout endpoint and optional default return URI.
+#[derive(Debug, Clone)]
+pub struct OAuthEndSessionConfig {
+    pub endpoint: String,
+    pub post_logout_redirect_uri: Option<String>,
+}
+
 /// Configuration for the OAuth plugin, containing all registered providers.
 #[derive(Clone, Default)]
 pub struct OAuthConfig {
@@ -509,6 +516,8 @@ impl std::fmt::Debug for OAuthAuthorizationCodeCallback {
 /// opt into removing exact duplicates.
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationPolicy {
+    /// RP-initiated logout from trusted generic-provider configuration.
+    pub end_session: Option<OAuthEndSessionConfig>,
     /// Verify code-grant ID tokens against trusted discovery metadata before profile admission.
     pub verify_grant_id_token: bool,
     /// Bind discovered ID tokens to a nonce in authenticated OAuth state.
@@ -596,6 +605,7 @@ pub struct OAuthAuthorizationPolicy {
 impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
+            end_session: None,
             verify_grant_id_token: false,
             id_token_nonce_binding: false,
             discovery_openid_scope: false,

@@ -117,6 +117,11 @@ pub(crate) async fn router(
         "required",
         "oidc",
         "mapped",
+        "logout",
+        "logout-configured",
+        "logout-disabled",
+        "logout-invalid",
+        "logout-no-return",
     ] {
         let path = format!("/__test/profiles/generic-discovery-{mode}/api/auth");
         let settings = config.clone().base_path(&path);
@@ -127,6 +132,16 @@ pub(crate) async fn router(
             generic.authorization_url = Some("https://configured.example.invalid/authorize".into());
             generic.token_url = Some(format!("{}/token/configured", fixture.base));
             generic.user_info_url = Some(format!("{}/user/configured", fixture.base));
+        }
+        generic.disable_provider_logout = !mode.starts_with("logout") || mode == "logout-disabled";
+        if mode.starts_with("logout") && mode != "logout-no-return" {
+            generic.post_logout_redirect_uri = Some("/signed-out".into());
+        }
+        if mode == "logout-configured" {
+            generic.end_session_endpoint = Some("https://configured.example.invalid/logout?keep=1&id_token_hint=old&id_token_hint=duplicate".into());
+        }
+        if mode == "logout-invalid" {
+            generic.end_session_endpoint = Some("http://[bad".into());
         }
         generic.require_id_token_verification = mode == "required";
         generic.provider.scopes = vec!["profile".into()];
@@ -150,6 +165,23 @@ pub(crate) async fn router(
             .await
             .map_err(|e| better_auth::AuthError::config(e.to_string()))?
         {
+            if mode == "logout" {
+                for (id, endpoint) in [
+                    ("invalid", "http://[bad"),
+                    ("backup", "https://backup.example.invalid/logout"),
+                ] {
+                    let mut provider = resolved.provider.clone();
+                    provider
+                        .authorization
+                        .as_mut()
+                        .unwrap()
+                        .end_session
+                        .as_mut()
+                        .unwrap()
+                        .endpoint = endpoint.into();
+                    plugin = plugin.add_provider(id, provider);
+                }
+            }
             plugin = plugin.add_provider("discovery", resolved.provider);
         }
         let auth = Arc::new(
