@@ -1953,7 +1953,6 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
         ))
     }
 
-
     /// Read the managed signing keyring on this transaction's connection.
     async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
         Err(crate::AuthError::config(

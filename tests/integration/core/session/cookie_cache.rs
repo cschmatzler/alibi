@@ -307,61 +307,89 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn unsupported_enabled_cache_strategies_fail_at_public_initialization_before_issuing_authority()
-     {
+    async fn authenticated_jwt_and_jwe_cache_retains_owner_after_revocation_but_rejects_tampering()
+    {
         type Schema =
             better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-        let db = Database::connect("sqlite::memory:").await.unwrap();
-        run_migrations(&db).await.unwrap();
         for strategy in [
             better_auth_core::CookieCacheStrategy::Jwt,
             better_auth_core::CookieCacheStrategy::Jwe,
         ] {
+            let db = Database::connect("sqlite::memory:").await.unwrap();
+            run_migrations(&db).await.unwrap();
             let config = AuthConfig::new("cache-native-initialization-secret-at-least-32")
+                .base_url("http://localhost:42594")
                 .session_cookie_cache(CookieCacheConfig {
                     enabled: true,
-                    strategy: strategy.clone(),
-                    ..Default::default()
-                });
-            let result = AuthBuilder::<Schema>::new(config.clone())
-                .store(SeaOrmStore::<Schema>::new(config, db.clone()))
-                .plugin(EmailPasswordPlugin::new())
-                .build()
-                .await;
-            assert!(matches!(
-                result,
-                Err(better_auth_core::AuthError::Config(_))
-            ));
-            let users = db
-                .query_all_raw(Statement::from_string(
-                    db.get_database_backend(),
-                    "SELECT * FROM users",
-                ))
-                .await
-                .unwrap();
-            let sessions = db
-                .query_all_raw(Statement::from_string(
-                    db.get_database_backend(),
-                    "SELECT * FROM sessions",
-                ))
-                .await
-                .unwrap();
-            assert!(users.is_empty());
-            assert!(sessions.is_empty());
-            let disabled = AuthConfig::new("cache-native-initialization-secret-at-least-32")
-                .session_cookie_cache(CookieCacheConfig {
-                    enabled: false,
                     strategy,
                     ..Default::default()
                 });
-            assert!(
-                AuthBuilder::<Schema>::new(disabled.clone())
-                    .store(SeaOrmStore::<Schema>::new(disabled, db.clone()))
-                    .plugin(EmailPasswordPlugin::new())
-                    .build()
-                    .await
-                    .is_ok()
+            let auth = AuthBuilder::<Schema>::new(config.clone())
+                .store(SeaOrmStore::<Schema>::new(config, db))
+                .plugin(EmailPasswordPlugin::new())
+                .build()
+                .await
+                .unwrap();
+            let signup = auth.handle_request(request(HttpMethod::Post,"/api/auth/sign-up/email",Some(json!({"name":"JWT Owner","email":"jwt-owner@example.test","password":"password123"})),None)).await.unwrap();
+            assert_eq!(signup.status, 200);
+            let body: Value = serde_json::from_slice(&signup.body).unwrap();
+            let token = body["token"].as_str().unwrap();
+            let pairs: Vec<_> = signup
+                .headers
+                .iter()
+                .filter(|(name, _)| name.eq_ignore_ascii_case("set-cookie"))
+                .map(|(_, value)| value.split(';').next().unwrap().to_owned())
+                .collect();
+            let cookies = pairs.join("; ");
+            auth.store().delete_session(token).await.unwrap();
+            let cached = auth
+                .handle_request(request(
+                    HttpMethod::Get,
+                    "/api/auth/get-session",
+                    None,
+                    Some(cookies.clone()),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(cached.status, 200);
+            let cached: Value = serde_json::from_slice(&cached.body).unwrap();
+            assert_eq!(cached["session"]["token"], token);
+            assert_eq!(cached["user"]["id"], body["user"]["id"]);
+            let cache = pairs
+                .iter()
+                .find(|pair| pair.starts_with("better-auth.session_data="))
+                .unwrap();
+            let tampered = cookies.replace(cache, &format!("{cache}x"));
+            let denied = auth
+                .handle_request(request(
+                    HttpMethod::Get,
+                    "/api/auth/get-session",
+                    None,
+                    Some(tampered),
+                ))
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::from_slice::<Value>(&denied.body).unwrap(),
+                Value::Null
             );
+            let mut bypass = request(
+                HttpMethod::Get,
+                "/api/auth/get-session",
+                None,
+                Some(cookies),
+            );
+            drop(
+                bypass
+                    .query
+                    .insert("disableCookieCache".into(), "true".into()),
+            );
+            let denied = auth.handle_request(bypass).await.unwrap();
+            assert_eq!(
+                serde_json::from_slice::<Value>(&denied.body).unwrap(),
+                Value::Null
+            );
+            assert!(auth.store().get_session(token).await.unwrap().is_none());
         }
     }
 }

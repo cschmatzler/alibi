@@ -208,6 +208,8 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
     let mut router = Router::new();
     let mut profiles = HashMap::new();
     for mode in [
+        "jwt-interactions",
+        "jwe-interactions",
         "jwe-old",
         "jwe-retained",
         "jwe-retired",
@@ -247,7 +249,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             "negative-infinite" => f64::NEG_INFINITY,
             _ => 300.0,
         };
-        let version = if mode.starts_with("version") || mode == "interactions" {
+        let version = if mode.starts_with("version") || mode.ends_with("interactions") {
             CookieCacheVersion::Resolver(application.clone())
         } else {
             CookieCacheVersion::Literal(if mode == "date-version" {
@@ -262,10 +264,12 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             .session_cookie_cache(CookieCacheConfig {
                 enabled: mode != "disabled",
                 strategy: match mode {
-                    "jwe" | "jwe-old" | "jwe-retained" | "jwe-retired" => {
+                    "jwe" | "jwe-interactions" | "jwe-old" | "jwe-retained" | "jwe-retired" => {
                         better_auth_core::CookieCacheStrategy::Jwe
                     }
-                    "jwt" | "managed" => better_auth_core::CookieCacheStrategy::Jwt,
+                    "jwt" | "jwt-interactions" | "managed" => {
+                        better_auth_core::CookieCacheStrategy::Jwt
+                    }
                     _ => better_auth_core::CookieCacheStrategy::Compact,
                 },
                 max_age,
@@ -305,7 +309,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             FieldConfig::new(json!({"type":"string"})).default_value(json!("cache-public-label")),
         );
         let mut store = SeaOrmStore::<ApplicationSchema>::new(config.clone(), db.clone());
-        if mode == "interactions" {
+        if mode.ends_with("interactions") {
             store = store.hook(SessionTokens(state.clone()));
         }
         let mut builder = AuthBuilder::<ApplicationSchema>::new(config.clone())
@@ -345,7 +349,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                     ..Default::default()
                 }));
         }
-        if mode == "interactions" {
+        if mode.ends_with("interactions") {
             let before = application.clone();
             let after = application.clone();
             builder = builder
