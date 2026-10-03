@@ -85,6 +85,7 @@ export function createTwoFactorPolicyFixture(
       "two-factor-lockout-fractional",
       "two-factor-lockout-zero",
       "two-factor-lockout-disabled",
+      "two-factor-skip-cookie-attributes",
       "two-factor-skip-verification",
       "two-factor-skip-user-hook",
       "two-factor-skip-session-cancel",
@@ -120,6 +121,28 @@ export function createTwoFactorPolicyFixture(
           betterAuth({
             ...base,
             appName: "Fixture Auth",
+            ...(name === "two-factor-skip-cookie-attributes"
+              ? {
+                  advanced: {
+                    ...base.advanced,
+                    useSecureCookies: false,
+                    defaultCookieAttributes: {
+                      maxAge: 99,
+                      path: `/__test/profiles/${name}/api/auth`,
+                      domain: "localhost",
+                      sameSite: "strict" as const,
+                      httpOnly: false,
+                      secure: true,
+                      expires: new Date("2027-01-01T00:00:00Z"),
+                      partitioned: true,
+                    },
+                    cookies: {
+                      two_factor: { attributes: { maxAge: 121.9, httpOnly: true } },
+                      trust_device: { attributes: { maxAge: 321.9, httpOnly: true } },
+                    },
+                  },
+                }
+              : {}),
             basePath: `/__test/profiles/${name}/api/auth`,
             ...(name === "two-factor-trust-cleanup-disabled"
               ? { verification: { ...base.verification, disableCleanup: true } }

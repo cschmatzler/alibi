@@ -35,6 +35,22 @@ and `partitioned`. Cookie emitters such as `create_session_cookie` now return
 publishing headers. The published 400-day limits apply at emission, rather than
 initialization. Clearing sets Max-Age to zero while retaining the other attributes.
 
+```rust
+use better_auth::{AuthConfig, AuthResult};
+use better_auth::config::CookieAttributes;
+use better_auth::utils::cookie_utils::create_session_cookie;
+
+fn session_header(token: &str, config: &AuthConfig) -> AuthResult<String> {
+    create_session_cookie(token, config)
+}
+
+let attributes = CookieAttributes {
+    max_age: Some(121.9), // migrate integer literals to floating point
+    partitioned: Some(true),
+    ..Default::default()
+};
+```
+
 Session-token issuance uses the actual session lifetime or omits Max-Age for a
 browser session. Session-cache cookies use their own configured `session_data`
 age; a zero age expires the cookie but retains the compact payload's 60-second

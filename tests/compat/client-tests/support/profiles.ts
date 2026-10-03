@@ -864,6 +864,7 @@ export const FIXTURE_PROFILES = [
   "two-factor-lockout-fractional",
   "two-factor-lockout-zero",
   "two-factor-lockout-disabled",
+  "two-factor-skip-cookie-attributes",
   "two-factor-skip-verification",
   "two-factor-totp-default",
   "two-factor-totp-config",

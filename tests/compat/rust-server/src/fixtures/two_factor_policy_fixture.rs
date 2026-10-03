@@ -232,6 +232,7 @@ pub(crate) async fn router(
         "two-factor-lockout-fractional",
         "two-factor-lockout-zero",
         "two-factor-lockout-disabled",
+        "two-factor-skip-cookie-attributes",
         "two-factor-skip-verification",
         "two-factor-skip-user-hook",
         "two-factor-skip-session-cancel",
@@ -282,6 +283,37 @@ pub(crate) async fn router(
         backup_configs.insert(name.to_owned(), backup.clone());
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
+        if name == "two-factor-skip-cookie-attributes" {
+            use better_auth_core::{CookieAttributes, CookieOverride, SameSite};
+            config.advanced.use_secure_cookies = Some(false);
+            config.advanced.default_cookie_attributes = CookieAttributes {
+                max_age: Some(99.0),
+                path: Some(path.clone()),
+                domain: Some("localhost".into()),
+                same_site: Some(SameSite::Strict),
+                http_only: Some(false),
+                secure: Some(true),
+                expires: Some(
+                    chrono::DateTime::parse_from_rfc3339("2027-01-01T00:00:00Z")
+                        .unwrap()
+                        .with_timezone(&chrono::Utc),
+                ),
+                partitioned: Some(true),
+            };
+            for (logical, age) in [("two_factor", 121.9), ("trust_device", 321.9)] {
+                config.advanced.cookies.insert(
+                    logical.into(),
+                    CookieOverride {
+                        attributes: CookieAttributes {
+                            max_age: Some(age),
+                            http_only: Some(true),
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    },
+                );
+            }
+        }
         config.app_name = "Fixture Auth".to_owned();
         if name == "two-factor-trust-cleanup-disabled" {
             config.verification.disable_cleanup = true;

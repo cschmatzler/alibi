@@ -48,14 +48,18 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         let path = format!("/__test/profiles/physical-cookie-{mode}/api/auth");
         let mut config = base.clone().base_path(&path);
         config.advanced.use_secure_cookies = match mode {
-            "cross-localhost" | "cross-ipv6" | "cross-inferred" | "cross-proxy" | "https-default" | "dynamic-https"
-            | "dynamic-http" | "dynamic-auto" => None,
+            "cross-localhost" | "cross-ipv6" | "cross-inferred" | "cross-proxy"
+            | "https-default" | "dynamic-https" | "dynamic-http" | "dynamic-auto" => None,
             "secure-prefix" | "secure-custom" | "secure-alias" => Some(true),
             _ => Some(false),
         };
         if mode.starts_with("cross-") {
             config = config
-                .base_url(match mode { "cross-localhost" => "https://localhost:4377", "cross-ipv6" => "https://[::1]:4377", _ => "https://cookie177.test" })
+                .base_url(match mode {
+                    "cross-localhost" => "https://localhost:4377",
+                    "cross-ipv6" => "https://[::1]:4377",
+                    _ => "https://cookie177.test",
+                })
                 .cross_sub_domain_cookies_from_base_url();
             config.advanced.trust_forwarded_host = true;
             config.trusted_origins.extend([

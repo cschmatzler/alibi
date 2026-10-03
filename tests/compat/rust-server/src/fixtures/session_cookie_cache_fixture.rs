@@ -371,6 +371,13 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                                 SameSite::Lax
                             }),
                             http_only: Some(logical != "session_data"),
+                            expires: (logical == "session_data").then(|| {
+                                chrono::DateTime::parse_from_rfc3339("2027-01-01T00:00:00Z")
+                                    .unwrap()
+                                    .with_timezone(&chrono::Utc)
+                            }),
+                            partitioned: (logical == "session_data").then_some(true),
+                            secure: (logical == "session_data").then_some(true),
                             ..Default::default()
                         },
                         ..Default::default()

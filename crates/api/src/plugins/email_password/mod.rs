@@ -837,8 +837,9 @@ fn append_dont_remember_cookie(
 
 /// Core sign-up logic.
 ///
-/// Returns `(response, Option<session_token>)`. The session token is present
-/// only when `auto_sign_in` is true.
+/// Returns the response and optional rendered session headers. Real automatic
+/// sign-in renders once inside the signup transaction; synthetic duplicates
+/// return no headers.
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.

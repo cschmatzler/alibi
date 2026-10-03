@@ -359,7 +359,9 @@ pub(crate) async fn router(
     for name in ["siwe", "siwe-email", "siwe-contract", "siwe-cookie-limit"] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
-        if name == "siwe-cookie-limit" { config.session.expires_in = chrono::Duration::seconds(34_560_001); }
+        if name == "siwe-cookie-limit" {
+            config.session.expires_in = chrono::Duration::seconds(34_560_001);
+        }
         let mut options = SiweConfig::new(
             "HTTPS://Fixture.Example/ignored",
             Arc::new(Nonce(state.clone())),
