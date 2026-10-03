@@ -1,0 +1,13 @@
+diff --git a/crates/api/src/plugins/oauth/handlers/mod.rs b/crates/api/src/plugins/oauth/handlers/mod.rs
+index 2be43c63..7cd3e96f 100644
+--- a/crates/api/src/plugins/oauth/handlers/mod.rs
++++ b/crates/api/src/plugins/oauth/handlers/mod.rs
+@@ -2324,7 +2324,7 @@ async fn initiate_oauth_flow_core(
+ ///
+ /// # Errors
+ /// Returns an error when validation, storage, or an application callback fails.
+-pub(super) async fn handle_social_sign_in(
++pub(in crate::plugins) async fn handle_social_sign_in(
+     config: &OAuthConfig,
+     req: &AuthRequest,
+     ctx: &AuthContext<impl better_auth_core::AuthSchema>,

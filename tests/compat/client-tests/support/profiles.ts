@@ -13,6 +13,20 @@ function variants<P extends string, S extends string>(
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  ...variants("generic-token-", [
+    "post",
+    "basic",
+    "none",
+    "manual",
+    "default-none",
+    "default-post",
+    "basic-secret",
+    "none-secret",
+    "incomplete",
+    "conflict",
+    "refresh-basic-secret",
+    "refresh-none-secret",
+  ] as const),
   ...(
     [
       "notion",
