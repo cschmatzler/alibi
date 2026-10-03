@@ -97,7 +97,16 @@ where
             seat.push(" WHERE ");
             seat.compare(team::Model::TABLE, "id", " = ", team_id);
             seat.push(" AND ");
-            seat.compare(team::Model::TABLE, "member_count", " < ", maximum);
+            if exec.engine() == crate::pool::Engine::Postgres {
+                // Source's text Number parameter is parsed as the physical
+                // bigint counter, rather than promoting that counter to float8.
+                seat.column(team::Model::TABLE, "member_count");
+                seat.push(" < ");
+                seat.bind(ryu_js::Buffer::new().format(maximum).to_owned());
+                seat.push("::bigint");
+            } else {
+                seat.compare(team::Model::TABLE, "member_count", " < ", maximum);
+            }
             if exec.fetch_scalar::<i64>(seat).await?.unwrap_or_default() == 0 {
                 return Ok(AddTeamMemberResult::LimitReached);
             }

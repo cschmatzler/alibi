@@ -442,7 +442,14 @@ pub(crate) fn bind_page(sql: &mut crate::sql::Sql, limit: Option<f64>, offset: O
     for (clause, number) in [(" LIMIT ", limit), (" OFFSET ", offset)] {
         if let Some(number) = number {
             sql.push(clause);
-            sql.bind(number);
+            if sql.engine() == crate::pool::Engine::Postgres {
+                // node-postgres sends Number parameters as text. Binding float8
+                // instead lets PostgreSQL round fractional pages to bigint.
+                sql.bind(ryu_js::Buffer::new().format(number).to_owned());
+                sql.push("::bigint");
+            } else {
+                sql.bind(number);
+            }
         }
     }
 }
