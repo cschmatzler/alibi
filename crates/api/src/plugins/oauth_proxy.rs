@@ -745,7 +745,7 @@ impl OAuthProxyPlugin {
                     ),
                     None,
                     &ctx.config,
-                ),
+                )?,
             );
         }
         if let Some(account) = outcome.account_cookie.as_ref() {
