@@ -91,7 +91,7 @@ those documented by the scoped stateless lifecycle implementation.
 Initial base `98bfe876`; tested code checkpoint `28d6d7f3`. Rebased production
 head `d4de08e7` on `02ed8058`, which adds merged PRs #401 (cookie policy) and
 #400 (generic OAuth token parameters). `rebase-range-diff.log` reports both
-commits unchanged. `incoming-shared-review.diff` records the constructor/cookie
+commits unchanged. `incoming-shared-review.diff.gz` records the constructor/cookie
 review: this owner's static HTTP origin/default cookie selection is unchanged;
 no incoming changes touch native optional records or either plugin. No passing
 checks were repeated for this unrelated rebase or evidence documentation.
