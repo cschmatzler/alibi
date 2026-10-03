@@ -2,7 +2,11 @@
 use super::{Backend, Db, TestResult, backend_tests};
 use better_auth::plugins::{EmailPasswordPlugin, PasskeyPlugin, TwoFactorConfig, TwoFactorPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use better_auth_core::{AuthRequest, AuthResponse, CreatePasskey, HttpMethod};
+use better_auth_core::types::UpdatePasskeyAuthentication;
+use better_auth_core::{
+    AuthRequest, AuthResponse, CreatePasskey, CreateTwoFactor, HttpMethod, UpdateTwoFactor,
+};
+use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -73,28 +77,194 @@ async fn without_database_optional_record_workflow() -> TestResult {
         .build()
         .await?;
     workflow(&auth, "without-database").await?;
+    // Retain live records before constructing a fresh instance. A restart must
+    // lose actual provisioned state, rather than merely miss an arbitrary ID.
+    let owner = auth
+        .store()
+        .get_user_by_email("optional172@fixture.test")
+        .await?
+        .unwrap();
+    let factor = auth
+        .store()
+        .create_two_factor(CreateTwoFactor {
+            user_id: owner.id.clone(),
+            secret: "retained-secret".into(),
+            backup_codes: "retained-backup".into(),
+            failed_verification_count: None,
+            ..Default::default()
+        })
+        .await?;
+    let sibling = auth
+        .store()
+        .create_two_factor(CreateTwoFactor {
+            user_id: owner.id.clone(),
+            secret: "sibling-secret".into(),
+            backup_codes: "sibling-backup".into(),
+            ..Default::default()
+        })
+        .await?;
+    assert_eq!(
+        auth.store()
+            .increment_two_factor_failure(&factor.id)
+            .await?
+            .unwrap()
+            .failed_verification_count,
+        Some(1.0)
+    );
+    let now = Utc::now();
+    let until = now + Duration::minutes(1);
+    assert!(
+        auth.store()
+            .set_two_factor_lock_if_count_at_least(&factor.id, 1.5, until)
+            .await?
+            .is_none()
+    );
+    assert!(
+        auth.store()
+            .set_two_factor_lock_if_count_at_least(&factor.id, 1.0, until)
+            .await?
+            .is_some()
+    );
+    assert!(
+        auth.store()
+            .clear_expired_two_factor_lock(&factor.id, now)
+            .await?
+            .is_none()
+    );
+    let cleared = auth
+        .store()
+        .clear_expired_two_factor_lock(&factor.id, until)
+        .await?
+        .unwrap();
+    assert_eq!(cleared.failed_verification_count, Some(0.0));
+    assert_eq!(cleared.locked_until, None);
+    let rotated = auth
+        .store()
+        .update_two_factor(
+            &factor.id,
+            UpdateTwoFactor {
+                secret: Some("rotated-secret".into()),
+                ..Default::default()
+            },
+        )
+        .await?
+        .unwrap();
+    assert_eq!(rotated.created_at, factor.created_at);
+    assert_eq!(rotated.updated_at, factor.updated_at);
+    let mut claims = tokio::task::JoinSet::new();
+    for index in 0..4 {
+        let store = Arc::clone(auth.store());
+        let id = factor.id.clone();
+        drop(claims.spawn(async move {
+            store
+                .compare_and_swap_two_factor_backup_codes(
+                    &id,
+                    "retained-backup",
+                    &format!("claimed-{index}"),
+                )
+                .await
+        }));
+    }
+    let mut winners = 0;
+    while let Some(claim) = claims.join_next().await {
+        if claim?? {
+            winners += 1;
+        }
+    }
+    assert_eq!(winners, 1);
+    auth.store().reset_two_factor_failures(&factor.id).await?;
+    assert_eq!(
+        auth.store()
+            .update_two_factor(&sibling.id, UpdateTwoFactor::default())
+            .await?
+            .unwrap()
+            .backup_codes,
+        "sibling-backup"
+    );
+    let key = auth
+        .store()
+        .create_passkey(passkey_input(&owner.id))
+        .await?;
+    assert_eq!(
+        auth.store()
+            .get_passkey_by_credential_id(&key.credential_id)
+            .await?
+            .unwrap()
+            .id,
+        key.id
+    );
+    let update = || UpdatePasskeyAuthentication {
+        credential: "verified-private-credential".into(),
+        counter: 7,
+        backed_up: true,
+        device_type: "multiDevice".into(),
+    };
+    let authenticated = auth
+        .store()
+        .update_passkey_authentication(&key.id, update())
+        .await?
+        .unwrap();
+    assert_eq!(authenticated.counter, 7);
+    assert!(authenticated.backed_up);
+    assert_eq!(authenticated.credential, "verified-private-credential");
+    assert_eq!(authenticated.created_at, key.created_at);
     let restarted = plugins(AuthBuilder::without_database(config))
         .build()
         .await?;
     assert!(
         restarted
             .store()
-            .get_two_factor_by_user_id("missing")
+            .get_two_factor_by_user_id(&owner.id)
             .await?
             .is_none()
     );
     assert!(
         restarted
             .store()
-            .list_passkeys_by_user("missing")
+            .get_passkey_by_credential_id(&key.credential_id)
+            .await?
+            .is_none()
+    );
+    assert!(
+        restarted
+            .store()
+            .list_passkeys_by_user(&owner.id)
             .await?
             .is_empty()
     );
+    auth.store().delete_two_factor(&owner.id).await?;
+    assert!(
+        auth.store()
+            .update_two_factor(&factor.id, UpdateTwoFactor::default())
+            .await?
+            .is_none()
+    );
+    assert!(
+        auth.store()
+            .increment_two_factor_failure(&factor.id)
+            .await?
+            .is_none()
+    );
+    assert!(
+        !auth
+            .store()
+            .compare_and_swap_two_factor_backup_codes(&factor.id, "retained-backup", "resurrected")
+            .await?
+    );
+    auth.store().delete_passkey(&key.id).await?;
+    assert!(
+        auth.store()
+            .update_passkey_authentication(&key.id, update())
+            .await?
+            .is_none()
+    );
+    assert!(auth.store().get_passkey_by_id(&key.id).await?.is_none());
     Ok(())
 }
 async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResult {
     let mut trace = Vec::new();
     let signup = auth.handle_request(request("/sign-up/email", Some(json!({"name":"Owner", "email":"optional172@fixture.test", "password":"Password123!"})), "")).await?;
+    observe(&mut trace, "/sign-up/email", &signup);
     assert_eq!(signup.status, 200, "{}", body(&signup));
     let user_id = body(&signup)["user"]["id"].as_str().unwrap().to_owned();
     let cookie = cookies(&signup);
@@ -107,6 +277,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             "",
         ))
         .await?;
+    observe(&mut trace, "/sign-up/email", &other);
     assert_eq!(other.status, 200);
     let other_cookie = cookies(&other);
     let enable = auth
@@ -116,7 +287,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             &cookie,
         ))
         .await?;
-    trace.push(json!({"path":"/two-factor/enable", "status":enable.status, "body":String::from_utf8_lossy(&enable.body), "cookies":enable.headers.get_all("set-cookie").collect::<Vec<_>>() }));
+    observe(&mut trace, "/two-factor/enable", &enable);
     if let Ok(directory) = std::env::var("PLUGIN_172_EVIDENCE") {
         std::fs::write(
             std::path::Path::new(&directory).join(format!("{owner}-workflow.json")),
@@ -146,7 +317,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
         ))
         .await?;
     assert_eq!(verify.status, 200, "{}", body(&verify));
-    trace.push(json!({"path":"/two-factor/verify-backup-code", "status":verify.status, "body":String::from_utf8_lossy(&verify.body)}));
+    observe(&mut trace, "/two-factor/verify-backup-code", &verify);
     assert_ne!(
         auth.store()
             .get_two_factor_by_user_id(&user_id)
@@ -162,22 +333,9 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             &enabled_cookie,
         ))
         .await?;
+    observe(&mut trace, "/two-factor/verify-backup-code", &replay);
     assert_eq!(replay.status, 401, "{}", body(&replay));
-    let passkey = auth
-        .store()
-        .create_passkey(CreatePasskey {
-            user_id: user_id.clone(),
-            name: Some("Original".into()),
-            credential_id: "Y3JlZGVudGlhbDE3Mg".into(),
-            public_key: "fixture-public-key".into(),
-            counter: 1,
-            device_type: "singleDevice".into(),
-            backed_up: false,
-            transports: Some("internal".into()),
-            credential: "private-credential".into(),
-            aaguid: None,
-        })
-        .await?;
+    let passkey = auth.store().create_passkey(passkey_input(&user_id)).await?;
     let list = auth
         .handle_request(request(
             "/passkey/list-user-passkeys",
@@ -185,6 +343,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             &enabled_cookie,
         ))
         .await?;
+    observe(&mut trace, "/passkey/list-user-passkeys", &list);
     assert_eq!(list.status, 200, "{}", body(&list));
     assert_eq!(body(&list)[0]["id"], passkey.id);
     assert!(!String::from_utf8_lossy(&list.body).contains("private-credential"));
@@ -196,6 +355,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
                 &other_cookie,
             ))
             .await?;
+        observe(&mut trace, path, &denied);
         assert_eq!(denied.status, 401);
     }
     assert_eq!(
@@ -214,6 +374,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             &enabled_cookie,
         ))
         .await?;
+    observe(&mut trace, "/passkey/update-passkey", &rename);
     assert_eq!(rename.status, 200, "{}", body(&rename));
     assert_eq!(
         auth.store()
@@ -231,6 +392,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             &enabled_cookie,
         ))
         .await?;
+    observe(&mut trace, "/passkey/delete-passkey", &remove);
     assert_eq!(remove.status, 200);
     assert!(auth.store().get_passkey_by_id(&passkey.id).await?.is_none());
     let mut disable_request = request(
@@ -244,6 +406,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             .insert("disableCookieCache".into(), "true".into()),
     );
     let disable = auth.handle_request(disable_request).await?;
+    observe(&mut trace, "/two-factor/disable", &disable);
     assert_eq!(disable.status, 200, "{}", body(&disable));
     assert!(
         auth.store()
@@ -251,8 +414,6 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             .await?
             .is_none()
     );
-    trace.push(json!({"path":"/passkey/list-user-passkeys", "status":list.status, "body":String::from_utf8_lossy(&list.body)}));
-    trace.push(json!({"path":"/two-factor/disable", "status":disable.status, "body":String::from_utf8_lossy(&disable.body)}));
     if let Ok(directory) = std::env::var("PLUGIN_172_EVIDENCE") {
         std::fs::write(
             std::path::Path::new(&directory).join(format!("{owner}-workflow.json")),
@@ -260,4 +421,27 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
         )?;
     }
     Ok(())
+}
+
+fn passkey_input(user_id: &str) -> CreatePasskey {
+    CreatePasskey {
+        user_id: user_id.to_owned(),
+        name: Some("Original".into()),
+        credential_id: "Y3JlZGVudGlhbDE3Mg".into(),
+        public_key: "fixture-public-key".into(),
+        counter: 1,
+        device_type: "singleDevice".into(),
+        backed_up: false,
+        transports: Some("internal".into()),
+        credential: "private-credential".into(),
+        aaguid: None,
+    }
+}
+
+fn observe(trace: &mut Vec<Value>, path: &str, response: &AuthResponse) {
+    trace.push(json!({
+        "path": path, "status": response.status,
+        "body": String::from_utf8_lossy(&response.body),
+        "cookies": response.headers.get_all("set-cookie").collect::<Vec<_>>(),
+    }));
 }
