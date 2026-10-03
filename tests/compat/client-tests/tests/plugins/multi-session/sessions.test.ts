@@ -3,6 +3,7 @@ import { createHmac } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
 import { multiSessionClient } from "better-auth/client/plugins";
+import { CookieJar } from "tough-cookie";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -567,7 +568,63 @@ compatScenario(
     expect(selected.status).toBe(200);
     const selection = await selected.json();
     expect(selection.session.token).toBe(rotated.token);
-    return { issued, before, rotated, after, selection };
+    // Logout acts on truthy signed proofs only; a valid signature of an empty
+    // payload is not a credential and must not acquire cleanup authority.
+    const foreign = await multiClient(ctx, profile, "foreign").signUp.email({
+      email: ctx.uniqueEmail("logout-foreign"),
+      password: "password123",
+      name: "Foreign browser",
+    });
+    expect(foreign.error).toBeNull();
+    if (!foreign.data) throw new Error("foreign persisted owner required");
+    const foreignBefore = await ctx.readUserState({ userId: foreign.data.user.id });
+    const secret = "compat-test-only-key-not-real-minimum-32chars";
+    const empty = `empty_multi-proof=${encodeURIComponent("." + createHmac("sha256", secret).update("").digest("base64"))}`;
+    const invalid = "invalid_multi-proof=bad";
+    const jar = new CookieJar();
+    for (const header of selected.headers.getSetCookie()) jar.setCookieSync(header, path);
+    jar.setCookieSync(replacement!, path);
+    const repeatedReplacement = `another_multi-${rotated.token}=${replacement!.split(";")[0]!.split("=")[1]}`;
+    for (const pair of [repeatedReplacement, empty, invalid]) {
+      jar.setCookieSync(`${pair}; Path=/`, path);
+    }
+    const logout = await actor.fetch(`${path}/sign-out`, {
+      method: "POST",
+      credentials: "omit",
+      headers: { "content-type": "application/json", cookie: jar.getCookieStringSync(path) },
+      body: "{}",
+    });
+    expect(logout.status).toBe(200);
+    const logoutBody = await logout.json();
+    const logoutCookies = logout.headers.getSetCookie();
+    expect(logoutCookies.some((raw) => raw.startsWith("empty_multi-proof="))).toBeFalse();
+    expect(logoutCookies.some((raw) => raw.startsWith("invalid_multi-proof="))).toBeFalse();
+    expect(
+      logoutCookies.filter((raw) => raw.includes("_multi-") && raw.includes("Max-Age=0")),
+    ).toHaveLength(2);
+    for (const header of logoutCookies) jar.setCookieSync(header, path);
+    expect(
+      jar
+        .getCookiesSync(path)
+        .map((cookie) => cookie.key)
+        .sort(),
+    ).toEqual(["empty_multi-proof", "invalid_multi-proof"]);
+    const retiredState = await ctx.readUserState({ userId: issued.user.id });
+    expect(stateSchema.parse(retiredState).sessions).toHaveLength(0);
+    const foreignAfter = await ctx.readUserState({ userId: foreign.data.user.id });
+    expect(foreignAfter).toEqual(foreignBefore);
+    return {
+      issued,
+      before,
+      rotated,
+      after,
+      selection,
+      foreign,
+      foreignBefore,
+      logoutBody,
+      retiredState,
+      foreignAfter,
+    };
   },
   ["POST /sign-in/email", "POST /multi-session/set-active"],
 );
