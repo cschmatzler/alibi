@@ -169,7 +169,15 @@ pub fn apply_list_users<T: AuthUser + Clone>(
     users.retain(|user| matches_search(user, params) && matches_filter(user, params));
 
     let sort_by = params.sort_by.as_deref().unwrap_or("createdAt");
-    let sort_direction = params.sort_direction.as_deref().unwrap_or("desc");
+    // An explicit sort field defaults to ascending in the public admin API.
+    let sort_direction = params
+        .sort_direction
+        .as_deref()
+        .unwrap_or(if params.sort_by.is_some() {
+            "asc"
+        } else {
+            "desc"
+        });
 
     users.sort_by(|lhs, rhs| match sort_by {
         "id" | "_id" | "email" | "name" | "username" | "role" => compare_option_strings(
