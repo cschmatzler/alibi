@@ -1,5 +1,7 @@
 import { test } from "bun:test";
 import { createHash } from "node:crypto";
+import { mkdir } from "node:fs/promises";
+import { join } from "node:path";
 
 import { createAuthClient } from "better-auth/client";
 import {
@@ -409,6 +411,14 @@ export function compatScenario(
             outcome.coverage.Rust = coverage;
           },
         );
+        const observationsDirectory = process.env.COMPAT_OBSERVATIONS_DIR;
+        if (observationsDirectory) {
+          await mkdir(observationsDirectory, { recursive: true });
+          await Bun.write(
+            join(observationsDirectory, `${Bun.hash(scenarioName)}.json`),
+            JSON.stringify({ scenarioName, ts, rust }, null, 2),
+          );
+        }
         const comparison = {
           sessionCookieSecret: "compat-test-only-key-not-real-minimum-32chars",
           compactSessionCacheSecret: "compat-test-only-key-not-real-minimum-32chars",
