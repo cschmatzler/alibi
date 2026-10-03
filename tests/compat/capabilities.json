@@ -15,7 +15,25 @@
           "kakao existing account info uses real GET without readmitting a changed raw account subject",
           "kick existing account info uses real GET without readmitting a changed raw account subject",
           "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy",
-          "linkedin existing account info uses real bearer GET without readmitting a changed raw account subject"
+          "linkedin existing account info uses real bearer GET without readmitting a changed raw account subject",
+          "linkedin client-key real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "linkedin configured-endpoint real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "linkedin default real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "linkedin empty image original profile retains original raw account and typed persistence",
+          "linkedin empty name original profile retains original raw account and typed persistence",
+          "linkedin false verification maps actual nullish defaults without changing foreign principals",
+          "linkedin mapped real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "linkedin missing image original profile retains original raw account and typed persistence",
+          "linkedin missing name original profile retains original raw account and typed persistence",
+          "linkedin missing verification maps actual nullish defaults without changing foreign principals",
+          "linkedin null image original profile retains original raw account and typed persistence",
+          "linkedin null name original profile retains original raw account and typed persistence",
+          "linkedin null verification maps actual nullish defaults without changing foreign principals",
+          "linkedin numeric image original profile retains original raw account and typed persistence",
+          "linkedin numeric name original profile retains original raw account and typed persistence",
+          "linkedin numeric subject original profile retains original raw account and typed persistence",
+          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "linkedin true verification maps actual nullish defaults without changing foreign principals"
         ],
         "rejection": [
           "account info requires an explicit account selector",
@@ -25,7 +43,16 @@
           "kakao existing account info uses real GET without readmitting a changed raw account subject",
           "kick existing account info uses real GET without readmitting a changed raw account subject",
           "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy",
-          "linkedin existing account info uses real bearer GET without readmitting a changed raw account subject"
+          "linkedin existing account info uses real bearer GET without readmitting a changed raw account subject",
+          "linkedin empty image original profile retains original raw account and typed persistence",
+          "linkedin empty name original profile retains original raw account and typed persistence",
+          "linkedin missing image original profile retains original raw account and typed persistence",
+          "linkedin missing name original profile retains original raw account and typed persistence",
+          "linkedin null image original profile retains original raw account and typed persistence",
+          "linkedin null name original profile retains original raw account and typed persistence",
+          "linkedin numeric image original profile retains original raw account and typed persistence",
+          "linkedin numeric name original profile retains original raw account and typed persistence",
+          "linkedin numeric subject original profile retains original raw account and typed persistence"
         ],
         "authorization": "session-gated routes reject requests without a session",
         "state": [
@@ -36,7 +63,20 @@
           "kakao existing account info uses real GET without readmitting a changed raw account subject",
           "kick existing account info uses real GET without readmitting a changed raw account subject",
           "additional mapped provider fields retain public profile id independently from physical account authority and declared user create update policy",
-          "linkedin existing account info uses real bearer GET without readmitting a changed raw account subject"
+          "linkedin existing account info uses real bearer GET without readmitting a changed raw account subject",
+          "linkedin empty image original profile retains original raw account and typed persistence",
+          "linkedin empty name original profile retains original raw account and typed persistence",
+          "linkedin false verification maps actual nullish defaults without changing foreign principals",
+          "linkedin missing image original profile retains original raw account and typed persistence",
+          "linkedin missing name original profile retains original raw account and typed persistence",
+          "linkedin missing verification maps actual nullish defaults without changing foreign principals",
+          "linkedin null image original profile retains original raw account and typed persistence",
+          "linkedin null name original profile retains original raw account and typed persistence",
+          "linkedin null verification maps actual nullish defaults without changing foreign principals",
+          "linkedin numeric image original profile retains original raw account and typed persistence",
+          "linkedin numeric name original profile retains original raw account and typed persistence",
+          "linkedin numeric subject original profile retains original raw account and typed persistence",
+          "linkedin true verification maps actual nullish defaults without changing foreign principals"
         ]
       }
     },
@@ -4833,7 +4873,12 @@
           "encrypted OAuth actual persisted tokens decrypt with pinned crypto while refresh rotates only owned secrets",
           "apple provider refresh rotates stored credentials and excludes foreign owners",
           "duplicate OAuth same owner keys reject global callbacks while row-id lifecycle remains scoped",
-          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped"
+          "duplicate OAuth foreign owner keys reject global callbacks while row-id lifecycle remains scoped",
+          "linkedin client-key real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "linkedin configured-endpoint real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "linkedin default real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "linkedin mapped real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority"
         ],
         "state": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",

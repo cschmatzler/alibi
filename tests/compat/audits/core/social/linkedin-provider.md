@@ -44,6 +44,8 @@ Focused repaired SDK passes 45/45 with 2,080 assertions. The unchanged original
 harness passes 89/89 with 2,367 assertions. Strict TypeScript/lint, all-target
 workspace clippy and strict documentation pass (`/tmp/pr294-focused-after.log`).
 The complete
-unchanged canonical gate and coverage floor remain pending. Original baseline
-capability requirements and duplicates are preserved; new requirements are
-limited to independently measured Source/Native owner receipts.
+unchanged canonical gate and coverage floor remain pending. Independent fresh Source-self and Source/Native receipt sets agree on 315
+measured cells from all 45 owners (`/tmp/pr294-independent-recount.json`). All
+5,742 baseline requirement entries, 5,738 unique cells and four existing
+duplicates are preserved; 315 provider requirement cells are added, including
+45 newly measured getter cells. No requirement is inferred from declared flags.
