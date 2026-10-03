@@ -1,0 +1,3704 @@
+{
+  "baseline": "dfd88d21",
+  "observations": {
+    "before-raw-32215-32218": [
+      {
+        "port": "32215",
+        "signup": {
+          "status": 200,
+          "setCookie": [
+            "better-auth.session_token=pPqNokBDRYRu8Cr5yqpt2jR9wYadwZjq.RAnVNxOcxjIHlEyZQG4LD%2B6vrRaFoJ1pQgfFIpBZr8Q%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "token": "pPqNokBDRYRu8Cr5yqpt2jR9wYadwZjq",
+            "user": {
+              "name": "Before certificate",
+              "email": "before-32215-1791061191285@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T20:59:51.406Z",
+              "updatedAt": "2026-10-03T20:59:51.406Z",
+              "role": "user",
+              "banned": false,
+              "banReason": null,
+              "banExpires": null,
+              "twoFactorEnabled": false,
+              "username": null,
+              "displayUsername": null,
+              "id": "jF1lhVNqdg8K0PbIDmL7tojG0ENNMxk3"
+            }
+          }
+        },
+        "before": {
+          "status": 200,
+          "setCookie": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "Bwo6Z4fZRPbTMs8ZzxxTNQ8OKpV4M8pe",
+                "counter": 1,
+                "name": "Certified device"
+              }
+            ],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "setCookie": [
+            "better-auth.better-auth-passkey=kGzcfhZRLWUcRrYNKYVvC0eYkoNwcT__.S%2FDeZa7HOjHsqrSDCvJW9r%2B8EBPa6%2FTx63PfQ%2FF57%2B8%3D; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "challenge": "rqZ32WKNPer-crr_ryZUkDVS5tyW4NOIS7pm11L72Ng",
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "ZTFmZXYxYmN4ZG5zemFvd2FueDNsbms4bjNmOG8yeTQ",
+              "name": "before-32215-1791061191285@example.com",
+              "displayName": "before-32215-1791061191285@example.com"
+            },
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "attestation": "none",
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "userVerification": "preferred",
+              "requireResidentKey": false
+            },
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "YmVmb3JlLTMyMjE1",
+          "rawId": "YmVmb3JlLTMyMjE1",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoicnFaMzJXS05QZXItY3JyX3J5WlVrRFZTNXR5VzROT0lTN3BtMTFMNzJOZyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTUiLCJjcm9zc09yaWdpbiI6dHJ1ZX0",
+            "attestationObject": "o2NmbXRmcGFja2VkZ2F0dFN0bXSjY3g1Y4FZAgkwggIFMIIBrKADAgECAg0A6ntClK_HIVUh_BdsMAoGCCqGSM49BAMCMEYxCzAJBgNVBAYTAlVTMR4wHAYDVQQKDBVDb21wYXRpYmlsaXR5IGZpeHR1cmUxFzAVBgNVBAMMDlB1YmxpYyB0ZXN0IENBMB4XDTI2MTAwMzIwNTk1MVoXDTQ2MDkyODIwNTk1MVowdTELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEiMCAGA1UECwwZQXV0aGVudGljYXRvciBBdHRlc3RhdGlvbjEiMCAGA1UEAwwZUHVibGljIHRlc3QgYXV0aGVudGljYXRvcjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABFVYIUbAQJv50qBDZIDPZA8NYDDCvNs2Ddgx-j6lJTUvKLo-OWiPQrvB-FNuhlBjb1B8eFynmVudA66Rh6vGtcKjUDBOMAwGA1UdEwEB_wQCMAAwHQYDVR0OBBYEFKLN0O_RYoI76YKzBOMtCzpfWfMZMB8GA1UdIwQYMBaAFDNS0vPccpqz6SafLicccZbYQTBbMAoGCCqGSM49BAMCA0cAMEQCIEoX8H1qgQGak88H9pgKQn-fugDg45Il6aKV3Z6HYndgAiByvniZi_jJ-22kKI3mELxjh7oVPwhnpUIa7qzy4rcLKGNhbGcmY3NpZ1hHMEUCIQDF9peZXQJpadt01pGRDJ5m8CyJ-79CfvFgVO4EHBkrPAIgWERCC9cTdBmWyzlPu7Bt2M2b7NptDsdkmry2H2TRWQZoYXV0aERhdGFYkEmWDeWIDoxodDQXD2R2YFuP5K65ooYyx5lc87qDHZdjQQAAAAAAAAAAAAAAAAAAAAAAAAAAAAxiZWZvcmUtMzIyMTWlAQIDJiABIVggX-alHb5i5TGl-q5tFZTxHcjEHQ_AF6jI0MfRqltzD-YiWCBaTmAg006kU8JiHLWbDNAAnLV10JXEKc_DJH514aKuag",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 200,
+          "setCookie": [
+            "better-auth.session_token=9wpJrTZbbGWQYfDHbxTMIU9g3MnI2gta.PoMyJuJM2%2B334qAImSwayKMiJaIbFuDTSsr6wbqqAVA%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "name": null,
+            "publicKey": "pQECAyYgASFYIF/mpR2+YuUxpfqubRWU8R3IxB0PwBeoyNDH0apbcw/mIlggWk5gINNOpFPCYhy1mwzQAJy1ddCVxCnPwyR+deGirmo=",
+            "userId": "jF1lhVNqdg8K0PbIDmL7tojG0ENNMxk3",
+            "credentialID": "YmVmb3JlLTMyMjE1",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T20:59:51.493Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000",
+            "id": "UaQNEJrAEt7udea2GjkZO9dO179kNNVy",
+            "session": {
+              "expiresAt": "2026-10-10T20:59:51.494Z",
+              "token": "9wpJrTZbbGWQYfDHbxTMIU9g3MnI2gta",
+              "createdAt": "2026-10-03T20:59:51.494Z",
+              "updatedAt": "2026-10-03T20:59:51.494Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2",
+              "userId": "jF1lhVNqdg8K0PbIDmL7tojG0ENNMxk3",
+              "impersonatedBy": null,
+              "activeOrganizationId": null,
+              "id": "wJoX35bkhOHn7P0ryyVdoeooqLxdbg0z"
+            },
+            "user": {
+              "name": "Before certificate",
+              "email": "before-32215-1791061191285@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T20:59:51.406Z",
+              "updatedAt": "2026-10-03T20:59:51.406Z",
+              "role": "user",
+              "banned": false,
+              "banReason": null,
+              "banExpires": null,
+              "twoFactorEnabled": false,
+              "username": null,
+              "displayUsername": null,
+              "id": "jF1lhVNqdg8K0PbIDmL7tojG0ENNMxk3"
+            }
+          }
+        },
+        "after": {
+          "status": 200,
+          "setCookie": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "Bwo6Z4fZRPbTMs8ZzxxTNQ8OKpV4M8pe",
+                "counter": 1,
+                "name": "Certified device"
+              },
+              {
+                "userId": "jF1lhVNqdg8K0PbIDmL7tojG0ENNMxk3",
+                "counter": 0,
+                "name": null
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "setCookie": [],
+          "body": {
+            "message": "Challenge not found",
+            "code": "CHALLENGE_NOT_FOUND"
+          }
+        }
+      },
+      {
+        "port": "32218",
+        "signup": {
+          "status": 200,
+          "setCookie": [
+            "better-auth.session_token=FVmqnCBZmxBtfQehqk0Wdsz0Usm3IZ8N.f7NSmZtnR9K7vw5goJdit8kC49kTr4mEaya93ZyJktM%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "token": "FVmqnCBZmxBtfQehqk0Wdsz0Usm3IZ8N",
+            "user": {
+              "id": "80c732cc-3ece-4a4b-8e17-aba627b2bf0f",
+              "name": "Before certificate",
+              "email": "before-32218-1791061191501@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T20:59:51.631Z",
+              "updatedAt": "2026-10-03T20:59:51.631Z",
+              "twoFactorEnabled": false,
+              "role": "user",
+              "banned": false,
+              "banExpires": null,
+              "banReason": null,
+              "displayUsername": null,
+              "username": null
+            }
+          }
+        },
+        "before": {
+          "status": 200,
+          "setCookie": [],
+          "body": {
+            "passkeys": [],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "setCookie": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IjFkMGYzMjVhLWVlMzEtNDExNi04OWM1LTFlYTYxN2ZkZDRjYSIsImV4cCI6MTc5MTA2MTQ5MSwiaWF0IjoxNzkxMDYxMTkxfQ.pgY1By43HNYDzRy79hm75ncFqVDvgdrxxZic4hUdO1M; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "ejdsaXliNGNyb2NlMncxd3J3MDJramt1MmxrcjA4cGs",
+              "name": "before-32218-1791061191501@example.com",
+              "displayName": "before-32218-1791061191501@example.com"
+            },
+            "challenge": "LcWDqUTU7r9i_MqqikeyqlyG20i0gTC-ZKU6qaTlI8g",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "YmVmb3JlLTMyMjE4",
+          "rawId": "YmVmb3JlLTMyMjE4",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiTGNXRHFVVFU3cjlpX01xcWlrZXlxbHlHMjBpMGdUQy1aS1U2cWFUbEk4ZyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTgiLCJjcm9zc09yaWdpbiI6dHJ1ZX0",
+            "attestationObject": "o2NmbXRmcGFja2VkZ2F0dFN0bXSjY3g1Y4FZAgkwggIFMIIBrKADAgECAg0AnTBXZHOLTHhPxI9LMAoGCCqGSM49BAMCMEYxCzAJBgNVBAYTAlVTMR4wHAYDVQQKDBVDb21wYXRpYmlsaXR5IGZpeHR1cmUxFzAVBgNVBAMMDlB1YmxpYyB0ZXN0IENBMB4XDTI2MTAwMzIwNTk1MVoXDTQ2MDkyODIwNTk1MVowdTELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEiMCAGA1UECwwZQXV0aGVudGljYXRvciBBdHRlc3RhdGlvbjEiMCAGA1UEAwwZUHVibGljIHRlc3QgYXV0aGVudGljYXRvcjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABFVYIUbAQJv50qBDZIDPZA8NYDDCvNs2Ddgx-j6lJTUvKLo-OWiPQrvB-FNuhlBjb1B8eFynmVudA66Rh6vGtcKjUDBOMAwGA1UdEwEB_wQCMAAwHQYDVR0OBBYEFKLN0O_RYoI76YKzBOMtCzpfWfMZMB8GA1UdIwQYMBaAFDNS0vPccpqz6SafLicccZbYQTBbMAoGCCqGSM49BAMCA0cAMEQCIDDTGW2tqa7OwMgF3OjO7YdWQ9Ac7J8AyBYNpL3Nbqd8AiALM1hH2BMQ9IcskRW6CbwU8izZXtM0HRT5RQKwKZ89aGNhbGcmY3NpZ1hIMEYCIQDWqoNQkBRVRLXHMec5AXo9rxiQwGJJkGZtthetIrYF_gIhAJNGML7oGoj4NncNss5Rljp5Qx6qsErUUycvXq0AUKi0aGF1dGhEYXRhWJBJlg3liA6MaHQ0Fw9kdmBbj-SuuaKGMseZXPO6gx2XY0EAAAAAAAAAAAAAAAAAAAAAAAAAAAAMYmVmb3JlLTMyMjE4pQECAyYgASFYIF_mpR2-YuUxpfqubRWU8R3IxB0PwBeoyNDH0apbcw_mIlggWk5gINNOpFPCYhy1mwzQAJy1ddCVxCnPwyR-deGirmo",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 500,
+          "setCookie": [],
+          "body": {
+            "code": "FAILED_TO_VERIFY_REGISTRATION",
+            "message": "Failed to verify registration"
+          }
+        },
+        "after": {
+          "status": 200,
+          "setCookie": [],
+          "body": {
+            "passkeys": [],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "setCookie": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      }
+    ],
+    "before-raw-32219": [
+      {
+        "port": "32219",
+        "signup": {
+          "status": 200,
+          "setCookie": [
+            "better-auth.session_token=2xnHO7xFcUtknskG4cR67mj40Fad31Io.0LhnlF6lpOGJYKHmpHEne7HlZ4qYqO6zyl3IjjPDNE0%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "token": "2xnHO7xFcUtknskG4cR67mj40Fad31Io",
+            "user": {
+              "id": "a157c99c-0c66-4936-89ed-bd039aeb6575",
+              "name": "Before certificate",
+              "email": "before-32219-1791061464109@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:04:24.238Z",
+              "updatedAt": "2026-10-03T21:04:24.238Z",
+              "twoFactorEnabled": false,
+              "role": "user",
+              "banned": false,
+              "banExpires": null,
+              "banReason": null,
+              "displayUsername": null,
+              "username": null
+            }
+          }
+        },
+        "before": {
+          "status": 200,
+          "setCookie": [],
+          "body": {
+            "passkeys": [],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "setCookie": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IjU3NWFiODAzLTFhZWItNDZjMC1hZjQ4LTdlNjdhOTI5OWIxZiIsImV4cCI6MTc5MTA2MTc2NCwiaWF0IjoxNzkxMDYxNDY0fQ.3iVzz8G6DHeCiccOvG6QkBAJBmpQ8OXjtwXP7IukOC8; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "dHU5bW9zZjFvNW84OGppOG43ZnBqZzFreXhiYnF1N2c",
+              "name": "before-32219-1791061464109@example.com",
+              "displayName": "before-32219-1791061464109@example.com"
+            },
+            "challenge": "8p7h8Xgfl4Qprje7fJlt9-FaGe77WWmJ31Udpk-kti0",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "YmVmb3JlLTMyMjE5",
+          "rawId": "YmVmb3JlLTMyMjE5",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiOHA3aDhYZ2ZsNFFwcmplN2ZKbHQ5LUZhR2U3N1dXbUozMVVkcGsta3RpMCIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTkiLCJjcm9zc09yaWdpbiI6dHJ1ZX0",
+            "attestationObject": "o2NmbXRmcGFja2VkZ2F0dFN0bXSjY3g1Y4FZAgowggIGMIIBrKADAgECAg0AoyjY9pHAy-F8EO6GMAoGCCqGSM49BAMCMEYxCzAJBgNVBAYTAlVTMR4wHAYDVQQKDBVDb21wYXRpYmlsaXR5IGZpeHR1cmUxFzAVBgNVBAMMDlB1YmxpYyB0ZXN0IENBMB4XDTI2MTAwMzIxMDQyNFoXDTQ2MDkyODIxMDQyNFowdTELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEiMCAGA1UECwwZQXV0aGVudGljYXRvciBBdHRlc3RhdGlvbjEiMCAGA1UEAwwZUHVibGljIHRlc3QgYXV0aGVudGljYXRvcjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABAzQre0251oZj9HZlIVdtZUOHidW-kDRDx9FZwlBw9DWSqvUqqePM0F-RFmdqmrOeBOOTglS1qf9rGD5CAREpaCjUDBOMAwGA1UdEwEB_wQCMAAwHQYDVR0OBBYEFDjhFILutXe85-2qaS0UFowLU6JAMB8GA1UdIwQYMBaAFDNS0vPccpqz6SafLicccZbYQTBbMAoGCCqGSM49BAMCA0gAMEUCIQD2ePPaZAUuSXrlGUajEPxCAmo0PK0LJkzPAbE_HTaHQQIgbnB-Pu0S40X899yOeRvtu6Ar6ZL_ddOzHrA89_XppX9jYWxnJmNzaWdYSDBGAiEA77GFBUF-YIQ6IO4fBlcrEEU1_o-VYQm6QNrNNipcDYsCIQDWk4_WMJhBM6uMjFvNwCN-0qxfmnjSy-P-lc2u9ZPfamhhdXRoRGF0YViQSZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2NBAAAAAAAAAAAAAAAAAAAAAAAAAAAADGJlZm9yZS0zMjIxOaUBAgMmIAEhWCBAYFujdGi9yK9I3orv-q7a70op5icmiqAXChQmxdlriSJYIMZ1DEirvl_mNfKnrWXDr3l5odpZNPUyqXaK1dYEy3zX",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 500,
+          "setCookie": [],
+          "body": {
+            "code": "FAILED_TO_VERIFY_REGISTRATION",
+            "message": "Failed to verify registration"
+          }
+        },
+        "after": {
+          "status": 200,
+          "setCookie": [],
+          "body": {
+            "passkeys": [],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "setCookie": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      }
+    ],
+    "key-before-raw-32215-32219": [
+      {
+        "port": "32215",
+        "signup": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=74ugNsmIgAPUFnDvA29RVvXKsVfOYBay.kle5WM%2B6eLv9d67wh8BMo6HoJ1tpJan2KXSLRa7hL84%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "token": "74ugNsmIgAPUFnDvA29RVvXKsVfOYBay",
+            "user": {
+              "name": "Key authority",
+              "email": "key-before-32215-1791062132688@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:15:32.755Z",
+              "updatedAt": "2026-10-03T21:15:32.755Z",
+              "role": "user",
+              "banned": false,
+              "banReason": null,
+              "banExpires": null,
+              "twoFactorEnabled": false,
+              "username": null,
+              "displayUsername": null,
+              "id": "57Lbq9VVLwr3DiiSyes52tEOuIhSuJCs"
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=Vwle1Iz0OwwarqHBqi82swqaI3hmjFgv.74j1zlhSMFE5Xk0dagFj2C7jE%2FwNy3vhxQoe8mj8eW4%3D; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "challenge": "cPxA8y0e8avn1q8Yb8S_wxIOJc6RbX0XjsCruiIlFe4",
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "MTJqZ3VjY2FnZ3ZoMW94ajM4YWRpb3JnZDR3d3lkOGo",
+              "name": "key-before-32215-1791062132688@example.com",
+              "displayName": "key-before-32215-1791062132688@example.com"
+            },
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "attestation": "none",
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "userVerification": "preferred",
+              "requireResidentKey": false
+            },
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "a2V5LWJlZm9yZS0zMjIxNQ",
+          "rawId": "a2V5LWJlZm9yZS0zMjIxNQ",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiY1B4QTh5MGU4YXZuMXE4WWI4U193eElPSmM2UmJYMFhqc0NydWlJbEZlNCIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTUiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRmcGFja2VkZ2F0dFN0bXSjY3g1Y4FZAgowggIGMIIBq6ADAgECAgxl9kQOM1Gw_jqtiIIwCgYIKoZIzj0EAwIwRjELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEXMBUGA1UEAwwOUHVibGljIHRlc3QgQ0EwHhcNMjYxMDAzMjExNTMyWhcNNDYwOTI4MjExNTMyWjB1MQswCQYDVQQGEwJVUzEeMBwGA1UECgwVQ29tcGF0aWJpbGl0eSBmaXh0dXJlMSIwIAYDVQQLDBlBdXRoZW50aWNhdG9yIEF0dGVzdGF0aW9uMSIwIAYDVQQDDBlQdWJsaWMgdGVzdCBhdXRoZW50aWNhdG9yMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAELGTsRF6IUqaNBG52vqQo6htaSP1OgLywJq4IAnOb_hxuEHeiFy_uh1EU8TS7FxJ2dhQIf57h8ZU92wE_DEI8c6NQME4wDAYDVR0TAQH_BAIwADAdBgNVHQ4EFgQUtIOUb3gLhE26Y29-dJQ1um1ysWAwHwYDVR0jBBgwFoAUM1LS89xymrPpJp8uJxxxlthBMFswCgYIKoZIzj0EAwIDSQAwRgIhAInSbvJhYIvFeV0fGayBk3JG6LG0cFdiEqAU-PXRSFuBAiEAoBvL0SAQ7QdOQpAYQStZ19SAGrRjEhHDFxVwTSWNsHNjYWxnJmNzaWdYRzBFAiBwK6YUTtrz561dRIhDGSebBQfo5yInnJXlHLCG8lbAFwIhAON1mS-7sAUY-7DJFKd9KlfgsCfwM77eY8tozRY55GQ1aGF1dGhEYXRhWJRJlg3liA6MaHQ0Fw9kdmBbj-SuuaKGMseZXPO6gx2XY0EAAAAAAAAAAAAAAAAAAAAAAAAAAAAQa2V5LWJlZm9yZS0zMjIxNaUBAgMmIAEhWCACp9-DA0hixy-JhhahVz-aZrSMUO3sVxDIfRa908oKlyJYIE5rrg-Nj_6zq3_3gamVjNNxaDps8Kr23Zf_lST5xFgk",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "enrolled": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "name": "Original key",
+            "publicKey": "pQECAyYgASFYIAKn34MDSGLHL4mGFqFXP5pmtIxQ7exXEMh9Fr3TygqXIlggTmuuD42P/rOrf/eBqZWM03FoOmzwqvbdl/+VJPnEWCQ=",
+            "userId": "57Lbq9VVLwr3DiiSyes52tEOuIhSuJCs",
+            "credentialID": "a2V5LWJlZm9yZS0zMjIxNQ",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T21:15:32.980Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000",
+            "id": "5M0JQiqShXJbcjDMT09CsI3IlvWyGbvQ"
+          }
+        },
+        "authOptions": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=1qXpB84LmX7F1tEjCC9b0-X9zhBVAiDM.kefvbFKuyVA0ItefaxdDFOzx1Zn6obh5t4BRIJ%2B%2B4Ro%3D; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rpId": "localhost",
+            "challenge": "NjZr2OG_p46ydXw5dwNZbGvUGWOX-vCrKiZTtq5-Rgc",
+            "timeout": 60000,
+            "userVerification": "preferred"
+          }
+        },
+        "swapped": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "updated": 1
+          }
+        },
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "57Lbq9VVLwr3DiiSyes52tEOuIhSuJCs",
+                "counter": 0,
+                "name": "Original key"
+              },
+              {
+                "userId": "PrUT7G1hVnfzHjgBatyURumkiwPhLTQz",
+                "counter": 0,
+                "name": "SafetyNet field proof"
+              },
+              {
+                "userId": "PrUT7G1hVnfzHjgBatyURumkiwPhLTQz",
+                "counter": 0,
+                "name": "SafetyNet field proof"
+              },
+              {
+                "userId": "PrUT7G1hVnfzHjgBatyURumkiwPhLTQz",
+                "counter": 0,
+                "name": "SafetyNet field proof"
+              }
+            ],
+            "sessions": {
+              "count": 0
+            },
+            "challenges": {
+              "count": 1
+            }
+          }
+        },
+        "assertion": {
+          "id": "a2V5LWJlZm9yZS0zMjIxNQ",
+          "rawId": "a2V5LWJlZm9yZS0zMjIxNQ",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiTmpacjJPR19wNDZ5ZFh3NWR3TlpiR3ZVR1dPWC12Q3JLaVpUdHE1LVJnYyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTUiLCJjcm9zc09yaWdpbiI6dHJ1ZX0",
+            "authenticatorData": "SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MBAAAAAQ",
+            "signature": "MEUCIEHdbGxnbKZdQt5oGdi7B1Mh2y7U42AtuzZVF1sZeJJBAiEAmiFtj9z-1-1HpZI60tYMbkt-_YdZc9a1LRXhBH_QDU4"
+          },
+          "clientExtensionResults": {}
+        },
+        "stale": {
+          "status": 401,
+          "cookies": [],
+          "body": {
+            "message": "Authentication failed",
+            "code": "AUTHENTICATION_FAILED"
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "57Lbq9VVLwr3DiiSyes52tEOuIhSuJCs",
+                "counter": 0,
+                "name": "Original key"
+              },
+              {
+                "userId": "PrUT7G1hVnfzHjgBatyURumkiwPhLTQz",
+                "counter": 0,
+                "name": "SafetyNet field proof"
+              },
+              {
+                "userId": "PrUT7G1hVnfzHjgBatyURumkiwPhLTQz",
+                "counter": 0,
+                "name": "SafetyNet field proof"
+              },
+              {
+                "userId": "PrUT7G1hVnfzHjgBatyURumkiwPhLTQz",
+                "counter": 0,
+                "name": "SafetyNet field proof"
+              }
+            ],
+            "sessions": {
+              "count": 0
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        }
+      },
+      {
+        "port": "32219",
+        "signup": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=eMvHzmXmVbK7OqkhBdb6vl1Z7z4zyKh9.f3Rd2kH0plwIugzMzXIxmeddBveUwz%2Bk7YyXZp%2FWUZE%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "token": "eMvHzmXmVbK7OqkhBdb6vl1Z7z4zyKh9",
+            "user": {
+              "id": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+              "name": "Key authority",
+              "email": "key-before-32219-1791062132993@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:15:33.124Z",
+              "updatedAt": "2026-10-03T21:15:33.124Z",
+              "twoFactorEnabled": false,
+              "role": "user",
+              "banned": false,
+              "banExpires": null,
+              "banReason": null,
+              "displayUsername": null,
+              "username": null
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6ImIzYmI2ODAxLTJlYjgtNDUzNC05NjQ0LTFkYTdlZDg1Y2RmZCIsImV4cCI6MTc5MTA2MjQzMywiaWF0IjoxNzkxMDYyMTMzfQ.xUkEQ_VTHUHaW-JVlOlsHDBnJIiMAsm8SKlxIgE1Wik; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "dXVxYnZseGR5ejJvZnF0ZzYyZWg3enZyemM5a3lidmk",
+              "name": "key-before-32219-1791062132993@example.com",
+              "displayName": "key-before-32219-1791062132993@example.com"
+            },
+            "challenge": "BXgJwPzLhGTNtEYJNZ5P0WXy7zsYHcOC6qPpOqf2Xpc",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "a2V5LWJlZm9yZS0zMjIxOQ",
+          "rawId": "a2V5LWJlZm9yZS0zMjIxOQ",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiQlhnSndQekxoR1ROdEVZSk5aNVAwV1h5N3pzWUhjT0M2cVBwT3FmMlhwYyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTkiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRmcGFja2VkZ2F0dFN0bXSjY3g1Y4FZAgowggIGMIIBrKADAgECAg0AsIG9vEYUMgqj-rFfMAoGCCqGSM49BAMCMEYxCzAJBgNVBAYTAlVTMR4wHAYDVQQKDBVDb21wYXRpYmlsaXR5IGZpeHR1cmUxFzAVBgNVBAMMDlB1YmxpYyB0ZXN0IENBMB4XDTI2MTAwMzIxMTUzM1oXDTQ2MDkyODIxMTUzM1owdTELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEiMCAGA1UECwwZQXV0aGVudGljYXRvciBBdHRlc3RhdGlvbjEiMCAGA1UEAwwZUHVibGljIHRlc3QgYXV0aGVudGljYXRvcjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABCxk7EReiFKmjQRudr6kKOobWkj9ToC8sCauCAJzm_4cbhB3ohcv7odRFPE0uxcSdnYUCH-e4fGVPdsBPwxCPHOjUDBOMAwGA1UdEwEB_wQCMAAwHQYDVR0OBBYEFLSDlG94C4RNumNvfnSUNbptcrFgMB8GA1UdIwQYMBaAFDNS0vPccpqz6SafLicccZbYQTBbMAoGCCqGSM49BAMCA0gAMEUCIQCM7EiknJRa84lclICiy1fNdKRVhhkcnB8ZaVxdiPVtJQIgTkfI9Hhwl_Nukchur6VM4RmR2HfWPSTT8BjBJo-yj5xjYWxnJmNzaWdYRzBFAiEA4pBs8f80-88hosjIqAqmgC513FK2x4JLP9_7osq1au4CIBflq9S1pgBML8epjfF4JI4oFwI8tH9YSDdZbLXBRwh4aGF1dGhEYXRhWJRJlg3liA6MaHQ0Fw9kdmBbj-SuuaKGMseZXPO6gx2XY0EAAAAAAAAAAAAAAAAAAAAAAAAAAAAQa2V5LWJlZm9yZS0zMjIxOaUBAgMmIAEhWCACp9-DA0hixy-JhhahVz-aZrSMUO3sVxDIfRa908oKlyJYIE5rrg-Nj_6zq3_3gamVjNNxaDps8Kr23Zf_lST5xFgk",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "enrolled": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "id": "b57b922a-03e3-4b8f-baf6-80017d7b7ef8",
+            "name": "Original key",
+            "credentialID": "a2V5LWJlZm9yZS0zMjIxOQ",
+            "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+            "publicKey": "pQECAyYgASFYIAKn34MDSGLHL4mGFqFXP5pmtIxQ7exXEMh9Fr3TygqXIlggTmuuD42P/rOrf/eBqZWM03FoOmzwqvbdl/+VJPnEWCQ=",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T21:15:33.185Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "authOptions": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IjQ5MTFhOWZjLTAwNzYtNDI1MC05ZTI4LWM5ZmQ4ZTQ5Nzc5ZSIsImV4cCI6MTc5MTA2MjQzMywiaWF0IjoxNzkxMDYyMTMzfQ.95tsI3oDDtLxz3eAAT2vk2foCySFgmIK_Krk7xXlg5s; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "challenge": "5uTz3Fg-MDRJLSpLLV0qJRWDrA6gmX3ZkdKCaEnJAPc",
+            "timeout": 60000,
+            "rpId": "localhost",
+            "userVerification": "preferred"
+          }
+        },
+        "swapped": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "updated": 1
+          }
+        },
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 0,
+                "name": "Original key"
+              }
+            ],
+            "sessions": {
+              "count": 0
+            },
+            "challenges": {
+              "count": 1
+            }
+          }
+        },
+        "assertion": {
+          "id": "a2V5LWJlZm9yZS0zMjIxOQ",
+          "rawId": "a2V5LWJlZm9yZS0zMjIxOQ",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiNXVUejNGZy1NRFJKTFNwTExWMHFKUldEckE2Z21YM1prZEtDYUVuSkFQYyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTkiLCJjcm9zc09yaWdpbiI6dHJ1ZX0",
+            "authenticatorData": "SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MBAAAAAQ",
+            "signature": "MEUCID1gUIfmOImsf9NLrnRvQNeThf6OMgiLwt33VA9Ad4DLAiEA7kI7w21pS62Z60mrRRRUgwhQVMKHQUeTwTUwzGRQTCo"
+          },
+          "clientExtensionResults": {}
+        },
+        "stale": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=LmdPc4ynG0kXIFMEJS7dgYzLFK2gGkfA.tSZwBxHnmBf0swy%2BWxBpJkuRkDGmCS5NhTf9kiV3IFY%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "session": {
+              "id": "d3489766-6e10-49c0-83b9-79c145e09a52",
+              "expiresAt": "2026-10-10T21:15:33.198Z",
+              "token": "LmdPc4ynG0kXIFMEJS7dgYzLFK2gGkfA",
+              "createdAt": "2026-10-03T21:15:33.198Z",
+              "updatedAt": "2026-10-03T21:15:33.198Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2",
+              "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+              "activeOrganizationId": null,
+              "impersonatedBy": null
+            },
+            "user": {
+              "id": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+              "name": "Key authority",
+              "email": "key-before-32219-1791062132993@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:15:33.124Z",
+              "updatedAt": "2026-10-03T21:15:33.124Z",
+              "twoFactorEnabled": false,
+              "role": "user",
+              "banned": false,
+              "banExpires": null,
+              "banReason": null,
+              "displayUsername": null,
+              "username": null
+            }
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              }
+            ],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        }
+      }
+    ],
+    "key-before-raw-32218": [
+      {
+        "port": "32218",
+        "signup": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=jXAiBJ8TYL1bhLIA1CUYIELNl1HPALxY.XlqdYgqMYux3xzKZ3%2B5rD%2Fht8FsEuR87fndNaAZXvrk%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "token": "jXAiBJ8TYL1bhLIA1CUYIELNl1HPALxY",
+            "user": {
+              "id": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+              "name": "Key authority",
+              "email": "key-before-32218-1791062558063@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:22:38.189Z",
+              "updatedAt": "2026-10-03T21:22:38.189Z",
+              "twoFactorEnabled": false,
+              "role": "user",
+              "banned": false,
+              "banExpires": null,
+              "banReason": null,
+              "displayUsername": null,
+              "username": null
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IjNjNTc2YTVlLTVhZGEtNGJhZC05NmQ1LTA4MzczYjBjOTBiZCIsImV4cCI6MTc5MTA2Mjg1OCwiaWF0IjoxNzkxMDYyNTU4fQ.o9Nu11k0OTBRJvgONblayhXS4giopSY2P_0UP-6ReMw; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "eXllOHI0NGtzcXFnMndtbGduZ2Y0OWJxcnBjcGFhYnY",
+              "name": "key-before-32218-1791062558063@example.com",
+              "displayName": "key-before-32218-1791062558063@example.com"
+            },
+            "challenge": "CayrL0B3NvagaNIsE0ndFfYBHcmHhb8q_I3P7MCI7TA",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "a2V5LWJlZm9yZS0zMjIxOA",
+          "rawId": "a2V5LWJlZm9yZS0zMjIxOA",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiQ2F5ckwwQjNOdmFnYU5Jc0UwbmRGZllCSGNtSGhiOHFfSTNQN01DSTdUQSIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTgiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRmcGFja2VkZ2F0dFN0bXSjY3g1Y4FZAgowggIGMIIBq6ADAgECAgxZGVWo_2ASSubcTogwCgYIKoZIzj0EAwIwRjELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEXMBUGA1UEAwwOUHVibGljIHRlc3QgQ0EwHhcNMjYxMDAzMjEyMjM4WhcNNDYwOTI4MjEyMjM4WjB1MQswCQYDVQQGEwJVUzEeMBwGA1UECgwVQ29tcGF0aWJpbGl0eSBmaXh0dXJlMSIwIAYDVQQLDBlBdXRoZW50aWNhdG9yIEF0dGVzdGF0aW9uMSIwIAYDVQQDDBlQdWJsaWMgdGVzdCBhdXRoZW50aWNhdG9yMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEY8G0p2je0ty1_zu-1MhPIxiFfWsBLCa7PIo7oxu9MFhGaYP44xMCd9a4kJ79J2Id8L01DLFbQGDQsTaXCfHfxKNQME4wDAYDVR0TAQH_BAIwADAdBgNVHQ4EFgQUVQRjLNH4xVMel-v8CafJ19XxCDEwHwYDVR0jBBgwFoAUM1LS89xymrPpJp8uJxxxlthBMFswCgYIKoZIzj0EAwIDSQAwRgIhAMMfiqkXA1ucrdeZgRWNvS53vrfKToFUP4NVa4lv7gVUAiEA_gamvFOaxk88Mbb0uWv2P2nQE3Nc_YWqNMyOrXJunL1jYWxnJmNzaWdYRjBEAiAIEmtFvXiMR-fAQkpl8QppG1_0oKevPO6KljuRPdkWlQIgQIv-fTTolkJz5xmQ1Sl0pms3svlIBwIOt2vQ0Hg9K9loYXV0aERhdGFYlEmWDeWIDoxodDQXD2R2YFuP5K65ooYyx5lc87qDHZdjQQAAAAAAAAAAAAAAAAAAAAAAAAAAABBrZXktYmVmb3JlLTMyMjE4pQECAyYgASFYIB_zPJiv-7Gg0eOS79-ykxrmsQQgq4Pyq8k168iKt-cbIlggZvXUyf9bpRFOm6-Umkie_rXFcs9D1QCr09sjz8mv17A",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "enrolled": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "id": "0871a39a-1b3f-44d8-98a5-831a5f42f2f7",
+            "name": "Original key",
+            "credentialID": "a2V5LWJlZm9yZS0zMjIxOA",
+            "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+            "publicKey": "pQECAyYgASFYIB/zPJiv+7Gg0eOS79+ykxrmsQQgq4Pyq8k168iKt+cbIlggZvXUyf9bpRFOm6+Umkie/rXFcs9D1QCr09sjz8mv17A=",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T21:22:38.239Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000"
+          }
+        },
+        "authOptions": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_data=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6ImM0YWZlODA1LWNjM2MtNGYxNC1hNGY0LTgzNTQyNjM5MmViNyIsImV4cCI6MTc5MTA2Mjg1OCwiaWF0IjoxNzkxMDYyNTU4fQ.0QOe_tdz-LpZ7Rcc92pwW7TJcqT5Y2aeX6YQQSNfZYE; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "challenge": "E00Zmv4ouvQpkWVMA_ZMhCwVlpawTjLu0DxbLuvAHOE",
+            "timeout": 60000,
+            "rpId": "localhost",
+            "userVerification": "preferred"
+          }
+        },
+        "swapped": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "updated": 1
+          }
+        },
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 0,
+                "name": "Original key"
+              }
+            ],
+            "sessions": {
+              "count": 0
+            },
+            "challenges": {
+              "count": 1
+            }
+          }
+        },
+        "assertion": {
+          "id": "a2V5LWJlZm9yZS0zMjIxOA",
+          "rawId": "a2V5LWJlZm9yZS0zMjIxOA",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiRTAwWm12NG91dlFwa1dWTUFfWk1oQ3dWbHBhd1RqTHUwRHhiTHV2QUhPRSIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTgiLCJjcm9zc09yaWdpbiI6dHJ1ZX0",
+            "authenticatorData": "SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2MBAAAAAQ",
+            "signature": "MEUCIHfQQgEfCMZWvlwkLLhP9ETINELcdxNvzZDCdCPqy7OuAiEA9p1EwyLhJEEvoIkHi3n2Az9d5KGE21iwzt8aonjwDbQ"
+          },
+          "clientExtensionResults": {}
+        },
+        "stale": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=wuMRgLqDnUfthLhK6qNRoJw2vf7uFJSf.qutn4BbqtZY2INcpwxB7oboUoDj2eoS%2B5DPkB%2B3vdMk%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "session": {
+              "id": "ac3b996d-448b-4f09-964f-c3f3981abdac",
+              "expiresAt": "2026-10-10T21:22:38.256Z",
+              "token": "wuMRgLqDnUfthLhK6qNRoJw2vf7uFJSf",
+              "createdAt": "2026-10-03T21:22:38.256Z",
+              "updatedAt": "2026-10-03T21:22:38.256Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2",
+              "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+              "activeOrganizationId": null,
+              "impersonatedBy": null
+            },
+            "user": {
+              "id": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+              "name": "Key authority",
+              "email": "key-before-32218-1791062558063@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:22:38.189Z",
+              "updatedAt": "2026-10-03T21:22:38.189Z",
+              "twoFactorEnabled": false,
+              "role": "user",
+              "banned": false,
+              "banExpires": null,
+              "banReason": null,
+              "displayUsername": null,
+              "username": null
+            }
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              }
+            ],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        }
+      }
+    ],
+    "variants-before-raw": [
+      {
+        "port": "32215",
+        "label": "rsa-short-exponent",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.ceremony-proof=7vGxfILTPBPVHRfc5b4ucKoaJtiBncK6.8Alo%2FnssKZlJBQNBsCmE2c79M8t4lIIUQuHZ3hgyKhI%3D; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "challenge": "Ve2zO628t1i72090kzbTM4GOBJ6UR2DixLyLdO3IyNQ",
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "ZTlucXZ6N3F2Y3Z4amtsZGZ1cHM2MTU0dTl0azBnOGE",
+              "name": "variants-before-32215-1791064530988@example.com",
+              "displayName": "variants-before-32215-1791064530988@example.com"
+            },
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "attestation": "none",
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "userVerification": "preferred",
+              "requireResidentKey": false
+            },
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1yc2Etc2hvcnQtZXhwb25lbnQ",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1yc2Etc2hvcnQtZXhwb25lbnQ",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiVmUyek82Mjh0MWk3MjA5MGt6YlRNNEdPQko2VVIyRGl4THlMZE8zSXlOUSIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTUiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRmcGFja2VkZ2F0dFN0bXSiY2FsZzkBAWNzaWdZAQArFHSNj9oM8fcAjJP6pvqj2x6uw6RwVO8Xz2i0zljyrPM_L7YnL1rn8wcCdNqiEP2P49tY0lOHu5O54y4cigm7hTfBuUTZB75FzSuvnqY8pLHz7GVFeJkdlNktBD0FcWheEP7IOk2SLKXqiVbdmGBWHuotJdnqOuhzBaRnmWzK84B-5otVKvukTBrNzXntcihcNPgjEK-BIbk9H80FAxBZAg2bRs0CcZYs8g7li7hd09qMq6c18x5qeMH0EEYdspRpruPSHH3rO63KFzrlxCtGc6__wyZ0dQuHqk_dumNjqypuIWEqMuDRAEzi9Pt5Kb-2u3C1JxceJ82c2pg7W0-raGF1dGhEYXRhWQF6SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2NBAAAAAAAAAAAAAAAAAAAAAAAAAAAANXZhcmlhbnQtYmVmb3JlLTE3OTEwNjQ1MzA5ODgtMzIyMTUtcnNhLXNob3J0LWV4cG9uZW50pAEDAzkBASBZAQDG_EW4ZSma--Zu4LWynyCw6A689FAfUGL92G3RLPey2WLrQDCebc_v3vho6EgX0QSQdZXK6t13pa2cdM1u54YtBtNhAugf8VkKXmtBMNTKyzEVJUiQClxsNpJZAs3mds8bYF1f0icBJE7NVDQpPheI_9BKefUg54fVfefeBimyPoK4-UL192B-COCZfwCl5Nnwmunr1WZLxmFKYaWJ1gVA14DbwBys5khvVakEBuXv5tFLPzxsxkh1MsnTx1bkB0SSjOIC0Fo_XStuo5cd9AcAYiuXquyItUcx3MuYA98_yfpaTCVwUP8I4OM_rbPqeUNKLeG_KFyASkq3NCUplvtJIUED",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=cDjCS79sAZuDwkU7fKRBWcLUTs1LCxI0.LYO0%2Fyv6yxR1%2Bdy910iEEyampghl1VqMc6U3MlrfT98%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "name": "Source key variant",
+            "publicKey": "pAEDAzkBASBZAQDG/EW4ZSma++Zu4LWynyCw6A689FAfUGL92G3RLPey2WLrQDCebc/v3vho6EgX0QSQdZXK6t13pa2cdM1u54YtBtNhAugf8VkKXmtBMNTKyzEVJUiQClxsNpJZAs3mds8bYF1f0icBJE7NVDQpPheI/9BKefUg54fVfefeBimyPoK4+UL192B+COCZfwCl5Nnwmunr1WZLxmFKYaWJ1gVA14DbwBys5khvVakEBuXv5tFLPzxsxkh1MsnTx1bkB0SSjOIC0Fo/XStuo5cd9AcAYiuXquyItUcx3MuYA98/yfpaTCVwUP8I4OM/rbPqeUNKLeG/KFyASkq3NCUplvtJIUED",
+            "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+            "credentialID": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1yc2Etc2hvcnQtZXhwb25lbnQ",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T21:55:31.090Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000",
+            "id": "mjMhtakItWSFJTFHxg7y0zDHVPoTCwlU",
+            "session": {
+              "expiresAt": "2026-10-10T21:55:31.090Z",
+              "token": "cDjCS79sAZuDwkU7fKRBWcLUTs1LCxI0",
+              "createdAt": "2026-10-03T21:55:31.090Z",
+              "updatedAt": "2026-10-03T21:55:31.090Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2",
+              "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+              "id": "6jUY8ulF6bfjeGwtXDts9kSskRoeO7Kl"
+            },
+            "user": {
+              "name": "Source variants",
+              "email": "variants-before-32215-1791064530988@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:55:31.064Z",
+              "updatedAt": "2026-10-03T21:55:31.064Z",
+              "username": null,
+              "displayUsername": null,
+              "id": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG"
+            }
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "message": "Challenge not found",
+            "code": "CHALLENGE_NOT_FOUND"
+          }
+        }
+      },
+      {
+        "port": "32215",
+        "label": "u2f-p384-control",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.ceremony-proof=BbinhYrwoz5wZXpE59MariLsGfOv6iaU.DfPlGCqMj%2BpNKV1ZZVgPC8ynOmu1%2FXTw3ptedLEVVgo%3D; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "challenge": "zoqO2zDT8OLP07x4Sh50s-ibHK5hcr9OUpgIoqto_sw",
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "NHAyczBvZmY2bHNjNnF4M2F2bHEyZ2llb25jMDJvNjE",
+              "name": "variants-before-32215-1791064530988@example.com",
+              "displayName": "variants-before-32215-1791064530988@example.com"
+            },
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "attestation": "none",
+            "excludeCredentials": [
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1yc2Etc2hvcnQtZXhwb25lbnQ",
+                "transports": [
+                  "internal"
+                ],
+                "type": "public-key"
+              }
+            ],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "userVerification": "preferred",
+              "requireResidentKey": false
+            },
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtcDM4NC1jb250cm9s",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtcDM4NC1jb250cm9s",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiem9xTzJ6RFQ4T0xQMDd4NFNoNTBzLWliSEs1aGNyOU9VcGdJb3F0b19zdyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTUiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRoZmlkby11MmZnYXR0U3RtdKNjeDVjgVkB2TCCAdUwggF7oAMCAQICDDrCM-A_Sf8nNo5QJzAKBggqhkjOPQQDAjBGMQswCQYDVQQGEwJVUzEeMBwGA1UECgwVQ29tcGF0aWJpbGl0eSBmaXh0dXJlMRcwFQYDVQQDDA5QdWJsaWMgdGVzdCBDQTAeFw0yNjEwMDMyMTU1MzFaFw00NjA5MjgyMTU1MzFaMCgxJjAkBgNVBAMMHVB1YmxpYyBVMkYgdGVzdCBhdXRoZW50aWNhdG9yMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAEiINg5y9FK3bNyeNZ0L1qIWWu3aTutmmcG3HSgPivgNKBBwL42UIN_EhDw4ksOXGkTYZoKQ0vWKPFUu0KQIm1CvC0oEk1mAkE1FJfoLqigkzAQuHNWkVu5lsz-uosYsbzo1AwTjAMBgNVHRMBAf8EAjAAMB0GA1UdDgQWBBS-PFs8F5EyRULPBxA9C-Sm9kNnyDAfBgNVHSMEGDAWgBQzUtLz3HKas-kmny4nHHGW2EEwWzAKBggqhkjOPQQDAgNIADBFAiAjGnQQ5v-VP2YOT0s5jxabi0bk_nNFiWlF8PutDx_HvQIhAM9YWdcRhPWfiDYlGMRumBJnDPRC0q9RcB9iBZO0UJ-AY2FsZyZjc2lnWGcwZQIxAKfSmGkNtOV4594HbCUEWskUsMYJV9HODXPwLaGQ9a-vDHlpjsRQSKwF9QqmEOdoxQIwHXGs07gUG5oQ5AypNw7TPNeTDcxfUOVUbgOOxM1tkh8q3JMvVB1lFcW2z__FuH73aGF1dGhEYXRhWLdJlg3liA6MaHQ0Fw9kdmBbj-SuuaKGMseZXPO6gx2XY0EAAAAAAAAAAAAAAAAAAAAAAAAAAAAzdmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtcDM4NC1jb250cm9spQECAyYgASFYICrcpTbGdPbYKhTQgfQLnF0343ghadytSom2gth1oL4VIlgg_EXTvK04pnyK-gP79CGVGNyFGmEzyjegcV7tMOPFVbw",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=uhE9mTUKnGsFWtYylAe1QbsmUiVpR8Me.AvQMeSZyZaQ4LQAXz5y4Wz8TZQijYksMzmnvdifnTWk%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "name": "Source key variant",
+            "publicKey": "pQECAyYgASFYICrcpTbGdPbYKhTQgfQLnF0343ghadytSom2gth1oL4VIlgg/EXTvK04pnyK+gP79CGVGNyFGmEzyjegcV7tMOPFVbw=",
+            "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+            "credentialID": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtcDM4NC1jb250cm9s",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T21:55:31.139Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000",
+            "id": "8WWWAptdsd6UR6TGb6UE05xVFSShIR4H",
+            "session": {
+              "expiresAt": "2026-10-10T21:55:31.139Z",
+              "token": "uhE9mTUKnGsFWtYylAe1QbsmUiVpR8Me",
+              "createdAt": "2026-10-03T21:55:31.139Z",
+              "updatedAt": "2026-10-03T21:55:31.139Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2",
+              "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+              "id": "dHoake9p6FxYKXUbPc9J1AHRj55jwduy"
+            },
+            "user": {
+              "name": "Source variants",
+              "email": "variants-before-32215-1791064530988@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:55:31.064Z",
+              "updatedAt": "2026-10-03T21:55:31.064Z",
+              "username": null,
+              "displayUsername": null,
+              "id": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG"
+            }
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 3
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "message": "Challenge not found",
+            "code": "CHALLENGE_NOT_FOUND"
+          }
+        }
+      },
+      {
+        "port": "32215",
+        "label": "u2f-ed25519",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 3
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.ceremony-proof=yfTcEG-3tDa7L1D4lJeyFzuseBjbb_cd.n6LdKbfbA8orWTQHq7zPvuCqtH%2BqhRhcizOBm3H29Mo%3D; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "challenge": "tfiuYpNhTLbiGSTlWVJ093Hvgjr52hbr1Y_Ups0_kW4",
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "OWdrZzl0eDNsdmkyMzZyeXc0bnZ3MGVuYXViNmsyZG4",
+              "name": "variants-before-32215-1791064530988@example.com",
+              "displayName": "variants-before-32215-1791064530988@example.com"
+            },
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "attestation": "none",
+            "excludeCredentials": [
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1yc2Etc2hvcnQtZXhwb25lbnQ",
+                "transports": [
+                  "internal"
+                ],
+                "type": "public-key"
+              },
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtcDM4NC1jb250cm9s",
+                "transports": [
+                  "internal"
+                ],
+                "type": "public-key"
+              }
+            ],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "userVerification": "preferred",
+              "requireResidentKey": false
+            },
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtZWQyNTUxOQ",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtZWQyNTUxOQ",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoidGZpdVlwTmhUTGJpR1NUbFdWSjA5M0h2Z2pyNTJoYnIxWV9VcHMwX2tXNCIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTUiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRoZmlkby11MmZnYXR0U3RtdKNjeDVjgVkBvTCCAbkwggFeoAMCAQICDCcQDBLMB2Sgun7TBDAKBggqhkjOPQQDAjBGMQswCQYDVQQGEwJVUzEeMBwGA1UECgwVQ29tcGF0aWJpbGl0eSBmaXh0dXJlMRcwFQYDVQQDDA5QdWJsaWMgdGVzdCBDQTAeFw0yNjEwMDMyMTU1MzFaFw00NjA5MjgyMTU1MzFaMCgxJjAkBgNVBAMMHVB1YmxpYyBVMkYgdGVzdCBhdXRoZW50aWNhdG9yMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQDrVTpY8ZgCzBdGXetoq789hh6Oiu4Z7GYPkaJ7n2AALJ3rhiKn96wMaGJagg_qz-pPdimUi-yd9jEtyfyCb1aNQME4wDAYDVR0TAQH_BAIwADAdBgNVHQ4EFgQU9r1UijBoVvPXpAY1j9XRRF_M2nswHwYDVR0jBBgwFoAUM1LS89xymrPpJp8uJxxxlthBMFswCgYIKoZIzj0EAwIDSQAwRgIhAKkR7D4KcDOyWQ2cesYkM1s8fXf0dRKRWiqpGtXgQ33qAiEA6m8U6I3Hu-ML2T30iJoKbfTjKYKB_yRYkpmspqpDEE9jYWxnJmNzaWdYRzBFAiEApz5Gqh80TeoHarJepagqB0KfpR_-wAGDpoDnzkji7lACID2kOwDppBGswoCCnml0YehkHiZeV8jPtdwMecnUWY3BaGF1dGhEYXRhWI9Jlg3liA6MaHQ0Fw9kdmBbj-SuuaKGMseZXPO6gx2XY0EAAAAAAAAAAAAAAAAAAAAAAAAAAAAudmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtZWQyNTUxOaQBAQMnIAYhWCCKggSlphjGlL3Xd4HZnfkF_FyfOokeRXUpbU5-aNRv6g",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=swz4Nnyj7Eomj3fqHp4KJOBVUmoCNGR5.oL8mK%2FX3DS%2BFSrPszP7tnwS8wzN9G%2BHzkG9Aj6Hm7o8%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "name": "Source key variant",
+            "publicKey": "pAEBAycgBiFYIIqCBKWmGMaUvdd3gdmd+QX8XJ86iR5FdSltTn5o1G/q",
+            "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+            "credentialID": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtZWQyNTUxOQ",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T21:55:31.177Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000",
+            "id": "0J7zHb5e6d4nfNDfkhKO17HKgg0XNyM7",
+            "session": {
+              "expiresAt": "2026-10-10T21:55:31.177Z",
+              "token": "swz4Nnyj7Eomj3fqHp4KJOBVUmoCNGR5",
+              "createdAt": "2026-10-03T21:55:31.177Z",
+              "updatedAt": "2026-10-03T21:55:31.177Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2",
+              "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+              "id": "sUpYZWNrnnLj0UYpnvH2mv2kfC07C09S"
+            },
+            "user": {
+              "name": "Source variants",
+              "email": "variants-before-32215-1791064530988@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:55:31.064Z",
+              "updatedAt": "2026-10-03T21:55:31.064Z",
+              "username": null,
+              "displayUsername": null,
+              "id": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG"
+            }
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 4
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "message": "Challenge not found",
+            "code": "CHALLENGE_NOT_FOUND"
+          }
+        }
+      },
+      {
+        "port": "32215",
+        "label": "apple-opaque",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 4
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.ceremony-proof=bqktO2y8bxv2BWPBYl9dYcckjvcOszRR.wR2aLrdKBcjfoElb0bzEFxZ%2FA4EnH%2FLWsJr%2BafLExPU%3D; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "challenge": "sBypTzKF6wdWMcqZ84J4Sf8boT9NMKjiNETtfq92jo8",
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "YmptYWJrbDR1aDhuNHdzZmpmMXBieHRycTh4NGtma3E",
+              "name": "variants-before-32215-1791064530988@example.com",
+              "displayName": "variants-before-32215-1791064530988@example.com"
+            },
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "attestation": "none",
+            "excludeCredentials": [
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1yc2Etc2hvcnQtZXhwb25lbnQ",
+                "transports": [
+                  "internal"
+                ],
+                "type": "public-key"
+              },
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtcDM4NC1jb250cm9s",
+                "transports": [
+                  "internal"
+                ],
+                "type": "public-key"
+              },
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtZWQyNTUxOQ",
+                "transports": [
+                  "internal"
+                ],
+                "type": "public-key"
+              }
+            ],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "userVerification": "preferred",
+              "requireResidentKey": false
+            },
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1hcHBsZS1vcGFxdWU",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1hcHBsZS1vcGFxdWU",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoic0J5cFR6S0Y2d2RXTWNxWjg0SjRTZjhib1Q5Tk1LamlORVR0ZnE5MmpvOCIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTUiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRlYXBwbGVnYXR0U3RtdKFjeDVjgVkB7TCCAekwggGPoAMCAQICDQDHVroo1hzpN196EtkwCgYIKoZIzj0EAwIwRjELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEXMBUGA1UEAwwOUHVibGljIHRlc3QgQ0EwHhcNMjYxMDAzMjE1NTMxWhcNNDYwOTI4MjE1NTMxWjAhMR8wHQYDVQQDDBZTb2Z0d2FyZSBhdXRoZW50aWNhdG9yMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEKtylNsZ09tgqFNCB9AucXTfjeCFp3K1KibaC2HWgvhX8RdO8rTimfIr6A_v0IZUY3IUaYTPKN6BxXu0w48VVvKOBhjCBgzAMBgNVHRMBAf8EAjAAMDMGCSqGSIb3Y2QIAgQmAAAAAAAApyM5LkHKMD1_Yd4mgY8P8pgltkzZ-PMaG30fho7KswowHQYDVR0OBBYEFHei2-N-p4YpyCxwod6C-_RzlX3cMB8GA1UdIwQYMBaAFDNS0vPccpqz6SafLicccZbYQTBbMAoGCCqGSM49BAMCA0gAMEUCIBp4JzLi71DQMMFBbBJaLtoysO59ypYis5BX9yvRds3KAiEA8Q-tb8jiWm3bPpyHYZqlJ5lScca03ROcUU7WsQ2BPY5oYXV0aERhdGFYs0mWDeWIDoxodDQXD2R2YFuP5K65ooYyx5lc87qDHZdjQQAAAAAAAAAAAAAAAAAAAAAAAAAAAC92YXJpYW50LWJlZm9yZS0xNzkxMDY0NTMwOTg4LTMyMjE1LWFwcGxlLW9wYXF1ZaUBAgMmIAEhWCAq3KU2xnT22CoU0IH0C5xdN-N4IWncrUqJtoLYdaC-FSJYIPxF07ytOKZ8ivoD-_QhlRjchRphM8o3oHFe7TDjxVW8",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=5QYbtHMFGtLo86uGpx1zQpajitayy6xO.EKA7W5yKccz2F1cS5b%2FMuz4%2BIcFO6kwcr56XOtXOgNQ%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "name": "Source key variant",
+            "publicKey": "pQECAyYgASFYICrcpTbGdPbYKhTQgfQLnF0343ghadytSom2gth1oL4VIlgg/EXTvK04pnyK+gP79CGVGNyFGmEzyjegcV7tMOPFVbw=",
+            "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+            "credentialID": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1hcHBsZS1vcGFxdWU",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T21:55:31.212Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000",
+            "id": "9i6rf0uN1PyTeALmw0K5rp3Agl3sdTJj",
+            "session": {
+              "expiresAt": "2026-10-10T21:55:31.213Z",
+              "token": "5QYbtHMFGtLo86uGpx1zQpajitayy6xO",
+              "createdAt": "2026-10-03T21:55:31.213Z",
+              "updatedAt": "2026-10-03T21:55:31.213Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2",
+              "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+              "id": "zBDjdveyllnILQjwZm0B7srRhyu9e4sV"
+            },
+            "user": {
+              "name": "Source variants",
+              "email": "variants-before-32215-1791064530988@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:55:31.064Z",
+              "updatedAt": "2026-10-03T21:55:31.064Z",
+              "username": null,
+              "displayUsername": null,
+              "id": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG"
+            }
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 5
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "message": "Challenge not found",
+            "code": "CHALLENGE_NOT_FOUND"
+          }
+        }
+      },
+      {
+        "port": "32215",
+        "label": "tpm-sha384-name",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 5
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.ceremony-proof=HK9NrGn1N4z_072roTk4uVMuYBqcs_rx.FDHgHSgJNYuFfbX9voGkVlbW51PjeB4PwsjIGGzjsY0%3D; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "challenge": "tuaOlDXLlUesyc-kY8cpGnGsM_3iRWcLnd3qUfAsA68",
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "MG0ya2phdmZqYmNla2dyYmw4eTY5c202amcwbjNweG4",
+              "name": "variants-before-32215-1791064530988@example.com",
+              "displayName": "variants-before-32215-1791064530988@example.com"
+            },
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "attestation": "none",
+            "excludeCredentials": [
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1yc2Etc2hvcnQtZXhwb25lbnQ",
+                "transports": [
+                  "internal"
+                ],
+                "type": "public-key"
+              },
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtcDM4NC1jb250cm9s",
+                "transports": [
+                  "internal"
+                ],
+                "type": "public-key"
+              },
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS11MmYtZWQyNTUxOQ",
+                "transports": [
+                  "internal"
+                ],
+                "type": "public-key"
+              },
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS1hcHBsZS1vcGFxdWU",
+                "transports": [
+                  "internal"
+                ],
+                "type": "public-key"
+              }
+            ],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "userVerification": "preferred",
+              "requireResidentKey": false
+            },
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS10cG0tc2hhMzg0LW5hbWU",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS10cG0tc2hhMzg0LW5hbWU",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoidHVhT2xEWExsVWVzeWMta1k4Y3BHbkdzTV8zaVJXY0xuZDNxVWZBc0E2OCIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTUiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRjdHBtZ2F0dFN0bXSmY3ZlcmMyLjBncHViQXJlYVhWACMACwAAAAAAAAAQABAAAwAQACAq3KU2xnT22CoU0IH0C5xdN-N4IWncrUqJtoLYdaC-FQAg_EXTvK04pnyK-gP79CGVGNyFGmEzyjegcV7tMOPFVbxoY2VydEluZm9Yef9UQ0eAFwAAACAKQs6eaETR6id1a3AIUVxqM8UmrEm1lta7ENt6i33zCgAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgAMRlr0oGjVXrkSR66f9ywlOU2UK4gbFpSvLr-Dai7CNOkGl7KPYTwfy8EYm0qAFn7vAABjeDVjgVkB_jCCAfowggGgoAMCAQICDGOsqsoE3HqDAP6KJDAKBggqhkjOPQQDAjBGMQswCQYDVQQGEwJVUzEeMBwGA1UECgwVQ29tcGF0aWJpbGl0eSBmaXh0dXJlMRcwFQYDVQQDDA5QdWJsaWMgdGVzdCBDQTAeFw0yNjEwMDMyMTU1MzFaFw00NjA5MjgyMTU1MzFaMAAwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARAOtVOljxmALMF0Zd62irvz2GHo6K7hnsZg-RonufYAAsneuGIqf3rAxoYlqCD-rP6k92KZSL7J32MS3J_IJvVo4G5MIG2MAwGA1UdEwEB_wQCMAAwEAYDVR0lBAkwBwYFZ4EFCAMwVAYDVR0RAQH_BEowSKRGMEQxFjAUBgVngQUCAQwLaWQ6NDk0MjREMDAxEjAQBgVngQUCAgwHRml4dHVyZTEWMBQGBWeBBQIDDAtpZDowMDAxMDAwMDAdBgNVHQ4EFgQU9r1UijBoVvPXpAY1j9XRRF_M2nswHwYDVR0jBBgwFoAUM1LS89xymrPpJp8uJxxxlthBMFswCgYIKoZIzj0EAwIDSAAwRQIhAKwD7Te_QRZvB5r72Q5Ild4-d7AdbZo25dPJtmW55JX0AiAU0AJA7OuQzHMUnd6Dx1sE1cWI5QDzA_khryJAzQ2WOGNhbGcmY3NpZ1hHMEUCIF8GmVyrtPPAGHQ5WKMh7NL0Yln91k8BIbZ2CVplVOuWAiEAyi0IVc7LGoGXBM9N3vE8uqQRQF8iXOzgysy9ekJkTlloYXV0aERhdGFYtkmWDeWIDoxodDQXD2R2YFuP5K65ooYyx5lc87qDHZdjQQAAAAAAAAAAAAAAAAAAAAAAAAAAADJ2YXJpYW50LWJlZm9yZS0xNzkxMDY0NTMwOTg4LTMyMjE1LXRwbS1zaGEzODQtbmFtZaUBAgMmIAEhWCAq3KU2xnT22CoU0IH0C5xdN-N4IWncrUqJtoLYdaC-FSJYIPxF07ytOKZ8ivoD-_QhlRjchRphM8o3oHFe7TDjxVW8",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=BsY4cXaQRy2kqQsY1BkKtBjVbg2Jod1z.guU04MrOG%2Fvyd4qe0i4n%2F5ULisCtoAxBf%2BCmU5AUs8Y%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "name": "Source key variant",
+            "publicKey": "pQECAyYgASFYICrcpTbGdPbYKhTQgfQLnF0343ghadytSom2gth1oL4VIlgg/EXTvK04pnyK+gP79CGVGNyFGmEzyjegcV7tMOPFVbw=",
+            "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+            "credentialID": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxNS10cG0tc2hhMzg0LW5hbWU",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T21:55:31.258Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000",
+            "id": "lJt8JjTVuDZ2jjGYdI4GTNqHiRgcc8Rt",
+            "session": {
+              "expiresAt": "2026-10-10T21:55:31.258Z",
+              "token": "BsY4cXaQRy2kqQsY1BkKtBjVbg2Jod1z",
+              "createdAt": "2026-10-03T21:55:31.258Z",
+              "updatedAt": "2026-10-03T21:55:31.258Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2",
+              "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+              "id": "pJdOwgemZWEcBzLQGeFbsI8On0AWyQyc"
+            },
+            "user": {
+              "name": "Source variants",
+              "email": "variants-before-32215-1791064530988@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:55:31.064Z",
+              "updatedAt": "2026-10-03T21:55:31.064Z",
+              "username": null,
+              "displayUsername": null,
+              "id": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG"
+            }
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "oOnyrPmnHYx9OWxot66YyAWrdIGbtcDG",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "26WQ9or6T4Z78Q8sQYCvsYr1thj0CWbm",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 6
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "message": "Challenge not found",
+            "code": "CHALLENGE_NOT_FOUND"
+          }
+        }
+      },
+      {
+        "port": "32218",
+        "label": "rsa-short-exponent",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "a1e80f1a-4d10-4c95-b524-7d53d62c8eaf",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "f3508fb6-5f53-4c5b-92c6-6b7c5df91f7f",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IjBlNmQ2NjkxLTAyMDEtNDkxMC05Njg4LTJlODFlMzIzZTYxZiIsImV4cCI6MTc5MTA2NDgzMSwiaWF0IjoxNzkxMDY0NTMxfQ.txzFIg5Z3FY5_lIJpGlPcWzTdgN1BfpgBRcQxcIukrY; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "cHc1OGFjc3Zpa3MxZzFqb3pmazhkbnpza21iOW12b2o",
+              "name": "variants-before-32218-1791064531261@example.com",
+              "displayName": "variants-before-32218-1791064531261@example.com"
+            },
+            "challenge": "EkoTXKw2clKRGWXav6VTVwGaMGCfUX4ece8LrFhGXq0",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC1yc2Etc2hvcnQtZXhwb25lbnQ",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC1yc2Etc2hvcnQtZXhwb25lbnQ",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiRWtvVFhLdzJjbEtSR1dYYXY2VlRWd0dhTUdDZlVYNGVjZThMckZoR1hxMCIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTgiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRmcGFja2VkZ2F0dFN0bXSiY2FsZzkBAWNzaWdZAQCRk4yDWi-FOFs_yFmBMzn9wD2TTxNe08OwMebUDWY1JtSrgLeQI3vP1gs7NmsCq5wuepV60AePBBQ8wWigrqqu5lg8LZIfA2x9Dibn_VxG2AW7dQZhH807Wm4I6bkqtagCx2BsvOvEZJGRrSEPVHjcicHSMi9zQePyhwJNOQtAKdPvzTstWSNf7OdYtANa9c8MiX6LyBJ0I8IpL8fYV00KvhXArTbz2N7zpA94N-r-TwAfOC-umi-JRQNViKbinXP5dFzMwdvlZBtFljdsjkVQZXra-XU6heMi8TRoRRXszfLZ-061r9s1o3A5bpIXUP6LPSF2mvbe1b_QngUh17TGaGF1dGhEYXRhWQF6SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2NBAAAAAAAAAAAAAAAAAAAAAAAAAAAANXZhcmlhbnQtYmVmb3JlLTE3OTEwNjQ1MzA5ODgtMzIyMTgtcnNhLXNob3J0LWV4cG9uZW50pAEDAzkBASBZAQDG_EW4ZSma--Zu4LWynyCw6A689FAfUGL92G3RLPey2WLrQDCebc_v3vho6EgX0QSQdZXK6t13pa2cdM1u54YtBtNhAugf8VkKXmtBMNTKyzEVJUiQClxsNpJZAs3mds8bYF1f0icBJE7NVDQpPheI_9BKefUg54fVfefeBimyPoK4-UL192B-COCZfwCl5Nnwmunr1WZLxmFKYaWJ1gVA14DbwBys5khvVakEBuXv5tFLPzxsxkh1MsnTx1bkB0SSjOIC0Fo_XStuo5cd9AcAYiuXquyItUcx3MuYA98_yfpaTCVwUP8I4OM_rbPqeUNKLeG_KFyASkq3NCUplvtJIUED",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 500,
+          "cookies": [],
+          "body": {
+            "code": "FAILED_TO_VERIFY_REGISTRATION",
+            "message": "Failed to verify registration"
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "a1e80f1a-4d10-4c95-b524-7d53d62c8eaf",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "f3508fb6-5f53-4c5b-92c6-6b7c5df91f7f",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      },
+      {
+        "port": "32218",
+        "label": "u2f-p384-control",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "a1e80f1a-4d10-4c95-b524-7d53d62c8eaf",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "f3508fb6-5f53-4c5b-92c6-6b7c5df91f7f",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6ImI5ZTYxZmQ4LTUxMDgtNDBmYy04MWRjLTI4OGJjNzNkMDkxMCIsImV4cCI6MTc5MTA2NDgzMSwiaWF0IjoxNzkxMDY0NTMxfQ.kLfMIrt901VfQyCVnjSy_7_GRvzQVkJfULE2Lcwj_S4; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "OXptdDVhdjdjY3d0OTQydXZ2c2g3Y2l2OXJqam1tNWQ",
+              "name": "variants-before-32218-1791064531261@example.com",
+              "displayName": "variants-before-32218-1791064531261@example.com"
+            },
+            "challenge": "QfZQNo5tAEOgFKSMUxPW8P04YRJSt3Pihfq44rK5PB4",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC11MmYtcDM4NC1jb250cm9s",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC11MmYtcDM4NC1jb250cm9s",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiUWZaUU5vNXRBRU9nRktTTVV4UFc4UDA0WVJKU3QzUGloZnE0NHJLNVBCNCIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTgiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRoZmlkby11MmZnYXR0U3RtdKNjeDVjgVkB2jCCAdYwggF8oAMCAQICDQCoA2WG_cpF8BGuTIgwCgYIKoZIzj0EAwIwRjELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEXMBUGA1UEAwwOUHVibGljIHRlc3QgQ0EwHhcNMjYxMDAzMjE1NTMxWhcNNDYwOTI4MjE1NTMxWjAoMSYwJAYDVQQDDB1QdWJsaWMgVTJGIHRlc3QgYXV0aGVudGljYXRvcjB2MBAGByqGSM49AgEGBSuBBAAiA2IABIiDYOcvRSt2zcnjWdC9aiFlrt2k7rZpnBtx0oD4r4DSgQcC-NlCDfxIQ8OJLDlxpE2GaCkNL1ijxVLtCkCJtQrwtKBJNZgJBNRSX6C6ooJMwELhzVpFbuZbM_rqLGLG86NQME4wDAYDVR0TAQH_BAIwADAdBgNVHQ4EFgQUvjxbPBeRMkVCzwcQPQvkpvZDZ8gwHwYDVR0jBBgwFoAUM1LS89xymrPpJp8uJxxxlthBMFswCgYIKoZIzj0EAwIDSAAwRQIgUl-KsZJ_o0HqLxagGcUzUT4mUmX41SkPcFKa07VP9wQCIQDFQxkg5QUZr1MbHSi_eva_GB9pqQeIRRSiBabTHCna_2NhbGcmY3NpZ1hmMGQCMHDJe0vJiQxTOvYUo5wNH0RZrERLS-XDIuwcYX0FDpCoVj6xDez3mcTxh3z0Q5LxnQIwLpL-exd4s8k0WyFvjOjpZOaSmXxGTzX2xh7yxxKW1JpWNuWVi2p5nM2B9uvCrnHtaGF1dGhEYXRhWLdJlg3liA6MaHQ0Fw9kdmBbj-SuuaKGMseZXPO6gx2XY0EAAAAAAAAAAAAAAAAAAAAAAAAAAAAzdmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC11MmYtcDM4NC1jb250cm9spQECAyYgASFYICrcpTbGdPbYKhTQgfQLnF0343ghadytSom2gth1oL4VIlgg_EXTvK04pnyK-gP79CGVGNyFGmEzyjegcV7tMOPFVbw",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=ny0RPuPixfGJHYi1bg47g5KMRLvXjVji.%2FzgtzRGKV%2BqOO%2BVVueX5f9miQfEScncrtKsHop9hfwU%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "id": "d983a6f9-d9ab-4585-a7e9-f0b1cc35238a",
+            "name": "Source key variant",
+            "credentialID": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC11MmYtcDM4NC1jb250cm9s",
+            "userId": "750de866-82da-4838-9291-411fa55e8191",
+            "publicKey": "pQECAyYgASFYICrcpTbGdPbYKhTQgfQLnF0343ghadytSom2gth1oL4VIlgg/EXTvK04pnyK+gP79CGVGNyFGmEzyjegcV7tMOPFVbw=",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T21:55:31.488Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000",
+            "user": {
+              "id": "750de866-82da-4838-9291-411fa55e8191",
+              "name": "Source variants",
+              "email": "variants-before-32218-1791064531261@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:55:31.407Z",
+              "updatedAt": "2026-10-03T21:55:31.407Z",
+              "twoFactorEnabled": false,
+              "role": "user",
+              "banned": false,
+              "banExpires": null,
+              "banReason": null,
+              "displayUsername": null,
+              "username": null
+            },
+            "session": {
+              "id": "a4bc49d3-5769-420b-b20a-1c6100d1c0aa",
+              "expiresAt": "2026-10-10T21:55:31.487Z",
+              "token": "ny0RPuPixfGJHYi1bg47g5KMRLvXjVji",
+              "createdAt": "2026-10-03T21:55:31.488Z",
+              "updatedAt": "2026-10-03T21:55:31.488Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2",
+              "userId": "750de866-82da-4838-9291-411fa55e8191",
+              "activeOrganizationId": null,
+              "impersonatedBy": null
+            }
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "a1e80f1a-4d10-4c95-b524-7d53d62c8eaf",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "f3508fb6-5f53-4c5b-92c6-6b7c5df91f7f",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "750de866-82da-4838-9291-411fa55e8191",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      },
+      {
+        "port": "32218",
+        "label": "u2f-ed25519",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "a1e80f1a-4d10-4c95-b524-7d53d62c8eaf",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "f3508fb6-5f53-4c5b-92c6-6b7c5df91f7f",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "750de866-82da-4838-9291-411fa55e8191",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IjJlNzk5YmNhLTQ4MzktNDZiNi04YmM0LWM0YmZiZTViNWRmYiIsImV4cCI6MTc5MTA2NDgzMSwiaWF0IjoxNzkxMDY0NTMxfQ.bkIe4MapHFTBqyXLXvg467DqyiS8IeG296aliXpx03o; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "M2l1N240cTN2ZmpzcDh4eWhlcTdnanNzbW13MDJ3Z3o",
+              "name": "variants-before-32218-1791064531261@example.com",
+              "displayName": "variants-before-32218-1791064531261@example.com"
+            },
+            "challenge": "4H7VzOyiNBwJtGpOFHC7pXgQwUeM6QF8kWgzeaJZW70",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC11MmYtcDM4NC1jb250cm9s",
+                "type": "public-key",
+                "transports": [
+                  "internal"
+                ]
+              }
+            ],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC11MmYtZWQyNTUxOQ",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC11MmYtZWQyNTUxOQ",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiNEg3VnpPeWlOQndKdEdwT0ZIQzdwWGdRd1VlTTZRRjhrV2d6ZWFKWlc3MCIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTgiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRoZmlkby11MmZnYXR0U3RtdKNjeDVjgVkBuzCCAbcwggFeoAMCAQICDCpHHP9i_QfGYRQfHDAKBggqhkjOPQQDAjBGMQswCQYDVQQGEwJVUzEeMBwGA1UECgwVQ29tcGF0aWJpbGl0eSBmaXh0dXJlMRcwFQYDVQQDDA5QdWJsaWMgdGVzdCBDQTAeFw0yNjEwMDMyMTU1MzFaFw00NjA5MjgyMTU1MzFaMCgxJjAkBgNVBAMMHVB1YmxpYyBVMkYgdGVzdCBhdXRoZW50aWNhdG9yMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQDrVTpY8ZgCzBdGXetoq789hh6Oiu4Z7GYPkaJ7n2AALJ3rhiKn96wMaGJagg_qz-pPdimUi-yd9jEtyfyCb1aNQME4wDAYDVR0TAQH_BAIwADAdBgNVHQ4EFgQU9r1UijBoVvPXpAY1j9XRRF_M2nswHwYDVR0jBBgwFoAUM1LS89xymrPpJp8uJxxxlthBMFswCgYIKoZIzj0EAwIDRwAwRAIgHA4bSQRswpVwlx8UMhR-5o_xcRkUybv9HKG9A01k-cICIHzx6SY3Quy5lLvVykQtnQP1d19vs7dpLFhTwDuAhLIgY2FsZyZjc2lnWEYwRAIgBUx10eOKjWpMLUdqIUaFEQKvV5TDjKbycxfKdlbkB_0CIGA2fgI2IjiVpzuBeJUSlytIj1hqQrJtMbYrv4AIXEaFaGF1dGhEYXRhWI9Jlg3liA6MaHQ0Fw9kdmBbj-SuuaKGMseZXPO6gx2XY0EAAAAAAAAAAAAAAAAAAAAAAAAAAAAudmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC11MmYtZWQyNTUxOaQBAQMnIAYhWCCKggSlphjGlL3Xd4HZnfkF_FyfOokeRXUpbU5-aNRv6g",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 500,
+          "cookies": [],
+          "body": {
+            "code": "FAILED_TO_VERIFY_REGISTRATION",
+            "message": "Failed to verify registration"
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "a1e80f1a-4d10-4c95-b524-7d53d62c8eaf",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "f3508fb6-5f53-4c5b-92c6-6b7c5df91f7f",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "750de866-82da-4838-9291-411fa55e8191",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      },
+      {
+        "port": "32218",
+        "label": "apple-opaque",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "a1e80f1a-4d10-4c95-b524-7d53d62c8eaf",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "f3508fb6-5f53-4c5b-92c6-6b7c5df91f7f",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "750de866-82da-4838-9291-411fa55e8191",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IjNhMGZiZjAxLWY5MWQtNGZlYy1iMjYzLTc2ZjU0Yjk2Yjc2YyIsImV4cCI6MTc5MTA2NDgzMSwiaWF0IjoxNzkxMDY0NTMxfQ.JwViuR7xy_RLn0jdwtrBEpeao514zOsZwlehoGEIwfY; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "azFwMHJmdXA2ZTNjb2c2bDIycm9kZ2lwNDZ2anZzcXk",
+              "name": "variants-before-32218-1791064531261@example.com",
+              "displayName": "variants-before-32218-1791064531261@example.com"
+            },
+            "challenge": "AIXOPd2LqLNPAzc2bMuTTe5pKNJrVMM9Q16NjPdtKGE",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC11MmYtcDM4NC1jb250cm9s",
+                "type": "public-key",
+                "transports": [
+                  "internal"
+                ]
+              }
+            ],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC1hcHBsZS1vcGFxdWU",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC1hcHBsZS1vcGFxdWU",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiQUlYT1BkMkxxTE5QQXpjMmJNdVRUZTVwS05KclZNTTlRMTZOalBkdEtHRSIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTgiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRlYXBwbGVnYXR0U3RtdKFjeDVjgVkB7TCCAekwggGPoAMCAQICDQDcoMEyJ2g77C2ixrIwCgYIKoZIzj0EAwIwRjELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEXMBUGA1UEAwwOUHVibGljIHRlc3QgQ0EwHhcNMjYxMDAzMjE1NTMxWhcNNDYwOTI4MjE1NTMxWjAhMR8wHQYDVQQDDBZTb2Z0d2FyZSBhdXRoZW50aWNhdG9yMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEKtylNsZ09tgqFNCB9AucXTfjeCFp3K1KibaC2HWgvhX8RdO8rTimfIr6A_v0IZUY3IUaYTPKN6BxXu0w48VVvKOBhjCBgzAMBgNVHRMBAf8EAjAAMDMGCSqGSIb3Y2QIAgQmAAAAAAAACuDqsSyAmDUt2JJhlSy-im8J_lFv8olEyE86x4DfTy4wHQYDVR0OBBYEFHei2-N-p4YpyCxwod6C-_RzlX3cMB8GA1UdIwQYMBaAFDNS0vPccpqz6SafLicccZbYQTBbMAoGCCqGSM49BAMCA0gAMEUCIE-Y9sVTTTrwjowDEpEZpZQGZ7lgWzXkjELLmbATGjEyAiEA2oypitnza6crO6loedQBGgydIA3WqeVjJGtyCOEf9FRoYXV0aERhdGFYs0mWDeWIDoxodDQXD2R2YFuP5K65ooYyx5lc87qDHZdjQQAAAAAAAAAAAAAAAAAAAAAAAAAAAC92YXJpYW50LWJlZm9yZS0xNzkxMDY0NTMwOTg4LTMyMjE4LWFwcGxlLW9wYXF1ZaUBAgMmIAEhWCAq3KU2xnT22CoU0IH0C5xdN-N4IWncrUqJtoLYdaC-FSJYIPxF07ytOKZ8ivoD-_QhlRjchRphM8o3oHFe7TDjxVW8",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 500,
+          "cookies": [],
+          "body": {
+            "code": "FAILED_TO_VERIFY_REGISTRATION",
+            "message": "Failed to verify registration"
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "a1e80f1a-4d10-4c95-b524-7d53d62c8eaf",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "f3508fb6-5f53-4c5b-92c6-6b7c5df91f7f",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "750de866-82da-4838-9291-411fa55e8191",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      },
+      {
+        "port": "32218",
+        "label": "tpm-sha384-name",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "a1e80f1a-4d10-4c95-b524-7d53d62c8eaf",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "f3508fb6-5f53-4c5b-92c6-6b7c5df91f7f",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "750de866-82da-4838-9291-411fa55e8191",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6ImYzMGZmZGU0LWE5NWMtNDljYy05ZTNiLTA1ZGQxNTYwYmRhYSIsImV4cCI6MTc5MTA2NDgzMSwiaWF0IjoxNzkxMDY0NTMxfQ.tE-FJpKj8dM_c0FBAHQuaqiBXr9nL5hU_uryXz5g4rQ; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "ZHllbnN5bDk2eG5qamtwbDNsNG9rZ2MzaW4xMHB3MmU",
+              "name": "variants-before-32218-1791064531261@example.com",
+              "displayName": "variants-before-32218-1791064531261@example.com"
+            },
+            "challenge": "qtWb7umCi5pM5l12jRFquFwOGSADg9l9UvO4e5cOHDs",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC11MmYtcDM4NC1jb250cm9s",
+                "type": "public-key",
+                "transports": [
+                  "internal"
+                ]
+              }
+            ],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC10cG0tc2hhMzg0LW5hbWU",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOC10cG0tc2hhMzg0LW5hbWU",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoicXRXYjd1bUNpNXBNNWwxMmpSRnF1RndPR1NBRGc5bDlVdk80ZTVjT0hEcyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTgiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRjdHBtZ2F0dFN0bXSmY3ZlcmMyLjBncHViQXJlYVhWACMACwAAAAAAAAAQABAAAwAQACAq3KU2xnT22CoU0IH0C5xdN-N4IWncrUqJtoLYdaC-FQAg_EXTvK04pnyK-gP79CGVGNyFGmEzyjegcV7tMOPFVbxoY2VydEluZm9Yef9UQ0eAFwAAACD9J23RN8l7ij4zHLD5ONkeapNM7gxSRUOc0mdIN7337QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgAMRlr0oGjVXrkSR66f9ywlOU2UK4gbFpSvLr-Dai7CNOkGl7KPYTwfy8EYm0qAFn7vAABjeDVjgVkCADCCAfwwggGhoAMCAQICDQCylqD3clU7RR1DuBswCgYIKoZIzj0EAwIwRjELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEXMBUGA1UEAwwOUHVibGljIHRlc3QgQ0EwHhcNMjYxMDAzMjE1NTMxWhcNNDYwOTI4MjE1NTMxWjAAMFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEQDrVTpY8ZgCzBdGXetoq789hh6Oiu4Z7GYPkaJ7n2AALJ3rhiKn96wMaGJagg_qz-pPdimUi-yd9jEtyfyCb1aOBuTCBtjAMBgNVHRMBAf8EAjAAMBAGA1UdJQQJMAcGBWeBBQgDMFQGA1UdEQEB_wRKMEikRjBEMRYwFAYFZ4EFAgEMC2lkOjQ5NDI0RDAwMRIwEAYFZ4EFAgIMB0ZpeHR1cmUxFjAUBgVngQUCAwwLaWQ6MDAwMTAwMDAwHQYDVR0OBBYEFPa9VIowaFbz16QGNY_V0URfzNp7MB8GA1UdIwQYMBaAFDNS0vPccpqz6SafLicccZbYQTBbMAoGCCqGSM49BAMCA0kAMEYCIQCCTjt7a1kJ2OrJvHgyo6MpgG-0A3hE-KGYXfbL5Wfe8wIhAPrpvVelomx8u5gUKQ9wybLcr_g0WjdapQ5i5MaWZdSNY2FsZyZjc2lnWEcwRQIhANa3mO2VD2UR8pfyy9leQjoRrFFc3nndsh8rHHYuHmqxAiBYcSubWNLf9leCAKK1hcLdiHlaqvaGp61ptxmkh-fvsmhhdXRoRGF0YVi2SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2NBAAAAAAAAAAAAAAAAAAAAAAAAAAAAMnZhcmlhbnQtYmVmb3JlLTE3OTEwNjQ1MzA5ODgtMzIyMTgtdHBtLXNoYTM4NC1uYW1lpQECAyYgASFYICrcpTbGdPbYKhTQgfQLnF0343ghadytSom2gth1oL4VIlgg_EXTvK04pnyK-gP79CGVGNyFGmEzyjegcV7tMOPFVbw",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 500,
+          "cookies": [],
+          "body": {
+            "code": "FAILED_TO_VERIFY_REGISTRATION",
+            "message": "Failed to verify registration"
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "1b68504a-f67c-4e98-978d-1ba0402ad944",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "a1e80f1a-4d10-4c95-b524-7d53d62c8eaf",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "f3508fb6-5f53-4c5b-92c6-6b7c5df91f7f",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "750de866-82da-4838-9291-411fa55e8191",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      },
+      {
+        "port": "32219",
+        "label": "rsa-short-exponent",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "8f79a6c9-a446-4abc-9bef-6cd6e2b0cd06",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IjYxNGRjNjA2LWEyMzItNDI0MS05NzEyLTRjMmNlMDk0ZDkwOSIsImV4cCI6MTc5MTA2NDgzMSwiaWF0IjoxNzkxMDY0NTMxfQ.dgXn-VwDVZvSsLWy7F-ItJYC6j_VxQwE9P7IvrkzIBs; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "MDY2MmxyMGdrM2M1dDA4djJyeWd1NnB5YXB6ZzFmeDc",
+              "name": "variants-before-32219-1791064531580@example.com",
+              "displayName": "variants-before-32219-1791064531580@example.com"
+            },
+            "challenge": "jpCPXjRC62ZctAOgdEO-EYAX9TapYegUfERpqptm75g",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS1yc2Etc2hvcnQtZXhwb25lbnQ",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS1yc2Etc2hvcnQtZXhwb25lbnQ",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoianBDUFhqUkM2MlpjdEFPZ2RFTy1FWUFYOVRhcFllZ1VmRVJwcXB0bTc1ZyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTkiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRmcGFja2VkZ2F0dFN0bXSiY2FsZzkBAWNzaWdZAQCxPapguPACLnnfQ0lklRA6iv9MXjv21ZMmaDLYeRxuYaWW87JbjBHBXAJSOL74x3PTAgpVvGanl6mLOVy9y2SlM0sBt7VLNmK0piCDYcxREDbFfw3gLWRpPA7R5SrzVc_Dz2AaULfk906It421YCJIFzTkJ736m3lpyPuitYMgGNM_p86nGX4fPEQrHAAYR15_OsA4kaV80Hmeq0pmhHsgMnZK9RJr_WxStUCQm9qNy8ScehPzz5kFA37et6eLtr3C23BwVm8OJCQ92dvrYSiagDxgA7_ADwRpIheDuFj4IGrtN6zh4vREh9ppf_HRpX57A0BHNrCcKGjg_eBBLqPsaGF1dGhEYXRhWQF6SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2NBAAAAAAAAAAAAAAAAAAAAAAAAAAAANXZhcmlhbnQtYmVmb3JlLTE3OTEwNjQ1MzA5ODgtMzIyMTktcnNhLXNob3J0LWV4cG9uZW50pAEDAzkBASBZAQDG_EW4ZSma--Zu4LWynyCw6A689FAfUGL92G3RLPey2WLrQDCebc_v3vho6EgX0QSQdZXK6t13pa2cdM1u54YtBtNhAugf8VkKXmtBMNTKyzEVJUiQClxsNpJZAs3mds8bYF1f0icBJE7NVDQpPheI_9BKefUg54fVfefeBimyPoK4-UL192B-COCZfwCl5Nnwmunr1WZLxmFKYaWJ1gVA14DbwBys5khvVakEBuXv5tFLPzxsxkh1MsnTx1bkB0SSjOIC0Fo_XStuo5cd9AcAYiuXquyItUcx3MuYA98_yfpaTCVwUP8I4OM_rbPqeUNKLeG_KFyASkq3NCUplvtJIUED",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 500,
+          "cookies": [],
+          "body": {
+            "code": "FAILED_TO_VERIFY_REGISTRATION",
+            "message": "Failed to verify registration"
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "8f79a6c9-a446-4abc-9bef-6cd6e2b0cd06",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      },
+      {
+        "port": "32219",
+        "label": "u2f-p384-control",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "8f79a6c9-a446-4abc-9bef-6cd6e2b0cd06",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 1
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6ImMxMDA0NjhhLTQ3NDMtNDFmZS04ZjU4LTcyNTU3ZDc2NDAwMSIsImV4cCI6MTc5MTA2NDgzMSwiaWF0IjoxNzkxMDY0NTMxfQ.uAk5ppE0_GLdKoPmECLhkJapaQ4Ot7pCetlZzyjZteo; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "MWZtZGRpYXlzMHJtaTBpYXZ4eDZ1bm11bnJjZ2J5ank",
+              "name": "variants-before-32219-1791064531580@example.com",
+              "displayName": "variants-before-32219-1791064531580@example.com"
+            },
+            "challenge": "WjwW2NeQqovrFjXmReMKJ9TpqfCqQCbZ-gSIAV83vYk",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS11MmYtcDM4NC1jb250cm9s",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS11MmYtcDM4NC1jb250cm9s",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiV2p3VzJOZVFxb3ZyRmpYbVJlTUtKOVRwcWZDcVFDYlotZ1NJQVY4M3ZZayIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTkiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRoZmlkby11MmZnYXR0U3RtdKNjeDVjgVkB2TCCAdUwggF8oAMCAQICDQDGrWKgMK3HqENbdAYwCgYIKoZIzj0EAwIwRjELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEXMBUGA1UEAwwOUHVibGljIHRlc3QgQ0EwHhcNMjYxMDAzMjE1NTMxWhcNNDYwOTI4MjE1NTMxWjAoMSYwJAYDVQQDDB1QdWJsaWMgVTJGIHRlc3QgYXV0aGVudGljYXRvcjB2MBAGByqGSM49AgEGBSuBBAAiA2IABIiDYOcvRSt2zcnjWdC9aiFlrt2k7rZpnBtx0oD4r4DSgQcC-NlCDfxIQ8OJLDlxpE2GaCkNL1ijxVLtCkCJtQrwtKBJNZgJBNRSX6C6ooJMwELhzVpFbuZbM_rqLGLG86NQME4wDAYDVR0TAQH_BAIwADAdBgNVHQ4EFgQUvjxbPBeRMkVCzwcQPQvkpvZDZ8gwHwYDVR0jBBgwFoAUM1LS89xymrPpJp8uJxxxlthBMFswCgYIKoZIzj0EAwIDRwAwRAIgCGLTuhTd1aml4ZHikp3IA9IXa0e5nt36Qg8ot2HMYYcCIBZRV-yDXB0Pc8sKZkJlqkSHgaL2sQTjFgKmnE36SGySY2FsZyZjc2lnWGgwZgIxANotGo1AEMmgXl5KkKnqv1A4RPnqA68lkhEY7V4uS_6KgeqyCEqgLq6w_wckEg4_DwIxAOM3m5UQljolJJZVMaAEn3mdwoOB3Q0mw3GwCGwdADTKDGY0PemyFEo5yCgE3uJQeGhhdXRoRGF0YVi3SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2NBAAAAAAAAAAAAAAAAAAAAAAAAAAAAM3ZhcmlhbnQtYmVmb3JlLTE3OTEwNjQ1MzA5ODgtMzIyMTktdTJmLXAzODQtY29udHJvbKUBAgMmIAEhWCAq3KU2xnT22CoU0IH0C5xdN-N4IWncrUqJtoLYdaC-FSJYIPxF07ytOKZ8ivoD-_QhlRjchRphM8o3oHFe7TDjxVW8",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 200,
+          "cookies": [
+            "better-auth.session_token=LbfhgLFwmiFh5a2d3qCgVDU4Dsc1fQAM.3m2DyM%2FubTRwXeK8ONJ3VDLbLYjIqqI%2FTRRshFFKTlc%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "id": "73200120-10ba-4fbe-9502-c22abb1b04e0",
+            "name": "Source key variant",
+            "credentialID": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS11MmYtcDM4NC1jb250cm9s",
+            "userId": "8bb32dd4-f53f-4024-926e-4f94852545aa",
+            "publicKey": "pQECAyYgASFYICrcpTbGdPbYKhTQgfQLnF0343ghadytSom2gth1oL4VIlgg/EXTvK04pnyK+gP79CGVGNyFGmEzyjegcV7tMOPFVbw=",
+            "counter": 0,
+            "deviceType": "singleDevice",
+            "backedUp": false,
+            "transports": "internal",
+            "createdAt": "2026-10-03T21:55:31.775Z",
+            "aaguid": "00000000-0000-0000-0000-000000000000",
+            "user": {
+              "id": "8bb32dd4-f53f-4024-926e-4f94852545aa",
+              "name": "Source variants",
+              "email": "variants-before-32219-1791064531580@example.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T21:55:31.718Z",
+              "updatedAt": "2026-10-03T21:55:31.718Z",
+              "twoFactorEnabled": false,
+              "role": "user",
+              "banned": false,
+              "banExpires": null,
+              "banReason": null,
+              "displayUsername": null,
+              "username": null
+            },
+            "session": {
+              "id": "a7356f33-45e2-4f20-85ed-53db9c1b0d94",
+              "expiresAt": "2026-10-10T21:55:31.775Z",
+              "token": "LbfhgLFwmiFh5a2d3qCgVDU4Dsc1fQAM",
+              "createdAt": "2026-10-03T21:55:31.775Z",
+              "updatedAt": "2026-10-03T21:55:31.775Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2",
+              "userId": "8bb32dd4-f53f-4024-926e-4f94852545aa",
+              "activeOrganizationId": null,
+              "impersonatedBy": null
+            }
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "8bb32dd4-f53f-4024-926e-4f94852545aa",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "8f79a6c9-a446-4abc-9bef-6cd6e2b0cd06",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      },
+      {
+        "port": "32219",
+        "label": "u2f-ed25519",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "8bb32dd4-f53f-4024-926e-4f94852545aa",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "8f79a6c9-a446-4abc-9bef-6cd6e2b0cd06",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6ImFjY2JhYmJhLWU1ZjMtNDJjZC05NGZlLTNmYjk3ZTJmZWJjNiIsImV4cCI6MTc5MTA2NDgzMSwiaWF0IjoxNzkxMDY0NTMxfQ.niDU0iRrxXTxKQyLRop2eTxxmIqh5Wv2QSPZSOuHIlw; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "ajBueTB3N285eTg2enJuejE0azV2aTdjMHZueThwMGg",
+              "name": "variants-before-32219-1791064531580@example.com",
+              "displayName": "variants-before-32219-1791064531580@example.com"
+            },
+            "challenge": "QvKkK4Y5ECNly0O6VLCr1kRXTU9FNm0m1x8zgPpmSJw",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS11MmYtcDM4NC1jb250cm9s",
+                "type": "public-key",
+                "transports": [
+                  "internal"
+                ]
+              }
+            ],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS11MmYtZWQyNTUxOQ",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS11MmYtZWQyNTUxOQ",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiUXZLa0s0WTVFQ05seTBPNlZMQ3Ixa1JYVFU5Rk5tMG0xeDh6Z1BwbVNKdyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTkiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRoZmlkby11MmZnYXR0U3RtdKNjeDVjgVkBvTCCAbkwggFfoAMCAQICDQDKh5w__4815QsSpFQwCgYIKoZIzj0EAwIwRjELMAkGA1UEBhMCVVMxHjAcBgNVBAoMFUNvbXBhdGliaWxpdHkgZml4dHVyZTEXMBUGA1UEAwwOUHVibGljIHRlc3QgQ0EwHhcNMjYxMDAzMjE1NTMxWhcNNDYwOTI4MjE1NTMxWjAoMSYwJAYDVQQDDB1QdWJsaWMgVTJGIHRlc3QgYXV0aGVudGljYXRvcjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABEA61U6WPGYAswXRl3raKu_PYYejoruGexmD5Gie59gACyd64Yip_esDGhiWoIP6s_qT3YplIvsnfYxLcn8gm9WjUDBOMAwGA1UdEwEB_wQCMAAwHQYDVR0OBBYEFPa9VIowaFbz16QGNY_V0URfzNp7MB8GA1UdIwQYMBaAFDNS0vPccpqz6SafLicccZbYQTBbMAoGCCqGSM49BAMCA0gAMEUCIQDnYzMTmBq9hbfwM69bTxY22l83oitIdls91oICPhac3AIgOW6xFa-OVTaW33FmurzympArOJ-mdrktIARX6-fHY6djYWxnJmNzaWdYSDBGAiEA77gS8aFs435omGJx263FI7GJKEy7inott8ASB3cZQIECIQC93WFl5GcPnSMXCSg2NtLNfg5fFgXgVcOa4LRYRk9JmGhhdXRoRGF0YViPSZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2NBAAAAAAAAAAAAAAAAAAAAAAAAAAAALnZhcmlhbnQtYmVmb3JlLTE3OTEwNjQ1MzA5ODgtMzIyMTktdTJmLWVkMjU1MTmkAQEDJyAGIVggioIEpaYYxpS913eB2Z35BfxcnzqJHkV1KW1OfmjUb-o",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 500,
+          "cookies": [],
+          "body": {
+            "code": "FAILED_TO_VERIFY_REGISTRATION",
+            "message": "Failed to verify registration"
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "8bb32dd4-f53f-4024-926e-4f94852545aa",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "8f79a6c9-a446-4abc-9bef-6cd6e2b0cd06",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      },
+      {
+        "port": "32219",
+        "label": "apple-opaque",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "8bb32dd4-f53f-4024-926e-4f94852545aa",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "8f79a6c9-a446-4abc-9bef-6cd6e2b0cd06",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6ImJmMzQyOGJhLWVjNWYtNDBhOS1iOTZjLTkyMWEwMmY0MjdmNCIsImV4cCI6MTc5MTA2NDgzMSwiaWF0IjoxNzkxMDY0NTMxfQ.kOrGraxC56uoFwN26hFNQPgdm3IOP6JZsGh3Kgyv19Y; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "YWZwZnVnOTFreXVleWF4NzJqMXlveG1scDVwdHM0ZGY",
+              "name": "variants-before-32219-1791064531580@example.com",
+              "displayName": "variants-before-32219-1791064531580@example.com"
+            },
+            "challenge": "i2ifLjunIzVac912bPe7BGg93PLJJEoda8MzrelKUF0",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS11MmYtcDM4NC1jb250cm9s",
+                "type": "public-key",
+                "transports": [
+                  "internal"
+                ]
+              }
+            ],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS1hcHBsZS1vcGFxdWU",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS1hcHBsZS1vcGFxdWU",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiaTJpZkxqdW5JelZhYzkxMmJQZTdCR2c5M1BMSkpFb2RhOE16cmVsS1VGMCIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTkiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRlYXBwbGVnYXR0U3RtdKFjeDVjgVkB7TCCAekwggGOoAMCAQICDFvQmbtyeQaOiyvTKDAKBggqhkjOPQQDAjBGMQswCQYDVQQGEwJVUzEeMBwGA1UECgwVQ29tcGF0aWJpbGl0eSBmaXh0dXJlMRcwFQYDVQQDDA5QdWJsaWMgdGVzdCBDQTAeFw0yNjEwMDMyMTU1MzFaFw00NjA5MjgyMTU1MzFaMCExHzAdBgNVBAMMFlNvZnR3YXJlIGF1dGhlbnRpY2F0b3IwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQq3KU2xnT22CoU0IH0C5xdN-N4IWncrUqJtoLYdaC-FfxF07ytOKZ8ivoD-_QhlRjchRphM8o3oHFe7TDjxVW8o4GGMIGDMAwGA1UdEwEB_wQCMAAwMwYJKoZIhvdjZAgCBCYAAAAAAAAHE1ayqKSBJIJdzfP9cgWjhof5yt6uKx3J5qc_84fQ1DAdBgNVHQ4EFgQUd6Lb436nhinILHCh3oL79HOVfdwwHwYDVR0jBBgwFoAUM1LS89xymrPpJp8uJxxxlthBMFswCgYIKoZIzj0EAwIDSQAwRgIhAPWzGdVTRrMQGDV-Ke659_vU07Ly2TTNqQ9YvzT0pwPeAiEAjr8cn2bKSEimDcqSSQMGkC-NUMjhRq7rlHwxwXvmHAloYXV0aERhdGFYs0mWDeWIDoxodDQXD2R2YFuP5K65ooYyx5lc87qDHZdjQQAAAAAAAAAAAAAAAAAAAAAAAAAAAC92YXJpYW50LWJlZm9yZS0xNzkxMDY0NTMwOTg4LTMyMjE5LWFwcGxlLW9wYXF1ZaUBAgMmIAEhWCAq3KU2xnT22CoU0IH0C5xdN-N4IWncrUqJtoLYdaC-FSJYIPxF07ytOKZ8ivoD-_QhlRjchRphM8o3oHFe7TDjxVW8",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 500,
+          "cookies": [],
+          "body": {
+            "code": "FAILED_TO_VERIFY_REGISTRATION",
+            "message": "Failed to verify registration"
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "8bb32dd4-f53f-4024-926e-4f94852545aa",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "8f79a6c9-a446-4abc-9bef-6cd6e2b0cd06",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      },
+      {
+        "port": "32219",
+        "label": "tpm-sha384-name",
+        "before": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "8bb32dd4-f53f-4024-926e-4f94852545aa",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "8f79a6c9-a446-4abc-9bef-6cd6e2b0cd06",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "options": {
+          "status": 200,
+          "cookies": [
+            "better-auth.better-auth-passkey=eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6ImM5NjMwMmJjLTQxZGUtNDVmMS05ZTc4LTVmNjEzYWI5NTA0ZCIsImV4cCI6MTc5MTA2NDgzMSwiaWF0IjoxNzkxMDY0NTMxfQ.rXzjoMz9twsYIClcYsKXVlplyX1ACOaqvmV2vcjNvNQ; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+          ],
+          "body": {
+            "rp": {
+              "name": "Better Auth",
+              "id": "localhost"
+            },
+            "user": {
+              "id": "ZDR1anF6NGx0cGo1ZzZrMmZxNDQ2am40OXk2d2NtZDg",
+              "name": "variants-before-32219-1791064531580@example.com",
+              "displayName": "variants-before-32219-1791064531580@example.com"
+            },
+            "challenge": "vQOi_35s6vehJ-6tzXksCrzICBXFBCSgwCyMJ-zprCk",
+            "pubKeyCredParams": [
+              {
+                "alg": -8,
+                "type": "public-key"
+              },
+              {
+                "alg": -7,
+                "type": "public-key"
+              },
+              {
+                "alg": -257,
+                "type": "public-key"
+              }
+            ],
+            "timeout": 60000,
+            "excludeCredentials": [
+              {
+                "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS11MmYtcDM4NC1jb250cm9s",
+                "type": "public-key",
+                "transports": [
+                  "internal"
+                ]
+              }
+            ],
+            "authenticatorSelection": {
+              "residentKey": "preferred",
+              "requireResidentKey": false,
+              "userVerification": "preferred"
+            },
+            "attestation": "none",
+            "extensions": {
+              "credProps": true
+            },
+            "hints": []
+          }
+        },
+        "proof": {
+          "id": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS10cG0tc2hhMzg0LW5hbWU",
+          "rawId": "dmFyaWFudC1iZWZvcmUtMTc5MTA2NDUzMDk4OC0zMjIxOS10cG0tc2hhMzg0LW5hbWU",
+          "type": "public-key",
+          "response": {
+            "clientDataJSON": "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoidlFPaV8zNXM2dmVoSi02dHpYa3NDcnpJQ0JYRkJDU2d3Q3lNSi16cHJDayIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6MzIyMTkiLCJjcm9zc09yaWdpbiI6ZmFsc2V9",
+            "attestationObject": "o2NmbXRjdHBtZ2F0dFN0bXSmY3ZlcmMyLjBncHViQXJlYVhWACMACwAAAAAAAAAQABAAAwAQACAq3KU2xnT22CoU0IH0C5xdN-N4IWncrUqJtoLYdaC-FQAg_EXTvK04pnyK-gP79CGVGNyFGmEzyjegcV7tMOPFVbxoY2VydEluZm9Yef9UQ0eAFwAAACC04pfchLaT5ER0qQSRTm1Ngv4_S_vwY_Ivoc97FEuu7QAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMgAMRlr0oGjVXrkSR66f9ywlOU2UK4gbFpSvLr-Dai7CNOkGl7KPYTwfy8EYm0qAFn7vAABjeDVjgVkB_TCCAfkwggGgoAMCAQICDCw7w0HCNvrM-ieLDzAKBggqhkjOPQQDAjBGMQswCQYDVQQGEwJVUzEeMBwGA1UECgwVQ29tcGF0aWJpbGl0eSBmaXh0dXJlMRcwFQYDVQQDDA5QdWJsaWMgdGVzdCBDQTAeFw0yNjEwMDMyMTU1MzFaFw00NjA5MjgyMTU1MzFaMAAwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARAOtVOljxmALMF0Zd62irvz2GHo6K7hnsZg-RonufYAAsneuGIqf3rAxoYlqCD-rP6k92KZSL7J32MS3J_IJvVo4G5MIG2MAwGA1UdEwEB_wQCMAAwEAYDVR0lBAkwBwYFZ4EFCAMwVAYDVR0RAQH_BEowSKRGMEQxFjAUBgVngQUCAQwLaWQ6NDk0MjREMDAxEjAQBgVngQUCAgwHRml4dHVyZTEWMBQGBWeBBQIDDAtpZDowMDAxMDAwMDAdBgNVHQ4EFgQU9r1UijBoVvPXpAY1j9XRRF_M2nswHwYDVR0jBBgwFoAUM1LS89xymrPpJp8uJxxxlthBMFswCgYIKoZIzj0EAwIDRwAwRAIgFxNRslrqSi1q5VjakMxOWxLmz1BkISDLZRcVFd1bEQQCIDc4P-bYtoDbZrfCTcoKhxCDYDTRwq14t1x3UNPNv0_MY2FsZyZjc2lnWEcwRQIhAPgi1XrjustBh2OVCDhp9A5gZreTDJGL0B2dbbKCaIuDAiAg9_r0X3c3aM2wy6zmV3VFCe-11kK_bb9CtvtEWsk18mhhdXRoRGF0YVi2SZYN5YgOjGh0NBcPZHZgW4_krrmihjLHmVzzuoMdl2NBAAAAAAAAAAAAAAAAAAAAAAAAAAAAMnZhcmlhbnQtYmVmb3JlLTE3OTEwNjQ1MzA5ODgtMzIyMTktdHBtLXNoYTM4NC1uYW1lpQECAyYgASFYICrcpTbGdPbYKhTQgfQLnF0343ghadytSom2gth1oL4VIlgg_EXTvK04pnyK-gP79CGVGNyFGmEzyjegcV7tMOPFVbw",
+            "transports": [
+              "internal"
+            ]
+          },
+          "clientExtensionResults": {}
+        },
+        "attempt": {
+          "status": 500,
+          "cookies": [],
+          "body": {
+            "code": "FAILED_TO_VERIFY_REGISTRATION",
+            "message": "Failed to verify registration"
+          }
+        },
+        "after": {
+          "status": 200,
+          "cookies": [],
+          "body": {
+            "passkeys": [
+              {
+                "userId": "8bb32dd4-f53f-4024-926e-4f94852545aa",
+                "counter": 0,
+                "name": "Source key variant"
+              },
+              {
+                "userId": "b1cc140b-bbf3-4d5d-bb02-1d4bd4ca0c6c",
+                "counter": 1,
+                "name": "Original key"
+              },
+              {
+                "userId": "8f79a6c9-a446-4abc-9bef-6cd6e2b0cd06",
+                "counter": 0,
+                "name": "Source key variant"
+              }
+            ],
+            "sessions": {
+              "count": 2
+            },
+            "challenges": {
+              "count": 0
+            }
+          }
+        },
+        "replay": {
+          "status": 400,
+          "cookies": [],
+          "body": {
+            "code": "CHALLENGE_NOT_FOUND",
+            "message": "Challenge not found"
+          }
+        }
+      }
+    ]
+  }
+}

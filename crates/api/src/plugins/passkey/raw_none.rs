@@ -43,6 +43,10 @@ impl RawCredential {
         let Self::SourceRawKey { credential_id, .. } = self;
         credential_id
     }
+    pub(super) fn replace_public_key(&mut self, bytes: Vec<u8>) {
+        let Self::SourceRawKey { public_key, .. } = self;
+        *public_key = bytes;
+    }
     pub(super) fn public_key(&self) -> &[u8] {
         let Self::SourceRawKey { public_key, .. } = self;
         public_key
@@ -256,7 +260,7 @@ fn source_number(value: f64) -> Cbor {
     }
 }
 
-fn decode_first(bytes: &[u8]) -> Result<(Cbor, usize), WebauthnError> {
+pub(super) fn decode_first(bytes: &[u8]) -> Result<(Cbor, usize), WebauthnError> {
     let mut decoder = SourceDecoder { bytes, cursor: 0 };
     let value = decoder.item(0)?;
     Ok((value, decoder.cursor))
@@ -432,9 +436,6 @@ pub(super) fn register_raw_key(
     };
     let none = text(&object, "fmt") == Some(&Cbor::Text("none".into()));
     let packed = text(&object, "fmt") == Some(&Cbor::Text("packed".into()));
-    if !none && !packed {
-        return Ok(None);
-    }
     let Some(Cbor::Bytes(data)) = text(&object, "authData") else {
         return Err(malformed());
     };
@@ -452,15 +453,25 @@ pub(super) fn register_raw_key(
         return Err(malformed());
     }
     let (key, key_length) = decode_first(key_bytes)?;
-    let mismatch = mismatched_ed25519(&key);
-    if !(none && curve_eight(&key)) && !mismatch {
-        return Ok(None);
+    if !matches!(
+        match &key {
+            Cbor::Map(map) => map.get(&Cbor::Integer(3)),
+            _ => None,
+        },
+        Some(Cbor::Integer(
+            -8 | -7 | -36 | -37 | -38 | -39 | -257 | -258 | -259 | -65535
+        ))
+    ) {
+        return Err(malformed());
     }
+    let mismatch = mismatched_ed25519(&key);
+    let representable = webauthn_rs_core::proto::COSEKey::try_from(&key).is_ok();
+    let mut raw_eligible = (none && (curve_eight(&key) || !representable)) || mismatch;
     if packed
         && let Some(Cbor::Map(statement)) = text(&object, "attStmt")
         && statement.contains_key(&Cbor::Text("x5c".into()))
     {
-        return Ok(None);
+        raw_eligible = false;
     }
     let Some(id) = original.get("id").and_then(JsValue::as_str) else {
         return Err(malformed());
@@ -524,6 +535,9 @@ pub(super) fn register_raw_key(
     {
         return Err(WebauthnError::AttestationStatementMapInvalid);
     }
+    if !raw_eligible {
+        return Ok(None);
+    }
     if packed {
         let Some(Cbor::Map(statement)) = text(&object, "attStmt") else {
             return Err(malformed());
@@ -580,6 +594,30 @@ pub(super) fn raw_credential_id(credential: &RawCredential) -> String {
     URL_SAFE_NO_PAD.encode(credential.credential_id())
 }
 
+/// Source requires exactly one well-formed, canonically-sized extension item.
+pub(super) fn validate_assertion_data(bytes: &[u8]) -> Result<(), WebauthnError> {
+    let flags = *bytes.get(32).ok_or_else(malformed)?;
+    let mut end = 37usize;
+    if flags & 0x40 != 0 {
+        let length = bytes.get(53..55).ok_or_else(malformed)?;
+        let id_length = u16::from_be_bytes(length.try_into().map_err(|_| malformed())?);
+        let start = 55 + usize::from(id_length);
+        let (key, _) = decode_first(bytes.get(start..).ok_or_else(malformed)?)?;
+        end = start + source_encoded_length(&key)?;
+    }
+    if flags & 0x80 != 0 {
+        let (extension, _) = decode_first(bytes.get(end..).ok_or_else(malformed)?)?;
+        if !extension_conversion_possible(&extension) {
+            return Err(malformed());
+        }
+        end += source_encoded_length(&extension)?;
+    }
+    if bytes.len() != end {
+        return Err(malformed());
+    }
+    Ok(())
+}
+
 /// Only freshly issued Source-policy states may authorize a raw assertion.
 /// The stored ID/key tags and current public counter remain authoritative.
 pub(super) fn authenticate_raw(
@@ -592,9 +630,7 @@ pub(super) fn authenticate_raw(
     current_counter: u32,
 ) -> Result<super::authentication::AuthenticationResult, WebauthnError> {
     let (key, _) = decode_first(credential.public_key())?;
-    if !mismatched_ed25519(&key) {
-        return Err(WebauthnError::COSEKeyEDDSAInvalidCurve);
-    }
+
     if original.get("type").and_then(JsValue::as_str) != Some("public-key")
         || authentication.raw_id.as_ref() != credential.credential_id()
         || authentication.id != raw_credential_id(credential)
@@ -621,9 +657,10 @@ pub(super) fn authenticate_raw(
         return Err(malformed());
     }
     let bytes = authentication.response.authenticator_data.as_ref();
+    validate_assertion_data(bytes)?;
     let data = webauthn_rs_core::internals::AuthenticatorData::<
         webauthn_rs_core::proto::Authentication,
-    >::try_from(bytes)?;
+    >::from_source(bytes)?;
     if bytes.get(..32) != Some(compute_sha256(rp_id.as_bytes()).as_slice()) {
         return Err(WebauthnError::InvalidRPIDHash);
     }
@@ -640,11 +677,22 @@ pub(super) fn authenticate_raw(
     signed.extend_from_slice(&compute_sha256(
         authentication.response.client_data_json.as_ref(),
     ));
-    if !verify_ed25519(
-        credential.public_key(),
-        authentication.response.signature.as_ref(),
-        &signed,
-    )? {
+    let verified = if let Cbor::Map(map) = &key
+        && map.get(&Cbor::Integer(1)) == Some(&Cbor::Integer(1))
+    {
+        if map.get(&Cbor::Integer(-1)) != Some(&Cbor::Integer(6)) {
+            return Err(WebauthnError::COSEKeyEDDSAInvalidCurve);
+        }
+        verify_ed25519(
+            credential.public_key(),
+            authentication.response.signature.as_ref(),
+            &signed,
+        )?
+    } else {
+        webauthn_rs_core::proto::COSEKey::try_from(&key)?
+            .verify_signature(authentication.response.signature.as_ref(), &signed)?
+    };
+    if !verified {
         return Err(WebauthnError::AuthenticationFailure);
     }
     Ok(super::authentication::AuthenticationResult::Raw(

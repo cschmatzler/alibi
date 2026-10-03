@@ -7,14 +7,41 @@ use validator::Validate;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::plugins) struct VerifyRegistrationRequest {
-    pub(super) response: better_auth_core::utils::json::JsValue,
-    pub(super) name: Option<String>,
+    #[serde(default, deserialize_with = "optional_name")]
+    pub(super) response: Option<better_auth_core::utils::json::JsValue>,
+    #[serde(default, deserialize_with = "optional_name")]
+    pub(super) name: Option<better_auth_core::utils::json::JsValue>,
     #[serde(default = "no_registration_session")]
     pub(super) create_session: better_auth_core::utils::json::JsValue,
 }
 
 impl Validate for VerifyRegistrationRequest {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        if self.response.is_none() {
+            let mut errors = validator::ValidationErrors::new();
+            errors.add(
+                "response",
+                validator::ValidationError::new("nonoptional")
+                    .with_message("Invalid input: expected nonoptional, received undefined".into()),
+            );
+            return Err(errors);
+        }
+        if let Some(name) = &self.name
+            && !name.is_string()
+        {
+            let mut errors = validator::ValidationErrors::new();
+            errors.add(
+                "name",
+                validator::ValidationError::new("string").with_message(
+                    format!(
+                        "Invalid input: expected string, received {}",
+                        received_type(name)
+                    )
+                    .into(),
+                ),
+            );
+            return Err(errors);
+        }
         if self.create_session.is_boolean() {
             return Ok(());
         }
@@ -40,11 +67,29 @@ impl Validate for VerifyRegistrationRequest {
     }
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::plugins) struct VerifyAuthenticationRequest {
-    #[validate(custom(function = "validate_authentication_response"))]
-    pub(super) response: better_auth_core::utils::json::JsValue,
+    #[serde(default, deserialize_with = "optional_name")]
+    pub(super) response: Option<better_auth_core::utils::json::JsValue>,
+}
+impl Validate for VerifyAuthenticationRequest {
+    fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        match self.response.as_ref() {
+            Some(value) if value.is_object() => Ok(()),
+            value => {
+                let received = value.map_or("undefined", received_type);
+                let mut errors = validator::ValidationErrors::new();
+                errors.add(
+                    "response",
+                    validator::ValidationError::new("record").with_message(
+                        format!("Invalid input: expected record, received {received}").into(),
+                    ),
+                );
+                Err(errors)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Validate)]
@@ -59,7 +104,7 @@ pub(in crate::plugins) struct DeletePasskeyRequest {
 pub(in crate::plugins) struct UpdatePasskeyRequest {
     #[validate(length(min = 1))]
     pub(super) id: String,
-    #[validate(length(min = 1))]
+    #[validate(custom(function = "validate_trimmed_name"))]
     pub(super) name: String,
 }
 
@@ -80,18 +125,27 @@ const fn no_registration_session() -> better_auth_core::utils::json::JsValue {
     better_auth_core::utils::json::JsValue::Bool(false)
 }
 
-fn validate_authentication_response(
-    value: &better_auth_core::utils::json::JsValue,
-) -> Result<(), validator::ValidationError> {
+fn optional_name<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<Option<better_auth_core::utils::json::JsValue>, D::Error> {
+    better_auth_core::utils::json::JsValue::deserialize(decoder).map(Some)
+}
+fn received_type(value: &better_auth_core::utils::json::JsValue) -> &'static str {
     use better_auth_core::utils::json::JsValue;
-    let received = match value {
-        JsValue::Object(_) => return Ok(()),
-        JsValue::Array(_) => "array",
+    match value {
         JsValue::Null => "null",
+        JsValue::Array(_) => "array",
+        JsValue::Object(_) => "object",
         JsValue::Bool(_) => "boolean",
         JsValue::Number(_) => "number",
         JsValue::String(_) => "string",
-    };
-    Err(validator::ValidationError::new("record")
-        .with_message(format!("Invalid input: expected record, received {received}").into()))
+    }
+}
+
+fn validate_trimmed_name(value: &str) -> Result<(), validator::ValidationError> {
+    if super::registration::trim_name(value).is_empty() {
+        return Err(validator::ValidationError::new("length")
+            .with_message("Too small: expected string to have >=1 characters".into()));
+    }
+    Ok(())
 }

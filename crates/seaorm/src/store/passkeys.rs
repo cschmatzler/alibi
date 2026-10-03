@@ -7,8 +7,7 @@ use better_auth_core::store::PasskeyStore;
 use better_auth_core::types::{CreatePasskey, Passkey, UpdatePasskeyAuthentication};
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
-    QueryOrder, Set,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,
 };
 use uuid::Uuid;
 
@@ -76,7 +75,6 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SeaOrmStore<S> {
     async fn list_passkeys_by_user(&self, user_id: &str) -> AuthResult<Vec<Passkey>> {
         Entity::find()
             .filter(Column::UserId.eq(user_id))
-            .order_by_desc(Column::CreatedAt)
             .all(self.connection())
             .await
             .map(|models| models.iter().map(Passkey::from).collect())

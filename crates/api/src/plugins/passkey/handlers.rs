@@ -147,6 +147,13 @@ pub(super) async fn generate_register_options_core(
             COSEAlgorithm::EDDSA,
             COSEAlgorithm::ES256,
             COSEAlgorithm::RS256,
+            COSEAlgorithm::ES512,
+            COSEAlgorithm::PS256,
+            COSEAlgorithm::PS384,
+            COSEAlgorithm::PS512,
+            COSEAlgorithm::RS384,
+            COSEAlgorithm::RS512,
+            COSEAlgorithm::INSECURE_RS1,
         ])
         .require_resident_key(false)
         .user_verification_policy(UserVerificationPolicy::Preferred)
@@ -186,7 +193,7 @@ pub(super) async fn generate_register_options_core(
             .await?,
     );
 
-    let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token)?;
+    let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token, config)?;
     let mut response = registration_options_json(
         options,
         &generate_ts_user_handle(),
@@ -263,7 +270,7 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
             .await?,
     );
 
-    let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token)?;
+    let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token, config)?;
     let mut response = authentication_options_json(options)?;
     if let Some(object) = response.as_object_mut() {
         if allow_credentials_json.is_empty() {
@@ -294,11 +301,16 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
 ) -> PasskeyHandlerResult<Value> {
     use super::registration::{PasskeyRegistrationContext, VerifiedPasskeyRegistration, trim_name};
 
+    let Some(response) = body.response.as_ref() else {
+        return response_null(400);
+    };
+
     let Some(origin) = resolve_origin(config, req) else {
         return response_null(400);
     };
 
-    let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config)) else {
+    let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config, config))
+    else {
         return challenge_not_found();
     };
     let Ok(token) = decode_challenge_cookie(&ctx.config, &cookie_value) else {
@@ -336,8 +348,19 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         );
     }
 
+    let mut parsed_response = response.clone();
+    if matches!(stored_state.state, StoredRegistrationVerifier::Source(_)) {
+        // Source treats transports as persistence metadata, never authenticator
+        // admission. Keep the original callback input and signed bytes intact.
+        if let better_auth_core::utils::json::JsValue::Object(response) = &mut parsed_response
+            && let Some(better_auth_core::utils::json::JsValue::Object(authenticator)) =
+                response.get_mut("response")
+        {
+            drop(authenticator.shift_remove("transports"));
+        }
+    }
     let registration: RegisterPublicKeyCredential =
-        match better_auth_core::utils::json::from_value(body.response.clone()) {
+        match better_auth_core::utils::json::from_value(parsed_response) {
             Ok(registration) => registration,
             Err(_) => return passkey_registration_failure(),
         };
@@ -346,20 +369,17 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         StoredRegistrationVerifier::Source(StoredCoreRegistrationState::CoreRawNone {
             policy,
             ..
-        }) => {
-            match super::raw_none::register_raw_key(&registration, &body.response, policy, &origin)
-            {
-                Ok(value) => value,
-                Err(WebauthnError::AttestationStatementSigInvalid) => {
-                    return response_code(
-                        400,
-                        "FAILED_TO_VERIFY_REGISTRATION",
-                        "Failed to verify registration",
-                    );
-                }
-                Err(_) => return passkey_registration_failure(),
+        }) => match super::raw_none::register_raw_key(&registration, response, policy, &origin) {
+            Ok(value) => value,
+            Err(WebauthnError::AttestationStatementSigInvalid) => {
+                return response_code(
+                    400,
+                    "FAILED_TO_VERIFY_REGISTRATION",
+                    "Failed to verify registration",
+                );
             }
-        }
+            Err(_) => return passkey_registration_failure(),
+        },
         StoredRegistrationVerifier::Source(_) | StoredRegistrationVerifier::Legacy(_) => None,
     };
     let (snapshot, metadata, credential_id) = if let Some(raw) = raw_registration {
@@ -387,7 +407,14 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                 StoredCoreRegistrationState::Core { state }
                 | StoredCoreRegistrationState::CoreRawNone { state, .. },
             ) => {
-                let Ok(core) = build_verification_core(config, &ctx.config, &origin) else {
+                let Ok(core) = super::webauthn::build_registration_core(
+                    config,
+                    &ctx.config,
+                    &origin,
+                    &registration,
+                )
+                .await
+                else {
                     return passkey_registration_failure();
                 };
                 match finish_core_registration(&core, &registration, state, &origin) {
@@ -416,12 +443,38 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         (snapshot, metadata, credential_id)
     };
 
-    let transports = registration.response.transports.as_ref().map(|transports| {
-        transports
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-    });
+    let source_transports = matches!(stored_state.state, StoredRegistrationVerifier::Source(_));
+    let transports = if source_transports {
+        use better_auth_core::utils::json::JsValue;
+        match response
+            .get("response")
+            .and_then(|response| response.get("transports"))
+        {
+            None | Some(JsValue::Null) => Ok(None),
+            Some(JsValue::Array(values)) => match values
+                .iter()
+                .map(|value| {
+                    if value.is_null() {
+                        Ok(String::new())
+                    } else {
+                        value.coerce_string()
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(values) => Ok(Some(values)),
+                Err(_) => Err(AuthError::internal("Invalid transports")),
+            },
+            Some(_) => Err(AuthError::internal("Invalid transports")),
+        }
+    } else {
+        Ok(registration.response.transports.as_ref().map(|transports| {
+            transports
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        }))
+    };
 
     let verified = VerifiedPasskeyRegistration {
         credential_id: credential_id.clone(),
@@ -444,7 +497,8 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         user_id: stored_state.user_id,
         name: body
             .name
-            .as_deref()
+            .as_ref()
+            .and_then(better_auth_core::utils::json::JsValue::as_str)
             .map(trim_name)
             .filter(|name| !name.is_empty())
             .map(str::to_owned),
@@ -453,12 +507,12 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         counter: snapshot.counter,
         device_type: snapshot.device_type().to_owned(),
         backed_up: snapshot.backed_up,
-        transports: transports_to_csv(transports.as_deref()),
+        transports: None,
         credential: snapshot.serialized,
         aaguid: metadata.aaguid,
     };
     let callback = config.registration.after_verification.clone();
-    let client_data = body.response.clone();
+    let client_data = response.clone();
     let stored_context = stored_state.context;
     let authenticated_owner = authenticated_owner.map(str::to_owned);
     let request = req.clone();
@@ -504,6 +558,13 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                 }
             }
         }
+        // Source joins transport metadata after the verification callback.
+        let transports = transports?;
+        input_2.transports = if source_transports {
+            Some(transports.unwrap_or_default().join(","))
+        } else {
+            transports_to_csv(transports.as_deref())
+        };
         if input_2.user_id.is_empty() {
             return Err(AuthError::Upstream {
                 status: 400,
@@ -599,7 +660,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                     .map_err(|_error| {
                         AuthError::internal("invalid passkey registration transaction result")
                     })?;
-                let mut result = serde_json::to_value(PasskeyView::from(&passkey))?;
+                let mut result = registration_value(&passkey)?;
                 if let Some(object) = result.as_object_mut() {
                     drop(object.insert("user".into(), serde_json::to_value(ctx.user_view(&user))?));
                     drop(object.insert(
@@ -617,9 +678,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                 .database
                 .create_passkey(input)
                 .await
-                .and_then(|passkey| {
-                    serde_json::to_value(PasskeyView::from(&passkey)).map_err(AuthError::from)
-                }),
+                .and_then(|passkey| registration_value(&passkey)),
             Err(error) => Err(error),
         }
     };
@@ -649,7 +708,8 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         return response_message(400, "origin missing");
     };
 
-    let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config)) else {
+    let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config, config))
+    else {
         return challenge_not_found();
     };
     let Ok(token) = decode_challenge_cookie(&ctx.config, &cookie_value) else {
@@ -670,8 +730,11 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         }
         Err(_) => return passkey_authentication_failure(),
     };
+    let Some(response) = body.response.as_ref() else {
+        return passkey_authentication_failure();
+    };
     let authentication: PublicKeyCredential =
-        match serde_json::from_value(body.response.to_json_value()?) {
+        match serde_json::from_value(response.to_json_value()?) {
             Ok(authentication) => authentication,
             Err(_) => return passkey_authentication_failure(),
         };
@@ -693,6 +756,31 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
     let Ok(counter) = u32::try_from(passkey.counter()) else {
         return passkey_authentication_failure();
     };
+    if matches!(
+        &stored_state,
+        StoredAuthenticationState::Core { .. } | StoredAuthenticationState::CoreRaw { .. }
+    ) {
+        let Ok(public_key) = base64::engine::general_purpose::STANDARD.decode(passkey.public_key())
+        else {
+            return passkey_authentication_failure();
+        };
+        match &mut stored {
+            super::raw_none::StoredCredential::Raw(raw) => raw.replace_public_key(public_key),
+            super::raw_none::StoredCredential::Core(saved) => {
+                let Ok((key, _)) = super::raw_none::decode_first(&public_key) else {
+                    return passkey_authentication_failure();
+                };
+                let Ok(key) = webauthn_rs_core::proto::COSEKey::try_from(&key) else {
+                    return passkey_authentication_failure();
+                };
+                let mut current = webauthn_rs_core::proto::Credential::from(saved.clone());
+                current.cred = key;
+                current.cred_id = decode_credential_id(passkey.credential_id())?;
+                *saved = current.into();
+            }
+        }
+    }
+
     let authentication_result = match (&mut stored, stored_state) {
         (
             super::raw_none::StoredCredential::Raw(raw),
@@ -700,7 +788,7 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         ) => super::raw_none::authenticate_raw(
             raw,
             &authentication,
-            &body.response,
+            response,
             &challenge,
             &super::webauthn::resolve_rp_id(config, &ctx.config)?,
             &origin,
@@ -770,7 +858,7 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
             rp_id: super::webauthn::resolve_rp_id(config, &ctx.config)?,
         };
         match callback
-            .after_verification(&context, &verified, &body.response)
+            .after_verification(&context, &verified, response)
             .await
         {
             Ok(()) => {}
@@ -870,9 +958,9 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
 pub(super) async fn list_user_passkeys_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<Vec<PasskeyView>> {
+) -> AuthResult<Vec<Value>> {
     let passkeys = ctx.database.list_passkeys_by_user(&user.id()).await?;
-    Ok(passkeys.iter().map(PasskeyView::from).collect())
+    passkeys.iter().map(registration_value).collect()
 }
 
 ///
@@ -927,10 +1015,22 @@ pub(super) async fn update_passkey_core(
 
     let updated = ctx
         .database
-        .update_passkey_name(&body.id, &body.name)
+        .update_passkey_name(&body.id, super::registration::trim_name(&body.name))
         .await?;
 
     Ok(PasskeyHandlerOutcome::Success(PasskeyResponse {
         passkey: PasskeyView::from(&updated),
     }))
+}
+
+// The pinned adapter returns the database's nullable name in passkey rows.
+// Keep this serialization local to passkey endpoints.
+fn registration_value(passkey: &better_auth_core::Passkey) -> AuthResult<Value> {
+    let mut value = serde_json::to_value(PasskeyView::from(passkey))?;
+    if passkey.name.is_none()
+        && let Some(object) = value.as_object_mut()
+    {
+        drop(object.insert("name".into(), Value::Null));
+    }
+    Ok(value)
 }

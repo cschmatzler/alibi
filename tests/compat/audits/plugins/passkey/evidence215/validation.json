@@ -1,0 +1,72 @@
+{
+  "production": "675c8b13c35c3eb51adc794e73911ee0486aac0d",
+  "source": {
+    "passkey": "1.7.6",
+    "verifier": "13.3.3"
+  },
+  "sqlx": {
+    "ownersPassed": 11,
+    "initialRunPassed": 10,
+    "affectedRetryPassed": 1
+  },
+  "seaorm": {
+    "ownersPassed": 11,
+    "assertions": 1486
+  },
+  "logs": [
+    {
+      "path": "/tmp/close215-evidence/acceptance-qualified-sqlx.log",
+      "sha256": "74a45429bf041722801968c5a94f61d3f7ed40cf8721fa762d50f6e004ca9807"
+    },
+    {
+      "path": "/tmp/close215-evidence/acceptance-qualified-transport-sqlx.log",
+      "sha256": "eed5332a5681afcf5f2dd0b38a5a8ce76c870c07d134aa594a151369df3bddfe"
+    },
+    {
+      "path": "/tmp/close215-evidence/acceptance-qualified-seaorm.log",
+      "sha256": "36b8b98ec298d8c7ea274ab79ff5fb8e0fa1101e04c91a45acfaae3e405e3e75"
+    },
+    {
+      "path": "/tmp/close215-evidence/clippy-qualified.log",
+      "sha256": "9fe8655fd60b094778f490f8711347ad9818b2fddd25b3f5d09443d8418f85da"
+    },
+    {
+      "path": "/tmp/close215-evidence/clippy-schema.log",
+      "sha256": "54401485be3d8050d16d2c565a1187bd9eb18d87445e7c34a1696241a851685c"
+    },
+    {
+      "path": "/tmp/close215-evidence/clippy-qualified-rebased.log",
+      "sha256": "adedeb0d2eb69fb6ecd6c3059c7666832d9c62e9760fdd376abe4510f7a5bf38"
+    },
+    {
+      "path": "/tmp/close215-evidence/typecheck-qualified.log",
+      "sha256": "d7dafea04ea4edc9befb9f1f8e023496d3d0170241649d15cf6c34dd8c1de5f9"
+    },
+    {
+      "path": "/tmp/close215-evidence/legacy-pending-closure.log",
+      "sha256": "6ab8a32d07b5501b31daafaaea4c215b0347365104945dcb78889b24f20c0528"
+    },
+    {
+      "path": "/tmp/close215-evidence/build-qualified-rebased-sqlx.log",
+      "sha256": "f62068ff43b4ac4817b66e511aaeaca5f89d89d7324bbbf4a79f66988fe9ae3a"
+    },
+    {
+      "path": "/tmp/close215-evidence/build-qualified-rebased-seaorm.log",
+      "sha256": "b9fa21a2692bfdadc168048534786534aa32cb48b6fbabb4f9d63db1f91f68aa"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "/tmp/close215-evidence/sqlx-rebased-final-server",
+      "sha256": "8f9bc939e7f1ce6a2487de073f7b206ab9ddab990719325eb037f372ed2c91c4",
+      "production": "675c8b13",
+      "backend": "SQLx"
+    },
+    {
+      "path": "/tmp/close215-evidence/seaorm-qualified-final-server",
+      "sha256": "948057af69d7023d4f5b5f43fcaec7926cca54135e0fd9787be7f5b4b162d633",
+      "production": "675c8b13",
+      "backend": "SeaORM"
+    }
+  ]
+}

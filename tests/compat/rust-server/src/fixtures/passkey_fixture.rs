@@ -32,15 +32,49 @@ struct CurrentCounter {
     counter: u32,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CurrentPublicKey {
+    credential_id: String,
+    public_key: String,
+}
+
 pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
 ) -> AuthResult<Router> {
     let mut router = Router::new();
-    for (name, age) in [("passkey-fresh", 1), ("passkey-no-freshness", 0)] {
+    for (name, age) in [
+        ("passkey-fresh", 1),
+        ("passkey-no-freshness", 0),
+        ("passkey-acceptance", 0),
+    ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut configured = config.clone().base_path(&path);
         configured.session.fresh_age = Some(chrono::Duration::seconds(age));
+        let plugin = if name == "passkey-acceptance" {
+            let roots = [
+                "packed",
+                "fido-u2f",
+                "tpm",
+                "android-key",
+                "android-safetynet",
+                "apple",
+            ]
+            .into_iter()
+            .map(|format| {
+                (
+                    format.to_owned(),
+                    vec![include_str!("../../../fixtures/passkey-attestation/ca.pem").to_owned()],
+                )
+            })
+            .collect();
+            PasskeyPlugin::new()
+                .web_authn_challenge_cookie("ceremony-proof")
+                .attestation_root_certificates(roots)
+        } else {
+            PasskeyPlugin::new()
+        };
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(configured.clone())
                 .store(crate::backend::store::<TestSchema>(
@@ -49,7 +83,7 @@ pub(crate) async fn router(
                 ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new())
-                .plugin(PasskeyPlugin::new())
+                .plugin(plugin)
                 .build()
                 .await?,
         );
@@ -57,7 +91,31 @@ pub(crate) async fn router(
     }
     let state_database = database.clone();
     let counter_database = database.clone();
+    let key_database = database.clone();
     Ok(router
+        .route(
+            "/__test/passkey-crl",
+            get(|| async {
+                include_bytes!("../../../fixtures/passkey-attestation/revoked.der").as_slice()
+            }),
+        )
+        .route(
+            "/__test/passkey-public-key",
+            post(move |Json(input): Json<CurrentPublicKey>| {
+                let database = key_database.clone();
+                async move {
+                    let result = database
+                        .execute_raw(Statement::from_sql_and_values(
+                            DbBackend::Sqlite,
+                            "UPDATE passkeys SET public_key = ? WHERE credential_id = ?",
+                            [input.public_key.into(), input.credential_id.into()],
+                        ))
+                        .await
+                        .unwrap();
+                    Json(json!({"updated": result.rows_affected()}))
+                }
+            }),
+        )
         .route(
             "/__test/passkey-state",
             get(move |Query(query): Query<UserQuery>| {

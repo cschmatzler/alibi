@@ -1,0 +1,1 @@
+Certificates copied byte-for-byte from @simplewebauthn/server 13.3.3 esm/services/defaultRootCerts (MIT). Original package and license retained in issue215 research evidence. Default per-format trust anchors match SettingsService.

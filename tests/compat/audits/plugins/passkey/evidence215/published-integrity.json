@@ -1,0 +1,20 @@
+[
+  {
+    "package": "@better-auth/passkey",
+    "version": "1.7.6",
+    "filesCompared": 9,
+    "matchesFreshPublishedBytes": true,
+    "hardlinkedFiles": 9,
+    "archiveSHA256": "e367a9ecf4226354753e23bba0e6c56b4270b8b24a91d43bc167e46be0206bb2",
+    "publishedIntegrity": "sha512-HsG1uBjbfv8dpFckVRy+K9+krBFbg9uE6bUVWR7GpHd2OAsU5u2fCILpKSbwUck7DnVccen8TvatGPr7SVhIrQ=="
+  },
+  {
+    "package": "@simplewebauthn/server",
+    "version": "13.3.3",
+    "filesCompared": 425,
+    "matchesFreshPublishedBytes": true,
+    "hardlinkedFiles": 425,
+    "archiveSHA256": "1a41ed2adbae34321321ce4c02bc24e509e0a55ff73875d43224b2b435b107e8",
+    "publishedIntegrity": "sha512-LelX/lcy5cjc15A86i/aNxHhB5eU7dd20QsbP0VLAf9e38+SLlsnqCCyecx3xqfGofhmX05h1J9fKRYWxw+luA=="
+  }
+]

@@ -1,0 +1,224 @@
+{
+  "ts": {
+    "actor": "transport-owner",
+    "method": "GET",
+    "path": "/__test/profiles/passkey-acceptance/api/auth/passkey/generate-register-options",
+    "requestBodyShape": null,
+    "responseStatus": 200,
+    "responseHeaders": {
+      "content-type": "application/json"
+    },
+    "responseCookies": {
+      "better-auth.ceremony-proof;;/": {
+        "path": "/",
+        "domain": null,
+        "httpOnly": true,
+        "secure": false,
+        "sameSite": "lax",
+        "maxAge": 300,
+        "expiresAt": null
+      }
+    },
+    "responseBodyShape": {
+      "challenge": "string",
+      "rp": {
+        "name": "string",
+        "id": "string"
+      },
+      "user": {
+        "id": "string",
+        "name": "string",
+        "displayName": "string"
+      },
+      "pubKeyCredParams": [
+        {
+          "alg": "number",
+          "type": "string"
+        },
+        {
+          "alg": "number",
+          "type": "string"
+        },
+        {
+          "alg": "number",
+          "type": "string"
+        }
+      ],
+      "timeout": "number",
+      "attestation": "string",
+      "excludeCredentials": [
+        {
+          "id": "string",
+          "transports": [
+            "string"
+          ],
+          "type": "string"
+        }
+      ],
+      "authenticatorSelection": {
+        "residentKey": "string",
+        "userVerification": "string",
+        "requireResidentKey": "boolean"
+      },
+      "extensions": {
+        "credProps": "boolean"
+      },
+      "hints": []
+    },
+    "responseBody": {
+      "challenge": "KQVBx8V20IMvslr2Un_9lESq-HT_xedK_oyroO8o5ww",
+      "rp": {
+        "name": "Better Auth",
+        "id": "localhost"
+      },
+      "user": {
+        "id": "cWU1d3RoY2ppOGZxM3B0aDYzMXJiNzcxNXExdnIwd2g",
+        "name": "transport-admission-179106501015@test.com",
+        "displayName": "transport-admission-179106501015@test.com"
+      },
+      "pubKeyCredParams": [
+        {
+          "alg": -8,
+          "type": "public-key"
+        },
+        {
+          "alg": -7,
+          "type": "public-key"
+        },
+        {
+          "alg": -257,
+          "type": "public-key"
+        }
+      ],
+      "timeout": 60000,
+      "attestation": "none",
+      "excludeCredentials": [
+        {
+          "id": "dHJhbnNwb3J0LTA",
+          "transports": [
+            ""
+          ],
+          "type": "public-key"
+        }
+      ],
+      "authenticatorSelection": {
+        "residentKey": "preferred",
+        "userVerification": "preferred",
+        "requireResidentKey": false
+      },
+      "extensions": {
+        "credProps": true
+      },
+      "hints": []
+    }
+  },
+  "rust": {
+    "actor": "transport-owner",
+    "method": "GET",
+    "path": "/__test/profiles/passkey-acceptance/api/auth/passkey/generate-register-options",
+    "requestBodyShape": null,
+    "responseStatus": 200,
+    "responseHeaders": {
+      "content-type": "application/json"
+    },
+    "responseCookies": {
+      "better-auth.ceremony-proof;;/": {
+        "path": "/",
+        "domain": null,
+        "httpOnly": true,
+        "secure": false,
+        "sameSite": "lax",
+        "maxAge": 300,
+        "expiresAt": null
+      }
+    },
+    "responseBodyShape": {
+      "rp": {
+        "name": "string",
+        "id": "string"
+      },
+      "user": {
+        "id": "string",
+        "name": "string",
+        "displayName": "string"
+      },
+      "challenge": "string",
+      "pubKeyCredParams": [
+        {
+          "alg": "number",
+          "type": "string"
+        },
+        {
+          "alg": "number",
+          "type": "string"
+        },
+        {
+          "alg": "number",
+          "type": "string"
+        }
+      ],
+      "timeout": "number",
+      "excludeCredentials": [
+        {
+          "id": "string",
+          "type": "string",
+          "transports": []
+        }
+      ],
+      "authenticatorSelection": {
+        "residentKey": "string",
+        "requireResidentKey": "boolean",
+        "userVerification": "string"
+      },
+      "attestation": "string",
+      "extensions": {
+        "credProps": "boolean"
+      },
+      "hints": []
+    },
+    "responseBody": {
+      "rp": {
+        "name": "Better Auth",
+        "id": "localhost"
+      },
+      "user": {
+        "id": "aGZjMmg2Mm12dXNmdHpvcmM3bjI5NWFueTA5ZXhyYWg",
+        "name": "transport-admission-179106501015@test.com",
+        "displayName": "transport-admission-179106501015@test.com"
+      },
+      "challenge": "0WA50TtB75WEywhXNR7W7kgiNJQUuJXC1cO75SyPDzA",
+      "pubKeyCredParams": [
+        {
+          "alg": -8,
+          "type": "public-key"
+        },
+        {
+          "alg": -7,
+          "type": "public-key"
+        },
+        {
+          "alg": -257,
+          "type": "public-key"
+        }
+      ],
+      "timeout": 60000,
+      "excludeCredentials": [
+        {
+          "id": "dHJhbnNwb3J0LTA",
+          "type": "public-key",
+          "transports": []
+        }
+      ],
+      "authenticatorSelection": {
+        "residentKey": "preferred",
+        "requireResidentKey": false,
+        "userVerification": "preferred"
+      },
+      "attestation": "none",
+      "extensions": {
+        "credProps": true
+      },
+      "hints": []
+    }
+  }
+}
