@@ -6,6 +6,7 @@ pub use better_auth_seaorm::schema::{
 };
 pub use better_auth_seaorm::session_fields;
 pub use better_auth_seaorm::{
-    AuthEntity, Database, DatabaseConnection, HookControl, JsonMetadata, SeaOrmHookContext,
-    SeaOrmHooks, SeaOrmStore, current_request_hook_context, sea_orm,
+    AuthEntity, Database, DatabaseConnection, DatabaseHooks, HookControl, JsonMetadata, SeaOrm,
+    SeaOrmHookContext, SeaOrmHooks, SeaOrmRateLimitStorage, SeaOrmStore,
+    current_request_hook_context, sea_orm,
 };

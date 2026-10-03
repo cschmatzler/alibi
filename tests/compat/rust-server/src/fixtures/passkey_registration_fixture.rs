@@ -29,8 +29,8 @@ use better_auth_core::{
     },
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
-    hooks::{HookControl, SeaOrmHookContext, SeaOrmHooks},
+    DatabaseConnection,
+    hooks::{DatabaseHooks, HookControl},
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use chrono::Utc;
@@ -203,11 +203,11 @@ impl PasskeyRegistrationAfterVerification for Enrollment {
 }
 struct CancelSession;
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for CancelSession {
+impl DatabaseHooks<TestSchema, crate::backend::Backend> for CancelSession {
     async fn before_create_session(
         &self,
         _session: &mut CreateSession,
-        ctx: &SeaOrmHookContext<'_>,
+        ctx: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if ctx
             .request
@@ -269,7 +269,7 @@ pub(crate) async fn router(
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(configured.clone())
                 .store(
-                    SeaOrmStore::<TestSchema>::new(configured, database.clone())
+                    crate::backend::store::<TestSchema>(configured, database.clone())
                         .with_hooks(vec![Arc::new(CancelSession)]),
                 )
                 .rate_limit(RateLimitConfig::new().enabled(false))

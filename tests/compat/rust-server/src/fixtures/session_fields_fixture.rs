@@ -15,35 +15,33 @@ use better_auth_seaorm::sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Statement,
 };
 use better_auth_seaorm::store::entities::user;
-use better_auth_seaorm::{
-    DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
-};
+use better_auth_seaorm::{DatabaseConnection, DatabaseHooks, HookControl};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
 struct Callbacks;
 #[async_trait::async_trait]
-impl SeaOrmHooks<ApplicationSchema> for Callbacks {
+impl DatabaseHooks<ApplicationSchema, crate::backend::Backend> for Callbacks {
     async fn before_update_session(
         &self,
         token: &str,
         fields: &mut FieldValues,
-        ctx: &SeaOrmHookContext<'_>,
+        ctx: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if fields.get("label").and_then(JsValue::as_str) == Some("delete-before") {
-            _ = ctx
-                .db
-                .execute_raw(Statement::from_sql_and_values(
-                    ctx.db.get_database_backend(),
-                    "DELETE FROM sessions WHERE token=?",
-                    [token.into()],
-                ))
-                .await
-                .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
+            _ = crate::backend::hook_execute(
+                ctx.db,
+                "DELETE FROM sessions WHERE token=?",
+                vec![token.to_owned()],
+            )
+            .await?;
         }
         if fields.get("label").and_then(JsValue::as_str) == Some("cancel-before") {
             return Ok(HookControl::Cancel);
+        }
+        if fields.get("label").and_then(JsValue::as_str) == Some("native-hook") {
+            _ = fields.insert("label".into(), JsValue::String("model-override".into()));
         }
         if fields.get("label").and_then(JsValue::as_str) == Some("restore-undefined") {
             _ = fields.insert("transformed".into(), JsValue::String("hook-current".into()));
@@ -68,7 +66,6 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
         "ALTER TABLE sessions ADD COLUMN callback TEXT",
         "ALTER TABLE sessions ADD COLUMN number REAL",
         "ALTER TABLE sessions ADD COLUMN payload JSON NOT NULL DEFAULT '{}'",
-        "CREATE TABLE session_model_events (phase TEXT,label TEXT,is_insert BOOLEAN)",
     ] {
         _ = db
             .execute_raw(Statement::from_string(db.get_database_backend(), sql))
@@ -179,7 +176,7 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
             );
         }
         let mut builder = AuthBuilder::<ApplicationSchema>::new(config.clone())
-            .store(SeaOrmStore::<ApplicationSchema>::new(config, db.clone()).hook(Callbacks))
+            .store(crate::backend::store::<ApplicationSchema>(config, db.clone()).hook(Callbacks))
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_username(false))
             .plugin(SessionManagementPlugin::new())
@@ -212,7 +209,7 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
     Ok(router.route("/__test/session-field-state",get(move|Query(query):Query<StateQuery>|{
         let db=db.clone();async move {
             let user=user::Entity::find().filter(user::Column::Email.eq(query.email)).one(&db).await.unwrap();
-            let rows=if let Some(user)=user {application_session::Entity::find().filter(application_session::Column::UserId.eq(user.id)).all(&db).await.unwrap()}else{Vec::new()};
+            let rows=if let Some(user)=user {crate::backend::rows::<application_session::Model>(&db,"SELECT * FROM sessions WHERE user_id = ?",vec![user.id]).await.unwrap()}else{Vec::new()};
             Json(Value::Array(rows.into_iter().map(|row|json!({"id":row.id,"token":row.token,"userId":row.user_id,"updatedAt":row.updated_at,"label":row.label,"hidden":row.hidden,"serverOnly":row.server_only,"transformed":row.transformed,"validated":row.validated,"callback":row.callback,"number":row.number,"payload":row.payload,"activeOrganizationId":row.active_organization_id,"activeTeamId":row.active_team_id,"impersonatedBy":row.impersonated_by})).collect()))
         }
     })))

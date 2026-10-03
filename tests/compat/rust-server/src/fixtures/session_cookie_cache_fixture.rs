@@ -1,4 +1,5 @@
 //! Real compact-cache profiles. Application controls never enter public auth routes.
+use crate::backend::entities::{account, user, verification};
 use crate::session_field_model::{ApplicationSchema, application_session};
 use async_trait::async_trait;
 use axum::{Json, Router, routing::post};
@@ -28,9 +29,7 @@ use better_auth_core::{
     AuthRequest, CacheVersionContext, CookieCacheConfig, CookieCacheVersion,
     CookieCacheVersionResolver, UpdateUser,
 };
-use better_auth_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
-use better_auth_seaorm::store::entities::{account, user, verification};
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
@@ -51,11 +50,13 @@ struct Application {
 }
 struct SessionTokens(Arc<Mutex<State>>);
 #[async_trait]
-impl better_auth_seaorm::SeaOrmHooks<ApplicationSchema> for SessionTokens {
+impl better_auth_seaorm::DatabaseHooks<ApplicationSchema, crate::backend::Backend>
+    for SessionTokens
+{
     async fn before_create_session(
         &self,
         session: &mut better_auth_core::CreateSession,
-        _context: &better_auth_seaorm::SeaOrmHookContext<'_>,
+        _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<better_auth_seaorm::HookControl> {
         let mut state = self.0.lock().expect("configured session token policy");
         state.session_sequence += 1;
@@ -274,7 +275,6 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                 },
                 max_age,
                 version: Some(version),
-                ..Default::default()
             });
         if matches!(mode, "jwe-old" | "jwe-retained" | "jwe-retired") {
             let keys = if mode == "jwe-old" {
@@ -308,7 +308,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             "label".into(),
             FieldConfig::new(json!({"type":"string"})).default_value(json!("cache-public-label")),
         );
-        let mut store = SeaOrmStore::<ApplicationSchema>::new(config.clone(), db.clone());
+        let mut store = crate::backend::store::<ApplicationSchema>(config.clone(), db.clone());
         if mode.ends_with("interactions") {
             store = store.hook(SessionTokens(state.clone()));
         }
@@ -413,7 +413,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                         } else if control.action=="rotate-cache-key" {
                             JwtPlugin::new().create_jwk(None,None,auth.context()).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
                         } else if control.action=="retire-cache-key" {
-                            better_auth_seaorm::store::entities::jwk::Entity::delete_by_id(control.token.ok_or(axum::http::StatusCode::BAD_REQUEST)?).exec(&db).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                            { use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement}; db.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite, "DELETE FROM jwks WHERE id = ?", [control.token.ok_or(axum::http::StatusCode::BAD_REQUEST)?.into()])).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?; }
                         }
                         let keys=auth.store().list_jwks().await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
                         return Ok(Json(json!({"keys":keys.into_iter().map(|key|json!({"id":key.id,"publicKey":key.public_key,"privateKey":key.private_key,"createdAt":key.created_at,"expiresAt":key.expires_at,"alg":key.alg,"crv":key.crv})).collect::<Vec<_>>()})));
@@ -481,10 +481,11 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                     }
                     "rows" => {
                         let user_id = control.user_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;
-                        let users = user::Entity::find().filter(user::Column::Id.eq(user_id)).all(&db).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
-                        let accounts = account::Entity::find().filter(account::Column::UserId.eq(user_id)).all(&db).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
-                        let sessions = application_session::Entity::find().filter(application_session::Column::UserId.eq(user_id)).order_by_asc(application_session::Column::CreatedAt).all(&db).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
-                        let proofs = verification::Entity::find().order_by_asc(verification::Column::CreatedAt).all(&db).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                        let failed = |_| axum::http::StatusCode::INTERNAL_SERVER_ERROR;
+                        let users = crate::backend::rows::<user::Model>(&db, "SELECT * FROM users WHERE id = ?", vec![user_id.to_owned()]).await.map_err(failed)?;
+                        let accounts = crate::backend::rows::<account::Model>(&db, "SELECT * FROM accounts WHERE user_id = ?", vec![user_id.to_owned()]).await.map_err(failed)?;
+                        let sessions = crate::backend::rows::<application_session::Model>(&db, "SELECT * FROM sessions WHERE user_id = ? ORDER BY created_at", vec![user_id.to_owned()]).await.map_err(failed)?;
+                        let proofs = crate::backend::rows::<verification::Model>(&db, "SELECT * FROM verifications ORDER BY created_at", vec![]).await.map_err(failed)?;
                         let accounts = accounts.iter().map(|account| { let mut value=serde_json::to_value(better_auth_core::wire::AccountView::from(account)).expect("actual account row"); value["password"]=json!(account.password);value }).collect::<Vec<_>>();
                         let sessions = sessions.iter().map(|session| { let mut value=serde_json::to_value(auth.context().session_view(session)).expect("actual session row");value["hidden"]=json!(session.hidden);value }).collect::<Vec<_>>();
                         return Ok(Json(json!({"users":users.iter().map(|user|auth.context().user_view(user)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions,"verifications":proofs.iter().map(better_auth_core::wire::VerificationView::from).collect::<Vec<_>>()})));

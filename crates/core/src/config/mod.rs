@@ -621,8 +621,10 @@ pub struct AdvancedDatabaseConfig {
     /// Default `LIMIT` for "find many" queries.
     pub default_find_many_limit: usize,
 
-    /// If `true`, auto-generated IDs will be numeric (auto-increment style)
-    /// rather than UUIDs.
+    /// Declares that the database uses numeric IDs, as upstream's
+    /// `useNumberId`. IDs are always generated as strings; this only makes
+    /// invitation email verification required by default, because numeric
+    /// invitation IDs are guessable.
     pub use_number_id: bool,
 }
 

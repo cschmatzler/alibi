@@ -14,7 +14,7 @@ use better_auth::{
     wire::UserView,
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
 use chrono::Utc;
@@ -137,7 +137,10 @@ pub(crate) async fn router(
         config.app_name = "Fixture Auth".to_owned();
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(
                     EmailPasswordPlugin::new()

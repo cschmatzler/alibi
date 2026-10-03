@@ -19,7 +19,7 @@ use better_auth::{
 };
 use better_auth_core::{AuthRequest, HttpMethod};
 use better_auth_seaorm::{
-    DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
+    DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use serde_json::{Value, json};
@@ -181,11 +181,11 @@ impl better_auth_core::AuthPlugin<TestSchema> for Application {
     }
 }
 #[async_trait::async_trait]
-impl SeaOrmHooks<TestSchema> for Application {
+impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     async fn before_create_session(
         &self,
         session: &mut better_auth_core::CreateSession,
-        _: &SeaOrmHookContext<'_>,
+        _: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if self.mode == "composition" {
             session.token = Some(format!(
@@ -312,7 +312,7 @@ pub(crate) async fn router(
         }
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(
-                SeaOrmStore::<TestSchema>::new(config, database.clone())
+                crate::backend::store::<TestSchema>(config, database.clone())
                     .with_hooks(vec![application.clone()]),
             )
             .plugin(application.as_ref().clone())

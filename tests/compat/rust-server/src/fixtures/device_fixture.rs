@@ -12,7 +12,6 @@ use better_auth::plugins::{
     DeviceAuthorizationPlugin, EmailPasswordPlugin, SessionManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use better_auth_seaorm::SeaOrmStore;
 use better_auth_seaorm::{
     DatabaseConnection,
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr},
@@ -91,7 +90,10 @@ pub(crate) async fn profiles(
         let config = base.clone().base_path(&path);
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(
                     EmailPasswordPlugin::new()

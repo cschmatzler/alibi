@@ -1,0 +1,235 @@
+-- Better Auth schema for SQLite. Column affinities match the SeaORM migration:
+-- TEXT for strings, timestamps and JSON; BOOLEAN; INTEGER; REAL.
+
+CREATE TABLE users (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT,
+    email TEXT UNIQUE,
+    email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+    image TEXT,
+    username TEXT UNIQUE,
+    display_username TEXT,
+    two_factor_enabled BOOLEAN,
+    role TEXT,
+    banned BOOLEAN,
+    ban_reason TEXT,
+    ban_expires TEXT,
+    metadata TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    is_anonymous BOOLEAN,
+    phone_number TEXT,
+    phone_number_verified BOOLEAN,
+    last_login_method TEXT
+);
+CREATE INDEX idx_users_email ON users (email);
+CREATE INDEX idx_users_username ON users (username);
+CREATE UNIQUE INDEX idx_users_phone_number_unique ON users (phone_number);
+
+CREATE TABLE sessions (
+    id TEXT NOT NULL PRIMARY KEY,
+    expires_at TEXT NOT NULL,
+    token TEXT NOT NULL UNIQUE,
+    ip_address TEXT,
+    user_agent TEXT,
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    impersonated_by TEXT,
+    active_organization_id TEXT,
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    active_team_id TEXT
+);
+CREATE INDEX idx_sessions_token ON sessions (token);
+CREATE INDEX idx_sessions_user_id ON sessions (user_id);
+CREATE INDEX idx_sessions_expires_at ON sessions (expires_at);
+
+CREATE TABLE accounts (
+    id TEXT NOT NULL PRIMARY KEY,
+    account_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    access_token TEXT,
+    refresh_token TEXT,
+    id_token TEXT,
+    access_token_expires_at TEXT,
+    refresh_token_expires_at TEXT,
+    scope TEXT,
+    password TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_accounts_user_id ON accounts (user_id);
+CREATE INDEX idx_accounts_provider_account_lookup ON accounts (provider_id, account_id);
+
+CREATE TABLE verifications (
+    id TEXT NOT NULL PRIMARY KEY,
+    identifier TEXT NOT NULL,
+    value TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_verifications_identifier ON verifications (identifier);
+
+CREATE TABLE organization (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    logo TEXT,
+    metadata TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_organization_slug ON organization (slug);
+
+CREATE TABLE member (
+    id TEXT NOT NULL PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organization (id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    role TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX idx_member_organization_id ON member (organization_id);
+CREATE INDEX idx_member_user_id ON member (user_id);
+
+CREATE TABLE invitation (
+    id TEXT NOT NULL PRIMARY KEY,
+    organization_id TEXT NOT NULL REFERENCES organization (id) ON DELETE CASCADE,
+    email TEXT NOT NULL,
+    role TEXT NOT NULL,
+    status TEXT NOT NULL,
+    inviter_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    team_id TEXT
+);
+CREATE INDEX idx_invitation_organization_id ON invitation (organization_id);
+CREATE INDEX idx_invitation_email ON invitation (email);
+CREATE INDEX idx_invitation_status ON invitation (status);
+
+CREATE TABLE two_factor (
+    id TEXT NOT NULL PRIMARY KEY,
+    secret TEXT NOT NULL,
+    backup_codes TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    verified BOOLEAN DEFAULT TRUE,
+    failed_verification_count INTEGER DEFAULT 0,
+    locked_until TEXT
+);
+CREATE UNIQUE INDEX idx_two_factor_user_id ON two_factor (user_id);
+
+CREATE TABLE api_keys (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT,
+    start TEXT,
+    prefix TEXT,
+    key TEXT NOT NULL UNIQUE,
+    reference_id TEXT NOT NULL,
+    config_id TEXT NOT NULL DEFAULT 'default',
+    refill_interval REAL,
+    refill_amount REAL,
+    last_refill_at TEXT,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    rate_limit_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    rate_limit_time_window REAL,
+    rate_limit_max REAL,
+    request_count REAL,
+    remaining REAL,
+    last_request TEXT,
+    expires_at TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    permissions TEXT,
+    metadata TEXT
+);
+CREATE INDEX idx_api_keys_reference_id ON api_keys (reference_id);
+CREATE INDEX idx_api_keys_config_id ON api_keys (config_id);
+
+CREATE TABLE passkeys (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT,
+    public_key TEXT NOT NULL,
+    user_id TEXT NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    credential_id TEXT NOT NULL UNIQUE,
+    counter INTEGER NOT NULL DEFAULT 0,
+    device_type TEXT NOT NULL,
+    backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+    transports TEXT,
+    credential TEXT NOT NULL,
+    aaguid TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_passkeys_user_id ON passkeys (user_id);
+CREATE INDEX idx_passkeys_credential_id ON passkeys (credential_id);
+
+CREATE TABLE device_code (
+    id TEXT NOT NULL PRIMARY KEY,
+    device_code TEXT NOT NULL UNIQUE,
+    user_code TEXT NOT NULL UNIQUE,
+    user_id TEXT,
+    expires_at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    last_polled_at TEXT,
+    polling_interval INTEGER,
+    client_id TEXT,
+    scope TEXT
+);
+CREATE INDEX idx_device_code_device_code ON device_code (device_code);
+CREATE INDEX idx_device_code_user_code ON device_code (user_code);
+CREATE INDEX idx_device_code_user_id ON device_code (user_id);
+CREATE INDEX idx_device_code_expires_at ON device_code (expires_at);
+
+CREATE TABLE team (
+    id TEXT NOT NULL PRIMARY KEY,
+    name TEXT NOT NULL,
+    organization_id TEXT NOT NULL,
+    member_count INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+);
+CREATE INDEX idx_team_organization ON team (organization_id);
+
+CREATE TABLE team_member (
+    id TEXT NOT NULL PRIMARY KEY,
+    team_id TEXT NOT NULL REFERENCES team (id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    membership_key TEXT UNIQUE,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX idx_team_member_team ON team_member (team_id);
+CREATE INDEX idx_team_member_user ON team_member (user_id);
+
+CREATE TABLE organization_role (
+    id TEXT NOT NULL PRIMARY KEY,
+    organization_id TEXT NOT NULL,
+    role TEXT NOT NULL,
+    permission TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+);
+CREATE INDEX idx_organization_role_org ON organization_role (organization_id);
+CREATE INDEX idx_organization_role_role ON organization_role (role);
+
+CREATE TABLE jwks (
+    id TEXT NOT NULL PRIMARY KEY,
+    public_key TEXT NOT NULL,
+    private_key TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT,
+    alg TEXT,
+    crv TEXT
+);
+
+CREATE TABLE wallet_address (
+    id TEXT NOT NULL PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    address TEXT NOT NULL,
+    chain_id INTEGER NOT NULL,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX idx_wallet_address_user ON wallet_address (user_id);

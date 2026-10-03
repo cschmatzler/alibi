@@ -21,9 +21,7 @@ use better_auth_core::{
 };
 use better_auth_seaorm::sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Statement};
 use better_auth_seaorm::store::entities::{account, session, user, verification};
-use better_auth_seaorm::{
-    Database, DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
-};
+use better_auth_seaorm::{Database, DatabaseConnection, DatabaseHooks, HookControl};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -96,11 +94,11 @@ impl AuthPlugin<TestSchema> for CompletedRequests {
 }
 struct SessionHooks(Fixture);
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for SessionHooks {
+impl DatabaseHooks<TestSchema, crate::backend::Backend> for SessionHooks {
     async fn before_create_session(
         &self,
         session: &mut CreateSession,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if context
             .request
@@ -209,7 +207,7 @@ async fn build_router(config: &AuthConfig, managed: bool) -> AuthResult<(Router,
         })),
     };
     for db in [&fixture.preview, &fixture.production] {
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(db)
+        crate::backend::migrate(db)
             .await
             .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
     }
@@ -252,7 +250,7 @@ async fn build_router(config: &AuthConfig, managed: bool) -> AuthResult<(Router,
             let auth = Arc::new(
                 AuthBuilder::<TestSchema>::new(settings.clone())
                     .store(
-                        SeaOrmStore::<TestSchema>::new(settings, db.clone())
+                        crate::backend::store::<TestSchema>(settings, db.clone())
                             .with_hooks(vec![Arc::new(SessionHooks(fixture.clone()))]),
                     )
                     .rate_limit(RateLimitConfig::new().enabled(false))

@@ -1,0 +1,269 @@
+//! Session creation hooks, tokens and batch lookup.
+
+use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
+use async_trait::async_trait;
+use better_auth::{AuthConfig, AuthSchema};
+use better_auth_core::store::{
+    DatabaseHookContext, DatabaseHooks, HookBackend, HookControl, SessionStore, UserStore,
+    transaction,
+};
+use better_auth_core::{AuthError, AuthResult, AuthSession, AuthUser, CreateSession, CreateUser};
+use chrono::{DateTime, Duration, Utc};
+use std::sync::{Arc, Mutex};
+
+backend_tests!(
+    session_cancel_preserves_default_wire_error_and_transaction_rollback,
+    generates_default_tokens_before_hooks_and_persists_trusted_overrides,
+    batch_session_lookup_returns_token_index_order_and_includes_expired_rows_once,
+);
+postgres_tests!(
+    session_cancel_preserves_default_wire_error_and_transaction_rollback,
+    generates_default_tokens_before_hooks_and_persists_trusted_overrides,
+    // Token-index order is SQLite's plan for the unique token index. Both
+    // stores return PostgreSQL's physical row order instead.
+);
+
+fn input(user_id: &str, token: Option<&str>, expiry: DateTime<Utc>) -> CreateSession {
+    CreateSession {
+        additional_fields: better_auth_core::field_policy::FieldValues::default(),
+        token: token.map(str::to_owned),
+        user_id: user_id.to_owned(),
+        expires_at: expiry,
+        ip_address: None,
+        user_agent: None,
+        impersonated_by: None,
+        active_organization_id: None,
+        active_team_id: None,
+    }
+}
+
+struct RejectSession {
+    cancel: bool,
+    observed_transaction: Arc<Mutex<Option<bool>>>,
+}
+
+#[async_trait]
+impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for RejectSession {
+    async fn before_create_session(
+        &self,
+        _session: &mut CreateSession,
+        context: &DatabaseHookContext<'_, B>,
+    ) -> AuthResult<HookControl> {
+        *self.observed_transaction.lock().unwrap() = Some(context.tx.is_some());
+        if self.cancel {
+            Ok(HookControl::Cancel)
+        } else {
+            Err(AuthError::forbidden(
+                "session creation cancelled by database hook",
+            ))
+        }
+    }
+}
+
+struct TokenHook {
+    observed: Arc<Mutex<Option<String>>>,
+}
+
+#[async_trait]
+impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for TokenHook {
+    async fn before_create_session(
+        &self,
+        session: &mut CreateSession,
+        _context: &DatabaseHookContext<'_, B>,
+    ) -> AuthResult<HookControl> {
+        *self.observed.lock().unwrap() = session.token.clone();
+        session.token = Some("hook-assigned-token".to_owned());
+        Ok(HookControl::Continue)
+    }
+}
+
+async fn session_cancel_preserves_default_wire_error_and_transaction_rollback<B: Backend>(
+    db: Db,
+) -> TestResult {
+    for cancel in [false, true] {
+        for in_transaction in [false, true] {
+            let db = db.fresh().await?;
+            let (connection, store) = db
+                .migrated::<B>("cancel-session-hook-secret-at-least-32")
+                .await?;
+            let observed = Arc::new(Mutex::new(None));
+            let store = B::hook(
+                store,
+                RejectSession {
+                    cancel,
+                    observed_transaction: Arc::clone(&observed),
+                },
+            );
+            let email = "cancel-owner@fixture.test";
+            let expiry = Utc::now() + Duration::hours(1);
+            let error = if in_transaction {
+                transaction(&store, move |tx| {
+                    Box::pin(async move {
+                        let user = tx.create_user(CreateUser::new().with_email(email)).await?;
+                        drop(
+                            tx.create_session(input(
+                                user.id().as_ref(),
+                                Some("cancel-token"),
+                                expiry,
+                            ))
+                            .await?,
+                        );
+                        Ok(())
+                    })
+                })
+                .await
+                .unwrap_err()
+            } else {
+                let user = store
+                    .create_user(CreateUser::new().with_email(email))
+                    .await?;
+                store
+                    .create_session(input(user.id().as_ref(), Some("cancel-token"), expiry))
+                    .await
+                    .unwrap_err()
+            };
+            assert_eq!(*observed.lock().unwrap(), Some(in_transaction));
+            assert_eq!(matches!(error, AuthError::SessionCreationCancelled), cancel);
+            assert_eq!(matches!(error, AuthError::Forbidden(_)), !cancel);
+            let response = error.to_auth_response();
+            assert_eq!(response.status, 403);
+            assert_eq!(
+                serde_json::from_slice::<serde_json::Value>(&response.body)?,
+                serde_json::json!({"message":"session creation cancelled by database hook"})
+            );
+            assert!(store.get_session("cancel-token").await?.is_none());
+            assert_eq!(
+                store.get_user_by_email(email).await?.is_none(),
+                in_transaction
+            );
+            B::close(connection).await?;
+        }
+    }
+    Ok(())
+}
+
+async fn generates_default_tokens_before_hooks_and_persists_trusted_overrides<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, store) = db
+        .migrated::<B>("session-token-hook-local-secret-at-least-32")
+        .await?;
+    let user = store
+        .create_user(CreateUser::new().with_email("session-hook@example.com"))
+        .await?;
+    let user = user.id().into_owned();
+    let expiry = Utc::now() + Duration::hours(1);
+    let first = store.create_session(input(&user, None, expiry)).await?;
+    let second = store.create_session(input(&user, None, expiry)).await?;
+    assert_eq!(first.token().len(), 32);
+    assert!(
+        first
+            .token()
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric())
+    );
+    assert_ne!(first.token(), second.token());
+    let explicit = store
+        .create_session(input(&user, Some("trusted-server-override"), expiry))
+        .await?;
+    assert_eq!(explicit.token(), "trusted-server-override");
+    assert!(
+        store
+            .create_session(input(&user, Some(explicit.token()), expiry))
+            .await
+            .is_err()
+    );
+    let observed = Arc::new(Mutex::new(None));
+    let hooked = B::hook(
+        store,
+        TokenHook {
+            observed: Arc::clone(&observed),
+        },
+    );
+    let overridden = hooked.create_session(input(&user, None, expiry)).await?;
+    let generated = observed
+        .lock()
+        .unwrap()
+        .clone()
+        .ok_or("Hook saw no token")?;
+    assert_eq!(generated.len(), 32);
+    assert!(generated.bytes().all(|byte| byte.is_ascii_alphanumeric()));
+    assert_eq!(overridden.token(), "hook-assigned-token");
+    assert!(hooked.get_session(&generated).await?.is_none());
+    assert_eq!(
+        hooked
+            .get_session(overridden.token())
+            .await?
+            .map(|row| row.id().into_owned()),
+        Some(overridden.id().into_owned())
+    );
+    B::close(connection).await
+}
+
+async fn batch_session_lookup_returns_token_index_order_and_includes_expired_rows_once<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    let (connection, store) = db
+        .migrated::<B>("session-batch-local-secret-at-least-32")
+        .await?;
+    let user = store
+        .create_user(CreateUser::new().with_email("session-batch@example.com"))
+        .await?;
+    let user = user.id().into_owned();
+    let now = Utc::now();
+    for (token, expiry) in [
+        ("z-token", now + Duration::hours(1)),
+        ("a-token", now - Duration::minutes(1)),
+        ("m-token", now + Duration::hours(1)),
+    ] {
+        drop(
+            store
+                .create_session(input(&user, Some(token), expiry))
+                .await?,
+        );
+    }
+    let result = store
+        .get_sessions_by_tokens(&[
+            "z-token".to_owned(),
+            "unknown".to_owned(),
+            "a-token".to_owned(),
+            "z-token".to_owned(),
+            "m-token".to_owned(),
+        ])
+        .await?;
+    assert_eq!(
+        result.iter().map(AuthSession::token).collect::<Vec<_>>(),
+        vec!["a-token", "m-token", "z-token"]
+    );
+    assert!(result.first().is_some_and(|row| row.expires_at() < now));
+    assert_eq!(store.get_sessions_by_tokens(&[]).await?.len(), 0);
+    let mut config = AuthConfig::new("session-batch-local-secret-at-least-32");
+    config.advanced.database.default_find_many_limit = 2;
+    let limited = B::store(Arc::new(config), &connection);
+    assert_eq!(
+        limited
+            .get_sessions_by_tokens(&[
+                "z-token".to_owned(),
+                "a-token".to_owned(),
+                "m-token".to_owned()
+            ])
+            .await?
+            .iter()
+            .map(AuthSession::token)
+            .collect::<Vec<_>>(),
+        vec!["a-token", "m-token"]
+    );
+    store.delete_session("m-token").await?;
+    assert_eq!(
+        store
+            .get_sessions_by_tokens(&["m-token".to_owned(), "z-token".to_owned()])
+            .await?
+            .iter()
+            .map(AuthSession::token)
+            .collect::<Vec<_>>(),
+        vec!["z-token"]
+    );
+    B::close(connection).await
+}

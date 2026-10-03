@@ -20,7 +20,10 @@ pub mod session_fields;
 #[doc(hidden)]
 pub use better_auth_core as __private_core;
 pub use better_auth_seaorm_macros::AuthEntity;
-pub use hooks::{HookControl, SeaOrmHookContext, SeaOrmHooks, current_request_hook_context};
+pub use hooks::{
+    DatabaseHooks, HookControl, SeaOrm, SeaOrmHookContext, SeaOrmHooks,
+    current_request_hook_context,
+};
 pub use json_metadata::JsonMetadata;
 pub use schema::{
     SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,

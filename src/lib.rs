@@ -54,6 +54,8 @@ pub mod prelude;
 pub mod schema;
 #[cfg(feature = "seaorm2")]
 pub mod seaorm;
+#[cfg(feature = "sqlx")]
+pub mod sqlx;
 pub mod store;
 pub mod telemetry;
 pub mod wire;

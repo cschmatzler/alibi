@@ -22,7 +22,6 @@ use better_auth_core::{
     AuthRequest, CreateVerification, DatabaseError, HttpMethod, wire::VerificationView,
 };
 use better_auth_seaorm::{
-    SeaOrmStore,
     sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder},
     store::entities::verification,
 };
@@ -248,7 +247,7 @@ pub(super) async fn router(
         };
         let auth = Arc::new(
             AuthBuilder::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(
+                .store(crate::backend::store::<TestSchema>(
                     config.clone(),
                     database.clone(),
                 ))

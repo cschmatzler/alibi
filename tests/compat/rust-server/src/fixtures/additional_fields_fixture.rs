@@ -2,6 +2,7 @@
 use crate::additional_field_models::{
     ApplicationSchema, application_account, application_session, application_user,
 };
+use crate::backend::entities::verification;
 use axum::{
     Json, Router,
     extract::Query,
@@ -24,10 +25,9 @@ use better_auth_core::{
     utils::json::JsValue,
 };
 use better_auth_seaorm::sea_orm::{
-    ConnectionTrait, Database, DatabaseConnection, EntityTrait, Schema,
+    ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement,
 };
-use better_auth_seaorm::store::entities::verification;
-use better_auth_seaorm::{HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
+use better_auth_seaorm::{DatabaseHooks, HookControl};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -67,21 +67,11 @@ impl Fixture {
             .expect("application mapper receipts")
             .clear();
         for application in &self.applications {
-            let database = &application.database;
-            application_session::Entity::delete_many()
-                .exec(database)
-                .await
-                .map_err(db_error)?;
-            application_account::Entity::delete_many()
-                .exec(database)
-                .await
-                .map_err(db_error)?;
-            verification::Entity::delete_many()
-                .exec(database)
-                .await
-                .map_err(db_error)?;
-            application_user::Entity::delete_many()
-                .exec(database)
+            application
+                .database
+                .execute_unprepared(
+                    "DELETE FROM app_session; DELETE FROM app_account; DELETE FROM verifications; DELETE FROM app_user",
+                )
                 .await
                 .map_err(db_error)?;
             application
@@ -497,11 +487,11 @@ impl AdapterAfterHook<ApplicationSchema> for Application {
     }
 }
 #[async_trait::async_trait]
-impl SeaOrmHooks<ApplicationSchema> for Application {
+impl DatabaseHooks<ApplicationSchema, crate::backend::Backend> for Application {
     async fn after_update_session_missing(
         &self,
         _: &str,
-        _: &SeaOrmHookContext<'_>,
+        _: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
         if self.mode == "cached" {
             self.events
@@ -515,21 +505,23 @@ impl SeaOrmHooks<ApplicationSchema> for Application {
         &self,
         token: &str,
         fields: &mut better_auth::field_policy::FieldValues,
-        _: &SeaOrmHookContext<'_>,
+        _: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if self.mode != "cached" {
             return Ok(HookControl::Continue);
         }
-        use better_auth_seaorm::sea_orm::{ColumnTrait, QueryFilter};
         self.events
             .lock()
             .expect("application receipts")
             .push(json!({"phase":"before","entity":"session","fields":fields}));
-        let stored = application_session::Entity::find()
-            .filter(application_session::Column::Token.eq(token))
-            .one(&self.database)
-            .await
-            .map_err(db_error)?;
+        let stored = crate::backend::rows::<application_session::Model>(
+            &self.database,
+            "SELECT * FROM app_session WHERE token = ? LIMIT 1",
+            vec![token.to_owned()],
+        )
+        .await
+        .map_err(db_error)?
+        .pop();
         let command = fields.get("hidden").and_then(JsValue::as_str).or_else(|| {
             if fields.get("label").is_none() {
                 stored.as_ref().and_then(|row| row.hidden.as_deref())
@@ -548,9 +540,12 @@ impl SeaOrmHooks<ApplicationSchema> for Application {
                 });
             }
             Some("delete") => {
-                application_session::Entity::delete_many()
-                    .filter(application_session::Column::Token.eq(token))
-                    .exec(&self.database)
+                self.database
+                    .execute_raw(Statement::from_sql_and_values(
+                        DbBackend::Sqlite,
+                        "DELETE FROM app_session WHERE token = ?",
+                        [token.into()],
+                    ))
                     .await
                     .map_err(db_error)?;
             }
@@ -570,16 +565,9 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
     let database = Database::connect("sqlite::memory:")
         .await
         .map_err(db_error)?;
-    let backend = database.get_database_backend();
-    let schema = Schema::new(backend);
-    for statement in [
-        schema.create_table_from_entity(application_user::Entity),
-        schema.create_table_from_entity(application_session::Entity),
-        schema.create_table_from_entity(application_account::Entity),
-        schema.create_table_from_entity(verification::Entity),
-    ] {
+    for statement in crate::additional_field_models::TABLES {
         database
-            .execute_raw(backend.build(&statement))
+            .execute_unprepared(statement)
             .await
             .map_err(db_error)?;
     }
@@ -639,7 +627,10 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
         });
     }
     let mut builder = AuthBuilder::<ApplicationSchema>::new(settings.clone())
-        .store(SeaOrmStore::<ApplicationSchema>::new(settings, database).hook(application.clone()))
+        .store(
+            crate::backend::store::<ApplicationSchema>(settings, database)
+                .hook(application.clone()),
+        )
         .rate_limit(RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new().enable_username(false))
         .plugin(SessionManagementPlugin::new())
@@ -719,22 +710,34 @@ struct StateQuery {
 }
 impl Application {
     async fn state(&self) -> AuthResult<Value> {
-        let users = application_user::Entity::find()
-            .all(&self.database)
-            .await
-            .map_err(db_error)?;
-        let sessions = application_session::Entity::find()
-            .all(&self.database)
-            .await
-            .map_err(db_error)?;
-        let accounts = application_account::Entity::find()
-            .all(&self.database)
-            .await
-            .map_err(db_error)?;
-        let verifications = verification::Entity::find()
-            .all(&self.database)
-            .await
-            .map_err(db_error)?;
+        let users = crate::backend::rows::<application_user::Model>(
+            &self.database,
+            "SELECT * FROM app_user",
+            vec![],
+        )
+        .await
+        .map_err(db_error)?;
+        let sessions = crate::backend::rows::<application_session::Model>(
+            &self.database,
+            "SELECT * FROM app_session",
+            vec![],
+        )
+        .await
+        .map_err(db_error)?;
+        let accounts = crate::backend::rows::<application_account::Model>(
+            &self.database,
+            "SELECT * FROM app_account",
+            vec![],
+        )
+        .await
+        .map_err(db_error)?;
+        let verifications = crate::backend::rows::<verification::Model>(
+            &self.database,
+            "SELECT * FROM verifications",
+            vec![],
+        )
+        .await
+        .map_err(db_error)?;
         let verifications: Vec<Value> = verifications
             .into_iter()
             .map(|row| {
@@ -786,17 +789,16 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                         .get(query.profile.as_deref().unwrap_or("normal"))
                         .cloned();
                     async move {
-                        use better_auth_seaorm::sea_orm::{ColumnTrait, QueryFilter};
                         let application = application
                             .ok_or_else(|| AuthError::bad_request("Unknown application"))?;
                         if let Some(label) = input.label {
-                            application_session::Entity::update_many()
-                                .col_expr(
-                                    application_session::Column::Label,
-                                    better_auth_seaorm::sea_orm::sea_query::Expr::value(label),
-                                )
-                                .filter(application_session::Column::Token.eq(&input.token))
-                                .exec(&application.database)
+                            application
+                                .database
+                                .execute_raw(Statement::from_sql_and_values(
+                                    DbBackend::Sqlite,
+                                    "UPDATE app_session SET label = ? WHERE token = ?",
+                                    [label.into(), input.token.clone().into()],
+                                ))
                                 .await
                                 .map_err(db_error)?;
                         }
@@ -805,36 +807,34 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)>
                             application.drained.notified().await;
                         }
                         if let Some(omitted) = input.omitted {
-                            application_session::Entity::update_many()
-                                .col_expr(
-                                    application_session::Column::Omitted,
-                                    better_auth_seaorm::sea_orm::sea_query::Expr::value(omitted),
-                                )
-                                .filter(application_session::Column::Token.eq(&input.token))
-                                .exec(&application.database)
+                            application
+                                .database
+                                .execute_raw(Statement::from_sql_and_values(
+                                    DbBackend::Sqlite,
+                                    "UPDATE app_session SET omitted = ? WHERE token = ?",
+                                    [omitted.into(), input.token.clone().into()],
+                                ))
                                 .await
                                 .map_err(db_error)?;
                         }
                         if let Some(hidden) = input.hidden {
-                            application_session::Entity::update_many()
-                                .col_expr(
-                                    application_session::Column::Hidden,
-                                    better_auth_seaorm::sea_orm::sea_query::Expr::value(hidden),
-                                )
-                                .filter(application_session::Column::Token.eq(&input.token))
-                                .exec(&application.database)
+                            application
+                                .database
+                                .execute_raw(Statement::from_sql_and_values(
+                                    DbBackend::Sqlite,
+                                    "UPDATE app_session SET hidden = ? WHERE token = ?",
+                                    [hidden.into(), input.token.clone().into()],
+                                ))
                                 .await
                                 .map_err(db_error)?;
                         }
-                        application_session::Entity::update_many()
-                            .col_expr(
-                                application_session::Column::ExpiresAt,
-                                better_auth_seaorm::sea_orm::sea_query::Expr::value(
-                                    input.expires_at,
-                                ),
-                            )
-                            .filter(application_session::Column::Token.eq(input.token))
-                            .exec(&application.database)
+                        application
+                            .database
+                            .execute_raw(Statement::from_sql_and_values(
+                                DbBackend::Sqlite,
+                                "UPDATE app_session SET expires_at = ? WHERE token = ?",
+                                [input.expires_at.into(), input.token.into()],
+                            ))
                             .await
                             .map_err(db_error)?;
                         Ok::<_, AuthError>(Json(application.state().await?))

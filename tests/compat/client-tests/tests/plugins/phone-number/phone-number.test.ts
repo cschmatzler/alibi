@@ -152,6 +152,8 @@ compatScenario(
   },
 );
 
+// Only values whose stored text is the same on every SQLite version. REAL text
+// with 16-17 significant digits is formatted by the engine (3.52+), not the adapter.
 const numericPhoneValues = [
   ["1.0", "1"],
   ["1e3", "1000"],
@@ -159,15 +161,9 @@ const numericPhoneValues = [
   ["1e20", "1.0e+20"],
   ["2147483648", "2147483648"],
   ["2251799813685247", "2251799813685247"],
-  ["2251799813685248", "2251799813685248.0"],
   ["-2251799813685248", "-2251799813685248"],
-  ["-2251799813685249", "-2251799813685249.0"],
-  ["9007199254740993", "9007199254740992.0"],
   ["-0.0", "0.0"],
   ["47.49", "47.49"],
-  ["2.8781999999999997", "2.8781999999999997"],
-  ["1.234567890123456e-5", "1.2345678901234559e-05"],
-  ["5e-324", "4.9406564584124654e-324"],
   ["1e400", "Inf"],
   ["-1e400", "-Inf"],
 ] as const;
@@ -178,8 +174,9 @@ for (const group of [
   {
     name: "phone signup preserves raw JSON numeric bindings and rounded uniqueness",
     start: 6,
-    end: 12,
-    collisions: [["9007199254740992", 9]],
+    end: 9,
+    // JSON.parse rounds this literal to the owner's 47.49.
+    collisions: [["47.490000000000002", 8]],
     extras: false,
   },
   {
@@ -190,12 +187,12 @@ for (const group of [
     extras: false,
   },
   {
-    name: "phone signup binds fractional and overflowing JSON numbers without accepting duplicate owners",
-    start: 12,
-    end: 17,
+    name: "phone signup binds overflowing JSON numbers without accepting duplicate owners",
+    start: 9,
+    end: 11,
     collisions: [
-      ["1e309", 15],
-      ["-1e309", 16],
+      ["1e309", 9],
+      ["-1e309", 10],
     ],
     extras: true,
   },

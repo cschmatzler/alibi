@@ -17,7 +17,7 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use better_auth::{integrations::axum::AxumIntegration, middleware::RateLimitConfig};
-use better_auth_seaorm::{SeaOrmStore, sea_orm::DatabaseConnection};
+use better_auth_seaorm::sea_orm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
@@ -229,7 +229,7 @@ pub(super) async fn build(
         });
         let auth = Arc::new(
             AuthBuilder::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(
+                .store(crate::backend::store::<TestSchema>(
                     config.clone(),
                     database.clone(),
                 ))

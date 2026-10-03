@@ -20,26 +20,10 @@ JSON null with absence. The list handler now uses the same stored-metadata
 projection as get/full/set-active, retaining owner filtering and exact
 JavaScript JSON text for metadata created through the supported API.
 
-Fresh schemas allow a nullable metadata column. Installed schemas gain appended
-named migration `m20260930_000013_nullable_organization_metadata`; older
-migration names and ordering remain intact. SQLite uses the existing SQL
-tokenizer and the established pinned-connection rebuild procedure. It removes
-only the metadata column's `NOT NULL` rule, its optional constraint name and
-`ON CONFLICT` clause. It retains defaults, checks, custom columns, generated
-columns, indexes, triggers, views, row identity and stored bytes. Foreign-key
-and rename settings are restored; failed relationship checks roll back the
-replacement table and leave the migration unapplied. PostgreSQL uses `ALTER
-COLUMN metadata DROP NOT NULL` and is compile-checked, without a claimed
-PostgreSQL runtime migration test.
+The bundled schema declares a nullable metadata column. The single squashed auth migration installs this shape; there is no upgrade path from earlier bundled shapes.
 
-Three native SQLite tests own distinct storage/upgrade contracts: public-store
-omission versus literal null and subsequent patches; an installed custom schema
-with retained noncanonical JSON bytes, rowids, default/check constraints,
-generated fields, index, view, trigger and real foreign-key deletion; and an
-invalid existing reference causing rollback with enforcement/settings and
-migration ledger preserved. The public-store regression fails before the
-repair with `Some(Null)` versus `None`; the upgrade regression fails because
-the named metadata `NOT NULL` constraint remains.
+The native public-store test owns omission versus literal null and subsequent
+patches. It fails before the repair with `Some(Null)` versus `None`.
 
 The existing absent-metadata official-client case now observes raw SQL `NULL`
 and follows get/full/list, an unrelated update and set-active without changing
@@ -62,10 +46,8 @@ with 2,780 assertions; API library tests pass 321 and SeaORM library tests pass
 and fixture Clippy, client and changed reference-fixture TypeScript, formatting
 and diff checks pass. Comparisons and coverage requirements are unchanged.
 
-Installed rows containing `"null"` are preserved, including rows an older Rust
-version created for an omitted field. Their original intent cannot be inferred;
-they now behave as present JSON null rather than silently being rewritten to
-SQL `NULL`. Physical JSON column affinity differs from the pinned string
+Rows containing `"null"` behave as present JSON null rather than being
+rewritten to SQL `NULL`. Physical JSON column affinity differs from the pinned string
 schema. Arbitrary invalid JSON text, noncanonical legacy JSON spelling on HTTP
 readback, and application-selected custom organization models are separate
 boundaries: this storage path uses the bundled organization entity, and the

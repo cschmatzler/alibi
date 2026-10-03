@@ -509,6 +509,7 @@ dependencies = [
  "better-auth-api",
  "better-auth-core",
  "better-auth-seaorm",
+ "better-auth-sqlx",
  "chrono",
  "clap",
  "http-body-util",
@@ -608,6 +609,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "better-auth-entity-codegen"
+version = "1.0.0-alpha.3"
+dependencies = [
+ "better-auth-schema-registry",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
 name = "better-auth-macros"
 version = "1.0.0-alpha.3"
 dependencies = [
@@ -641,7 +652,34 @@ dependencies = [
 name = "better-auth-seaorm-macros"
 version = "1.0.0-alpha.3"
 dependencies = [
- "better-auth-schema-registry",
+ "better-auth-entity-codegen",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "better-auth-sqlx"
+version = "1.0.0-alpha.3"
+dependencies = [
+ "async-trait",
+ "better-auth-core",
+ "better-auth-sqlx-macros",
+ "chrono",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "better-auth-sqlx-macros"
+version = "1.0.0-alpha.3"
+dependencies = [
+ "better-auth-entity-codegen",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -933,6 +971,7 @@ dependencies = [
  "better-auth",
  "better-auth-core",
  "better-auth-seaorm",
+ "better-auth-sqlx",
  "chrono",
  "futures-util",
  "hmac 0.12.1",
@@ -940,6 +979,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
+ "sqlx",
  "tokio",
  "tower",
  "tower-http",

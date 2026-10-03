@@ -1,0 +1,24 @@
+[package]
+name = "better-auth-sqlx-macros"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+description = "SQLx proc macros for better-auth"
+repository = { workspace = true }
+
+readme = { workspace = true }
+keywords = { workspace = true }
+categories = { workspace = true }
+
+[lints]
+workspace = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+better-auth-entity-codegen = { workspace = true }
+proc-macro-crate = "3"
+proc-macro2 = { workspace = true }
+quote = { workspace = true }
+syn = { workspace = true }

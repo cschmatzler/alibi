@@ -17,3 +17,4 @@ mod contract;
 mod axum_integration;
 mod core;
 mod plugins;
+mod storage;

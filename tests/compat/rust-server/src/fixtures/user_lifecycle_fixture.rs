@@ -21,7 +21,7 @@ use better_auth_core::{
     CacheVersionContext, CookieCacheConfig, CookieCacheVersion, CookieCacheVersionResolver,
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr},
     store::entities::{account, session, user, verification},
 };
@@ -286,7 +286,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         };
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, db.clone()))
+                .store(crate::backend::store::<TestSchema>(config, db.clone()))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::with_config(policy))
                 .plugin(verification_plugin)

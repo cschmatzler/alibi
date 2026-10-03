@@ -15,7 +15,7 @@ use better_auth::{
     middleware::RateLimitConfig,
 };
 use better_auth_core::utils::json::JsValue;
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::{
@@ -203,7 +203,10 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         let jwt = JwtPlugin::with_config(options);
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(
                     EmailPasswordPlugin::new()

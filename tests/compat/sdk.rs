@@ -123,6 +123,15 @@ fn build_rust_compat_server() -> PathBuf {
         "tests/compat/rust-server/Cargo.toml",
         "--message-format=json-render-diagnostics",
     ]);
+    // Fixtures use `SqlxStore`; `BETTER_AUTH_COMPAT_BACKEND=seaorm` serves
+    // every fixture from `SeaOrmStore` instead.
+    match std::env::var("BETTER_AUTH_COMPAT_BACKEND").as_deref() {
+        Ok("seaorm") => {
+            let _ = command.args(["--features", "seaorm2"]);
+        }
+        Ok("sqlx") | Err(_) => {}
+        Ok(other) => panic!("BETTER_AUTH_COMPAT_BACKEND must be seaorm or sqlx, not {other}"),
+    }
     if std::env::var_os("BETTER_AUTH_COMPAT_COVERAGE_TARGET_DIR").is_some() {
         let _ = command.args(["--", "-C", "instrument-coverage"]);
     }

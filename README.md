@@ -23,7 +23,7 @@ wire behavior.
 - **Plugin Architecture** — compose only the auth features you need
 - **Type Safety** — leverages Rust's type system for compile-time guarantees
 - **Async First** — built on Tokio with full async/await support
-- **App-Owned SeaORM Schema** — auth entities live in your SeaORM model graph
+- **App-Owned Schema** — auth entities live in your SQLx (default) or SeaORM models
 - **Framework Integration** — first-class Axum support with session extractors
 - **OpenAPI** — auto-generated API specification
 - **Middleware** — CSRF, CORS, rate limiting, body size limits
@@ -44,7 +44,7 @@ preservation is disabled; session lists still use the secondary index. Cached
 malformed, expired, inactive, or mismatched credentials cannot authenticate.
 The backend holds sensitive credentials and must be trusted and isolated.
 
-Bundled SeaORM user/session models support this directly. Application-owned
+Bundled SQLx and SeaORM user/session models support this directly. Application-owned
 `AuthEntity` user/session models opt in with
 `#[auth(role = "user", secondary_storage)]` or the corresponding session role;
 each model field must support serialization and deserialization. Other schemas
@@ -83,10 +83,10 @@ background work observed through the application's background-task handler.
 
 ```toml
 [dependencies]
-better-auth = { version = "1.0.0-alpha.3", features = ["axum", "seaorm2"] }
+better-auth = { version = "1.0.0-alpha.3", features = ["axum"] }
 ```
 
-Generate the schema scaffolding with the CLI:
+SQLx is the default store backend. Generate the schema scaffolding with the CLI:
 
 ```bash
 cargo install better-auth-cli
@@ -94,6 +94,68 @@ better-auth-rs generate -o src/auth_schema.rs
 ```
 
 Or write it by hand — the `AuthEntity` derive generates all trait impls:
+
+```rust,ignore
+use better_auth::{AuthConfig, AuthSchema, BetterAuth};
+use better_auth::plugins::EmailPasswordPlugin;
+use better_auth::sqlx::{AuthEntity, SqlxPool, SqlxStore};
+use better_auth::store::SchemaMigrator;
+use chrono::{DateTime, Utc};
+
+// Only include the fields you need — plugin fields are optional.
+// The table defaults to the bundled name for the role; override it with
+// `#[auth(table = "...")]` and column names with `#[sqlx(rename = "...")]`.
+#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, AuthEntity)]
+#[auth(role = "user")]
+pub struct UserModel {
+    pub id: String,
+    pub name: Option<String>,
+    pub email: Option<String>,
+    pub email_verified: bool,
+    pub image: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    // Plugin and app-specific fields work as with SeaORM below.
+}
+
+// ... session, account, verification entities ...
+
+#[derive(AuthSchema)]
+#[auth(user = "crate::UserModel")]
+#[auth(session = "crate::SessionModel")]
+#[auth(account = "crate::AccountModel")]
+#[auth(verification = "crate::VerificationModel")]
+pub struct AppAuthSchema;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let pool = SqlxPool::connect("sqlite::memory:").await?;
+    let config = AuthConfig::new("your-very-secure-secret-key-at-least-32-chars-long")
+        .base_url("http://localhost:3000");
+    let store = SqlxStore::<AppAuthSchema>::new(config.clone(), pool);
+    // Optional: install the bundled schema instead of your own migrations.
+    store.migrate().await?;
+
+    let auth = BetterAuth::<AppAuthSchema>::new(config)
+        .store(store)
+        .plugin(EmailPasswordPlugin::new().enable_signup(true))
+        .build()
+        .await?;
+
+    Ok(())
+}
+```
+
+### SeaORM
+
+Enable `seaorm2` (optionally with `default-features = false` and `native-tls`
+or `rustls` to drop SQLx) and use `SeaOrmStore`, which implements the same
+`AuthStore` contract:
+
+```toml
+[dependencies]
+better-auth = { version = "1.0.0-alpha.3", features = ["axum", "seaorm2"] }
+```
 
 ```rust,ignore
 use better_auth::{AuthConfig, AuthSchema, BetterAuth};
@@ -186,6 +248,13 @@ single-secret `&str` APIs. Use `encrypt_token_with_config`,
 managed key versions.
 
 Your app owns the auth entities and migrations — Better Auth adapts to whatever schema you define.
+Both stores implement `better_auth::store::SchemaMigrator`; `store.migrate().await?`
+installs the bundled schema and records it in the `better_auth_migrations` ledger.
+
+Database hooks implement `better_auth::store::DatabaseHooks<S, B>` once per
+backend marker (`better_auth::sqlx::Sqlx` or `better_auth::seaorm::SeaOrm`).
+Each hook receives the configuration, the backend's pool/connection and the open
+transaction when there is one. Register them with `with_hooks` on either store.
 
 The supported native integration is Axum (`AxumIntegration`, including application
 state and session extractors). Other Rust HTTP hosts can call
@@ -220,7 +289,7 @@ presence for trusted callbacks. Public user/session/account projection applies
 returned-field filtering separately, and public account output always removes
 credentials. Register `AdapterAfterHook` during initialization to observe retained
 write output after commit; transaction rollback discards those observations.
-Typed store methods and SeaORM hooks continue to expose physical models.
+Typed store methods and database hooks continue to expose physical models.
 
 Password-reset and email-verification delivery callbacks are awaited by default;
 their errors fail the request. Set
@@ -278,8 +347,9 @@ invalid Redis TTLs fail closed; cache adapters without atomic increment also
 fail closed. Applications can implement `RateLimitStorage::consume` directly
 for their own atomic backend.
 
-`better_auth_seaorm::SeaOrmRateLimitStorage::new(connection)` supports shared
-SQLite/PostgreSQL rolling quotas. Call `storage.migrate().await?` explicitly
+`better_auth::sqlx::SqlxRateLimitStorage::new(pool)` and
+`better_auth::seaorm::SeaOrmRateLimitStorage::new(connection)` support shared
+SQLite/PostgreSQL rolling quotas. Call `SchemaMigrator::migrate` explicitly
 before installing it; its table and ledger are independent of ordinary auth
 migrations and do not require changes to `AuthSchema`. New/reset buckets prune
 expired rows older than the longest configured/observed window. Each row retains
@@ -339,6 +409,7 @@ Verification uses the configured IP policy.
 | Feature | Description |
 |---------|-------------|
 | `axum` | Axum web framework integration |
+| `sqlx` | SQLx database integration (default) |
 | `seaorm2` | SeaORM database integration |
 | `redis-cache` | Redis session/cache backend |
 
@@ -349,6 +420,7 @@ Verification uses the configured IP policy.
 | [`better-auth`](https://crates.io/crates/better-auth) | Main crate — re-exports and framework integration |
 | [`better-auth-core`](https://crates.io/crates/better-auth-core) | Core auth runtime, store, middleware, and error handling |
 | [`better-auth-api`](https://crates.io/crates/better-auth-api) | Plugin implementations |
+| [`better-auth-sqlx`](https://crates.io/crates/better-auth-sqlx) | SQLx store, entity traits, and `AuthEntity` derive macro |
 | [`better-auth-seaorm`](https://crates.io/crates/better-auth-seaorm) | SeaORM store, entity traits, and `AuthEntity` derive macro |
 | [`better-auth-cli`](https://crates.io/crates/better-auth-cli) | CLI tools (`better-auth-rs generate`) |
 

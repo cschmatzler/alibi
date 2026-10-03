@@ -12,9 +12,7 @@ bodies. Generated-code uniqueness retries at most three times and does not
 repeat the application issuance callback.
 
 The unconstrained optional device user reference permits upstream-supported
-prebinding. SQLite installed-table upgrades preserve custom columns/generated
-columns/checks/indexes/triggers/views and inbound references. A post-replacement
-integrity failure proves rollback and restored connection settings before retry.
+prebinding. The single squashed auth migration installs this shape; there is no upgrade path from earlier bundled shapes.
 
 Strict harness aliases relate persisted camel-case codes to issued snake-case
 codes. TypeScript-versus-TypeScript independently reproduced the previous false
@@ -24,10 +22,9 @@ expiry, unobserved tokens and larger TTL differences still fail. The new device-
 claims or trace shapes. Existing runtime user identity checks remain intact. Raw exceptions remain empty.
 
 Independent review found and resolved pre-authentication validation ordering,
-missing media rejection, unscoped aliases in JWT claims and missing destructive
-migration rollback evidence. Focused proof: 19 SDK scenarios / 326 assertions,
-production Clippy, native generator/collision/concurrency checks and installed
-SQLite upgrade/rollback. The final canonical `scripts/check.sh` gate passed
+missing media rejection and unscoped aliases in JWT claims. Focused proof: 19
+SDK scenarios / 326 assertions, production Clippy and native
+generator/collision/concurrency checks. The final canonical `scripts/check.sh` gate passed
 with 227 SDK scenarios / 5,064 assertions, 37 harness tests / 210 assertions,
 two Chromium tests / 22 assertions, and 79.23% source lines (21,526 / 27,170).
 

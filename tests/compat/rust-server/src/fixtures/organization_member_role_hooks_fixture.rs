@@ -19,14 +19,14 @@ use better_auth_core::{
     store::{MemberStore, UserStore},
     wire::UserView,
 };
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};
 
 struct Hooks {
     database: DatabaseConnection,
-    store: Arc<SeaOrmStore<TestSchema>>,
+    store: Arc<crate::backend::Store<TestSchema>>,
     mode: Mutex<String>,
     receipts: Mutex<Vec<Value>>,
     gate: Mutex<Arc<Notify>>,
@@ -125,7 +125,7 @@ pub(crate) async fn router(
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let hooks = Arc::new(Hooks {
         database: database.clone(),
-        store: Arc::new(SeaOrmStore::new(base.clone(), database)),
+        store: Arc::new(crate::backend::store(base.clone(), database)),
         mode: Mutex::new("record".into()),
         receipts: Mutex::new(Vec::new()),
         gate: Mutex::new(Arc::new(Notify::new())),
@@ -134,7 +134,7 @@ pub(crate) async fn router(
     let auth_config = base.clone().base_path(path);
     let auth = Arc::new(
         AuthBuilder::<TestSchema>::new(auth_config.clone())
-            .store(SeaOrmStore::<TestSchema>::new(
+            .store(crate::backend::store::<TestSchema>(
                 auth_config,
                 hooks.database.clone(),
             ))

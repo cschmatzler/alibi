@@ -32,41 +32,11 @@ and organization roles. This repair targets the pinned default adapter
 behavior; it does not claim identical effects across every source adapter or
 foreign-key configuration.
 
-The public SeaORM organization store now transactionally deletes only the
-three source-owned tables. It retains organization keys instead of deleting
-them before the final organization write. Fresh bundled schemas omit only the
-team and organization-role references to the organization. Team-member
-references to teams and application-owned references remain enforced. An
-appended named migration, `m20261001_000014_detach_organization_references`,
-detaches those same two declared references from installed schemas.
-
-The existing bounded reference-removal helper now accepts a private closed
-`AuthReference` descriptor with fixed table, column, parent and constraint
-names. Device-code and two-factor callers retain their singleton behavior.
-SQLite rebuilds both organization tables on one pinned connection in one
-transaction and runs a final relationship check. It preserves stored bytes,
-rowids, custom fields, default/check rules, generated columns, indexes,
-triggers, dependent views and unrelated foreign keys, including another
-parent referenced from the same organization-id column. On failure both
-rebuilds roll back and foreign-key/rename settings are restored. A connection
-is closed on cancellation or a failed restoration rather than returned with
-altered settings. Migration-ledger insertion remains owned by the migrator
-after this helper returns: failure during rebuilding leaves the new migration
-unapplied, but ledger-insert failure or cancellation after the helper commits
-is an explicit separate driver boundary. The installed recovery owner now
-proves this boundary with a genuine SQL ledger veto and deterministic
-cancellation after the real helper returns through an application-owned
-SeaORM MigratorTraitSelf driver. An independent file-database connection
-observes committed schema and preserved application rows with the target
-ledger entry absent. Removing the veto and rerunning AuthMigrator::up
-recognizes already removed references, records exactly one ledger entry, and
-leaves schema/bytes unchanged on a second retry. Connection foreign-key and
-rename settings, unrelated foreign keys, generated columns, indexes, views,
-triggers and CHECK enforcement remain intact. This defines safe retry for
-these reference-removal upgrades, not atomicity of schema plus ledger or of
-arbitrary custom migrations. PostgreSQL's scoped constraint
-removal is transactional and compile-checked; PostgreSQL runtime behavior is
-not claimed. Arbitrary unrecognized constraint definitions fail closed.
+The bundled organization stores now transactionally delete only the three
+source-owned tables. They retain organization keys instead of deleting them
+before the final organization write. The bundled schema omits only the team
+and organization-role references to the organization. Team-member references
+to teams and application-owned references remain enforced. The single squashed auth migration installs this shape; there is no upgrade path from earlier bundled shapes.
 
 Five official-client scenarios own the HTTP/state contracts: actual pending
 invitations, teams, dynamic roles and an organization key; foreign/member
@@ -84,12 +54,7 @@ application trigger aborts the final organization delete and all physical
 user/organization/member/invitation/team/team-member/role/key rows retain
 their exact fields. After removing that trigger only the scoped organization,
 members and invitations disappear; unrelated rows and all extension records
-remain. Two native installed-migration tests own byte/constraint preservation
-and second-table rollback. The latter seeds a real check-violating legacy role
-row so the first table rewrite succeeds and the second copy fails. It compares
-both original schemas, rows and ledger, restored settings, absence of temporary
-tables and retained foreign-key enforcement, then repairs the row and upgrades.
-The prior mixed team test retains its member/user capacity contract; its
+remain. The prior mixed team test retains its member/user capacity contract; its
 obsolete organization cascade tail is superseded by the deletion primary
 owner rather than duplicated.
 
@@ -97,14 +62,9 @@ Exact pre-fix production replay fails four new SDK scenarios at raw metadata,
 coded permission, validation-before-authentication and current-token clearing;
 the unselected-organization invariant already passes. The public-store test
 fails because an aborted organization delete has already removed its key.
-Both upgrade tests fail before the migration is registered. A separate
-incorrect implementation that commits each table independently fails the
-second-table rollback snapshot, proving that the negative control detects a
-partial migration commit rather than an unrelated early failure.
 
 Focused proof passes 51 organization/configuration SDK scenarios with 3,050
-assertions, 325 API library tests and 49 SeaORM library tests, including prior
-device/two-factor upgrade and rollback cases. Strict API/SeaORM library and
+assertions, 325 API library tests and 49 SeaORM library tests. Strict API/SeaORM library and
 fixture Clippy, client TypeScript, formatting and diff checks pass. One
 unchanged two-factor fixture nested condition was mechanically collapsed to
 unblock strict Clippy; its SQL and short-circuit behavior remain the same.

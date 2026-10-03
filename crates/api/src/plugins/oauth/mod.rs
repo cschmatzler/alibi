@@ -28,12 +28,13 @@ pub use id_token::{
 pub use providers::{
     AppleOptions, AtlassianOptions, CloudflareOptions, CognitoOptions, DropboxAccessType,
     DropboxOptions, FacebookOptions, FigmaOptions, HuggingFaceOptions, KakaoOptions, KickOptions,
-    LineOptions, LinearOptions, LinkedInOptions, MicrosoftOptions, MicrosoftProfilePhotoSize, NaverOptions, OAuthAccountSubject, OAuthAuthorizationPolicy,
-    OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthClientAssertion,
-    OAuthClientAssertionContext, OAuthClientAssertionGetter, OAuthConfig, OAuthIdTokenVerifier,
-    OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeEncoding, OAuthScopeOrder,
-    OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler,
-    OAuthUserInfoRequest, OAuthUserInfoResponse,
+    LineOptions, LinearOptions, LinkedInOptions, MicrosoftOptions, MicrosoftProfilePhotoSize,
+    NaverOptions, OAuthAccountSubject, OAuthAuthorizationPolicy, OAuthCallbackUserName,
+    OAuthCallbackUserPayload, OAuthClientAssertion, OAuthClientAssertionContext,
+    OAuthClientAssertionGetter, OAuthConfig, OAuthIdTokenVerifier, OAuthProvider,
+    OAuthRefreshTokenHandler, OAuthScopeEncoding, OAuthScopeOrder, OAuthTokenEndpointAuth,
+    OAuthTokenGrant, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 pub(in crate::plugins) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,

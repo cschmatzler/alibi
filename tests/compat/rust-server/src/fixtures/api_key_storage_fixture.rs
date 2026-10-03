@@ -17,10 +17,7 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::{BackgroundTaskCompletion, BackgroundTaskHandler, store::CacheAdapter};
-use better_auth_seaorm::{
-    SeaOrmStore,
-    sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement},
-};
+use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::{
@@ -476,7 +473,7 @@ pub(crate) async fn router(
         }
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(
+                .store(crate::backend::store::<TestSchema>(
                     config.clone(),
                     database.clone(),
                 ))

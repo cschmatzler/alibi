@@ -11,7 +11,7 @@ use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::oauth::{CloudflareOptions, OAuthProvider};
 use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -107,7 +107,10 @@ pub(crate) async fn router(
         provider.require_email_verification = mode == "required";
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(settings.clone())
-                .store(SeaOrmStore::<TestSchema>::new(settings, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    settings,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())

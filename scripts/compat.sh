@@ -14,8 +14,9 @@ for project in reference-server client-tests; do
   fi
 done
 
-# Build the fixture up front so a compiler failure is not reported as a scenario failure.
+# Build both fixture backends up front so a compiler failure is not reported as a scenario failure.
 cargo build --locked --manifest-path tests/compat/rust-server/Cargo.toml
+cargo build --locked --manifest-path tests/compat/rust-server/Cargo.toml --features seaorm2
 
 mkdir -p coverage
 bun tests/compat/reference-server/generate-openapi.mjs --profile all-in --format routes --output coverage/upstream-routes.json
@@ -26,6 +27,10 @@ cargo nextest run --locked --test compat -E 'test(/^route_inventory::/)'
 # must not be allowed to report parity.
 bun test --cwd tests/compat/client-tests harness
 
-# Every scenario directory, every process environment, then Chromium.
-cargo nextest run --locked --test compat --run-ignored only --no-capture \
-  -E 'test(=sdk::tests::full_client_compat) | test(=sdk::tests::browser_client_compat)'
+# Every scenario directory, every process environment, then Chromium, once
+# per store backend: the fixture server serves the same scenarios from
+# `SqlxStore` and from `SeaOrmStore`.
+for backend in sqlx seaorm; do
+  BETTER_AUTH_COMPAT_BACKEND="$backend" cargo nextest run --locked --test compat --run-ignored only --no-capture \
+    -E 'test(=sdk::tests::full_client_compat) | test(=sdk::tests::browser_client_compat)'
+done

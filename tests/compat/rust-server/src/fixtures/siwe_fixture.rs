@@ -19,13 +19,10 @@ use better_auth::plugins::{
 use better_auth::prelude::{CreateUser, UpdateUser};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use better_auth_core::AuthResponse;
-use better_auth_seaorm::store::entities::{account, session, user, verification, wallet_address};
-use better_auth_seaorm::{
-    SeaOrmStore,
-    sea_orm::{
-        ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr,
-    },
+use better_auth_seaorm::sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr,
 };
+use better_auth_seaorm::store::entities::{account, session, user, verification, wallet_address};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -378,7 +375,10 @@ pub(crate) async fn router(
         }
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new())
                 .plugin(SessionManagementPlugin::new())

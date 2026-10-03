@@ -1,11 +1,11 @@
 //! Proc macros for the Better Auth `SeaORM` integration.
 
-use better_auth_schema_registry::{self as registry, EntityRole};
+use better_auth_entity_codegen::{self as codegen, EntityRole};
 use proc_macro::TokenStream as ProcMacroTokenStream;
 use proc_macro_crate::{FoundCrate, crate_name};
 use proc_macro2::{Ident, Span, TokenStream};
 use quote::quote;
-use syn::{Data, DeriveInput, Fields, LitStr, Type, parse_macro_input};
+use syn::{DeriveInput, LitStr, Type, parse_macro_input};
 
 fn found_crate_tokens(name: &str) -> Option<TokenStream> {
     match crate_name(name).ok()? {
@@ -47,27 +47,19 @@ fn resolve_roots() -> (TokenStream, TokenStream) {
 
 fn generate_auth_entity(input: &DeriveInput) -> TokenStream {
     let (seaorm_root, core_root) = resolve_roots();
-    let (role, secondary) = match parse_role(input) {
-        Ok(role) => role,
+    let attributes = match codegen::parse_auth_attributes(input, false) {
+        Ok(attributes) => attributes,
         Err(err) => return err.to_compile_error(),
     };
+    let (role, secondary) = (attributes.role, attributes.secondary_storage);
 
-    let fields = match &input.data {
-        Data::Struct(data) => match &data.fields {
-            Fields::Named(fields) => fields,
-            Fields::Unnamed(_) | Fields::Unit => {
-                return syn::Error::new_spanned(
-                    &input.ident,
-                    "AuthEntity requires a struct with named fields",
-                )
-                .to_compile_error();
-            }
-        },
-        Data::Enum(_) | Data::Union(_) => {
-            return syn::Error::new_spanned(&input.ident, "AuthEntity requires a struct")
-                .to_compile_error();
-        }
+    let fields = match codegen::named_fields(input) {
+        Ok(fields) => fields,
+        Err(err) => return err.to_compile_error(),
     };
+    if let Err(err) = codegen::validate_core_fields(input, role, fields) {
+        return err.to_compile_error();
+    }
 
     let idents: Vec<_> = fields
         .named
@@ -75,34 +67,13 @@ fn generate_auth_entity(input: &DeriveInput) -> TokenStream {
         .filter_map(|field| field.ident.clone())
         .collect();
 
-    let core = registry::core_field_names(role);
-    let plugin = registry::plugin_field_names(role);
-
-    // Validate core fields are present
-    if let Some(missing) = core
-        .iter()
-        .find(|required| !idents.iter().any(|ident| ident == *required))
-    {
-        return syn::Error::new_spanned(
-            &input.ident,
-            format!("missing required auth field `{missing}` for this role"),
-        )
-        .to_compile_error();
-    }
-
-    let has = |name: &str| idents.iter().any(|i| i == name);
-    let optional = |name: &str| {
-        fields.named.iter().any(|field| {
-            field.ident.as_ref().is_some_and(|ident| ident == name)
-                && matches!(&field.ty, Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "Option"))
-        })
-    };
+    let has = |name: &str| codegen::has_field(fields, name);
+    let optional = |name: &str| codegen::optional_field(fields, name);
 
     // Extra fields: not core, not plugin — user-defined.
-    let all_known: Vec<&str> = core.iter().chain(plugin.iter()).copied().collect();
     let extra_not_set: Vec<_> = idents
         .iter()
-        .filter(|ident| !all_known.iter().any(|known| ident == known))
+        .filter(|ident| !codegen::is_known_field(role, ident))
         .map(|field| {
             quote! { #field: #seaorm_root::sea_orm::ActiveValue::NotSet }
         })
@@ -149,16 +120,15 @@ fn gen_user(
     core_root: &TokenStream,
 ) -> TokenStream {
     let (fields, secondary) = fields;
-    let secondary_codec = if secondary {
-        secondary_model_codec(fields, core_root)
-    } else {
-        quote! {}
+    let (auth_impl, additional_bindings) = match entity_fields(fields).and_then(|entity_fields| {
+        Ok((
+            codegen::auth_user_impl(ident, fields, &entity_fields, secondary, core_root),
+            additional_model_fields(fields, seaorm_root, core_root)?,
+        ))
+    }) {
+        Ok(generated) => generated,
+        Err(error) => return error.to_compile_error(),
     };
-    let (additional_output, additional_bindings) =
-        match additional_model_fields(EntityRole::User, fields, seaorm_root, core_root) {
-            Ok(fields) => fields,
-            Err(error) => return error.to_compile_error(),
-        };
     let mut list_columns = Vec::new();
     for field in &fields.named {
         let Some(name) = field.ident.as_ref() else {
@@ -205,72 +175,6 @@ fn gen_user(
         );
         list_columns.push(quote! { #camel => #column, });
     }
-    // AuthUser trait — plugin fields return defaults when absent
-    let username_impl = if has("username") {
-        quote! { fn username(&self) -> Option<&str> { self.username.as_deref() } }
-    } else {
-        quote! { fn username(&self) -> Option<&str> { None } }
-    };
-    let display_username_impl = if has("display_username") {
-        quote! { fn display_username(&self) -> Option<&str> { self.display_username.as_deref() } }
-    } else {
-        quote! { fn display_username(&self) -> Option<&str> { None } }
-    };
-    let two_factor_impl = if has("two_factor_enabled") {
-        if optional("two_factor_enabled") {
-            quote! {
-                fn two_factor_enabled(&self) -> bool { self.two_factor_enabled.unwrap_or(false) }
-                fn two_factor_enabled_value(&self) -> Option<bool> { self.two_factor_enabled }
-            }
-        } else {
-            quote! { fn two_factor_enabled(&self) -> bool { self.two_factor_enabled } }
-        }
-    } else {
-        quote! {
-            fn two_factor_enabled(&self) -> bool { false }
-            fn two_factor_enabled_value(&self) -> Option<bool> { None }
-        }
-    };
-    let role_impl = if has("role") {
-        quote! { fn role(&self) -> Option<&str> { self.role.as_deref() } }
-    } else {
-        quote! { fn role(&self) -> Option<&str> { None } }
-    };
-    let banned_impl = if has("banned") {
-        if optional("banned") {
-            quote! {
-                fn banned(&self) -> bool { self.banned.unwrap_or(false) }
-                fn banned_value(&self) -> Option<bool> { self.banned }
-            }
-        } else {
-            quote! { fn banned(&self) -> bool { self.banned } }
-        }
-    } else {
-        quote! {
-            fn banned(&self) -> bool { false }
-            fn banned_value(&self) -> Option<bool> { None }
-        }
-    };
-    let ban_reason_impl = if has("ban_reason") {
-        quote! { fn ban_reason(&self) -> Option<&str> { self.ban_reason.as_deref() } }
-    } else {
-        quote! { fn ban_reason(&self) -> Option<&str> { None } }
-    };
-    let ban_expires_impl = if has("ban_expires") {
-        quote! { fn ban_expires(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { self.ban_expires } }
-    } else {
-        quote! { fn ban_expires(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { None } }
-    };
-    let metadata_impl = if has("metadata") {
-        quote! { fn metadata(&self) -> &::serde_json::Value { &self.metadata } }
-    } else {
-        quote! { fn metadata(&self) -> &::serde_json::Value {
-            static EMPTY: ::std::sync::LazyLock<::serde_json::Value> =
-                ::std::sync::LazyLock::new(|| ::serde_json::json!({}));
-            &EMPTY
-        } }
-    };
-
     let prepare_json_metadata = if has("metadata") {
         quote! {
             fn prepare_json_metadata(active:&mut Self::ActiveModel,backend:#seaorm_root::sea_orm::DbBackend)->#core_root::AuthResult<()> {
@@ -298,20 +202,6 @@ fn gen_user(
         // Use trait default (returns None)
         quote! {}
     };
-    let mut optional_user_getters = Vec::new();
-    for name in ["is_anonymous", "phone_number_verified"] {
-        if has(name) {
-            let field = Ident::new(name, Span::call_site());
-            optional_user_getters.push(quote! { fn #field(&self) -> Option<bool> { self.#field } });
-        }
-    }
-    for name in ["phone_number", "last_login_method"] {
-        if has(name) {
-            let field = Ident::new(name, Span::call_site());
-            optional_user_getters
-                .push(quote! { fn #field(&self) -> Option<&str> { self.#field.as_deref() } });
-        }
-    }
     let phone_number_column_impl = if has("phone_number") {
         quote! { fn phone_number_column() -> Option<Self::Column> { Some(Column::PhoneNumber) } }
     } else {
@@ -319,26 +209,7 @@ fn gen_user(
     };
 
     quote! {
-        impl #core_root::entity::AuthUser for #ident {
-            #secondary_codec
-            #additional_output
-            fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
-            fn email(&self) -> Option<&str> { self.email.as_deref() }
-            fn name(&self) -> Option<&str> { self.name.as_deref() }
-            fn email_verified(&self) -> bool { self.email_verified }
-            fn image(&self) -> Option<&str> { self.image.as_deref() }
-            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.created_at }
-            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.updated_at }
-            #username_impl
-            #display_username_impl
-            #two_factor_impl
-            #role_impl
-            #banned_impl
-            #ban_reason_impl
-            #ban_expires_impl
-            #metadata_impl
-            #(#optional_user_getters)*
-        }
+        #auth_impl
 
         impl #seaorm_root::SeaOrmUserModel for #ident {
             #additional_bindings
@@ -556,45 +427,18 @@ fn plugin_update_fields_user(
 }
 
 fn additional_model_fields(
-    role: EntityRole,
     fields: &syn::FieldsNamed,
     seaorm_root: &TokenStream,
     core_root: &TokenStream,
-) -> syn::Result<(TokenStream, TokenStream)> {
-    let mut additional_output = Vec::new();
+) -> syn::Result<TokenStream> {
     let mut additional_binding = Vec::new();
     let mut additional_stage = Vec::new();
-    let known = registry::core_field_names(role)
-        .iter()
-        .chain(registry::plugin_field_names(role).iter())
-        .copied()
-        .collect::<Vec<_>>();
     for field in &fields.named {
         let Some(name) = &field.ident else {
             continue;
         };
         let (camel, column, physical) = additional_field_names(field)?;
-        // Nullable username columns must reach configured output transforms as
-        // actual stored values, even though canonical wire DTOs omit None.
-        // Only declared model fields qualify; missing plugin columns stay absent.
-        let physical_output = !known.iter().any(|known| name == known)
-            || matches!(role, EntityRole::User)
-                && (name == "username" || name == "display_username");
-        if physical_output {
-            additional_output.push(quote! {
-                if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
-                    let _ = fields.insert(#camel.into(), value);
-                }
-            });
-        }
         if let Some(physical) = physical.as_ref().filter(|physical| *physical != &camel) {
-            if physical_output {
-                additional_output.push(quote! {
-                    if let Ok(value) = #core_root::utils::json::to_value(&self.#name) {
-                        let _ = fields.insert(#physical.into(), value);
-                    }
-                });
-            }
             additional_binding.push(quote! {
                 #physical => (Column::#column, #seaorm_root::session_fields::raw_value(value)?),
             });
@@ -620,13 +464,6 @@ fn additional_model_fields(
             #camel => (Column::#column, #seaorm_root::session_fields::raw_value(value)?),
         });
     }
-    let output = quote! {
-        fn additional_fields(&self) -> #core_root::field_policy::FieldOutput {
-            let mut fields = #core_root::field_policy::FieldOutput::new();
-            #(#additional_output)*
-            fields
-        }
-    };
     let bindings = quote! {
         fn additional_field_bindings(fields: &#core_root::field_policy::FieldValues, _backend: #seaorm_root::sea_orm::DbBackend) -> #core_root::AuthResult<Vec<(Self::Column, #seaorm_root::sea_orm::Value)>> {
             let mut bindings = Vec::new();
@@ -644,32 +481,25 @@ fn additional_model_fields(
             Ok(())
         }
     };
-    Ok((output, bindings))
+    Ok(bindings)
 }
 
-fn secondary_model_codec(fields: &syn::FieldsNamed, core_root: &TokenStream) -> TokenStream {
-    let names: Vec<_> = fields
+fn entity_fields(fields: &syn::FieldsNamed) -> syn::Result<Vec<codegen::EntityField>> {
+    fields
         .named
         .iter()
-        .filter_map(|field| field.ident.as_ref())
-        .collect();
-    let keys: Vec<_> = names.iter().map(|name| name.to_string()).collect();
-    quote! {
-        fn secondary_snapshot(&self) -> #core_root::AuthResult<::serde_json::Value> {
-            let mut snapshot = ::serde_json::Map::new();
-            #(drop(snapshot.insert(#keys.to_owned(), ::serde_json::to_value(&self.#names)?));)*
-            Ok(::serde_json::Value::Object(snapshot))
-        }
-        fn from_secondary_snapshot(snapshot: ::serde_json::Value) -> #core_root::AuthResult<Self> {
-            let ::serde_json::Value::Object(mut fields) = snapshot else {
-                return Err(#core_root::AuthError::internal("Invalid secondary model snapshot"));
-            };
-            Ok(Self {
-                #(#names: ::serde_json::from_value(fields.remove(#keys).ok_or_else(||
-                    #core_root::AuthError::internal("Incomplete secondary model snapshot"))?)?,)*
+        .map(|field| {
+            let (camel, _column, physical) = additional_field_names(field)?;
+            Ok(codegen::EntityField {
+                ident: field
+                    .ident
+                    .clone()
+                    .ok_or_else(|| syn::Error::new_spanned(field, "Expected a named field"))?,
+                camel,
+                physical,
             })
-        }
-    }
+        })
+        .collect()
 }
 
 fn additional_field_names(field: &syn::Field) -> syn::Result<(String, Ident, Option<String>)> {
@@ -734,11 +564,6 @@ fn gen_session(
     core_root: &TokenStream,
 ) -> TokenStream {
     let (fields, secondary) = fields;
-    let secondary_codec = if secondary {
-        secondary_model_codec(fields, core_root)
-    } else {
-        quote! {}
-    };
     let nullable_defaults: Vec<_> = fields.named.iter().filter_map(|field| {
         if matches!(&field.ty, Type::Path(path) if path.path.segments.last().is_some_and(|segment| segment.ident == "Option")) {
             field.ident.as_ref().map(|name| quote! {
@@ -750,27 +575,15 @@ fn gen_session(
             None
         }
     }).collect();
-    let (additional_output, additional_bindings) =
-        match additional_model_fields(EntityRole::Session, fields, seaorm_root, core_root) {
-            Ok(fields) => fields,
-            Err(error) => return error.to_compile_error(),
-        };
-    let impersonated_by_impl = if has("impersonated_by") {
-        quote! { fn impersonated_by(&self) -> Option<&str> { self.impersonated_by.as_deref() } }
-    } else {
-        quote! { fn impersonated_by(&self) -> Option<&str> { None } }
+    let (auth_impl, additional_bindings) = match entity_fields(fields).and_then(|entity_fields| {
+        Ok((
+            codegen::auth_session_impl(ident, fields, &entity_fields, secondary, core_root),
+            additional_model_fields(fields, seaorm_root, core_root)?,
+        ))
+    }) {
+        Ok(generated) => generated,
+        Err(error) => return error.to_compile_error(),
     };
-    let active_org_impl = if has("active_organization_id") {
-        quote! { fn active_organization_id(&self) -> Option<&str> { self.active_organization_id.as_deref() } }
-    } else {
-        quote! { fn active_organization_id(&self) -> Option<&str> { None } }
-    };
-    let active_team_impl = if has("active_team_id") {
-        quote! { fn active_team_id(&self) -> Option<&str> { self.active_team_id.as_deref() } }
-    } else {
-        quote! {}
-    };
-
     let mut plugin_new_active = Vec::new();
     if has("impersonated_by") {
         plugin_new_active.push(quote! { impersonated_by: #seaorm_root::sea_orm::ActiveValue::Set(create_session.impersonated_by) });
@@ -816,22 +629,7 @@ fn gen_session(
     };
 
     quote! {
-        impl #core_root::entity::AuthSession for #ident {
-            #secondary_codec
-            #additional_output
-            fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
-            fn expires_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.expires_at }
-            fn token(&self) -> &str { &self.token }
-            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.created_at }
-            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.updated_at }
-            fn ip_address(&self) -> Option<&str> { self.ip_address.as_deref() }
-            fn user_agent(&self) -> Option<&str> { self.user_agent.as_deref() }
-            fn user_id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.user_id) }
-            #impersonated_by_impl
-            #active_org_impl
-            #active_team_impl
-            fn active(&self) -> bool { self.active }
-        }
+        #auth_impl
 
         impl #seaorm_root::SeaOrmSessionModel for #ident {
             fn materialize_secondary(mut active: Self::ActiveModel) -> #core_root::AuthResult<Self> {
@@ -909,29 +707,18 @@ fn gen_account(
     seaorm_root: &TokenStream,
     core_root: &TokenStream,
 ) -> TokenStream {
-    let (additional_output, additional_bindings) =
-        match additional_model_fields(EntityRole::Account, fields, seaorm_root, core_root) {
-            Ok(fields) => fields,
-            Err(error) => return error.to_compile_error(),
-        };
+    let (auth_impl, additional_bindings) = match entity_fields(fields).and_then(|entity_fields| {
+        Ok((
+            codegen::auth_account_impl(ident, &entity_fields, core_root),
+            additional_model_fields(fields, seaorm_root, core_root)?,
+        ))
+    }) {
+        Ok(generated) => generated,
+        Err(error) => return error.to_compile_error(),
+    };
     // Account has no plugin-optional fields — all are core.
     quote! {
-        impl #core_root::entity::AuthAccount for #ident {
-            #additional_output
-            fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
-            fn account_id(&self) -> &str { &self.account_id }
-            fn provider_id(&self) -> &str { &self.provider_id }
-            fn user_id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.user_id) }
-            fn access_token(&self) -> Option<&str> { self.access_token.as_deref() }
-            fn refresh_token(&self) -> Option<&str> { self.refresh_token.as_deref() }
-            fn id_token(&self) -> Option<&str> { self.id_token.as_deref() }
-            fn access_token_expires_at(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { self.access_token_expires_at }
-            fn refresh_token_expires_at(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { self.refresh_token_expires_at }
-            fn scope(&self) -> Option<&str> { self.scope.as_deref() }
-            fn password(&self) -> Option<&str> { self.password.as_deref() }
-            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.created_at }
-            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.updated_at }
-        }
+        #auth_impl
 
         impl #seaorm_root::SeaOrmAccountModel for #ident {
             #additional_bindings
@@ -1017,15 +804,9 @@ fn gen_verification(
     core_root: &TokenStream,
 ) -> TokenStream {
     // Verification has no plugin-optional fields.
+    let auth_impl = codegen::auth_verification_impl(ident, core_root);
     quote! {
-        impl #core_root::entity::AuthVerification for #ident {
-            fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
-            fn identifier(&self) -> &str { &self.identifier }
-            fn value(&self) -> &str { &self.value }
-            fn expires_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.expires_at }
-            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.created_at }
-            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.updated_at }
-        }
+        #auth_impl
 
         impl #seaorm_root::SeaOrmVerificationModel for #ident {
             type Id = ::std::string::String;
@@ -1062,47 +843,6 @@ fn gen_verification(
             }
         }
     }
-}
-
-fn parse_role(input: &DeriveInput) -> Result<(EntityRole, bool), syn::Error> {
-    let mut parsed = None;
-    let mut secondary = false;
-    for attr in &input.attrs {
-        if !attr.path().is_ident("auth") {
-            continue;
-        }
-        attr.parse_nested_meta(|meta| {
-            if meta.path.is_ident("role") {
-                let value = meta.value()?;
-                let role: LitStr = value.parse()?;
-                parsed = Some(match role.value().as_str() {
-                    "user" => EntityRole::User,
-                    "session" => EntityRole::Session,
-                    "account" => EntityRole::Account,
-                    "verification" => EntityRole::Verification,
-                    _ => {
-                        return Err(syn::Error::new_spanned(
-                            role,
-                            "unsupported auth role; expected user, session, account, or verification",
-                        ));
-                    }
-                });
-                Ok(())
-            } else if meta.path.is_ident("secondary_storage") {
-                secondary = true;
-                Ok(())
-            } else {
-                Err(meta.error("expected `role = \"...\"` or `secondary_storage`"))
-            }
-        })?;
-    }
-
-    parsed.map(|role| (role, secondary)).ok_or_else(|| {
-        syn::Error::new_spanned(
-            input,
-            "missing #[auth(role = \"...\")] attribute for AuthEntity",
-        )
-    })
 }
 
 /// Derive macro that generates `Auth*` trait impls and `SeaOrm*Model` impls

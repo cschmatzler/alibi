@@ -35,7 +35,7 @@ type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema:
 struct MetadataHook;
 
 #[async_trait::async_trait]
-impl better_auth_seaorm::SeaOrmHooks<Schema> for MetadataHook {
+impl better_auth_seaorm::DatabaseHooks<Schema, better_auth_seaorm::SeaOrm> for MetadataHook {
     async fn before_create_user(
         &self,
         user: &mut CreateUser,

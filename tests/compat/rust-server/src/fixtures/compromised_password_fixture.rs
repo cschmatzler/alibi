@@ -25,7 +25,7 @@ use better_auth_core::{
     wire::{AccountView, VerificationView},
 };
 use better_auth_seaorm::{
-    DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
+    DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
 };
@@ -81,11 +81,11 @@ impl PasswordHasher for Application {
     }
 }
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for Application {
+impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     async fn before_create_user(
         &self,
         user: &mut better_auth_core::CreateUser,
-        _context: &SeaOrmHookContext<'_>,
+        _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.event(json!({"stage":"user-create","name":user.name,"email":user.email}));
         Ok(HookControl::Continue)
@@ -173,7 +173,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
                 .store(
-                    SeaOrmStore::<TestSchema>::new(config, database.clone())
+                    crate::backend::store::<TestSchema>(config, database.clone())
                         .with_hooks(vec![app.clone()]),
                 )
                 .rate_limit(RateLimitConfig::new().enabled(false))

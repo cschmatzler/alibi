@@ -10,7 +10,7 @@ use better_auth::plugins::{
     SessionManagementPlugin, TwoFactorPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use std::sync::Arc;
 struct ApplicationVerifier(bool);
 #[async_trait]
@@ -65,7 +65,10 @@ pub(crate) async fn router(
         }
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(configured.clone())
-                .store(SeaOrmStore::<TestSchema>::new(configured, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    configured,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new())
                 .plugin(SessionManagementPlugin::new())

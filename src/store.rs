@@ -6,3 +6,6 @@ pub use better_auth_core::store::WalletAddressStore;
 pub use better_auth_core::store::{
     AuthStore, AuthTransaction, CacheAdapter, MemoryCacheAdapter, transaction,
 };
+pub use better_auth_core::store::{
+    DatabaseHookContext, DatabaseHooks, HookBackend, HookControl, SchemaMigrator,
+};

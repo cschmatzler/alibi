@@ -46,6 +46,8 @@ mod tests {
         assert!(readme.contains("better_auth::seaorm"));
         assert!(readme.contains("Database"));
         assert!(readme.contains("SeaOrmStore"));
+        assert!(readme.contains("better_auth::sqlx"));
+        assert!(readme.contains("SqlxStore"));
         assert!(!readme.contains("better_auth::store::sea_orm::Database"));
     }
 }

@@ -21,9 +21,9 @@ use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthSession,
 };
+use better_auth_seaorm::DatabaseConnection;
 use better_auth_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use better_auth_seaorm::store::entities::jwk;
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -154,7 +154,10 @@ pub(crate) async fn router(
         config.session.defer_session_refresh = *name == "jwt-session-deferred";
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_signup(true))
                 .plugin(SessionManagementPlugin::new())

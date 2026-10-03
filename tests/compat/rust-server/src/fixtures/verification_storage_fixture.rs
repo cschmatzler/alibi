@@ -1,5 +1,6 @@
 //! Actual initialized verification service, physical SQL and application cache.
 use crate::TestSchema;
+use crate::backend::entities::{account, session, user, verification};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -38,9 +39,8 @@ use better_auth_core::{
     wire::{AccountView, UserView, VerificationView},
 };
 use better_auth_seaorm::{
-    DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
-    sea_orm::{ActiveModelTrait, EntityTrait, QueryOrder, Set},
-    store::entities::{account, session, user, verification},
+    DatabaseConnection, DatabaseHooks, HookControl,
+    sea_orm::{ActiveModelTrait, Set},
 };
 use chrono::{DateTime, Duration, Utc};
 use serde_json::{Value, json};
@@ -216,20 +216,13 @@ impl Application {
         &self,
         stage: &str,
         data: Value,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
-        let rows = if let Some(tx) = context.tx {
-            verification::Entity::find()
-                .order_by_asc(verification::Column::CreatedAt)
-                .all(tx)
-                .await
-        } else {
-            verification::Entity::find()
-                .order_by_asc(verification::Column::CreatedAt)
-                .all(context.db)
-                .await
-        }
-        .map_err(error)?;
+        let rows = crate::backend::hook_rows::<verification::Model>(
+            context,
+            "SELECT * FROM verifications ORDER BY created_at",
+        )
+        .await?;
         self.events.lock().unwrap().push(json!({"stage":stage,"data":data,"cache":self.cache_state(),"verifications":rows.iter().map(VerificationView::from).collect::<Vec<_>>()}));
         self.backend_events.lock().unwrap().push(json!({"stage":stage,"data":data,"executedAt":Utc::now(),"cache":self.backend_cache_state(),"verifications":rows.iter().map(VerificationView::from).collect::<Vec<_>>()}));
         let calls = {
@@ -349,11 +342,11 @@ impl VerificationIdentifierHasher for Application {
     }
 }
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for Application {
+impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     async fn before_create_verification_record(
         &self,
         data: &mut VerificationCreation,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if let Some(frame) = self.current_frame() {
             let mut frame = frame.lock().unwrap();
@@ -392,7 +385,7 @@ impl SeaOrmHooks<TestSchema> for Application {
     async fn after_create_verification_record(
         &self,
         data: &VerificationSnapshot,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
         if let Some(pending) = self.pending_publication() {
             pending.lock().unwrap()["snapshot"] = json!(data.data());
@@ -408,7 +401,7 @@ impl SeaOrmHooks<TestSchema> for Application {
         &self,
         _id: &str,
         data: &mut UpdateVerification,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         let mut value = json!({});
         if let Some(patch) = &data.value {
@@ -431,7 +424,7 @@ impl SeaOrmHooks<TestSchema> for Application {
     async fn after_update_verification_record(
         &self,
         data: Option<&VerificationSnapshot>,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
         self.receipt(
             "update-after",
@@ -445,7 +438,7 @@ impl SeaOrmHooks<TestSchema> for Application {
     async fn before_delete_verification(
         &self,
         data: &verification::Model,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.receipt(
             "delete-before",
@@ -458,7 +451,7 @@ impl SeaOrmHooks<TestSchema> for Application {
     async fn after_delete_verification(
         &self,
         data: &verification::Model,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
         self.receipt("delete-after", json!(VerificationView::from(data)), context)
             .await
@@ -569,26 +562,34 @@ async fn sql_state(
     auth: &BetterAuth<TestSchema>,
     database: &DatabaseConnection,
 ) -> AuthResult<Value> {
-    let users = user::Entity::find()
-        .order_by_asc(user::Column::CreatedAt)
-        .all(database)
-        .await
-        .map_err(error)?;
-    let accounts = account::Entity::find()
-        .order_by_asc(account::Column::CreatedAt)
-        .all(database)
-        .await
-        .map_err(error)?;
-    let sessions = session::Entity::find()
-        .order_by_asc(session::Column::CreatedAt)
-        .all(database)
-        .await
-        .map_err(error)?;
-    let verifications = verification::Entity::find()
-        .order_by_asc(verification::Column::CreatedAt)
-        .all(database)
-        .await
-        .map_err(error)?;
+    let users = crate::backend::rows::<user::Model>(
+        database,
+        "SELECT * FROM users ORDER BY created_at",
+        vec![],
+    )
+    .await
+    .map_err(error)?;
+    let accounts = crate::backend::rows::<account::Model>(
+        database,
+        "SELECT * FROM accounts ORDER BY created_at",
+        vec![],
+    )
+    .await
+    .map_err(error)?;
+    let sessions = crate::backend::rows::<session::Model>(
+        database,
+        "SELECT * FROM sessions ORDER BY created_at",
+        vec![],
+    )
+    .await
+    .map_err(error)?;
+    let verifications = crate::backend::rows::<verification::Model>(
+        database,
+        "SELECT * FROM verifications ORDER BY created_at",
+        vec![],
+    )
+    .await
+    .map_err(error)?;
     let accounts = accounts
         .iter()
         .map(|row| {
@@ -659,7 +660,7 @@ pub(crate) async fn router(
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
                 .store(
-                    SeaOrmStore::<TestSchema>::new(config, database.clone())
+                    crate::backend::store::<TestSchema>(config, database.clone())
                         .with_hooks(vec![app.clone()]),
                 )
                 .rate_limit(RateLimitConfig::new().enabled(false))
@@ -804,7 +805,7 @@ pub(crate) async fn router(
                         }
                         "seed" => {
                             let data = creation(&body)?;
-                            let model = verification::ActiveModel {
+                            let seeded = better_auth_seaorm::store::entities::verification::ActiveModel {
                                 id: Set(data.id.unwrap_or_else(|| {
                                     better_auth_core::utils::id::generate_id(32)
                                 })),
@@ -817,6 +818,15 @@ pub(crate) async fn router(
                             .insert(&database)
                             .await
                             .map_err(error)?;
+                            let model = crate::backend::rows::<verification::Model>(
+                                &database,
+                                "SELECT * FROM verifications WHERE id = ?",
+                                vec![seeded.id],
+                            )
+                            .await
+                            .map_err(error)?
+                            .pop()
+                            .ok_or_else(|| AuthError::internal("seeded verification"))?;
                             Some(VerificationSnapshot::from_model(&model))
                         }
                         "transaction" => {

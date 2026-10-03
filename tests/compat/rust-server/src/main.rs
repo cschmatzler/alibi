@@ -1,12 +1,14 @@
 mod additional_field_models;
 mod fixtures;
 use fixtures::managed_secrets_fixture;
+mod backend;
 mod magic_profiles;
 mod otp_profiles;
 mod parity_controls;
 mod phone_profiles;
 mod session_field_model;
 mod session_profiles;
+use backend::entities;
 mod sqlite_fixture;
 mod verification_profiles;
 use fixtures::{
@@ -19,8 +21,9 @@ use fixtures::{
     facebook_provider_fixture, figma_provider_fixture, google_id_token_fixture,
     huggingface_provider_fixture, invitation_fixture, jwt_fixture, jwt_keyring_fixture,
     jwt_remote_fixture, kakao_provider_fixture, kick_provider_fixture, last_login_method_fixture,
-    lifecycle_fixture, line_provider_fixture, linear_provider_fixture, linkedin_provider_fixture, multiple_session_fixture, naver_provider_fixture, oauth_proxy_fixture,
-    one_tap_fixture, one_time_token_fixture, open_api_fixture, organization_creation_fixture,
+    lifecycle_fixture, line_provider_fixture, linear_provider_fixture, linkedin_provider_fixture,
+    multiple_session_fixture, naver_provider_fixture, oauth_proxy_fixture, one_tap_fixture,
+    one_time_token_fixture, open_api_fixture, organization_creation_fixture,
     organization_creation_hooks_fixture, organization_deletion_hooks_fixture,
     organization_invitation_acceptance_fixture, organization_member_addition_fixture,
     organization_member_removal_hooks_fixture, organization_member_role_hooks_fixture,
@@ -97,7 +100,6 @@ use better_auth::prelude::{
 };
 use better_auth::wire::UserView;
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_seaorm::SeaOrmStore;
 use better_auth_seaorm::sea_orm::{DatabaseConnection, DbErr, EntityTrait};
 use better_auth_seaorm::store::entities::{
     account, api_key, device_code, invitation, member, organization, passkey, session, two_factor,
@@ -111,7 +113,7 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = backend::TestSchema;
 
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
@@ -301,11 +303,11 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     account::Entity::delete_many().exec(database).await?;
     session::Entity::delete_many().exec(database).await?;
     user::Entity::delete_many().exec(database).await?;
-    // Fixture-owned tables: session-fields hook receipts and the application
-    // keys of the custom-adapter JWT keyring profiles.
+    // Fixture-owned table: the application keys of the custom-adapter JWT
+    // keyring profiles.
     {
         use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-        for table in ["session_model_events", "fixtureJwtKeyring"] {
+        for table in ["fixtureJwtKeyring"] {
             let _ = database
                 .execute_raw(Statement::from_string(
                     DbBackend::Sqlite,
@@ -732,7 +734,7 @@ fn mock_oauth_plugin_at(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    tracing_subscriber::fmt::init();
+    backend::init_tracing();
 
     let port: u16 = std::env::var("PORT")
         .ok()
@@ -748,7 +750,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .password_min_length(8);
 
     let (database, invitation_status_observer) = sqlite_fixture::connect().await?;
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
+    crate::backend::migrate(&database).await?;
     let set_password_router = set_password_fixture::router(&config, database.clone()).await?;
     let captcha_router = captcha_fixture::router(&config, database.clone(), port).await?;
     let reset_database = database.clone();
@@ -956,7 +958,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let one_tap_router =
         one_tap_fixture::router(&config, database.clone(), verification_outbox.clone()).await?;
-    let store = SeaOrmStore::<TestSchema>::new(config.clone(), database);
+    let store = crate::backend::store::<TestSchema>(config.clone(), database);
     let two_factor_plugin =
         TwoFactorPlugin::new().custom_send_otp(Arc::new(CompatTwoFactorOtpSender {
             outbox: two_factor_otp_outbox.clone(),
@@ -1069,7 +1071,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     error_page_config.render_error_page = true;
     let error_page_auth = Arc::new(
         AuthBuilder::<TestSchema>::new(error_page_config.clone())
-            .store(SeaOrmStore::<TestSchema>::new(
+            .store(crate::backend::store::<TestSchema>(
                 error_page_config,
                 reset_database.clone(),
             ))

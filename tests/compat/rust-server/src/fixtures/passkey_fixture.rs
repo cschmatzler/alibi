@@ -9,10 +9,7 @@ use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{EmailPasswordPlugin, PasskeyPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::{
-    SeaOrmStore,
-    sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement},
-};
+use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -46,7 +43,10 @@ pub(crate) async fn router(
         configured.session.fresh_age = Some(chrono::Duration::seconds(age));
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(configured.clone())
-                .store(SeaOrmStore::<TestSchema>::new(configured, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    configured,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new())
                 .plugin(PasskeyPlugin::new())

@@ -23,8 +23,8 @@ use better_auth::{
 };
 use better_auth_core::{AuthRequest, AuthSession, CreateSession, CreateUser};
 use better_auth_seaorm::{
-    DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
-    sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Statement},
+    DatabaseConnection, DatabaseHooks, HookControl,
+    sea_orm::{EntityTrait, QueryOrder},
     store::entities::{account, session, user},
 };
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -176,11 +176,11 @@ struct Hooks {
     mode: &'static str,
 }
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for Hooks {
+impl DatabaseHooks<TestSchema, crate::backend::Backend> for Hooks {
     async fn before_create_user(
         &self,
         _user: &mut CreateUser,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if context
             .request
@@ -201,7 +201,7 @@ impl SeaOrmHooks<TestSchema> for Hooks {
     async fn before_create_session(
         &self,
         _session: &mut CreateSession,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if context
             .request
@@ -222,7 +222,7 @@ impl SeaOrmHooks<TestSchema> for Hooks {
     async fn after_create_session(
         &self,
         session: &<TestSchema as better_auth_core::AuthSchema>::Session,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
         if self.mode == "snapshot"
             && context
@@ -230,20 +230,15 @@ impl SeaOrmHooks<TestSchema> for Hooks {
                 .as_ref()
                 .is_some_and(|request| request.path == "/sign-up/email")
         {
-            context
-                .db
-                .execute_raw(Statement::from_sql_and_values(
-                    context.db.get_database_backend(),
-                    "UPDATE users SET name=? WHERE id=?",
-                    [
-                        "Stored Hook Name".into(),
-                        session.user_id().into_owned().into(),
-                    ],
-                ))
-                .await
-                .map_err(|error| {
-                    AuthError::Database(better_auth_core::DatabaseError::Query(error.to_string()))
-                })?;
+            _ = crate::backend::hook_execute(
+                context.db,
+                "UPDATE users SET name=? WHERE id=?",
+                vec![
+                    "Stored Hook Name".to_owned(),
+                    session.user_id().into_owned(),
+                ],
+            )
+            .await?;
         }
         Ok(())
     }
@@ -283,7 +278,7 @@ pub(crate) async fn router(
         );
         let mut builder = AuthBuilder::<TestSchema>::new(settings.clone())
             .store(
-                SeaOrmStore::<TestSchema>::new(settings, database.clone())
+                crate::backend::store::<TestSchema>(settings, database.clone())
                     .with_hooks(vec![Arc::new(Hooks { mode })]),
             )
             .rate_limit(RateLimitConfig::new().enabled(false))

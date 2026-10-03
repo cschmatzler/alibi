@@ -27,7 +27,7 @@ use better_auth_core::{
     wire::{AccountView, UserView, VerificationView},
 };
 use better_auth_seaorm::{
-    DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
+    DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
 };
@@ -85,11 +85,11 @@ impl BackgroundTaskHandler for Application {
     }
 }
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for Application {
+impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     async fn before_create_user(
         &self,
         _user: &mut better_auth_core::CreateUser,
-        _context: &SeaOrmHookContext<'_>,
+        _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if _context.config.base_path.contains("signup-username-") {
             self.event(json!({"stage":"username-hook","request":request_observation()}));
@@ -242,7 +242,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             password_management = password_management.reset_token_expiry(chrono::Duration::zero());
         }
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
-            .store(SeaOrmStore::<TestSchema>::new(config, database.clone()).with_hooks(vec![app.clone()]))
+            .store(crate::backend::store::<TestSchema>(config, database.clone()).with_hooks(vec![app.clone()]))
             .rate_limit(RateLimitConfig { enabled: false, ..Default::default() })
             .plugin(EmailPasswordPlugin::with_config(EmailPasswordConfig {
                 enabled: name != "signup-password-disabled",

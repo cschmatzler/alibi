@@ -96,18 +96,13 @@ wallet insertion. User deletion removes owned wallets in the same transaction;
 an application `users` FK is not hardcoded. Canonical stored IDs also scope team
 and polymorphic API-key cleanup when caller IDs contain numeric aliases. SQL
 proof covers deleted/missing owners, unrelated owners, rollback after a user
-DELETE veto, installed-schema upgrades, default-primary persistence, and a
-custom numeric-ID schema using `"0001"` to refer to owner `"1"`.
+DELETE veto, and default-primary persistence.
 
 ## Focused validation and review
 
 - `cargo nextest run -p better-auth-api siwe`: independent golden Unicode signature and
   signed preference/session-lifetime tests.
-- `cargo nextest run -p better-auth-seaorm wallet_`: owner/deletion rollback and
-  installed-schema migration/default tests.
-- `cargo nextest run --features seaorm2 --test integration
-  numeric_user_schema_cleans_team`: custom numeric ID regression, observed to
-  fail before canonical cleanup and pass after it.
+- `cargo nextest run -p better-auth-seaorm wallet_`: owner/deletion rollback tests.
 - `cargo nextest run --test compat sdk::tests::plugins_siwe_client_compat --run-ignored only
   --no-capture`: official SDK, unchanged reference, exact wire/cookies and
   persisted identity graph across eleven named scenarios (724 assertions).
