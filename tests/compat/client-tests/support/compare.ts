@@ -553,7 +553,7 @@ export function compareValues(
           const at = decode(left.issuedTwoFactorCookie);
           const bt = decode(right.issuedTwoFactorCookie);
           const profile =
-            /^\/__test\/profiles\/(two-factor-(?:skip-verification|trust-(?:fractional|zero-challenge|negative-challenge|zero|negative|cleanup-disabled)))\/api\/auth$/.exec(
+            /^\/__test\/profiles\/(two-factor-(?:skip-verification|totp-(?:fraction|negative-period|infinite-period|negative-infinite-period|large-period|nan|invalid-digits|infinite-digits|tiny-period)|trust-(?:fractional|zero-challenge|negative-challenge|zero|negative|cleanup-disabled)))\/api\/auth$/.exec(
               issuancePath[1]!,
             );
 

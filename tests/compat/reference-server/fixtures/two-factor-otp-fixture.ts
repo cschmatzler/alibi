@@ -15,6 +15,14 @@ export function createTwoFactorOtpFixture(
     receipts.set(profile, values);
   };
   const reverse = (value: string) => value.split("").reverse().join("");
+  const numeric: Record<string, { digits: number; period?: number; allowedAttempts?: number }> = {
+    "two-factor-otp-nan": { digits: NaN, period: NaN, allowedAttempts: NaN },
+    "two-factor-otp-half": { digits: 0.5, period: 0.5, allowedAttempts: Infinity },
+    "two-factor-otp-large": { digits: 32769.5, period: 1e8, allowedAttempts: Infinity },
+    "two-factor-otp-infinite-digits": { digits: Infinity },
+    "two-factor-otp-infinite-expiry": { digits: 6, period: Infinity },
+    "two-factor-otp-negative-expiry": { digits: 6, period: -1 },
+  };
   const names = [
     "two-factor-otp-plain",
     "two-factor-otp-hashed",
@@ -23,6 +31,12 @@ export function createTwoFactorOtpFixture(
     "two-factor-otp-custom-cipher",
     "two-factor-otp-zero",
     "two-factor-otp-negative",
+    "two-factor-otp-nan",
+    "two-factor-otp-half",
+    "two-factor-otp-large",
+    "two-factor-otp-infinite-digits",
+    "two-factor-otp-infinite-expiry",
+    "two-factor-otp-negative-expiry",
   ] as const;
   const profiles = new Map(
     names.map((name) => {
@@ -49,17 +63,19 @@ export function createTwoFactorOtpFixture(
             : name.endsWith("encrypted")
               ? "encrypted"
               : "plain";
-      const settings = name.endsWith("zero")
-        ? { digits: 0 }
-        : name.endsWith("negative")
-          ? { digits: -1 }
-          : name.endsWith("plain")
-            ? {}
-            : name.endsWith("encrypted")
-              ? { digits: 8, period: 0, allowedAttempts: 0 }
-              : name.endsWith("hashed")
-                ? { digits: 3.5, period: 0.5, allowedAttempts: 2.5 }
-                : { digits: 3, period: 1, allowedAttempts: 2 };
+      const settings =
+        numeric[name] ??
+        (name.endsWith("zero")
+          ? { digits: 0 }
+          : name.endsWith("negative")
+            ? { digits: -1 }
+            : name.endsWith("plain")
+              ? {}
+              : name.endsWith("encrypted")
+                ? { digits: 8, period: 0, allowedAttempts: 0 }
+                : name.endsWith("hashed")
+                  ? { digits: 3.5, period: 0.5, allowedAttempts: 2.5 }
+                  : { digits: 3, period: 1, allowedAttempts: 2 });
       return [
         name,
         betterAuth({

@@ -12,6 +12,31 @@ use better_auth_seaorm::DatabaseConnection;
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 type Auth = Arc<BetterAuth<TestSchema>>;
+struct SessionFailure;
+#[async_trait::async_trait]
+impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for SessionFailure {
+    async fn before_create_session(
+        &self,
+        _session: &mut better_auth_core::CreateSession,
+        context: &crate::backend::HookContext<'_>,
+    ) -> AuthResult<better_auth_seaorm::HookControl> {
+        if let Some(request) = context
+            .request
+            .as_ref()
+            .filter(|request| request.path.ends_with("/two-factor/verify-totp"))
+        {
+            if let Some(failure) = request.headers.get("x-two-factor-session") {
+                if failure == "cancel" {
+                    return Ok(better_auth_seaorm::HookControl::Cancel);
+                }
+                return Err(better_auth_core::AuthError::forbidden(
+                    "session creation cancelled by database hook",
+                ));
+            }
+        }
+        Ok(better_auth_seaorm::HookControl::Continue)
+    }
+}
 
 pub(crate) async fn router(
     base: &AuthConfig,
@@ -24,25 +49,58 @@ pub(crate) async fn router(
         "two-factor-totp-config",
         "two-factor-totp-disabled",
         "two-factor-totp-zero",
+        "two-factor-totp-fraction",
+        "two-factor-totp-negative-period",
+        "two-factor-totp-infinite-period",
+        "two-factor-totp-negative-infinite-period",
+        "two-factor-totp-large-period",
+        "two-factor-totp-nan",
+        "two-factor-totp-invalid-digits",
+        "two-factor-totp-infinite-digits",
+        "two-factor-totp-tiny-period",
     ] {
+        let raw: (f64, f64) = match name {
+            "two-factor-totp-fraction" => (3.5, 30.5),
+            "two-factor-totp-negative-period" => (6.0, -30.0),
+            "two-factor-totp-infinite-period" => (6.0, f64::INFINITY),
+            "two-factor-totp-negative-infinite-period" => (6.0, -f64::INFINITY),
+            "two-factor-totp-large-period" => (6.0, 1e30),
+            "two-factor-totp-nan" => (f64::NAN, f64::NAN),
+            "two-factor-totp-invalid-digits" => (-1.0, 30.0),
+            "two-factor-totp-infinite-digits" => (f64::INFINITY, 30.0),
+            "two-factor-totp-tiny-period" => (6.0, f64::from_bits(1)),
+            _ => (0.0, 0.0),
+        };
+        let numeric = !matches!(
+            name,
+            "two-factor-totp-default"
+                | "two-factor-totp-config"
+                | "two-factor-totp-zero"
+                | "two-factor-totp-disabled"
+        );
         let configured = name == "two-factor-totp-config";
         let zero = name == "two-factor-totp-zero";
         let plugin = TwoFactorPlugin::with_config(TwoFactorConfig {
             issuer: Some("Enrollment Issuer".to_owned()),
             totp_issuer: configured.then(|| "Authenticator Issuer".to_owned()),
-            totp_digits: if zero {
-                0
+            skip_verification_on_enable: numeric && name != "two-factor-totp-fraction",
+            totp_digits: if numeric {
+                raw.0
+            } else if zero {
+                0.0
             } else if configured {
-                8
+                8.0
             } else {
-                6
+                6.0
             },
-            totp_period: if zero {
-                0
+            totp_period: if numeric {
+                raw.1
+            } else if zero {
+                0.0
             } else if configured {
-                45
+                45.0
             } else {
-                30
+                30.0
             },
             totp_disabled: name == "two-factor-totp-disabled",
             ..Default::default()
@@ -50,12 +108,15 @@ pub(crate) async fn router(
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
         config.app_name = "Fixture Auth".to_owned();
+        let store = crate::backend::store::<TestSchema>(config.clone(), database.clone());
+        let store = if name == "two-factor-totp-fraction" {
+            store.with_hooks(vec![Arc::new(SessionFailure)])
+        } else {
+            store
+        };
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(crate::backend::store::<TestSchema>(
-                    config,
-                    database.clone(),
-                ))
+                .store(store)
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(
                     EmailPasswordPlugin::new()
