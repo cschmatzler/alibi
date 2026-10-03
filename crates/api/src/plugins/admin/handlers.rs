@@ -578,7 +578,7 @@ pub(in crate::plugins) async fn impersonate_user_core(
         .await?
         .ok_or_else(|| AuthError::not_found(MESSAGE_USER_NOT_FOUND))?;
 
-    if target_is_admin(Some(&body.user_id), target.role(), config)
+    if target_is_admin(Some(target.id().as_ref()), target.role(), config)
         && !config.allow_impersonating_admins
         && !has_permission(
             Some(admin_user_id.as_ref()),
