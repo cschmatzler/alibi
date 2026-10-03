@@ -43,28 +43,28 @@ where
             sql.assign(column, value.clone());
         }
         sql.push(" WHERE ");
-        sql.compare_model::<S::Account>(
-            table,
-            S::Account::id_column(),
-            " = ",
-            S::Account::parse_id(&observed.id)?,
-        );
-        for (column, value) in [
-            (
-                S::Account::user_id_column(),
-                S::Account::parse_user_id(&observed.user_id)?,
-            ),
-            (
-                S::Account::provider_id_column(),
-                observed.provider_id.clone().into(),
-            ),
-            (
-                S::Account::account_id_column(),
-                observed.account_id.clone().into(),
-            ),
-        ] {
-            sql.push(" AND ");
-            sql.compare_model::<S::Account>(table, column, " = ", value);
+        // Validate application ID types, then compare their canonical physical
+        // text too: an application NOCASE collation must not admit another owner.
+        drop(S::Account::parse_id(&observed.id)?);
+        drop(S::Account::parse_user_id(&observed.user_id)?);
+        for (index, (column, value)) in [
+            (S::Account::id_column(), &observed.id),
+            (S::Account::user_id_column(), &observed.user_id),
+            (S::Account::provider_id_column(), &observed.provider_id),
+            (S::Account::account_id_column(), &observed.account_id),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            if index > 0 {
+                sql.push(" AND ");
+            }
+            sql.push("CAST(");
+            sql.column(table, column);
+            sql.push(" AS TEXT)");
+            exact_collation(&mut sql);
+            sql.push(" = ");
+            sql.bind(value.clone());
         }
         for (column, value) in columns.iter().zip([
             &observed.tokens.access_token,
@@ -74,10 +74,7 @@ where
             sql.push(" AND ");
             // Override application collations: CAS compares the exact stored text.
             sql.column(table, column);
-            match sql.engine() {
-                crate::pool::Engine::Sqlite => sql.push(" COLLATE BINARY"),
-                crate::pool::Engine::Postgres => sql.push(" COLLATE \"C\""),
-            }
+            exact_collation(&mut sql);
             if let Some(value) = value {
                 sql.push(" = ");
                 sql.bind(value.clone());
@@ -86,5 +83,12 @@ where
             }
         }
         Ok(self.exec().execute(sql).await? == 1)
+    }
+}
+
+fn exact_collation(sql: &mut Sql) {
+    match sql.engine() {
+        crate::pool::Engine::Sqlite => sql.push(" COLLATE BINARY"),
+        crate::pool::Engine::Postgres => sql.push(" COLLATE \"C\""),
     }
 }

@@ -6,7 +6,7 @@ use better_auth_core::{
     oauth_token_conversion::{OAuthTokenConversionStore, OAuthTokenSnapshot, OAuthTokenValues},
 };
 use sea_orm::{
-    ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter,
+    ColumnTrait, EntityTrait, QueryFilter,
     sea_query::{Expr, SimpleExpr},
 };
 
@@ -24,17 +24,36 @@ where
         let columns = S::Account::oauth_token_columns().ok_or_else(|| {
             AuthError::NotImplemented("Account token conversion columns are not configured".into())
         })?;
-        let mut query = <S::Account as SeaOrmAccountModel>::Entity::update_many()
-            .filter(S::Account::id_column().eq(S::Account::parse_id(&observed.id)?))
-            .filter(S::Account::user_id_column().eq(S::Account::parse_user_id(&observed.user_id)?))
-            .filter(S::Account::provider_id_column().eq(&observed.provider_id))
-            .filter(S::Account::account_id_column().eq(&observed.account_id));
+        let backend = self.connection().get_database_backend();
+        let template = match backend {
+            sea_orm::DbBackend::Sqlite => "CAST(? AS TEXT) COLLATE BINARY = ?",
+            sea_orm::DbBackend::Postgres => "CAST($1 AS TEXT) COLLATE \"C\" = $2",
+            _ => {
+                return Err(AuthError::NotImplemented(
+                    "OAuth token conversion requires SQLite or PostgreSQL".into(),
+                ));
+            }
+        };
+        drop(S::Account::parse_id(&observed.id)?);
+        drop(S::Account::parse_user_id(&observed.user_id)?);
+        let mut query = <S::Account as SeaOrmAccountModel>::Entity::update_many();
+        for (column, value) in [
+            (S::Account::id_column(), &observed.id),
+            (S::Account::user_id_column(), &observed.user_id),
+            (S::Account::provider_id_column(), &observed.provider_id),
+            (S::Account::account_id_column(), &observed.account_id),
+        ] {
+            query = query.filter(Expr::cust_with_exprs(
+                template,
+                [Expr::col(column), Expr::value(value.clone())],
+            ));
+        }
         for (column, value) in columns.iter().zip([
             &replacement.access_token,
             &replacement.refresh_token,
             &replacement.id_token,
         ]) {
-            query = query.col_expr(column.clone(), Expr::value(value.clone()));
+            query = query.col_expr(*column, Expr::value(value.clone()));
         }
         for (column, value) in columns.iter().zip([
             &observed.tokens.access_token,
@@ -42,22 +61,7 @@ where
             &observed.tokens.id_token,
         ]) {
             let predicate: SimpleExpr = if let Some(value) = value {
-                let template = match self.connection().get_database_backend() {
-                    sea_orm::DbBackend::Sqlite => "$1 COLLATE BINARY = $2",
-                    sea_orm::DbBackend::Postgres => "$1 COLLATE \"C\" = $2",
-                    _ => {
-                        return Err(AuthError::NotImplemented(
-                            "OAuth token conversion requires SQLite or PostgreSQL".into(),
-                        ));
-                    }
-                };
-                Expr::cust_with_exprs(
-                    template,
-                    [
-                        Expr::col(column.clone()).into(),
-                        Expr::value(value.clone()).into(),
-                    ],
-                )
+                Expr::cust_with_exprs(template, [Expr::col(*column), Expr::value(value.clone())])
             } else {
                 column.is_null()
             };

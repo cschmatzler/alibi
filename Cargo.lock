@@ -518,6 +518,7 @@ dependencies = [
 name = "better-auth"
 version = "1.0.0-alpha.3"
 dependencies = [
+ "aes-gcm",
  "async-trait",
  "axum",
  "base64 0.22.1",
@@ -525,8 +526,10 @@ dependencies = [
  "better-auth-core",
  "better-auth-seaorm",
  "better-auth-sqlx",
+ "chacha20poly1305",
  "chrono",
  "clap",
+ "hkdf 0.12.4",
  "http-body-util",
  "jsonwebtoken",
  "multer",
@@ -537,6 +540,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2 0.10.9",
  "sqlx",
  "thiserror 2.0.18",
  "tokio",

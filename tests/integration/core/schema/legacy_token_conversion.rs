@@ -66,7 +66,8 @@ fn config() -> AuthConfig {
 fn legacy(plain: &str) -> TestResult<String> {
     let mut key = [0; 32];
     Hkdf::<Sha256>::new(None, ORIGINAL.as_bytes())
-        .expand(b"better-auth-oauth-token-encryption", &mut key)?;
+        .expand(b"better-auth-oauth-token-encryption", &mut key)
+        .map_err(|_| "fixture HKDF")?;
     let nonce = [19; 12];
     let ciphertext = Aes256Gcm::new_from_slice(&key)?
         .encrypt(Nonce::from_slice(&nonce), plain.as_bytes())
@@ -115,6 +116,24 @@ async fn exercise<S: AuthSchema>(
     store: &(impl AuthStore<S> + OAuthTokenConversionStore<S>),
     db: &Db,
 ) -> TestResult {
+    // Application-defined collations must not weaken snapshot CAS. Recreate
+    // only this empty owned fixture table with NOCASE token/identity columns.
+    let schema = db
+        .text(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='accounts'",
+            &[],
+        )
+        .await?
+        .ok_or("account DDL")?;
+    _ = db.execute("DROP TABLE accounts", &[]).await?;
+    _ = db
+        .execute(
+            &schema
+                .replace("TEXT", "TEXT COLLATE NOCASE")
+                .replace("text", "text COLLATE NOCASE"),
+            &[],
+        )
+        .await?;
     let owner = store
         .create_user(CreateUser::new().with_email("owner@conversion190.test"))
         .await?;
@@ -146,8 +165,8 @@ async fn exercise<S: AuthSchema>(
             1 => &mut damaged.observed.tokens.refresh_token,
             _ => &mut damaged.observed.tokens.id_token,
         };
-        *token = Some(legacy("tamper")?.replace('A', "B"));
-        // Ensure a tag-changing alteration even if the original vector lacks A.
+        *token = Some(legacy("tamper")?);
+        // Change an authenticated ciphertext byte.
         let token = token.as_mut().ok_or("fixture token")?;
         token.replace_range(
             20..21,
@@ -162,10 +181,10 @@ async fn exercise<S: AuthSchema>(
     assert_eq!(db.table("accounts").await?, initial);
     let plan = OAuthTokenConversion::prepare(input.clone(), ORIGINAL, &config())?;
     // Failure after SQLite has begun the update must roll back every column.
-    db.execute("CREATE TRIGGER conversion190_fail AFTER UPDATE OF access_token ON accounts BEGIN SELECT RAISE(ABORT, 'owned fixture failure'); END", &[]).await?;
+    _ = db.execute("CREATE TRIGGER conversion190_fail AFTER UPDATE OF access_token ON accounts BEGIN SELECT RAISE(ABORT, 'owned fixture failure'); END", &[]).await?;
     assert!(plan.apply(store).await.is_err());
     assert_eq!(db.table("accounts").await?, initial);
-    db.execute("DROP TRIGGER conversion190_fail", &[]).await?;
+    _ = db.execute("DROP TRIGGER conversion190_fail", &[]).await?;
     assert!(plan.apply(store).await?);
     let converted = store
         .get_account("operator-fixture", "legacy-row")
@@ -189,7 +208,7 @@ async fn exercise<S: AuthSchema>(
             .and_then(serde_json::Value::as_object_mut)
             .ok_or("physical row")?;
         for field in ["access_token", "refresh_token", "id_token"] {
-            row.remove(field);
+            _ = row.remove(field);
         }
     }
     assert_eq!(before, after); // All untouched physical columns, including timestamps.
@@ -207,33 +226,60 @@ async fn exercise<S: AuthSchema>(
     assert_eq!(db.table("accounts").await?, stable); // Explicit already-converted retry.
 
     // Restore only the owned fixture's tokens, then interleave real side-pool writes.
-    for change in [
-        "refresh_token",
-        "access_token",
-        "id_token",
-        "user_id",
-        "provider_id",
-        "account_id",
+    for (change, case_only) in [
+        ("refresh_token", false),
+        ("access_token", false),
+        ("id_token", false),
+        ("user_id", false),
+        ("provider_id", false),
+        ("account_id", false),
+        ("refresh_token", true),
+        ("access_token", true),
+        ("id_token", true),
+        ("provider_id", true),
+        ("account_id", true),
+        ("user_id", true),
     ] {
-        db.execute("UPDATE accounts SET access_token=$1, refresh_token=$2, id_token=$3, user_id=$4, provider_id=$5, account_id=$6 WHERE id=$7", &[
+        _ = db.execute("UPDATE accounts SET access_token=$1, refresh_token=$2, id_token=$3, user_id=$4, provider_id=$5, account_id=$6 WHERE id=$7", &[
             input.observed.tokens.access_token.as_deref().ok_or("access")?, input.observed.tokens.refresh_token.as_deref().ok_or("refresh")?, input.observed.tokens.id_token.as_deref().ok_or("id")?, &input.observed.user_id, &input.observed.provider_id, &input.observed.account_id, &input.observed.id]).await?;
         let pending = OAuthTokenConversion::prepare(input.clone(), ORIGINAL, &config())?;
-        let value = if change == "user_id" {
+        let value = if case_only {
+            match change {
+                "access_token" => input
+                    .observed
+                    .tokens
+                    .access_token
+                    .as_deref()
+                    .ok_or("access")?,
+                "refresh_token" => input
+                    .observed
+                    .tokens
+                    .refresh_token
+                    .as_deref()
+                    .ok_or("refresh")?,
+                "id_token" => input.observed.tokens.id_token.as_deref().ok_or("id")?,
+                "provider_id" => &input.observed.provider_id,
+                "account_id" => &input.observed.account_id,
+                _ => &input.observed.user_id,
+            }
+            .to_uppercase()
+        } else if change == "user_id" {
             other.id().into_owned()
         } else {
             "concurrent-change".into()
         };
-        db.execute(
-            &format!("UPDATE accounts SET {change}=$1 WHERE id=$2"),
-            &[&value, &input.observed.id],
-        )
-        .await?;
+        _ = db
+            .execute(
+                &format!("UPDATE accounts SET {change}=$1 WHERE id=$2"),
+                &[&value, &input.observed.id],
+            )
+            .await?;
         let concurrent = db.table("accounts").await?;
         assert!(!pending.apply(store).await?);
         assert_eq!(db.table("accounts").await?, concurrent);
     }
     // Mixed plaintext and NULL require explicit classifications; no guessing.
-    db.execute("UPDATE accounts SET access_token=$1, refresh_token=NULL, id_token=$2, user_id=$3, provider_id=$4, account_id=$5 WHERE id=$6", &["plain-access", "plain-id", &input.observed.user_id, &input.observed.provider_id, &input.observed.account_id, &input.observed.id]).await?;
+    _ = db.execute("UPDATE accounts SET access_token=$1, refresh_token=NULL, id_token=$2, user_id=$3, provider_id=$4, account_id=$5 WHERE id=$6", &["plain-access", "plain-id", &input.observed.user_id, &input.observed.provider_id, &input.observed.account_id, &input.observed.id]).await?;
     let mixed = store
         .get_account("operator-fixture", "legacy-row")
         .await?
@@ -258,5 +304,14 @@ async fn exercise<S: AuthSchema>(
     );
     assert_eq!(mixed.refresh_token(), None);
     assert_eq!(mixed.id_token(), Some("plain-id"));
+    let mut missing = manifest(&mixed);
+    missing.access_encoding = TokenEncoding::Source;
+    missing.refresh_encoding = TokenEncoding::Absent;
+    missing.id_encoding = TokenEncoding::Plain;
+    let pending = OAuthTokenConversion::prepare(missing, ORIGINAL, &config())?;
+    _ = db
+        .execute("DELETE FROM accounts WHERE id=$1", &[&input.observed.id])
+        .await?;
+    assert!(!pending.apply(store).await?);
     Ok(())
 }
