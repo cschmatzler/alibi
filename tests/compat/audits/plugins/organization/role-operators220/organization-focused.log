@@ -1,0 +1,25 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (/tmp/role-operators220-target/debug/deps/better_auth_api-b9ce52ad46c0698e)
+
+running 10 tests
+test plugins::organization::dynamic_role_tests::role_wire_validation_preserves_union_selection_and_rejects_null_updates_without_mutation ... ok
+test plugins::organization::dynamic_role_tests::expired_and_revoked_role_sessions_cannot_mutate_existing_permissions ... ok
+test plugins::organization::dynamic_role_tests::assigned_role_checks_filter_the_tenant_before_the_configured_adapter_page ... ok
+test plugins::organization::dynamic_role_tests::dynamic_role_creation_preserves_the_membership_resource_and_name_check_order ... ok
+test plugins::organization::dynamic_role_tests::permission_requests_preserve_empty_legacy_xor_and_membership_wire_behavior ... ok
+test plugins::organization::dynamic_role_tests::default_role_validation_collects_ordered_issues_before_authorization_and_persistence ... ok
+test plugins::organization::dynamic_role_tests::delegation_checks_each_grant_without_unioning_full_requests_and_revokes_api_key_authority ... ok
+test plugins::organization::dynamic_role_tests::dynamic_role_mutations_scope_the_tenant_and_apply_name_selectors_to_all_legacy_rows ... ok
+test plugins::organization::dynamic_role_tests::callback_role_limits_are_scoped_and_count_rows_beyond_the_list_page ... ok
+test plugins::organization::dynamic_role_tests::overlapping_permission_reloads_change_pending_delegation_only_in_the_selected_organization ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 325 filtered out; finished in 0.08s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running unittests src/lib.rs (/tmp/role-operators220-target/debug/deps/better_auth_api-b9ce52ad46c0698e)
+
+running 1 test
+test plugins::organization::extension_tests::custom_role_configuration_replaces_defaults_and_whole_permission_checks_do_not_union_roles ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 334 filtered out; finished in 0.05s
+

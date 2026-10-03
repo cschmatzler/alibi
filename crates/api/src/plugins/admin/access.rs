@@ -32,18 +32,15 @@ impl RolePermissions {
     }
 
     fn allows(&self, requested: &HashMap<String, Vec<String>>) -> bool {
-        if requested.is_empty() {
-            return false;
-        }
-
-        requested.iter().all(|(resource, actions)| {
-            self.permissions.get(resource).is_some_and(|allowed| {
-                !actions.is_empty()
-                    && actions
-                        .iter()
-                        .all(|action| allowed.iter().any(|item| item == action))
-            })
-        })
+        use crate::plugins::access::{Connector, authorize};
+        authorize(
+            |resource| self.permissions.get(resource).map(Vec::as_slice),
+            requested
+                .iter()
+                .map(|(resource, actions)| (resource.as_str(), actions.as_slice(), Connector::And)),
+            Connector::And,
+        )
+        .success()
     }
 }
 

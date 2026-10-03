@@ -1,6 +1,7 @@
 //! Built-in plugins and plugin-specific configuration modules.
 
 pub use better_auth_api::OAuthPlugin;
+pub use better_auth_api::plugins::access;
 pub use better_auth_api::plugins::anonymous::{
     self, AnonymousConfig, AnonymousIdentity, AnonymousLink, AnonymousPlugin, LinkAnonymousAccount,
 };
