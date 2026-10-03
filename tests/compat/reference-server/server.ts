@@ -58,6 +58,7 @@ import { linearProviderFixture } from "./fixtures/linear-provider-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
 import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
+import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./fixtures/one-tap-fixture";
 import { openApiProfiles } from "./fixtures/open-api-fixture";
@@ -625,6 +626,7 @@ const linkedinFixture = linkedinProviderFixture(authOptions);
 const kakaoFixture = kakaoProviderFixture(authOptions);
 const lineFixture = lineProviderFixture(authOptions);
 const linearFixture = linearProviderFixture(authOptions);
+const naverFixture = naverProviderFixture(authOptions);
 const kickFixture = kickProviderFixture(authOptions);
 const atlassianFixture = atlassianProviderFixture(authOptions);
 const appleFixture = appleProviderFixture(authOptions);
@@ -673,6 +675,7 @@ for (const [path, instance] of lineFixture.profiles) {
 for (const [path, instance] of linearFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
+for (const [path, instance] of naverFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of kickFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
@@ -1659,6 +1662,8 @@ const server = Bun.serve({
       }
       const linearControl = await linearFixture.handle(request);
       if (linearControl) return linearControl;
+      const naverControl = await naverFixture.handle(request);
+      if (naverControl) return naverControl;
       const kickControl = await kickFixture.handle(request);
       if (kickControl) {
         return kickControl;
@@ -2503,6 +2508,7 @@ const server = Bun.serve({
         kakaoFixture.reset();
         lineFixture.reset();
         linearFixture.reset();
+        naverFixture.reset();
         kickFixture.reset();
         atlassianFixture.reset();
         appleFixture.reset();

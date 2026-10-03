@@ -796,6 +796,9 @@ pub use kakao::KakaoOptions;
 pub use kick::KickOptions;
 pub use line::LineOptions;
 
+mod naver;
+pub use naver::NaverOptions;
+
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
