@@ -53,6 +53,7 @@ import { kakaoProviderFixture } from "./fixtures/kakao-provider-fixture";
 import { kickProviderFixture } from "./fixtures/kick-provider-fixture";
 import { createLastLoginMethodFixture } from "./fixtures/last-login-method-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./fixtures/lifecycle-fixture";
+import { lineProviderFixture } from "./fixtures/line-provider-fixture";
 import { linearProviderFixture } from "./fixtures/linear-provider-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
 import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture";
@@ -621,6 +622,7 @@ const microsoftFixture = microsoftProviderFixture(authOptions);
 const figmaFixture = figmaProviderFixture(authOptions);
 const huggingfaceFixture = huggingfaceProviderFixture(authOptions);
 const kakaoFixture = kakaoProviderFixture(authOptions);
+const lineFixture = lineProviderFixture(authOptions);
 const linearFixture = linearProviderFixture(authOptions);
 const kickFixture = kickProviderFixture(authOptions);
 const atlassianFixture = atlassianProviderFixture(authOptions);
@@ -661,6 +663,9 @@ for (const [path, instance] of huggingfaceFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of kakaoFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of lineFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of linearFixture.profiles) {
@@ -1644,6 +1649,10 @@ const server = Bun.serve({
       if (kakaoControl) {
         return kakaoControl;
       }
+      const lineControl = await lineFixture.handle(request);
+      if (lineControl) {
+        return lineControl;
+      }
       const linearControl = await linearFixture.handle(request);
       if (linearControl) return linearControl;
       const kickControl = await kickFixture.handle(request);
@@ -2487,6 +2496,7 @@ const server = Bun.serve({
         microsoftFixture.reset();
         huggingfaceFixture.reset();
         kakaoFixture.reset();
+        lineFixture.reset();
         linearFixture.reset();
         kickFixture.reset();
         atlassianFixture.reset();

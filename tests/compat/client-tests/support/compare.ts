@@ -20,6 +20,7 @@ import {
   type ManagedAccountCookieProfile,
 } from "./managed-account-cookie";
 import { normalizeClientValue } from "./normalize";
+import { remoteJwtDefaultCopy, remoteJwtDefaultPublication } from "./remote-jwt-publication";
 import type { RequestWindow } from "./trace";
 import { samePublication, verificationPublicationPairs } from "./verification-publication";
 
@@ -59,6 +60,8 @@ export type ComparisonContext = {
   readonly rightFinishedAt?: number;
   readonly leftRequestWindows?: readonly (RequestWindow | undefined)[];
   readonly rightRequestWindows?: readonly (RequestWindow | undefined)[];
+  /** Actual raw-profile application signer key; admits only its observed null-default publication. */
+  readonly remoteJwtSignerSecret?: string;
 };
 
 const entityKeys = new Set([
@@ -126,6 +129,26 @@ export function compareValues(
   };
   const normalizedLeft = normalizeClientValue(left);
   const normalizedRight = normalizeClientValue(right);
+  const leftRemoteJwt = context.remoteJwtSignerSecret
+    ? remoteJwtDefaultPublication(
+        normalizedLeft,
+        context.leftRequestWindows,
+        context.remoteJwtSignerSecret,
+      )
+    : undefined;
+  const rightRemoteJwt = context.remoteJwtSignerSecret
+    ? remoteJwtDefaultPublication(
+        normalizedRight,
+        context.rightRequestWindows,
+        context.remoteJwtSignerSecret,
+      )
+    : undefined;
+  if (context.remoteJwtSignerSecret && (!leftRemoteJwt || !rightRemoteJwt)) {
+    fail(
+      "observation",
+      "remote JWT default expiry lacks its original signed publication, request or exact callback proof",
+    );
+  }
   // Decoded payload copies cannot authorize their own generated identities.
   // Keep independently observed user/session fields available for default JWTs.
   const payloads: Record<string, unknown>[] = [];
@@ -4631,6 +4654,9 @@ export function compareValues(
                 inClock(a.exp - lifetime, context.leftStartedAt, context.leftFinishedAt) &&
                 inClock(b.exp - lifetime, context.rightStartedAt, context.rightFinishedAt),
             )));
+      const remoteDefaultExpiry =
+        remoteJwtDefaultCopy(a, leftRemoteJwt, path) &&
+        remoteJwtDefaultCopy(b, rightRemoteJwt, path);
 
       if (
         jwtClaims &&
@@ -4705,6 +4731,10 @@ export function compareValues(
           (leftEntities.has(a.sub) || rightEntities.has(b.sub))
         ) {
           identity(a.sub, b.sub, childPath, "entity");
+        } else if (remoteDefaultExpiry && childKey === "exp") {
+          // Both complete claims are authenticated against their actual issuing
+          // request, including the exact 900-second default and unchanged iat.
+          continue;
         } else if (
           runtimeDates &&
           ["iat", "exp"].includes(childKey) &&

@@ -28,7 +28,7 @@ pub use id_token::{
 pub use providers::{
     AppleOptions, AtlassianOptions, CloudflareOptions, CognitoOptions, DropboxAccessType,
     DropboxOptions, FacebookOptions, FigmaOptions, HuggingFaceOptions, KakaoOptions, KickOptions,
-    LinearOptions, MicrosoftOptions, MicrosoftProfilePhotoSize, OAuthAccountSubject, OAuthAuthorizationPolicy,
+    LineOptions, LinearOptions, MicrosoftOptions, MicrosoftProfilePhotoSize, OAuthAccountSubject, OAuthAuthorizationPolicy,
     OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthClientAssertion,
     OAuthClientAssertionContext, OAuthClientAssertionGetter, OAuthConfig, OAuthIdTokenVerifier,
     OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeEncoding, OAuthScopeOrder,

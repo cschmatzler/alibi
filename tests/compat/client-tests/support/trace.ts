@@ -29,6 +29,10 @@ export type RequestWindow = {
   verificationInput?: unknown;
   /** Integrity of the original complete parsed observer response, separate from compared output. */
   verificationObserverDigest?: string;
+  /** Original remote signer input and signed response, before any client projection. */
+  remoteJwtSigning?: { input: unknown; response: unknown; digest: string };
+  /** Complete callback receipt from the real signer observer. */
+  remoteJwtObserver?: { body: unknown; digest: string };
   /** Original narrow physical controls; their values are not transport output. */
   controlObservation?: {
     kind:
@@ -288,6 +292,29 @@ export function createTracingFetch(
       }
 
       let controlObservation: RequestWindow["controlObservation"];
+      let remoteJwtSigning: RequestWindow["remoteJwtSigning"];
+      let remoteJwtObserver: RequestWindow["remoteJwtObserver"];
+      if (url.pathname === "/__test/jwt-remote" && response.status === 200) {
+        try {
+          const body: unknown = JSON.parse(responseText);
+          if (request.method === "POST") {
+            remoteJwtSigning = {
+              input: verificationInput,
+              response: body,
+              digest: createHash("sha256")
+                .update(JSON.stringify([verificationInput, body]))
+                .digest("hex"),
+            };
+          } else if (request.method === "GET") {
+            remoteJwtObserver = {
+              body,
+              digest: createHash("sha256").update(JSON.stringify(body)).digest("hex"),
+            };
+          }
+        } catch {
+          /* Invalid JSON cannot establish a signing publication. */
+        }
+      }
 
       if (
         (request.method === "POST" && url.pathname === "/__test/jwt-keyring") ||
@@ -331,6 +358,8 @@ export function createTracingFetch(
           startedAt,
           finishedAt: Date.now(),
           inputDates,
+          ...(remoteJwtSigning ? { remoteJwtSigning } : {}),
+          ...(remoteJwtObserver ? { remoteJwtObserver } : {}),
           ...(controlObservation ? { controlObservation } : {}),
           ...(request.method === "POST" &&
           url.pathname === "/__test/jwt-keyring" &&

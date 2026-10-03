@@ -233,6 +233,11 @@ for (const item of cases) {
         after,
       });
     },
+    [],
+    30_000,
+    item.name === "null"
+      ? { remoteJwtSignerSecret: "remote-jwt-application-secret-minimum-32-characters" }
+      : {},
   );
 }
 
