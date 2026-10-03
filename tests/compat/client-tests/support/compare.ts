@@ -6,6 +6,11 @@ import { xchacha20poly1305 } from "@noble/ciphers/chacha.js";
 import { Cookie } from "tough-cookie";
 import { z } from "zod";
 
+import {
+  authenticatedManagedAccountCookie,
+  managedAccountCookieReceipt,
+  type ManagedAccountCookieProfile,
+} from "./managed-account-cookie";
 import { normalizeClientValue } from "./normalize";
 import type { RequestWindow } from "./trace";
 import { samePublication, verificationPublicationPairs } from "./verification-publication";
@@ -26,7 +31,10 @@ export type ComparisonContext = {
   readonly leftPhysicalObservations?: readonly PhysicalObservation[];
   readonly rightPhysicalObservations?: readonly PhysicalObservation[];
   readonly sessionCookieSecret?: string;
+  /** One expected signing key per issuing auth runtime; retained keys are never candidates. */
+  readonly sessionCookieSecretsByAuthPath?: Readonly<Record<string, string>>;
   readonly compactSessionCacheSecret?: string;
+  readonly managedAccountCookieProfiles?: Readonly<Record<string, ManagedAccountCookieProfile>>;
   readonly oauthProxyProfileSecret?: string;
   readonly leftBaseURL: string;
   readonly rightBaseURL: string;
@@ -223,9 +231,12 @@ export function compareValues(
   >();
   const sessionCookieName = /^(?:__Secure-)?better-auth\.session_token$/;
 
+  const issuedSignatureKeys = new Map<string, string>();
+
   function signedCookie(
     value: string,
-  ): { token: string; error?: never } | { error: string; token?: never } {
+    expectedSecret?: string,
+  ): { token: string; signerSecret: string; error?: never } | { error: string; token?: never } {
     try {
       const decoded = decodeURIComponent(value);
       const separator = decoded.lastIndexOf(".");
@@ -237,7 +248,9 @@ export function compareValues(
       const token = decoded.slice(0, separator);
       const encodedSignature = decoded.slice(separator + 1);
       const signature = Buffer.from(encodedSignature, "base64");
-      const expected = createHmac("sha256", context.sessionCookieSecret!).update(token).digest();
+      const signerSecret =
+        expectedSecret ?? issuedSignatureKeys.get(value) ?? context.sessionCookieSecret!;
+      const expected = createHmac("sha256", signerSecret).update(token).digest();
 
       if (
         signature.toString("base64") !== encodedSignature ||
@@ -247,13 +260,13 @@ export function compareValues(
         return { error: "signed session cookie signature is invalid" };
       }
 
-      return { token };
+      return { token, signerSecret };
     } catch {
       return { error: "signed session cookie encoding is not canonical" };
     }
   }
 
-  function issuedCookie(value: string | undefined, token: string): boolean {
+  function issuedCookie(value: string | undefined, token: string, authPath?: string): boolean {
     if (!value) {
       return false;
     }
@@ -264,7 +277,14 @@ export function compareValues(
       return false;
     }
 
-    return signedCookie(value.slice(separator + 1)).token === token;
+    const encoded = value.slice(separator + 1);
+    const secret = authPath
+      ? (context.sessionCookieSecretsByAuthPath?.[authPath] ?? context.sessionCookieSecret)
+      : undefined;
+    const checked = signedCookie(encoded, secret);
+    if (checked.token !== token) return false;
+    if (secret) issuedSignatureKeys.set(encoded, secret);
+    return true;
   }
 
   const updates = new Map<string, ClockReceipt[]>();
@@ -440,8 +460,8 @@ export function compareValues(
 
           if (
             context.sessionCookieSecret &&
-            issuedCookie(left.issuedSessionCookie, a.token) &&
-            issuedCookie(right.issuedSessionCookie, b.token)
+            issuedCookie(left.issuedSessionCookie, a.token, receipt.authPath) &&
+            issuedCookie(right.issuedSessionCookie, b.token, receipt.authPath)
           ) {
             signedCookieIssuances.add(JSON.stringify([a.token, b.token]));
             if (typeof a.user.email === "string" && typeof b.user.email === "string") {
@@ -606,12 +626,19 @@ export function compareValues(
           left.issuedSessionCookie &&
           right.issuedSessionCookie
         ) {
-          const token = (cookie: string) =>
-            sessionCookieName.test(cookie.slice(0, cookie.indexOf("=")))
-              ? signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token
+          const token = (cookie: string, issued = false) => {
+            if (!sessionCookieName.test(cookie.slice(0, cookie.indexOf("=")))) return;
+            const encoded = cookie.slice(cookie.indexOf("=") + 1);
+            const expected = issued
+              ? (context.sessionCookieSecretsByAuthPath?.[owner.authPath] ??
+                context.sessionCookieSecret)
               : undefined;
-          const at = token(left.issuedSessionCookie);
-          const bt = token(right.issuedSessionCookie);
+            const checked = signedCookie(encoded, expected);
+            if (checked.token && expected) issuedSignatureKeys.set(encoded, expected);
+            return checked.token;
+          };
+          const at = token(left.issuedSessionCookie, true);
+          const bt = token(right.issuedSessionCookie, true);
           const previous = JSON.stringify([
             token(left.sessionCookie!),
             token(right.sessionCookie!),
@@ -699,7 +726,7 @@ export function compareValues(
 
   function controlBody(
     window: RequestWindow,
-    kind: "member-addition" | "social-provider" | "user-validation",
+    kind: "member-addition" | "social-provider" | "user-validation" | "managed-secrets",
   ) {
     const observation = window.controlObservation;
     return observation?.kind === kind &&
@@ -929,9 +956,13 @@ export function compareValues(
       }
     }
 
-    if (observer.path === "/__test/social-provider/state" && context.sessionCookieSecret) {
-      const a = controlBody(observer.left, "social-provider");
-      const b = controlBody(observer.right, "social-provider");
+    if (
+      ["/__test/social-provider/state", "/__test/managed-secrets/state"].includes(observer.path) &&
+      context.sessionCookieSecret
+    ) {
+      const managed = observer.path === "/__test/managed-secrets/state";
+      const a = controlBody(observer.left, managed ? "managed-secrets" : "social-provider");
+      const b = controlBody(observer.right, managed ? "managed-secrets" : "social-provider");
 
       if (
         !a ||
@@ -950,9 +981,11 @@ export function compareValues(
         // The local GitLab fixture issues a one-hour provider token and the
         // default seven-day session. Its actual signed redirect owns these rows.
         if (
-          !/^\/__test\/profiles\/social-gitlab-(?:issuer|issuer-slashes)\/api\/auth\/callback\/gitlab$/.test(
-            producer.path,
-          ) ||
+          !(
+            managed
+              ? /^\/__test\/profiles\/managed-(?:old|retained|retired|legacy|bare)\/api\/auth\/callback\/github$/
+              : /^\/__test\/profiles\/social-gitlab-(?:issuer|issuer-slashes)\/api\/auth\/callback\/gitlab$/
+          ).test(producer.path) ||
           producer.a.method !== "GET" ||
           producer.a.responseStatus !== 302 ||
           producer.b.responseStatus !== 302
@@ -960,10 +993,13 @@ export function compareValues(
           continue;
         }
 
+        const authPath = producer.path.slice(0, producer.path.lastIndexOf("/callback/"));
+        const expected =
+          context.sessionCookieSecretsByAuthPath?.[authPath] ?? context.sessionCookieSecret;
         const token = (window: RequestWindow) => {
           const cookie = window.issuedSessionCookie;
           return cookie && sessionCookieName.test(cookie.slice(0, cookie.indexOf("=")))
-            ? signedCookie(cookie.slice(cookie.indexOf("=") + 1)).token
+            ? signedCookie(cookie.slice(cookie.indexOf("=") + 1), expected).token
             : undefined;
         };
         const at = token(producer.left);
@@ -991,7 +1027,10 @@ export function compareValues(
           (body.users as unknown[]).find((row) => record(row) && row.id === id);
         const account = (body: Record<string, unknown>, id: string) =>
           (body.accounts as unknown[]).find(
-            (row) => record(row) && row.userId === id && row.providerId === "gitlab",
+            (row) =>
+              record(row) &&
+              row.userId === id &&
+              row.providerId === (managed ? "github" : "gitlab"),
           );
         const au = user(a, am.userId);
         const bu = user(b, bm.userId);
@@ -1000,6 +1039,27 @@ export function compareValues(
 
         if (!record(au) || !record(bu) || !record(aa) || !record(ba)) {
           continue;
+        }
+
+        if (
+          managed &&
+          issuedCookie(producer.left.issuedSessionCookie, at, authPath) &&
+          issuedCookie(producer.right.issuedSessionCookie, bt, authPath)
+        ) {
+          const receipt = {
+            left: producer.left,
+            right: producer.right,
+            leftUser: am.userId,
+            rightUser: bm.userId,
+            authPath,
+          };
+          issuances.set(JSON.stringify([at, bt]), receipt);
+          signedCookieIssuances.add(JSON.stringify([at, bt]));
+          cookieOwners.set(
+            JSON.stringify([producer.left.issuedSessionCookie, producer.right.issuedSessionCookie]),
+            receipt,
+          );
+          identity(at, bt, `traces.${index}.responseCookies`, "token");
         }
 
         collectResponseDates(
@@ -2576,6 +2636,11 @@ export function compareValues(
     const ac = signedCookie(av);
     const bc = signedCookie(bv);
 
+    if ("signerSecret" in ac && "signerSecret" in bc && ac.signerSecret !== bc.signerSecret) {
+      fail(path, "corresponding session cookie signer differs");
+      return true;
+    }
+
     if (ac.error || bc.error) {
       fail(path, ac.error ?? bc.error!);
       return true;
@@ -3578,6 +3643,66 @@ export function compareValues(
           false,
           false,
           undefined,
+          false,
+          true,
+        );
+        return;
+      }
+
+      if (key === "managedAccountCookie" && !applicationData && !traceShape(path)) {
+        if (
+          !authenticatedManagedAccountCookie(a, context.managedAccountCookieProfiles) ||
+          !authenticatedManagedAccountCookie(b, context.managedAccountCookieProfiles) ||
+          a.authPath !== b.authPath
+        ) {
+          fail(
+            path,
+            "managed account-cookie authentication, version, plaintext or physical row relationship differs",
+          );
+          return;
+        }
+        if (
+          !managedAccountCookieReceipt(a, context.leftRequestWindows) ||
+          !managedAccountCookieReceipt(b, context.rightRequestWindows)
+        ) {
+          fail(
+            path,
+            "managed account-cookie lacks actual issuance, physical read or valid snapshot chronology",
+          );
+          return;
+        }
+        for (const field of ["accessToken", "refreshToken"])
+          identity(
+            String(a.payload[field]),
+            String(b.payload[field]),
+            `${path}.payload.${field}`,
+            "token",
+          );
+        identity(String(a.token), String(b.token), `${path}.token`, "token");
+        visit(a.authPath, b.authPath, `${path}.authPath`, "authPath");
+        visit(a.header, b.header, `${path}.header`, "", false, false, true);
+        const credentialsCompared = (value: Record<string, unknown>) => ({
+          ...value,
+          accessToken: null,
+          refreshToken: null,
+        });
+        visit(
+          credentialsCompared(a.payload),
+          credentialsCompared(b.payload),
+          `${path}.payload`,
+          "",
+          true,
+          false,
+          false,
+          true,
+        );
+        visit(
+          credentialsCompared(a.account),
+          credentialsCompared(b.account),
+          `${path}.account`,
+          "",
+          false,
+          false,
           false,
           true,
         );

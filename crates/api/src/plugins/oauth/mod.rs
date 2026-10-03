@@ -130,6 +130,50 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
             _ => Ok(None),
         }
     }
+
+    async fn after_request(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+        mut response: AuthResponse,
+    ) -> AuthResult<AuthResponse> {
+        // Source renews an existing account JWE whenever setCookieCache emits
+        // a session cache, unless this endpoint already owns account issuance.
+        let account_name =
+            better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, "account_data");
+        let cache_name =
+            better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, "session_data");
+        let pending: Vec<_> = response
+            .headers
+            .get_all("set-cookie")
+            .filter_map(|raw| cookie::Cookie::parse(raw.clone()).ok())
+            .collect();
+        if !ctx.config.account.store_account_cookie
+            || pending.iter().any(|cookie| cookie.name() == account_name)
+            || !pending.iter().any(|cookie| {
+                cookie.name() == cache_name
+                    && !cookie.value().is_empty()
+                    && cookie.max_age().is_none_or(|age| age.whole_seconds() != 0)
+            })
+        {
+            return Ok(response);
+        }
+        let Some((user, _)) = better_auth_core::cache::runtime::published_session(req)
+            .or_else(|| req.session_hook_snapshot())
+        else {
+            return Ok(response);
+        };
+        let Ok(Some(account)) = handlers::decode_account_cookie(req, &ctx.config) else {
+            return Ok(response);
+        };
+        let header = if account.user_id == user.id {
+            handlers::create_account_cookie_header(&ctx.config, &account)?
+        } else {
+            better_auth_core::utils::cookie_utils::create_clear_cookie(&account_name, &ctx.config)
+        };
+        response.headers.append("set-cookie", header);
+        Ok(response)
+    }
 }
 
 impl std::fmt::Debug for OAuthPlugin {

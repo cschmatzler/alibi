@@ -253,7 +253,13 @@ pub(super) async fn handle_get_access_token(
         Ok(selection) => selection,
         Err(message) => return invalid_selection("body", &message),
     };
-    let (_, session) = match ctx.require_session(req).await {
+    let mut session_request = req.clone();
+    drop(
+        session_request
+            .query
+            .insert("disableCookieCache".into(), "true".into()),
+    );
+    let (_, session) = match ctx.require_cached_session(&session_request).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
@@ -277,7 +283,13 @@ pub(super) async fn handle_refresh_token(
         Ok(selection) => selection,
         Err(message) => return invalid_selection("body", &message),
     };
-    let (_, session) = match ctx.require_session(req).await {
+    let mut session_request = req.clone();
+    drop(
+        session_request
+            .query
+            .insert("disableCookieCache".into(), "true".into()),
+    );
+    let (_, session) = match ctx.require_cached_session(&session_request).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));

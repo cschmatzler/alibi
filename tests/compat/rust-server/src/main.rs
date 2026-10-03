@@ -854,7 +854,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let bearer_router =
         bearer_fixture::router(&config, database.clone(), multiple_session_counter.clone()).await?;
-    let managed_secrets_router = managed_secrets_fixture::router(&config, database.clone()).await?;
+    let managed_secrets_router = managed_secrets_fixture::router(&config, database.clone(), || {
+        mock_oauth_plugin(
+            port,
+            social_profile.clone(),
+            social_id_token_valid.clone(),
+            oauth_refresh_mode.clone(),
+        )
+    })
+    .await?;
     let custom_session_router =
         custom_session_fixture::router(&config, database.clone(), multiple_session_counter.clone())
             .await?;

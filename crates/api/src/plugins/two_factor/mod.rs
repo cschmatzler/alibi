@@ -2625,13 +2625,9 @@ mod tests {
                         ctx.database
                             .create_two_factor(CreateTwoFactor {
                                 user_id: user.id.clone(),
-                                secret: encrypt_value(&ctx.config, "historical-secret")
+                                secret: encrypt_value(&ctx.config, "historical-secret").unwrap(),
+                                backup_codes: encrypt_value(&ctx.config, "[\"historical-backup\"]")
                                     .unwrap(),
-                                backup_codes: encrypt_value(
-                                    &ctx.config,
-                                    "[\"historical-backup\"]",
-                                )
-                                .unwrap(),
                                 verified: Some(false),
                                 failed_verification_count: Some(0.5),
                                 locked_until: Some(Utc::now() + Duration::minutes(1)),
