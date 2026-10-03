@@ -952,3 +952,6 @@ mod tests {
     }
 }
 // LCOV_EXCL_STOP
+
+mod linear;
+pub use linear::LinearOptions;

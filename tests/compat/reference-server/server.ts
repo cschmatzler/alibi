@@ -53,6 +53,7 @@ import { kakaoProviderFixture } from "./fixtures/kakao-provider-fixture";
 import { kickProviderFixture } from "./fixtures/kick-provider-fixture";
 import { createLastLoginMethodFixture } from "./fixtures/last-login-method-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./fixtures/lifecycle-fixture";
+import { linearProviderFixture } from "./fixtures/linear-provider-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
@@ -618,6 +619,7 @@ const facebookFixture = facebookProviderFixture(authOptions);
 const figmaFixture = figmaProviderFixture(authOptions);
 const huggingfaceFixture = huggingfaceProviderFixture(authOptions);
 const kakaoFixture = kakaoProviderFixture(authOptions);
+const linearFixture = linearProviderFixture(authOptions);
 const kickFixture = kickProviderFixture(authOptions);
 const atlassianFixture = atlassianProviderFixture(authOptions);
 const appleFixture = appleProviderFixture(authOptions);
@@ -656,6 +658,9 @@ for (const [path, instance] of huggingfaceFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of kakaoFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of linearFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of kickFixture.profiles) {
@@ -1634,6 +1639,8 @@ const server = Bun.serve({
       if (kakaoControl) {
         return kakaoControl;
       }
+      const linearControl = await linearFixture.handle(request);
+      if (linearControl) return linearControl;
       const kickControl = await kickFixture.handle(request);
       if (kickControl) {
         return kickControl;
@@ -2474,6 +2481,7 @@ const server = Bun.serve({
         figmaFixture.reset();
         huggingfaceFixture.reset();
         kakaoFixture.reset();
+        linearFixture.reset();
         kickFixture.reset();
         atlassianFixture.reset();
         appleFixture.reset();

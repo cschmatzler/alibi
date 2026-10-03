@@ -28,10 +28,11 @@ pub use id_token::{
 pub use providers::{
     AppleOptions, AtlassianOptions, CloudflareOptions, CognitoOptions, DropboxAccessType,
     DropboxOptions, FacebookOptions, FigmaOptions, HuggingFaceOptions, KakaoOptions, KickOptions,
-    OAuthAccountSubject, OAuthAuthorizationPolicy, OAuthCallbackUserName, OAuthCallbackUserPayload,
-    OAuthConfig, OAuthIdTokenVerifier, OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeEncoding,
-    OAuthScopeOrder, OAuthTokenEndpointAuth, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler,
-    OAuthUserInfoRequest, OAuthUserInfoResponse,
+    LinearOptions, OAuthAccountSubject, OAuthAuthorizationPolicy, OAuthCallbackUserName,
+    OAuthCallbackUserPayload, OAuthConfig, OAuthIdTokenVerifier, OAuthProvider,
+    OAuthRefreshTokenHandler, OAuthScopeEncoding, OAuthScopeOrder, OAuthTokenEndpointAuth,
+    OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 pub(in crate::plugins) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,
