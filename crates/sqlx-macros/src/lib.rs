@@ -245,7 +245,7 @@ fn try_generate_model(input: &DeriveInput) -> syn::Result<TokenStream> {
     let table = table_attribute(input)?;
     let fields = codegen::named_fields(input)?;
     let columns = columns(input, fields)?;
-    model_impl(&input.ident, &table, &columns, &roots)
+    model_impl(&input.ident, &table, &columns, None, &roots)
 }
 
 fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
@@ -273,7 +273,7 @@ fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
         }
         .to_owned()
     });
-    let model = model_impl(ident, &table, &columns, &roots)?;
+    let model = model_impl(ident, &table, &columns, Some(attributes.role), &roots)?;
     let secondary = attributes.secondary_storage;
     let core_root = &roots.core;
     let role_impl = match attributes.role {
@@ -317,8 +317,15 @@ fn model_impl(
     ident: &Ident,
     table: &str,
     columns: &[Column],
+    role: Option<EntityRole>,
     roots: &Roots,
 ) -> syn::Result<TokenStream> {
+    let verification_column = if matches!(role, Some(EntityRole::User)) {
+        let name = physical(columns, "email_verified")?;
+        quote! { ::std::option::Option::Some(#name) }
+    } else {
+        quote! { ::std::option::Option::None }
+    };
     let sqlx_root = &roots.sqlx;
     let core_root = &roots.core;
     let primary_key = physical(columns, "id")?;
@@ -363,6 +370,7 @@ fn model_impl(
             const COLUMNS: &'static [#sqlx_root::model::ColumnDef] = &[#(#definitions),*];
             const COLUMN_NAMES: &'static [&'static str] = &[#(#names),*];
             const PRIMARY_KEY: &'static str = #primary_key;
+            const PROVIDER_VERIFICATION_COLUMN: ::std::option::Option<&'static str> = #verification_column;
 
             fn into_active(self) -> #sqlx_root::model::ActiveRow {
                 let mut active = #sqlx_root::model::ActiveRow::new();

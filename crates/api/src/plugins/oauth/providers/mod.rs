@@ -1,5 +1,34 @@
+pub(super) mod remaining_profile;
+mod roblox;
+pub use roblox::RobloxOptions;
+mod salesforce;
+pub use salesforce::{SalesforceEnvironment, SalesforceOptions};
+mod slack;
+pub use slack::SlackOptions;
+mod spotify;
+pub use spotify::SpotifyOptions;
+mod tiktok;
+pub use tiktok::TikTokOptions;
+mod twitch;
+pub use twitch::TwitchOptions;
+mod twitter;
+pub use twitter::TwitterOptions;
+mod vercel;
+pub use vercel::VercelOptions;
+mod vk;
+pub use vk::VkOptions;
+mod wechat;
+pub use wechat::{WeChatLanguage, WeChatOptions};
+mod zoom;
+pub use zoom::ZoomOptions;
+
+mod reddit;
+pub use reddit::RedditOptions;
 mod railway;
 pub use railway::RailwayOptions;
+mod paypal;
+pub use paypal::{PayPalEnvironment, PayPalOptions};
+
 mod paybin;
 pub use paybin::PaybinOptions;
 mod polar;
@@ -127,14 +156,77 @@ pub type OAuthAccountSubject = fn(&Value) -> Result<String, String>;
 
 #[async_trait]
 pub trait OAuthUserInfoHandler: Send + Sync {
+    /// Retain factory-specific use of the original configured client array.
+    fn configured_client_ids(&self, _ids: &[String]) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        None
+    }
+
+    /// Custom application callbacks throw on failure; factory transports can
+    /// return a missing profile and tag only their uncaught projection failures.
+    fn errors_are_exceptions(&self) -> bool {
+        true
+    }
+
+    /// Factory handlers can install application mapping before projecting raw
+    /// profile fields. Custom getUserInfo callbacks retain their precedence.
+    fn mapped_handler(
+        &self,
+        _mapper: Arc<dyn OAuthProfileMapper>,
+    ) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        None
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String>;
 }
 
+/// Asynchronous partial application mapping of the original provider profile.
+/// Absent keys retain published defaults; raw output remains independent from
+/// typed persistence, and returned IDs never replace original account authority.
+#[async_trait]
+pub trait OAuthProfileMapper: Send + Sync {
+    async fn map_profile(
+        &self,
+        profile: Value,
+    ) -> Result<better_auth_core::field_policy::FieldOutput, String>;
+}
+
+pub(super) fn apply_application_mapping(
+    response: &mut OAuthUserInfoResponse,
+    mapped: better_auth_core::field_policy::FieldOutput,
+) -> Result<(), String> {
+    let output = response
+        .user_output
+        .get_or_insert_with(|| response.user.public_profile(true));
+    output.extend(mapped.clone());
+    for (key, value) in mapped {
+        match key.as_str() {
+            "id" => response.user.id = remaining_profile::js_string(&value)?,
+            "email" => response.user.email = value.as_str().unwrap_or_default().into(),
+            "emailVerified" => response.user.email_verified = remaining_profile::truthy(&value),
+            "name" => {
+                response.user.name = remaining_profile::scalar(
+                    Some(&value).filter(|value| remaining_profile::truthy(value)),
+                )?
+            }
+            "image" => response.user.image = remaining_profile::scalar(Some(&value))?,
+            _ => {
+                drop(response.user.additional_fields.insert(key, value));
+            }
+        }
+    }
+    Ok(())
+}
+
 #[async_trait]
 pub trait OAuthRefreshTokenHandler: Send + Sync {
+    /// Reconfigure a factory transport that directly interpolates client IDs.
+    fn configured_client_ids(&self, _ids: &[String]) -> Option<Arc<dyn OAuthRefreshTokenHandler>> {
+        None
+    }
+
     async fn refresh_access_token(&self, refresh_token: &str) -> Result<OAuthTokenSet, String>;
 }
 
@@ -372,6 +464,40 @@ pub enum OAuthTokenEndpointAuth {
     ClientSecretPost,
     PrivateKeyJwt,
     None,
+    /// TikTok authenticates with client_key and client_secret, never client_id.
+    ClientKeyPost,
+}
+
+#[derive(Debug, Clone)]
+pub struct OAuthAuthorizationCodeContext {
+    pub code: String,
+    pub redirect_uri: String,
+    pub code_verifier: Option<String>,
+    pub device_id: Option<String>,
+}
+
+#[async_trait]
+pub trait OAuthAuthorizationCodeHandler: Send + Sync {
+    /// Reconfigure a factory transport that directly interpolates client IDs.
+    fn configured_client_ids(
+        &self,
+        _ids: &[String],
+    ) -> Option<Arc<dyn OAuthAuthorizationCodeHandler>> {
+        None
+    }
+
+    async fn validate_authorization_code(
+        &self,
+        context: OAuthAuthorizationCodeContext,
+    ) -> Result<OAuthTokenSet, String>;
+}
+
+#[derive(Clone)]
+pub struct OAuthAuthorizationCodeCallback(pub Arc<dyn OAuthAuthorizationCodeHandler>);
+impl std::fmt::Debug for OAuthAuthorizationCodeCallback {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("OAuthAuthorizationCodeCallback(..)")
+    }
 }
 
 /// Immutable authorization configuration used by the built-in social providers.
@@ -379,7 +505,30 @@ pub enum OAuthTokenEndpointAuth {
 /// opt into removing exact duplicates.
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationPolicy {
+    /// Application-owned or provider-specific code grant implementation.
+    pub authorization_code: Option<OAuthAuthorizationCodeCallback>,
+    /// A code grant can retain PKCE even when authorization disables it (Zoom).
+    pub authorization_code_pkce: Option<bool>,
+    /// Name of the client identifier in custom authorization URLs.
+    pub client_id_parameter: String,
+    /// Custom URL factories may interpolate the entire client array.
+    pub literal_client_id: Option<String>,
+    /// WeChat's custom factory constructs an expiry even for zero/null seconds.
+    pub token_expiry_always: bool,
+    /// Custom factory token objects can omit returned grant ID tokens.
+    pub token_response_omits_id_token: bool,
+    pub scope_separator: String,
+    pub emit_empty_scope: bool,
+    pub authorization_fragment: Option<String>,
+    /// Dedicated factories may lack a built-in refresh implementation (Vercel).
+    pub supports_refresh: bool,
+    /// TikTok's published factory ignores mapProfileToUser.
+    pub supports_profile_mapper: bool,
+    /// Published social factories pass through omitted access tokens to userinfo.
+    pub allow_missing_access_token: bool,
     pub configured_scopes: Vec<String>,
+    /// Providers such as PayPal deliberately omit even configured/requested scopes.
+    pub omit_scopes: bool,
     pub scope_encoding: OAuthScopeEncoding,
     /// Retain the first occurrence of each scope, as Cloudflare requires.
     pub deduplicate_scopes: bool,
@@ -392,6 +541,8 @@ pub struct OAuthAuthorizationPolicy {
     pub fixed_authorization_params: Vec<(String, String)>,
     /// Optional application client key sent in authorization-code forms only.
     pub authorization_code_client_key: Option<String>,
+    /// Trusted provider headers applied to authorization-code grants only.
+    pub authorization_code_headers: Vec<(String, String)>,
     /// Required by private_key_jwt; invoked afresh for each real token grant.
     pub client_assertion: Option<OAuthClientAssertion>,
     /// Exact configured refresh scope, including an explicitly empty value.
@@ -410,12 +561,37 @@ pub struct OAuthAuthorizationPolicy {
     pub default_prompt: Option<String>,
     /// Discord emits this JS number only when the effective scopes contain `bot`.
     pub discord_permissions: Option<f64>,
+    /// Preserve thrown decoded grant-profile failures instead of redirecting.
+    /// Missing/falsy ID tokens still follow the absent-profile redirect.
+    pub propagate_grant_profile_errors: bool,
+    /// Preserve effective raw email type errors at their callback stage.
+    /// Typed native profile fields remain unchanged.
+    pub preserve_raw_email_errors: bool,
+    /// Retain the published adapter scalar rather than discarding it in bool projection.
+    pub preserve_raw_profile_scalars: bool,
+    /// Some published factories omit their returned options object entirely.
+    pub honor_factory_options: bool,
+    /// Preserve uncaught published profile/application callback exceptions.
+    pub source_profile_exceptions: bool,
 }
 
 impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
+            authorization_code: None,
+            authorization_code_pkce: None,
+            client_id_parameter: "client_id".into(),
+            literal_client_id: None,
+            token_expiry_always: false,
+            token_response_omits_id_token: false,
+            scope_separator: " ".into(),
+            emit_empty_scope: false,
+            authorization_fragment: None,
+            supports_refresh: true,
+            supports_profile_mapper: true,
+            allow_missing_access_token: false,
             configured_scopes: Vec::new(),
+            omit_scopes: false,
             scope_encoding: OAuthScopeEncoding::Form,
             deduplicate_scopes: false,
             require_client_id: false,
@@ -423,6 +599,7 @@ impl Default for OAuthAuthorizationPolicy {
             refresh_token_endpoint_auth: None,
             fixed_authorization_params: Vec::new(),
             authorization_code_client_key: None,
+            authorization_code_headers: Vec::new(),
             client_assertion: None,
             refresh_scope: None,
             response_type: "code".into(),
@@ -436,11 +613,32 @@ impl Default for OAuthAuthorizationPolicy {
             prompt: None,
             default_prompt: None,
             discord_permissions: None,
+            propagate_grant_profile_errors: false,
+            preserve_raw_email_errors: false,
+            preserve_raw_profile_scalars: false,
+            honor_factory_options: true,
+            source_profile_exceptions: false,
         }
     }
 }
 
 impl OAuthProvider {
+    /// Install asynchronous partial mapping on the dedicated factory's profile
+    /// handler. Installing a custom userinfo handler afterwards replaces both
+    /// the default transport and mapping, matching getUserInfo precedence.
+    #[must_use]
+    pub fn with_profile_mapper(mut self, mapper: Arc<dyn OAuthProfileMapper>) -> Self {
+        if self
+            .authorization
+            .as_ref()
+            .is_none_or(|policy| policy.supports_profile_mapper)
+            && let Some(handler) = self.get_user_info.take()
+        {
+            self.get_user_info = Some(handler.mapped_handler(mapper).unwrap_or(handler));
+        }
+        self
+    }
+
     /// GitLab.com social login with the published `read_user` scope and PKCE.
     #[must_use]
     pub fn gitlab(client_id: &str, client_secret: &str) -> Self {
@@ -484,6 +682,32 @@ impl OAuthProvider {
 
     #[must_use]
     pub fn with_client_ids(mut self, client_ids: Vec<String>) -> Self {
+        if let Some(handler) = self
+            .get_user_info
+            .as_ref()
+            .and_then(|handler| handler.configured_client_ids(&client_ids))
+        {
+            self.get_user_info = Some(handler);
+        }
+        if let Some(handler) = self
+            .refresh_access_token
+            .as_ref()
+            .and_then(|handler| handler.configured_client_ids(&client_ids))
+        {
+            self.refresh_access_token = Some(handler);
+        }
+        if let Some(policy) = self.authorization.as_mut() {
+            if policy.client_id_parameter == "appid" {
+                policy.literal_client_id = Some(client_ids.join(","));
+            }
+            if let Some(handler) = policy
+                .authorization_code
+                .as_ref()
+                .and_then(|callback| callback.0.configured_client_ids(&client_ids))
+            {
+                policy.authorization_code = Some(OAuthAuthorizationCodeCallback(handler));
+            }
+        }
         if let Some(policy) = self.id_token.as_mut() {
             policy.client_ids = Some(client_ids.clone());
         }

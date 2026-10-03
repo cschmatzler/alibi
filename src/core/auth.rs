@@ -941,6 +941,9 @@ impl<S: AuthSchema> BetterAuth<S> {
         }
 
         let update_user = UpdateUser {
+            provider_email_verified: None,
+            provider_name: None,
+            provider_image: None,
             additional_fields,
             is_anonymous: None,
             phone_number: clear_phone.then_some(None),

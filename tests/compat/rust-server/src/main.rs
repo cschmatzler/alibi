@@ -31,13 +31,13 @@ use fixtures::{
     organization_membership_policy_fixture, organization_timestamp_fixture,
     organization_transport_probe, organization_update_hooks_fixture,
     passkey_authentication_fixture, passkey_fixture, passkey_registration_fixture,
-    paybin_provider_fixture, physical_cookie_fixture, polar_provider_fixture,
-    railway_provider_fixture, rate_limit_fixture, server_endpoint_fixture,
-    session_cookie_cache_fixture, session_fields_fixture, set_password_fixture,
-    signup_policy_fixture, siwe_fixture, social_provider_fixture, team_fixture,
-    two_factor_delivery_fixture, two_factor_otp_fixture, two_factor_pending_lookup_fixture,
-    two_factor_policy_fixture, two_factor_totp_fixture, user_lifecycle_fixture,
-    user_validation_fixture, verification_storage_fixture,
+    paybin_provider_fixture, paypal_provider_fixture, physical_cookie_fixture,
+    polar_provider_fixture, provider_batch_fixture, railway_provider_fixture, rate_limit_fixture,
+    reddit_provider_fixture, server_endpoint_fixture, session_cookie_cache_fixture,
+    session_fields_fixture, set_password_fixture, signup_policy_fixture, siwe_fixture,
+    social_provider_fixture, team_fixture, two_factor_delivery_fixture, two_factor_otp_fixture,
+    two_factor_pending_lookup_fixture, two_factor_policy_fixture, two_factor_totp_fixture,
+    user_lifecycle_fixture, user_validation_fixture, verification_storage_fixture,
 };
 
 // Bun's Response.json adds UTF-8 to private control responses. Public auth
@@ -888,8 +888,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         oauth_proxy_fixture::managed_router(&config).await?;
     let (railway_router, railway_reset) =
         railway_provider_fixture::router(&config, database.clone()).await?;
+    let (reddit_router, reddit_reset) =
+        reddit_provider_fixture::router(&config, database.clone()).await?;
+    let (provider_batch_router, provider_batch_reset) =
+        provider_batch_fixture::router(&config, database.clone()).await?;
     let (polar_router, polar_reset) =
         polar_provider_fixture::router(&config, database.clone()).await?;
+    let (paypal_router, paypal_reset) =
+        paypal_provider_fixture::router(&config, database.clone()).await?;
     let (notion_router, notion_reset) =
         notion_provider_fixture::router(&config, database.clone()).await?;
     let (paybin_router, paybin_reset) =
@@ -1420,8 +1426,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let social_id_token_valid = social_id_token_valid_for_reset.clone();
                 let database = database_for_reset.clone();
                 let railway_reset=railway_reset.clone();
+                let reddit_reset=reddit_reset.clone();
+                let provider_batch_reset=provider_batch_reset.clone();
                 let polar_reset=polar_reset.clone();
                 let notion_reset=notion_reset.clone();
+                let paypal_reset=paypal_reset.clone();
                 let paybin_reset=paybin_reset.clone();
                 let cloudflare_reset=cloudflare_reset.clone();
                 let cognito_reset=cognito_reset.clone();
@@ -1448,8 +1457,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 async move {
                     api_key_storage_reset.reset().await;
                     railway_reset.reset().await;
+                    reddit_reset.reset().await;
+                    provider_batch_reset.reset().await;
                     polar_reset.reset().await;
                     notion_reset.reset().await;
+                    paypal_reset.reset().await;
                     paybin_reset.reset().await;
                     cloudflare_reset.reset().await;
                     cognito_reset.reset().await;
@@ -2086,8 +2098,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_state(auth)
         .merge(error_page_router)
         .merge(railway_router)
+        .merge(reddit_router)
+        .merge(provider_batch_router)
         .merge(polar_router)
         .merge(notion_router)
+        .merge(paypal_router)
         .merge(paybin_router)
         .merge(cloudflare_router)
         .merge(cognito_router)

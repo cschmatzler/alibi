@@ -197,7 +197,13 @@ impl<S: AuthSchema> PluginStore<S> {
     }
 
     async fn user_record(&self, user: S::User) -> AuthResult<crate::AdapterRecord<S::User>> {
-        self.projection_context.user_adapter_record(user).await
+        use crate::AuthUser;
+        let verification = self.inner.provider_verification_output(&user.id()).await?;
+        let mut record = self.projection_context.user_adapter_record(user).await?;
+        if let Some(value) = verification {
+            record.retain_provider_verification(value);
+        }
+        Ok(record)
     }
 
     async fn session_record(
@@ -323,6 +329,13 @@ impl<S: AuthSchema> PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> UserStore<S> for PluginStore<S> {
+    async fn provider_verification_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<serde_json::Value>> {
+        self.inner.provider_verification_output(id).await
+    }
+
     async fn create_user_record(
         &self,
         create_user: CreateUser,
@@ -921,6 +934,10 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
 
 #[async_trait]
 impl<S: AuthSchema> AccountStore<S> for PluginStore<S> {
+    async fn provider_token_text(&self, value: &serde_json::Value) -> AuthResult<Option<String>> {
+        self.inner.provider_token_text(value).await
+    }
+
     async fn create_account_record(
         &self,
         create_account: CreateAccount,
@@ -1671,8 +1688,34 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
     }
 }
 
+impl<S: AuthSchema> PluginTransaction<'_, S> {
+    async fn transaction_user_record(
+        &self,
+        user: S::User,
+    ) -> AuthResult<crate::AdapterRecord<S::User>> {
+        use crate::AuthUser;
+        let verification = self.inner.provider_verification_output(&user.id()).await?;
+        let mut record = self
+            .record_store
+            .projection_context
+            .user_adapter_record(user)
+            .await?;
+        if let Some(value) = verification {
+            record.retain_provider_verification(value);
+        }
+        Ok(record)
+    }
+}
+
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    async fn provider_verification_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<serde_json::Value>> {
+        self.inner.provider_verification_output(id).await
+    }
+
     async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
         self.inner.list_jwks().await
     }
@@ -1688,7 +1731,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         create_user: CreateUser,
     ) -> AuthResult<crate::AdapterRecord<S::User>> {
         let model = self.create_user(create_user).await?;
-        let record = self.record_store.user_record(model).await?;
+        let record = self.transaction_user_record(model).await?;
         self.observe(AdapterEvent::UserCreated(record.clone()))?;
         Ok(record)
     }
@@ -1699,7 +1742,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         source: UserValidationSource,
     ) -> AuthResult<crate::AdapterRecord<S::User>> {
         let model = self.create_user_with_source(create_user, source).await?;
-        let record = self.record_store.user_record(model).await?;
+        let record = self.transaction_user_record(model).await?;
         self.observe(AdapterEvent::UserCreated(record.clone()))?;
         Ok(record)
     }
@@ -1709,7 +1752,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         prepared: PreparedUserCreation,
     ) -> AuthResult<crate::AdapterRecord<S::User>> {
         let model = self.create_user_prepared(prepared).await?;
-        let record = self.record_store.user_record(model).await?;
+        let record = self.transaction_user_record(model).await?;
         self.observe(AdapterEvent::UserCreated(record.clone()))?;
         Ok(record)
     }
@@ -1721,7 +1764,7 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         let Some(model) = self.get_user_by_id(id).await? else {
             return Ok(None);
         };
-        let record = self.record_store.user_record(model).await?;
+        let record = self.transaction_user_record(model).await?;
         Ok(Some(record))
     }
 
@@ -2031,6 +2074,16 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    /// Read the provider verification column using the adapter's physical scalar
+    /// rules. This is retained output, not authorization input; typed models
+    /// continue to supply the canonical boolean accessor.
+    async fn provider_verification_output(
+        &self,
+        _id: &str,
+    ) -> AuthResult<Option<serde_json::Value>> {
+        Ok(None)
+    }
+
     /// Stage a session using the actual transaction-local model and creation hooks.
     async fn prepare_secondary_session_creation(
         &self,
@@ -2269,6 +2322,16 @@ pub enum NumericTextInput {
 
 #[async_trait]
 pub trait UserStore<S: AuthSchema>: Send + Sync {
+    /// Read the provider verification column using the adapter's physical scalar
+    /// rules. This is retained output, not authorization input; typed models
+    /// continue to supply the canonical boolean accessor.
+    async fn provider_verification_output(
+        &self,
+        _id: &str,
+    ) -> AuthResult<Option<serde_json::Value>> {
+        Ok(None)
+    }
+
     /// Return a retained adapter record. The default is the physical model's
     /// serialized snapshot; initialized stores apply their declared output policy.
     async fn create_user_record(
@@ -2727,6 +2790,23 @@ pub trait SessionStore<S: AuthSchema>: Send + Sync {
 
 #[async_trait]
 pub trait AccountStore<S: AuthSchema>: Send + Sync {
+    /// Apply the physical token TEXT column's scalar affinity before persistence.
+    /// SQL adapters override this for their own boolean/numeric representation.
+    async fn provider_token_text(&self, value: &serde_json::Value) -> AuthResult<Option<String>> {
+        if value.is_null() {
+            return Ok(None);
+        }
+        if value.is_object() || value.is_array() {
+            return Err(AuthError::internal(
+                "Unsupported provider token SQL parameter",
+            ));
+        }
+        crate::utils::json::JsValue::from(value.clone())
+            .coerce_string()
+            .map(Some)
+            .map_err(AuthError::internal)
+    }
+
     /// Return a retained adapter record. The default is the physical model's
     /// serialized snapshot; initialized stores apply their declared output policy.
     async fn create_account_record(

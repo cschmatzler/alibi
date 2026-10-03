@@ -52,13 +52,15 @@ where
             .await
             .map_err(map_db_err)?;
         let owner_id = S::User::parse_id(&data.user_id)?;
-        let owner = <S::User as SeaOrmUserModel>::Entity::find()
-            .filter(S::User::id_column().eq(owner_id))
-            .lock_shared()
-            .one(&transaction)
-            .await
-            .map_err(map_db_err)?
-            .ok_or(AuthError::UserNotFound)?;
+        let owner = super::users::user_query::<S::User>(
+            sea_orm::ConnectionTrait::get_database_backend(&transaction),
+        )
+        .filter(S::User::id_column().eq(owner_id))
+        .lock_shared()
+        .one(&transaction)
+        .await
+        .map_err(map_db_err)?
+        .ok_or(AuthError::UserNotFound)?;
         let created = wallet_address::ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             user_id: Set(owner.id().into_owned()),

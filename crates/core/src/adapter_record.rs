@@ -108,6 +108,10 @@ impl<M> AdapterRecord<M> {
         Self { stored, output }
     }
 
+    pub(crate) fn retain_provider_verification(&mut self, value: serde_json::Value) {
+        self.output.insert("emailVerified".into(), Some(value));
+    }
+
     #[must_use]
     pub const fn stored(&self) -> &M {
         &self.stored

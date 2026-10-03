@@ -146,6 +146,9 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     const COLUMN_NAMES: &'static [&'static str];
     /// Physical primary-key column.
     const PRIMARY_KEY: &'static str;
+    /// Provider verification column whose SQLite storage may retain raw scalars.
+    /// Other model roles and handwritten models retain their existing projection.
+    const PROVIDER_VERIFICATION_COLUMN: Option<&'static str> = None;
 
     /// Every column as an unchanged value.
     fn into_active(self) -> ActiveRow;
@@ -184,13 +187,68 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     }
 }
 
+fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
+    for (index, column) in M::COLUMN_NAMES.iter().enumerate() {
+        if index > 0 {
+            sql.push(", ");
+        }
+        let raw_verification = sql.engine() == crate::pool::Engine::Sqlite
+            && M::PROVIDER_VERIFICATION_COLUMN == Some(*column);
+        let emit_column = |sql: &mut Sql| {
+            if qualified {
+                sql.column(M::TABLE, column);
+            } else {
+                sql.ident(column);
+            }
+        };
+        if raw_verification {
+            // Match the published SQLite adapter's numeric boolean conversion:
+            // only 1 is true. Strings remain raw in adapter output; the typed
+            // Rust accessor uses their truthiness without changing the column.
+            sql.push("CASE WHEN typeof(");
+            emit_column(sql);
+            sql.push(") IN ('integer', 'real') THEN ");
+            emit_column(sql);
+            sql.push(" = 1 WHEN ");
+            emit_column(sql);
+            sql.push(" IS NULL THEN NULL ELSE ");
+            emit_column(sql);
+            sql.push(" <> '' END AS ");
+            sql.ident(column);
+        } else {
+            emit_column(sql);
+        }
+    }
+}
+
 pub(crate) fn select_model<M: SqlxModel>(exec: Exec<'_>) -> Sql {
-    select(exec.engine(), M::TABLE, M::COLUMN_NAMES)
+    if exec.engine() != crate::pool::Engine::Sqlite || M::PROVIDER_VERIFICATION_COLUMN.is_none() {
+        return select(exec.engine(), M::TABLE, M::COLUMN_NAMES);
+    }
+    let mut sql = Sql::new(exec.engine());
+    sql.push("SELECT ");
+    projection::<M>(&mut sql, true);
+    sql.push(" FROM ");
+    sql.ident(M::TABLE);
+    sql
 }
 
 pub(crate) fn returning<M: SqlxModel>(sql: &mut Sql) {
     sql.push(" RETURNING ");
-    sql.column_list(M::COLUMN_NAMES);
+    projection::<M>(sql, false);
+}
+
+fn bind_model_value<M: SqlxModel>(sql: &mut Sql, column: &str, value: SqlValue) {
+    let cast = sql.engine() == crate::pool::Engine::Postgres
+        && M::PROVIDER_VERIFICATION_COLUMN == Some(column)
+        && matches!(&value, SqlValue::Text(_));
+    if cast {
+        sql.push("CAST(");
+    }
+    sql.bind(M::column_value(column, value));
+    if cast {
+        sql.push(" AS BOOLEAN)");
+    }
 }
 
 /// `INSERT ... RETURNING` every present column.
@@ -202,11 +260,14 @@ pub(crate) async fn insert<M: SqlxModel>(exec: Exec<'_>, active: &ActiveRow) -> 
     let present = active.present().collect::<Vec<_>>();
     sql.column_list(&present.iter().map(|(name, _)| *name).collect::<Vec<_>>());
     sql.push(") VALUES ");
-    sql.bind_list(
-        present
-            .into_iter()
-            .map(|(column, value)| M::column_value(column, value.clone())),
-    );
+    sql.push("(");
+    for (index, (column, value)) in present.into_iter().enumerate() {
+        if index > 0 {
+            sql.push(", ");
+        }
+        bind_model_value::<M>(&mut sql, column, value.clone());
+    }
+    sql.push(")");
     returning::<M>(&mut sql);
     exec.fetch_optional::<M>(sql)
         .await?
@@ -240,7 +301,9 @@ pub(crate) async fn update<M: SqlxModel>(
         if index > 0 {
             sql.push(", ");
         }
-        sql.assign(column, M::column_value(column, value.clone()));
+        sql.ident(column);
+        sql.push(" = ");
+        bind_model_value::<M>(&mut sql, column, value.clone());
     }
     sql.push(" WHERE ");
     sql.compare_model::<M>(M::TABLE, M::PRIMARY_KEY, " = ", key);

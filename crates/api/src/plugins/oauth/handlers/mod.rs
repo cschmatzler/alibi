@@ -1,4 +1,4 @@
-use super::encryption::encrypt_token_set;
+use super::encryption::{encrypt_provider_token_set, encrypt_token_set, provider_token_nulls};
 use super::providers::{
     OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthClientAssertionContext, OAuthConfig,
     OAuthProvider, OAuthScopeOrder, OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet,
@@ -141,8 +141,16 @@ pub(in crate::plugins) struct OAuthProcessPolicy {
 impl OAuthProcessPolicy {
     const fn for_provider(provider: &OAuthProvider, callback_url: Option<String>) -> Self {
         Self {
-            override_user_info: provider.override_user_info_on_sign_in,
-            require_email_verification: provider.require_email_verification,
+            override_user_info: provider.override_user_info_on_sign_in
+                && match &provider.authorization {
+                    Some(policy) => policy.honor_factory_options,
+                    None => true,
+                },
+            require_email_verification: provider.require_email_verification
+                && match &provider.authorization {
+                    Some(policy) => policy.honor_factory_options,
+                    None => true,
+                },
             callback_url,
             use_updated_user: true,
         }
@@ -215,6 +223,9 @@ fn build_authorization_url(
             )
         },
         |policy| {
+            if policy.omit_scopes {
+                return Vec::new();
+            }
             let mut effective = Vec::new();
             if !policy.disable_default_scopes {
                 effective.extend(provider.scopes.iter().map(String::as_str));
@@ -238,7 +249,12 @@ fn build_authorization_url(
             effective
         },
     );
-    let scope_str = effective_scopes.join(" ");
+    let scope_str = effective_scopes.join(
+        provider
+            .authorization
+            .as_ref()
+            .map_or(" ", |policy| policy.scope_separator.as_str()),
+    );
 
     let mut url = url::Url::parse(&provider.auth_url)
         .map_err(|error| AuthError::internal(format!("Invalid auth URL: {error}")))?;
@@ -250,9 +266,26 @@ fn build_authorization_url(
             .as_ref()
             .map_or("code", |policy| policy.response_type.as_str()),
     );
-    set_authorization_param(&mut url, "client_id", &provider.client_id);
+    set_authorization_param(
+        &mut url,
+        provider
+            .authorization
+            .as_ref()
+            .map_or("client_id", |policy| policy.client_id_parameter.as_str()),
+        provider
+            .authorization
+            .as_ref()
+            .and_then(|policy| policy.literal_client_id.as_deref())
+            .unwrap_or(&provider.client_id),
+    );
     set_authorization_param(&mut url, "state", state);
-    if provider.authorization.is_none() || !effective_scopes.is_empty() {
+    if provider.authorization.is_none()
+        || !effective_scopes.is_empty()
+        || provider
+            .authorization
+            .as_ref()
+            .is_some_and(|policy| policy.emit_empty_scope)
+    {
         set_authorization_param(&mut url, "scope", &scope_str);
     }
     set_authorization_param(
@@ -319,12 +352,20 @@ fn build_authorization_url(
     }
     if let Some(params) = additional_params {
         for (key, value) in params {
+            if provider.authorization.as_ref().is_some_and(|policy| {
+                policy.client_id_parameter != "client_id" && key == &policy.client_id_parameter
+            }) {
+                continue;
+            }
             set_authorization_param(&mut url, key, value);
         }
     }
     if let Some(policy) = &provider.authorization {
         for (key, value) in &policy.fixed_authorization_params {
             set_authorization_param(&mut url, key, value);
+        }
+        if let Some(fragment) = &policy.authorization_fragment {
+            url.set_fragment(Some(fragment));
         }
     }
     if provider.authorization.as_ref().is_some_and(|policy| {
@@ -454,7 +495,13 @@ pub(super) async fn refresh_tokens_via_provider(
         .await
         .map_err(|e| AuthError::internal(format!("Failed to parse refresh response: {e}")))?;
 
-    parse_token_response(token_data)
+    parse_token_response(
+        token_data,
+        provider
+            .authorization
+            .as_ref()
+            .is_some_and(|policy| policy.allow_missing_access_token),
+    )
 }
 
 async fn provider_token_request(
@@ -472,6 +519,23 @@ async fn provider_token_request(
         .map_err(|error| AuthError::internal(format!("Token HTTP client failed: {error}")))?
         .post(&provider.token_url)
         .header("Accept", "application/json");
+    let mut request = request;
+    if grant_type == OAuthTokenGrant::AuthorizationCode
+        && let Some(policy) = &provider.authorization
+    {
+        let mut headers = reqwest::header::HeaderMap::new();
+        for (name, value) in &policy.authorization_code_headers {
+            let name =
+                reqwest::header::HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
+                    AuthError::config(format!("Invalid code grant header: {error}"))
+                })?;
+            let value = reqwest::header::HeaderValue::from_str(value).map_err(|error| {
+                AuthError::config(format!("Invalid code grant header: {error}"))
+            })?;
+            drop(headers.insert(name, value));
+        }
+        request = request.headers(headers);
+    }
     let request = match provider.authorization.as_ref().and_then(|policy| {
         if grant_type == OAuthTokenGrant::RefreshToken {
             policy
@@ -526,6 +590,14 @@ async fn provider_token_request(
             ]);
             request
         }
+        Some(OAuthTokenEndpointAuth::ClientKeyPost) => {
+            form.retain(|(key, _)| key != "client_key");
+            form.extend([
+                ("client_key".into(), provider.client_id.clone()),
+                ("client_secret".into(), provider.client_secret.clone()),
+            ]);
+            request
+        }
         Some(method) => {
             if provider.client_id.is_empty() || provider.client_secret.is_empty() {
                 return Err(AuthError::config(
@@ -554,12 +626,22 @@ async fn provider_token_request(
     Ok(request.form(&form))
 }
 
-fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenSet> {
+fn parse_token_response(
+    token_data: serde_json::Value,
+    allow_missing_access_token: bool,
+) -> AuthResult<OAuthTokenSet> {
+    if token_data.is_null() {
+        return Err(AuthError::internal("Missing token response"));
+    }
     let access_token = token_data
         .get("access_token")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| AuthError::internal("Missing access_token in token response"))?
-        .to_owned();
+        .map(str::to_owned);
+    if access_token.is_none() && !allow_missing_access_token {
+        return Err(AuthError::internal(
+            "Missing access_token in token response",
+        ));
+    }
     let refresh_token = token_data
         .get("refresh_token")
         .and_then(|v| v.as_str())
@@ -569,30 +651,20 @@ fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenS
         .and_then(|v| v.as_str())
         .map(String::from);
     let expiry = |field: &str| -> Option<chrono::DateTime<Utc>> {
-        let value = token_data.get(field)?;
-        let seconds = match value {
-            serde_json::Value::Number(number) => number.as_f64().filter(|value| *value != 0.0)?,
-            serde_json::Value::String(value) if !value.is_empty() => {
-                value.trim().parse::<f64>().ok()?
-            }
-            _ => return None,
-        };
-        let timestamp = Utc::now().timestamp_millis() as f64 + seconds * 1000.0;
-        if !timestamp.is_finite() || timestamp.abs() > 8_640_000_000_000_000.0 {
-            return None;
-        }
-        chrono::DateTime::from_timestamp_millis(timestamp.trunc() as i64)
+        super::providers::remaining_profile::grant_expiry(token_data.get(field)?, true)
     };
     let access_token_expires_at = expiry("expires_in");
     let refresh_token_expires_at = expiry("refresh_token_expires_in");
     let scopes = match token_data.get("scope") {
-        Some(serde_json::Value::String(scope)) => {
-            scope.split_whitespace().map(String::from).collect()
-        }
+        Some(serde_json::Value::String(scope)) => scope
+            .split(super::providers::remaining_profile::js_whitespace)
+            .filter(|value| !value.is_empty())
+            .map(String::from)
+            .collect(),
         Some(serde_json::Value::Array(scopes)) => scopes
             .iter()
             .filter_map(serde_json::Value::as_str)
-            .map(str::trim)
+            .map(|value| value.trim_matches(super::providers::remaining_profile::js_whitespace))
             .filter(|value| !value.is_empty())
             .map(String::from)
             .collect(),
@@ -604,7 +676,7 @@ fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenS
             .get("token_type")
             .and_then(|v| v.as_str())
             .map(String::from),
-        access_token: Some(access_token),
+        access_token,
         refresh_token,
         access_token_expires_at,
         refresh_token_expires_at,
@@ -630,6 +702,22 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
         .and_then(|policy| policy.redirect_uri.as_deref())
         .filter(|uri| !uri.is_empty())
         .unwrap_or(redirect_uri);
+    if let Some(handler) = provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.authorization_code.as_ref())
+    {
+        return handler
+            .0
+            .validate_authorization_code(super::providers::OAuthAuthorizationCodeContext {
+                code: code.into(),
+                redirect_uri: redirect_uri.into(),
+                code_verifier: code_verifier.map(str::to_owned),
+                device_id: device_id.map(str::to_owned),
+            })
+            .await
+            .map_err(AuthError::internal);
+    }
     let mut form: Vec<(&str, &str)> = vec![
         ("grant_type", "authorization_code"),
         ("code", code),
@@ -671,7 +759,13 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
         .json()
         .await
         .map_err(|e| AuthError::internal(format!("Failed to parse token response: {e}")))?;
-    parse_token_response(token_data)
+    parse_token_response(
+        token_data,
+        provider
+            .authorization
+            .as_ref()
+            .is_some_and(|policy| policy.allow_missing_access_token),
+    )
 }
 
 ///
@@ -682,10 +776,24 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
     request: OAuthUserInfoRequest,
 ) -> AuthResult<OAuthUserInfoResponse> {
     if let Some(handler) = &provider.get_user_info {
-        let response = handler
-            .get_user_info(request)
-            .await
-            .map_err(AuthError::internal)?;
+        let response = handler.get_user_info(request).await.map_err(|error| {
+            if provider
+                .authorization
+                .as_ref()
+                .is_some_and(|policy| policy.source_profile_exceptions)
+                && (handler.errors_are_exceptions()
+                    || error
+                        .starts_with(super::providers::remaining_profile::PROFILE_EXCEPTION_PREFIX))
+            {
+                AuthError::Api {
+                    status: 500,
+                    code: Some("OAUTH_PROFILE_EXCEPTION".into()),
+                    message: "Provider profile callback failed".into(),
+                }
+            } else {
+                AuthError::internal(error)
+            }
+        })?;
         return Ok(response);
     }
 
@@ -803,6 +911,17 @@ pub(in crate::plugins) fn parse_callback_user_payload(
             .and_then(|value| value.as_str())
             .map(String::from),
     })
+}
+
+fn raw_truthy(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null | serde_json::Value::Bool(false) => false,
+        serde_json::Value::Number(number) => number.as_f64() != Some(0.0),
+        serde_json::Value::String(value) => !value.is_empty(),
+        serde_json::Value::Bool(true)
+        | serde_json::Value::Array(_)
+        | serde_json::Value::Object(_) => true,
+    }
 }
 
 fn redirect_response(location: &str) -> AuthResponse {
@@ -1105,10 +1224,27 @@ pub(in crate::plugins) struct OAuthIdentity<'a> {
     pub profile: &'a serde_json::Value,
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep OAuth account matching, linking policy, and signup branches together for review"
-)]
+fn verification_override(
+    user: &impl AuthUser,
+    email: &str,
+    incoming: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    incoming.map(|incoming| {
+        if user
+            .email()
+            .is_some_and(|stored| stored.eq_ignore_ascii_case(email))
+            && user.email_verified()
+        {
+            user.adapter_snapshot()
+                .and_then(|output| output.values().get("emailVerified"))
+                .cloned()
+                .unwrap_or(serde_json::Value::Bool(true))
+        } else {
+            incoming.clone()
+        }
+    })
+}
+
 pub(in crate::plugins) async fn process_oauth_sign_in(
     identity: OAuthIdentity<'_>,
     policy: &OAuthProcessPolicy,
@@ -1117,6 +1253,35 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
     meta: &better_auth_core::RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
+    process_oauth_sign_in_with_output(
+        identity,
+        policy,
+        tokens,
+        disable_sign_up,
+        meta,
+        ctx,
+        (None, None),
+    )
+    .await
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep OAuth account matching, linking policy, and signup branches together for review"
+)]
+async fn process_oauth_sign_in_with_output(
+    identity: OAuthIdentity<'_>,
+    policy: &OAuthProcessPolicy,
+    tokens: &OAuthTokenSet,
+    disable_sign_up: bool,
+    meta: &better_auth_core::RequestMeta,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    (raw_output, raw_policy): (
+        Option<&better_auth_core::field_policy::FieldOutput>,
+        Option<&super::providers::OAuthAuthorizationPolicy>,
+    ),
+) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
+    let raw_verification = raw_output.and_then(|output| output.get("emailVerified"));
     let OAuthIdentity {
         provider_name,
         user: user_info,
@@ -1132,13 +1297,9 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         .await
         .map_err(OAuthSignInError::from_account_lookup)?;
 
-    let token_bundle = encrypt_token_set(
-        ctx,
-        tokens.access_token.clone(),
-        tokens.refresh_token.clone(),
-        tokens.id_token.clone(),
-    )
-    .map_err(|error| error.to_string())?;
+    let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_policy)
+        .await
+        .map_err(|error| error.to_string())?;
 
     if let Some(existing_account) = linked_account {
         let existing_user = ctx
@@ -1162,6 +1323,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                     .update_account_record(
                         &existing_account.id(),
                         UpdateAccount {
+                            provider_token_nulls: provider_token_nulls(tokens, raw_policy),
                             access_token: token_bundle.access_token.clone(),
                             refresh_token: token_bundle.refresh_token.clone(),
                             id_token: token_bundle.id_token.clone(),
@@ -1201,6 +1363,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
 
         if policy.override_user_info {
             let additional_fields = provider_fields(user_info, false, ctx)?;
+            let verification = verification_override(&user, &user_info.email, raw_verification);
             user = ctx
                 .database
                 .update_user_record(
@@ -1210,11 +1373,17 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                         image: user_info.image.clone(),
                         email: Some(user_info.email.to_lowercase()),
                         additional_fields,
-                        email_verified: Some(
-                            user.email()
-                                .is_some_and(|email| email.eq_ignore_ascii_case(&user_info.email))
-                                && (user.email_verified() || user_info.email_verified),
-                        ),
+                        email_verified: Some(verification.as_ref().map_or_else(
+                            || {
+                                user.email().is_some_and(|email| {
+                                    email.eq_ignore_ascii_case(&user_info.email)
+                                }) && (user.email_verified() || user_info.email_verified)
+                            },
+                            raw_truthy,
+                        )),
+                        provider_email_verified: verification,
+                        provider_name: raw_output.and_then(|output| output.get("name")).cloned(),
+                        provider_image: raw_output.and_then(|output| output.get("image")).cloned(),
                         ..Default::default()
                     },
                 )
@@ -1232,15 +1401,21 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                 user_id: existing_account.user_id().to_string(),
                 provider_id: provider_name.to_owned(),
                 account_id: existing_account.account_id().to_owned(),
-                access_token: token_bundle
-                    .access_token
-                    .or_else(|| existing_account.access_token().map(str::to_owned)),
-                refresh_token: token_bundle
-                    .refresh_token
-                    .or_else(|| existing_account.refresh_token().map(str::to_owned)),
-                id_token: token_bundle
-                    .id_token
-                    .or_else(|| existing_account.id_token().map(str::to_owned)),
+                access_token: token_bundle.access_token.or_else(|| {
+                    (!provider_token_nulls(tokens, raw_policy)[0])
+                        .then(|| existing_account.access_token().map(str::to_owned))
+                        .flatten()
+                }),
+                refresh_token: token_bundle.refresh_token.or_else(|| {
+                    (!provider_token_nulls(tokens, raw_policy)[1])
+                        .then(|| existing_account.refresh_token().map(str::to_owned))
+                        .flatten()
+                }),
+                id_token: token_bundle.id_token.or_else(|| {
+                    (!provider_token_nulls(tokens, raw_policy)[2])
+                        .then(|| existing_account.id_token().map(str::to_owned))
+                        .flatten()
+                }),
                 access_token_expires_at: tokens
                     .access_token_expires_at
                     .or_else(|| existing_account.access_token_expires_at()),
@@ -1360,25 +1535,31 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
 
         if policy.override_user_info {
             let additional_fields = provider_fields(user_info, false, ctx)?;
-            linked_user =
-                ctx.database
-                    .update_user_record(
-                        &linked_user.id(),
-                        UpdateUser {
-                            name: user_info.name.clone(),
-                            image: user_info.image.clone(),
-                            email: Some(user_info.email.to_lowercase()),
-                            additional_fields,
-                            email_verified: Some(
+            let verification =
+                verification_override(&linked_user, &user_info.email, raw_verification);
+            linked_user = ctx
+                .database
+                .update_user_record(
+                    &linked_user.id(),
+                    UpdateUser {
+                        name: user_info.name.clone(),
+                        image: user_info.image.clone(),
+                        email: Some(user_info.email.to_lowercase()),
+                        additional_fields,
+                        email_verified: Some(verification.as_ref().map_or_else(
+                            || {
                                 linked_user.email().is_some_and(|email| {
                                     email.eq_ignore_ascii_case(&user_info.email)
-                                }) && (linked_user.email_verified() || user_info.email_verified),
-                            ),
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .map_err(|error| error.to_string())?;
+                                }) && (linked_user.email_verified() || user_info.email_verified)
+                            },
+                            raw_truthy,
+                        )),
+                        provider_email_verified: verification,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| error.to_string())?;
         }
 
         let issued = finish_oauth_session(&linked_user, false, policy, meta, ctx).await?;
@@ -1412,6 +1593,8 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
             &mut create_user,
         );
         apply_default_role(ctx, &mut create_user);
+        create_user.provider_email_verified =
+            raw_verification.filter(|value| !value.is_null()).cloned();
         create_user.image = user_info.image.clone();
         create_user.additional_fields = provider_fields(user_info, true, ctx)?;
 
@@ -1484,6 +1667,36 @@ pub(in crate::plugins) async fn complete_link_social(
     link: &OAuthStateLink,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> Result<(), OAuthSignInError> {
+    complete_link_social_with_raw_email(
+        provider_name,
+        user_info,
+        profile,
+        tokens,
+        link,
+        ctx,
+        (None, None),
+    )
+    .await
+    .map(|_| ())
+}
+
+enum LinkSocialOutcome {
+    Linked,
+    InvalidRawEmail,
+}
+
+async fn complete_link_social_with_raw_email(
+    provider_name: &str,
+    user_info: &OAuthUserInfo,
+    profile: &serde_json::Value,
+    tokens: &OAuthTokenSet,
+    link: &OAuthStateLink,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    (raw_email, raw_policy): (
+        Option<&serde_json::Value>,
+        Option<&super::providers::OAuthAuthorizationPolicy>,
+    ),
+) -> Result<LinkSocialOutcome, OAuthSignInError> {
     // Explicit linking validates fresh provider data before its trust/email
     // guards or account lookup. The candidate retains the selected local ID.
     let mut candidate = provider_candidate(user_info, &link.user_id);
@@ -1511,6 +1724,10 @@ pub(in crate::plugins) async fn complete_link_social(
         return Err("unable_to_link_account".to_owned().into());
     }
 
+    if raw_email.is_some_and(|email| !email.is_null() && !email.is_string()) {
+        return Ok(LinkSocialOutcome::InvalidRawEmail);
+    }
+
     if !linking.allow_different_emails && !user_info.email.eq_ignore_ascii_case(&link.email) {
         return Err("email_does_not_match".to_owned().into());
     }
@@ -1525,19 +1742,16 @@ pub(in crate::plugins) async fn complete_link_social(
             return Err("account_already_linked_to_different_user".to_owned().into());
         }
 
-        let token_bundle = encrypt_token_set(
-            ctx,
-            tokens.access_token.clone(),
-            tokens.refresh_token.clone(),
-            tokens.id_token.clone(),
-        )
-        .map_err(|error| error.to_string())?;
+        let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_policy)
+            .await
+            .map_err(|error| error.to_string())?;
 
         drop(
             ctx.database
                 .update_account_record(
                     &existing_account.id(),
                     UpdateAccount {
+                        provider_token_nulls: provider_token_nulls(tokens, raw_policy),
                         access_token: token_bundle.access_token,
                         refresh_token: token_bundle.refresh_token,
                         id_token: token_bundle.id_token,
@@ -1552,16 +1766,12 @@ pub(in crate::plugins) async fn complete_link_social(
                 .map_err(|error| error.to_string())?,
         );
 
-        return Ok(());
+        return Ok(LinkSocialOutcome::Linked);
     }
 
-    let token_bundle = encrypt_token_set(
-        ctx,
-        tokens.access_token.clone(),
-        tokens.refresh_token.clone(),
-        tokens.id_token.clone(),
-    )
-    .map_err(|error| error.to_string())?;
+    let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_policy)
+        .await
+        .map_err(|error| error.to_string())?;
 
     drop(
         ctx.database
@@ -1583,7 +1793,7 @@ pub(in crate::plugins) async fn complete_link_social(
             .map_err(|_error| "unable_to_link_account".to_owned())?,
     );
 
-    Ok(())
+    Ok(LinkSocialOutcome::Linked)
 }
 
 async fn sign_in_with_id_token_core(
@@ -1660,7 +1870,11 @@ async fn sign_in_with_id_token_core(
             ..Default::default()
         },
         provider.disable_implicit_sign_up && !body.request_sign_up.unwrap_or(false)
-            || provider.disable_sign_up,
+            || (provider.disable_sign_up
+                && provider
+                    .authorization
+                    .as_ref()
+                    .is_none_or(|policy| policy.honor_factory_options)),
         meta,
         ctx,
     )
@@ -2388,7 +2602,7 @@ pub(super) async fn handle_callback(
         provider
             .authorization
             .as_ref()
-            .is_none_or(|policy| policy.pkce)
+            .is_none_or(|policy| policy.authorization_code_pkce.unwrap_or(policy.pkce))
             .then_some(payload.code_verifier.as_str()),
         merged_2.get("device_id").map(String::as_str),
     )
@@ -2397,7 +2611,7 @@ pub(super) async fn handle_callback(
         return Ok(redirect_on_error("invalid_code", None));
     };
 
-    let Ok(mut user_info) = fetch_user_info_from_provider(
+    let user_info_result = fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
             token_type: tokens.token_type.clone(),
@@ -2411,26 +2625,58 @@ pub(super) async fn handle_callback(
             user: parse_callback_user_payload(merged_2.get("user").map(String::as_str)),
         },
     )
-    .await
-    else {
-        return Ok(redirect_on_error("unable_to_get_user_info", None));
+    .await;
+    let mut user_info = match user_info_result {
+        Ok(user_info) => user_info,
+        Err(error) => {
+            if matches!(&error,AuthError::Api {code:Some(code),..} if code == "OAUTH_PROFILE_EXCEPTION")
+            {
+                return Ok(AuthResponse::new(500));
+            }
+            if provider
+                .authorization
+                .as_ref()
+                .is_some_and(|policy| policy.propagate_grant_profile_errors)
+                && tokens
+                    .raw
+                    .as_ref()
+                    .and_then(|raw| raw.get("id_token"))
+                    .is_some_and(raw_truthy)
+            {
+                // The published factory throws outside callback redirect handling.
+                // State was consumed, but its pending clear-cookie is not emitted.
+                return Ok(AuthResponse::new(500));
+            }
+            return Ok(redirect_on_error("unable_to_get_user_info", None));
+        }
     };
 
     if resolve_account_subject(provider, &mut user_info).is_err() {
         return Ok(redirect_on_error("unable_to_get_user_info", None));
     }
 
+    let raw_email = provider
+        .authorization
+        .as_ref()
+        .filter(|policy| policy.preserve_raw_email_errors)
+        .and(user_info.user_output.as_ref())
+        .and_then(|output| output.get("email"));
+
     if let Some(link) = payload.link.as_ref() {
-        if let Err(error_3) = complete_link_social(
+        let link_result = complete_link_social_with_raw_email(
             provider_name,
             &user_info.user,
             &user_info.data,
             &tokens,
             link,
             ctx,
+            (raw_email, provider.authorization.as_ref()),
         )
-        .await
-        {
+        .await;
+        if matches!(link_result, Ok(LinkSocialOutcome::InvalidRawEmail)) {
+            return Ok(AuthResponse::new(500));
+        }
+        if let Err(error_3) = link_result {
             if error_3.is_ambiguous_account() {
                 return Ok(AuthResponse::new(500));
             }
@@ -2445,10 +2691,30 @@ pub(super) async fn handle_callback(
             .with_appended_header("Set-Cookie", clear_state_cookie));
     }
 
+    if raw_email.is_some_and(|email| raw_truthy(email) && !email.is_string()) {
+        // Source first resolves account ownership, then lowercases email either
+        // in the caught email lookup (new identity) or uncaught validation (owned).
+        let existing_account = ctx
+            .database
+            .get_account_record(provider_name, &user_info.user.id)
+            .await;
+        return Ok(match existing_account {
+            Ok(Some(_)) => AuthResponse::new(500),
+            Ok(None) | Err(_) => {
+                redirect_response(&format!("{default_error_url}?error=internal_server_error"))
+                    .with_appended_header("Set-Cookie", clear_state_cookie.clone())
+            }
+        });
+    }
+
     let disable_sign_up = provider.disable_implicit_sign_up
         && !payload.request_sign_up.unwrap_or(false)
-        || provider.disable_sign_up;
-    let outcome = match process_oauth_sign_in(
+        || (provider.disable_sign_up
+            && provider
+                .authorization
+                .as_ref()
+                .is_none_or(|policy| policy.honor_factory_options));
+    let outcome = match process_oauth_sign_in_with_output(
         OAuthIdentity {
             provider_name,
             user: &user_info.user,
@@ -2459,6 +2725,14 @@ pub(super) async fn handle_callback(
         disable_sign_up,
         &meta,
         ctx,
+        (
+            provider
+                .authorization
+                .as_ref()
+                .filter(|policy| policy.preserve_raw_profile_scalars)
+                .and(user_info.user_output.as_ref()),
+            provider.authorization.as_ref(),
+        ),
     )
     .await
     {

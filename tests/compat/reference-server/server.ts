@@ -80,10 +80,13 @@ import { passkeyRegistrationFixture } from "./fixtures/passkey-registration-fixt
 import { callbackSnapshot, capturePasswordlessRequest } from "./fixtures/passwordless-context";
 import { numericModes, numericOptions } from "./fixtures/passwordless-numeric";
 import { paybinProviderFixture } from "./fixtures/paybin-provider-fixture";
+import { paypalProviderFixture } from "./fixtures/paypal-provider-fixture";
 import { createPhoneFixture } from "./fixtures/phone-fixture";
 import { physicalCookieProfiles } from "./fixtures/physical-cookie-fixture";
 import { polarProviderFixture } from "./fixtures/polar-provider-fixture";
 import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
+import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
+import { providerBatchFixture } from "./fixtures/provider-batch-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
@@ -631,7 +634,9 @@ const passkeyAuthentication = passkeyAuthenticationFixture(
   `http://localhost:${PORT}`,
 );
 const railwayFixture = railwayProviderFixture(authOptions);
+const redditFixture = redditProviderFixture(authOptions);
 const polarFixture = polarProviderFixture(authOptions);
+const paypalFixture = paypalProviderFixture(authOptions);
 const notionFixture = notionProviderFixture(authOptions);
 const paybinFixture = paybinProviderFixture(authOptions);
 const cloudflareFixture = cloudflareProviderFixture(authOptions);
@@ -656,6 +661,7 @@ const anonymousProfiles = await anonymousFixture(authOptions, database);
 const sessionCookieCacheProfiles = await sessionCookieCacheFixture(authOptions, database);
 const userLifecycleFixture = createUserLifecycleFixture(authOptions, database);
 const additionalFields = await additionalFieldsFixture(authOptions);
+const providerBatch = providerBatchFixture(authOptions,database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -669,6 +675,15 @@ for (const [path, instance] of polarFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of railwayFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of paypalFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of redditFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of providerBatch.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of notionFixture.profiles) {
@@ -1872,9 +1887,15 @@ const server = Bun.serve({
       const managedProxyControl = await managedProxyProfiles.handle(request);
       if (managedProxyControl) return managedProxyControl;
       const railwayControl = await railwayFixture.handle(request);
+      const redditControl = await redditFixture.handle(request);
+      const providerBatchControl=await providerBatch.handle(request);
+      if (providerBatchControl) return providerBatchControl;
       if (railwayControl) return railwayControl;
+      if (redditControl) return redditControl;
       const polarControl = await polarFixture.handle(request);
       if (polarControl) return polarControl;
+      const paypalControl = await paypalFixture.handle(request);
+      if (paypalControl) return paypalControl;
       const notionControl = await notionFixture.handle(request);
       const paybinControl = await paybinFixture.handle(request);
       if (notionControl) return notionControl;
@@ -2767,8 +2788,11 @@ const server = Bun.serve({
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         await apiKeyStorage.reset();
         railwayFixture.reset();
+        redditFixture.reset();
+        providerBatch.reset();
         polarFixture.reset();
         notionFixture.reset();
+        paypalFixture.reset();
         paybinFixture.reset();
         cloudflareFixture.reset();
         cognitoFixture.reset();

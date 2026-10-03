@@ -111,13 +111,15 @@ where
                 return Ok(None);
             }
             let typed_id = S::User::parse_id(user_id)?;
-            let user = <S::User as SeaOrmUserModel>::Entity::find()
-                .filter(S::User::id_column().eq(typed_id))
-                .lock_shared()
-                .one(&transaction)
-                .await
-                .map_err(map_db_err)?
-                .ok_or(AuthError::UserNotFound)?;
+            let user = super::users::user_query::<S::User>(
+                sea_orm::ConnectionTrait::get_database_backend(&transaction),
+            )
+            .filter(S::User::id_column().eq(typed_id))
+            .lock_shared()
+            .one(&transaction)
+            .await
+            .map_err(map_db_err)?
+            .ok_or(AuthError::UserNotFound)?;
             if user
                 .email()
                 .is_none_or(|email| email.to_lowercase() != invitation.email.to_lowercase())

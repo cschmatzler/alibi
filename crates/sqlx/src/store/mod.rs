@@ -224,6 +224,12 @@ where
             )
             .await
     }
+    async fn provider_verification_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<serde_json::Value>> {
+        users::provider_verification_output::<S::User>(Exec::Tx(self.tx), id).await
+    }
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
         users::find_user_by_id::<S::User>(Exec::Tx(self.tx), id, users::Lock::None).await
     }

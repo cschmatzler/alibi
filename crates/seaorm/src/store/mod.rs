@@ -199,10 +199,16 @@ where
             )
             .await
     }
+    async fn provider_verification_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<serde_json::Value>> {
+        users::provider_verification_output::<S::User, _>(self.tx, id).await
+    }
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
-        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        use sea_orm::{ColumnTrait, ConnectionTrait, QueryFilter};
         let id = S::User::parse_id(id)?;
-        <S::User as SeaOrmUserModel>::Entity::find()
+        users::user_query::<S::User>(self.tx.get_database_backend())
             .filter(S::User::id_column().eq(id))
             .one(self.tx)
             .await

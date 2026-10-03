@@ -1,5 +1,8 @@
 # Notion provider contract (issue #154)
 
+Historical bounded slice. Its production residuals are superseded by [consolidated PR #374](provider-batch-154-170.md); observations and failures below remain historical evidence.
+
+
 Authority: the installed, published Better Auth **1.7.6** `@better-auth/core/dist/social-providers/notion.mjs`, declarations and OAuth authorization/token helpers. The official-client owner is `tests/core/social/notion.test.ts`. The unchanged Source factory runs against deterministic local HTTP by redirecting only its two fixed provider destinations. Native uses the public factory and trusted transport overrides. Provider controls supply responses, never callback admission or SQL rows. Raw comparisons, complete users/accounts/sessions, foreign ownership, pinned dependencies and comparator exclusions remain unchanged.
 
 Authoring gate: the provider boundary protects scope order, fixed owner precedence, code/refresh credential differences, the versioned API envelope and original owner identity. Credible regressions include adding PKCE, deduplicating scopes, allowing caller owner replacement, using Basic for refresh, omitting the API version or letting a mapper replace the account subject. Existing provider owners do not reach Notion's factory or envelope. Mapping variants share one table. No private-helper test or test-only production export is added.

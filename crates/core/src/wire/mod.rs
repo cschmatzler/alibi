@@ -15,6 +15,7 @@ use std::borrow::Cow;
 
 /// Public user response shape.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(try_from = "UserViewInput")]
 pub struct UserView {
     pub id: String,
     pub name: Option<String>,
@@ -107,7 +108,11 @@ impl Serialize for UserView {
         entry!("id", &self.id);
         entry!("name", &self.name);
         entry!("email", &self.email);
-        entry!("emailVerified", &self.email_verified);
+        if let Some(value) = self.extension_fields.get("emailVerified") {
+            entry!("emailVerified", value);
+        } else {
+            entry!("emailVerified", &self.email_verified);
+        }
         entry!("image", &self.image);
         entry!(
             "createdAt",
@@ -154,11 +159,130 @@ impl Serialize for UserView {
             entry!("lastLoginMethod", value);
         }
         for (name, value) in &self.extension_fields {
-            if !self.omitted_fields.contains(name) {
+            if name != "emailVerified" && !self.omitted_fields.contains(name) {
                 map.serialize_entry(name, value)?;
             }
         }
         map.end()
+    }
+}
+
+#[derive(Deserialize)]
+struct UserViewInput {
+    id: String,
+    name: Option<String>,
+    email: Option<String>,
+    #[serde(rename = "emailVerified")]
+    email_verified: serde_json::Value,
+    image: Option<String>,
+    #[serde(rename = "createdAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
+    created_at: DateTime<Utc>,
+    #[serde(rename = "updatedAt")]
+    #[serde(serialize_with = "crate::utils::datetime::serialize")]
+    updated_at: DateTime<Utc>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    username: Option<String>,
+    #[serde(
+        rename = "displayUsername",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    display_username: Option<String>,
+    #[serde(
+        rename = "twoFactorEnabled",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    two_factor_enabled: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    banned: Option<bool>,
+    #[serde(rename = "banReason", default, skip_serializing_if = "Option::is_none")]
+    ban_reason: Option<String>,
+    #[serde(
+        rename = "banExpires",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]
+    ban_expires: Option<DateTime<Utc>>,
+    #[serde(
+        rename = "isAnonymous",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    is_anonymous: Option<bool>,
+    #[serde(
+        rename = "phoneNumber",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    phone_number: Option<String>,
+    #[serde(
+        rename = "phoneNumberVerified",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    phone_number_verified: Option<bool>,
+    #[serde(
+        rename = "lastLoginMethod",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    last_login_method: Option<String>,
+    /// Nullable fields contributed by an enabled plugin's output schema.
+    #[serde(
+        flatten,
+        default,
+        deserialize_with = "crate::utils::json::deserialize_btree_map"
+    )]
+    extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
+    #[serde(skip)]
+    metadata: serde_json::Value,
+}
+
+impl TryFrom<UserViewInput> for UserView {
+    type Error = &'static str;
+    fn try_from(mut input: UserViewInput) -> Result<Self, Self::Error> {
+        let email_verified = match &input.email_verified {
+            serde_json::Value::Bool(value) => *value,
+            serde_json::Value::String(value) => !value.is_empty(),
+            _ => {
+                return Err("User verification output must be a boolean or retained SQLite string");
+            }
+        };
+        if !input.email_verified.is_boolean() {
+            drop(
+                input
+                    .extension_fields
+                    .insert("emailVerified".into(), input.email_verified),
+            );
+        }
+        Ok(Self {
+            email_verified,
+            extension_fields: input.extension_fields,
+            id: input.id,
+            name: input.name,
+            email: input.email,
+            image: input.image,
+            created_at: input.created_at,
+            updated_at: input.updated_at,
+            username: input.username,
+            display_username: input.display_username,
+            two_factor_enabled: input.two_factor_enabled,
+            role: input.role,
+            banned: input.banned,
+            ban_reason: input.ban_reason,
+            ban_expires: input.ban_expires,
+            is_anonymous: input.is_anonymous,
+            phone_number: input.phone_number,
+            phone_number_verified: input.phone_number_verified,
+            last_login_method: input.last_login_method,
+            metadata: input.metadata,
+            omitted_fields: std::collections::BTreeSet::default(),
+        })
     }
 }
 
@@ -307,7 +431,7 @@ pub struct VerificationView {
 
 impl<T: AuthUser> From<&T> for UserView {
     fn from(user: &T) -> Self {
-        Self {
+        let mut view = Self {
             id: user.id().into_owned(),
             name: user.name().map(str::to_owned),
             email: user.email().map(str::to_owned),
@@ -329,7 +453,18 @@ impl<T: AuthUser> From<&T> for UserView {
             extension_fields: std::collections::BTreeMap::default(),
             metadata: user.metadata().clone(),
             omitted_fields: std::collections::BTreeSet::default(),
+        };
+        if let Some(value) = user
+            .adapter_snapshot()
+            .and_then(|output| output.values().get("emailVerified"))
+            && !value.is_boolean()
+        {
+            drop(
+                view.extension_fields
+                    .insert("emailVerified".into(), value.clone()),
+            );
         }
+        view
     }
 }
 

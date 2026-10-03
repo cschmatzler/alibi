@@ -43,7 +43,7 @@ where
         maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         let id = S::User::parse_id(user_id)?;
-        if <S::User as SeaOrmUserModel>::Entity::find()
+        if super::users::user_query::<S::User>(sea_orm::ConnectionTrait::get_database_backend(tx))
             .filter(S::User::id_column().eq(id))
             .lock_shared()
             .one(tx)
