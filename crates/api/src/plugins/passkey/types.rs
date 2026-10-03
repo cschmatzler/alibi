@@ -7,7 +7,9 @@ use validator::Validate;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(in crate::plugins) struct VerifyRegistrationRequest {
+    #[serde(default = "missing_response")]
     pub(super) response: better_auth_core::utils::json::JsValue,
+    #[serde(default, deserialize_with = "optional_name")]
     pub(super) name: Option<String>,
     #[serde(default = "no_registration_session")]
     pub(super) create_session: better_auth_core::utils::json::JsValue,
@@ -59,7 +61,7 @@ pub(in crate::plugins) struct DeletePasskeyRequest {
 pub(in crate::plugins) struct UpdatePasskeyRequest {
     #[validate(length(min = 1))]
     pub(super) id: String,
-    #[validate(length(min = 1))]
+    #[validate(custom(function = "validate_trimmed_name"))]
     pub(super) name: String,
 }
 
@@ -94,4 +96,17 @@ fn validate_authentication_response(
     };
     Err(validator::ValidationError::new("record")
         .with_message(format!("Invalid input: expected record, received {received}").into()))
+}
+
+fn missing_response() -> better_auth_core::utils::json::JsValue { better_auth_core::utils::json::JsValue::Null }
+fn optional_name<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<String>, D::Error> {
+    use serde::Deserialize;
+    String::deserialize(decoder).map(Some)
+}
+
+fn validate_trimmed_name(value: &str) -> Result<(), validator::ValidationError> {
+    if super::registration::trim_name(value).is_empty() {
+        return Err(validator::ValidationError::new("length").with_message("Too small: expected string to have >=1 characters".into()));
+    }
+    Ok(())
 }

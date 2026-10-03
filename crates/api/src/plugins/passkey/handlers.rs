@@ -147,6 +147,13 @@ pub(super) async fn generate_register_options_core(
             COSEAlgorithm::EDDSA,
             COSEAlgorithm::ES256,
             COSEAlgorithm::RS256,
+            COSEAlgorithm::ES512,
+            COSEAlgorithm::PS256,
+            COSEAlgorithm::PS384,
+            COSEAlgorithm::PS512,
+            COSEAlgorithm::RS384,
+            COSEAlgorithm::RS512,
+            COSEAlgorithm::INSECURE_RS1,
         ])
         .require_resident_key(false)
         .user_verification_policy(UserVerificationPolicy::Preferred)
@@ -186,7 +193,7 @@ pub(super) async fn generate_register_options_core(
             .await?,
     );
 
-    let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token)?;
+    let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token, config)?;
     let mut response = registration_options_json(
         options,
         &generate_ts_user_handle(),
@@ -263,7 +270,7 @@ pub(super) async fn generate_authenticate_options_core<U: AuthUser>(
             .await?,
     );
 
-    let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token)?;
+    let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token, config)?;
     let mut response = authentication_options_json(options)?;
     if let Some(object) = response.as_object_mut() {
         if allow_credentials_json.is_empty() {
@@ -298,7 +305,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         return response_null(400);
     };
 
-    let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config)) else {
+    let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config, config)) else {
         return challenge_not_found();
     };
     let Ok(token) = decode_challenge_cookie(&ctx.config, &cookie_value) else {
@@ -649,7 +656,7 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         return response_message(400, "origin missing");
     };
 
-    let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config)) else {
+    let Some(cookie_value) = get_cookie_value(req, &challenge_cookie_name(&ctx.config, config)) else {
         return challenge_not_found();
     };
     let Ok(token) = decode_challenge_cookie(&ctx.config, &cookie_value) else {
@@ -693,6 +700,23 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
     let Ok(counter) = u32::try_from(passkey.counter()) else {
         return passkey_authentication_failure();
     };
+    if matches!(&stored_state, StoredAuthenticationState::Core { .. } | StoredAuthenticationState::CoreRaw { .. }) {
+        let Ok(public_key) = base64::engine::general_purpose::STANDARD.decode(passkey.public_key()) else {
+            return passkey_authentication_failure();
+        };
+        match &mut stored {
+            super::raw_none::StoredCredential::Raw(raw) => raw.replace_public_key(public_key),
+            super::raw_none::StoredCredential::Core(saved) => {
+                let Ok(key): Result<serde_cbor_2::Value, _> = serde_cbor_2::from_slice(&public_key) else { return passkey_authentication_failure(); };
+                let Ok(key) = webauthn_rs_core::proto::COSEKey::try_from(&key) else { return passkey_authentication_failure(); };
+                let mut current = webauthn_rs_core::proto::Credential::from(saved.clone());
+                current.cred = key;
+                current.cred_id = decode_credential_id(passkey.credential_id())?;
+                *saved = current.into();
+            }
+        }
+    }
+
     let authentication_result = match (&mut stored, stored_state) {
         (
             super::raw_none::StoredCredential::Raw(raw),
@@ -927,7 +951,7 @@ pub(super) async fn update_passkey_core(
 
     let updated = ctx
         .database
-        .update_passkey_name(&body.id, &body.name)
+        .update_passkey_name(&body.id, super::registration::trim_name(&body.name))
         .await?;
 
     Ok(PasskeyHandlerOutcome::Success(PasskeyResponse {

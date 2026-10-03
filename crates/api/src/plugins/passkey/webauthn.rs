@@ -25,8 +25,6 @@ use webauthn_rs_core::{
     },
 };
 
-pub(super) const PASSKEY_CHALLENGE_COOKIE_NAME: &str = "better-auth-passkey";
-
 const OPTIONS_TIMEOUT_MS: u64 = 60_000;
 
 const GENERATED_USER_ID_LENGTH: usize = 32;
@@ -130,14 +128,14 @@ pub(super) fn get_cookie_value(req: &AuthRequest, name: &str) -> Option<String> 
     })
 }
 
-pub(super) fn challenge_cookie_name(auth_config: &AuthConfig) -> String {
+pub(super) fn challenge_cookie_name(auth_config: &AuthConfig, config: &PasskeyConfig) -> String {
     auth_config
         .session
         .cookie_name
         .strip_suffix("session_token")
         .map_or_else(
-            || PASSKEY_CHALLENGE_COOKIE_NAME.to_owned(),
-            |prefix| format!("{prefix}{PASSKEY_CHALLENGE_COOKIE_NAME}"),
+            || config.web_authn_challenge_cookie.clone(),
+            |prefix| format!("{prefix}{}", config.web_authn_challenge_cookie),
         )
 }
 
@@ -173,6 +171,10 @@ pub(super) fn build_verification_core(
     let rp_id = resolve_rp_id(config, auth_config)?;
     let parsed_origin = Url::parse(origin)
         .map_err(|error| AuthError::bad_request(format!("Invalid passkey origin: {error}")))?;
+    let mut policy = webauthn_rs_core::source_policy::SourcePolicy::default();
+    if let Some(roots) = &config.attestation_root_certificates {
+        policy.roots.extend(roots.clone());
+    }
     Ok(WebauthnCore::new_unsafe_experts_only(
         &config.rp_name,
         &rp_id,
@@ -180,7 +182,7 @@ pub(super) fn build_verification_core(
         Duration::from_millis(OPTIONS_TIMEOUT_MS),
         Some(false),
         Some(false),
-    ))
+    ).with_source_policy(policy))
 }
 
 // The pinned verifier uses different legacy spellings in the two ceremonies.
@@ -237,7 +239,7 @@ pub(super) fn finish_core_registration(
     // Source's packed self-attestation verifier accepts only Ed25519 OKP.
     // None attestation still permits a genuine Ed448 credential to enroll.
     let attestation: serde_cbor_2::Value =
-        serde_cbor_2::from_slice(registration.response.attestation_object.as_ref())?;
+        super::raw_none::decode_first(registration.response.attestation_object.as_ref())?.0;
     if let serde_cbor_2::Value::Map(object) = &attestation
         && object.get(&serde_cbor_2::Value::Text("fmt".into()))
             == Some(&serde_cbor_2::Value::Text("packed".into()))
@@ -247,7 +249,7 @@ pub(super) fn finish_core_registration(
         && let Some(serde_cbor_2::Value::Bytes(bytes)) =
             object.get(&serde_cbor_2::Value::Text("authData".into()))
     {
-        let data = AuthenticatorData::<Registration>::try_from(bytes.as_slice())?;
+        let data = AuthenticatorData::<Registration>::from_source(bytes.as_slice())?;
         if let Some(acd) = data.acd
             && let serde_cbor_2::Value::Map(key) = acd.credential_pk
             && key.get(&serde_cbor_2::Value::Integer(1)) == Some(&serde_cbor_2::Value::Integer(1))
@@ -284,7 +286,8 @@ pub(super) fn finish_core_authentication(
         return Err(WebauthnError::InvalidRPOrigin);
     }
     validate_token_binding(&client_data, "notSupported")?;
-    let data = AuthenticatorData::<Authentication>::try_from(
+    super::raw_none::validate_assertion_data(authentication.response.authenticator_data.as_ref())?;
+    let data = AuthenticatorData::<Authentication>::from_source(
         authentication.response.authenticator_data.as_ref(),
     )?;
     if !data.user_present {
@@ -338,6 +341,7 @@ pub(super) fn create_challenge_cookie(
     auth_config: &AuthConfig,
     ttl_secs: i64,
     token: &str,
+    config: &PasskeyConfig,
 ) -> AuthResult<String> {
     let now = Utc::now();
     let claims = ChallengeCookieClaims {
@@ -355,7 +359,7 @@ pub(super) fn create_challenge_cookie(
         &EncodingKey::from_secret(auth_config.current_secret().as_bytes()),
     )?;
     better_auth_core::utils::cookie_utils::create_cookie(
-        &challenge_cookie_name(auth_config),
+        &challenge_cookie_name(auth_config, config),
         &signed,
         ttl_secs,
         auth_config,
@@ -561,7 +565,7 @@ pub(super) fn extract_registration_metadata(
     registration: &RegisterPublicKeyCredential,
 ) -> AuthResult<RegisteredPasskeyMetadata> {
     let attestation_bytes = registration.response.attestation_object.as_ref();
-    let attestation: serde_cbor_2::Value = serde_cbor_2::from_slice(attestation_bytes)
+    let attestation: serde_cbor_2::Value = super::raw_none::decode_first(attestation_bytes).map(|(value, _)| value)
         .map_err(|error| AuthError::internal(format!("Invalid attestation CBOR: {error}")))?;
     let serde_cbor_2::Value::Map(attestation_map) = attestation else {
         return Err(AuthError::internal("Attestation object must be a CBOR map"));

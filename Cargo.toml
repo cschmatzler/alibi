@@ -26,6 +26,8 @@ members = [
     "crates/sqlx-macros",
     "crates/schema-registry",
     "crates/cli",
+    "vendor/webauthn-rs-core",
+    "vendor/webauthn-rs",
 ]
 exclude = ["tests/compat/rust-server"]
 
