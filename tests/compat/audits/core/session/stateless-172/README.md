@@ -2,8 +2,9 @@
 
 Reference: published Better Auth **1.7.6**, unchanged. Initial implementation base
 `385165ec`; production checkpoints `faf5e241`, `2717c13b`, `136abfd4`, `e890ddec`.
-Final rebase target `6e21809e` changes admin classification, two-factor numeric
-configuration and fixtures, not these cache/store/projection paths. No comparator
+Final rebase target `adb9a9c7` changes admin classification, two-factor numeric
+configuration, passkey token-binding validation and fixtures, not these
+cache/store/projection paths. No comparator
 changes, broad compatibility replay, full devenv test or coverage sweep. Those
 historical gates were explicitly superseded by the user. Hosted CI is disabled.
 
@@ -101,3 +102,8 @@ callback-failure differential coverage is bounded to inspected implementation;
 no exhaustive campaign or independent second-agent review was performed. Session
 updates avoid resurrecting a record removed while callbacks await, but captured
 cookies retain Source's replay limit. The issue stays open with these bounds.
+
+Rebase review: `git range-diff 385165ec..6386bc7a adb9a9c7..01a2ec1c`
+reports all five commits unchanged. The actual PR diff was inspected after
+rebase; there were no conflicts or affected production interactions. No passing
+checks were repeated for those unrelated upstream edits or documentation.
