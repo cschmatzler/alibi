@@ -1,0 +1,3 @@
+1:  c5b19e26 = 1:  4d8bfdd9 Support native no-database API-key record storage
+2:  7d8b71ca = 2:  abe31a62 Prove API-key records on SQLx, SeaORM and true no-database handlers
+3:  f10e6932 = 3:  d047b3bf Retain bounded native API-key Source and adapter evidence

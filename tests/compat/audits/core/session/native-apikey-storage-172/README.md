@@ -119,3 +119,13 @@ cache-aware interfaces where cookie-only authority is intended. Exhaustive
 concurrency/callback-failure differentials and independent second-agent review
 remain unclaimed. All native records are lost on restart. Existing captured-cache
 session replay limits remain unchanged.
+
+## Rebase
+
+Rebased on merged #404 at `c16c5849`. Inspected incoming raw organization-role
+representation and consumer parsing changes, including the organization API-key
+creator role validation before its permission shortcut. That fix is preserved.
+`rebase-range-diff.log` records all three commits unchanged. Incoming review diffs
+and core/API compile pass are retained. User-owned API-key paths, native rows,
+source fixture and both adapter key models are unaffected; no passing adapter
+checks were replayed for this update.
