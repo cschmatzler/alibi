@@ -1,0 +1,14 @@
+   Compiling validator v0.21.0
+   Compiling better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-rs-origin178/crates/core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.15s
+     Running unittests src/lib.rs (/tmp/origin178-target/debug/deps/better_auth_core-dd176b7b810df64c)
+
+running 3 tests
+test config::tests::validate_rejects_empty_secret ... ok
+test config::tests::validate_accepts_valid_secret ... ok
+test config::tests::validate_rejects_short_secret ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 160 filtered out; finished in 0.00s
+
+mbx[cache]: 1 hits, 1 misses, 1 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: 680.0 GiB on loan to every checkout simultaneously. the paperwork is an inode.

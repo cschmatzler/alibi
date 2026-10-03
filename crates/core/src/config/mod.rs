@@ -1064,10 +1064,18 @@ impl AuthConfig {
                 || self.session.store_in_database
                 || self.session.preserve_in_database)
         {
-            return Err(AuthError::config("Stateless sessions cannot use server session storage"));
+            return Err(AuthError::config(
+                "Stateless sessions cannot use server session storage",
+            ));
         }
-        if self.dynamic_base_url.as_ref().is_some_and(|policy| policy.allowed_hosts.is_empty()) {
-            return Err(AuthError::config("Dynamic base URL allowed hosts cannot be empty"));
+        if self
+            .dynamic_base_url
+            .as_ref()
+            .is_some_and(|policy| policy.allowed_hosts.is_empty())
+        {
+            return Err(AuthError::config(
+                "Dynamic base URL allowed hosts cannot be empty",
+            ));
         }
         if let Some(secrets) = &self.managed_secrets {
             return secrets.validate();

@@ -57,3 +57,12 @@ callback family. Existing WebAuthn proof-origin comparison is unchanged. Broader
 cross-family equivalence, expiry/concurrency and independent external review
 are not claimed. #178 stays open with those boundaries; no full-sweep or frozen
 gate is required by the current user policy.
+
+Tested production head before rebase: `1d095df85080a36969a5f4e53dfb777a380a99ec` on base `adb9a9c780023c4df04c4bf1006bad7d44b14238`.
+Rebased onto `822d104c0f294afdf19c09853f45f5f55fd6868a`; replayed head `1e26cf15ffd542af0db866ee87021b02ff2eb1dc`.
+`rebase-receipt.json` records unchanged origin/CSRF/fixture bytes and identical
+dispatch edits, with exports united and both initializer validation guards kept.
+Only three affected config validation tests ran after conflict resolution;
+clean adapter and Source proof was reused. Later receipt/formatting edits do not
+change those behaviors. The final merge SHA is recorded on PR #391 and in the
+retained `/tmp/origin178-evidence` landing receipt.
