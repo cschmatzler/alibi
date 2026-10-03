@@ -75,3 +75,13 @@ production change substitutes for these remaining acceptance requirements.
 The external autoreview tool/skills referenced by test-audit are unavailable.
 This sole-worker task performed a separate production/security review without
 nested contributors; independent external review is not claimed.
+
+Final validation on rebased main `b41f0e63`: the selected installed corruption/date
+lifecycle passes with 164 assertions on SQLx and 164 on SeaORM. The three native
+callback/view tests, API Clippy with warnings denied, client TypeScript and
+scoped lint pass. Original native shape-stage and date-proof failures remain
+in `before-sqlx-corrected.log` and `before-date-sqlx.log`. Additional bounded
+published probes record calendar rollover (`2025-02-30` becomes `2025-03-02`)
+and parsed `1e400` serialization in `source-serializer-bounds.log`; these are
+remaining bounds, not native support claims. No new tests were added for
+unimplemented contracts, and no test-only follow-up PR was created.
