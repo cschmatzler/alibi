@@ -78,8 +78,8 @@ pub(in crate::plugins) async fn provider_logout_url<S: AuthSchema>(
         // URLSearchParams.set replaces existing values while retaining unrelated parameters.
         let mut parameters: Vec<(String, String)> = url.query_pairs().into_owned().collect();
         let mut set = |name: &str, value: &str| {
-            if let Some(index) = parameters.iter().position(|(key, _)| key == name) {
-                parameters[index].1 = value.to_owned();
+            if let Some((_, previous)) = parameters.iter_mut().find(|(key, _)| key == name) {
+                *previous = value.to_owned();
                 let mut first = true;
                 parameters.retain(|(key, _)| {
                     if key != name {

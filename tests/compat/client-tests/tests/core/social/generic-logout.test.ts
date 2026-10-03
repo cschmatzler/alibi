@@ -235,3 +235,39 @@ compatScenario(
   },
   ["POST /sign-out"],
 );
+
+compatScenario(
+  "generic provider logout validates optional request fields before revocation",
+  async (ctx) => {
+    const fixture = "generic-discovery-logout";
+    const owner = ctx.actor("owner", fixture);
+    const email = ctx.uniqueEmail("validation");
+    expect(
+      (await owner.client.signUp.email({ email, password: "Password123!", name: "Owner" })).error,
+    ).toBeNull();
+    await ctx.seedOAuthAccount({ email, providerId: "discovery", idToken: "validation-token" });
+    const before = await rows(ctx);
+    const rejected = [];
+    for (const body of [{ disableRedirect: "yes" }, { callbackURL: null }, { state: 123 }]) {
+      const response = await owner.fetch(ctx.baseURL + authProfilePath(fixture) + "/sign-out", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        redirect: "manual",
+      });
+      const result = {
+        status: response.status,
+        body: await response.json(),
+        location: response.headers.get("location"),
+      };
+      rejected.push(result);
+      expect(result.status).toBe(400);
+      expect(result.location).toBeNull();
+      expect(await rows(ctx)).toEqual(before);
+    }
+    const result = { before, after: await rows(ctx), rejected };
+    await save(ctx, "validation", result);
+    return result;
+  },
+  ["POST /sign-out"],
+);
