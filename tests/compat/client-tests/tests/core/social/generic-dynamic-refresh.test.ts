@@ -92,6 +92,13 @@ for (const item of cases) {
               path: "/__test/generic-token/control",
               method: "POST",
               json: {
+                profile: {
+                  id: "generic-subject",
+                  email: "generic@example.invalid",
+                  name: "Generic Name",
+                  email_verified: true,
+                  picture: "https://images.example.invalid/generic.png",
+                },
                 tokenResponse: {
                   access_token: token,
                   refresh_token: refresh,
@@ -121,6 +128,26 @@ for (const item of cases) {
         const current = seen.slice(
           index * (item.mode === "dynamic-error" || item.mode === "dynamic-custom" ? 1 : 2),
         );
+        if (process.env.DYNAMIC_REFRESH_EVIDENCE_DIR) {
+          await Bun.write(
+            `${process.env.DYNAMIC_REFRESH_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}-round-${index}.json`,
+            JSON.stringify(
+              {
+                name,
+                baseURL: ctx.baseURL,
+                before,
+                denied,
+                request: { method, path: requestPath, tenant, metadataCookie: `meta-${index}` },
+                status: response.status,
+                body,
+                after,
+                rawReceipts: seen,
+              },
+              null,
+              2,
+            ),
+          );
+        }
         expect(current[0]).toEqual({
           kind: item.mode === "dynamic-custom" ? "custom" : "params",
           tenant,
@@ -140,8 +167,9 @@ for (const item of cases) {
           expect(after.users).toEqual(before.users);
           expect(after.sessions).toEqual(before.sessions);
           expect(after.accounts).toHaveLength(before.accounts.length);
-          for (const row of before.accounts.filter((a) => a.id !== id))
+          for (const row of before.accounts.filter((a) => a.id !== id)) {
             expect(after.accounts.find((a) => a.id === row.id)).toEqual(row);
+          }
           const changed = after.accounts.find((a) => a.id === id)!;
           expect(changed).toMatchObject({
             ...account,
@@ -168,8 +196,9 @@ for (const item of cases) {
                 ? {}
                 : { resource: `tenant ${tenant} :+&=/%é`, scope: `profile ${tenant}` }),
             });
-            if (item.mode === "dynamic")
+            if (item.mode === "dynamic") {
               expect(grant.raw).toContain(`resource=tenant+${tenant}+%3A%2B%26%3D%2F%25%C3%A9`);
+            }
           }
         }
         rounds.push({
@@ -183,7 +212,7 @@ for (const item of cases) {
         });
       }
       const result = { before, denied: ctx.snapshot(denied), rounds };
-      if (process.env.DYNAMIC_REFRESH_EVIDENCE_DIR)
+      if (process.env.DYNAMIC_REFRESH_EVIDENCE_DIR) {
         await Bun.write(
           `${process.env.DYNAMIC_REFRESH_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
           JSON.stringify(
@@ -192,6 +221,7 @@ for (const item of cases) {
             2,
           ),
         );
+      }
       return result;
     },
     ["POST /refresh-token", "POST /get-access-token", "GET /account-info"],

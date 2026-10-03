@@ -1,10 +1,10 @@
 //! Generic provider token configuration exercised through real HTTP grants.
 use crate::TestSchema;
 use axum::{
+    Json, Router,
     extract::State,
     http::HeaderMap,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -16,7 +16,7 @@ use better_auth::plugins::oauth::{
 use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::DatabaseConnection;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
 #[derive(Clone, Default)]
@@ -244,6 +244,9 @@ pub(crate) async fn router(
         };
         let provider = if mode.starts_with("dynamic") {
             let mut generic = GenericOAuthConfig::new("client :+&", secret);
+            generic.authorization_url = Some(provider.auth_url.clone());
+            generic.token_url = Some(provider.token_url.clone());
+            generic.user_info_url = provider.user_info_url.clone();
             generic.provider = provider;
             generic
                 .resolve()

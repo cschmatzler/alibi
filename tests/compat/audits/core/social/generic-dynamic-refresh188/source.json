@@ -1,0 +1,16 @@
+{
+  "better-auth": {
+    "version": "1.7.6",
+    "tarballSha256": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+    "publishedFiles": 465,
+    "byteMismatches": 0,
+    "allInstalledFilesHavePrivateInodes": true
+  },
+  "@better-auth/core": {
+    "version": "1.7.6",
+    "tarballSha256": "e77e869a604083abf292ba9045f5182bd25cc2e57697e8fc1e3965651613f908",
+    "publishedFiles": 350,
+    "byteMismatches": 0,
+    "allInstalledFilesHavePrivateInodes": true
+  }
+}

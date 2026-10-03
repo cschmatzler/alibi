@@ -231,7 +231,7 @@ pub(super) fn apply_application_mapping(
     Ok(())
 }
 
-/// Metadata of the request triggering a refresh, as in `OAuthRefreshContext`.
+/// Metadata of the request triggering an OAuth token refresh.
 /// Headers, cookies and body fields are untrusted. Applications must validate
 /// tenant/scope/audience entitlements before forwarding derived values.
 #[derive(Clone, Copy)]

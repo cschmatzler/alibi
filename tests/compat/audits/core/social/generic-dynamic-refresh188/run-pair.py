@@ -1,11 +1,13 @@
-import os,sys,subprocess,socket,time,json,urllib.request,pathlib
-root=pathlib.Path(__file__).resolve().parents[6]; ev=pathlib.Path(os.environ.get('DYNAMIC_REFRESH_EVIDENCE_DIR','/tmp/dynamic-refresh188-evidence')); ev.mkdir(parents=True,exist_ok=True); backend=sys.argv[1]; label=sys.argv[2] if len(sys.argv)>2 else backend
+import os,sys,subprocess,socket,time,json,urllib.request,pathlib,hashlib
+root=pathlib.Path(__file__).resolve().parents[6]; ev=pathlib.Path(os.environ.get('DYNAMIC_REFRESH_EVIDENCE_DIR','/tmp/dynamic-refresh188-evidence')); ev.mkdir(parents=True,exist_ok=True); backend=sys.argv[1]; binary=pathlib.Path(os.environ.get('COMPAT_RUST_BINARY',str(pathlib.Path(os.environ['CARGO_TARGET_DIR'])/'debug/compat-rust-server'))); label=sys.argv[2] if len(sys.argv)>2 else backend
+# Adapter selection is compile-time: use a separately built --features seaorm binary.
+(ev/f'{label}-binary.json').write_text(json.dumps({'adapterBuild':backend,'binary':str(binary),'sha256':hashlib.sha256(binary.read_bytes()).hexdigest()},indent=2))
 ps=[];fs=[]
 def port():
  with socket.socket() as s:s.bind(('127.0.0.1',0));return s.getsockname()[1]
-ts,rs=port(),port();e=dict(os.environ,NODE_ENV='production',BUN_ENV='production',TEST='0',NO_PROXY='localhost,127.0.0.1',no_proxy='localhost,127.0.0.1',BETTER_AUTH_COMPAT_BACKEND=backend)
+ts,rs=port(),port();e=dict(os.environ,NODE_ENV='production',BUN_ENV='production',TEST='0',NO_PROXY='localhost,127.0.0.1',no_proxy='localhost,127.0.0.1')
 try:
- for name,p,cwd,cmd in [('source',ts,root/'tests/compat/reference-server',['bun','run','server.ts']),('rust',rs,root,[str(pathlib.Path(os.environ['CARGO_TARGET_DIR'])/'debug/compat-rust-server')])]:
+ for name,p,cwd,cmd in [('source',ts,root/'tests/compat/reference-server',['bun','run','server.ts']),('rust',rs,root,[str(binary)])]:
   f=open(ev/f'{label}-{name}.log','w');fs.append(f);child=subprocess.Popen(cmd,cwd=cwd,env=dict(e,PORT=str(p)),stdout=f,stderr=subprocess.STDOUT);ps.append(child)
   for _ in range(180):
    if child.poll() is not None:raise RuntimeError(f'{name} exited {child.returncode}')

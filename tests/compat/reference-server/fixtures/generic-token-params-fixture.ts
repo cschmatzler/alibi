@@ -143,8 +143,9 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                       });
                       if (mode === "dynamic-error") throw new Error("refresh policy rejected");
                       if (mode === "dynamic-none") return undefined;
-                      if (!["allowed-one", "allowed-two"].includes(tenant ?? ""))
+                      if (!["allowed-one", "allowed-two"].includes(tenant ?? "")) {
                         throw new Error("tenant not allowed");
+                      }
                       return {
                         resource: `tenant ${tenant} :+&=/%é`,
                         scope: `profile ${tenant}`,
