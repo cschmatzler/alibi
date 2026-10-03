@@ -22,17 +22,18 @@ pub(in crate::plugins) use handlers::{
     OAuthProcessPolicy, OAuthSignInError, create_account_cookie_header, process_oauth_sign_in,
 };
 pub use id_token::{
-    HttpOAuthJwksSource, OAuthIdTokenConfig, OAuthJwksSelection, OAuthJwksSource,
-    OAuthNonceComparison,
+    HttpOAuthJwksSource, OAuthIdTokenClaimsVerifier, OAuthIdTokenConfig, OAuthJwksSelection,
+    OAuthJwksSource, OAuthNonceComparison,
 };
 pub use providers::{
     AppleOptions, AtlassianOptions, CloudflareOptions, CognitoOptions, DropboxAccessType,
     DropboxOptions, FacebookOptions, FigmaOptions, HuggingFaceOptions, KakaoOptions, KickOptions,
-    LineOptions, LinearOptions, LinkedInOptions, OAuthAccountSubject, OAuthAuthorizationPolicy, OAuthCallbackUserName,
-    OAuthCallbackUserPayload, OAuthConfig, OAuthIdTokenVerifier, OAuthProvider,
-    OAuthRefreshTokenHandler, OAuthScopeEncoding, OAuthScopeOrder, OAuthTokenEndpointAuth,
-    OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
-    OAuthUserInfoResponse,
+    LineOptions, LinearOptions, LinkedInOptions, MicrosoftOptions, MicrosoftProfilePhotoSize, OAuthAccountSubject, OAuthAuthorizationPolicy,
+    OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthClientAssertion,
+    OAuthClientAssertionContext, OAuthClientAssertionGetter, OAuthConfig, OAuthIdTokenVerifier,
+    OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeEncoding, OAuthScopeOrder,
+    OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler,
+    OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 pub(in crate::plugins) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,

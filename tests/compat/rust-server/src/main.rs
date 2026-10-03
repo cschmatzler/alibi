@@ -104,6 +104,7 @@ use better_auth_seaorm::store::entities::{
     user, verification, wallet_address,
 };
 use chrono::{DateTime, Utc};
+use fixtures::microsoft_provider_fixture;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -887,6 +888,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         facebook_provider_fixture::router(&config, database.clone()).await?;
     let (dropbox_router, dropbox_reset) =
         dropbox_provider_fixture::router(&config, database.clone()).await?;
+    let (microsoft_router, microsoft_reset) =
+        microsoft_provider_fixture::router(&config, database.clone()).await?;
     let (figma_router, figma_reset) =
         figma_provider_fixture::router(&config, database.clone()).await?;
     let (huggingface_router, huggingface_reset) =
@@ -1405,6 +1408,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let dropbox_reset=dropbox_reset.clone();
                 let facebook_reset=facebook_reset.clone();
                 let figma_reset=figma_reset.clone();
+                let microsoft_reset=microsoft_reset.clone();
                 let huggingface_reset=huggingface_reset.clone();
                 let linkedin_reset=linkedin_reset.clone();
                 let kakao_reset=kakao_reset.clone();
@@ -1428,6 +1432,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     dropbox_reset.reset().await;
                     facebook_reset.reset().await;
                     figma_reset.reset().await;
+                    microsoft_reset.reset().await;
                     huggingface_reset.reset().await;
                     linkedin_reset.reset().await;
                     kakao_reset.reset().await;
@@ -2057,6 +2062,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(dropbox_router)
         .merge(facebook_router)
         .merge(figma_router)
+        .merge(microsoft_router)
         .merge(huggingface_router)
         .merge(linkedin_router)
         .merge(kakao_router)

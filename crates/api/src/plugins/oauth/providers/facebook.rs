@@ -93,6 +93,7 @@ impl OAuthProvider {
             algorithm: Some(jsonwebtoken::Algorithm::RS256),
             selection: OAuthJwksSelection::RemoteRs256,
             nonce_comparison: OAuthNonceComparison::Exact,
+            verify_claims: None,
         };
         Self {
             client_id: client_id.clone(),

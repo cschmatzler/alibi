@@ -59,7 +59,19 @@
           "linkedin numeric name original profile retains original raw account and typed persistence",
           "linkedin numeric subject original profile retains original raw account and typed persistence",
           "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
-          "linkedin true verification maps actual nullish defaults without changing foreign principals"
+          "linkedin true verification maps actual nullish defaults without changing foreign principals",
+          "microsoft mapped account info preserves enriched public properties independently of physical raw oid",
+          "microsoft signed empty-image retains measured profile and verification fallback",
+          "microsoft signed empty-name retains measured profile and verification fallback",
+          "microsoft signed explicit-null retains measured profile and verification fallback",
+          "microsoft signed missing-image retains measured profile and verification fallback",
+          "microsoft signed missing-name retains measured profile and verification fallback",
+          "microsoft signed null-image retains measured profile and verification fallback",
+          "microsoft signed null-name retains measured profile and verification fallback",
+          "microsoft signed null-primary retains measured profile and verification fallback",
+          "microsoft signed numeric-image retains measured profile and verification fallback",
+          "microsoft signed numeric-name retains measured profile and verification fallback",
+          "microsoft signed string-primary retains measured profile and verification fallback"
         ],
         "rejection": [
           "account info requires an explicit account selector",
@@ -146,7 +158,19 @@
           "linkedin numeric image original profile retains original raw account and typed persistence",
           "linkedin numeric name original profile retains original raw account and typed persistence",
           "linkedin numeric subject original profile retains original raw account and typed persistence",
-          "linkedin true verification maps actual nullish defaults without changing foreign principals"
+          "linkedin true verification maps actual nullish defaults without changing foreign principals",
+          "microsoft mapped account info preserves enriched public properties independently of physical raw oid",
+          "microsoft signed empty-image retains measured profile and verification fallback",
+          "microsoft signed empty-name retains measured profile and verification fallback",
+          "microsoft signed explicit-null retains measured profile and verification fallback",
+          "microsoft signed missing-image retains measured profile and verification fallback",
+          "microsoft signed missing-name retains measured profile and verification fallback",
+          "microsoft signed null-image retains measured profile and verification fallback",
+          "microsoft signed null-name retains measured profile and verification fallback",
+          "microsoft signed null-primary retains measured profile and verification fallback",
+          "microsoft signed numeric-image retains measured profile and verification fallback",
+          "microsoft signed numeric-name retains measured profile and verification fallback",
+          "microsoft signed string-primary retains measured profile and verification fallback"
         ]
       }
     },
@@ -274,7 +298,9 @@
           "api-key list validates pagination and sort direction",
           "compact ordinary API-key list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
         ],
-        "authorization": "compact ordinary API-key list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache",
+        "authorization": [
+          "compact ordinary API-key list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
         "state": [
           "api-key wire dates preserve actual stored submillisecond instants through the published SDK and virtual sessions",
           "compact ordinary API-key list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
@@ -594,7 +620,19 @@
           "linkedin numeric subject original profile retains original raw account and typed persistence",
           "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin true verification maps actual nullish defaults without changing foreign principals",
-          "linkedin zero access expiry follows actual token helper"
+          "linkedin zero access expiry follows actual token helper",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft exchange error-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange photo-failure proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange redirect-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft mapped account info preserves enriched public properties independently of physical raw oid",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "rejection": [
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
@@ -773,7 +811,19 @@
           "linkedin explicit browser link missing-raw retains existing and foreign authority",
           "linkedin mapped real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin nonobject original profile invokes mapper before raw subject denial",
-          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority"
+          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft exchange blank-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange missing-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange null-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange numeric-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "authorization": [
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
@@ -950,7 +1000,19 @@
           "linkedin explicit browser link missing-raw retains existing and foreign authority",
           "linkedin mapped real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin nonobject original profile invokes mapper before raw subject denial",
-          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority"
+          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft exchange blank-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange missing-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange null-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange numeric-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "state": [
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
@@ -1365,7 +1427,22 @@
           "linkedin numeric subject original profile retains original raw account and typed persistence",
           "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin true verification maps actual nullish defaults without changing foreign principals",
-          "linkedin zero access expiry follows actual token helper"
+          "linkedin zero access expiry follows actual token helper",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft exchange blank-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange error-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange missing-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange null-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange numeric-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange photo-failure proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange redirect-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ]
       }
     },
@@ -2206,7 +2283,9 @@
           "CAPTCHA captcha-turnstile-globstar path and early rejection ordering preserve unchanged physical principals",
           "CAPTCHA captcha-turnstile-disabled path and early rejection ordering preserve unchanged physical principals"
         ],
-        "rejection": "CAPTCHA captcha-turnstile-custom path and early rejection ordering preserve unchanged physical principals",
+        "rejection": [
+          "CAPTCHA captcha-turnstile-custom path and early rejection ordering preserve unchanged physical principals"
+        ],
         "authorization": {
           "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
         },
@@ -2283,7 +2362,9 @@
         "authorization": {
           "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
         },
-        "state": "additional field documentation preserves logical model policies and callable defaults without executing adapter callbacks or revealing physical columns"
+        "state": [
+          "additional field documentation preserves logical model policies and callable defaults without executing adapter callbacks or revealing physical columns"
+        ]
       }
     },
     {
@@ -2606,8 +2687,12 @@
           "passkey Ed25519Curve8 none enrollment retains original owner while genuine and invalid signed authentication reject before writes",
           "compact ordinary passkey list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
         ],
-        "rejection": "compact ordinary passkey list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache",
-        "authorization": "compact ordinary passkey list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache",
+        "rejection": [
+          "compact ordinary passkey list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
+        "authorization": [
+          "compact ordinary passkey list retains genuinely signed revoked authority and rejects bypass expired and foreign-bound cache"
+        ],
         "state": [
           "passkey signed backup state changes advance verified counters while preserving registration snapshots and foreign owners",
           "passkey verified callback awaits real stored reads before counter and session while body claims cannot switch credential owner",
@@ -3422,7 +3507,9 @@
           "configured no-mail mailbox-change guard keeps occupied and available stages private",
           "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
         ],
-        "authorization": "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes",
+        "authorization": [
+          "user update and sensitive mailbox routes reject missing and stale authority before application callbacks or row changes"
+        ],
         "state": [
           "configured mailbox changes conceal occupied addresses and preserve complete foreign rows",
           "configured verified mailbox existing preserves old confirmation, new verification and persisted stage",
@@ -4352,7 +4439,9 @@
           "organization role validation and permission request unions retain authentication precedence and persisted state",
           "compact ordinary organization guards retain revoked identity while physical memberships still isolate the foreign organization"
         ],
-        "state": "compact ordinary organization guards retain revoked identity while physical memberships still isolate the foreign organization"
+        "state": [
+          "compact ordinary organization guards retain revoked identity while physical memberships still isolate the foreign organization"
+        ]
       }
     },
     {
@@ -5113,7 +5202,15 @@
           "linkedin configured-endpoint real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin default real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin mapped real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
-          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority"
+          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
@@ -5178,7 +5275,15 @@
           "linkedin configured-endpoint real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin default real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin mapped real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
-          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority"
+          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -5195,7 +5300,15 @@
           "linkedin configured-endpoint real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin default real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin mapped real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
-          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority"
+          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "state": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -5259,7 +5372,15 @@
           "linkedin configured-endpoint real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin default real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin mapped real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
-          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority"
+          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ]
       }
     },
@@ -6397,7 +6518,55 @@
           "linkedin published disabled-configured authorization retains ordered scopes and absent PKCE",
           "linkedin published disabled-scope authorization retains ordered scopes and absent PKCE",
           "linkedin true verification maps actual nullish defaults without changing foreign principals",
-          "linkedin zero access expiry follows actual token helper"
+          "linkedin zero access expiry follows actual token helper",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft authority-slashes authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft client-array authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft consumers authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft default authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft disabled-configured authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-scope authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft exchange blank-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange error-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange missing-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange null-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange numeric-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange photo-failure proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange redirect-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft fixed-tenant authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft mapped account info preserves enriched public properties independently of physical raw oid",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft organizations authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft signed client-array admission persists raw oid using configured authority",
+          "microsoft signed common admission persists raw oid using configured authority",
+          "microsoft signed consumers admission persists raw oid using configured authority",
+          "microsoft signed empty-image retains measured profile and verification fallback",
+          "microsoft signed empty-name retains measured profile and verification fallback",
+          "microsoft signed exact-nonce admission persists raw oid using configured authority",
+          "microsoft signed explicit-false admission persists raw oid using configured authority",
+          "microsoft signed explicit-null retains measured profile and verification fallback",
+          "microsoft signed explicit-signup admission persists raw oid using configured authority",
+          "microsoft signed explicit-true admission persists raw oid using configured authority",
+          "microsoft signed fixed-tenant admission persists raw oid using configured authority",
+          "microsoft signed missing-image retains measured profile and verification fallback",
+          "microsoft signed missing-name retains measured profile and verification fallback",
+          "microsoft signed null-image retains measured profile and verification fallback",
+          "microsoft signed null-name retains measured profile and verification fallback",
+          "microsoft signed null-primary retains measured profile and verification fallback",
+          "microsoft signed numeric-image retains measured profile and verification fallback",
+          "microsoft signed numeric-name retains measured profile and verification fallback",
+          "microsoft signed organizations admission persists raw oid using configured authority",
+          "microsoft signed signup-option admission persists raw oid using configured authority",
+          "microsoft signed string-primary retains measured profile and verification fallback",
+          "microsoft signed verified-primary admission persists raw oid using configured authority",
+          "microsoft signed verified-secondary admission persists raw oid using configured authority"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -6509,7 +6678,34 @@
           "line delegated direct unexpected remote object nonce rejects before owned or foreign writes",
           "line delegated direct unexpected remote string nonce rejects before owned or foreign writes",
           "linear rejects direct ID-token sign-in without remote verification or identity writes",
-          "linkedin rejects direct ID-token sign-in without remote verification or identity writes"
+          "linkedin rejects direct ID-token sign-in without remote verification or identity writes",
+          "microsoft genuine signed audience rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed blank-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed bound-issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed consumer-organizations rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed disabled-idtoken rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed empty-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed expired rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed fixed-issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed future rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed implicit-disabled rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-tid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed nonce rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed null-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed null-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed numeric-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed numeric-tid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed old rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed organization-consumers rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed signature rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed unknown-kid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft selected JWK first-duplicate-import rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK mismatched-algorithm rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK missing-algorithm rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK missing-key rejects genuine signed admission at configured trusted tenant"
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
@@ -6598,7 +6794,33 @@
           "line delegated direct unexpected remote array nonce rejects before owned or foreign writes",
           "line delegated direct unexpected remote boolean nonce rejects before owned or foreign writes",
           "line delegated direct unexpected remote object nonce rejects before owned or foreign writes",
-          "line delegated direct unexpected remote string nonce rejects before owned or foreign writes"
+          "line delegated direct unexpected remote string nonce rejects before owned or foreign writes",
+          "microsoft genuine signed audience rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed blank-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed bound-issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed consumer-organizations rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed empty-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed expired rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed fixed-issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed future rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed implicit-disabled rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-tid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed nonce rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed null-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed null-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed numeric-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed numeric-tid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed old rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed organization-consumers rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed signature rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed unknown-kid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft selected JWK first-duplicate-import rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK mismatched-algorithm rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK missing-algorithm rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK missing-key rejects genuine signed admission at configured trusted tenant"
         ],
         "state": [
           "Discord authorization conditions JS permissions on effective bot scope and defaults prompt",
@@ -7039,7 +7261,54 @@
           "linkedin published disabled-configured authorization retains ordered scopes and absent PKCE",
           "linkedin published disabled-scope authorization retains ordered scopes and absent PKCE",
           "linkedin true verification maps actual nullish defaults without changing foreign principals",
-          "linkedin zero access expiry follows actual token helper"
+          "linkedin zero access expiry follows actual token helper",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft authority-slashes authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft client-array authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft consumers authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft default authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft disabled-configured authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-scope authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft exchange blank-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange error-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange missing-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange null-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange numeric-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange photo-failure proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange redirect-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft fixed-tenant authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft organizations authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft signed client-array admission persists raw oid using configured authority",
+          "microsoft signed common admission persists raw oid using configured authority",
+          "microsoft signed consumers admission persists raw oid using configured authority",
+          "microsoft signed empty-image retains measured profile and verification fallback",
+          "microsoft signed empty-name retains measured profile and verification fallback",
+          "microsoft signed exact-nonce admission persists raw oid using configured authority",
+          "microsoft signed explicit-false admission persists raw oid using configured authority",
+          "microsoft signed explicit-null retains measured profile and verification fallback",
+          "microsoft signed explicit-signup admission persists raw oid using configured authority",
+          "microsoft signed explicit-true admission persists raw oid using configured authority",
+          "microsoft signed fixed-tenant admission persists raw oid using configured authority",
+          "microsoft signed missing-image retains measured profile and verification fallback",
+          "microsoft signed missing-name retains measured profile and verification fallback",
+          "microsoft signed null-image retains measured profile and verification fallback",
+          "microsoft signed null-name retains measured profile and verification fallback",
+          "microsoft signed null-primary retains measured profile and verification fallback",
+          "microsoft signed numeric-image retains measured profile and verification fallback",
+          "microsoft signed numeric-name retains measured profile and verification fallback",
+          "microsoft signed organizations admission persists raw oid using configured authority",
+          "microsoft signed signup-option admission persists raw oid using configured authority",
+          "microsoft signed string-primary retains measured profile and verification fallback",
+          "microsoft signed verified-primary admission persists raw oid using configured authority",
+          "microsoft signed verified-secondary admission persists raw oid using configured authority"
         ]
       }
     },
@@ -7188,7 +7457,15 @@
           "linkedin configured-endpoint real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin default real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin mapped real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
-          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority"
+          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "rejection": {
           "notApplicable": "Succeeds without a session and takes no input; there is nothing to reject."
@@ -7296,7 +7573,15 @@
           "linkedin configured-endpoint real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin default real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
           "linkedin mapped real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
-          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority"
+          "linkedin public real secret or public exchange and original profile refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ]
       }
     },
@@ -7543,7 +7828,9 @@
           "additional field input policies validate before awaited physical binding enforce required readonly and unknown fields and retain foreign rows on errors",
           "additional output transforms await real adapter results retain hidden undefined and changed types before committed after hooks and roll back failed signup"
         ],
-        "authorization": "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
+        "authorization": [
+          "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state"
+        ],
         "state": [
           "anonymous cancellation application errors and disabled cleanup retain stage-specific committed state",
           "anonymous upgrade transfers original completed user and session snapshots before cleanup",
@@ -8514,7 +8801,19 @@
           "linear null name GraphQL viewer retains original raw account and typed persistence",
           "linear numeric image GraphQL viewer retains original raw account and typed persistence",
           "linear numeric name GraphQL viewer retains original raw account and typed persistence",
-          "linear numeric subject GraphQL viewer retains original raw account and typed persistence"
+          "linear numeric subject GraphQL viewer retains original raw account and typed persistence",
+          "microsoft mapped account info preserves enriched public properties independently of physical raw oid",
+          "microsoft signed empty-image retains measured profile and verification fallback",
+          "microsoft signed empty-name retains measured profile and verification fallback",
+          "microsoft signed explicit-null retains measured profile and verification fallback",
+          "microsoft signed missing-image retains measured profile and verification fallback",
+          "microsoft signed missing-name retains measured profile and verification fallback",
+          "microsoft signed null-image retains measured profile and verification fallback",
+          "microsoft signed null-name retains measured profile and verification fallback",
+          "microsoft signed null-primary retains measured profile and verification fallback",
+          "microsoft signed numeric-image retains measured profile and verification fallback",
+          "microsoft signed numeric-name retains measured profile and verification fallback",
+          "microsoft signed string-primary retains measured profile and verification fallback"
         ],
         "rejection": [
           "account info requires an explicit account selector",
@@ -8545,7 +8844,19 @@
           "linear null name GraphQL viewer retains original raw account and typed persistence",
           "linear numeric image GraphQL viewer retains original raw account and typed persistence",
           "linear numeric name GraphQL viewer retains original raw account and typed persistence",
-          "linear numeric subject GraphQL viewer retains original raw account and typed persistence"
+          "linear numeric subject GraphQL viewer retains original raw account and typed persistence",
+          "microsoft mapped account info preserves enriched public properties independently of physical raw oid",
+          "microsoft signed empty-image retains measured profile and verification fallback",
+          "microsoft signed empty-name retains measured profile and verification fallback",
+          "microsoft signed explicit-null retains measured profile and verification fallback",
+          "microsoft signed missing-image retains measured profile and verification fallback",
+          "microsoft signed missing-name retains measured profile and verification fallback",
+          "microsoft signed null-image retains measured profile and verification fallback",
+          "microsoft signed null-name retains measured profile and verification fallback",
+          "microsoft signed null-primary retains measured profile and verification fallback",
+          "microsoft signed numeric-image retains measured profile and verification fallback",
+          "microsoft signed numeric-name retains measured profile and verification fallback",
+          "microsoft signed string-primary retains measured profile and verification fallback"
         ]
       }
     },
@@ -8802,7 +9113,19 @@
           "linear numeric name GraphQL viewer retains original raw account and typed persistence",
           "linear numeric subject GraphQL viewer retains original raw account and typed persistence",
           "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
-          "linear zero access expiry follows actual token helper"
+          "linear zero access expiry follows actual token helper",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft exchange error-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange photo-failure proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange redirect-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft mapped account info preserves enriched public properties independently of physical raw oid",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "rejection": [
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
@@ -8954,7 +9277,19 @@
           "linear missing GraphQL viewer {\"data\":{}} rejects before mapper or identity writes",
           "linear missing GraphQL viewer {} rejects before mapper or identity writes",
           "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
-          "linear truthy nonobject GraphQL viewer invokes original mapper before raw identity denial"
+          "linear truthy nonobject GraphQL viewer invokes original mapper before raw identity denial",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft exchange blank-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange missing-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange null-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange numeric-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "authorization": [
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
@@ -9104,7 +9439,19 @@
           "linear missing GraphQL viewer {\"data\":{}} rejects before mapper or identity writes",
           "linear missing GraphQL viewer {} rejects before mapper or identity writes",
           "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
-          "linear truthy nonobject GraphQL viewer invokes original mapper before raw identity denial"
+          "linear truthy nonobject GraphQL viewer invokes original mapper before raw identity denial",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft exchange blank-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange missing-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange null-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange numeric-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "state": [
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
@@ -9448,7 +9795,22 @@
           "linear numeric subject GraphQL viewer retains original raw account and typed persistence",
           "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear truthy nonobject GraphQL viewer invokes original mapper before raw identity denial",
-          "linear zero access expiry follows actual token helper"
+          "linear zero access expiry follows actual token helper",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft exchange blank-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange error-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange missing-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange null-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange numeric-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange photo-failure proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange redirect-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ]
       }
     },
@@ -10107,7 +10469,15 @@
           "linear configured-endpoint real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear default real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear mapped real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
-          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority"
+          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
@@ -10162,7 +10532,15 @@
           "linear configured-endpoint real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear default real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear mapped real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
-          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority"
+          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -10174,7 +10552,15 @@
           "linear configured-endpoint real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear default real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear mapped real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
-          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority"
+          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "state": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -10228,7 +10614,15 @@
           "linear configured-endpoint real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear default real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear mapped real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
-          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority"
+          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ]
       }
     },
@@ -10684,7 +11078,55 @@
           "linear published disabled-configured authorization retains ordered scopes and absent PKCE",
           "linear published disabled-scope authorization retains ordered scopes and absent PKCE",
           "linear truthy nonobject GraphQL viewer invokes original mapper before raw identity denial",
-          "linear zero access expiry follows actual token helper"
+          "linear zero access expiry follows actual token helper",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft authority-slashes authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft client-array authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft consumers authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft default authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft disabled-configured authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-scope authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft exchange blank-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange error-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange missing-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange null-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange numeric-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange photo-failure proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange redirect-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft fixed-tenant authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft mapped account info preserves enriched public properties independently of physical raw oid",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft organizations authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft signed client-array admission persists raw oid using configured authority",
+          "microsoft signed common admission persists raw oid using configured authority",
+          "microsoft signed consumers admission persists raw oid using configured authority",
+          "microsoft signed empty-image retains measured profile and verification fallback",
+          "microsoft signed empty-name retains measured profile and verification fallback",
+          "microsoft signed exact-nonce admission persists raw oid using configured authority",
+          "microsoft signed explicit-false admission persists raw oid using configured authority",
+          "microsoft signed explicit-null retains measured profile and verification fallback",
+          "microsoft signed explicit-signup admission persists raw oid using configured authority",
+          "microsoft signed explicit-true admission persists raw oid using configured authority",
+          "microsoft signed fixed-tenant admission persists raw oid using configured authority",
+          "microsoft signed missing-image retains measured profile and verification fallback",
+          "microsoft signed missing-name retains measured profile and verification fallback",
+          "microsoft signed null-image retains measured profile and verification fallback",
+          "microsoft signed null-name retains measured profile and verification fallback",
+          "microsoft signed null-primary retains measured profile and verification fallback",
+          "microsoft signed numeric-image retains measured profile and verification fallback",
+          "microsoft signed numeric-name retains measured profile and verification fallback",
+          "microsoft signed organizations admission persists raw oid using configured authority",
+          "microsoft signed signup-option admission persists raw oid using configured authority",
+          "microsoft signed string-primary retains measured profile and verification fallback",
+          "microsoft signed verified-primary admission persists raw oid using configured authority",
+          "microsoft signed verified-secondary admission persists raw oid using configured authority"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -10778,7 +11220,34 @@
           "huggingface rejects direct ID-token sign-in without remote verification or identity writes",
           "kakao rejects direct ID-token sign-in without remote verification or identity writes",
           "kick rejects direct ID-token sign-in without remote verification or identity writes",
-          "linear rejects direct ID-token sign-in without remote verification or identity writes"
+          "linear rejects direct ID-token sign-in without remote verification or identity writes",
+          "microsoft genuine signed audience rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed blank-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed bound-issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed consumer-organizations rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed disabled-idtoken rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed empty-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed expired rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed fixed-issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed future rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed implicit-disabled rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-tid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed nonce rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed null-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed null-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed numeric-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed numeric-tid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed old rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed organization-consumers rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed signature rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed unknown-kid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft selected JWK first-duplicate-import rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK mismatched-algorithm rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK missing-algorithm rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK missing-key rejects genuine signed admission at configured trusted tenant"
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
@@ -10851,7 +11320,33 @@
           "facebook remote JWKS private applies usable public key selection to actual signed proof",
           "facebook remote JWKS removed applies usable public key selection to actual signed proof",
           "facebook remote JWKS use applies usable public key selection to actual signed proof",
-          "facebook remote JWKS weak-modulus applies usable public key selection to actual signed proof"
+          "facebook remote JWKS weak-modulus applies usable public key selection to actual signed proof",
+          "microsoft genuine signed audience rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed blank-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed bound-issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed consumer-organizations rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed empty-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed expired rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed fixed-issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed future rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed implicit-disabled rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed issuer rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed missing-tid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed nonce rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed null-email rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed null-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed numeric-oid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed numeric-tid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed old rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed organization-consumers rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed signature rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft genuine signed unknown-kid rejection preserves all foreign rows and pre-photo mapping order",
+          "microsoft selected JWK first-duplicate-import rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK mismatched-algorithm rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK missing-algorithm rejects genuine signed admission at configured trusted tenant",
+          "microsoft selected JWK missing-key rejects genuine signed admission at configured trusted tenant"
         ],
         "state": [
           "Discord authorization conditions JS permissions on effective bot scope and defaults prompt",
@@ -11226,7 +11721,54 @@
           "linear published default authorization retains ordered scopes and absent PKCE",
           "linear published disabled-configured authorization retains ordered scopes and absent PKCE",
           "linear published disabled-scope authorization retains ordered scopes and absent PKCE",
-          "linear zero access expiry follows actual token helper"
+          "linear zero access expiry follows actual token helper",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft authority-slashes authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft client-array authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft consumers authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft default authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft disabled-configured authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-scope authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft exchange blank-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange error-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange missing-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange null-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange numeric-oid proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange photo-failure proves optional photo versus identity and grant denial ordering",
+          "microsoft exchange redirect-grant proves optional photo versus identity and grant denial ordering",
+          "microsoft fixed-tenant authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft organizations authorization preserves scopes PKCE hint prompt authority and foreign rows",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft signed client-array admission persists raw oid using configured authority",
+          "microsoft signed common admission persists raw oid using configured authority",
+          "microsoft signed consumers admission persists raw oid using configured authority",
+          "microsoft signed empty-image retains measured profile and verification fallback",
+          "microsoft signed empty-name retains measured profile and verification fallback",
+          "microsoft signed exact-nonce admission persists raw oid using configured authority",
+          "microsoft signed explicit-false admission persists raw oid using configured authority",
+          "microsoft signed explicit-null retains measured profile and verification fallback",
+          "microsoft signed explicit-signup admission persists raw oid using configured authority",
+          "microsoft signed explicit-true admission persists raw oid using configured authority",
+          "microsoft signed fixed-tenant admission persists raw oid using configured authority",
+          "microsoft signed missing-image retains measured profile and verification fallback",
+          "microsoft signed missing-name retains measured profile and verification fallback",
+          "microsoft signed null-image retains measured profile and verification fallback",
+          "microsoft signed null-name retains measured profile and verification fallback",
+          "microsoft signed null-primary retains measured profile and verification fallback",
+          "microsoft signed numeric-image retains measured profile and verification fallback",
+          "microsoft signed numeric-name retains measured profile and verification fallback",
+          "microsoft signed organizations admission persists raw oid using configured authority",
+          "microsoft signed signup-option admission persists raw oid using configured authority",
+          "microsoft signed string-primary retains measured profile and verification fallback",
+          "microsoft signed verified-primary admission persists raw oid using configured authority",
+          "microsoft signed verified-secondary admission persists raw oid using configured authority"
         ]
       }
     },
@@ -11330,7 +11872,15 @@
           "linear configured-endpoint real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear default real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear mapped real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
-          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority"
+          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ],
         "rejection": {
           "notApplicable": "Succeeds without a session and takes no input; there is nothing to reject."
@@ -11428,7 +11978,15 @@
           "linear configured-endpoint real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear default real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
           "linear mapped real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
-          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority"
+          "linear public real secret or public exchange and GraphQL viewer refresh replay and local logout preserve foreign authority",
+          "microsoft assertion exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft client-key exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft disabled-configured exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
         ]
       }
     },

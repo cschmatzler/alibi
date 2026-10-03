@@ -56,6 +56,7 @@ import { linkedinProviderFixture } from "./fixtures/linkedin-provider-fixture";
 import { lineProviderFixture } from "./fixtures/line-provider-fixture";
 import { linearProviderFixture } from "./fixtures/linear-provider-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
+import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./fixtures/one-tap-fixture";
@@ -617,6 +618,7 @@ const cloudflareFixture = cloudflareProviderFixture(authOptions);
 const cognitoFixture = cognitoProviderFixture(authOptions);
 const dropboxFixture = dropboxProviderFixture(authOptions);
 const facebookFixture = facebookProviderFixture(authOptions);
+const microsoftFixture = microsoftProviderFixture(authOptions);
 const figmaFixture = figmaProviderFixture(authOptions);
 const huggingfaceFixture = huggingfaceProviderFixture(authOptions);
 const linkedinFixture = linkedinProviderFixture(authOptions);
@@ -654,6 +656,7 @@ for (const [path, instance] of dropboxFixture.profiles) {
 for (const [path, instance] of facebookFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
+for (const [path, instance] of microsoftFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of figmaFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
@@ -1600,6 +1603,8 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      const microsoftControl = await microsoftFixture.handle(request);
+      if (microsoftControl) return microsoftControl;
       if (url.pathname.startsWith("/__test/profiles/error-page/api/auth/")) {
         return errorPageAuth.handler(request);
       }
@@ -2492,6 +2497,7 @@ const server = Bun.serve({
         dropboxFixture.reset();
         facebookFixture.reset();
         figmaFixture.reset();
+        microsoftFixture.reset();
         huggingfaceFixture.reset();
         linkedinFixture.reset();
         kakaoFixture.reset();
