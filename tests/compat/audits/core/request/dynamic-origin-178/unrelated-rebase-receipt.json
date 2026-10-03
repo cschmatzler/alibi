@@ -1,0 +1,16 @@
+{
+  "priorRebaseBase": "48a42c2d789fcbbaf68cd32d638d3de9a15cce97",
+  "latestRebaseBase": "822d104c0f294afdf19c09853f45f5f55fd6868a",
+  "priorHead": "43787e0cfb9b8f2826a52f8a806fb8683184d211",
+  "replayedHead": "a9074f046f3949519abebd35b24ff457dfb4ae66",
+  "allProductionAndFixtureFilesIdentical": [
+    "src/core/auth.rs",
+    "src/config.rs",
+    "crates/core/src/config/mod.rs",
+    "crates/core/src/config/origin.rs",
+    "crates/core/src/middleware/csrf/mod.rs",
+    "tests/integration/core/dynamic_origin.rs"
+  ],
+  "additionalTestsRun": false,
+  "reason": "Main #393 changes organization partial role updates only; range-diff reports all four origin commits unchanged."
+}
