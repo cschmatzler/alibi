@@ -1,6 +1,6 @@
 //! The pinned safeJSONParse date reviver, restricted to its ISO-Z grammar.
 use crate::utils::json::JsValue;
-use chrono::{DateTime, Duration, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 
 pub(crate) fn parse(value: &str) -> Option<DateTime<Utc>> {
     let bytes = value.as_bytes();
@@ -72,5 +72,65 @@ pub(crate) fn revive(value: &mut JsValue) {
         JsValue::Array(values) => values.iter_mut().for_each(revive),
         JsValue::Object(values) => values.values_mut().for_each(revive),
         JsValue::Null | JsValue::Bool(_) | JsValue::Number(_) => {}
+    }
+}
+
+// safeJSONParse's second invocation walks a pre-parsed object into fresh
+// ordinary JavaScript objects. The __proto__ setter changes its prototype;
+// it does not create an enumerable output property.
+pub(crate) fn revive_parsed(value: &mut JsValue) {
+    match value {
+        JsValue::Object(values) => {
+            drop(values.shift_remove("__proto__"));
+            values.values_mut().for_each(revive_parsed);
+        }
+        JsValue::Array(values) => values.iter_mut().for_each(revive_parsed),
+        _ => revive(value),
+    }
+}
+
+// The compatibility runtime's UTC Date primitive conversion. Keep Date
+// revival distinct from ordinary string coercion; arrays join revived values.
+pub(crate) fn coerce_id(value: &JsValue) -> Option<String> {
+    match value {
+        JsValue::String(text) => parse(text).map_or_else(
+            || Some(text.clone()),
+            |date| {
+                Some(format!(
+                    "{}{:04}{}",
+                    date.format("%a %b %d "),
+                    date.year(),
+                    date.format(" %H:%M:%S GMT+0000 (Coordinated Universal Time)")
+                ))
+            },
+        ),
+        JsValue::Array(values) => values
+            .iter()
+            .map(|value| {
+                if value.is_null() {
+                    Some(String::new())
+                } else {
+                    coerce_id(value)
+                }
+            })
+            .collect::<Option<Vec<_>>>()
+            .map(|values| values.join(",")),
+        JsValue::Object(values) => coerce_object_id(values),
+        value => value.coerce_string().ok(),
+    }
+}
+
+fn coerce_object_id(values: &indexmap::IndexMap<String, JsValue>) -> Option<String> {
+    // Own/inherited non-callable toString values cannot yield a primitive.
+    if values.contains_key("toString") {
+        return None;
+    }
+    match values.get("__proto__") {
+        Some(JsValue::Object(prototype)) => coerce_object_id(prototype),
+        // These require JavaScript internal slots or inherited Array methods,
+        // rather than an idiomatic own-property native JSON object.
+        Some(JsValue::Null | JsValue::Array(_)) => None,
+        Some(JsValue::String(text)) if parse(text).is_some() => None,
+        _ => Some("[object Object]".into()),
     }
 }

@@ -173,17 +173,55 @@ pub fn set_issuance_preference(request: &AuthRequest, dont_remember: bool) {
         .insert(IssuancePreference(dont_remember));
 }
 
+// Better Call reads the first base cookie. Better Auth's session-store reader
+// uses the last valid duplicate for chunks, with its stricter octet grammar.
 fn cookies<H: std::hash::BuildHasher + Sync>(
     headers: &std::collections::HashMap<String, String, H>,
 ) -> IndexMap<String, String> {
+    cookie_values(headers, false)
+}
+
+fn cookie_values<H: std::hash::BuildHasher + Sync>(
+    headers: &std::collections::HashMap<String, String, H>,
+    chunks: bool,
+) -> IndexMap<String, String> {
     let mut values = IndexMap::new();
     if let Some(header) = headers.get("cookie") {
-        for cookie in cookie::Cookie::split_parse(header).flatten() {
-            _ = values.entry(cookie.name().into()).or_insert_with(|| {
-                percent_encoding::percent_decode_str(cookie.value())
-                    .decode_utf8_lossy()
-                    .into_owned()
-            });
+        for pair in header.split(';') {
+            let Some((name, value)) = pair.split_once('=') else {
+                continue;
+            };
+            let (name, mut value) = if chunks {
+                (
+                    name.trim_matches([' ', '\t']),
+                    value.trim_matches([' ', '\t']),
+                )
+            } else {
+                (
+                    crate::utils::javascript::trim(name),
+                    crate::utils::javascript::trim(value),
+                )
+            };
+            if value.starts_with('"') && (!chunks || (value.len() >= 2 && value.ends_with('"'))) {
+                value = if value.len() == 1 {
+                    ""
+                } else {
+                    value.get(1..value.len() - 1).unwrap_or(value)
+                };
+            }
+            if chunks && (name.is_empty() || !name.bytes().all(|byte|
+                matches!(byte, b'!' | b'#'..=b'\'' | b'*' | b'+' | b'-' | b'.' | b'0'..=b'9' | b'A'..=b'Z' | b'^' | b'_' | b'`' | b'a'..=b'z' | b'|' | b'~'))
+                || !value.bytes().all(|byte| matches!(byte, 0x20..=0x21 | 0x23..=0x3a | 0x3c..=0x5b | 0x5d..=0x7e))) {
+                continue;
+            }
+            let decoded = percent_encoding::percent_decode_str(value)
+                .decode_utf8()
+                .map_or_else(|_| value.to_owned(), |decoded| decoded.into_owned());
+            if chunks {
+                drop(values.insert(name.to_owned(), decoded));
+            } else {
+                _ = values.entry(name.to_owned()).or_insert(decoded);
+            }
         }
     }
     values
@@ -195,11 +233,15 @@ fn chunk_index(name: &str, base: &str) -> Option<u64> {
     (index <= 9_007_199_254_740_991 && index.to_string() == suffix).then_some(index)
 }
 
-fn cache_value(values: &IndexMap<String, String>, name: &str) -> Option<String> {
+fn cache_value(
+    values: &IndexMap<String, String>,
+    chunks: &IndexMap<String, String>,
+    name: &str,
+) -> Option<String> {
     if let Some(value) = values.get(name).filter(|value| !value.is_empty()) {
         return Some(value.clone());
     }
-    let mut chunks: Vec<_> = values
+    let mut chunks: Vec<_> = chunks
         .iter()
         .filter_map(|(key, value)| Some((chunk_index(key, name)?, value)))
         .collect();
@@ -348,7 +390,7 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
         value.len().div_ceil(capacity)
     };
     let mut output = IndexMap::new();
-    for old in existing_names(&cookies(headers), &name) {
+    for old in existing_names(&cookie_values(headers, true), &name) {
         drop(output.insert(
             old.clone(),
             super::cookie_header(&old, "", Some(0.0), &ctx.config)?,
@@ -582,8 +624,9 @@ pub async fn read<S: AuthSchema>(
     }
     let name = related_cookie_name(&ctx.config, "session_data");
     let values = cookies(request.session_headers());
+    let chunks = cookie_values(request.session_headers(), true);
     if enabled.is_none() {
-        for old in existing_names(&values, &name) {
+        for old in existing_names(&chunks, &name) {
             request.queue_response_header(
                 "Set-Cookie",
                 super::cookie_header(&old, "", Some(0.0), &ctx.config)?,
@@ -597,14 +640,14 @@ pub async fn read<S: AuthSchema>(
     let Some(token) = token else {
         return Ok(None);
     };
-    let Some(value) = cache_value(&values, &name) else {
+    let Some(value) = cache_value(&values, &chunks, &name) else {
         return Ok(None);
     };
     let config =
         enabled.ok_or_else(|| AuthError::internal("Missing enabled cache configuration"))?;
     let decoded = match config.strategy {
         crate::CookieCacheStrategy::Compact => {
-            super::decode_compact(&value, ctx.config.current_secret())
+            super::decode_compact_http(&value, ctx.config.current_secret())?
         }
         crate::CookieCacheStrategy::Jwt => {
             if let Some(signer) = ctx
@@ -871,7 +914,7 @@ pub fn session_cleanup_headers(
     ) {
         names.push(related_cookie_name(config, "oauth_state"));
     }
-    names.extend(existing_names(&cookies(headers), &cache_name));
+    names.extend(existing_names(&cookie_values(headers, true), &cache_name));
     if !skip_remember {
         names.push(related_cookie_name(config, "dont_remember"));
     }

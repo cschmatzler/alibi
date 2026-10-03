@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::borrow::Cow;
 
 /// Public user response shape.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct UserView {
     pub id: String,
     pub name: Option<String>,
@@ -88,6 +88,78 @@ pub struct UserView {
     pub extension_fields: std::collections::BTreeMap<String, serde_json::Value>,
     #[serde(skip)]
     pub metadata: serde_json::Value,
+    /// Fields absent from an authenticated cache projection.
+    #[serde(skip)]
+    pub omitted_fields: std::collections::BTreeSet<String>,
+}
+
+impl Serialize for UserView {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        use serde::ser::SerializeMap;
+        let mut map = serializer.serialize_map(None)?;
+        macro_rules! entry {
+            ($name:literal, $value:expr) => {
+                if !self.omitted_fields.contains($name) {
+                    map.serialize_entry($name, $value)?;
+                }
+            };
+        }
+        entry!("id", &self.id);
+        entry!("name", &self.name);
+        entry!("email", &self.email);
+        entry!("emailVerified", &self.email_verified);
+        entry!("image", &self.image);
+        entry!(
+            "createdAt",
+            &crate::utils::datetime::json_date_millis(self.created_at.timestamp_millis())
+        );
+        entry!(
+            "updatedAt",
+            &crate::utils::datetime::json_date_millis(self.updated_at.timestamp_millis())
+        );
+        if let Some(value) = &self.username {
+            entry!("username", value);
+        }
+        if let Some(value) = &self.display_username {
+            entry!("displayUsername", value);
+        }
+        if let Some(value) = &self.two_factor_enabled {
+            entry!("twoFactorEnabled", value);
+        }
+        if let Some(value) = &self.role {
+            entry!("role", value);
+        }
+        if let Some(value) = &self.banned {
+            entry!("banned", value);
+        }
+        if let Some(value) = &self.ban_reason {
+            entry!("banReason", value);
+        }
+        if let Some(value) = &self.ban_expires {
+            entry!(
+                "banExpires",
+                &crate::utils::datetime::json_date_millis(value.timestamp_millis())
+            );
+        }
+        if let Some(value) = &self.is_anonymous {
+            entry!("isAnonymous", value);
+        }
+        if let Some(value) = &self.phone_number {
+            entry!("phoneNumber", value);
+        }
+        if let Some(value) = &self.phone_number_verified {
+            entry!("phoneNumberVerified", value);
+        }
+        if let Some(value) = &self.last_login_method {
+            entry!("lastLoginMethod", value);
+        }
+        for (name, value) in &self.extension_fields {
+            if !self.omitted_fields.contains(name) {
+                map.serialize_entry(name, value)?;
+            }
+        }
+        map.end()
+    }
 }
 
 /// Public session response shape.
@@ -151,22 +223,16 @@ impl Serialize for SessionView {
         entry!("id", &self.id);
         entry!(
             "expiresAt",
-            &self
-                .expires_at
-                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+            &crate::utils::datetime::json_date_millis(self.expires_at.timestamp_millis())
         );
         entry!("token", &self.token);
         entry!(
             "createdAt",
-            &self
-                .created_at
-                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+            &crate::utils::datetime::json_date_millis(self.created_at.timestamp_millis())
         );
         entry!(
             "updatedAt",
-            &self
-                .updated_at
-                .to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+            &crate::utils::datetime::json_date_millis(self.updated_at.timestamp_millis())
         );
         entry!("ipAddress", &self.ip_address);
         entry!("userAgent", &self.user_agent);
@@ -262,6 +328,7 @@ impl<T: AuthUser> From<&T> for UserView {
             last_login_method: user.last_login_method().map(str::to_owned),
             extension_fields: std::collections::BTreeMap::default(),
             metadata: user.metadata().clone(),
+            omitted_fields: std::collections::BTreeSet::default(),
         }
     }
 }
@@ -816,6 +883,7 @@ mod tests {
     #[test]
     fn user_view_serializes_camel_case() {
         let user = UserView {
+            omitted_fields: std::collections::BTreeSet::default(),
             id: "user-1".to_owned(),
             name: Some("Ada".to_owned()),
             email: Some("ada@example.com".to_owned()),

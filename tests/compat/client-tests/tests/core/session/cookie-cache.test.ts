@@ -2022,3 +2022,280 @@ compatScenario(
   },
   ["POST /sign-up/email", "GET /get-session"],
 );
+
+// Original signed envelopes have fixed bytes and bind to the genuine first
+// session issued by the exotic application's database hook. No comparator
+// exception or cache-shaped entropy treatment is needed for these inputs.
+compatScenario(
+  "compact exotic original bytes preserve published decoding callback order HTTP fallback and physical owners",
+  async (ctx) => {
+    const vectors = (await Bun.file(
+      new URL("../../../../../fixtures/session/compact-exotic-inputs.json", import.meta.url),
+    ).json()) as {
+      javascriptOnlyObservations: { name: string; header: string; decodedJSON: string }[];
+      observations: {
+        name: string;
+        token: string;
+        originalBytesHex: string;
+        envelope: any;
+        header: string;
+        decoded: any;
+        versionCalls: any[];
+      }[];
+    };
+    // Measure the published helper's JavaScript-only representations explicitly.
+    // Native UTF-8/prototype rejection and physical fallback have a separate
+    // dual-store Rust API owner; these are never normalized into native values.
+    for (const input of vectors.javascriptOnlyObservations) {
+      const decoded = await getCookieCache(new Headers({ cookie: input.header }), {
+        secret,
+        isSecure: false,
+      });
+      expect(JSON.stringify(decoded)).toBe(input.decodedJSON);
+    }
+    await control(ctx, "exotic", { action: "reset" });
+    const owner = client(ctx, "exotic");
+    const foreign = client(ctx, "exotic", "foreign");
+    const signup = await owner.sdk.signUp.email({
+      email: ctx.uniqueEmail("exotic-owner"),
+      name: "Physical Exotic Owner",
+      password: "password123",
+    });
+    expect(signup.error).toBeNull();
+    expect(signup.data!.token).toBe("00010000000000000000000000000001");
+    const original = owner.headers.at(-1)!;
+    const issued = await atom(original);
+    const other = await foreign.sdk.signUp.email({
+      email: ctx.uniqueEmail("exotic-foreign"),
+      name: "Physical Foreign Owner",
+      password: "password123",
+    });
+    expect(other.error).toBeNull();
+    const ownerBefore = await cacheOwnerRows(ctx, signup.data!.user.id, "exotic");
+    const foreignBefore = await cacheOwnerRows(ctx, other.data!.user.id, "exotic");
+    const token = cookiePairs(original).find((p) => p.startsWith("better-auth.session_token="))!;
+    const foreignToken = cookiePairs(foreign.headers.at(-1)!).find((p) =>
+      p.startsWith("better-auth.session_token="),
+    )!;
+    const results = [];
+    for (const input of vectors.observations) {
+      const versionCalls: unknown[] = [];
+      const decoded = await getCookieCache(new Headers({ cookie: input.header }), {
+        secret,
+        isSecure: false,
+        strategy: "compact",
+        version: (session, user) => {
+          versionCalls.push({ session, user });
+          return "1";
+        },
+      });
+      expect(ctx.snapshot(decoded)).toEqual(input.decoded);
+      expect(ctx.snapshot(versionCalls)).toEqual(input.versionCalls);
+      // Retain and compare all original bytes, signature and claims. Padding
+      // tails are intentionally included in the original token as measured.
+      expect(Buffer.from(input.token, "base64url").toString("hex")).toBe(input.originalBytesHex);
+      await control(ctx, "exotic", { action: "clear-events" });
+      const read = await response(
+        await owner.fetch(ctx.baseURL + authProfilePath("session-cache-exotic") + "/get-session", {
+          credentials: "omit",
+          headers: { cookie: token + "; " + input.header },
+        }),
+      );
+      expect(read.status).toBe(200);
+      const hit = input.decoded !== null && input.name !== "wrong-token";
+      expect((read.body as any).user.name).toBe(
+        hit ? input.decoded.user.name : "Physical Exotic Owner",
+      );
+      if (hit) {
+        expect((read.body as any).session).toEqual(input.decoded.session);
+        expect((read.body as any).user).toEqual(input.decoded.user);
+      }
+      const events = (await control(ctx, "exotic", { action: "state" })).events;
+      // HMAC/schema rejection and token mismatch precede the callback. A valid
+      // expired/version-mismatched payload reaches the callback before fallback.
+      const reached = input.versionCalls.length > 0 && input.name !== "wrong-token";
+      expect(events, input.name).toHaveLength(hit ? 1 : reached ? 2 : 1);
+      if (reached) expect(ctx.snapshot(events[0]!.session)).toEqual(input.versionCalls[0]!.session);
+      if (!hit) expect(events.at(-1)!.user.name).toBe("Physical Exotic Owner");
+      results.push({
+        applicationData: { input },
+        decoded: ctx.snapshot(decoded),
+        versionCalls: ctx.snapshot(versionCalls),
+        read,
+        events,
+      });
+    }
+    const canonical = vectors.observations.find((v) => v.name === "canonical")!;
+    await control(ctx, "exotic", { action: "clear-events" });
+    const graft = await response(
+      await owner.fetch(ctx.baseURL + authProfilePath("session-cache-exotic") + "/get-session", {
+        credentials: "omit",
+        headers: { cookie: foreignToken + "; " + canonical.header },
+      }),
+    );
+    expect((graft.body as any).user.id).toBe(other.data!.user.id);
+    const graftEvents = (await control(ctx, "exotic", { action: "state" })).events;
+    expect(graftEvents).toHaveLength(1);
+    expect(graftEvents[0]!.user.id).toBe(other.data!.user.id);
+    const noToken = await response(
+      await owner.fetch(ctx.baseURL + authProfilePath("session-cache-exotic") + "/get-session", {
+        credentials: "omit",
+        headers: { cookie: canonical.header },
+      }),
+    );
+    expect(noToken.body).toBeNull();
+    expect(await cacheOwnerRows(ctx, signup.data!.user.id, "exotic")).toEqual(ownerBefore);
+    expect(await cacheOwnerRows(ctx, other.data!.user.id, "exotic")).toEqual(foreignBefore);
+    await control(ctx, "exotic", { action: "revoke", token: signup.data!.token });
+    const revokedBefore = await cacheOwnerRows(ctx, signup.data!.user.id, "exotic");
+    const expired = vectors.observations.find((v) => v.name === "outer-expired")!;
+    const revoked = await response(
+      await owner.fetch(ctx.baseURL + authProfilePath("session-cache-exotic") + "/get-session", {
+        credentials: "omit",
+        headers: { cookie: token + "; " + expired.header },
+      }),
+    );
+    expect(revoked.body).toBeNull();
+    expect(await cacheOwnerRows(ctx, signup.data!.user.id, "exotic")).toEqual(revokedBefore);
+    expect(await cacheOwnerRows(ctx, other.data!.user.id, "exotic")).toEqual(foreignBefore);
+    return {
+      signup: ctx.snapshot(signup),
+      issued,
+      other: ctx.snapshot(other),
+      ownerBefore,
+      foreignBefore,
+      applicationData: { javascriptOnlyObservations: vectors.javascriptOnlyObservations },
+      results,
+      graft,
+      graftEvents,
+      noToken,
+      revokedBefore,
+      revoked,
+    };
+  },
+  ["GET /get-session"],
+  120000,
+);
+
+compatScenario(
+  "compact public helper and HTTP separately preserve noncanonical duplicate gap base and truncation parsing",
+  async (ctx) => {
+    const vectors = await Bun.file(
+      new URL("../../../../../fixtures/session/compact-exotic-inputs.json", import.meta.url),
+    ).json();
+    const input = vectors.observations.find((v: any) => v.name === "canonical");
+    await control(ctx, "exotic", { action: "reset" });
+    const owner = client(ctx, "exotic");
+    const signup = await owner.sdk.signUp.email({
+      email: ctx.uniqueEmail("exotic-chunks"),
+      name: "Physical Chunk Owner",
+      password: "password123",
+    });
+    expect(signup.error).toBeNull();
+    const original = owner.headers.at(-1)!;
+    const issued = await atom(original);
+    const token = cookiePairs(original).find((p) => p.startsWith("better-auth.session_token="))!;
+    const ownerBefore = await cacheOwnerRows(ctx, signup.data!.user.id, "exotic");
+    const middle = Math.floor(input.token.length / 2);
+    const a = input.token.slice(0, middle);
+    const b = input.token.slice(middle);
+    const cases: [string, string[], boolean, boolean][] = [
+      ["canonical", [`${cookieName}.0=${a}`, `${cookieName}.1=${b}`], true, true],
+      ["duplicate-index-alias", [`${cookieName}.00=${a}`, `${cookieName}.0=${b}`], true, false],
+      [
+        "invalid-duplicate-ignored",
+        [`${cookieName}.0=${a}`, `${cookieName}.0=bad"`, `${cookieName}.1=${b}`],
+        true,
+        true,
+      ],
+      ["base-lone-quote", [`${cookieName}="`], false, false],
+      ["base-unclosed-quote", [`${cookieName}="${input.token}X`], false, true],
+      ["reverse", [`${cookieName}.1=${b}`, `${cookieName}.0=${a}`], true, true],
+      ...["00", "+0", "-0", "0junk", "0.0", "0x0", "9007199254740992"].map(
+        (index): [string, string[], boolean, boolean] => [
+          index,
+          [`${cookieName}.${index}=${a}`, `${cookieName}.9007199254740993=${b}`],
+          true,
+          false,
+        ],
+      ),
+      ["nested-suffix", [`${cookieName}.junk.0=${a}`, `${cookieName}.junk.1=${b}`], true, false],
+      ["empty-suffix", [`${cookieName}.=${a}`, `${cookieName}.1=${b}`], true, false],
+      ["negative", [`${cookieName}.-1=${a}`, `${cookieName}.0=${b}`], true, false],
+      ["gap", [`${cookieName}.2=${a}`, `${cookieName}.9=${b}`], true, true],
+      [
+        "duplicate-last-valid",
+        [`${cookieName}.0=bad`, `${cookieName}.0=${a}`, `${cookieName}.1=${b}`],
+        true,
+        true,
+      ],
+      [
+        "duplicate-last-invalid",
+        [`${cookieName}.0=${a}`, `${cookieName}.0=bad`, `${cookieName}.1=${b}`],
+        false,
+        false,
+      ],
+      ["base-first-bad", [`${cookieName}=bad`, input.header], true, false],
+      ["base-last-bad", [input.header, `${cookieName}=bad`], false, true],
+      ["base-precedence", [input.header, `${cookieName}.0=bad`], true, true],
+      [
+        "empty-base",
+        [`${cookieName}=`, `${cookieName}.0=${a}`, `${cookieName}.1=${b}`],
+        true,
+        true,
+      ],
+      ["missing-prefix", [`${cookieName}.1=${b}`], false, false],
+      ["truncated", [`${cookieName}.0=${a}`, `${cookieName}.1=${b.slice(0, -12)}`], false, false],
+      ["quoted", [`${cookieName}="${input.token}"`], true, true],
+      [
+        "percent",
+        [
+          `${cookieName}=${encodeURIComponent(input.token.slice(0, 1)) + "%" + input.token.charCodeAt(1).toString(16) + input.token.slice(2)}`,
+        ],
+        true,
+        true,
+      ],
+      ["invalid-percent", [`${cookieName}=${input.token}%FF`], false, false],
+      ["invalid-name-ignored", [input.header, `${cookieName}.0[=bad`], true, true],
+    ];
+    const results = [];
+    for (const [name, pairs, helperHit, httpHit] of cases) {
+      const header = pairs.join("; ");
+      let decoded;
+      try {
+        decoded = await getCookieCache(new Headers({ cookie: header }), {
+          secret,
+          isSecure: false,
+        });
+      } catch (error) {
+        decoded = { thrown: (error as Error).message };
+      }
+      expect(decoded !== null && !(decoded as any)?.thrown).toBe(helperHit);
+      if (helperHit) {
+        expect(ctx.snapshot(decoded)).toEqual(input.decoded);
+      }
+      const read = await response(
+        await owner.fetch(ctx.baseURL + authProfilePath("session-cache-exotic") + "/get-session", {
+          credentials: "omit",
+          headers: { cookie: token + "; " + header },
+        }),
+      );
+      expect(read.status, name).toBe(name === "invalid-percent" ? 500 : 200);
+      if (read.status === 200) {
+        expect((read.body as any).user.name, name).toBe(
+          httpHit ? "Signed Exotic Owner" : "Physical Chunk Owner",
+        );
+      } else {
+        expect(read.body).toEqual({
+          code: "FAILED_TO_GET_SESSION",
+          message: "Failed to get session",
+        });
+      }
+      results.push({ name, header, decoded: ctx.snapshot(decoded), read });
+    }
+    expect(await cacheOwnerRows(ctx, signup.data!.user.id, "exotic")).toEqual(ownerBefore);
+    return { signup: ctx.snapshot(signup), issued, input, ownerBefore, results };
+  },
+  ["GET /get-session"],
+  120000,
+);

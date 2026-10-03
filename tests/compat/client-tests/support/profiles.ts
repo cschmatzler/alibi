@@ -448,6 +448,7 @@ export const FIXTURE_PROFILES = [
   "two-factor-pending-lookup-zero-disabled",
   ...variants("session-cache-", [
     "standard",
+    "exotic",
     "disabled",
     "version",
     "version-api",
