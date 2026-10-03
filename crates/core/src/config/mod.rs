@@ -139,7 +139,9 @@ pub enum AwaitedNotificationErrorPolicy {
 }
 
 mod origin;
-pub use origin::{BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver, TrustedProvidersResolver};
+pub use origin::{
+    BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver, TrustedProvidersResolver,
+};
 
 /// Main configuration for `BetterAuth`
 #[derive(Clone)]

@@ -13,3 +13,5 @@ mod session;
 mod user_json;
 
 mod dynamic_origin;
+
+mod dynamic_providers;

@@ -32,6 +32,9 @@ pub trait TrustedOriginsResolver: Send + Sync {
 /// Request-dependent account-linking trust policy. Initialization passes `None`;
 /// HTTP dispatch passes the original request before hooks and authority checks.
 /// This selects trusted provider IDs, not provider factories or credentials.
+/// Initialization failures propagate from the builder. Request failures abort
+/// before routing as an empty HTTP 500, including explicit API errors thrown
+/// at this stage; the private cause is discarded rather than logged.
 #[async_trait]
 pub trait TrustedProvidersResolver: Send + Sync {
     async fn resolve(&self, request: Option<&AuthRequest>) -> AuthResult<Vec<String>>;
@@ -170,7 +173,12 @@ impl AuthConfig {
         if let Some(resolver) = &self.account.account_linking.trusted_providers_resolver {
             config.account.account_linking.trusted_providers = resolver
                 .resolve(Some(request))
-                .await?
+                .await
+                .map_err(|_| {
+                    AuthError::CallbackFailure(Box::new(AuthError::internal(
+                        "Trusted provider resolution failed",
+                    )))
+                })?
                 .into_iter()
                 .filter(|provider| !provider.is_empty())
                 .collect();
