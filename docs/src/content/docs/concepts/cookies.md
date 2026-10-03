@@ -38,7 +38,7 @@ initialization. Clearing sets Max-Age to zero while retaining the other attribut
 ```rust
 use better_auth::{AuthConfig, AuthResult};
 use better_auth::config::CookieAttributes;
-use better_auth::utils::cookie_utils::create_session_cookie;
+use better_auth_core::utils::cookie_utils::create_session_cookie;
 
 fn session_header(token: &str, config: &AuthConfig) -> AuthResult<String> {
     create_session_cookie(token, config)

@@ -1120,18 +1120,15 @@ fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> f64 {
         .cookies
         .get("account_data")
         .and_then(|cookie| cookie.attributes.max_age)
-        .map_or_else(
-            || {
-                better_auth_core::cache::effective_max_age(
-                    config
-                        .session
-                        .cookie_cache
-                        .as_ref()
-                        .map_or(300.0, |cache| cache.max_age),
-                )
-            },
-            |age| age,
-        )
+        .unwrap_or_else(|| {
+            better_auth_core::cache::effective_max_age(
+                config
+                    .session
+                    .cookie_cache
+                    .as_ref()
+                    .map_or(300.0, |cache| cache.max_age),
+            )
+        })
 }
 
 /// Emit the encrypted account snapshot and clear stale incoming chunks.

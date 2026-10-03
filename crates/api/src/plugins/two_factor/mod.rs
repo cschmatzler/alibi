@@ -2472,12 +2472,6 @@ async fn create_trust_device_cookie_header(
     )
 }
 
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    clippy::cast_sign_loss,
-    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
-)]
 fn create_signed_cookie_header(
     secret: &str,
     config: &better_auth_core::AuthConfig,

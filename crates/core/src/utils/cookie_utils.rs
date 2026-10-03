@@ -35,11 +35,13 @@ pub fn create_cookie_with_max_age(
     let mut attributes = cookie_attributes(name, config);
     if producer_age.is_some() {
         attributes.max_age = producer_age;
-        if let Some(age) = config.advanced.cookies.iter().find_map(|(logical, entry)| {
-            (related_cookie_name(config, logical) == name)
-                .then_some(entry.attributes.max_age)
-                .flatten()
-        }) {
+        if let Some(age) = config
+            .advanced
+            .cookies
+            .iter()
+            .find(|(logical, _)| related_cookie_name(config, logical) == name)
+            .and_then(|(_, entry)| entry.attributes.max_age)
+        {
             attributes.max_age = Some(age);
         }
     }
@@ -361,9 +363,11 @@ fn render_encoded_cookie(
     let mut header = format!("{name}={value}");
     if let Some(age) = attributes.max_age.filter(|age| *age >= 0.0) {
         if age > 34_560_000.0 {
-            return Err(crate::AuthError::CallbackFailure(Box::new(crate::AuthError::internal(
-                "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
-            ))));
+            return Err(crate::AuthError::CallbackFailure(Box::new(
+                crate::AuthError::internal(
+                    "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
+                ),
+            )));
         }
         // JavaScript renders Math.floor(-0) as "0".
         let age = if age == 0.0 { 0.0 } else { age.floor() };
@@ -391,9 +395,11 @@ fn render_encoded_cookie(
             .num_milliseconds()
             > 34_560_000_000
         {
-            return Err(crate::AuthError::CallbackFailure(Box::new(crate::AuthError::internal(
-                "Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.",
-            ))));
+            return Err(crate::AuthError::CallbackFailure(Box::new(
+                crate::AuthError::internal(
+                    "Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.",
+                ),
+            )));
         }
         _ = write!(
             header,
