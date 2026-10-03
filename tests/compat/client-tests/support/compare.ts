@@ -1354,10 +1354,13 @@ export function compareValues(
           }
         }
 
-        // This fixture uses the real default seven-day session policy. Its
+        // These profiles use the real default seven-day session policy. Their
         // narrow observer omits creation dates; subtract the configured lifetime
         // and require the independent issuance windows on both runtimes.
-        if (receipt.authPath === "/__test/profiles/org-member-addition/api/auth") {
+        if (
+          receipt.authPath === "/__test/profiles/org-member-addition/api/auth" ||
+          receipt.authPath === "/__test/profiles/dispatch-default/api/auth"
+        ) {
           if (
             inWindows(
               Date.parse(a.expiresAt) - 604800000,
