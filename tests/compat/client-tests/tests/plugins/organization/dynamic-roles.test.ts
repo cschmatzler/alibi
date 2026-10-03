@@ -829,13 +829,13 @@ compatScenario(
       data: { permission: { team: ["update"] } },
     });
     expect(new Date(data(byId).roleData.updatedAt!).toISOString()).toBe(
-      afterRename.parsed.roles[0]?.updatedAt,
+      afterRename.parsed.roles[0]!.updatedAt!,
     );
 
     const afterId = await state(ctx, organizationId);
     expect(afterId.parsed.roles.map((role) => role.permission)).toEqual([
       '{"team":["update"]}',
-      permissionJsons[1],
+      permissionJsons[1]!,
     ]);
 
     const byName = await owner.client.organization.updateRole({
