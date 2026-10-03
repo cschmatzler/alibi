@@ -12,7 +12,7 @@ mod verification_profiles;
 use fixtures::{
     additional_fields_fixture, admin_banned_message_fixture, admin_permission_fixture,
     anonymous_fixture, api_key_background_fixture, api_key_generation_fixture,
-    api_key_hook_fixture, api_key_options_fixture, apple_provider_fixture,
+    api_key_hook_fixture, api_key_options_fixture, api_key_storage_fixture, apple_provider_fixture,
     atlassian_provider_fixture, bearer_fixture, captcha_fixture, client_ip_fixture,
     cloudflare_provider_fixture, cognito_provider_fixture, compromised_password_fixture,
     custom_session_fixture, device_fixture, dispatch_fixture, dropbox_provider_fixture,
@@ -833,6 +833,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
     )
     .await?;
+    let (api_key_storage_router, api_key_storage_reset) =
+        api_key_storage_fixture::router(&config, database.clone()).await?;
     let api_key_background_router =
         api_key_background_fixture::router(&config, database.clone()).await?;
     let api_key_hook_router = api_key_hook_fixture::router(&config, database.clone()).await?;
@@ -1369,6 +1371,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/__test/reset-state",
             post(move || {
+                let api_key_storage_reset = api_key_storage_reset.clone();
                 let verification_storage_reset = verification_storage_reset.clone();
                 let user_validation_app = user_validation_app.clone();
                 let registration_receipts = registration_receipts.clone();
@@ -1407,6 +1410,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let invitation_acceptance_reset = invitation_acceptance_reset.clone();
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
+                    api_key_storage_reset.reset().await;
                     cloudflare_reset.reset().await;
                     cognito_reset.reset().await;
                     if let Err(error) = additional_fields_reset.reset().await {
@@ -2068,6 +2072,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(admin_banned_message_router)
         .merge(api_key_generation_router)
         .merge(api_key_options_router)
+        .merge(api_key_storage_router)
         .merge(api_key_background_router)
         .merge(api_key_hook_router)
         .merge(session_fields_router)

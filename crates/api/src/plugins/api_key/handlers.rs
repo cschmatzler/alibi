@@ -1,10 +1,12 @@
+mod metadata_sort;
+
 use super::ApiKeyPlugin;
 use super::types::{
     ApiKeyView, CreateKeyRequest, CreateKeyResponse, DeleteKeyRequest, ListKeysQuery,
     ListKeysResponse, UpdateKeyRequest,
 };
 use crate::plugins::helpers;
-use better_auth_core::{AuthContext, AuthResult, CreateApiKey, UpdateApiKey};
+use better_auth_core::{ApiKey, AuthContext, AuthResult, CreateApiKey, UpdateApiKey};
 
 // ---------------------------------------------------------------------------
 // Core functions -- framework-agnostic business logic
@@ -290,7 +292,7 @@ pub(super) async fn create_key_for_user(
         )?),
         enabled: true,
     };
-    let api_key = ctx.database.create_api_key(input).await?;
+    let api_key = config.create_stored_key(ctx, input).await?;
     let mut api_key = ApiKeyView::from(&api_key);
     // Upstream returns supplied falsy metadata at creation, but stores null.
     api_key.metadata = body
@@ -380,10 +382,26 @@ pub(in crate::plugins) async fn list_keys_core(
         let _ignored_resolve_configuration = plugin.resolve_configuration(config_id)?;
     }
 
-    let keys = ctx
-        .database
-        .list_api_keys_by_reference(reference_id)
-        .await?;
+    let keys = if let Some(config_id) = config_id {
+        plugin
+            .resolve_configuration(Some(config_id))?
+            .list_stored_keys(
+                ctx,
+                reference_id,
+                query.sort_by.as_deref(),
+                query.sort_direction.as_deref(),
+            )
+            .await?
+    } else {
+        plugin
+            .list_storage_keys(
+                ctx,
+                reference_id,
+                query.sort_by.as_deref(),
+                query.sort_direction.as_deref(),
+            )
+            .await?
+    };
     let mut views: Vec<ApiKeyView> = keys
         .iter()
         .filter(|key| {
@@ -393,15 +411,13 @@ pub(in crate::plugins) async fn list_keys_core(
                 .find(|config| super::config_id_matches(&key.config_id, &config.config_id))
                 .map(|config| config.references)
                 .unwrap_or_default();
-            key_references == references
+            key.reference_id == reference_id
+                && key_references == references
                 && config_id.is_none_or(|id| super::config_id_matches(&key.config_id, id))
         })
         .map(ApiKeyView::from)
         .collect();
 
-    if let Some(sort_by) = query.sort_by.as_deref() {
-        sort_views(&mut views, sort_by, query.sort_direction.as_deref());
-    }
     let total = views.len();
     if let Some(offset) = query.offset {
         views = views.split_off(offset.min(views.len()));
@@ -427,15 +443,80 @@ fn compare_numbers(left: Option<f64>, right: Option<f64>) -> std::cmp::Ordering 
     }
 }
 
-fn sort_views(views: &mut [ApiKeyView], sort_by: &str, direction: Option<&str>) {
-    views.sort_by(|a, b| {
+fn compare_strings(
+    left: Option<&str>,
+    right: Option<&str>,
+    from_database: bool,
+) -> std::cmp::Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) if !from_database => {
+            left.encode_utf16().cmp(right.encode_utf16())
+        }
+        _ => left.cmp(&right),
+    }
+}
+
+fn compare_metadata(left: Option<&str>, right: Option<&str>) -> AuthResult<std::cmp::Ordering> {
+    use better_auth_core::utils::{
+        javascript::string_to_number,
+        json::{JsValue, parse_value},
+    };
+    let left = left.map(parse_value).transpose()?.unwrap_or(JsValue::Null);
+    let right = right.map(parse_value).transpose()?.unwrap_or(JsValue::Null);
+    match (left.is_null(), right.is_null()) {
+        (true, true) => return Ok(std::cmp::Ordering::Equal),
+        (true, false) => return Ok(std::cmp::Ordering::Less),
+        (false, true) => return Ok(std::cmp::Ordering::Greater),
+        (false, false) => {}
+    }
+    let primitive = |value: JsValue| match value {
+        JsValue::Array(_) | JsValue::Object(_) => value
+            .coerce_string()
+            .map(JsValue::String)
+            .map_err(better_auth_core::AuthError::internal),
+        value => Ok(value),
+    };
+    let left = primitive(left)?;
+    let right = primitive(right)?;
+    if let (JsValue::String(left), JsValue::String(right)) = (&left, &right) {
+        return Ok(compare_strings(Some(left), Some(right), false));
+    }
+    let number = |value: &JsValue| match value {
+        JsValue::Null => Some(0.0),
+        JsValue::Bool(value) => Some(f64::from(*value)),
+        JsValue::Number(value) => Some(*value),
+        JsValue::String(value) => string_to_number(value),
+        JsValue::Array(_) | JsValue::Object(_) => None,
+    };
+    Ok(number(&left)
+        .zip(number(&right))
+        .and_then(|(left, right)| left.partial_cmp(&right))
+        .unwrap_or(std::cmp::Ordering::Equal))
+}
+
+pub(super) fn sort_keys(
+    keys: &mut [ApiKey],
+    sort_by: &str,
+    direction: Option<&str>,
+    from_database: bool,
+) -> AuthResult<()> {
+    if sort_by == "metadata" && !from_database {
+        return metadata_sort::sort(keys, direction);
+    }
+    keys.sort_by(|left, right| {
+        let a = ApiKeyView::from(left);
+        let b = ApiKeyView::from(right);
+        let strings = |left, right| compare_strings(left, right, from_database);
         let ordering = match sort_by {
-            "id" => a.id.cmp(&b.id),
-            "name" => a.name.cmp(&b.name),
-            "start" => a.start.cmp(&b.start),
-            "prefix" => a.prefix.cmp(&b.prefix),
-            "referenceId" => a.reference_id.cmp(&b.reference_id),
-            "configId" => a.config_id.cmp(&b.config_id),
+            "key" => strings(Some(&left.key_hash), Some(&right.key_hash)),
+            "id" => strings(Some(&a.id), Some(&b.id)),
+            "name" => strings(a.name.as_deref(), b.name.as_deref()),
+            "start" => strings(a.start.as_deref(), b.start.as_deref()),
+            "prefix" => strings(a.prefix.as_deref(), b.prefix.as_deref()),
+            "referenceId" => strings(Some(&a.reference_id), Some(&b.reference_id)),
+            "configId" => strings(Some(&a.config_id), Some(&b.config_id)),
+            "permissions" => strings(left.permissions.as_deref(), right.permissions.as_deref()),
+            "metadata" => strings(left.metadata.as_deref(), right.metadata.as_deref()),
             "enabled" => a.enabled.cmp(&b.enabled),
             "rateLimitEnabled" => a.rate_limit_enabled.cmp(&b.rate_limit_enabled),
             "createdAt" => a.created_at.cmp(&b.created_at),
@@ -459,6 +540,7 @@ fn sort_views(views: &mut [ApiKeyView], sort_by: &str, direction: Option<&str>) 
             ordering
         }
     });
+    Ok(())
 }
 
 ///
@@ -562,7 +644,7 @@ pub(super) async fn update_key_for_user(
         expires_at,
         ..Default::default()
     };
-    let updated = ctx.database.update_api_key(&body.key_id, update).await?;
+    let updated = config.update_stored_key(ctx, &body.key_id, update).await?;
     plugin.maybe_delete_expired(ctx).await?;
     Ok(ApiKeyView::from(&updated))
 }
@@ -577,8 +659,9 @@ pub(in crate::plugins) async fn delete_key_core(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<serde_json::Value> {
     let config = plugin.resolve_configuration(body.config_id.as_deref())?;
-    drop(helpers::get_owned_api_key(ctx, config, &body.key_id, user_id.as_ref(), "delete").await?);
-    ctx.database.delete_api_key(&body.key_id).await?;
+    let key =
+        helpers::get_owned_api_key(ctx, config, &body.key_id, user_id.as_ref(), "delete").await?;
+    config.remove_key(ctx, &key).await?;
     plugin.maybe_delete_expired(ctx).await?;
     Ok(serde_json::json!({ "success": true }))
 }

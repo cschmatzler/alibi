@@ -715,10 +715,17 @@ impl<T: AuthApiKey> From<&T> for ApiKeyView {
                     value
                 }),
             metadata: ak.metadata().and_then(|s| {
-                crate::utils::json::parse_value(s)
-                    .ok()?
-                    .to_json_value()
-                    .ok()
+                let value = crate::utils::json::parse_value(s).ok()?;
+                if let crate::utils::json::JsValue::String(encoded) = value {
+                    let mut value = crate::utils::json::parse_value(&encoded)
+                        .ok()?
+                        .to_json_value()
+                        .ok()?;
+                    normalize_api_key_permission_dates(&mut value);
+                    Some(value)
+                } else {
+                    value.to_json_value().ok()
+                }
             }),
         }
     }
