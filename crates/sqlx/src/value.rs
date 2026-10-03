@@ -126,9 +126,13 @@ pub enum ColumnKind {
     Double,
     /// `f32` columns.
     Float,
+    /// `i32` columns, including typed NULLs.
+    Int,
+    /// `i64` columns, including typed NULLs.
+    BigInt,
     /// `bool` columns.
     Boolean,
-    /// Integers, timestamps, bytes, UUIDs and custom values: bound unchanged.
+    /// Timestamps, bytes, UUIDs and custom values: bound unchanged.
     Other,
     /// UTC wall-clock timestamps, bound as PostgreSQL `TIMESTAMP`.
     NaiveTimestamp,
@@ -202,8 +206,8 @@ macro_rules! sqlx_value {
 
 sqlx_value!(
     bool => Bool, Boolean,
-    i32 => Int, Other,
-    i64 => BigInt, Other,
+    i32 => Int, Int,
+    i64 => BigInt, BigInt,
     f32 => Float, Float,
     f64 => Double, Double,
     Vec<u8> => Bytes, Other,

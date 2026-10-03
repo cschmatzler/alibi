@@ -497,7 +497,23 @@ where
                 // boolean field before the adapter binds it. Array operands
                 // retain their original strings. The actual model column type
                 // also supports custom boolean fields and physical renames.
-                let bindings: Vec<SqlValue> = if matches!(value, UserFilterValue::Scalar(_))
+                let numeric_cast = if self.exec().engine() == crate::pool::Engine::Postgres {
+                    match <S::User as SqlxModel>::column_kind(column) {
+                        ColumnKind::Int => Some("int4"),
+                        ColumnKind::BigInt => Some("int8"),
+                        ColumnKind::Float => Some("float4"),
+                        ColumnKind::Double => Some("float8"),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                let bindings: Vec<SqlValue> = if numeric_cast.is_some() {
+                    numeric_filter_text(operands)
+                        .into_iter()
+                        .map(Into::into)
+                        .collect()
+                } else if matches!(value, UserFilterValue::Scalar(_))
                     && <S::User as SqlxModel>::column_kind(column) == ColumnKind::Boolean
                 {
                     operands
@@ -513,18 +529,18 @@ where
                 };
                 sql.push(" WHERE ");
                 match operator {
-                    "in" | "not_in" if bindings.is_empty() => {
+                    "in" | "not_in" if bindings.is_empty() && numeric_cast.is_none() => {
                         sql.push(if operator == "in" { "1 = 2" } else { "1 = 1" });
                     }
                     "in" => {
                         sql.column(table, column);
                         sql.push(" IN ");
-                        sql.bind_list(bindings);
+                        bind_filter_values(&mut sql, bindings, numeric_cast);
                     }
                     "not_in" => {
                         sql.column(table, column);
                         sql.push(" NOT IN ");
-                        sql.bind_list(bindings);
+                        bind_filter_values(&mut sql, bindings, numeric_cast);
                     }
                     // The pinned adapter interpolates the complete array's
                     // comma-joined value into a bound LIKE pattern. Actual SQL
@@ -564,7 +580,7 @@ where
                         };
                         sql.ident(column);
                         sql.push(comparison);
-                        sql.bind_list(bindings);
+                        bind_filter_values(&mut sql, bindings, numeric_cast);
                     }
                     _ => return Err(AuthError::bad_request("Unsupported user filter operator")),
                 }
@@ -615,4 +631,43 @@ where
 
 fn normalize_user_email(email: &str) -> String {
     email.to_lowercase()
+}
+
+// Source converts a nonempty numeric scalar, or every numeric array operand,
+// to Number before node-postgres serializes the parameter. An invalid array
+// keeps all its original strings. PostgreSQL validates the resulting text.
+fn numeric_filter_text(values: &[String]) -> Vec<String> {
+    let numbers = values
+        .iter()
+        .map(|value| {
+            (!better_auth_core::utils::javascript::trim(value).is_empty())
+                .then(|| better_auth_core::utils::javascript::string_to_number(value))
+                .flatten()
+                .filter(|number| !number.is_nan())
+        })
+        .collect::<Option<Vec<_>>>();
+    numbers.map_or_else(
+        || values.to_vec(),
+        |numbers| {
+            numbers
+                .into_iter()
+                .map(|number| ryu_js::Buffer::new().format(number).to_owned())
+                .collect()
+        },
+    )
+}
+
+fn bind_filter_values(sql: &mut Sql, values: Vec<SqlValue>, cast: Option<&str>) {
+    sql.push("(");
+    for (index, value) in values.into_iter().enumerate() {
+        if index > 0 {
+            sql.push(", ");
+        }
+        sql.bind(value);
+        if let Some(cast) = cast {
+            sql.push("::");
+            sql.push(cast);
+        }
+    }
+    sql.push(")");
 }

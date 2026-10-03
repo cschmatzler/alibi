@@ -97,6 +97,8 @@ pub(crate) async fn prepare_value(
             SqlValue::Text(None) => SqlValue::Bool(None),
             other => other,
         }),
-        ColumnKind::Other | ColumnKind::NaiveTimestamp => Ok(value),
+        ColumnKind::Int | ColumnKind::BigInt | ColumnKind::Other | ColumnKind::NaiveTimestamp => {
+            Ok(value)
+        }
     }
 }
