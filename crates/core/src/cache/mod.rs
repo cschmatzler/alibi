@@ -15,7 +15,6 @@ use chrono::{SecondsFormat, Utc};
 use hmac::{Hmac, Mac};
 use serde_json::{Value, json};
 use sha2::Sha256;
-use std::fmt::Write;
 use std::{any::Any, fmt, sync::Arc};
 
 /// Which actual snapshot a version callback receives.
@@ -563,29 +562,16 @@ pub fn cookie_header(
         .remove(b'(')
         .remove(b')');
 
-    let session = &config.session;
-
-    let encoded = percent_encoding::utf8_percent_encode(value, COMPONENT);
-    let mut header = format!("{name}={encoded}");
-    if let Some(age) = max_age.filter(|age| *age >= 0.0) {
-        if age > 34_560_000.0 {
-            return Err(crate::AuthError::internal(
-                "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
-            ));
-        }
-        _ = write!(header, "; Max-Age={}", age.floor());
-    }
-    header.push_str("; Path=/");
-    if session.cookie_http_only {
-        header.push_str("; HttpOnly");
-    }
-    if session.cookie_secure || name.starts_with("__Secure-") || name.starts_with("__Host-") {
-        header.push_str("; Secure");
-    }
-    header.push_str(match session.cookie_same_site {
-        crate::config::SameSite::Lax => "; SameSite=Lax",
-        crate::config::SameSite::Strict => "; SameSite=Strict",
-        crate::config::SameSite::None => "; SameSite=None",
-    });
-    Ok(header)
+    let base = ["session_data", "account_data"]
+        .into_iter()
+        .map(|logical| crate::utils::cookie_utils::related_cookie_name(config, logical))
+        .find(|base| runtime::chunk_index(name, base).is_some());
+    let encoded = percent_encoding::utf8_percent_encode(value, COMPONENT).to_string();
+    crate::utils::cookie_utils::create_numeric_cookie_header(
+        name,
+        base.as_deref().unwrap_or(name),
+        &encoded,
+        max_age,
+        config,
+    )
 }
