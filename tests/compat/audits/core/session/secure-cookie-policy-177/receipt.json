@@ -1,0 +1,66 @@
+{
+  "issue": 177,
+  "pr": "https://github.com/cschmatzler/better-auth-rs/pull/401",
+  "testedBase": "4564656881ff0bdac07d29b008b228a5696a4ac0",
+  "testedHead": "e5545998da893177afbe85000fbacc736b4447fe",
+  "rebasedBase": "98bfe87690f5051c4a4fc850eb50320c6fb133b2",
+  "rebasedProductionHead": "9f2c03a2e50108f9b3e17107812dc68eefca0d27",
+  "source": {
+    "better-auth": "1.7.6",
+    "better-auth/core": "1.7.6",
+    "better-call": "1.4.0",
+    "files": [
+      "cookies/index.mjs:createCookieGetter",
+      "context/helpers.mjs:resolveDynamicContext",
+      "core/types/init-options.d.mts:advanced",
+      "better-call/cookies.mjs:_serialize"
+    ],
+    "authenticity": "Fresh frozen Bun installs; cookies/index.mjs matched the fresh published tarball. No installed package file was mutated."
+  },
+  "production": "Select __Secure- independently from attribute overrides; explicit use_secure_cookies wins, otherwise configured static/dynamic protocol determines initial choice. Preserve custom names and explicit prefix precedence without deriving sibling prefixes from per-token aliases. Preserve legacy cookie_name and prefix initialization; authenticate and clear the same resolved token name. Dynamic cross-subdomain request config rebuilds names only from the existing trusted URL boundary.",
+  "before": "The 45646568 cookie helper, builder and dynamic resolver were built with the new public config field and fixture profiles only. secure-prefix regression failed expected __Secure-better-auth.session_token, received better-auth.session_token. Raw signup headers show missing prefix and Secure.",
+  "checks": {
+    "sqlxPhysicalLifecycle": {
+      "pass": 15,
+      "fail": 0,
+      "assertions": 5280
+    },
+    "seaormPhysicalLifecycle": {
+      "pass": 15,
+      "fail": 0,
+      "assertions": 5280
+    },
+    "sourceAndSqlxBrowser": {
+      "pass": 4,
+      "fail": 0
+    },
+    "reviewedSqlxBrowser": {
+      "pass": 2,
+      "fail": 0
+    },
+    "reviewedSeaormBrowser": {
+      "pass": 2,
+      "fail": 0
+    },
+    "sourceSelfInitial": {
+      "pass": 14,
+      "fail": 0
+    },
+    "typescript": "pass",
+    "clippy": "cargo clippy --locked --lib -p better-auth-core -p better-auth --features axum,seaorm -- -D warnings: pass",
+    "focusedFormatting": "pass",
+    "actions": "enabled=false; statusCheckRollup empty; no CI result claimed",
+    "broadSuites": "Not run per task scope"
+  },
+  "proof": "Physical owner preserves exact signed bytes and attributes, verifies HMAC/URI encoding, checks standards-aware tough-cookie persistence and literal configured names, rotates durable/transient tokens, rejects corrupt proofs, checks real adapter rows and foreign-user partition, and proves deletion of the active token. Chromium independently enforces prefixed/custom Secure/HttpOnly/path cookies, reload persistence and logout on trustworthy localhost.",
+  "rebase": "Only unrelated popup work landed. Empty incoming shared-owner diff and equal range-diff for both implementation commits. No build or passing checks replayed after this rebase.",
+  "review": "Self-review traced initialized token reads, shared writes/clears and trusted dynamic configuration. Fixed inline HTTPS fixture origins and per-cookie alias precedence. No nested delegation; no independent reviewer claimed.",
+  "remainingIssue177": [
+    "Real TLS/non-loopback deployment and configured proxy browser evidence.",
+    "Cross-subdomain inference and broader serializer attributes/limits beyond unchanged existing owners.",
+    "Complete session-cache/account/OAuth-state/multi-session/two-factor creation, replacement, base/chunk precedence and retirement matrix.",
+    "Duplicate names, stale chunks, malformed proof, expiry/replay/concurrency across every cookie family.",
+    "Legacy local related-name helpers and cookie-family-specific renderers are outside this bounded shared-prefix proof."
+  ],
+  "scopeExclusions": "No changes to provider factories, OAuth token conversion, start/state/dispatch handlers, UserView output, account DEF/chunk/TTL/field omission implementation, or full inventory. #177 remains open."
+}

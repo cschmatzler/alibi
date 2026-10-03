@@ -1,0 +1,22 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/session/physical-cookie.test.ts:
+(pass) physical session default preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2337.22ms]
+(pass) physical session attributes preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2254.85ms]
+(pass) physical session secure preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2232.50ms]
+(pass) physical session none preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2267.24ms]
+(pass) physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2278.32ms]
+(pass) physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2089.73ms]
+(pass) physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2277.14ms]
+(pass) physical session secure-prefix preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2188.64ms]
+(pass) physical session https-default preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2187.31ms]
+(pass) physical session https-disabled preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2182.56ms]
+(pass) physical session secure-custom preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2173.94ms]
+(pass) physical session dynamic-https preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2121.65ms]
+(pass) physical session dynamic-http preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2128.80ms]
+(pass) physical session dynamic-auto preserves full signed token preference bytes through signup signin restore corruption rotation and logout [2069.84ms]
+
+ 14 pass
+ 0 fail
+ 4928 expect() calls
+Ran 14 tests across 1 file. [30.86s]

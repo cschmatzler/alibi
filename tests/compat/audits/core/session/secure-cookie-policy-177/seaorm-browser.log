@@ -1,0 +1,11 @@
+bun test v1.4.2 (744846f84)
+
+browser/auth.test.ts:
+(pass) Rust secure-prefix: Chromium enforces session cookies, reload persistence and logout [756.54ms]
+(pass) Rust secure-custom: Chromium enforces session cookies, reload persistence and logout [694.70ms]
+
+ 2 pass
+ 4 filtered out
+ 0 fail
+ 24 expect() calls
+Ran 2 tests across 1 file. [1.63s]

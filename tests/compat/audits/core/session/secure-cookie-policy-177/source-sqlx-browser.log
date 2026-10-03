@@ -1,0 +1,13 @@
+bun test v1.4.2 (744846f84)
+
+browser/auth.test.ts:
+(pass) TypeScript secure-prefix: Chromium enforces session cookies, reload persistence and logout [1080.95ms]
+(pass) TypeScript secure-custom: Chromium enforces session cookies, reload persistence and logout [334.81ms]
+(pass) Rust secure-prefix: Chromium enforces session cookies, reload persistence and logout [690.21ms]
+(pass) Rust secure-custom: Chromium enforces session cookies, reload persistence and logout [750.87ms]
+
+ 4 pass
+ 2 filtered out
+ 0 fail
+ 48 expect() calls
+Ran 4 tests across 1 file. [3.05s]
