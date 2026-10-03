@@ -1,5 +1,6 @@
 pub mod adapter;
 pub mod cache;
+pub mod stateless;
 
 mod database_hooks;
 mod migrations;
@@ -669,7 +670,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
             .attach(&mut create_session.additional_fields, true);
-        let session = if self.secondary().is_some() {
+        let session = if self.config.session.stateless {
+            self.inner
+                .prepare_secondary_session_creation(create_session, false)
+                .await?
+        } else if self.secondary().is_some() {
             self.inner
                 .prepare_secondary_session_creation(create_session, self.session_uses_database())
                 .await?
@@ -677,7 +682,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             self.inner.create_session(create_session).await?
         };
         self.mirror_created_session(&session).await?;
-        if self.secondary().is_some() {
+        if self.secondary().is_some() || self.config.session.stateless {
             self.inner
                 .complete_secondary_session_creation(&session)
                 .await?;
@@ -688,6 +693,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         Ok(session)
     }
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
+        if self.config.session.stateless {
+            return Ok(None);
+        }
         if self.secondary().is_some() {
             if let Some((session, _)) = self.cached_session(token).await? {
                 return Ok(Some(session));
@@ -721,6 +729,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         self.inner.get_sessions_by_tokens(tokens).await
     }
     async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
+        if self.config.session.stateless {
+            return Ok(Vec::new());
+        }
         if self.secondary().is_some() {
             return self.cached_user_sessions(user_id).await;
         }
@@ -787,6 +798,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         self.remove_cached_user_sessions(user_id, tokens).await
     }
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {
+        if self.config.session.stateless {
+            return Ok(0);
+        }
         if self.secondary().is_some()
             && (!self.config.session.store_in_database || self.config.session.preserve_in_database)
         {
@@ -1808,7 +1822,11 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
             .attach(&mut create_session.additional_fields, true);
-        let session = if self.record_store.secondary().is_some() {
+        let session = if self.config.session.stateless {
+            self.inner
+                .prepare_secondary_session_creation(create_session, false)
+                .await?
+        } else if self.record_store.secondary().is_some() {
             let model = self
                 .inner
                 .prepare_secondary_session_creation(

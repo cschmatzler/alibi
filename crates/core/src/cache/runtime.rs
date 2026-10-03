@@ -757,6 +757,49 @@ async fn authenticated_inner<S: AuthSchema>(
         )));
     }
     if let Some(cache) = read(ctx, request).await? {
+        if ctx.config.session.stateless {
+            let config = ctx
+                .config
+                .session
+                .cookie_cache
+                .as_ref()
+                .ok_or_else(|| AuthError::internal("Missing stateless cache configuration"))?;
+            let update_age = match ctx.config.session.cookie_refresh_cache {
+                crate::CookieRefreshCache::Disabled => None,
+                crate::CookieRefreshCache::Automatic => {
+                    Some((super::effective_max_age(config.max_age) * 0.2).floor())
+                }
+                crate::CookieRefreshCache::UpdateAge(age) => Some(age),
+            };
+            // Source's cache-hit branch precedes disableRefresh, dontRemember,
+            // disableSessionRefresh, and deferSessionRefresh. None of these
+            // suppress envelope renewal or extend the embedded session expiry.
+            if update_age.is_some_and(|age| {
+                cache.expires_at - (chrono::Utc::now().timestamp_millis() as f64) < age * 1000.0
+            }) {
+                let context =
+                    CacheVersionContext::cached(cache.user.clone(), cache.session.clone());
+                for header in
+                    build_headers(ctx, context, request.session_headers(), false, None).await?
+                {
+                    request.queue_response_header("Set-Cookie", header);
+                }
+                let remember = ctx.session_manager().has_dont_remember_cookie(request);
+                request.queue_response_header(
+                    "Set-Cookie",
+                    super::cookie_header(
+                        &ctx.config.session.cookie_name,
+                        &percent_encoding::percent_decode_str(&sign_cookie_value(
+                            &cache.session.token,
+                            ctx.config.current_secret(),
+                        ))
+                        .decode_utf8_lossy(),
+                        (!remember).then_some(ctx.config.session.expires_in.num_seconds() as f64),
+                        &ctx.config,
+                    )?,
+                );
+            }
+        }
         request
             .extensions()
             .insert(SessionHookCache(Some(SessionHookCacheMetadata {
@@ -773,6 +816,10 @@ async fn authenticated_inner<S: AuthSchema>(
                 needs_refresh: None,
             },
         )));
+    }
+    if ctx.config.session.stateless {
+        cleanup(ctx, request)?;
+        return Ok(None);
     }
     let manager = ctx.session_manager();
     let Some(token) = manager.extract_session_token(request) else {

@@ -1094,6 +1094,26 @@ impl<S: AuthSchema> AuthContext<S> {
         self.authenticated_session(req, true).await
     }
 
+    /// Authoritative session authority without reconstructing an application
+    /// model from a cookie. Stateless deployments authorize the authenticated
+    /// cache snapshot; stateful deployments always bypass it.
+    pub async fn require_authoritative_cached_session(
+        &self,
+        req: &AuthRequest,
+    ) -> AuthResult<(crate::AuthenticatedUser<S>, crate::wire::SessionView)> {
+        crate::cache::runtime::clear_established_session::<S>(req);
+        let mut authoritative = req.clone();
+        authoritative.virtual_session = None;
+        if self.config.session.has_server_session_store() {
+            drop(
+                authoritative
+                    .query
+                    .insert("disableCookieCache".into(), "true".into()),
+            );
+        }
+        self.require_cached_session(&authoritative).await
+    }
+
     /// Authorize against the persisted signed-cookie session.
     /// This bypasses hook-provided virtual sessions while preserving normal
     /// refresh, browser preferences and deferred-read behavior.

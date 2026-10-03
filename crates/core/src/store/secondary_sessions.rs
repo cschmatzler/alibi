@@ -23,7 +23,8 @@ impl<S: AuthSchema> PluginStore<S> {
     }
 
     pub(super) fn session_uses_database(&self) -> bool {
-        self.secondary().is_none() || self.config.session.store_in_database
+        !self.config.session.stateless
+            && (self.secondary().is_none() || self.config.session.store_in_database)
     }
 
     async fn references(&self, user_id: &str) -> AuthResult<Vec<Reference>> {

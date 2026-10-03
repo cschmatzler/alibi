@@ -368,7 +368,7 @@ impl SessionManagementPlugin {
         };
 
         let (user, _) = ctx
-            .require_authoritative_session(req)
+            .require_authoritative_cached_session(req)
             .await
             .map_err(session_authorization_error)?;
         let response = revoke_session_core(&user, &revoke_req.token, ctx).await?;
@@ -381,7 +381,7 @@ impl SessionManagementPlugin {
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _) = ctx
-            .require_authoritative_session(req)
+            .require_authoritative_cached_session(req)
             .await
             .map_err(session_authorization_error)?;
         let response = revoke_sessions_core(user.id(), ctx).await?;
@@ -394,7 +394,7 @@ impl SessionManagementPlugin {
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, current_session) = ctx
-            .require_authoritative_session(req)
+            .require_authoritative_cached_session(req)
             .await
             .map_err(session_authorization_error)?;
         let response = revoke_other_sessions_core(user.id(), &current_session, ctx).await?;

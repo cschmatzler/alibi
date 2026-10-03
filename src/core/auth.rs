@@ -1186,3 +1186,15 @@ fn route_path_matches(pattern: &str, path: &str) -> bool {
     }
     path_parts.next().is_none()
 }
+
+impl AuthBuilder<crate::store::StatelessSchema> {
+    /// Build with ephemeral user/account provisioning and cookie-only sessions.
+    /// User credentials are local to this instance and lost on restart. Session
+    /// cookies remain independently valid until expiry/version/key invalidation.
+    #[must_use]
+    pub fn without_database(mut config: AuthConfig) -> Self {
+        config.session = config.session.stateless();
+        config.account.store_account_cookie = true;
+        Self::new(config).store(crate::store::StatelessStore::default())
+    }
+}

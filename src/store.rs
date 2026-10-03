@@ -9,3 +9,5 @@ pub use better_auth_core::store::{
 pub use better_auth_core::store::{
     DatabaseHookContext, DatabaseHooks, HookBackend, HookControl, SchemaMigrator,
 };
+
+pub use better_auth_core::store::stateless::{StatelessSchema, StatelessStore};

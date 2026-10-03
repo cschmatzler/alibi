@@ -222,6 +222,12 @@ impl<S: AuthSchema> SessionManager<S> {
         if request.session_query_truthy("disableRefresh") {
             return true;
         }
+        self.has_dont_remember_cookie(request)
+    }
+
+    /// The independently signed browser session preference.
+    #[must_use]
+    pub fn has_dont_remember_cookie(&self, request: &impl SessionRequest) -> bool {
         let name = crate::utils::cookie_utils::related_cookie_name(&self.config, "dont_remember");
         request
             .session_headers()

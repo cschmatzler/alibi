@@ -1,0 +1,812 @@
+//! Ephemeral no-database identity provisioning and cookie-only sessions.
+//!
+//! This store has no database connection, session map, or revocation list.
+//! User/account/verification provisioning is instance-local, as in the pinned
+//! no-database memory adapter. Durable plugins require an application store.
+//! Applications can also use cookie-only sessions with durable SQL user storage.
+use super::*;
+use crate::{AccountView, SessionView, UserView, VerificationView};
+use chrono::{DateTime, Utc};
+
+/// Wire schema for deployments that do not configure a database.
+pub struct StatelessSchema;
+impl AuthSchema for StatelessSchema {
+    type User = UserView;
+    type Session = SessionView;
+    type Account = AccountView;
+    type Verification = VerificationView;
+}
+
+/// No-persistence store. Session ownership comes from the trusted issuance input,
+/// and subsequent authority comes only from authenticated cookies.
+#[derive(Default)]
+pub struct StatelessStore {
+    state: std::sync::Mutex<IdentityState>,
+}
+
+#[derive(Default)]
+struct IdentityState {
+    users: indexmap::IndexMap<String, UserView>,
+    accounts: indexmap::IndexMap<String, AccountView>,
+    verifications: indexmap::IndexMap<String, VerificationView>,
+}
+
+impl StatelessStore {
+    fn lock(&self) -> AuthResult<std::sync::MutexGuard<'_, IdentityState>> {
+        self.state
+            .lock()
+            .map_err(|_| AuthError::internal("No-database identity state poisoned"))
+    }
+}
+
+macro_rules! unsupported_store {
+    ($trait:ty, { $(async fn $name:ident($($arg:ident: $ty:ty),* $(,)?) -> $ret:ty;)* }) => {
+        #[async_trait]
+        impl $trait for StatelessStore {
+            $(async fn $name(&self, $($arg: $ty),*) -> $ret {
+                $(let _ = $arg;)*
+                Err(AuthError::NotImplemented(concat!(stringify!($name), " requires an application store").into()))
+            })*
+        }
+    };
+}
+
+unsupported_store!(OrganizationStore, {
+    async fn create_organization(org: CreateOrganization) -> AuthResult<Organization>;
+    async fn get_organization_by_id(id: &str) -> AuthResult<Option<Organization>>;
+    async fn get_organization_by_slug(slug: &str) -> AuthResult<Option<Organization>>;
+    async fn list_organizations_by_ids(ids: &[String]) -> AuthResult<Vec<Organization>>;
+    async fn update_organization(id: &str, update: UpdateOrganization) -> AuthResult<Organization>;
+    async fn delete_organization(id: &str) -> AuthResult<()>;
+    async fn list_user_organizations(user_id: &str) -> AuthResult<Vec<Organization>>;
+});
+
+unsupported_store!(MemberStore, {
+    async fn create_member(member: CreateMember) -> AuthResult<Member>;
+    async fn get_member(organization_id: &str, user_id: &str) -> AuthResult<Option<Member>>;
+    async fn get_member_by_id(id: &str) -> AuthResult<Option<Member>>;
+    async fn update_member_role(member_id: &str, role: &str) -> AuthResult<Member>;
+    async fn delete_member(member_id: &str) -> AuthResult<()>;
+    async fn list_organization_members(org_id: &str) -> AuthResult<Vec<Member>>;
+    async fn query_organization_members(
+        params: &ListOrganizationMembersParams,
+    ) -> AuthResult<(Vec<Member>, usize)>;
+    async fn count_organization_members(org_id: &str) -> AuthResult<i64>;
+    async fn count_organization_owners(org_id: &str) -> AuthResult<i64>;
+});
+
+unsupported_store!(InvitationStore, {
+    async fn create_invitation(invitation: CreateInvitation) -> AuthResult<Invitation>;
+    async fn get_invitation_by_id(id: &str) -> AuthResult<Option<Invitation>>;
+    async fn get_pending_invitation(org_id: &str, email: &str) -> AuthResult<Option<Invitation>>;
+    async fn update_invitation_status(id: &str, status: InvitationStatus)
+    -> AuthResult<Invitation>;
+    async fn list_organization_invitations(org_id: &str) -> AuthResult<Vec<Invitation>>;
+    async fn count_pending_organization_invitations(org_id: &str) -> AuthResult<i64>;
+    async fn list_user_invitations(email: &str) -> AuthResult<Vec<Invitation>>;
+});
+
+unsupported_store!(TwoFactorStore, {
+    async fn create_two_factor(two_factor: CreateTwoFactor) -> AuthResult<TwoFactor>;
+    async fn get_two_factor_by_user_id(user_id: &str) -> AuthResult<Option<TwoFactor>>;
+    async fn update_two_factor_backup_codes(
+        user_id: &str,
+        backup_codes: &str,
+    ) -> AuthResult<TwoFactor>;
+    async fn delete_two_factor(user_id: &str) -> AuthResult<()>;
+});
+
+unsupported_store!(ApiKeyStore, {
+    async fn create_api_key(input: CreateApiKey) -> AuthResult<ApiKey>;
+    async fn get_api_key_by_id(id: &str) -> AuthResult<Option<ApiKey>>;
+    async fn get_api_key_by_hash(hash: &str) -> AuthResult<Option<ApiKey>>;
+    async fn list_api_keys_by_reference(reference_id: &str) -> AuthResult<Vec<ApiKey>>;
+    async fn update_api_key(id: &str, update: UpdateApiKey) -> AuthResult<ApiKey>;
+    async fn delete_api_key(id: &str) -> AuthResult<()>;
+    async fn delete_expired_api_keys() -> AuthResult<usize>;
+    async fn consume_api_key_usage(
+        id: &str,
+        global_rate_limit_enabled: bool,
+    ) -> AuthResult<ConsumeApiKeyResult>;
+});
+
+unsupported_store!(PasskeyStore, {
+    async fn create_passkey(input: CreatePasskey) -> AuthResult<Passkey>;
+    async fn get_passkey_by_id(id: &str) -> AuthResult<Option<Passkey>>;
+    async fn get_passkey_by_credential_id(credential_id: &str) -> AuthResult<Option<Passkey>>;
+    async fn list_passkeys_by_user(user_id: &str) -> AuthResult<Vec<Passkey>>;
+    async fn update_passkey_authentication(
+        id: &str,
+        update: UpdatePasskeyAuthentication,
+    ) -> AuthResult<Option<Passkey>>;
+    async fn update_passkey_name(id: &str, name: &str) -> AuthResult<Passkey>;
+    async fn delete_passkey(id: &str) -> AuthResult<()>;
+});
+
+unsupported_store!(DeviceCodeStore, {
+    async fn create_device_code(input: CreateDeviceCode) -> AuthResult<DeviceCode>;
+    async fn get_device_code_by_device_code(device_code: &str) -> AuthResult<Option<DeviceCode>>;
+    async fn get_device_code_by_user_code(user_code: &str) -> AuthResult<Option<DeviceCode>>;
+    async fn update_device_code(id: &str, update: UpdateDeviceCode) -> AuthResult<DeviceCode>;
+    async fn update_device_code_if_status(
+        id: &str,
+        current_status: &str,
+        update: UpdateDeviceCode,
+    ) -> AuthResult<bool>;
+    async fn claim_device_code(id: &str, user_id: &str) -> AuthResult<bool>;
+    async fn delete_device_code(id: &str) -> AuthResult<()>;
+    async fn delete_device_code_if_status(id: &str, status: &str) -> AuthResult<bool>;
+});
+
+impl TeamStore for StatelessStore {}
+impl OrganizationRoleStore for StatelessStore {}
+impl WalletAddressStore for StatelessStore {}
+impl JwkStore for StatelessStore {}
+
+#[async_trait]
+impl SessionStore<StatelessSchema> for StatelessStore {
+    async fn prepare_secondary_session_creation(
+        &self,
+        input: CreateSession,
+        persist: bool,
+    ) -> AuthResult<SessionView> {
+        if persist {
+            return Err(AuthError::config("StatelessStore cannot persist sessions"));
+        }
+        SessionStore::<StatelessSchema>::create_session(self, input).await
+    }
+    async fn complete_secondary_session_creation(&self, _session: &SessionView) -> AuthResult<()> {
+        Ok(())
+    }
+    async fn create_session(&self, mut input: CreateSession) -> AuthResult<SessionView> {
+        input.additional_fields.apply_adapter_transforms()?;
+        let now = Utc::now();
+        Ok(SessionView {
+            id: uuid::Uuid::new_v4().to_string(),
+            token: input
+                .token
+                .unwrap_or_else(crate::utils::sessions::generate_session_token),
+            user_id: input.user_id,
+            expires_at: input.expires_at,
+            created_at: now,
+            updated_at: now,
+            ip_address: input.ip_address.or_else(|| Some(String::new())),
+            user_agent: input.user_agent.or_else(|| Some(String::new())),
+            active_organization_id: input.active_organization_id,
+            active_team_id: input.active_team_id,
+            impersonated_by: input.impersonated_by,
+            extension_fields: input
+                .additional_fields
+                .into_iter()
+                .map(|(key, value)| value.to_json_value().map(|value| (key, value)))
+                .collect::<Result<_, _>>()?,
+            active: true,
+            omitted_fields: Default::default(),
+        })
+    }
+    async fn get_session(&self, _token: &str) -> AuthResult<Option<SessionView>> {
+        Ok(None)
+    }
+    async fn get_user_sessions(&self, _user: &str) -> AuthResult<Vec<SessionView>> {
+        Ok(Vec::new())
+    }
+    async fn update_session_expiry(
+        &self,
+        _token: &str,
+        _expires: chrono::DateTime<Utc>,
+    ) -> AuthResult<()> {
+        Err(AuthError::SessionNotFound)
+    }
+    async fn update_session_active_organization(
+        &self,
+        _token: &str,
+        _id: Option<&str>,
+    ) -> AuthResult<SessionView> {
+        Err(AuthError::SessionNotFound)
+    }
+    async fn delete_session(&self, _token: &str) -> AuthResult<()> {
+        Ok(())
+    }
+    async fn delete_user_sessions(&self, _user: &str) -> AuthResult<()> {
+        Ok(())
+    }
+    async fn delete_expired_sessions(&self) -> AuthResult<usize> {
+        Ok(0)
+    }
+}
+
+#[async_trait]
+impl UserStore<StatelessSchema> for StatelessStore {
+    async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<UserView> {
+        create_user.email = create_user.email.map(|email| email.to_lowercase());
+        UserStore::<StatelessSchema>::create_user_prepared(
+            self,
+            crate::user_validation::PreparedUserCreation::from_data(create_user),
+        )
+        .await
+    }
+
+    async fn create_user_prepared(
+        &self,
+        prepared: crate::user_validation::PreparedUserCreation,
+    ) -> AuthResult<UserView> {
+        let (create_user, defaults) = prepared.into_parts();
+        let mut create_user = defaults.apply(create_user)?;
+        create_user.additional_fields.apply_adapter_transforms()?;
+        let now = Utc::now();
+        let id = create_user
+            .id
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let username = create_user.username.map(|username| username.to_lowercase());
+        let user = UserView {
+            omitted_fields: std::collections::BTreeSet::default(),
+            id: id.clone(),
+            name: create_user.name,
+            email: create_user.email,
+            email_verified: create_user.email_verified.unwrap_or(false),
+            image: create_user.image,
+            created_at: create_user.created_at.unwrap_or(now),
+            updated_at: create_user.updated_at.unwrap_or(now),
+            username,
+            display_username: create_user.display_username,
+            two_factor_enabled: create_user.two_factor_enabled,
+            role: create_user.role,
+            banned: create_user.banned,
+            ban_reason: None,
+            ban_expires: None,
+            metadata: create_user
+                .metadata
+                .unwrap_or_else(|| serde_json::json!({})),
+            is_anonymous: create_user.is_anonymous,
+            phone_number: create_user.phone_number,
+            phone_number_verified: create_user.phone_number_verified,
+            last_login_method: create_user.last_login_method,
+            extension_fields: create_user
+                .additional_fields
+                .into_iter()
+                .map(|(key, value)| value.to_json_value().map(|value| (key, value)))
+                .collect::<Result<_, _>>()?,
+        };
+        let mut state = self.lock()?;
+        if state.users.contains_key(&id)
+            || state
+                .users
+                .values()
+                .any(|existing| user.email.is_some() && existing.email == user.email)
+        {
+            return Err(AuthError::bad_request("User already exists"));
+        }
+        drop(state.users.insert(id, user.clone()));
+        Ok(user)
+    }
+
+    async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<UserView>> {
+        Ok(self.lock()?.users.get(id).cloned())
+    }
+
+    async fn list_users_by_ids(&self, ids: &[String]) -> AuthResult<Vec<UserView>> {
+        let state = self.lock()?;
+        Ok(ids
+            .iter()
+            .filter_map(|id| state.users.get(id).cloned())
+            .collect())
+    }
+
+    async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<UserView>> {
+        Ok(self
+            .lock()?
+            .users
+            .values()
+            .find(|user| user.email.as_deref() == Some(&email.to_lowercase()))
+            .cloned())
+    }
+
+    async fn get_user_by_username(&self, username: &str) -> AuthResult<Option<UserView>> {
+        let normalized = username.to_lowercase();
+        Ok(self
+            .lock()?
+            .users
+            .values()
+            .find(|user| user.username.as_deref() == Some(&normalized))
+            .cloned())
+    }
+
+    async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<UserView>> {
+        Ok(self
+            .lock()?
+            .users
+            .values()
+            .find(|user| user.phone_number.as_deref() == Some(phone_number))
+            .cloned())
+    }
+
+    async fn update_user(&self, id: &str, mut update: UpdateUser) -> AuthResult<UserView> {
+        let mut state = self.lock()?;
+        let user = state.users.get_mut(id).ok_or(AuthError::UserNotFound)?;
+        if let Some(email) = update.email {
+            user.email = Some(email.to_lowercase());
+        }
+        if let Some(name) = update.name {
+            user.name = Some(name);
+        }
+        if let Some(image) = update.image {
+            user.image = Some(image);
+        }
+        if let Some(email_verified) = update.email_verified {
+            user.email_verified = email_verified;
+        }
+        if let Some(username) = update.username {
+            user.username = Some(username.to_lowercase());
+        }
+        if let Some(display_username) = update.display_username {
+            user.display_username = Some(display_username);
+        }
+        if let Some(role) = update.role {
+            user.role = Some(role);
+        }
+        if let Some(banned) = update.banned {
+            user.banned = Some(banned);
+            if !banned {
+                user.ban_reason = None;
+                user.ban_expires = None;
+            }
+        }
+        if let Some(ban_reason) = update.ban_reason {
+            user.ban_reason = Some(ban_reason);
+        }
+        if let Some(ban_expires) = update.ban_expires {
+            user.ban_expires = ban_expires;
+        }
+        if let Some(two_factor_enabled) = update.two_factor_enabled {
+            user.two_factor_enabled = Some(two_factor_enabled);
+        }
+        if let Some(metadata) = update.metadata {
+            user.metadata = metadata;
+        }
+        if let Some(is_anonymous) = update.is_anonymous {
+            user.is_anonymous = Some(is_anonymous);
+        }
+        if let Some(phone_number) = update.phone_number {
+            user.phone_number = phone_number;
+        }
+        if let Some(phone_number_verified) = update.phone_number_verified {
+            user.phone_number_verified = Some(phone_number_verified);
+        }
+        if let Some(last_login_method) = update.last_login_method {
+            user.last_login_method = last_login_method;
+        }
+        update.additional_fields.apply_adapter_transforms()?;
+        for (key, value) in update.additional_fields {
+            drop(user.extension_fields.insert(key, value.to_json_value()?));
+        }
+        user.updated_at = Utc::now();
+        let locked_result = Ok(user.clone());
+        drop(state);
+        locked_result
+    }
+
+    async fn delete_user(&self, id: &str) -> AuthResult<()> {
+        self.lock()?.users.shift_remove(id);
+        Ok(())
+    }
+
+    async fn list_users(&self, _params: ListUsersParams) -> AuthResult<(Vec<UserView>, usize)> {
+        let users: Vec<_> = self.lock()?.users.values().cloned().collect();
+        Ok(crate::user_query::apply_list_users(users, &_params))
+    }
+}
+
+#[async_trait]
+impl AccountStore<StatelessSchema> for StatelessStore {
+    async fn create_account(&self, create_account: CreateAccount) -> AuthResult<AccountView> {
+        let now = Utc::now();
+        let account = AccountView {
+            id: uuid::Uuid::new_v4().to_string(),
+            account_id: create_account.account_id,
+            provider_id: create_account.provider_id,
+            user_id: create_account.user_id,
+            access_token: create_account.access_token,
+            refresh_token: create_account.refresh_token,
+            id_token: create_account.id_token,
+            access_token_expires_at: create_account.access_token_expires_at,
+            refresh_token_expires_at: create_account.refresh_token_expires_at,
+            scope: create_account.scope,
+            password: create_account.password,
+            created_at: now,
+            updated_at: now,
+        };
+        drop(
+            self.lock()?
+                .accounts
+                .insert(account.id.clone(), account.clone()),
+        );
+        Ok(account)
+    }
+
+    async fn get_account(
+        &self,
+        provider: &str,
+        provider_account_id: &str,
+    ) -> AuthResult<Option<AccountView>> {
+        let storage = self.lock()?;
+        let mut matches = storage.accounts.values().filter(|account| {
+            account.provider_id == provider && account.account_id == provider_account_id
+        });
+        let first = matches.next().cloned();
+        if matches.next().is_some() {
+            return Err(AuthError::Database(
+                crate::DatabaseError::AmbiguousAccount {
+                    provider: provider.to_owned(),
+                },
+            ));
+        }
+        Ok(first)
+    }
+
+    async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<AccountView>> {
+        Ok(self
+            .lock()?
+            .accounts
+            .values()
+            .filter(|account| account.user_id == user_id)
+            .cloned()
+            .collect())
+    }
+
+    async fn update_account(&self, id: &str, update: UpdateAccount) -> AuthResult<AccountView> {
+        let mut state = self.lock()?;
+        let account = state
+            .accounts
+            .get_mut(id)
+            .ok_or_else(|| AuthError::not_found("Account not found"))?;
+        if let Some(access_token) = update.access_token {
+            account.access_token = Some(access_token);
+        }
+        if let Some(refresh_token) = update.refresh_token {
+            account.refresh_token = Some(refresh_token);
+        }
+        if let Some(id_token) = update.id_token {
+            account.id_token = Some(id_token);
+        }
+        if let Some(access_token_expires_at) = update.access_token_expires_at {
+            account.access_token_expires_at = Some(access_token_expires_at);
+        }
+        if let Some(refresh_token_expires_at) = update.refresh_token_expires_at {
+            account.refresh_token_expires_at = Some(refresh_token_expires_at);
+        }
+        if let Some(scope) = update.scope {
+            account.scope = Some(scope);
+        }
+        if let Some(password) = update.password {
+            account.password = Some(password);
+        }
+        account.updated_at = Utc::now();
+        let locked_result = Ok(account.clone());
+        drop(state);
+        locked_result
+    }
+
+    async fn delete_account(&self, id: &str) -> AuthResult<()> {
+        self.lock()?.accounts.shift_remove(id);
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl VerificationStore<StatelessSchema> for StatelessStore {
+    async fn create_verification_record(
+        &self,
+        data: crate::verification::VerificationCreation,
+        publication: crate::verification::VerificationPublication,
+    ) -> AuthResult<Option<crate::verification::VerificationSnapshot>> {
+        let snapshot = if publication.store_in_database {
+            let model = VerificationView {
+                id: data.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+                identifier: data.identifier,
+                value: data.value,
+                expires_at: data.expires_at,
+                created_at: data.created_at,
+                updated_at: data.updated_at,
+            };
+            let mut state = self.lock()?;
+            if state.verifications.contains_key(&model.id) {
+                return Err(AuthError::internal("duplicate verification primary ID"));
+            }
+            state.verifications.insert(model.id.clone(), model.clone());
+            drop(state);
+            crate::verification::VerificationSnapshot::from_model(&model)
+        } else {
+            data.snapshot()
+        };
+        publication.publish(&snapshot).await?;
+        Ok(Some(snapshot))
+    }
+
+    async fn consume_verification_snapshot(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<VerificationView>> {
+        let mut state = self.lock()?;
+        let found = state
+            .verifications
+            .values()
+            .filter(|verification| verification.identifier == identifier)
+            .max_by_key(|verification| verification.created_at)
+            .cloned();
+        state
+            .verifications
+            .retain(|_, sibling| sibling.identifier != identifier);
+        drop(state);
+        Ok(found)
+    }
+
+    async fn update_verification_by_identifier(
+        &self,
+        identifier: &str,
+        data: crate::UpdateVerification,
+    ) -> AuthResult<Option<crate::verification::VerificationSnapshot>> {
+        let mut state = self.lock()?;
+        let mut found = None;
+        for model in state.verifications.values_mut() {
+            if model.identifier == identifier {
+                model.updated_at = Utc::now();
+                if let Some(value) = &data.value {
+                    model.value.clone_from(value);
+                }
+                if let Some(expiry) = data.expires_at {
+                    model.expires_at = expiry;
+                }
+                if found.is_none() {
+                    found = Some(crate::verification::VerificationSnapshot::from_model(model));
+                }
+            }
+        }
+        drop(state);
+        Ok(found)
+    }
+
+    async fn reserve_verification_record(
+        &self,
+        logical_identifier: &str,
+        data: CreateVerification,
+    ) -> AuthResult<Option<VerificationView>> {
+        let (id, _) = crate::store::verification_reservation_key(logical_identifier);
+        let mut state = self.lock()?;
+        let indexmap::map::Entry::Vacant(entry) = state.verifications.entry(id.clone()) else {
+            return Ok(None);
+        };
+        let now = Utc::now();
+        let model = VerificationView {
+            id,
+            identifier: data.identifier,
+            value: data.value,
+            expires_at: data.expires_at,
+            created_at: now,
+            updated_at: now,
+        };
+        entry.insert(model.clone());
+        drop(state);
+        Ok(Some(model))
+    }
+
+    async fn create_verification(
+        &self,
+        verification: CreateVerification,
+    ) -> AuthResult<VerificationView> {
+        let now = Utc::now();
+        let verification = VerificationView {
+            id: uuid::Uuid::new_v4().to_string(),
+            identifier: verification.identifier,
+            value: verification.value,
+            expires_at: verification.expires_at,
+            created_at: now,
+            updated_at: now,
+        };
+        self.lock()?
+            .verifications
+            .insert(verification.id.clone(), verification.clone());
+        Ok(verification)
+    }
+
+    async fn get_verification(
+        &self,
+        identifier: &str,
+        value: &str,
+    ) -> AuthResult<Option<VerificationView>> {
+        Ok(self
+            .lock()?
+            .verifications
+            .values()
+            .filter(|verification| {
+                verification.identifier == identifier
+                    && verification.value == value
+                    && verification.expires_at >= Utc::now()
+            })
+            .max_by_key(|verification| verification.created_at)
+            .cloned())
+    }
+
+    async fn get_verification_by_value(&self, value: &str) -> AuthResult<Option<VerificationView>> {
+        Ok(self
+            .lock()?
+            .verifications
+            .values()
+            .filter(|verification| {
+                verification.value == value && verification.expires_at >= Utc::now()
+            })
+            .max_by_key(|verification| verification.created_at)
+            .cloned())
+    }
+
+    async fn get_verification_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<VerificationView>> {
+        Ok(self
+            .lock()?
+            .verifications
+            .values()
+            .filter(|verification| {
+                verification.identifier == identifier && verification.expires_at >= Utc::now()
+            })
+            .max_by_key(|verification| verification.created_at)
+            .cloned())
+    }
+
+    async fn consume_verification(
+        &self,
+        identifier: &str,
+        value: &str,
+    ) -> AuthResult<Option<VerificationView>> {
+        let mut state = self.lock()?;
+        let found = state
+            .verifications
+            .values()
+            .filter(|verification| verification.identifier == identifier)
+            .max_by_key(|verification| verification.created_at)
+            .cloned();
+        if let Some(verification) = &found {
+            if verification.value != value {
+                return Ok(None);
+            }
+            state
+                .verifications
+                .retain(|_, sibling| sibling.identifier != identifier);
+        }
+        drop(state);
+
+        Ok(found.filter(|verification| verification.expires_at >= Utc::now()))
+    }
+
+    async fn get_latest_verification_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<VerificationView>> {
+        Ok(self
+            .lock()?
+            .verifications
+            .values()
+            .filter(|verification| verification.identifier == identifier)
+            .max_by_key(|verification| verification.created_at)
+            .cloned())
+    }
+
+    async fn consume_verification_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<VerificationView>> {
+        let mut state = self.lock()?;
+        let found = state
+            .verifications
+            .values()
+            .filter(|verification| verification.identifier == identifier)
+            .max_by_key(|verification| verification.created_at)
+            .cloned();
+        state
+            .verifications
+            .retain(|_, sibling| sibling.identifier != identifier);
+        drop(state);
+
+        Ok(found.filter(|verification| verification.expires_at >= Utc::now()))
+    }
+
+    async fn delete_verifications_by_identifier(&self, identifier: &str) -> AuthResult<()> {
+        self.lock()?
+            .verifications
+            .retain(|_, verification| verification.identifier != identifier);
+        Ok(())
+    }
+
+    async fn compare_and_swap_verification(
+        &self,
+        id: &str,
+        expected_value: &str,
+        value: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AuthResult<bool> {
+        let mut state = self.lock()?;
+        let Some(verification) = state.verifications.get_mut(id) else {
+            return Ok(false);
+        };
+        if verification.value != expected_value {
+            return Ok(false);
+        }
+        verification.value = value.to_owned();
+        verification.expires_at = expires_at;
+        verification.updated_at = Utc::now();
+        drop(state);
+
+        Ok(true)
+    }
+
+    async fn reserve_verification(&self, verification: CreateVerification) -> AuthResult<bool> {
+        let (id, _) = crate::store::verification_reservation_key(&verification.identifier);
+        let mut state = self.lock()?;
+        let indexmap::map::Entry::Vacant(entry) = state.verifications.entry(id.clone()) else {
+            return Ok(false);
+        };
+
+        let now = Utc::now();
+        let _ignored_insert = entry.insert(VerificationView {
+            id,
+            identifier: verification.identifier,
+            value: verification.value,
+            expires_at: verification.expires_at,
+            created_at: now,
+            updated_at: now,
+        });
+        drop(state);
+        Ok(true)
+    }
+
+    async fn delete_verification(&self, id: &str) -> AuthResult<()> {
+        self.lock()?.verifications.shift_remove(id);
+        Ok(())
+    }
+
+    async fn delete_expired_verifications(&self) -> AuthResult<usize> {
+        let now = Utc::now();
+        let mut state = self.lock()?;
+        let before = state.verifications.len();
+        state.verifications.retain(|_, verification| {
+            verification.expires_at.timestamp_millis() >= now.timestamp_millis()
+        });
+        Ok(before - state.verifications.len())
+    }
+}
+
+#[async_trait]
+impl TransactionStore<StatelessSchema> for StatelessStore {
+    async fn transaction_boxed(
+        &self,
+        work: Box<TransactionWork<StatelessSchema>>,
+    ) -> AuthResult<BoxedTransactionValue> {
+        // The pinned memory adapter has no transactional rollback. All methods
+        // use instance-local identity maps; sessions are never inserted into them.
+        work(self).await
+    }
+}
+
+#[async_trait]
+impl AuthTransaction<StatelessSchema> for StatelessStore {
+    async fn prepare_secondary_session_creation(
+        &self,
+        input: CreateSession,
+        persist: bool,
+    ) -> AuthResult<SessionView> {
+        SessionStore::<StatelessSchema>::prepare_secondary_session_creation(self, input, persist)
+            .await
+    }
+    async fn create_user(&self, data: CreateUser) -> AuthResult<UserView> {
+        UserStore::<StatelessSchema>::create_user(self, data).await
+    }
+    async fn create_user_prepared(&self, data: PreparedUserCreation) -> AuthResult<UserView> {
+        UserStore::<StatelessSchema>::create_user_prepared(self, data).await
+    }
+    async fn create_account(&self, data: CreateAccount) -> AuthResult<AccountView> {
+        AccountStore::<StatelessSchema>::create_account(self, data).await
+    }
+    async fn create_session(&self, data: CreateSession) -> AuthResult<SessionView> {
+        SessionStore::<StatelessSchema>::create_session(self, data).await
+    }
+}
