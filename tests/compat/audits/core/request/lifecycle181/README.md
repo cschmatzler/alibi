@@ -48,6 +48,14 @@ CARGO_TARGET_DIR=/tmp/lifecycle181-target CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFIL
 Run the source probe in a private directory with the pinned reference-server
 package manifest and Bun dependencies. No listener or application route is added.
 
+All 10 adjacent `core::lifecycle_dispatch` regressions pass. Targeted Rust
+format checks, `git diff --check` and `cargo clippy --locked --test integration
+--features seaorm -- -D warnings` pass. Two existing fixture lint blockers were
+fixed inline: fixed-size hex decoding uses `as_chunks`, and the result-returning
+origin-policy test documents its intentional panic-on-contract-failure assertions.
+The rebase onto `556f30a7` only brought unrelated OAuth refresh changes; the
+already-passing adapter regressions were not replayed for that rebase.
+
 This proves one endpoint error/header defect. Initialization replacement, trusted
 principal extensions, universal database callback composition, cancellation and
 background tasks remain outside this repair. Issue #181 remains open. Actions

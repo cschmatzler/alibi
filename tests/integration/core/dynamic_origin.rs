@@ -295,6 +295,10 @@ async fn dynamic_origin_magic_link<B: Backend>(db: Db) -> TestResult {
 }
 
 #[tokio::test]
+#[expect(
+    clippy::panic_in_result_fn,
+    reason = "fixture setup propagates errors while contract assertions intentionally fail the test"
+)]
 async fn dynamic_origin_resolution() -> TestResult {
     let mut observations = Vec::new();
     for (host, transport, forwarded_host, forwarded_protocol, trust, expected) in [

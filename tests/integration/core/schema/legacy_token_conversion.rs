@@ -83,7 +83,9 @@ fn source_plain(value: &str) -> TestResult<String> {
         .ok_or("missing managed envelope")?;
     let bytes = value
         .as_bytes()
-        .chunks_exact(2)
+        .as_chunks::<2>()
+        .0
+        .iter()
         .map(|pair| -> TestResult<u8> { Ok(u8::from_str_radix(std::str::from_utf8(pair)?, 16)?) })
         .collect::<TestResult<Vec<_>>>()?;
     let (nonce, ciphertext) = bytes.split_at(24);
