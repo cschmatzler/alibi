@@ -5,6 +5,12 @@ export function passkeyFixture(database: Database) {
   return async (request: Request): Promise<Response | null> => {
     const url = new URL(request.url);
 
+    if (url.pathname === "/__test/passkey-crl") {
+      return new Response(
+        Bun.file(new URL("../../fixtures/passkey-attestation/revoked.der", import.meta.url)),
+      );
+    }
+
     if (url.pathname === "/__test/passkey-state") {
       const userId = url.searchParams.get("userId") ?? "";
       return Response.json({
@@ -21,6 +27,14 @@ export function passkeyFixture(database: Database) {
       const result = database
         .query('UPDATE passkey SET counter = ? WHERE "credentialID" = ?')
         .run(body.counter, body.credentialId);
+      return Response.json({ updated: result.changes });
+    }
+
+    if (url.pathname === "/__test/passkey-public-key" && request.method === "POST") {
+      const body = (await request.json()) as { credentialId: string; publicKey: string };
+      const result = database
+        .query('UPDATE passkey SET "publicKey" = ? WHERE "credentialID" = ?')
+        .run(body.publicKey, body.credentialId);
       return Response.json({ updated: result.changes });
     }
 

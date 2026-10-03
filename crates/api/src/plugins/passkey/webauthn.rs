@@ -182,7 +182,37 @@ pub(super) fn build_verification_core(
         Duration::from_millis(OPTIONS_TIMEOUT_MS),
         Some(false),
         Some(false),
-    ).with_source_policy(policy))
+    )
+    .with_source_policy(policy))
+}
+
+/// Keep certificate URL fetching in the API's configured HTTP/TLS stack.
+pub(super) async fn build_registration_core(
+    config: &PasskeyConfig,
+    auth_config: &AuthConfig,
+    origin: &str,
+    registration: &RegisterPublicKeyCredential,
+) -> AuthResult<WebauthnCore> {
+    let mut policy = webauthn_rs_core::source_policy::SourcePolicy::default();
+    if let Some(roots) = &config.attestation_root_certificates {
+        policy.roots.extend(roots.clone());
+    }
+    policy
+        .check_revocations(
+            registration.response.attestation_object.as_ref(),
+            |url| async move {
+                reqwest::get(url)
+                    .await
+                    .ok()?
+                    .bytes()
+                    .await
+                    .ok()
+                    .map(|bytes| bytes.to_vec())
+            },
+        )
+        .await
+        .map_err(|error| AuthError::internal(error.to_string()))?;
+    Ok(build_verification_core(config, auth_config, origin)?.with_source_policy(policy))
 }
 
 // The pinned verifier uses different legacy spellings in the two ceremonies.
@@ -565,7 +595,8 @@ pub(super) fn extract_registration_metadata(
     registration: &RegisterPublicKeyCredential,
 ) -> AuthResult<RegisteredPasskeyMetadata> {
     let attestation_bytes = registration.response.attestation_object.as_ref();
-    let attestation: serde_cbor_2::Value = super::raw_none::decode_first(attestation_bytes).map(|(value, _)| value)
+    let attestation: serde_cbor_2::Value = super::raw_none::decode_first(attestation_bytes)
+        .map(|(value, _)| value)
         .map_err(|error| AuthError::internal(format!("Invalid attestation CBOR: {error}")))?;
     let serde_cbor_2::Value::Map(attestation_map) = attestation else {
         return Err(AuthError::internal("Attestation object must be a CBOR map"));

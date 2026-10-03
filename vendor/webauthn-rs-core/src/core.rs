@@ -338,7 +338,6 @@ impl WebauthnCore {
                 exclude_credentials: exclude_credentials.as_ref().map(|creds| {
                     creds
                         .iter()
-                        .cloned()
                         .map(|id| PublicKeyCredentialDescriptor {
                             type_: "public-key".to_string(),
                             id: id.as_ref().into(),
@@ -885,13 +884,11 @@ impl WebauthnCore {
                     return Err(WebauthnError::UserNotVerified);
                 }
             }
-            (_, UserVerificationPolicy::Preferred) => {
-                // If we asked for Preferred at registration, we MAY have established to the user
-                // that they are required to enter a pin, so we SHOULD enforce this.
-                if cred.user_verified && !data.authenticator_data.user_verified {
-                    debug!("Token registered UV=preferred, enforcing UV policy.");
-                    return Err(WebauthnError::UserNotVerified);
-                }
+            // Preserve the historical Preferred policy's established UV requirement.
+            (_, UserVerificationPolicy::Preferred)
+                if cred.user_verified && !data.authenticator_data.user_verified => {
+                debug!("Token registered UV=preferred, enforcing UV policy.");
+                return Err(WebauthnError::UserNotVerified);
             }
             // Pass - we can not know if verification was requested to the client in the past correctly.
             // This means we can't know what it's behaviour is at the moment.

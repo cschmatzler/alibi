@@ -10,13 +10,29 @@ pub(in crate::plugins) struct VerifyRegistrationRequest {
     #[serde(default = "missing_response")]
     pub(super) response: better_auth_core::utils::json::JsValue,
     #[serde(default, deserialize_with = "optional_name")]
-    pub(super) name: Option<String>,
+    pub(super) name: Option<better_auth_core::utils::json::JsValue>,
     #[serde(default = "no_registration_session")]
     pub(super) create_session: better_auth_core::utils::json::JsValue,
 }
 
 impl Validate for VerifyRegistrationRequest {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
+        if let Some(name) = &self.name
+            && !name.is_string()
+        {
+            let mut errors = validator::ValidationErrors::new();
+            errors.add(
+                "name",
+                validator::ValidationError::new("string").with_message(
+                    format!(
+                        "Invalid input: expected string, received {}",
+                        received_type(name)
+                    )
+                    .into(),
+                ),
+            );
+            return Err(errors);
+        }
         if self.create_session.is_boolean() {
             return Ok(());
         }
@@ -98,15 +114,30 @@ fn validate_authentication_response(
         .with_message(format!("Invalid input: expected record, received {received}").into()))
 }
 
-fn missing_response() -> better_auth_core::utils::json::JsValue { better_auth_core::utils::json::JsValue::Null }
-fn optional_name<'de, D: serde::Deserializer<'de>>(decoder: D) -> Result<Option<String>, D::Error> {
-    use serde::Deserialize;
-    String::deserialize(decoder).map(Some)
+fn missing_response() -> better_auth_core::utils::json::JsValue {
+    better_auth_core::utils::json::JsValue::Null
+}
+fn optional_name<'de, D: serde::Deserializer<'de>>(
+    decoder: D,
+) -> Result<Option<better_auth_core::utils::json::JsValue>, D::Error> {
+    better_auth_core::utils::json::JsValue::deserialize(decoder).map(Some)
+}
+fn received_type(value: &better_auth_core::utils::json::JsValue) -> &'static str {
+    use better_auth_core::utils::json::JsValue;
+    match value {
+        JsValue::Null => "null",
+        JsValue::Array(_) => "array",
+        JsValue::Object(_) => "object",
+        JsValue::Bool(_) => "boolean",
+        JsValue::Number(_) => "number",
+        JsValue::String(_) => "string",
+    }
 }
 
 fn validate_trimmed_name(value: &str) -> Result<(), validator::ValidationError> {
     if super::registration::trim_name(value).is_empty() {
-        return Err(validator::ValidationError::new("length").with_message("Too small: expected string to have >=1 characters".into()));
+        return Err(validator::ValidationError::new("length")
+            .with_message("Too small: expected string to have >=1 characters".into()));
     }
     Ok(())
 }

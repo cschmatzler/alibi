@@ -454,8 +454,13 @@ pub(super) fn register_raw_key(
     }
     let (key, key_length) = decode_first(key_bytes)?;
     if !matches!(
-        match &key { Cbor::Map(map) => map.get(&Cbor::Integer(3)), _ => None },
-        Some(Cbor::Integer(-8 | -7 | -36 | -37 | -38 | -39 | -257 | -258 | -259 | -65535))
+        match &key {
+            Cbor::Map(map) => map.get(&Cbor::Integer(3)),
+            _ => None,
+        },
+        Some(Cbor::Integer(
+            -8 | -7 | -36 | -37 | -38 | -39 | -257 | -258 | -259 | -65535
+        ))
     ) {
         return Err(malformed());
     }
@@ -602,10 +607,14 @@ pub(super) fn validate_assertion_data(bytes: &[u8]) -> Result<(), WebauthnError>
     }
     if flags & 0x80 != 0 {
         let (extension, _) = decode_first(bytes.get(end..).ok_or_else(malformed)?)?;
-        if !extension_conversion_possible(&extension) { return Err(malformed()); }
+        if !extension_conversion_possible(&extension) {
+            return Err(malformed());
+        }
         end += source_encoded_length(&extension)?;
     }
-    if bytes.len() != end { return Err(malformed()); }
+    if bytes.len() != end {
+        return Err(malformed());
+    }
     Ok(())
 }
 
@@ -671,10 +680,17 @@ pub(super) fn authenticate_raw(
     let verified = if let Cbor::Map(map) = &key
         && map.get(&Cbor::Integer(1)) == Some(&Cbor::Integer(1))
     {
-        if map.get(&Cbor::Integer(-1)) != Some(&Cbor::Integer(6)) { return Err(WebauthnError::COSEKeyEDDSAInvalidCurve); }
-        verify_ed25519(credential.public_key(), authentication.response.signature.as_ref(), &signed)?
+        if map.get(&Cbor::Integer(-1)) != Some(&Cbor::Integer(6)) {
+            return Err(WebauthnError::COSEKeyEDDSAInvalidCurve);
+        }
+        verify_ed25519(
+            credential.public_key(),
+            authentication.response.signature.as_ref(),
+            &signed,
+        )?
     } else {
-        webauthn_rs_core::proto::COSEKey::try_from(&key)?.verify_signature(authentication.response.signature.as_ref(), &signed)?
+        webauthn_rs_core::proto::COSEKey::try_from(&key)?
+            .verify_signature(authentication.response.signature.as_ref(), &signed)?
     };
     if !verified {
         return Err(WebauthnError::AuthenticationFailure);
