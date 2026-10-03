@@ -1,0 +1,12 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/social/generic-client-assertion.test.ts:
+(pass) generic client assertion nan rejects code and refresh before token transport [674.33ms]
+
+tests/core/social/oauth-account-boundaries.test.ts:
+
+ 1 pass
+ 53 filtered out
+ 0 fail
+ 18 expect() calls
+Ran 1 test across 2 files. [738.00ms]

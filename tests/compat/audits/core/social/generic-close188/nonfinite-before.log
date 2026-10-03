@@ -1,0 +1,28 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/social/generic-client-assertion.test.ts:
+ 97 |           after: deniedAfter,
+ 98 |           callback: { status: callback.status, location: callback.headers.get("location") },
+ 99 |         });
+100 |         expect(
+101 |           new URL(callback.headers.get("location")!, ctx.baseURL).searchParams.get("error"),
+102 |         ).toBe("invalid_code");
+      ^
+error: expect(received).toBe(expected)
+
+Expected: "invalid_code"
+Received: null
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-close188/tests/compat/client-tests/tests/core/social/generic-client-assertion.test.ts:102:11
+      at runScenario (/tmp/better-auth-close188/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-close188/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) generic client assertion nan authenticates code and refresh at bound endpoint [622.85ms]
+
+tests/core/social/oauth-account-boundaries.test.ts:
+
+ 0 pass
+ 53 filtered out
+ 1 fail
+ 12 expect() calls
+Ran 1 test across 2 files. [708.00ms]

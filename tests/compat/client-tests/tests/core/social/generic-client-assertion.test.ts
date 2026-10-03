@@ -47,23 +47,23 @@ const modes = [
   "getter-error",
 ];
 for (const mode of modes) {
-  const name = `generic client assertion ${mode} authenticates code and refresh at bound endpoint`;
+  const deny = [
+    "bad-key",
+    "missing-crt",
+    "duplicate-ops",
+    "invalid-ext",
+    "nan",
+    "infinity",
+    "secret",
+    "manual",
+    "getter-error",
+  ].includes(mode);
+  const name = `generic client assertion ${mode} ${deny ? "rejects code and refresh before token transport" : "authenticates code and refresh at bound endpoint"}`;
   compatScenario(
     name,
     async (ctx) => {
       const fixture = `generic-token-jwt-${mode}` as FixtureProfile;
       const actor = ctx.actor("owner", fixture);
-      const deny = [
-        "bad-key",
-        "missing-crt",
-        "duplicate-ops",
-        "invalid-ext",
-        "nan",
-        "infinity",
-        "secret",
-        "manual",
-        "getter-error",
-      ].includes(mode);
       await ctx.rawRequest({
         path: "/__test/generic-token/control",
         method: "POST",
@@ -91,10 +91,16 @@ for (const mode of modes) {
       );
       expect(callback.status).toBe(302);
       if (deny) {
+        const deniedAfter = await state(ctx);
+        await save(ctx, name + "-code", {
+          before,
+          after: deniedAfter,
+          callback: { status: callback.status, location: callback.headers.get("location") },
+        });
         expect(
           new URL(callback.headers.get("location")!, ctx.baseURL).searchParams.get("error"),
         ).toBe("invalid_code");
-        expect(await state(ctx)).toEqual(before);
+        expect(deniedAfter).toEqual(before);
         expect(await receipts(ctx)).toEqual([]);
         // Explicit refresh reaches the same auth failure before any account mutation.
         expect(

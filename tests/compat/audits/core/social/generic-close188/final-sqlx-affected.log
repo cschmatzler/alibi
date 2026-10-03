@@ -1,0 +1,17 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/social/generic-client-assertion.test.ts:
+(pass) generic client assertion nan authenticates code and refresh at bound endpoint [685.09ms]
+(pass) generic client assertion infinity authenticates code and refresh at bound endpoint [587.99ms]
+
+tests/core/social/oauth-account-boundaries.test.ts:
+(pass) oauth generic subject key resolves original token and profile before account writes [461.06ms]
+(pass) oauth generic subject error resolves original token and profile before account writes [497.84ms]
+(pass) oauth generic subject invalid resolves original token and profile before account writes [1062.01ms]
+(pass) oauth generic subject default resolves original token and profile before account writes [453.84ms]
+
+ 6 pass
+ 48 filtered out
+ 0 fail
+ 168 expect() calls
+Ran 6 tests across 2 files. [3.82s]

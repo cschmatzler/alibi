@@ -1,0 +1,43 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/social/oauth-account-boundaries.test.ts:
+132 |     const email = ctx.uniqueEmail("changed");
+133 |     const second = await flow(email, true);
+134 |     const after = await state(ctx);
+135 |     expect(second.data!.user.id).toBe(first.data!.user.id);
+136 |     expect(second.data!.user.email).toBe(email);
+137 |     expect(second.data!.user.emailVerified).toBe(true);
+      ^
+error: expect(received).toBe(expected)
+
+Expected: true
+Received: false
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-close188/tests/compat/client-tests/tests/core/social/oauth-account-boundaries.test.ts:137:45
+      at runScenario (/tmp/better-auth-close188/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-close188/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) oauth changed verified email override retains original account authority [756.53ms]
+266 |         authProfilePath("generic-token-none") +
+267 |         `/callback/generic?code=code&state=${encodeURIComponent(u.searchParams.get("state")!)}`,
+268 |       { redirect: "manual" },
+269 |     );
+270 |     expect(callback.status).toBe(302);
+271 |     expect(new URL(callback.headers.get("location")!, ctx.baseURL).searchParams.get("error")).toBe(
+      ^
+error: expect(received).toBe(expected)
+
+Expected: "unable_to_link_account"
+Received: "user_not_found"
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-close188/tests/compat/client-tests/tests/core/social/oauth-account-boundaries.test.ts:271:95
+      at runScenario (/tmp/better-auth-close188/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-close188/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) oauth orphan binding rejects callback without adopting same-email user [688.97ms]
+
+ 0 pass
+ 21 filtered out
+ 2 fail
+ 31 expect() calls
+Ran 2 tests across 1 file. [1.52s]
