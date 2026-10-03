@@ -18,21 +18,21 @@ use fixtures::{
     custom_session_fixture, device_fixture, dispatch_fixture, dropbox_provider_fixture,
     facebook_provider_fixture, figma_provider_fixture, google_id_token_fixture,
     huggingface_provider_fixture, invitation_fixture, jwt_fixture, jwt_keyring_fixture,
-    jwt_remote_fixture, kakao_provider_fixture, kick_provider_fixture, naver_provider_fixture, last_login_method_fixture,
-    lifecycle_fixture, linear_provider_fixture, multiple_session_fixture, oauth_proxy_fixture,
-    one_tap_fixture, one_time_token_fixture, open_api_fixture, organization_creation_fixture,
-    organization_creation_hooks_fixture, organization_deletion_hooks_fixture,
-    organization_invitation_acceptance_fixture, organization_member_addition_fixture,
-    organization_member_removal_hooks_fixture, organization_member_role_hooks_fixture,
-    organization_membership_policy_fixture, organization_timestamp_fixture,
-    organization_transport_probe, organization_update_hooks_fixture,
-    passkey_authentication_fixture, passkey_fixture, passkey_registration_fixture,
-    physical_cookie_fixture, rate_limit_fixture, server_endpoint_fixture,
-    session_cookie_cache_fixture, session_fields_fixture, set_password_fixture,
-    signup_policy_fixture, siwe_fixture, social_provider_fixture, team_fixture,
-    two_factor_delivery_fixture, two_factor_otp_fixture, two_factor_pending_lookup_fixture,
-    two_factor_policy_fixture, two_factor_totp_fixture, user_lifecycle_fixture,
-    user_validation_fixture, verification_storage_fixture,
+    jwt_remote_fixture, kakao_provider_fixture, kick_provider_fixture, last_login_method_fixture,
+    lifecycle_fixture, linear_provider_fixture, multiple_session_fixture, naver_provider_fixture,
+    oauth_proxy_fixture, one_tap_fixture, one_time_token_fixture, open_api_fixture,
+    organization_creation_fixture, organization_creation_hooks_fixture,
+    organization_deletion_hooks_fixture, organization_invitation_acceptance_fixture,
+    organization_member_addition_fixture, organization_member_removal_hooks_fixture,
+    organization_member_role_hooks_fixture, organization_membership_policy_fixture,
+    organization_timestamp_fixture, organization_transport_probe,
+    organization_update_hooks_fixture, passkey_authentication_fixture, passkey_fixture,
+    passkey_registration_fixture, physical_cookie_fixture, rate_limit_fixture,
+    server_endpoint_fixture, session_cookie_cache_fixture, session_fields_fixture,
+    set_password_fixture, signup_policy_fixture, siwe_fixture, social_provider_fixture,
+    team_fixture, two_factor_delivery_fixture, two_factor_otp_fixture,
+    two_factor_pending_lookup_fixture, two_factor_policy_fixture, two_factor_totp_fixture,
+    user_lifecycle_fixture, user_validation_fixture, verification_storage_fixture,
 };
 
 // Bun's Response.json adds UTF-8 to private control responses. Public auth
@@ -895,7 +895,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         kakao_provider_fixture::router(&config, database.clone()).await?;
     let (linear_router, linear_reset) =
         linear_provider_fixture::router(&config, database.clone()).await?;
-    let (naver_router, naver_reset) = naver_provider_fixture::router(&config, database.clone()).await?;
+    let (naver_router, naver_reset) =
+        naver_provider_fixture::router(&config, database.clone()).await?;
     let (kick_router, kick_reset) =
         kick_provider_fixture::router(&config, database.clone()).await?;
     let (cognito_router, cognito_reset) =
