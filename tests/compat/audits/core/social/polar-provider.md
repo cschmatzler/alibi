@@ -1,0 +1,45 @@
+# Polar provider contract (issue #157)
+
+Authority: published Better Auth **1.7.6** `@better-auth/core/dist/social-providers/polar.mjs`, its `polar.d.mts` declarations, and the installed authorization/code/refresh/token-auth helpers. The downloaded factory and installed factory are byte-identical. The unchanged factory runs in `polar-provider-fixture.ts`; only its two fixed HTTP destinations are redirected to deterministic local HTTP. Native uses the public factory plus trusted application transport overrides. Fixtures supply HTTP responses and retain actual receipts; they never admit callbacks or write auth rows. The official client owner is `tests/core/social/polar.test.ts`. Comparator rules, package pins and excluded package boundaries are unchanged.
+
+Authoring gate: Polar's factory boundary protects its ordered defaults, PKCE, prompt precedence, production destinations, form credentials, two-level name fallback and original profile account identity. Credible regressions include removing PKCE, deduplicating scopes, forwarding login hints, substituting sandbox endpoints, using Basic authentication, collapsing raw null/absence, or allowing mapped IDs to replace account identity. Existing owners cannot exercise Polar's actual factory. Variants share tables and use production entry points; no private helper test or production test-only export is added.
+
+## Native interface and protocol
+
+`OAuthProvider::polar` / `polar_with_options(PolarOptions)` use authorization `https://polar.sh/oauth2/authorize`, token `https://api.polar.sh/v1/oauth2/token`, and bearer GET `https://api.polar.sh/v1/oauth2/userinfo`. Defaults are `openid`, `profile`, `email`, followed by configured and requested scopes, retaining duplicates and order. Disabled defaults remove only those three defaults. Empty final scopes omit the parameter. Nonempty authorization endpoint and redirect URI override production defaults; explicitly empty overrides fall back. The factory forwards configured prompt and additional parameters (caller prompt wins). It does not forward loginHint, display, responseMode or idTokenNonce. Reserved OAuth parameters are rejected by the public route.
+
+PKCE is S256. Tests hash the actual code-exchange verifier and match the actual authorization challenge. Confidential clients send ID and secret in the form without Basic authorization. Public clients send ID without secret. Optional clientKey is code-only: although passed in the factory's refresh options object, the actual refresh helper does not read it. Both grants refuse redirects. No default token expiry is fabricated: absent/zero expiry is null; fractional seconds retain milliseconds. Refresh rotates owned account tokens and preserves the original account scope, users, sessions and foreign rows.
+
+The published factory has no sandbox option, discovery or issuer option, ID-token/JWKS/nonce/audience verifier, or provider logout. These are unsupported contracts, not missing implementations. Direct ID-token signin is rejected before provider HTTP, even though the default scopes contain `openid`. Logout revokes only the local session; no Polar request occurs. Returned generic provider policies and asynchronous callbacks remain available.
+
+## Mapping and persistence
+
+The mapper receives the complete original profile before subject validation. Account identity derives from original `profile.id`, independently of mapper output. Missing/null/empty IDs deny callback admission; numeric IDs, including zero and exponential JavaScript formatting, become the persisted account subject. Mapper ID remains public user-info output and cannot change account authority.
+
+Name follows JavaScript truthiness: `public_name || username || ""`. Missing/null/empty/zero public names fall back to username; missing/null/empty username with no public name falls back to an empty string. Scalar numbers retain raw account-info JSON and use JavaScript string formatting for typed persistence. Email uses `profile.email` directly; missing/null/empty email prevents signup. Avatar absence remains absent in account-info; null and empty remain distinct. Email verification uses `email_verified ?? false`: absent/null default false and true is retained. Mapping can override public name, email, image and verification.
+
+Unsupported malformed shapes are explicit: the declared profile uses string email and boolean verification; numeric email/verification and arbitrary object/array fields are not claimed. A null whole profile crashes the published factory with a server error; native safely denies invalid subject admission. This scope does not emulate that Source crash. The initial failed probe remains in retained logs, with no skip or comparator exception added.
+
+## Authorization and persistence review
+
+Review traced `resolve_account_subject` before callback persistence, mapper output as public fields rather than account authority, and account-info/refresh resolution through authoritative session user ID and `get_user_accounts_record(user_id)`. Actual foreign refresh and account-info requests deny without provider HTTP or foreign row changes. Callback replay and unissued state cannot reuse the provider exchange. Signup-disabled and implicit-disabled callbacks preserve complete foreign users/accounts/sessions. Required email verification persists the user/account but issues no session for the default unverified profile.
+
+Data-exfiltration review traced fixed/default URLs and trusted application configuration into the bearer GET. Request parameters and provider profile data cannot choose the HTTP destination. The public options Debug implementation omits client secret. Existing token transport refuses redirects. No security finding was identified in this scope.
+
+## Evidence and limits
+
+Evidence is emitted only after successful real Source/native raw comparisons. Coverage additions preserve prior requirements and implemented/upstream route flags. Full raw observations, request/response traces, physical rows and comparison results are retained under `/tmp/polar157-evidence`, outside the owned worktree and target cleanup. A temporary local capture records them without changing comparator behavior; it is restored before committing.
+
+Per current user instruction, this worker runs only targeted proof, never `scripts/check.sh`, `scripts/compat.sh`, `full_client_compat` or `devenv test`. Coordinator owns periodic full dual-backend proof. Dedicated generic callback override/encrypted-token/client-ID-array permutations and broader instrumented source coverage are not claimed by this scope; #157 remains open for those residuals rather than false closure.
+
+Measured final commands, negative controls and current-main validation follow below.
+
+- Initial final SQLx selected Polar + Notion + account owners: **101/101**, **3,400 assertions**, `/tmp/polar157-sqlx-final2.log`.
+- Initial final SeaORM same actual Source/native owner files: **101/101**, **3,400 assertions**, `/tmp/polar157-seaorm-final.log`. Fixture compiled with `--features seaorm2`; auth store selection is in `backend.rs`, separate from the common physical observation connection.
+- Strict API all-target Clippy with Axum and standalone fixture all-target Clippy with SeaORM pass. TypeScript typecheck and focused oxlint pass. Coverage harness passes **4/4**, **78 assertions**, `/tmp/polar157-coverage-harness.log`.
+- **253 distinct** route/category/scenario requirements are observed across five route families; the existing inventory contains each route twice, so both copies receive **506** additions. Every earlier named requirement, route flag and the 1.7.6 pin is preserved. Prior array order is retained.
+- GitHub repository Actions are disabled (`actions/permissions.enabled=false`); no hosted CI success is claimed.
+
+Targeted runner: `devenv shell -- env CARGO_BUILD_JOBS=2 CARGO_TARGET_DIR=<owned-target> BETTER_AUTH_COMPAT_BACKEND=<sqlx-or-seaorm> tests/compat/client-tests/run-against-both.sh tests/core/social/polar.test.ts tests/core/social/notion.test.ts tests/core/account`. This workpiece directly built the same standalone fixture for each selected backend and started it plus the pinned Bun reference, then ran those exact official-client files with `COMPAT_COVERAGE=1` to retain emitted evidence. Build, server and test logs are `/tmp/polar157-*.log`; the owned runner is `/tmp/polar157-run.py`.
+
+Negative controls: temporary native mutations remove PKCE, default null verification to true, and remove the original-profile account-subject resolver. The three primary owners fail on the intended Rust boundary after Source passes: missing `S256`, physically stored verification true, and invalid raw subject incorrectly admitted after mapping (**0/3**, **92 assertions**, `/tmp/polar157-negative.log`). These controls demonstrate sensitivity, not a claim of running a historical missing-factory baseline. Native source and the temporary raw-capture harness are fully restored before committing and final proof.

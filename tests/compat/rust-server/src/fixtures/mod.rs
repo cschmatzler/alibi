@@ -84,3 +84,5 @@ pub(crate) mod naver_provider_fixture;
 
 pub(crate) mod notion_provider_fixture;
 pub(crate) mod paybin_provider_fixture;
+
+pub(crate) mod polar_provider_fixture;

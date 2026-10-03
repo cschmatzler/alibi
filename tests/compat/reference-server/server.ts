@@ -81,6 +81,7 @@ import { numericModes, numericOptions } from "./fixtures/passwordless-numeric";
 import { paybinProviderFixture } from "./fixtures/paybin-provider-fixture";
 import { createPhoneFixture } from "./fixtures/phone-fixture";
 import { physicalCookieProfiles } from "./fixtures/physical-cookie-fixture";
+import { polarProviderFixture } from "./fixtures/polar-provider-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
@@ -617,6 +618,7 @@ const passkeyAuthentication = passkeyAuthenticationFixture(
   authOptions,
   `http://localhost:${PORT}`,
 );
+const polarFixture = polarProviderFixture(authOptions);
 const notionFixture = notionProviderFixture(authOptions);
 const paybinFixture = paybinProviderFixture(authOptions);
 const cloudflareFixture = cloudflareProviderFixture(authOptions);
@@ -648,6 +650,9 @@ for (const [path, instance] of additionalFields.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of userLifecycleFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of polarFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of notionFixture.profiles) {
@@ -1692,6 +1697,8 @@ const server = Bun.serve({
       }
       const managedProxyControl = await managedProxyProfiles.handle(request);
       if (managedProxyControl) return managedProxyControl;
+      const polarControl = await polarFixture.handle(request);
+      if (polarControl) return polarControl;
       const notionControl = await notionFixture.handle(request);
       const paybinControl = await paybinFixture.handle(request);
       if (notionControl) return notionControl;
@@ -2563,6 +2570,7 @@ const server = Bun.serve({
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         await apiKeyStorage.reset();
+        polarFixture.reset();
         notionFixture.reset();
         paybinFixture.reset();
         cloudflareFixture.reset();
