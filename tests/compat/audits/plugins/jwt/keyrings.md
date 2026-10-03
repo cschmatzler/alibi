@@ -238,3 +238,35 @@ Exact cc99 full-SDK failures:
 - generated lifecycle seed 12648430 profile default
 - generated lifecycle seed 12648430 profile session-no-refresh
 - generated lifecycle seed 12648430 profile session-deferred
+
+### Generated RSA key clock provenance (PR #296)
+
+The full SDK owner `application JWT keyring pinning resolved keys RSA modulus
+grace corruption and installed rows remain observable` failed on raw recovered
+key creation/expiry dates in the PR #296 gate: actual asynchronous RSA
+generation put the two creation offsets 2.668 seconds apart. Published Source
+`createJwk` sets its dates after awaiting key generation. The original failed
+gate remains `/tmp/pr296-canonical.log` (1717/1719 SDK owners passed).
+
+The comparator owns a distinct publication-provenance contract; the SDK owner
+already checks production signing, legacy fallback, stored rows and manual
+creation clocks, but cannot prove that comparison rejects forged provenance.
+The new strongest-boundary harness owner starts two unchanged Source servers,
+deletes the actual installed key, delays one genuine recovery request, then
+observes actual SQL/create-event controls, public JWKS and independently
+verified SDK token signatures. No dependency patch, fake principal, synthetic
+timestamp or production seam is used. It fails before the repair on exactly the
+retained raw key/event/legacy dates (`/tmp/pr296-keyring-clock-before.log`, 44
+assertions), and passes after (`/tmp/pr296-keyring-clock-after2.log`, 56).
+
+Admission requires exact `jwt-keyring-plain` POST control inputs and immutable
+full response digests, successful public GET publication with matching kid,
+RSA material and algorithm, an actual signed public token, a matching creation
+event and physical row, the creation request window, and the literal one-hour
+policy (at most five milliseconds between Source's consecutive date reads).
+Every approved raw date is a complete independently observed copy; approval
+does not propagate by ID alone. Twelve controls reject coherent wrong expiry,
+foreign kid/material/algorithm, failed or foreign publication, foreign control
+profile/operation, missing or altered observation provenance, invalid signature,
+and a one-millisecond mutation of a legacy copy at its exact date path. Existing
+manual creation start/end and exact lifetime assertions remain unchanged.

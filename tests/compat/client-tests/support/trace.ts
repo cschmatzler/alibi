@@ -31,11 +31,17 @@ export type RequestWindow = {
   verificationObserverDigest?: string;
   /** Original narrow physical controls; their values are not transport output. */
   controlObservation?: {
-    kind: "member-addition" | "social-provider" | "user-validation" | "managed-secrets";
+    kind:
+      | "member-addition"
+      | "social-provider"
+      | "user-validation"
+      | "managed-secrets"
+      | "jwt-keyring";
     body: unknown;
     digest: string;
   };
   memberAdditionOwner?: { organizationId: string; userId: string };
+  jwtKeyringInput?: { profile: string; operation: string };
 };
 
 /** Complete response observations, kept in memory; reports contain paths rather than secrets. */
@@ -284,24 +290,28 @@ export function createTracingFetch(
       let controlObservation: RequestWindow["controlObservation"];
 
       if (
-        request.method === "GET" &&
-        [
-          "/__test/organization-member-addition/state",
-          "/__test/social-provider/state",
-          "/__test/user-validation/state",
-          "/__test/managed-secrets/state",
-        ].includes(url.pathname)
+        (request.method === "POST" && url.pathname === "/__test/jwt-keyring") ||
+        (request.method === "GET" &&
+          [
+            "/__test/organization-member-addition/state",
+            "/__test/social-provider/state",
+            "/__test/user-validation/state",
+            "/__test/managed-secrets/state",
+          ].includes(url.pathname))
       ) {
         try {
           const body: unknown = JSON.parse(responseText);
           controlObservation = {
-            kind: url.pathname.includes("organization-member-addition")
-              ? "member-addition"
-              : url.pathname.includes("managed-secrets")
-                ? "managed-secrets"
-                : url.pathname.includes("user-validation")
-                  ? "user-validation"
-                  : "social-provider",
+            kind:
+              url.pathname === "/__test/jwt-keyring"
+                ? "jwt-keyring"
+                : url.pathname.includes("organization-member-addition")
+                  ? "member-addition"
+                  : url.pathname.includes("managed-secrets")
+                    ? "managed-secrets"
+                    : url.pathname.includes("user-validation")
+                      ? "user-validation"
+                      : "social-provider",
             body,
             digest: createHash("sha256").update(JSON.stringify(body)).digest("hex"),
           };
@@ -313,12 +323,26 @@ export function createTracingFetch(
       const memberInput = verificationInput as
         | { body?: { organizationId?: unknown; userId?: unknown } }
         | undefined;
+      const keyringInput = verificationInput as
+        | { profile?: unknown; operation?: unknown }
+        | undefined;
       const entry: TraceEntry = {
         [requestWindow]: {
           startedAt,
           finishedAt: Date.now(),
           inputDates,
           ...(controlObservation ? { controlObservation } : {}),
+          ...(request.method === "POST" &&
+          url.pathname === "/__test/jwt-keyring" &&
+          typeof keyringInput?.profile === "string" &&
+          typeof keyringInput.operation === "string"
+            ? {
+                jwtKeyringInput: {
+                  profile: keyringInput.profile,
+                  operation: keyringInput.operation,
+                },
+              }
+            : {}),
           ...(request.method === "POST" &&
           url.pathname === "/__test/organization-member-addition/server" &&
           typeof memberInput?.body?.organizationId === "string" &&
