@@ -665,11 +665,7 @@ pub(super) fn transports_to_csv(transports: Option<&[String]>) -> Option<String>
 }
 
 pub(super) fn parse_transports_csv(transports: &str) -> Vec<String> {
-    transports
-        .split(',')
-        .filter(|transport| !transport.is_empty())
-        .map(str::to_owned)
-        .collect()
+    transports.split(',').map(str::to_owned).collect()
 }
 
 pub(super) fn credential_id_from_authentication(authentication: &PublicKeyCredential) -> String {
