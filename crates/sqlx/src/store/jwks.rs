@@ -11,7 +11,8 @@ use better_auth_core::types::{CreateJwk, Jwk};
 impl<S: AuthSchema> SqlxStore<S> {
     pub(super) async fn list_jwks_with(&self, exec: Exec<'_>) -> AuthResult<Vec<Jwk>> {
         let mut sql = model::select_model::<Model>(exec);
-        sql.push(" LIMIT ").bind(self.find_many_limit());
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
         Ok(exec
             .fetch_all::<Model>(sql)
             .await?

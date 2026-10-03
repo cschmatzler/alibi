@@ -26,7 +26,7 @@ mod sqlx_schema {
     }
 }
 
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 mod seaorm_schema {
     #![allow(
         unreachable_pub,
@@ -51,7 +51,7 @@ mod seaorm_schema {
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
 /// Round-trip every core role through the generated models.
-#[cfg(any(feature = "sqlx", feature = "seaorm2"))]
+#[cfg(any(feature = "sqlx", feature = "seaorm"))]
 async fn exercise<S: better_auth::AuthSchema>(
     store: &dyn better_auth::store::AuthStore<S>,
 ) -> TestResult {

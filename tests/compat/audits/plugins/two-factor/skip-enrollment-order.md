@@ -26,7 +26,7 @@ All response fields remain part of the ordinary comparison.
 
 The native route test independently owns lifecycle cancellation and historical
 generation preservation, which the public SDK case cannot seed or inspect in
-full. Its four cases use actual SeaOrmHooks with fresh or existing unverified
+full. Its four cases use actual DatabaseHooks with fresh or existing unverified
 factors, and either a rejecting user update or cancelled session creation.
 They assert callback owner/order, original encrypted generation and clocks,
 nullable/fractional policy fields, original session and its org/team/admin/
@@ -50,7 +50,7 @@ Focused validation: ten native two-factor tests pass
 (`/tmp/two-factor-skip-order-native-final.log`); nineteen distinct official SDK
 scenarios / 652 assertions pass
 (`/tmp/two-factor-skip-order-sdk-family-final.log`), including the new scenario
-/ 22 assertions. Client TypeScript and workspace library Clippy with seaorm2
+/ 22 assertions. Client TypeScript and workspace library Clippy with seaorm
 pass; formatting and diff checks pass. No comparator exemption, skip, timeout,
 coverage, dependency, lock, migration or shared inventory change is made.
 The coordinator owns independent review and canonical gates.

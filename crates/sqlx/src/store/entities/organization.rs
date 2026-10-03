@@ -1,18 +1,16 @@
 pub use crate::json_metadata::JsonMetadata;
 use chrono::{DateTime, Utc};
 
-bundled_model! {
-    table = "organization", primary_key = "id";
-    #[derive(Clone, Debug, PartialEq)]
-    pub struct Model {
-        pub id: String = "id",
-        pub name: String = "name",
-        pub slug: String = "slug",
-        pub logo: Option<String> = "logo",
-        pub metadata: Option<JsonMetadata> = "metadata",
-        pub created_at: DateTime<Utc> = "created_at",
-        pub updated_at: DateTime<Utc> = "updated_at",
-    }
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow, crate::SqlxModel)]
+#[auth(table = "organization")]
+pub struct Model {
+    pub id: String,
+    pub name: String,
+    pub slug: String,
+    pub logo: Option<String>,
+    pub metadata: Option<JsonMetadata>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl From<&Model> for better_auth_core::Organization {

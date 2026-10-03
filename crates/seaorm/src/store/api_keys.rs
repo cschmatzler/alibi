@@ -1,9 +1,10 @@
 use super::entities::api_key::{ActiveModel, Column, Entity};
 use super::entities::api_key_start::ApiKeyStart;
-use super::{SeaOrmStore, map_db_err, parse_optional_rfc3339};
+use super::{SeaOrmStore, map_db_err};
 use crate::schema::AuthSchema;
 use async_trait::async_trait;
 use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::adapter::parse_optional_rfc3339;
 use better_auth_core::store::{ApiKeyStore, ConsumeApiKeyResult};
 use better_auth_core::types::{ApiKey, CreateApiKey, UpdateApiKey};
 use chrono::Utc;

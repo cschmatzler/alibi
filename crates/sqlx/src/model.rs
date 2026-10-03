@@ -142,6 +142,8 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     const TABLE: &'static str;
     /// Physical columns in model field order.
     const COLUMNS: &'static [ColumnDef];
+    /// The names of [`COLUMNS`](Self::COLUMNS), for select and returning lists.
+    const COLUMN_NAMES: &'static [&'static str];
     /// Physical primary-key column.
     const PRIMARY_KEY: &'static str;
 
@@ -165,11 +167,6 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     }
 
     #[must_use]
-    fn column_names() -> Vec<&'static str> {
-        Self::COLUMNS.iter().map(|column| column.name).collect()
-    }
-
-    #[must_use]
     fn column_kind(column: &str) -> ColumnKind {
         Self::COLUMNS
             .iter()
@@ -179,21 +176,24 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
 }
 
 pub(crate) fn select_model<M: SqlxModel>(exec: Exec<'_>) -> Sql {
-    select(exec.backend(), M::TABLE, &M::column_names())
+    select(exec.engine(), M::TABLE, M::COLUMN_NAMES)
 }
 
 pub(crate) fn returning<M: SqlxModel>(sql: &mut Sql) {
-    sql.push(" RETURNING ").column_list(&M::column_names());
+    sql.push(" RETURNING ");
+    sql.column_list(M::COLUMN_NAMES);
 }
 
 /// `INSERT ... RETURNING` every present column.
 pub(crate) async fn insert<M: SqlxModel>(exec: Exec<'_>, active: &ActiveRow) -> AuthResult<M> {
-    let mut sql = Sql::new(exec.backend());
-    sql.push("INSERT INTO ").ident(M::TABLE).push(" (");
+    let mut sql = Sql::new(exec.engine());
+    sql.push("INSERT INTO ");
+    sql.ident(M::TABLE);
+    sql.push(" (");
     let present = active.present().collect::<Vec<_>>();
-    sql.column_list(&present.iter().map(|(name, _)| *name).collect::<Vec<_>>())
-        .push(") VALUES ")
-        .bind_list(present.into_iter().map(|(_, value)| value.clone()));
+    sql.column_list(&present.iter().map(|(name, _)| *name).collect::<Vec<_>>());
+    sql.push(") VALUES ");
+    sql.bind_list(present.into_iter().map(|(_, value)| value.clone()));
     returning::<M>(&mut sql);
     exec.fetch_optional::<M>(sql)
         .await?
@@ -214,25 +214,23 @@ pub(crate) async fn update<M: SqlxModel>(
     if active.changed().next().is_none() {
         // Nothing to write: return the stored row, as an unchanged model update does.
         let mut sql = select_model::<M>(exec);
-        sql.push(" WHERE ")
-            .column(M::TABLE, M::PRIMARY_KEY)
-            .push(" = ")
-            .bind(key)
-            .push(" LIMIT 1");
+        sql.push(" WHERE ");
+        sql.compare(M::TABLE, M::PRIMARY_KEY, " = ", key);
+        sql.push(" LIMIT 1");
         return exec.fetch_optional::<M>(sql).await;
     }
-    let mut sql = Sql::new(exec.backend());
-    sql.push("UPDATE ").ident(M::TABLE).push(" SET ");
+    let mut sql = Sql::new(exec.engine());
+    sql.push("UPDATE ");
+    sql.ident(M::TABLE);
+    sql.push(" SET ");
     for (index, (column, value)) in active.changed().enumerate() {
         if index > 0 {
             sql.push(", ");
         }
-        sql.ident(column).push(" = ").bind(value.clone());
+        sql.assign(column, value.clone());
     }
-    sql.push(" WHERE ")
-        .column(M::TABLE, M::PRIMARY_KEY)
-        .push(" = ")
-        .bind(key);
+    sql.push(" WHERE ");
+    sql.compare(M::TABLE, M::PRIMARY_KEY, " = ", key);
     returning::<M>(&mut sql);
     exec.fetch_optional::<M>(sql).await
 }
@@ -240,10 +238,8 @@ pub(crate) async fn update<M: SqlxModel>(
 /// `SELECT ... WHERE "t"."pk" = ? LIMIT 1`, optionally scoped by one more column.
 pub(crate) fn by_id<M: SqlxModel>(exec: Exec<'_>, id: impl Into<SqlValue>) -> Sql {
     let mut sql = select_model::<M>(exec);
-    sql.push(" WHERE ")
-        .column(M::TABLE, M::PRIMARY_KEY)
-        .push(" = ")
-        .bind(id);
+    sql.push(" WHERE ");
+    sql.compare(M::TABLE, M::PRIMARY_KEY, " = ", id);
     sql
 }
 
@@ -254,12 +250,10 @@ pub(crate) fn limit_one(sql: &mut Sql) {
 
 /// `DELETE FROM "t" WHERE "t"."pk" = ?`.
 pub(crate) fn delete_by_id<M: SqlxModel>(exec: Exec<'_>, id: impl Into<SqlValue>) -> Sql {
-    let mut sql = Sql::new(exec.backend());
-    sql.push("DELETE FROM ")
-        .ident(M::TABLE)
-        .push(" WHERE ")
-        .column(M::TABLE, M::PRIMARY_KEY)
-        .push(" = ")
-        .bind(id);
+    let mut sql = Sql::new(exec.engine());
+    sql.push("DELETE FROM ");
+    sql.ident(M::TABLE);
+    sql.push(" WHERE ");
+    sql.compare(M::TABLE, M::PRIMARY_KEY, " = ", id);
     sql
 }

@@ -3,6 +3,8 @@
 //! Every variant carries its own nullable type, so PostgreSQL receives a typed
 //! `NULL` for each column rather than an untyped text parameter.
 
+use crate::pool::Engine;
+use better_auth_core::error::AuthResult;
 use chrono::{DateTime, NaiveDateTime, Utc};
 
 /// A typed value bound to one SQL parameter.
@@ -156,6 +158,18 @@ pub trait SqlxValue: Sized {
     ///
     /// Returns an error if the value has a different type.
     fn from_sql_value(value: SqlValue) -> Result<Self, ValueTypeError>;
+
+    /// Prepare a staged value for `engine`, after application hooks and
+    /// before the write. JSON metadata binds exact JavaScript text on SQLite;
+    /// every other value is bound unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be serialized for `engine`.
+    fn prepare(self, engine: Engine) -> AuthResult<Self> {
+        let _ = engine;
+        Ok(self)
+    }
 }
 
 macro_rules! sqlx_value {
@@ -223,5 +237,8 @@ impl<T: SqlxValue> SqlxValue for Option<T> {
         } else {
             T::from_sql_value(value).map(Some)
         }
+    }
+    fn prepare(self, engine: Engine) -> AuthResult<Self> {
+        self.map(|value| value.prepare(engine)).transpose()
     }
 }

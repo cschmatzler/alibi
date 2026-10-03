@@ -53,7 +53,7 @@ SQLite-only SQL also have ignored PostgreSQL variants, run with
 Each test gets a fresh schema in that database.
 
 The Rust fixture server serves the compat suite from `SqlxStore`. Set
-`BETTER_AUTH_COMPAT_BACKEND=seaorm` (fixture feature `seaorm2`) to serve it from
+`BETTER_AUTH_COMPAT_BACKEND=seaorm` (fixture feature `seaorm`) to serve it from
 `SeaOrmStore`; `./scripts/compat.sh` runs both.
 
 ## Where a new test goes

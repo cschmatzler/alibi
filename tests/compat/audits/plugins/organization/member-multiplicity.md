@@ -63,7 +63,7 @@ The final locked focused owner passes three tests in
 Strict production Clippy passes in
 `/tmp/organization-member-multiplicity-production-clippy.log`; the locked
 downstream root build without default features and with
-`rustls,axum,seaorm2,redis-cache` passes in
+`rustls,axum,seaorm,redis-cache` passes in
 `/tmp/organization-member-multiplicity-consumer.log`. An exploratory
 `--all-targets` Clippy invocation found existing test-only warnings outside this
 slice; that nonpassing log is retained and is not represented as a passed check.

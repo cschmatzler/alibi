@@ -1,23 +1,21 @@
 use chrono::{DateTime, Utc};
 
-bundled_model! {
-    table = "passkeys", primary_key = "id";
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    pub struct Model {
-        pub id: String = "id",
-        pub name: Option<String> = "name",
-        pub public_key: String = "public_key",
-        pub user_id: String = "user_id",
-        pub credential_id: String = "credential_id",
-        pub counter: i64 = "counter",
-        pub device_type: String = "device_type",
-        pub backed_up: bool = "backed_up",
-        pub transports: Option<String> = "transports",
-        pub credential: String = "credential",
-        pub aaguid: Option<String> = "aaguid",
-        pub created_at: DateTime<Utc> = "created_at",
-        pub updated_at: DateTime<Utc> = "updated_at",
-    }
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, crate::SqlxModel)]
+#[auth(table = "passkeys")]
+pub struct Model {
+    pub id: String,
+    pub name: Option<String>,
+    pub public_key: String,
+    pub user_id: String,
+    pub credential_id: String,
+    pub counter: i64,
+    pub device_type: String,
+    pub backed_up: bool,
+    pub transports: Option<String>,
+    pub credential: String,
+    pub aaguid: Option<String>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
 }
 
 impl From<&Model> for better_auth_core::Passkey {

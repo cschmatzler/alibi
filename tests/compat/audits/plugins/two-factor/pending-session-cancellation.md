@@ -60,4 +60,4 @@ Final focused validation: twenty-seven distinct SDK scenarios / 972 assertions
 pass (`/tmp/two-factor-pending-cancel-sdk-family-final.log`), including the six
 pending cancellation/control scenarios / 268 assertions. Ten native tests
 (`/tmp/two-factor-pending-cancel-native-final.log`), client TypeScript and
-workspace library Clippy with seaorm2 pass. Formatting and diff checks pass.
+workspace library Clippy with seaorm pass. Formatting and diff checks pass.

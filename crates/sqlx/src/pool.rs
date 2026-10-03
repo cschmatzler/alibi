@@ -1,15 +1,20 @@
-//! Backend-tagged `SQLx` pools and transactions, and statement execution.
+//! Engine-tagged `SQLx` pools and transactions, and statement execution.
 
 use crate::error::map_sqlx_err;
-use crate::sql::{Sql, postgres_arguments, sqlite_arguments};
+use crate::sql::Sql;
 use better_auth_core::error::{AuthError, AuthResult};
+#[cfg(feature = "postgres")]
 use sqlx::postgres::{PgPool, PgRow, Postgres};
+#[cfg(feature = "sqlite")]
 use sqlx::sqlite::{Sqlite, SqlitePool, SqliteRow};
 use sqlx::{AssertSqlSafe, Decode, Type};
 
+#[cfg(not(any(feature = "sqlite", feature = "postgres")))]
+compile_error!("better-auth-sqlx needs the `sqlite` or `postgres` feature");
+
 /// The database engine behind a pool.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SqlxBackend {
+pub enum Engine {
     Sqlite,
     Postgres,
 }
@@ -17,16 +22,20 @@ pub enum SqlxBackend {
 /// An application's `SQLx` pool. Better Auth shares it with the application.
 #[derive(Clone, Debug)]
 pub enum SqlxPool {
+    #[cfg(feature = "sqlite")]
     Sqlite(SqlitePool),
+    #[cfg(feature = "postgres")]
     Postgres(PgPool),
 }
 
+#[cfg(feature = "sqlite")]
 impl From<SqlitePool> for SqlxPool {
     fn from(pool: SqlitePool) -> Self {
         Self::Sqlite(pool)
     }
 }
 
+#[cfg(feature = "postgres")]
 impl From<PgPool> for SqlxPool {
     fn from(pool: PgPool) -> Self {
         Self::Postgres(pool)
@@ -38,39 +47,48 @@ impl SqlxPool {
     ///
     /// # Errors
     ///
-    /// Returns the driver error, or a configuration error for another scheme.
+    /// Returns the driver error, or a configuration error for a scheme whose
+    /// engine feature is not enabled.
     pub async fn connect(url: &str) -> Result<Self, sqlx::Error> {
+        #[cfg(feature = "sqlite")]
         if url.starts_with("sqlite:") {
-            SqlitePool::connect(url).await.map(Self::Sqlite)
-        } else if url.starts_with("postgres:") || url.starts_with("postgresql:") {
-            PgPool::connect(url).await.map(Self::Postgres)
-        } else {
-            Err(sqlx::Error::Configuration(
-                "Better Auth SQLx pools support sqlite: and postgres: URLs".into(),
-            ))
+            return SqlitePool::connect(url).await.map(Self::Sqlite);
         }
+        #[cfg(feature = "postgres")]
+        if url.starts_with("postgres:") || url.starts_with("postgresql:") {
+            return PgPool::connect(url).await.map(Self::Postgres);
+        }
+        Err(sqlx::Error::Configuration(
+            "the database URL scheme is not an enabled Better Auth SQLx engine".into(),
+        ))
     }
 
     #[must_use]
-    pub const fn backend(&self) -> SqlxBackend {
+    pub const fn engine(&self) -> Engine {
         match self {
-            Self::Sqlite(_) => SqlxBackend::Sqlite,
-            Self::Postgres(_) => SqlxBackend::Postgres,
+            #[cfg(feature = "sqlite")]
+            Self::Sqlite(_) => Engine::Sqlite,
+            #[cfg(feature = "postgres")]
+            Self::Postgres(_) => Engine::Postgres,
         }
     }
 
+    #[cfg(feature = "sqlite")]
     #[must_use]
     pub const fn as_sqlite(&self) -> Option<&SqlitePool> {
         match self {
             Self::Sqlite(pool) => Some(pool),
+            #[cfg(feature = "postgres")]
             Self::Postgres(_) => None,
         }
     }
 
+    #[cfg(feature = "postgres")]
     #[must_use]
     pub const fn as_postgres(&self) -> Option<&PgPool> {
         match self {
             Self::Postgres(pool) => Some(pool),
+            #[cfg(feature = "sqlite")]
             Self::Sqlite(_) => None,
         }
     }
@@ -78,25 +96,52 @@ impl SqlxPool {
     /// Close every pooled connection.
     pub async fn close(&self) {
         match self {
+            #[cfg(feature = "sqlite")]
             Self::Sqlite(pool) => pool.close().await,
+            #[cfg(feature = "postgres")]
             Self::Postgres(pool) => pool.close().await,
         }
+    }
+
+    /// Run `statements` in order, without bound arguments. Generated
+    /// application migrations install their tables this way.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first driver error.
+    pub async fn execute_batch(&self, statements: &[&str]) -> Result<(), sqlx::Error> {
+        for statement in statements {
+            let statement = AssertSqlSafe((*statement).to_owned());
+            match self {
+                #[cfg(feature = "sqlite")]
+                Self::Sqlite(pool) => _ = sqlx::raw_sql(statement).execute(pool).await?,
+                #[cfg(feature = "postgres")]
+                Self::Postgres(pool) => _ = sqlx::raw_sql(statement).execute(pool).await?,
+            }
+        }
+        Ok(())
     }
 
     /// Begin a transaction. SQLite uses `BEGIN IMMEDIATE` when `immediate` is set,
     /// acquiring its writer reservation before the first read.
     pub(crate) async fn begin(&self, immediate: bool) -> AuthResult<SqlxTransaction> {
         let inner = match self {
+            #[cfg(feature = "sqlite")]
             Self::Sqlite(pool) if immediate => pool
                 .begin_with("BEGIN IMMEDIATE")
                 .await
                 .map(TransactionKind::Sqlite),
+            #[cfg(feature = "sqlite")]
             Self::Sqlite(pool) => pool.begin().await.map(TransactionKind::Sqlite),
-            Self::Postgres(pool) => pool.begin().await.map(TransactionKind::Postgres),
+            #[cfg(feature = "postgres")]
+            Self::Postgres(pool) => {
+                let _ = immediate;
+                pool.begin().await.map(TransactionKind::Postgres)
+            }
         }
         .map_err(map_sqlx_err)?;
         Ok(SqlxTransaction {
-            backend: self.backend(),
+            engine: self.engine(),
             inner: tokio::sync::Mutex::new(Some(inner)),
         })
     }
@@ -104,8 +149,10 @@ impl SqlxPool {
 
 /// An open driver transaction.
 #[derive(Debug)]
-pub enum TransactionKind {
+pub(crate) enum TransactionKind {
+    #[cfg(feature = "sqlite")]
     Sqlite(sqlx::Transaction<'static, Sqlite>),
+    #[cfg(feature = "postgres")]
     Postgres(sqlx::Transaction<'static, Postgres>),
 }
 
@@ -115,7 +162,7 @@ pub enum TransactionKind {
 /// hook may [`lock`](Self::lock) the transaction to run its own queries in it.
 #[derive(Debug)]
 pub struct SqlxTransaction {
-    backend: SqlxBackend,
+    engine: Engine,
     inner: tokio::sync::Mutex<Option<TransactionKind>>,
 }
 
@@ -125,17 +172,21 @@ pub struct SqlxTransactionGuard<'a>(tokio::sync::MutexGuard<'a, Option<Transacti
 
 impl SqlxTransactionGuard<'_> {
     /// The SQLite connection running this transaction.
+    #[cfg(feature = "sqlite")]
     pub fn sqlite(&mut self) -> Option<&mut sqlx::SqliteConnection> {
         match self.0.as_mut()? {
             TransactionKind::Sqlite(transaction) => Some(&mut **transaction),
+            #[cfg(feature = "postgres")]
             TransactionKind::Postgres(_) => None,
         }
     }
 
     /// The PostgreSQL connection running this transaction.
+    #[cfg(feature = "postgres")]
     pub fn postgres(&mut self) -> Option<&mut sqlx::PgConnection> {
         match self.0.as_mut()? {
             TransactionKind::Postgres(transaction) => Some(&mut **transaction),
+            #[cfg(feature = "sqlite")]
             TransactionKind::Sqlite(_) => None,
         }
     }
@@ -143,8 +194,8 @@ impl SqlxTransactionGuard<'_> {
 
 impl SqlxTransaction {
     #[must_use]
-    pub const fn backend(&self) -> SqlxBackend {
-        self.backend
+    pub const fn engine(&self) -> Engine {
+        self.engine
     }
 
     /// Wait for the current statement, then run statements on this transaction.
@@ -154,7 +205,9 @@ impl SqlxTransaction {
 
     pub(crate) async fn commit(self) -> AuthResult<()> {
         match self.inner.into_inner() {
+            #[cfg(feature = "sqlite")]
             Some(TransactionKind::Sqlite(transaction)) => transaction.commit().await,
+            #[cfg(feature = "postgres")]
             Some(TransactionKind::Postgres(transaction)) => transaction.commit().await,
             None => return Err(AuthError::internal("Transaction already finished")),
         }
@@ -163,7 +216,9 @@ impl SqlxTransaction {
 
     pub(crate) async fn rollback(self) -> AuthResult<()> {
         match self.inner.into_inner() {
+            #[cfg(feature = "sqlite")]
             Some(TransactionKind::Sqlite(transaction)) => transaction.rollback().await,
+            #[cfg(feature = "postgres")]
             Some(TransactionKind::Postgres(transaction)) => transaction.rollback().await,
             None => return Err(AuthError::internal("Transaction already finished")),
         }
@@ -171,37 +226,37 @@ impl SqlxTransaction {
     }
 }
 
-/// A model decodable from rows of both supported backends.
-pub trait SqlxRow:
-    for<'r> sqlx::FromRow<'r, SqliteRow> + for<'r> sqlx::FromRow<'r, PgRow> + Send + Unpin
-{
+macro_rules! decodable {
+    ($($row:tt)*) => {
+        /// A model decodable from the rows of every enabled engine.
+        pub trait SqlxRow: $($row)* + Send + Unpin {}
+
+        impl<T> SqlxRow for T where T: $($row)* + Send + Unpin {}
+    };
 }
 
-impl<T> SqlxRow for T where
-    T: for<'r> sqlx::FromRow<'r, SqliteRow> + for<'r> sqlx::FromRow<'r, PgRow> + Send + Unpin
-{
+#[cfg(all(feature = "sqlite", feature = "postgres"))]
+decodable!(for<'r> sqlx::FromRow<'r, SqliteRow> + for<'r> sqlx::FromRow<'r, PgRow>);
+#[cfg(all(feature = "sqlite", not(feature = "postgres")))]
+decodable!(for<'r> sqlx::FromRow<'r, SqliteRow>);
+#[cfg(all(feature = "postgres", not(feature = "sqlite")))]
+decodable!(for<'r> sqlx::FromRow<'r, PgRow>);
+
+macro_rules! scalar {
+    ($($bound:tt)*) => {
+        /// A single-column value decodable from every enabled engine.
+        pub(crate) trait SqlxScalar: $($bound)* + Send + Unpin {}
+
+        impl<T> SqlxScalar for T where T: $($bound)* + Send + Unpin {}
+    };
 }
 
-/// A single-column value decodable from both supported backends.
-pub(crate) trait SqlxScalar:
-    for<'r> Decode<'r, Sqlite>
-    + Type<Sqlite>
-    + for<'r> Decode<'r, Postgres>
-    + Type<Postgres>
-    + Send
-    + Unpin
-{
-}
-
-impl<T> SqlxScalar for T where
-    T: for<'r> Decode<'r, Sqlite>
-        + Type<Sqlite>
-        + for<'r> Decode<'r, Postgres>
-        + Type<Postgres>
-        + Send
-        + Unpin
-{
-}
+#[cfg(all(feature = "sqlite", feature = "postgres"))]
+scalar!(for<'r> Decode<'r, Sqlite> + Type<Sqlite> + for<'r> Decode<'r, Postgres> + Type<Postgres>);
+#[cfg(all(feature = "sqlite", not(feature = "postgres")))]
+scalar!(for<'r> Decode<'r, Sqlite> + Type<Sqlite>);
+#[cfg(all(feature = "postgres", not(feature = "sqlite")))]
+scalar!(for<'r> Decode<'r, Postgres> + Type<Postgres>);
 
 /// Where a statement runs: the shared pool or an open transaction.
 #[derive(Clone, Copy, Debug)]
@@ -210,11 +265,14 @@ pub(crate) enum Exec<'a> {
     Tx(&'a SqlxTransaction),
 }
 
+/// Bind `$sql` for the engine behind `$exec` and run `$body` with `$query`
+/// (text and arguments) on `$executor`.
 macro_rules! dispatch {
     ($exec:expr, $sql:expr, |$query:ident, $executor:ident| $body:expr) => {{
         let (text, args) = $sql.into_parts();
         match $exec {
-            Exec::Pool(SqlxPool::Sqlite(pool)) => match sqlite_arguments(args) {
+            #[cfg(feature = "sqlite")]
+            Exec::Pool(SqlxPool::Sqlite(pool)) => match crate::sql::sqlite_arguments(args) {
                 Ok(arguments) => {
                     let $executor = pool;
                     let $query = (AssertSqlSafe(text), arguments);
@@ -222,7 +280,8 @@ macro_rules! dispatch {
                 }
                 Err(error) => Err(sqlx::Error::Encode(error)),
             },
-            Exec::Pool(SqlxPool::Postgres(pool)) => match postgres_arguments(args) {
+            #[cfg(feature = "postgres")]
+            Exec::Pool(SqlxPool::Postgres(pool)) => match crate::sql::postgres_arguments(args) {
                 Ok(arguments) => {
                     let $executor = pool;
                     let $query = (AssertSqlSafe(text), arguments);
@@ -233,7 +292,9 @@ macro_rules! dispatch {
             Exec::Tx(transaction) => {
                 let mut guard = transaction.inner.lock().await;
                 match guard.as_mut() {
-                    Some(TransactionKind::Sqlite(open)) => match sqlite_arguments(args) {
+                    #[cfg(feature = "sqlite")]
+                    Some(TransactionKind::Sqlite(open)) => match crate::sql::sqlite_arguments(args)
+                    {
                         Ok(arguments) => {
                             let $executor = &mut **open;
                             let $query = (AssertSqlSafe(text), arguments);
@@ -241,14 +302,17 @@ macro_rules! dispatch {
                         }
                         Err(error) => Err(sqlx::Error::Encode(error)),
                     },
-                    Some(TransactionKind::Postgres(open)) => match postgres_arguments(args) {
-                        Ok(arguments) => {
-                            let $executor = &mut **open;
-                            let $query = (AssertSqlSafe(text), arguments);
-                            $body
+                    #[cfg(feature = "postgres")]
+                    Some(TransactionKind::Postgres(open)) => {
+                        match crate::sql::postgres_arguments(args) {
+                            Ok(arguments) => {
+                                let $executor = &mut **open;
+                                let $query = (AssertSqlSafe(text), arguments);
+                                $body
+                            }
+                            Err(error) => Err(sqlx::Error::Encode(error)),
                         }
-                        Err(error) => Err(sqlx::Error::Encode(error)),
-                    },
+                    }
                     None => Err(sqlx::Error::PoolClosed),
                 }
             }
@@ -258,10 +322,10 @@ macro_rules! dispatch {
 }
 
 impl Exec<'_> {
-    pub(crate) const fn backend(self) -> SqlxBackend {
+    pub(crate) const fn engine(self) -> Engine {
         match self {
-            Self::Pool(pool) => pool.backend(),
-            Self::Tx(transaction) => transaction.backend,
+            Self::Pool(pool) => pool.engine(),
+            Self::Tx(transaction) => transaction.engine,
         }
     }
 
@@ -299,21 +363,33 @@ impl Exec<'_> {
         })
     }
 
+    pub(crate) async fn fetch_scalar<T: SqlxScalar>(self, sql: Sql) -> AuthResult<Option<T>> {
+        dispatch!(self, sql, |query, executor| {
+            sqlx::query_scalar_with(query.0, query.1)
+                .fetch_optional(executor)
+                .await
+        })
+    }
+
     /// Run a fixed multi-statement script without bound arguments.
     pub(crate) async fn execute_script(self, script: &'static str) -> AuthResult<()> {
         let result = match self {
+            #[cfg(feature = "sqlite")]
             Exec::Pool(SqlxPool::Sqlite(pool)) => {
                 sqlx::raw_sql(script).execute(pool).await.map(drop)
             }
+            #[cfg(feature = "postgres")]
             Exec::Pool(SqlxPool::Postgres(pool)) => {
                 sqlx::raw_sql(script).execute(pool).await.map(drop)
             }
             Exec::Tx(transaction) => {
                 let mut guard = transaction.inner.lock().await;
                 match guard.as_mut() {
+                    #[cfg(feature = "sqlite")]
                     Some(TransactionKind::Sqlite(open)) => {
                         sqlx::raw_sql(script).execute(&mut **open).await.map(drop)
                     }
+                    #[cfg(feature = "postgres")]
                     Some(TransactionKind::Postgres(open)) => {
                         sqlx::raw_sql(script).execute(&mut **open).await.map(drop)
                     }
@@ -322,13 +398,5 @@ impl Exec<'_> {
             }
         };
         result.map_err(map_sqlx_err)
-    }
-
-    pub(crate) async fn fetch_scalar<T: SqlxScalar>(self, sql: Sql) -> AuthResult<Option<T>> {
-        dispatch!(self, sql, |query, executor| {
-            sqlx::query_scalar_with(query.0, query.1)
-                .fetch_optional(executor)
-                .await
-        })
     }
 }

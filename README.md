@@ -192,13 +192,13 @@ wire type. Plugin tables still use their bundled models.
 
 ### SeaORM
 
-Enable `seaorm2` (optionally with `default-features = false` and `native-tls`
+Enable `seaorm` (optionally with `default-features = false` and `native-tls`
 or `rustls` to drop SQLx) and use `SeaOrmStore`, which implements the same
 `AuthStore` contract:
 
 ```toml
 [dependencies]
-better-auth = { version = "1.0.0-alpha.3", features = ["axum", "seaorm2"] }
+better-auth = { version = "1.0.0-alpha.3", features = ["axum", "seaorm"] }
 ```
 
 ```rust,ignore
@@ -295,10 +295,10 @@ Your app owns the auth entities and migrations — Better Auth adapts to whateve
 Both stores implement `better_auth::store::SchemaMigrator`; `store.migrate().await?`
 installs the bundled schema and records it in the `better_auth_migrations` ledger.
 
-Database hooks implement `better_auth::store::DatabaseHooks<S, B>` once per
-backend marker (`better_auth::sqlx::Sqlx` or `better_auth::seaorm::SeaOrm`).
+Database hooks implement `better_auth::store::DatabaseHooks<S, B>` for a
+backend marker (`better_auth::sqlx::SqlxBackend` or `better_auth::seaorm::SeaOrmBackend`).
 Each hook receives the configuration, the backend's pool/connection and the open
-transaction when there is one. Register them with `with_hooks` on either store.
+transaction when there is one. Register them with `hook` or `with_hooks` on either store.
 
 The supported native integration is Axum (`AxumIntegration`, including application
 state and session extractors). Other Rust HTTP hosts can call
@@ -453,8 +453,9 @@ Verification uses the configured IP policy.
 | Feature | Description |
 |---------|-------------|
 | `axum` | Axum web framework integration |
-| `sqlx` | SQLx database integration (default) |
-| `seaorm2` | SeaORM database integration |
+| `sqlx` | SQLx store for SQLite and PostgreSQL (default); `sqlx-sqlite` and `sqlx-postgres` select one engine |
+| `seaorm` | SeaORM store |
+| `native-tls` / `rustls` | TLS stack for outbound HTTP and for the SQLx and SeaORM PostgreSQL drivers (`native-tls` is default) |
 | `redis-cache` | Redis session/cache backend |
 
 ## Crate Structure
@@ -464,7 +465,7 @@ Verification uses the configured IP policy.
 | [`better-auth`](https://crates.io/crates/better-auth) | Main crate — re-exports and framework integration |
 | [`better-auth-core`](https://crates.io/crates/better-auth-core) | Core auth runtime, store, middleware, and error handling |
 | [`better-auth-api`](https://crates.io/crates/better-auth-api) | Plugin implementations |
-| [`better-auth-sqlx`](https://crates.io/crates/better-auth-sqlx) | SQLx store, entity traits, and `AuthEntity` derive macro |
+| [`better-auth-sqlx`](https://crates.io/crates/better-auth-sqlx) | SQLx store, entity traits, and the `AuthEntity` and `SqlxModel` derive macros |
 | [`better-auth-seaorm`](https://crates.io/crates/better-auth-seaorm) | SeaORM store, entity traits, and `AuthEntity` derive macro |
 | [`better-auth-cli`](https://crates.io/crates/better-auth-cli) | CLI tools (`better-auth-rs generate`) |
 

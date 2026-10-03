@@ -136,7 +136,7 @@ mutation, veto, ordinary before-error, API before-error, after-error, output-err
 and row-deletion branches. It observes real callbacks and database rows: before
 errors/veto leave the row unchanged, after/output errors retain committed writes,
 and deletion clears authentication cookies. A missing row invokes the new
-`SeaOrmHooks::after_update_session_missing` callback after successful before hooks;
+`DatabaseHooks::after_update_session_missing` callback after successful before hooks;
 a veto does not. Adapter transforms and `onUpdate` run even when a before hook
 removed the target row. This remains stateful SQLite evidence.
 

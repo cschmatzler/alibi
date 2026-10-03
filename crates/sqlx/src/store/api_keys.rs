@@ -1,6 +1,6 @@
 use super::entities::api_key::Model;
 use super::entities::api_key_start::ApiKeyStart;
-use super::{SqlxStore, lock_exclusive, parse_optional_rfc3339};
+use super::{SqlxStore, lock_exclusive};
 use crate::error::{record_not_inserted, record_not_updated};
 use crate::model::{self, ActiveRow, SqlxModel};
 use crate::pool::Exec;
@@ -9,6 +9,7 @@ use crate::sql::Sql;
 use crate::value::SqlxValue;
 use async_trait::async_trait;
 use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::adapter::parse_optional_rfc3339;
 use better_auth_core::store::{ApiKeyStore, ConsumeApiKeyResult};
 use better_auth_core::types::{ApiKey, CreateApiKey, UpdateApiKey};
 use chrono::Utc;
@@ -32,7 +33,7 @@ where
         let now = Utc::now();
         let start = input
             .start
-            .map(|start| ApiKeyStart::prepare(start, self.exec().backend()))
+            .map(|start| ApiKeyStart::prepare(start, self.exec().engine()))
             .transpose()?;
         let sqlite_cast = start
             .as_ref()
@@ -67,17 +68,20 @@ where
             // Keep one bound INSERT with every ordinary model value. Only the
             // invalid-surrogate SQLite start needs a bytes-to-TEXT expression;
             // other engines and valid strings retain the ordinary insert path.
-            let mut sql = Sql::with(self.exec().backend(), "INSERT INTO ");
-            sql.ident(Model::TABLE).push(" (");
+            let mut sql = Sql::with(self.exec().engine(), "INSERT INTO ");
+            sql.ident(Model::TABLE);
+            sql.push(" (");
             let present = active.present().collect::<Vec<_>>();
-            sql.column_list(&present.iter().map(|(name, _)| *name).collect::<Vec<_>>())
-                .push(") SELECT ");
+            sql.column_list(&present.iter().map(|(name, _)| *name).collect::<Vec<_>>());
+            sql.push(") SELECT ");
             for (index, (name, value)) in present.into_iter().enumerate() {
                 if index > 0 {
                     sql.push(", ");
                 }
                 if name == "start" {
-                    sql.push("CAST(").bind(value.clone()).push(" AS text)");
+                    sql.push("CAST(");
+                    sql.bind(value.clone());
+                    sql.push(" AS text)");
                 } else {
                     sql.bind(value.clone());
                 }
@@ -105,10 +109,8 @@ where
 
     async fn get_api_key_by_hash(&self, hash: &str) -> AuthResult<Option<ApiKey>> {
         let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(Model::TABLE, "key")
-            .push(" = ")
-            .bind(hash);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "key", " = ", hash);
         model::limit_one(&mut sql);
         Ok(self
             .exec()
@@ -121,13 +123,11 @@ where
         // Explicit ASC order matches TS insertion-order behavior and avoids
         // nondeterministic results across database backends.
         let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(Model::TABLE, "reference_id")
-            .push(" = ")
-            .bind(reference_id)
-            .push(" ORDER BY ")
-            .column(Model::TABLE, "created_at")
-            .push(" ASC");
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "reference_id", " = ", reference_id);
+        sql.push(" ORDER BY ");
+        sql.column(Model::TABLE, "created_at");
+        sql.push(" ASC");
         Ok(self
             .exec()
             .fetch_all::<Model>(sql)
@@ -263,14 +263,12 @@ where
     async fn delete_expired_api_keys(&self) -> AuthResult<usize> {
         // Single query: DELETE FROM api_keys WHERE expires_at IS NOT NULL AND expires_at < NOW()
         // Matches TS: adapter.deleteMany({ where: [{ field: "expiresAt", operator: "lt", value: new Date() }, ...] })
-        let mut sql = Sql::with(self.exec().backend(), "DELETE FROM ");
-        sql.ident(Model::TABLE)
-            .push(" WHERE ")
-            .column(Model::TABLE, "expires_at")
-            .push(" IS NOT NULL AND ")
-            .column(Model::TABLE, "expires_at")
-            .push(" < ")
-            .bind(Utc::now());
+        let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(Model::TABLE);
+        sql.push(" WHERE ");
+        sql.column(Model::TABLE, "expires_at");
+        sql.push(" IS NOT NULL AND ");
+        sql.compare(Model::TABLE, "expires_at", " < ", Utc::now());
         let deleted = self.exec().execute(sql).await?;
         usize::try_from(deleted)
             .map_err(|_error| AuthError::internal("Affected row count exceeds usize"))

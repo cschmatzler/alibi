@@ -97,7 +97,7 @@ Focused validation: all 18 two-factor SDK scenarios / 630 assertions pass
 / 426 assertions (`/tmp/two-factor-lockout-sdk-final.log`). Nine native API tests
 pass (`/tmp/two-factor-policy-native-final.log`). TypeScript
 (`/tmp/two-factor-policy-typecheck-final.log`), workspace library Clippy with
-seaorm2 (`/tmp/two-factor-policy-clippy-final.log`), formatting and diff checks pass.
+seaorm (`/tmp/two-factor-policy-clippy-final.log`), formatting and diff checks pass.
 No shared inventory, comparator, coverage, dependency, lock or migration changes
 occur in this API commit. The coordinator owns independent review/full gates.
 

@@ -16,7 +16,7 @@ use better_auth_core::{AuthRequest, AuthResult, CreateSession, HttpMethod, utils
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
 use better_auth_seaorm::store::__private_test_support::migrator::run_migrations;
 use better_auth_seaorm::{
-    Database, DatabaseHooks, HookControl, SeaOrm, SeaOrmHookContext, SeaOrmStore,
+    Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
 };
 use serde_json::{Value, json};
 use std::sync::{
@@ -27,7 +27,7 @@ use std::sync::{
 struct ApplicationHook;
 
 #[async_trait]
-impl DatabaseHooks<ApplicationSchema, SeaOrm> for ApplicationHook {
+impl DatabaseHooks<ApplicationSchema, SeaOrmBackend> for ApplicationHook {
     async fn before_create_session(
         &self,
         data: &mut CreateSession,

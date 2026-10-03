@@ -2493,7 +2493,7 @@ mod tests {
     async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rejection() {
         use better_auth_core::{AuthConfig, CreateSession};
         use better_auth_seaorm::{
-            Database, DatabaseHooks, HookControl, SeaOrm, SeaOrmHookContext, SeaOrmStore,
+            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
         };
         struct PolicyHook {
             cancel_session: bool,
@@ -2501,7 +2501,7 @@ mod tests {
             observed: Arc<std::sync::Mutex<Vec<(String, String)>>>,
         }
         #[async_trait]
-        impl DatabaseHooks<TestSchema, SeaOrm> for PolicyHook {
+        impl DatabaseHooks<TestSchema, SeaOrmBackend> for PolicyHook {
             async fn before_update_user(
                 &self,
                 id: &str,
@@ -4481,7 +4481,7 @@ mod tests {
     async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves_hook_inputs() {
         use better_auth_core::{AuthConfig, CreateSession};
         use better_auth_seaorm::{
-            Database, DatabaseHooks, HookControl, SeaOrm, SeaOrmHookContext, SeaOrmStore,
+            Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
         };
 
         struct Hook {
@@ -4489,7 +4489,7 @@ mod tests {
             observed: Arc<std::sync::Mutex<Vec<String>>>,
         }
         #[async_trait]
-        impl DatabaseHooks<TestSchema, SeaOrm> for Hook {
+        impl DatabaseHooks<TestSchema, SeaOrmBackend> for Hook {
             async fn before_update_user(
                 &self,
                 _id: &str,

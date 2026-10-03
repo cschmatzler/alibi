@@ -114,19 +114,22 @@ where
             }
             let session_table = <S::Session as SqlxModel>::TABLE;
             let mut session = model::select_model::<S::Session>(exec);
-            session
-                .push(" WHERE ")
-                .column(session_table, S::Session::token_column())
-                .push(" = ")
-                .bind(session_token)
-                .push(" AND ")
-                .column(session_table, S::Session::user_id_column())
-                .push(" = ")
-                .bind(S::Session::parse_user_id(user_id)?)
-                .push(" AND ")
-                .column(session_table, S::Session::active_column())
-                .push(" = ")
-                .bind(true);
+            session.push(" WHERE ");
+            session.compare(
+                session_table,
+                S::Session::token_column(),
+                " = ",
+                session_token,
+            );
+            session.push(" AND ");
+            session.compare(
+                session_table,
+                S::Session::user_id_column(),
+                " = ",
+                S::Session::parse_user_id(user_id)?,
+            );
+            session.push(" AND ");
+            session.compare(session_table, S::Session::active_column(), " = ", true);
             model::limit_one(&mut session);
             lock_exclusive(&mut session);
             let session = exec
@@ -146,13 +149,15 @@ where
                     .ok_or_else(|| AuthError::bad_request("Organization not found"))?,
             );
             if let Some(limit) = membership_limit {
-                let mut count = Sql::with(exec.backend(), "SELECT COUNT(*) FROM ");
-                count
-                    .ident(member::Model::TABLE)
-                    .push(" WHERE ")
-                    .column(member::Model::TABLE, "organization_id")
-                    .push(" = ")
-                    .bind(invitation.organization_id.as_str());
+                let mut count = Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
+                count.ident(member::Model::TABLE);
+                count.push(" WHERE ");
+                count.compare(
+                    member::Model::TABLE,
+                    "organization_id",
+                    " = ",
+                    invitation.organization_id.as_str(),
+                );
                 let members = exec.fetch_scalar::<i64>(count).await?.unwrap_or_default();
                 if u64::try_from(members).unwrap_or_default()
                     >= u64::try_from(limit)
@@ -171,10 +176,13 @@ where
                 .unwrap_or_default();
             for team_id in &requested {
                 let mut room = model::by_id::<team::Model>(exec, *team_id);
-                room.push(" AND ")
-                    .column(team::Model::TABLE, "organization_id")
-                    .push(" = ")
-                    .bind(invitation.organization_id.as_str());
+                room.push(" AND ");
+                room.compare(
+                    team::Model::TABLE,
+                    "organization_id",
+                    " = ",
+                    invitation.organization_id.as_str(),
+                );
                 model::limit_one(&mut room);
                 if exec.fetch_optional::<team::Model>(room).await?.is_none() {
                     return Err(AuthError::bad_request("Team not found"));
@@ -219,21 +227,14 @@ where
                     .await?
                     .ok_or_else(record_not_updated)?,
             );
-            let mut changed = Sql::with(exec.backend(), "UPDATE ");
-            changed
-                .ident(Model::TABLE)
-                .push(" SET ")
-                .ident("status")
-                .push(" = ")
-                .bind("accepted")
-                .push(" WHERE ")
-                .column(Model::TABLE, "id")
-                .push(" = ")
-                .bind(invitation_id)
-                .push(" AND ")
-                .column(Model::TABLE, "status")
-                .push(" = ")
-                .bind("pending");
+            let mut changed = Sql::with(exec.engine(), "UPDATE ");
+            changed.ident(Model::TABLE);
+            changed.push(" SET ");
+            changed.assign("status", "accepted");
+            changed.push(" WHERE ");
+            changed.compare(Model::TABLE, "id", " = ", invitation_id);
+            changed.push(" AND ");
+            changed.compare(Model::TABLE, "status", " = ", "pending");
             if exec.execute(changed).await? != 1 {
                 return Err(AuthError::bad_request("Invitation not found"));
             }
@@ -264,20 +265,14 @@ where
         status: InvitationStatus,
     ) -> AuthResult<Option<Invitation>> {
         // Returning the actual changed row is part of this atomic public contract.
-        let mut sql = Sql::with(self.exec().backend(), "UPDATE ");
-        sql.ident(Model::TABLE)
-            .push(" SET ")
-            .ident("status")
-            .push(" = ")
-            .bind(status.to_string())
-            .push(" WHERE ")
-            .column(Model::TABLE, "id")
-            .push(" = ")
-            .bind(id)
-            .push(" AND ")
-            .column(Model::TABLE, "status")
-            .push(" = ")
-            .bind(expected.to_string());
+        let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(Model::TABLE);
+        sql.push(" SET ");
+        sql.assign("status", status.to_string());
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "id", " = ", id);
+        sql.push(" AND ");
+        sql.compare(Model::TABLE, "status", " = ", expected.to_string());
         model::returning::<Model>(&mut sql);
         Ok(self
             .exec()
@@ -293,22 +288,19 @@ where
         email: &str,
     ) -> AuthResult<Option<Invitation>> {
         let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(Model::TABLE, "organization_id")
-            .push(" = ")
-            .bind(org_id)
-            .push(" AND ")
-            .column(Model::TABLE, "email")
-            .push(" = ")
-            .bind(email.to_lowercase())
-            .push(" AND ")
-            .column(Model::TABLE, "status")
-            .push(" = ")
-            .bind(InvitationStatus::Pending.to_string())
-            .push(" AND ")
-            .column(Model::TABLE, "expires_at")
-            .push(" > ")
-            .bind(Utc::now());
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "organization_id", " = ", org_id);
+        sql.push(" AND ");
+        sql.compare(Model::TABLE, "email", " = ", email.to_lowercase());
+        sql.push(" AND ");
+        sql.compare(
+            Model::TABLE,
+            "status",
+            " = ",
+            InvitationStatus::Pending.to_string(),
+        );
+        sql.push(" AND ");
+        sql.compare(Model::TABLE, "expires_at", " > ", Utc::now());
         model::limit_one(&mut sql);
         Ok(self
             .exec()
@@ -336,13 +328,11 @@ where
 
     async fn list_organization_invitations(&self, org_id: &str) -> AuthResult<Vec<Invitation>> {
         let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(Model::TABLE, "organization_id")
-            .push(" = ")
-            .bind(org_id)
-            .push(" ORDER BY ")
-            .column(Model::TABLE, "created_at")
-            .push(" DESC");
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "organization_id", " = ", org_id);
+        sql.push(" ORDER BY ");
+        sql.column(Model::TABLE, "created_at");
+        sql.push(" DESC");
         Ok(self
             .exec()
             .fetch_all::<Model>(sql)
@@ -353,31 +343,28 @@ where
     }
 
     async fn count_pending_organization_invitations(&self, org_id: &str) -> AuthResult<i64> {
-        let mut sql = Sql::with(self.exec().backend(), "SELECT COUNT(*) FROM ");
-        sql.ident(Model::TABLE)
-            .push(" WHERE ")
-            .column(Model::TABLE, "organization_id")
-            .push(" = ")
-            .bind(org_id)
-            .push(" AND ")
-            .column(Model::TABLE, "status")
-            .push(" = ")
-            .bind(InvitationStatus::Pending.to_string())
-            .push(" AND ")
-            .column(Model::TABLE, "expires_at")
-            .push(" > ")
-            .bind(Utc::now());
+        let mut sql = Sql::with(self.exec().engine(), "SELECT COUNT(*) FROM ");
+        sql.ident(Model::TABLE);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "organization_id", " = ", org_id);
+        sql.push(" AND ");
+        sql.compare(
+            Model::TABLE,
+            "status",
+            " = ",
+            InvitationStatus::Pending.to_string(),
+        );
+        sql.push(" AND ");
+        sql.compare(Model::TABLE, "expires_at", " > ", Utc::now());
         self.count_invitation_rows(sql).await
     }
 
     async fn list_user_invitations(&self, email: &str) -> AuthResult<Vec<Invitation>> {
         let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(Model::TABLE, "email")
-            .push(" = ")
-            .bind(email.to_lowercase())
-            .push(" LIMIT ")
-            .bind(self.find_many_limit());
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "email", " = ", email.to_lowercase());
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
         Ok(self
             .exec()
             .fetch_all::<Model>(sql)

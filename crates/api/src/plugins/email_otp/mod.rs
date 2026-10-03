@@ -426,7 +426,7 @@ mod tests {
     impl
         better_auth_seaorm::DatabaseHooks<
             better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
-            better_auth_seaorm::SeaOrm,
+            better_auth_seaorm::SeaOrmBackend,
         > for CancelVerificationUpdate
     {
         async fn before_update_verification(

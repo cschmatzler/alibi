@@ -2,8 +2,9 @@
 //!
 //! Use `JsonMetadata` for metadata fields which must retain arbitrary object
 //! keys on `SQLx` reads. Existing Value fields remain source-compatible but use
-//! `serde_json`'s ordinary `SQLx` decoder. `AuthEntity` prepares Set metadata after
-//! application hooks and before the store write; manual models can override
+//! `serde_json`'s ordinary `SQLx` decoder. `AuthEntity` calls
+//! [`MetadataBinding::prepare`] on Set metadata after application hooks and
+//! before the store write; manual models can override
 //! `SeaOrmUserModel::prepare_json_metadata` to choose their binding policy.
 
 /// JSON storage preserving every application object key.
@@ -133,29 +134,33 @@ impl std::ops::Deref for JsonMetadata {
     }
 }
 
-/// Prepare a native metadata field for its configured database binding.
+/// A metadata field prepared for its configured database binding, after
+/// application hooks and before the store write.
 ///
-/// Existing Value fields remain supported; `JsonMetadata` additionally preserves arbitrary keys on
-/// `SQLx` reads and exact JavaScript JSON text on SQLite writes.
-///
-/// # Errors
-///
-/// Returns an error if metadata cannot be serialized for the selected backend.
-pub fn prepare_metadata_value<T>(
-    value: T,
-    backend: sea_orm::DbBackend,
-) -> better_auth_core::AuthResult<T>
-where
-    T: Into<serde_json::Value> + From<serde_json::Value> + 'static,
-{
-    let value = better_auth_core::utils::json::to_value(&value.into())?;
-    if std::any::TypeId::of::<T>() == std::any::TypeId::of::<JsonMetadata>() {
-        let prepared: Box<dyn std::any::Any> = Box::new(JsonMetadata::for_backend(value, backend)?);
-        prepared
-            .downcast::<T>()
-            .map(|value_2| *value_2)
-            .map_err(|_error| better_auth_core::AuthError::internal("Invalid JSON metadata type"))
-    } else {
-        Ok(T::from(value))
+/// `serde_json::Value` fields are normalized; [`JsonMetadata`] additionally
+/// preserves exact JavaScript JSON text on SQLite writes.
+pub trait MetadataBinding: Sized {
+    /// # Errors
+    ///
+    /// Returns an error if the value cannot be serialized for `backend`.
+    fn prepare(self, backend: sea_orm::DbBackend) -> better_auth_core::AuthResult<Self>;
+}
+
+impl MetadataBinding for serde_json::Value {
+    fn prepare(self, _backend: sea_orm::DbBackend) -> better_auth_core::AuthResult<Self> {
+        Ok(better_auth_core::utils::json::to_value(&self)?)
+    }
+}
+
+impl MetadataBinding for JsonMetadata {
+    fn prepare(self, backend: sea_orm::DbBackend) -> better_auth_core::AuthResult<Self> {
+        let value = better_auth_core::utils::json::to_value(&self.0)?;
+        Ok(Self::for_backend(value, backend)?)
+    }
+}
+
+impl<T: MetadataBinding> MetadataBinding for Option<T> {
+    fn prepare(self, backend: sea_orm::DbBackend) -> better_auth_core::AuthResult<Self> {
+        self.map(|value| value.prepare(backend)).transpose()
     }
 }

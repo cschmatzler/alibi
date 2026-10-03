@@ -60,7 +60,7 @@ Two native integrations use actual SQLite and public builders/stores:
   type and generated backend preparation. Creation/read/update retain marker
   keys, correctly rounded numbers and exact SQL text; the unrelated extra field
   stays null and serde metadata remains an object rather than quoted JSON.
-  This feature test uses seaorm2, the feature exposing the public derive module.
+  This feature test uses seaorm, the feature exposing the public derive module.
 
 Both initial tests failed before production changes with a SQLx metadata decode
 error. They protect separate bundled-adapter and custom-model/derive contracts;
@@ -70,7 +70,7 @@ and their real persistence/signup/signin tests pass.
 
 Focused checks: two new tests; two existing derived-model tests; four database
 hook tests; four legacy custom-schema tests; all four JSON Number integrations;
-production workspace Clippy with seaorm2; formatting/diff checks. Independent
+production workspace Clippy with seaorm; formatting/diff checks. Independent
 review and the canonical full gate are owned by the coordinator. Dependency
 versions, lockfiles, comparators, inventories and coverage settings are unchanged.
 

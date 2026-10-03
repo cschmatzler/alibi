@@ -10,7 +10,6 @@ mod invitations;
 mod jwks;
 mod members;
 pub(crate) mod migrator;
-mod numeric_page;
 mod organization_roles;
 mod organizations;
 mod passkeys;
@@ -32,15 +31,16 @@ pub mod __private_test_support {
     }
 }
 
-use crate::hooks::{SqlxHookContext, SqlxHooks, current_request_hook_context};
+use crate::hooks::{DatabaseHooks, SqlxBackend, SqlxHookContext, current_request_hook_context};
 use crate::pool::{Exec, SqlxPool, SqlxTransaction};
 use crate::schema::{
     AuthSchema, SqlxAccountModel, SqlxSessionModel, SqlxUserModel, SqlxVerificationModel,
 };
 use async_trait::async_trait;
 use better_auth_core::config::AuthConfig;
-use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::error::AuthResult;
 use better_auth_core::store::SchemaMigrator;
+use better_auth_core::store::adapter::{AfterHook, AfterHookQueue};
 use better_auth_core::store::{
     AuthTransaction, BoxedTransactionValue, TransactionStore, TransactionWork,
 };
@@ -52,7 +52,7 @@ use std::sync::Arc;
 pub struct SqlxStore<S: AuthSchema> {
     config: Arc<AuthConfig>,
     pool: SqlxPool,
-    hooks: Vec<Arc<dyn SqlxHooks<S>>>,
+    hooks: Vec<Arc<dyn DatabaseHooks<S, SqlxBackend>>>,
     _schema: PhantomData<S>,
 }
 
@@ -74,13 +74,13 @@ impl<S: AuthSchema> SqlxStore<S> {
     }
 
     #[must_use]
-    pub fn with_hooks(mut self, hooks: Vec<Arc<dyn SqlxHooks<S>>>) -> Self {
+    pub fn with_hooks(mut self, hooks: Vec<Arc<dyn DatabaseHooks<S, SqlxBackend>>>) -> Self {
         self.hooks = hooks;
         self
     }
 
     #[must_use]
-    pub fn hook<H: SqlxHooks<S> + 'static>(mut self, hook: H) -> Self {
+    pub fn hook<H: DatabaseHooks<S, SqlxBackend> + 'static>(mut self, hook: H) -> Self {
         self.hooks.push(Arc::new(hook));
         self
     }
@@ -95,7 +95,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         &self.config
     }
 
-    pub(crate) fn hooks(&self) -> &[Arc<dyn SqlxHooks<S>>] {
+    pub(crate) fn hooks(&self) -> &[Arc<dyn DatabaseHooks<S, SqlxBackend>>] {
         &self.hooks
     }
 
@@ -122,29 +122,15 @@ impl<S: AuthSchema> SqlxStore<S> {
 
     /// Run work on a fresh transaction, committing on success. On failure the
     /// transaction is dropped, which rolls it back, and the work's error returns.
-    pub(crate) async fn in_transaction<T, F>(&self, immediate: bool, work: F) -> AuthResult<T>
-    where
-        F: for<'tx> FnOnce(
-            &'tx SqlxTransaction,
-        ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = AuthResult<T>> + Send + 'tx>,
-        >,
-    {
+    pub(crate) async fn in_transaction<T>(
+        &self,
+        immediate: bool,
+        work: impl AsyncFnOnce(&SqlxTransaction) -> AuthResult<T>,
+    ) -> AuthResult<T> {
         let transaction = self.pool.begin(immediate).await?;
         let value = work(&transaction).await?;
         transaction.commit().await?;
         Ok(value)
-    }
-
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database connection check fails.
-    pub async fn test_connection(&self) -> Result<(), sqlx::Error> {
-        match &self.pool {
-            SqlxPool::Sqlite(pool) => sqlx::query("SELECT 1").execute(pool).await.map(drop),
-            SqlxPool::Postgres(pool) => sqlx::query("SELECT 1").execute(pool).await.map(drop),
-        }
     }
 }
 
@@ -160,17 +146,7 @@ impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
 struct SqlxStoreTransaction<'a, S: AuthSchema> {
     store: &'a SqlxStore<S>,
     tx: &'a SqlxTransaction,
-    pending_after: tokio::sync::Mutex<Vec<AfterCreate<S>>>,
-}
-
-enum AfterCreate<S: AuthSchema> {
-    User(S::User),
-    Account(S::Account),
-    Session(S::Session),
-    SessionUpdated(S::Session),
-    SessionUpdateMissing(String),
-    Verification(S::Verification),
-    VerificationRecord(better_auth_core::verification::VerificationSnapshot),
+    pending_after: AfterHookQueue<S>,
 }
 
 #[async_trait]
@@ -262,9 +238,8 @@ where
     async fn create_user(&self, create_user: better_auth_core::CreateUser) -> AuthResult<S::User> {
         let user = self.store.create_user_in_tx(self.tx, create_user).await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::User(user.clone()));
+            .push(AfterHook::UserCreated(user.clone()))
+            .await;
         Ok(user)
     }
 
@@ -277,9 +252,8 @@ where
             .create_user_prepared_in_tx(self.tx, prepared)
             .await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::User(user.clone()));
+            .push(AfterHook::UserCreated(user.clone()))
+            .await;
         Ok(user)
     }
 
@@ -292,9 +266,8 @@ where
             .create_account_in_tx(self.tx, create_account)
             .await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::Account(account.clone()));
+            .push(AfterHook::AccountCreated(account.clone()))
+            .await;
         Ok(account)
     }
 
@@ -335,10 +308,10 @@ where
             )
             .await?;
         let event = result.as_ref().map_or_else(
-            || AfterCreate::SessionUpdateMissing(token),
-            |model| AfterCreate::SessionUpdated(model.clone()),
+            || AfterHook::SessionUpdateMissing(token),
+            |model| AfterHook::SessionUpdated(model.clone()),
         );
-        self.pending_after.lock().await.push(event);
+        self.pending_after.push(event).await;
         Ok(result)
     }
     async fn prepare_secondary_session_creation(
@@ -351,9 +324,8 @@ where
             .prepare_secondary_session_in_tx(self.tx, input, persist)
             .await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::Session(session.clone()));
+            .push(AfterHook::SessionCreated(session.clone()))
+            .await;
         Ok(session)
     }
     async fn create_session(
@@ -365,9 +337,8 @@ where
             .create_session_in_tx(self.tx, create_session)
             .await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::Session(session.clone()));
+            .push(AfterHook::SessionCreated(session.clone()))
+            .await;
         Ok(session)
     }
     async fn create_verification_record(
@@ -386,9 +357,8 @@ where
             .await?;
         if let Some(snapshot) = &snapshot {
             self.pending_after
-                .lock()
-                .await
-                .push(AfterCreate::VerificationRecord(snapshot.clone()));
+                .push(AfterHook::VerificationRecordCreated(snapshot.clone()))
+                .await;
         }
         Ok(snapshot)
     }
@@ -402,9 +372,8 @@ where
             .create_verification_in_tx(self.tx, verification)
             .await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::Verification(verification.clone()));
+            .push(AfterHook::VerificationCreated(verification.clone()))
+            .await;
         Ok(verification)
     }
 }
@@ -426,47 +395,18 @@ where
         let tx_store = SqlxStoreTransaction {
             store: self,
             tx: &tx,
-            pending_after: tokio::sync::Mutex::new(Vec::new()),
+            pending_after: AfterHookQueue::new(),
         };
         let outcome = work(&tx_store).await;
-        let pending_after = tx_store.pending_after.into_inner();
+        let pending_after = tx_store.pending_after;
         match outcome {
             Ok(value) => {
                 tx.commit().await?;
-                // The pinned adapter defers after callbacks until commit and
-                // drops them on rollback. Preserve each created snapshot and
-                // its operation order, including interleaved model writes.
-                let hook_context = self.hook_context(None);
-                for created in pending_after {
-                    for hook in self.hooks() {
-                        match &created {
-                            AfterCreate::User(user) => {
-                                hook.after_create_user(user, &hook_context).await?;
-                            }
-                            AfterCreate::Account(account) => {
-                                hook.after_create_account(account, &hook_context).await?;
-                            }
-                            AfterCreate::Session(session) => {
-                                hook.after_create_session(session, &hook_context).await?;
-                            }
-                            AfterCreate::SessionUpdated(session) => {
-                                hook.after_update_session(session, &hook_context).await?;
-                            }
-                            AfterCreate::SessionUpdateMissing(token) => {
-                                hook.after_update_session_missing(token, &hook_context)
-                                    .await?;
-                            }
-                            AfterCreate::VerificationRecord(snapshot) => {
-                                hook.after_create_verification_record(snapshot, &hook_context)
-                                    .await?;
-                            }
-                            AfterCreate::Verification(verification) => {
-                                hook.after_create_verification(verification, &hook_context)
-                                    .await?;
-                            }
-                        }
-                    }
-                }
+                // After hooks run only once the auth writes are durable, in
+                // operation order; rollback drops them.
+                pending_after
+                    .run(self.hooks(), &self.hook_context(None))
+                    .await?;
                 Ok(value)
             }
             Err(err) => {
@@ -477,29 +417,26 @@ where
     }
 }
 
-pub(crate) fn parse_rfc3339(value: &str, field: &str) -> Result<DateTime<Utc>, AuthError> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|_error| AuthError::bad_request(format!("Invalid RFC 3339 timestamp for {field}")))
-}
-
-pub(crate) fn parse_optional_rfc3339(
-    value: Option<&str>,
-    field: &str,
-) -> Result<Option<DateTime<Utc>>, AuthError> {
-    value.map(|inner| parse_rfc3339(inner, field)).transpose()
-}
-
 /// `FOR UPDATE` on PostgreSQL; SQLite relies on its `BEGIN IMMEDIATE` writer lock.
 pub(crate) fn lock_exclusive(sql: &mut crate::sql::Sql) {
-    if sql.backend() == crate::pool::SqlxBackend::Postgres {
+    if sql.engine() == crate::pool::Engine::Postgres {
         sql.push(" FOR UPDATE");
     }
 }
 
 /// `FOR SHARE` on PostgreSQL; SQLite relies on its `BEGIN IMMEDIATE` writer lock.
 pub(crate) fn lock_shared(sql: &mut crate::sql::Sql) {
-    if sql.backend() == crate::pool::SqlxBackend::Postgres {
+    if sql.engine() == crate::pool::Engine::Postgres {
         sql.push(" FOR SHARE");
+    }
+}
+
+/// Bind raw numeric `LIMIT`/`OFFSET` values; the database validates them.
+pub(crate) fn bind_page(sql: &mut crate::sql::Sql, limit: Option<f64>, offset: Option<f64>) {
+    for (clause, number) in [(" LIMIT ", limit), (" OFFSET ", offset)] {
+        if let Some(number) = number {
+            sql.push(clause);
+            sql.bind(number);
+        }
     }
 }

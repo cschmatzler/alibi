@@ -14,14 +14,10 @@ use uuid::Uuid;
 
 fn team_member_lookup(exec: Exec<'_>, team_id: &str, user_id: &str) -> Sql {
     let mut sql = model::select_model::<team_member::Model>(exec);
-    sql.push(" WHERE ")
-        .column(team_member::Model::TABLE, "team_id")
-        .push(" = ")
-        .bind(team_id)
-        .push(" AND ")
-        .column(team_member::Model::TABLE, "user_id")
-        .push(" = ")
-        .bind(user_id);
+    sql.push(" WHERE ");
+    sql.compare(team_member::Model::TABLE, "team_id", " = ", team_id);
+    sql.push(" AND ");
+    sql.compare(team_member::Model::TABLE, "user_id", " = ", user_id);
     model::limit_one(&mut sql);
     sql
 }
@@ -39,10 +35,8 @@ where
     ) -> AuthResult<Option<Team>> {
         let mut sql = model::by_id::<team::Model>(exec, team_id);
         if let Some(org) = organization_id {
-            sql.push(" AND ")
-                .column(team::Model::TABLE, "organization_id")
-                .push(" = ")
-                .bind(org);
+            sql.push(" AND ");
+            sql.compare(team::Model::TABLE, "organization_id", " = ", org);
         }
         model::limit_one(&mut sql);
         Ok(exec
@@ -78,13 +72,10 @@ where
         {
             return Ok(AddTeamMemberResult::Existing(member.into()));
         }
-        let mut count = Sql::with(exec.backend(), "SELECT COUNT(*) FROM ");
-        count
-            .ident(team_member::Model::TABLE)
-            .push(" WHERE ")
-            .column(team_member::Model::TABLE, "team_id")
-            .push(" = ")
-            .bind(team_id);
+        let mut count = Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
+        count.ident(team_member::Model::TABLE);
+        count.push(" WHERE ");
+        count.compare(team_member::Model::TABLE, "team_id", " = ", team_id);
         let count = u64::try_from(exec.fetch_scalar::<i64>(count).await?.unwrap_or_default())
             .unwrap_or_default();
         if maximum
@@ -147,12 +138,15 @@ where
     }
     async fn list_teams(&self, organization_id: &str) -> AuthResult<Vec<Team>> {
         let mut sql = model::select_model::<team::Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(team::Model::TABLE, "organization_id")
-            .push(" = ")
-            .bind(organization_id)
-            .push(" LIMIT ")
-            .bind(self.find_many_limit());
+        sql.push(" WHERE ");
+        sql.compare(
+            team::Model::TABLE,
+            "organization_id",
+            " = ",
+            organization_id,
+        );
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
         Ok(self
             .exec()
             .fetch_all::<team::Model>(sql)
@@ -168,10 +162,13 @@ where
         update: UpdateTeam,
     ) -> AuthResult<Team> {
         let mut sql = model::by_id::<team::Model>(self.exec(), team_id);
-        sql.push(" AND ")
-            .column(team::Model::TABLE, "organization_id")
-            .push(" = ")
-            .bind(organization_id);
+        sql.push(" AND ");
+        sql.compare(
+            team::Model::TABLE,
+            "organization_id",
+            " = ",
+            organization_id,
+        );
         model::limit_one(&mut sql);
         let model = self
             .exec()
@@ -190,67 +187,65 @@ where
     }
     async fn delete_team(&self, organization_id: &str, team_id: &str) -> AuthResult<bool> {
         let (organization_id, team_id) = (organization_id.to_owned(), team_id.to_owned());
-        self.in_transaction(true, move |tx| {
-            Box::pin(async move {
-                let exec = Exec::Tx(tx);
-                let mut delete = Sql::with(exec.backend(), "DELETE FROM ");
-                delete
-                    .ident(team::Model::TABLE)
-                    .push(" WHERE ")
-                    .column(team::Model::TABLE, "id")
-                    .push(" = ")
-                    .bind(team_id.as_str())
-                    .push(" AND ")
-                    .column(team::Model::TABLE, "organization_id")
-                    .push(" = ")
-                    .bind(organization_id.as_str());
-                if exec.execute(delete).await? == 0 {
-                    return Ok(false);
+        self.in_transaction(true, async move |tx| {
+            let exec = Exec::Tx(tx);
+            let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
+            delete.ident(team::Model::TABLE);
+            delete.push(" WHERE ");
+            delete.compare(team::Model::TABLE, "id", " = ", team_id.as_str());
+            delete.push(" AND ");
+            delete.compare(
+                team::Model::TABLE,
+                "organization_id",
+                " = ",
+                organization_id.as_str(),
+            );
+            if exec.execute(delete).await? == 0 {
+                return Ok(false);
+            }
+            let mut members = Sql::with(exec.engine(), "DELETE FROM ");
+            members.ident(team_member::Model::TABLE);
+            members.push(" WHERE ");
+            members.compare(
+                team_member::Model::TABLE,
+                "team_id",
+                " = ",
+                team_id.as_str(),
+            );
+            _ = exec.execute(members).await?;
+            let mut pending = model::select_model::<invitation::Model>(exec);
+            pending.push(" WHERE ");
+            pending.compare(
+                invitation::Model::TABLE,
+                "organization_id",
+                " = ",
+                organization_id.as_str(),
+            );
+            pending.push(" AND ");
+            pending.compare(invitation::Model::TABLE, "status", " = ", "pending");
+            pending.push(" AND ");
+            pending.compare(invitation::Model::TABLE, "expires_at", " > ", Utc::now());
+            for invite in exec.fetch_all::<invitation::Model>(pending).await? {
+                let Some(ids) = invite.team_id.as_deref() else {
+                    continue;
+                };
+                if !ids.split(',').any(|id| id == team_id) {
+                    continue;
                 }
-                let mut members = Sql::with(exec.backend(), "DELETE FROM ");
-                members
-                    .ident(team_member::Model::TABLE)
-                    .push(" WHERE ")
-                    .column(team_member::Model::TABLE, "team_id")
-                    .push(" = ")
-                    .bind(team_id.as_str());
-                exec.execute(members).await?;
-                let mut pending = model::select_model::<invitation::Model>(exec);
-                pending
-                    .push(" WHERE ")
-                    .column(invitation::Model::TABLE, "organization_id")
-                    .push(" = ")
-                    .bind(organization_id.as_str())
-                    .push(" AND ")
-                    .column(invitation::Model::TABLE, "status")
-                    .push(" = ")
-                    .bind("pending")
-                    .push(" AND ")
-                    .column(invitation::Model::TABLE, "expires_at")
-                    .push(" > ")
-                    .bind(Utc::now());
-                for invite in exec.fetch_all::<invitation::Model>(pending).await? {
-                    let Some(ids) = invite.team_id.as_deref() else {
-                        continue;
-                    };
-                    if !ids.split(',').any(|id| id == team_id) {
-                        continue;
-                    }
-                    let remaining = ids
-                        .split(',')
-                        .filter(|id| *id != team_id)
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    let mut active = invite.into_active();
-                    active.set("team_id", (!remaining.is_empty()).then_some(remaining));
-                    drop(
-                        model::update::<invitation::Model>(exec, &active)
-                            .await?
-                            .ok_or_else(record_not_updated)?,
-                    );
-                }
-                Ok(true)
-            })
+                let remaining = ids
+                    .split(',')
+                    .filter(|id| *id != team_id)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let mut active = invite.into_active();
+                active.set("team_id", (!remaining.is_empty()).then_some(remaining));
+                drop(
+                    model::update::<invitation::Model>(exec, &active)
+                        .await?
+                        .ok_or_else(record_not_updated)?,
+                );
+            }
+            Ok(true)
         })
         .await
     }
@@ -281,32 +276,35 @@ where
     async fn remove_team_member(&self, team_id: &str, user_id: &str) -> AuthResult<usize> {
         let (team_id, user_id) = (team_id.to_owned(), user_id.to_owned());
         let removed = self
-            .in_transaction(true, move |tx| {
-                Box::pin(async move {
-                    let exec = Exec::Tx(tx);
-                    let mut room = model::by_id::<team::Model>(exec, team_id.as_str());
-                    model::limit_one(&mut room);
-                    lock_exclusive(&mut room);
-                    drop(exec.fetch_optional::<team::Model>(room).await?);
-                    let mut delete = Sql::with(exec.backend(), "DELETE FROM ");
-                    delete
-                        .ident(team_member::Model::TABLE)
-                        .push(" WHERE ")
-                        .column(team_member::Model::TABLE, "team_id")
-                        .push(" = ")
-                        .bind(team_id.as_str())
-                        .push(" AND ")
-                        .column(team_member::Model::TABLE, "user_id")
-                        .push(" = ")
-                        .bind(user_id.as_str());
-                    let removed = exec.execute(delete).await?;
-                    let count = i64::try_from(removed)
-                        .map_err(|_error| AuthError::internal("Team membership count overflow"))?;
-                    if count > 0 {
-                        release_seats(exec, &team_id, count).await?;
-                    }
-                    Ok(removed)
-                })
+            .in_transaction(true, async move |tx| {
+                let exec = Exec::Tx(tx);
+                let mut room = model::by_id::<team::Model>(exec, team_id.as_str());
+                model::limit_one(&mut room);
+                lock_exclusive(&mut room);
+                drop(exec.fetch_optional::<team::Model>(room).await?);
+                let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
+                delete.ident(team_member::Model::TABLE);
+                delete.push(" WHERE ");
+                delete.compare(
+                    team_member::Model::TABLE,
+                    "team_id",
+                    " = ",
+                    team_id.as_str(),
+                );
+                delete.push(" AND ");
+                delete.compare(
+                    team_member::Model::TABLE,
+                    "user_id",
+                    " = ",
+                    user_id.as_str(),
+                );
+                let removed = exec.execute(delete).await?;
+                let count = i64::try_from(removed)
+                    .map_err(|_error| AuthError::internal("Team membership count overflow"))?;
+                if count > 0 {
+                    release_seats(exec, &team_id, count).await?;
+                }
+                Ok(removed)
             })
             .await?;
         usize::try_from(removed)
@@ -314,12 +312,10 @@ where
     }
     async fn list_team_members(&self, team_id: &str) -> AuthResult<Vec<TeamMember>> {
         let mut sql = model::select_model::<team_member::Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(team_member::Model::TABLE, "team_id")
-            .push(" = ")
-            .bind(team_id)
-            .push(" LIMIT ")
-            .bind(self.find_many_limit());
+        sql.push(" WHERE ");
+        sql.compare(team_member::Model::TABLE, "team_id", " = ", team_id);
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
         Ok(self
             .exec()
             .fetch_all::<team_member::Model>(sql)
@@ -330,22 +326,19 @@ where
     }
     async fn list_user_teams(&self, user_id: &str) -> AuthResult<Vec<Team>> {
         let mut sql = model::select_model::<team_member::Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(team_member::Model::TABLE, "user_id")
-            .push(" = ")
-            .bind(user_id)
-            .push(" LIMIT ")
-            .bind(self.find_many_limit());
+        sql.push(" WHERE ");
+        sql.compare(team_member::Model::TABLE, "user_id", " = ", user_id);
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
         let memberships: Vec<team_member::Model> = self.exec().fetch_all(sql).await?;
         if memberships.is_empty() {
             return Ok(Vec::new());
         }
         let mut rooms = model::select_model::<team::Model>(self.exec());
-        rooms
-            .push(" WHERE ")
-            .column(team::Model::TABLE, "id")
-            .push(" IN ")
-            .bind_list(memberships.iter().map(|row| row.team_id.clone()));
+        rooms.push(" WHERE ");
+        rooms.column(team::Model::TABLE, "id");
+        rooms.push(" IN ");
+        rooms.bind_list(memberships.iter().map(|row| row.team_id.clone()));
         let rooms = self
             .exec()
             .fetch_all::<team::Model>(rooms)
@@ -364,23 +357,19 @@ where
 
 /// `UPDATE team SET member_count = member_count - n WHERE id = ? AND member_count >= n`.
 async fn release_seats(exec: Exec<'_>, team_id: &str, count: i64) -> AuthResult<()> {
-    let mut sql = Sql::with(exec.backend(), "UPDATE ");
-    sql.ident(team::Model::TABLE)
-        .push(" SET ")
-        .ident("member_count")
-        .push(" = ")
-        .ident("member_count")
-        .push(" - ")
-        .bind(count)
-        .push(" WHERE ")
-        .column(team::Model::TABLE, "id")
-        .push(" = ")
-        .bind(team_id)
-        .push(" AND ")
-        .column(team::Model::TABLE, "member_count")
-        .push(" >= ")
-        .bind(count);
-    exec.execute(sql).await?;
+    let mut sql = Sql::with(exec.engine(), "UPDATE ");
+    sql.ident(team::Model::TABLE);
+    sql.push(" SET ");
+    sql.ident("member_count");
+    sql.push(" = ");
+    sql.ident("member_count");
+    sql.push(" - ");
+    sql.bind(count);
+    sql.push(" WHERE ");
+    sql.compare(team::Model::TABLE, "id", " = ", team_id);
+    sql.push(" AND ");
+    sql.compare(team::Model::TABLE, "member_count", " >= ", count);
+    _ = exec.execute(sql).await?;
     Ok(())
 }
 
@@ -396,16 +385,12 @@ pub(super) async fn remove_owned_team_members(
     }
     let mut teams = model::select_model::<team::Model>(exec);
     if let Some(org) = organization_id {
-        teams
-            .push(" WHERE ")
-            .column(team::Model::TABLE, "organization_id")
-            .push(" = ")
-            .bind(org);
+        teams.push(" WHERE ");
+        teams.compare(team::Model::TABLE, "organization_id", " = ", org);
     }
-    teams
-        .push(" ORDER BY ")
-        .column(team::Model::TABLE, "id")
-        .push(" ASC");
+    teams.push(" ORDER BY ");
+    teams.column(team::Model::TABLE, "id");
+    teams.push(" ASC");
     lock_exclusive(&mut teams);
     let rooms = exec.fetch_all::<team::Model>(teams).await?;
     release_owned_team_members(tx, user_id, rooms).await
@@ -419,17 +404,17 @@ pub(super) async fn release_owned_team_members(
 ) -> AuthResult<()> {
     let exec = Exec::Tx(tx);
     for room in rooms {
-        let mut delete = Sql::with(exec.backend(), "DELETE FROM ");
-        delete
-            .ident(team_member::Model::TABLE)
-            .push(" WHERE ")
-            .column(team_member::Model::TABLE, "team_id")
-            .push(" = ")
-            .bind(room.id.as_str())
-            .push(" AND ")
-            .column(team_member::Model::TABLE, "user_id")
-            .push(" = ")
-            .bind(user_id);
+        let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
+        delete.ident(team_member::Model::TABLE);
+        delete.push(" WHERE ");
+        delete.compare(
+            team_member::Model::TABLE,
+            "team_id",
+            " = ",
+            room.id.as_str(),
+        );
+        delete.push(" AND ");
+        delete.compare(team_member::Model::TABLE, "user_id", " = ", user_id);
         let deleted = exec.execute(delete).await?;
         if deleted > 0 {
             let count = i64::try_from(deleted)

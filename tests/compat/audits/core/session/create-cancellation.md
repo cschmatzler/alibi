@@ -26,6 +26,6 @@ is needed. The coordinator owns independent review and integration.
 
 Focused validation: the four-case real store test passes
 (`/tmp/session-cancel-storage-native-final.log`); workspace library Clippy with
-seaorm2 passes (`/tmp/session-cancel-storage-clippy.log`). Formatting and diff
+seaorm passes (`/tmp/session-cancel-storage-clippy.log`). Formatting and diff
 checks pass. This prerequisite does not claim endpoint-specific null-session
 responses; those require their own public-boundary regression.

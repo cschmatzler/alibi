@@ -1,5 +1,5 @@
 use super::SqlxStore;
-use crate::error::{cancelled_by_hook, record_not_updated};
+use crate::error::record_not_updated;
 use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxAccountModel};
@@ -7,6 +7,7 @@ use crate::sql::Sql;
 use async_trait::async_trait;
 use better_auth_core::error::AuthResult;
 use better_auth_core::store::AccountStore;
+use better_auth_core::store::adapter::cancelled_by_hook;
 use better_auth_core::types::{CreateAccount, UpdateAccount};
 use chrono::Utc;
 
@@ -35,9 +36,9 @@ where
         let mut fields = std::mem::take(&mut create_account.additional_fields);
         fields.apply_adapter_transforms_async().await?;
         let mut active = S::Account::new_active(None, create_account, now);
-        let backend = exec.backend();
+        let backend = exec.engine();
         for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
-            let value = crate::session_fields::prepare_value(
+            let value = crate::additional_fields::prepare_value(
                 exec,
                 <S::Account as SqlxModel>::column_kind(column),
                 value,
@@ -66,11 +67,14 @@ where
     async fn find_account_by_id(&self, id: &str) -> AuthResult<Option<S::Account>> {
         let account_id = <S::Account as SqlxAccountModel>::parse_id(id)?;
         let mut sql = model::select_model::<S::Account>(self.exec());
-        sql.push(" WHERE ")
-            .column(<S::Account as SqlxModel>::TABLE, S::Account::id_column())
-            .push(" = ")
-            .bind(account_id)
-            .push(" LIMIT 1");
+        sql.push(" WHERE ");
+        sql.compare(
+            <S::Account as SqlxModel>::TABLE,
+            S::Account::id_column(),
+            " = ",
+            account_id,
+        );
+        sql.push(" LIMIT 1");
         self.exec().fetch_optional(sql).await
     }
 }
@@ -93,16 +97,17 @@ where
     ) -> AuthResult<Option<S::Account>> {
         let table = <S::Account as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::Account>(self.exec());
-        sql.push(" WHERE ")
-            .column(table, S::Account::provider_id_column())
-            .push(" = ")
-            .bind(provider)
-            .push(" AND ")
-            .column(table, S::Account::account_id_column())
-            .push(" = ")
-            .bind(provider_account_id)
-            .push(" LIMIT ")
-            .bind(2_i64);
+        sql.push(" WHERE ");
+        sql.compare(table, S::Account::provider_id_column(), " = ", provider);
+        sql.push(" AND ");
+        sql.compare(
+            table,
+            S::Account::account_id_column(),
+            " = ",
+            provider_account_id,
+        );
+        sql.push(" LIMIT ");
+        sql.bind(2_i64);
         let mut accounts: Vec<S::Account> = self.exec().fetch_all(sql).await?;
         if accounts.len() > 1 {
             return Err(better_auth_core::AuthError::Database(
@@ -117,13 +122,13 @@ where
     async fn get_user_accounts(&self, user_id: &str) -> AuthResult<Vec<S::Account>> {
         let user_id = <S::Account as SqlxAccountModel>::parse_user_id(user_id)?;
         let mut sql = model::select_model::<S::Account>(self.exec());
-        sql.push(" WHERE ")
-            .column(
-                <S::Account as SqlxModel>::TABLE,
-                S::Account::user_id_column(),
-            )
-            .push(" = ")
-            .bind(user_id);
+        sql.push(" WHERE ");
+        sql.compare(
+            <S::Account as SqlxModel>::TABLE,
+            S::Account::user_id_column(),
+            " = ",
+            user_id,
+        );
         self.exec().fetch_all(sql).await
     }
 
@@ -149,9 +154,9 @@ where
         let mut fields = std::mem::take(&mut update.additional_fields);
         fields.apply_adapter_transforms_async().await?;
         S::Account::apply_update(&mut active, update, Utc::now());
-        let backend = self.exec().backend();
+        let backend = self.exec().engine();
         for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
-            let value = crate::session_fields::prepare_value(
+            let value = crate::additional_fields::prepare_value(
                 self.exec(),
                 <S::Account as SqlxModel>::column_kind(column),
                 value,
@@ -187,13 +192,11 @@ where
             }
         }
         let table = <S::Account as SqlxModel>::TABLE;
-        let mut sql = Sql::with(self.exec().backend(), "DELETE FROM ");
-        sql.ident(table)
-            .push(" WHERE ")
-            .column(table, S::Account::id_column())
-            .push(" = ")
-            .bind(account_id);
-        self.exec().execute(sql).await?;
+        let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
+        sql.ident(table);
+        sql.push(" WHERE ");
+        sql.compare(table, S::Account::id_column(), " = ", account_id);
+        _ = self.exec().execute(sql).await?;
         for hook in self.hooks() {
             hook.after_delete_account(&account_model, &hook_context)
                 .await?;

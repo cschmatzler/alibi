@@ -77,7 +77,7 @@ native callback boundary is distinct from the built-in-provider SDK proof.
 
 Ten native API tests pass (`/tmp/two-factor-passwordless-native-final.log`),
 TypeScript passes (`/tmp/two-factor-passwordless-typecheck-final.log`), and
-workspace library Clippy with seaorm2, formatting and diff checks pass.
+workspace library Clippy with seaorm, formatting and diff checks pass.
 
 Wider account schema follow-up: while preparing distinct child profiles, the
 pinned SQLite runtime accepted repeated providerId/accountId on different

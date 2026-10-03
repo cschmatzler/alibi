@@ -1,6 +1,6 @@
 //! Native user metadata persistence must preserve valid application JSON keys.
 
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 #[expect(unreachable_pub, reason = "SeaORM derive requires public model fields")]
 mod custom_user {
     use better_auth_seaorm::sea_orm::entity::prelude::*;
@@ -35,7 +35,7 @@ type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema:
 struct MetadataHook;
 
 #[async_trait::async_trait]
-impl better_auth_seaorm::DatabaseHooks<Schema, better_auth_seaorm::SeaOrm> for MetadataHook {
+impl better_auth_seaorm::DatabaseHooks<Schema, better_auth_seaorm::SeaOrmBackend> for MetadataHook {
     async fn before_create_user(
         &self,
         user: &mut CreateUser,
@@ -58,10 +58,10 @@ impl better_auth_seaorm::DatabaseHooks<Schema, better_auth_seaorm::SeaOrm> for M
     }
 }
 
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 struct CustomSchema;
 
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 impl better_auth_core::AuthSchema for CustomSchema {
     type User = custom_user::Model;
     type Session = better_auth_seaorm::store::entities::session::Model;
@@ -77,16 +77,14 @@ mod tests {
     async fn prepared_metadata_replacement_persists_the_edited_value() {
         use better_auth_seaorm::sea_orm::{ActiveModelTrait, ActiveValue::Set, IntoActiveModel};
         use better_auth_seaorm::store::entities::organization;
-        use better_auth_seaorm::{JsonMetadata, json_metadata::prepare_metadata_value};
+        use better_auth_seaorm::{JsonMetadata, json_metadata::MetadataBinding};
         let db = Database::connect("sqlite::memory:").await.unwrap();
         better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
-        let prepared: JsonMetadata = prepare_metadata_value(
-            JsonMetadata::from(serde_json::json!({"version":"old","fixed":1e20})),
-            DbBackend::Sqlite,
-        )
-        .unwrap();
+        let prepared = JsonMetadata::from(serde_json::json!({"version":"old","fixed":1e20}))
+            .prepare(DbBackend::Sqlite)
+            .unwrap();
         let mut value: serde_json::Value = prepared.into();
         drop(
             value
@@ -94,8 +92,9 @@ mod tests {
                 .expect("metadata is an object")
                 .insert("version".to_owned(), serde_json::json!("edited")),
         );
-        let prepared_2 =
-            prepare_metadata_value(JsonMetadata::from(value), DbBackend::Sqlite).unwrap();
+        let prepared_2 = JsonMetadata::from(value)
+            .prepare(DbBackend::Sqlite)
+            .unwrap();
         let inserted = organization::ActiveModel {
             id: Set("prepared-metadata".into()),
             name: Set("Prepared".into()),
@@ -118,7 +117,9 @@ mod tests {
         );
         let mut active = inserted.into_active_model();
         active.metadata = Set(Some(
-            prepare_metadata_value(JsonMetadata::from(value_2), DbBackend::Sqlite).unwrap(),
+            JsonMetadata::from(value_2)
+                .prepare(DbBackend::Sqlite)
+                .unwrap(),
         ));
         let updated = active.update(&db).await.unwrap();
         assert_eq!(updated.metadata.as_ref().unwrap()["version"], "updated");
@@ -245,7 +246,7 @@ mod tests {
 
     // Custom model/derive support is a separate public integration contract: the
     // bundled entity alone cannot prove the macro supplies backend-aware bindings.
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     #[tokio::test]
     async fn custom_user_metadata_derive_prepares_json_without_changing_extra_fields() {
         let db = Database::connect("sqlite::memory:").await.unwrap();

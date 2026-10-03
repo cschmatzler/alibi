@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-better-auth = { path = "../../..", features = ["axum", "seaorm2"] }
+better-auth = { path = "../../..", features = ["axum", "seaorm"] }
 better-auth-core = { path = "../../../crates/core" }
 better-auth-seaorm = { path = "../../../crates/seaorm" }
 better-auth-sqlx = { path = "../../../crates/sqlx" }
@@ -31,7 +31,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json"] }
 # Serve every fixture from the SeaORM store instead of the default SQLx store.
 # The name matches the library feature, so the fixture model shared with the
 # root crate's integration tests selects the same backend in both crates.
-seaorm2 = []
+seaorm = []
 
 # Optimize the pinned memory-hard primitive for debug compatibility fixtures.
 [profile.dev.package.scrypt]

@@ -65,7 +65,7 @@ their terminal evidence recorded separately rather than claiming those tools ran
 
 The concrete API/production slice is composed on actual main
 `fa8837ec322e94486829f12677a83bdecc10ef03`. Workspace Clippy with all targets and
-`axum,seaorm2,redis-cache`, locked dependencies and `-D warnings` passed at this
+`axum,seaorm,redis-cache`, locked dependencies and `-D warnings` passed at this
 checkpoint (`/tmp/issue205-initial-strict4.log`). All six adapters are compiled:
 organization, email OTP, JWT, one-time token, API key and two-factor.
 

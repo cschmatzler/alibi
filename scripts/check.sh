@@ -15,20 +15,20 @@ stage "Format, lint and type-check"
 cargo fmt --all -- --check
 cargo fmt --manifest-path tests/compat/rust-server/Cargo.toml -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo clippy --workspace --all-targets --locked --features axum,seaorm2,redis-cache -- -D warnings
-cargo check -p better-auth --locked --no-default-features --features rustls,axum,seaorm2,redis-cache
+cargo clippy --workspace --all-targets --locked --features axum,seaorm,redis-cache -- -D warnings
+cargo check -p better-auth --locked --no-default-features --features rustls,axum,seaorm,redis-cache
 cargo check -p better-auth --locked --no-default-features --features rustls,axum,sqlx
 cargo clippy --manifest-path tests/compat/rust-server/Cargo.toml --all-targets --locked -- -D warnings
-cargo clippy --manifest-path tests/compat/rust-server/Cargo.toml --all-targets --locked --features seaorm2 -- -D warnings
+cargo clippy --manifest-path tests/compat/rust-server/Cargo.toml --all-targets --locked --features seaorm -- -D warnings
 bun run --cwd tests/compat/client-tests format:check
 bun run --cwd tests/compat/client-tests lint
 bun run --cwd tests/compat/client-tests typecheck
 
 stage "Unit, integration, static compat and repository tests"
 cargo nextest run --workspace --locked
-cargo nextest run --workspace --locked --features axum,seaorm2,redis-cache
+cargo nextest run --workspace --locked --features axum,seaorm,redis-cache
 cargo nextest run --locked --manifest-path tests/compat/rust-server/Cargo.toml
-cargo test --workspace --doc --locked --features axum,seaorm2,redis-cache
+cargo test --workspace --doc --locked --features axum,seaorm,redis-cache
 
 stage "Differential compatibility against upstream"
 ./scripts/compat.sh

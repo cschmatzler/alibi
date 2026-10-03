@@ -1,3 +1,4 @@
+pub mod adapter;
 pub mod cache;
 
 mod database_hooks;

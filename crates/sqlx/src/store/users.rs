@@ -1,5 +1,5 @@
 use super::{SqlxStore, lock_exclusive, lock_shared};
-use crate::error::{cancelled_by_hook, record_not_updated};
+use crate::error::record_not_updated;
 use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxUserModel};
@@ -8,6 +8,7 @@ use crate::value::{ColumnKind, SqlValue};
 use async_trait::async_trait;
 use better_auth_core::AuthUser;
 use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::adapter::cancelled_by_hook;
 use better_auth_core::store::{NumericTextInput, UserStore};
 use better_auth_core::types::{CreateUser, ListUsersParams, UpdateUser};
 use chrono::Utc;
@@ -27,11 +28,9 @@ pub(super) async fn find_user_by_id<M: SqlxUserModel>(
 ) -> AuthResult<Option<M>> {
     let id = M::parse_id(id)?;
     let mut sql = model::select_model::<M>(exec);
-    sql.push(" WHERE ")
-        .column(M::TABLE, M::id_column())
-        .push(" = ")
-        .bind(id)
-        .push(" LIMIT 1");
+    sql.push(" WHERE ");
+    sql.compare(M::TABLE, M::id_column(), " = ", id);
+    sql.push(" LIMIT 1");
     match lock {
         Lock::None => {}
         Lock::Shared => lock_shared(&mut sql),
@@ -75,9 +74,9 @@ where
         let mut fields = std::mem::take(&mut create_user.additional_fields);
         fields.apply_adapter_transforms_async().await?;
         let mut active = S::User::new_active(user_id, create_user, now);
-        let backend = exec.backend();
+        let backend = exec.engine();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
-            let value = crate::session_fields::prepare_value(
+            let value = crate::additional_fields::prepare_value(
                 exec,
                 <S::User as SqlxModel>::column_kind(column),
                 value,
@@ -123,11 +122,9 @@ where
 
     fn user_lookup(&self, column: &str, value: impl Into<SqlValue>) -> Sql {
         let mut sql = model::select_model::<S::User>(self.exec());
-        sql.push(" WHERE ")
-            .column(<S::User as SqlxModel>::TABLE, column)
-            .push(" = ")
-            .bind(value)
-            .push(" LIMIT 1");
+        sql.push(" WHERE ");
+        sql.compare(<S::User as SqlxModel>::TABLE, column, " = ", value);
+        sql.push(" LIMIT 1");
         sql
     }
 }
@@ -166,9 +163,10 @@ where
                 return Err(AuthError::bad_request("Numeric text input must not be NaN"));
             }
         };
-        let backend = self.exec().backend();
+        let backend = self.exec().engine();
         let mut sql = Sql::with(backend, "SELECT CAST(");
-        sql.bind(value).push(" AS TEXT) AS value");
+        sql.bind(value);
+        sql.push(" AS TEXT) AS value");
         // The configured database's own CAST decides the stored text.
         self.exec()
             .fetch_scalar::<String>(sql)
@@ -190,10 +188,10 @@ where
             .map(|id| S::User::parse_id(id))
             .collect::<AuthResult<Vec<_>>>()?;
         let mut sql = model::select_model::<S::User>(self.exec());
-        sql.push(" WHERE ")
-            .column(<S::User as SqlxModel>::TABLE, S::User::id_column())
-            .push(" IN ")
-            .bind_list(user_ids);
+        sql.push(" WHERE ");
+        sql.column(<S::User as SqlxModel>::TABLE, S::User::id_column());
+        sql.push(" IN ");
+        sql.bind_list(user_ids);
         self.exec().fetch_all(sql).await
     }
 
@@ -206,11 +204,11 @@ where
             .map(|id| S::User::parse_id(id))
             .collect::<AuthResult<Vec<_>>>()?;
         let mut sql = model::select_model::<S::User>(self.exec());
-        sql.push(" WHERE ")
-            .column(<S::User as SqlxModel>::TABLE, S::User::id_column())
-            .push(" IN ")
-            .bind_list(user_ids);
-        super::numeric_page::bind_page(&mut sql, Some(limit), None);
+        sql.push(" WHERE ");
+        sql.column(<S::User as SqlxModel>::TABLE, S::User::id_column());
+        sql.push(" IN ");
+        sql.bind_list(user_ids);
+        super::bind_page(&mut sql, Some(limit), None);
         self.exec().fetch_all(sql).await
     }
 
@@ -259,9 +257,9 @@ where
         let mut fields = std::mem::take(&mut update.additional_fields);
         fields.apply_adapter_transforms_async().await?;
         S::User::apply_update(&mut active, update, Utc::now());
-        let backend = self.exec().backend();
+        let backend = self.exec().engine();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
-            let value = crate::session_fields::prepare_value(
+            let value = crate::additional_fields::prepare_value(
                 self.exec(),
                 <S::User as SqlxModel>::column_kind(column),
                 value,
@@ -300,29 +298,27 @@ where
         // would outlive them and start working again if the id were reused.
         let owner = user.id().into_owned();
         let id = id.to_owned();
-        self.in_transaction(true, move |tx| {
-            Box::pin(async move {
-                let exec = Exec::Tx(tx);
-                drop(find_user_by_id::<S::User>(exec, &id, Lock::Exclusive).await?);
-                super::teams::remove_owned_team_members(tx, &owner, None).await?;
-                super::wallets::remove_owned_wallets(tx, &owner).await?;
-                let mut keys = Sql::with(exec.backend(), "DELETE FROM ");
-                keys.ident("api_keys")
-                    .push(" WHERE ")
-                    .column("api_keys", "reference_id")
-                    .push(" = ")
-                    .bind(owner.clone());
-                exec.execute(keys).await?;
-                let mut users = Sql::with(exec.backend(), "DELETE FROM ");
-                users
-                    .ident(<S::User as SqlxModel>::TABLE)
-                    .push(" WHERE ")
-                    .column(<S::User as SqlxModel>::TABLE, S::User::id_column())
-                    .push(" = ")
-                    .bind(S::User::parse_id(&id)?);
-                exec.execute(users).await?;
-                Ok(())
-            })
+        self.in_transaction(true, async move |tx| {
+            let exec = Exec::Tx(tx);
+            drop(find_user_by_id::<S::User>(exec, &id, Lock::Exclusive).await?);
+            super::teams::remove_owned_team_members(tx, &owner, None).await?;
+            super::wallets::remove_owned_wallets(tx, &owner).await?;
+            let mut keys = Sql::with(exec.engine(), "DELETE FROM ");
+            keys.ident("api_keys");
+            keys.push(" WHERE ");
+            keys.compare("api_keys", "reference_id", " = ", owner.clone());
+            _ = exec.execute(keys).await?;
+            let mut users = Sql::with(exec.engine(), "DELETE FROM ");
+            users.ident(<S::User as SqlxModel>::TABLE);
+            users.push(" WHERE ");
+            users.compare(
+                <S::User as SqlxModel>::TABLE,
+                S::User::id_column(),
+                " = ",
+                S::User::parse_id(&id)?,
+            );
+            _ = exec.execute(users).await?;
+            Ok(())
         })
         .await?;
         for hook in self.hooks() {
@@ -376,30 +372,26 @@ where
                         sql.push(if operator == "in" { "1 = 2" } else { "1 = 1" });
                     }
                     "in" => {
-                        sql.column(table, column).push(" IN ").bind_list(bindings);
+                        sql.column(table, column);
+                        sql.push(" IN ");
+                        sql.bind_list(bindings);
                     }
                     "not_in" => {
-                        sql.column(table, column)
-                            .push(" NOT IN ")
-                            .bind_list(bindings);
+                        sql.column(table, column);
+                        sql.push(" NOT IN ");
+                        sql.bind_list(bindings);
                     }
                     // The pinned adapter interpolates the complete array's
                     // comma-joined value into a bound LIKE pattern. Actual SQL
                     // retains backend case, wildcard and NULL semantics.
                     "contains" => {
-                        sql.column(table, column)
-                            .push(" LIKE ")
-                            .bind(format!("%{}%", operands.join(",")));
+                        sql.compare(table, column, " LIKE ", format!("%{}%", operands.join(",")));
                     }
                     "starts_with" => {
-                        sql.column(table, column)
-                            .push(" LIKE ")
-                            .bind(format!("{}%", operands.join(",")));
+                        sql.compare(table, column, " LIKE ", format!("{}%", operands.join(",")));
                     }
                     "ends_with" => {
-                        sql.column(table, column)
-                            .push(" LIKE ")
-                            .bind(format!("%{}", operands.join(",")));
+                        sql.compare(table, column, " LIKE ", format!("%{}", operands.join(",")));
                     }
                     "eq" | "ne" | "lt" | "lte" | "gt" | "gte" => {
                         let comparison = match operator {
@@ -410,7 +402,9 @@ where
                             "gt" => " > ",
                             _ => " >= ",
                         };
-                        sql.ident(column).push(comparison).bind_list(bindings);
+                        sql.ident(column);
+                        sql.push(comparison);
+                        sql.bind_list(bindings);
                     }
                     _ => return Err(AuthError::bad_request("Unsupported user filter operator")),
                 }

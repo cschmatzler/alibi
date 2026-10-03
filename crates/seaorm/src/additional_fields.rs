@@ -1,4 +1,5 @@
 //! Raw configured values staged on actual session entity columns.
+use better_auth_core::store::adapter::RawFieldValue;
 use better_auth_core::{AuthError, AuthResult, utils::json::JsValue};
 use sea_orm::{ColumnTrait, ConnectionTrait, DbBackend, Statement, Value, sea_query::ColumnType};
 
@@ -7,28 +8,14 @@ use sea_orm::{ColumnTrait, ConnectionTrait, DbBackend, Statement, Value, sea_que
 /// # Errors
 ///
 /// Returns an error if an object or array cannot be serialized as JSON.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_possible_truncation,
-    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
-)]
 pub fn raw_value(value: &JsValue) -> AuthResult<Value> {
-    Ok(match value {
-        JsValue::Null => Value::String(None),
-        JsValue::Bool(value) => Value::Bool(Some(*value)),
-        JsValue::Number(value)
-            if value.is_finite()
-                && value.fract() == 0.0
-                && !(*value == 0.0 && value.is_sign_negative())
-                && (-9_223_372_036_854_776_000.0..9_223_372_036_854_776_000.0).contains(value) =>
-        {
-            Value::BigInt(Some(*value as i64))
-        }
-        JsValue::Number(value) => Value::Double(Some(*value)),
-        JsValue::String(value) => Value::String(Some(value.clone())),
-        JsValue::Array(_) | JsValue::Object(_) => {
-            Value::Json(Some(Box::new(value.to_json_value()?)))
-        }
+    Ok(match RawFieldValue::from_js(value)? {
+        RawFieldValue::Null => Value::String(None),
+        RawFieldValue::Bool(value) => Value::Bool(Some(value)),
+        RawFieldValue::Integer(value) => Value::BigInt(Some(value)),
+        RawFieldValue::Number(value) => Value::Double(Some(value)),
+        RawFieldValue::Text(value) => Value::String(Some(value)),
+        RawFieldValue::Json(value) => Value::Json(Some(Box::new(value))),
     })
 }
 

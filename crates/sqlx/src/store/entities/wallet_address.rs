@@ -1,7 +1,9 @@
 use crate::value::{ColumnKind, SqlValue, SqlxValue, ValueTypeError};
 use chrono::{DateTime, Utc};
 use sqlx::error::BoxDynError;
+#[cfg(feature = "postgres")]
 use sqlx::postgres::{PgTypeInfo, PgValueRef, Postgres};
+#[cfg(feature = "sqlite")]
 use sqlx::sqlite::{Sqlite, SqliteTypeInfo, SqliteValueRef};
 use sqlx::{Decode, Type, ValueRef};
 
@@ -52,6 +54,7 @@ impl SqlxValue for WalletChainId {
     }
 }
 
+#[cfg(feature = "sqlite")]
 impl Type<Sqlite> for WalletChainId {
     fn type_info() -> SqliteTypeInfo {
         <f64 as Type<Sqlite>>::type_info()
@@ -63,6 +66,7 @@ impl Type<Sqlite> for WalletChainId {
     }
 }
 
+#[cfg(feature = "sqlite")]
 impl<'r> Decode<'r, Sqlite> for WalletChainId {
     #[expect(
         clippy::as_conversions,
@@ -82,6 +86,7 @@ impl<'r> Decode<'r, Sqlite> for WalletChainId {
     }
 }
 
+#[cfg(feature = "postgres")]
 impl Type<Postgres> for WalletChainId {
     fn type_info() -> PgTypeInfo {
         <f64 as Type<Postgres>>::type_info()
@@ -93,6 +98,7 @@ impl Type<Postgres> for WalletChainId {
     }
 }
 
+#[cfg(feature = "postgres")]
 impl<'r> Decode<'r, Postgres> for WalletChainId {
     #[expect(
         clippy::as_conversions,
@@ -111,17 +117,15 @@ impl<'r> Decode<'r, Postgres> for WalletChainId {
     }
 }
 
-bundled_model! {
-    table = "wallet_address", primary_key = "id";
-    #[derive(Clone, Debug, PartialEq)]
-    pub struct Model {
-        pub id: String = "id",
-        pub user_id: String = "user_id",
-        pub address: String = "address",
-        pub chain_id: WalletChainId = "chain_id",
-        pub is_primary: bool = "is_primary",
-        pub created_at: DateTime<Utc> = "created_at",
-    }
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow, crate::SqlxModel)]
+#[auth(table = "wallet_address")]
+pub struct Model {
+    pub id: String,
+    pub user_id: String,
+    pub address: String,
+    pub chain_id: WalletChainId,
+    pub is_primary: bool,
+    pub created_at: DateTime<Utc>,
 }
 
 impl From<Model> for better_auth_core::WalletAddress {

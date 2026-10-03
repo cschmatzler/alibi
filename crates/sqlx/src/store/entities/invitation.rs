@@ -1,19 +1,17 @@
 use chrono::{DateTime, Utc};
 
-bundled_model! {
-    table = "invitation", primary_key = "id";
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    pub struct Model {
-        pub id: String = "id",
-        pub organization_id: String = "organization_id",
-        pub email: String = "email",
-        pub role: String = "role",
-        pub team_id: Option<String> = "team_id",
-        pub status: String = "status",
-        pub inviter_id: String = "inviter_id",
-        pub expires_at: DateTime<Utc> = "expires_at",
-        pub created_at: DateTime<Utc> = "created_at",
-    }
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, crate::SqlxModel)]
+#[auth(table = "invitation")]
+pub struct Model {
+    pub id: String,
+    pub organization_id: String,
+    pub email: String,
+    pub role: String,
+    pub team_id: Option<String>,
+    pub status: String,
+    pub inviter_id: String,
+    pub expires_at: DateTime<Utc>,
+    pub created_at: DateTime<Utc>,
 }
 
 impl From<&Model> for better_auth_core::Invitation {

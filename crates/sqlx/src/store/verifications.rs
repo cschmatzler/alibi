@@ -1,5 +1,4 @@
 use super::{SqlxStore, lock_exclusive};
-use crate::error::cancelled_by_hook;
 use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxVerificationModel};
@@ -7,6 +6,7 @@ use crate::sql::Sql;
 use async_trait::async_trait;
 use better_auth_core::entity::AuthVerification;
 use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::adapter::cancelled_by_hook;
 use better_auth_core::store::{VerificationStore, verification_reservation_key};
 use better_auth_core::types::{CreateVerification, UpdateVerification};
 use better_auth_core::verification::{
@@ -124,14 +124,14 @@ where
         let table = Self::verification_table();
         let mut sql = model::select_model::<S::Verification>(exec);
         for (index, (column, operator, value)) in filters.iter().enumerate() {
-            sql.push(if index == 0 { " WHERE " } else { " AND " })
-                .column(table, column)
-                .push(operator)
-                .bind(value.clone());
+            sql.push(if index == 0 { " WHERE " } else { " AND " });
+            sql.column(table, column);
+            sql.push(operator);
+            sql.bind(value.clone());
         }
-        sql.push(" ORDER BY ")
-            .column(table, S::Verification::created_at_column())
-            .push(" DESC LIMIT 1");
+        sql.push(" ORDER BY ");
+        sql.column(table, S::Verification::created_at_column());
+        sql.push(" DESC LIMIT 1");
         sql
     }
 
@@ -175,28 +175,25 @@ where
             }
             let table = Self::verification_table();
             let id = S::Verification::parse_id(model.id().as_ref())?;
-            let mut delete = Sql::with(exec.backend(), "DELETE FROM ");
-            delete
-                .ident(table)
-                .push(" WHERE ")
-                .column(table, S::Verification::id_column())
-                .push(" = ")
-                .bind(id)
-                .push(" AND ")
-                .column(table, S::Verification::value_column())
-                .push(" = ")
-                .bind(model.value());
+            let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
+            delete.ident(table);
+            delete.push(" WHERE ");
+            delete.compare(table, S::Verification::id_column(), " = ", id);
+            delete.push(" AND ");
+            delete.compare(table, S::Verification::value_column(), " = ", model.value());
             if exec.execute(delete).await? != 1 {
                 return Ok(None);
             }
-            let mut siblings = Sql::with(exec.backend(), "DELETE FROM ");
-            siblings
-                .ident(table)
-                .push(" WHERE ")
-                .column(table, S::Verification::identifier_column())
-                .push(" = ")
-                .bind(identifier);
-            exec.execute(siblings).await?;
+            let mut siblings = Sql::with(exec.engine(), "DELETE FROM ");
+            siblings.ident(table);
+            siblings.push(" WHERE ");
+            siblings.compare(
+                table,
+                S::Verification::identifier_column(),
+                " = ",
+                identifier,
+            );
+            _ = exec.execute(siblings).await?;
             Ok(Some(model))
         }
         .await;
@@ -231,35 +228,27 @@ where
         updated_at_column: &'static str,
     ) -> AuthResult<Option<S::Verification>> {
         let table = Self::verification_table();
-        let mut sql = Sql::with(self.exec().backend(), "UPDATE ");
-        sql.ident(table)
-            .push(" SET ")
-            .ident(updated_at_column)
-            .push(" = ")
-            .bind(S::Verification::timestamp_value(
-                updated_at_column,
-                Utc::now(),
-            ));
+        let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
+        sql.ident(table);
+        sql.push(" SET ");
+        sql.assign(
+            updated_at_column,
+            S::Verification::timestamp_value(updated_at_column, Utc::now()),
+        );
         if let Some(value) = value {
-            sql.push(", ")
-                .ident(S::Verification::value_column())
-                .push(" = ")
-                .bind(value);
+            sql.push(", ");
+            sql.assign(S::Verification::value_column(), value);
         }
         if let Some(expires_at) = expires_at {
-            sql.push(", ")
-                .ident(S::Verification::expires_at_column())
-                .push(" = ")
-                .bind(S::Verification::timestamp_value(
-                    S::Verification::expires_at_column(),
-                    expires_at,
-                ));
+            sql.push(", ");
+            sql.assign(
+                S::Verification::expires_at_column(),
+                S::Verification::timestamp_value(S::Verification::expires_at_column(), expires_at),
+            );
         }
         for (index, (column, value)) in filters.iter().enumerate() {
-            sql.push(if index == 0 { " WHERE " } else { " AND " })
-                .column(table, column)
-                .push(" = ")
-                .bind(value.clone());
+            sql.push(if index == 0 { " WHERE " } else { " AND " });
+            sql.compare(table, column, " = ", value.clone());
         }
         model::returning::<S::Verification>(&mut sql);
         // The statement updates every matching row; the first returned row is the snapshot.
@@ -406,12 +395,14 @@ where
     async fn delete_verifications_by_identifier(&self, identifier: &str) -> AuthResult<()> {
         let table = Self::verification_table();
         let mut select = model::select_model::<S::Verification>(self.exec());
-        select
-            .push(" WHERE ")
-            .column(table, S::Verification::identifier_column())
-            .push(" = ")
-            .bind(identifier)
-            .push(" LIMIT 1");
+        select.push(" WHERE ");
+        select.compare(
+            table,
+            S::Verification::identifier_column(),
+            " = ",
+            identifier,
+        );
+        select.push(" LIMIT 1");
         let Some(model) = self
             .exec()
             .fetch_optional::<S::Verification>(select)
@@ -432,14 +423,16 @@ where
                 return Ok(());
             }
         }
-        let mut delete = Sql::with(self.exec().backend(), "DELETE FROM ");
-        delete
-            .ident(table)
-            .push(" WHERE ")
-            .column(table, S::Verification::identifier_column())
-            .push(" = ")
-            .bind(identifier);
-        self.exec().execute(delete).await?;
+        let mut delete = Sql::with(self.exec().engine(), "DELETE FROM ");
+        delete.ident(table);
+        delete.push(" WHERE ");
+        delete.compare(
+            table,
+            S::Verification::identifier_column(),
+            " = ",
+            identifier,
+        );
+        _ = self.exec().execute(delete).await?;
         for hook in self.hooks() {
             hook.after_delete_verification(&model, &hook_context)
                 .await?;
@@ -517,12 +510,9 @@ where
             Err(error) => {
                 let table = Self::verification_table();
                 let mut existing = model::select_model::<S::Verification>(self.exec());
-                existing
-                    .push(" WHERE ")
-                    .column(table, S::Verification::id_column())
-                    .push(" = ")
-                    .bind(id)
-                    .push(" LIMIT 1");
+                existing.push(" WHERE ");
+                existing.compare(table, S::Verification::id_column(), " = ", id);
+                existing.push(" LIMIT 1");
                 if self
                     .exec()
                     .fetch_optional::<S::Verification>(existing)
@@ -587,12 +577,14 @@ where
         let verification_id = <S::Verification as SqlxVerificationModel>::parse_id(id)?;
         let table = Self::verification_table();
         let mut select = model::select_model::<S::Verification>(self.exec());
-        select
-            .push(" WHERE ")
-            .column(table, S::Verification::id_column())
-            .push(" = ")
-            .bind(verification_id.clone())
-            .push(" LIMIT 1");
+        select.push(" WHERE ");
+        select.compare(
+            table,
+            S::Verification::id_column(),
+            " = ",
+            verification_id.clone(),
+        );
+        select.push(" LIMIT 1");
         let verification = self
             .exec()
             .fetch_optional::<S::Verification>(select)
@@ -609,14 +601,11 @@ where
                 }
             }
         }
-        let mut delete = Sql::with(self.exec().backend(), "DELETE FROM ");
-        delete
-            .ident(table)
-            .push(" WHERE ")
-            .column(table, S::Verification::id_column())
-            .push(" = ")
-            .bind(verification_id);
-        self.exec().execute(delete).await?;
+        let mut delete = Sql::with(self.exec().engine(), "DELETE FROM ");
+        delete.ident(table);
+        delete.push(" WHERE ");
+        delete.compare(table, S::Verification::id_column(), " = ", verification_id);
+        _ = self.exec().execute(delete).await?;
         if let Some(verification) = &verification {
             for hook in self.hooks() {
                 hook.after_delete_verification(verification, &hook_context)
@@ -632,16 +621,15 @@ where
         let deadline = Utc::now().trunc_subsecs(3);
         let table = Self::verification_table();
         let mut select = model::select_model::<S::Verification>(self.exec());
-        select
-            .push(" WHERE ")
-            .column(table, S::Verification::expires_at_column())
-            .push(" < ")
-            .bind(S::Verification::timestamp_value(
-                S::Verification::expires_at_column(),
-                deadline,
-            ))
-            .push(" LIMIT ")
-            .bind(self.find_many_limit());
+        select.push(" WHERE ");
+        select.compare(
+            table,
+            S::Verification::expires_at_column(),
+            " < ",
+            S::Verification::timestamp_value(S::Verification::expires_at_column(), deadline),
+        );
+        select.push(" LIMIT ");
+        select.bind(self.find_many_limit());
         let snapshots: Vec<S::Verification> = self.exec().fetch_all(select).await?;
         let hook_context = self.hook_context(None);
         // deleteManyWithHooks snapshots a findMany page before mutation.
@@ -658,16 +646,15 @@ where
                 }
             }
         }
-        let mut delete = Sql::with(self.exec().backend(), "DELETE FROM ");
-        delete
-            .ident(table)
-            .push(" WHERE ")
-            .column(table, S::Verification::expires_at_column())
-            .push(" < ")
-            .bind(S::Verification::timestamp_value(
-                S::Verification::expires_at_column(),
-                deadline,
-            ));
+        let mut delete = Sql::with(self.exec().engine(), "DELETE FROM ");
+        delete.ident(table);
+        delete.push(" WHERE ");
+        delete.compare(
+            table,
+            S::Verification::expires_at_column(),
+            " < ",
+            S::Verification::timestamp_value(S::Verification::expires_at_column(), deadline),
+        );
         let deleted = self.exec().execute(delete).await?;
         for model in &snapshots {
             for hook in self.hooks() {

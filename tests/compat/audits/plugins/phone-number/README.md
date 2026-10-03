@@ -72,7 +72,7 @@ the repaired numeric and user metadata prerequisites, final focused evidence is:
 - /tmp/phone-v2-final-integration.log: three SQLite phone integrations.
 - /tmp/phone-v2-final-sdk.log: eleven SDK scenarios, 1058 assertions.
 - /tmp/phone-v2-final-typecheck.log and /tmp/phone-v2-final-clippy.log:
-  client TypeScript and production workspace Clippy with seaorm2.
+  client TypeScript and production workspace Clippy with seaorm.
 
 Independent coordinator review traced ownership, proof consumption, credential
 writes, callback ordering and trusted-device checks against the pinned source.

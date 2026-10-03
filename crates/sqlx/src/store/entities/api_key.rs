@@ -1,33 +1,32 @@
 use super::api_key_start::ApiKeyStart;
 use chrono::{DateTime, Utc};
 
-bundled_model! {
-    table = "api_keys", primary_key = "id";
-    #[derive(Clone, Debug, PartialEq)]
-    pub struct Model {
-        pub id: String = "id",
-        pub name: Option<String> = "name",
-        pub start: Option<ApiKeyStart> = "start",
-        pub prefix: Option<String> = "prefix",
-        pub key_hash: String = "key",
-        pub reference_id: String = "reference_id",
-        pub config_id: String = "config_id",
-        pub refill_interval: Option<f64> = "refill_interval",
-        pub refill_amount: Option<f64> = "refill_amount",
-        pub last_refill_at: Option<DateTime<Utc>> = "last_refill_at",
-        pub enabled: bool = "enabled",
-        pub rate_limit_enabled: bool = "rate_limit_enabled",
-        pub rate_limit_time_window: Option<f64> = "rate_limit_time_window",
-        pub rate_limit_max: Option<f64> = "rate_limit_max",
-        pub request_count: Option<f64> = "request_count",
-        pub remaining: Option<f64> = "remaining",
-        pub last_request: Option<DateTime<Utc>> = "last_request",
-        pub expires_at: Option<DateTime<Utc>> = "expires_at",
-        pub created_at: DateTime<Utc> = "created_at",
-        pub updated_at: DateTime<Utc> = "updated_at",
-        pub permissions: Option<String> = "permissions",
-        pub metadata: Option<String> = "metadata",
-    }
+#[derive(Clone, Debug, PartialEq, sqlx::FromRow, crate::SqlxModel)]
+#[auth(table = "api_keys")]
+pub struct Model {
+    pub id: String,
+    pub name: Option<String>,
+    pub start: Option<ApiKeyStart>,
+    pub prefix: Option<String>,
+    #[sqlx(rename = "key")]
+    pub key_hash: String,
+    pub reference_id: String,
+    pub config_id: String,
+    pub refill_interval: Option<f64>,
+    pub refill_amount: Option<f64>,
+    pub last_refill_at: Option<DateTime<Utc>>,
+    pub enabled: bool,
+    pub rate_limit_enabled: bool,
+    pub rate_limit_time_window: Option<f64>,
+    pub rate_limit_max: Option<f64>,
+    pub request_count: Option<f64>,
+    pub remaining: Option<f64>,
+    pub last_request: Option<DateTime<Utc>>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub permissions: Option<String>,
+    pub metadata: Option<String>,
 }
 
 fn to_rfc3339(value: DateTime<Utc>) -> String {

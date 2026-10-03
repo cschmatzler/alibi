@@ -68,10 +68,8 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
         credential_id: &str,
     ) -> AuthResult<Option<Passkey>> {
         let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(Model::TABLE, "credential_id")
-            .push(" = ")
-            .bind(credential_id);
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "credential_id", " = ", credential_id);
         model::limit_one(&mut sql);
         Ok(self
             .exec()
@@ -82,13 +80,11 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
 
     async fn list_passkeys_by_user(&self, user_id: &str) -> AuthResult<Vec<Passkey>> {
         let mut sql = model::select_model::<Model>(self.exec());
-        sql.push(" WHERE ")
-            .column(Model::TABLE, "user_id")
-            .push(" = ")
-            .bind(user_id)
-            .push(" ORDER BY ")
-            .column(Model::TABLE, "created_at")
-            .push(" DESC");
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "user_id", " = ", user_id);
+        sql.push(" ORDER BY ");
+        sql.column(Model::TABLE, "created_at");
+        sql.push(" DESC");
         Ok(self
             .exec()
             .fetch_all::<Model>(sql)

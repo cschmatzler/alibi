@@ -10,7 +10,6 @@ mod invitations;
 mod jwks;
 mod members;
 mod migrator;
-mod numeric_page;
 mod organization_roles;
 mod organizations;
 mod passkeys;
@@ -39,13 +38,14 @@ impl<S: AuthSchema> better_auth_core::store::SchemaMigrator for SeaOrmStore<S> {
     }
 }
 
-use crate::hooks::{SeaOrmHookContext, SeaOrmHooks, current_request_hook_context};
+use crate::hooks::{DatabaseHooks, SeaOrmBackend, SeaOrmHookContext, current_request_hook_context};
 use crate::schema::{
     AuthSchema, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
 };
 use async_trait::async_trait;
 use better_auth_core::config::AuthConfig;
 use better_auth_core::error::{AuthError, AuthResult, DatabaseError};
+use better_auth_core::store::adapter::{AfterHook, AfterHookQueue};
 use better_auth_core::store::{
     AuthTransaction, BoxedTransactionValue, TransactionStore, TransactionWork,
 };
@@ -58,7 +58,7 @@ use std::sync::Arc;
 pub struct SeaOrmStore<S: AuthSchema> {
     config: Arc<AuthConfig>,
     db: DatabaseConnection,
-    hooks: Vec<Arc<dyn SeaOrmHooks<S>>>,
+    hooks: Vec<Arc<dyn DatabaseHooks<S, SeaOrmBackend>>>,
     _schema: PhantomData<S>,
 }
 
@@ -80,13 +80,13 @@ impl<S: AuthSchema> SeaOrmStore<S> {
     }
 
     #[must_use]
-    pub fn with_hooks(mut self, hooks: Vec<Arc<dyn SeaOrmHooks<S>>>) -> Self {
+    pub fn with_hooks(mut self, hooks: Vec<Arc<dyn DatabaseHooks<S, SeaOrmBackend>>>) -> Self {
         self.hooks = hooks;
         self
     }
 
     #[must_use]
-    pub fn hook<H: SeaOrmHooks<S> + 'static>(mut self, hook: H) -> Self {
+    pub fn hook<H: DatabaseHooks<S, SeaOrmBackend> + 'static>(mut self, hook: H) -> Self {
         self.hooks.push(Arc::new(hook));
         self
     }
@@ -101,7 +101,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         &self.config
     }
 
-    pub(crate) fn hooks(&self) -> &[Arc<dyn SeaOrmHooks<S>>] {
+    pub(crate) fn hooks(&self) -> &[Arc<dyn DatabaseHooks<S, SeaOrmBackend>>] {
         &self.hooks
     }
 
@@ -116,34 +116,16 @@ impl<S: AuthSchema> SeaOrmStore<S> {
             request: current_request_hook_context(),
         }
     }
-
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database connection check fails.
-    pub async fn test_connection(&self) -> Result<(), DbErr> {
-        self.db.ping().await
-    }
 }
 
-struct SeaOrmTransaction<'a, S: AuthSchema> {
+struct SeaOrmStoreTransaction<'a, S: AuthSchema> {
     store: &'a SeaOrmStore<S>,
     tx: &'a DatabaseTransaction,
-    pending_after: tokio::sync::Mutex<Vec<AfterCreate<S>>>,
-}
-
-enum AfterCreate<S: AuthSchema> {
-    User(S::User),
-    Account(S::Account),
-    Session(S::Session),
-    SessionUpdated(S::Session),
-    SessionUpdateMissing(String),
-    Verification(S::Verification),
-    VerificationRecord(better_auth_core::verification::VerificationSnapshot),
+    pending_after: AfterHookQueue<S>,
 }
 
 #[async_trait]
-impl<S> AuthTransaction<S> for SeaOrmTransaction<'_, S>
+impl<S> AuthTransaction<S> for SeaOrmStoreTransaction<'_, S>
 where
     S: AuthSchema,
     S::User: SeaOrmUserModel,
@@ -237,9 +219,8 @@ where
     async fn create_user(&self, create_user: better_auth_core::CreateUser) -> AuthResult<S::User> {
         let user = self.store.create_user_in_tx(self.tx, create_user).await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::User(user.clone()));
+            .push(AfterHook::UserCreated(user.clone()))
+            .await;
         Ok(user)
     }
 
@@ -252,9 +233,8 @@ where
             .create_user_prepared_in_tx(self.tx, prepared)
             .await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::User(user.clone()));
+            .push(AfterHook::UserCreated(user.clone()))
+            .await;
         Ok(user)
     }
 
@@ -267,9 +247,8 @@ where
             .create_account_in_tx(self.tx, create_account)
             .await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::Account(account.clone()));
+            .push(AfterHook::AccountCreated(account.clone()))
+            .await;
         Ok(account)
     }
 
@@ -310,10 +289,10 @@ where
             )
             .await?;
         let event = result.as_ref().map_or_else(
-            || AfterCreate::SessionUpdateMissing(token),
-            |model| AfterCreate::SessionUpdated(model.clone()),
+            || AfterHook::SessionUpdateMissing(token),
+            |model| AfterHook::SessionUpdated(model.clone()),
         );
-        self.pending_after.lock().await.push(event);
+        self.pending_after.push(event).await;
         Ok(result)
     }
     async fn prepare_secondary_session_creation(
@@ -326,9 +305,8 @@ where
             .prepare_secondary_session_in_tx(self.tx, input, persist)
             .await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::Session(session.clone()));
+            .push(AfterHook::SessionCreated(session.clone()))
+            .await;
         Ok(session)
     }
     async fn create_session(
@@ -340,9 +318,8 @@ where
             .create_session_in_tx(self.tx, create_session)
             .await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::Session(session.clone()));
+            .push(AfterHook::SessionCreated(session.clone()))
+            .await;
         Ok(session)
     }
     async fn create_verification_record(
@@ -356,9 +333,8 @@ where
             .await?;
         if let Some(snapshot) = &snapshot {
             self.pending_after
-                .lock()
-                .await
-                .push(AfterCreate::VerificationRecord(snapshot.clone()));
+                .push(AfterHook::VerificationRecordCreated(snapshot.clone()))
+                .await;
         }
         Ok(snapshot)
     }
@@ -372,9 +348,8 @@ where
             .create_verification_in_tx(self.tx, verification)
             .await?;
         self.pending_after
-            .lock()
-            .await
-            .push(AfterCreate::Verification(verification.clone()));
+            .push(AfterHook::VerificationCreated(verification.clone()))
+            .await;
         Ok(verification)
     }
 }
@@ -393,50 +368,21 @@ where
         work: Box<TransactionWork<S>>,
     ) -> AuthResult<BoxedTransactionValue> {
         let tx = self.db.begin().await.map_err(map_db_err)?;
-        let tx_store = SeaOrmTransaction {
+        let tx_store = SeaOrmStoreTransaction {
             store: self,
             tx: &tx,
-            pending_after: tokio::sync::Mutex::new(Vec::new()),
+            pending_after: AfterHookQueue::new(),
         };
         let outcome = work(&tx_store).await;
-        let pending_after = tx_store.pending_after.into_inner();
+        let pending_after = tx_store.pending_after;
         match outcome {
             Ok(value) => {
                 tx.commit().await.map_err(map_db_err)?;
-                // The pinned adapter defers after callbacks until commit and
-                // drops them on rollback. Preserve each created snapshot and
-                // its operation order, including interleaved model writes.
-                let hook_context = self.hook_context(None);
-                for created in pending_after {
-                    for hook in self.hooks() {
-                        match &created {
-                            AfterCreate::User(user) => {
-                                hook.after_create_user(user, &hook_context).await?;
-                            }
-                            AfterCreate::Account(account) => {
-                                hook.after_create_account(account, &hook_context).await?;
-                            }
-                            AfterCreate::Session(session) => {
-                                hook.after_create_session(session, &hook_context).await?;
-                            }
-                            AfterCreate::SessionUpdated(session) => {
-                                hook.after_update_session(session, &hook_context).await?;
-                            }
-                            AfterCreate::SessionUpdateMissing(token) => {
-                                hook.after_update_session_missing(token, &hook_context)
-                                    .await?;
-                            }
-                            AfterCreate::VerificationRecord(snapshot) => {
-                                hook.after_create_verification_record(snapshot, &hook_context)
-                                    .await?;
-                            }
-                            AfterCreate::Verification(verification) => {
-                                hook.after_create_verification(verification, &hook_context)
-                                    .await?;
-                            }
-                        }
-                    }
-                }
+                // After hooks run only once the auth writes are durable, in
+                // operation order; rollback drops them.
+                pending_after
+                    .run(self.hooks(), &self.hook_context(None))
+                    .await?;
                 Ok(value)
             }
             Err(err) => {
@@ -461,19 +407,29 @@ pub(crate) fn map_db_err(err: DbErr) -> AuthError {
     }
 }
 
-pub(crate) fn cancelled_by_hook(operation: &str) -> AuthError {
-    AuthError::forbidden(format!("{operation} cancelled by database hook"))
-}
-
-fn parse_rfc3339(value: &str, field: &str) -> Result<DateTime<Utc>, AuthError> {
-    DateTime::parse_from_rfc3339(value)
-        .map(|dt| dt.with_timezone(&Utc))
-        .map_err(|_error| AuthError::bad_request(format!("Invalid RFC 3339 timestamp for {field}")))
-}
-
-fn parse_optional_rfc3339(
-    value: Option<&str>,
-    field: &str,
-) -> Result<Option<DateTime<Utc>>, AuthError> {
-    value.map(|inner| parse_rfc3339(inner, field)).transpose()
+/// Bind raw numeric `LIMIT`/`OFFSET` values; the database validates them.
+pub(crate) fn bind_page(
+    mut statement: sea_orm::Statement,
+    limit: Option<f64>,
+    offset: Option<f64>,
+) -> AuthResult<sea_orm::Statement> {
+    use sea_orm::{DbBackend, Value, Values};
+    use std::fmt::Write;
+    for (clause, number) in [("LIMIT", limit), ("OFFSET", offset)] {
+        if let Some(number) = number {
+            let values = statement.values.get_or_insert_with(|| Values(Vec::new()));
+            let placeholder = match statement.db_backend {
+                DbBackend::Postgres => format!("${}", values.0.len() + 1),
+                DbBackend::Sqlite | DbBackend::MySql => "?".into(),
+                _ => {
+                    return Err(AuthError::not_implemented(
+                        "Raw numeric pages are not supported by this database backend",
+                    ));
+                }
+            };
+            _ = write!(statement.sql, " {clause} {placeholder}");
+            values.0.push(Value::Double(Some(number)));
+        }
+    }
+    Ok(statement)
 }

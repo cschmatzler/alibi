@@ -27,7 +27,7 @@ Authorization review traced raw account subject through callback resolution befo
 Final commands and measured results are recorded below after validation. Per user instruction, no full_client_compat, scripts/compat.sh or scripts/check.sh is run by this workpiece.
 
 - SQLx official-client Notion owner: **42/42**, **1,324 assertions**, `/tmp/notion154-sqlx2.log`.
-- SeaORM actual Source/native Notion + Cloudflare + account-management owners: **92/92**, **2,968 assertions**, `/tmp/notion154-seaorm.log`. Selected fixture was built with `--features seaorm2`; setup/observation connection does not replace the selected auth store.
+- SeaORM actual Source/native Notion + Cloudflare + account-management owners: **92/92**, **2,968 assertions**, `/tmp/notion154-seaorm.log`. Selected fixture was built with `--features seaorm`; setup/observation connection does not replace the selected auth store.
 - Negative controls: temporarily replacing fixed `owner=user` with `workspace` and using Basic for refresh causes both selected primary owners to fail on the native owner parameter and actual refresh receipt respectively (**0/2**, `/tmp/notion154-negative.log`). Source passes the same assertions; final production was restored before final proof. These are deliberate mutation controls, not a claim of running a historical missing-factory baseline.
 - TypeScript `bun run typecheck` passes. Final Rust lint/format and refreshed-main proof follow below.
 - The extended absent-scope owner reproduces the empty-login-hint regression before its repair: Source omits the hint; native emitted `login_hint=` (**0/1**, `/tmp/notion154-emptyhint-before.log`). The builder now preserves published truthiness for dedicated policies, while retaining legacy generic behavior.

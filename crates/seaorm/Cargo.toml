@@ -25,5 +25,9 @@ tokio = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 
-sea-orm = { version = "2.0.4", features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite", "macros", "with-chrono", "with-json", "with-uuid"] }
-sea-orm-migration = { version = "2.0.4", features = ["runtime-tokio-rustls", "sqlx-postgres", "sqlx-sqlite"] }
+sea-orm = { version = "2.0.4", features = ["runtime-tokio", "sqlx-postgres", "sqlx-sqlite", "macros", "with-chrono", "with-json", "with-uuid"] }
+sea-orm-migration = { version = "2.0.4", features = ["runtime-tokio", "sqlx-postgres", "sqlx-sqlite"] }
+
+[features]
+tls-rustls = ["sea-orm/runtime-tokio-rustls", "sea-orm-migration/runtime-tokio-rustls"]
+tls-native-tls = ["sea-orm/runtime-tokio-native-tls", "sea-orm-migration/runtime-tokio-native-tls"]

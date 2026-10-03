@@ -1,5 +1,5 @@
 //! The auth store under test. Fixtures share one SQLite database, served
-//! through `SqlxStore`; the `seaorm2` feature serves it through `SeaOrmStore`.
+//! through `SqlxStore`; the `seaorm` feature serves it through `SeaOrmStore`.
 //! Fixture scaffolding (seeding, inspection, resets) uses the SeaORM connection
 //! in both builds; it is test setup, not the store being compared.
 
@@ -8,9 +8,9 @@ use better_auth_seaorm::DatabaseConnection;
 use better_auth_seaorm::sea_orm::DbErr;
 use std::sync::Arc;
 
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 mod selected {
-    pub use better_auth_seaorm::SeaOrm as Backend;
+    pub use better_auth_seaorm::SeaOrmBackend as Backend;
     pub use better_auth_seaorm::SeaOrmHookContext as HookContext;
     pub use better_auth_seaorm::SeaOrmStore as Store;
     pub use better_auth_seaorm::store::entities;
@@ -18,9 +18,9 @@ mod selected {
         better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 }
 
-#[cfg(not(feature = "seaorm2"))]
+#[cfg(not(feature = "seaorm"))]
 mod selected {
-    pub use better_auth_sqlx::Sqlx as Backend;
+    pub use better_auth_sqlx::SqlxBackend as Backend;
     pub use better_auth_sqlx::SqlxHookContext as HookContext;
     pub use better_auth_sqlx::SqlxStore as Store;
     pub use better_auth_sqlx::store::entities;
@@ -30,7 +30,7 @@ mod selected {
 
 pub(crate) use selected::*;
 
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 impl better_auth_seaorm::sea_orm::ActiveModelBehavior
     for crate::session_field_model::application_session::ActiveModel
 {
@@ -41,11 +41,11 @@ pub(crate) fn store<S: AuthSchema>(
     config: impl Into<Arc<AuthConfig>>,
     database: DatabaseConnection,
 ) -> Store<S> {
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     {
         Store::new(config, database)
     }
-    #[cfg(not(feature = "seaorm2"))]
+    #[cfg(not(feature = "seaorm"))]
     {
         Store::new(config, database.get_sqlite_connection_pool().clone())
     }
@@ -53,11 +53,11 @@ pub(crate) fn store<S: AuthSchema>(
 
 /// Install the bundled schema with the selected store's migrator.
 pub(crate) async fn migrate(database: &DatabaseConnection) -> Result<(), DbErr> {
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     {
         better_auth_seaorm::store::__private_test_support::migrator::run_migrations(database).await
     }
-    #[cfg(not(feature = "seaorm2"))]
+    #[cfg(not(feature = "seaorm"))]
     {
         let pool = better_auth_sqlx::SqlxPool::from(database.get_sqlite_connection_pool().clone());
         better_auth_sqlx::store::__private_test_support::migrator::run_migrations(&pool)
@@ -67,7 +67,7 @@ pub(crate) async fn migrate(database: &DatabaseConnection) -> Result<(), DbErr> 
 }
 
 /// Read rows into the selected backend's model type.
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 pub(crate) async fn rows<M>(
     database: &DatabaseConnection,
     sql: &str,
@@ -87,7 +87,7 @@ where
 }
 
 /// Read rows into the selected backend's model type.
-#[cfg(not(feature = "seaorm2"))]
+#[cfg(not(feature = "seaorm"))]
 pub(crate) async fn rows<M>(
     database: &DatabaseConnection,
     sql: &str,
@@ -112,7 +112,7 @@ pub(crate) async fn hook_execute(
     sql: &str,
     args: Vec<String>,
 ) -> better_auth::AuthResult<u64> {
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     {
         use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
         database
@@ -125,7 +125,7 @@ pub(crate) async fn hook_execute(
             .map(|result| result.rows_affected())
             .map_err(|error| better_auth::AuthError::internal(error.to_string()))
     }
-    #[cfg(not(feature = "seaorm2"))]
+    #[cfg(not(feature = "seaorm"))]
     {
         let pool = database
             .as_sqlite()
@@ -143,7 +143,7 @@ pub(crate) async fn hook_execute(
 }
 
 /// Read rows on a hook's transaction when present, otherwise its connection.
-#[cfg(feature = "seaorm2")]
+#[cfg(feature = "seaorm")]
 pub(crate) async fn hook_rows<M>(
     context: &HookContext<'_>,
     sql: &str,
@@ -161,7 +161,7 @@ where
 }
 
 /// Read rows on a hook's transaction when present, otherwise its connection.
-#[cfg(not(feature = "seaorm2"))]
+#[cfg(not(feature = "seaorm"))]
 pub(crate) async fn hook_rows<M>(
     context: &HookContext<'_>,
     sql: &str,
@@ -191,11 +191,11 @@ where
 
 /// A SeaORM connection to the store's database, for fixture scaffolding.
 pub(crate) fn database_of<S: AuthSchema>(store: &Store<S>) -> DatabaseConnection {
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     {
         store.connection().clone()
     }
-    #[cfg(not(feature = "seaorm2"))]
+    #[cfg(not(feature = "seaorm"))]
     {
         let pool = store
             .pool()
@@ -209,9 +209,9 @@ pub(crate) fn database_of<S: AuthSchema>(store: &Store<S>) -> DatabaseConnection
 /// Install the process tracing subscriber. The SQLx build adds the layer that
 /// reports statements to [`observe`] callbacks.
 pub(crate) fn init_tracing() {
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     tracing_subscriber::fmt::init();
-    #[cfg(not(feature = "seaorm2"))]
+    #[cfg(not(feature = "seaorm"))]
     {
         use tracing_subscriber::{EnvFilter, Layer, filter::Targets, prelude::*};
         tracing_subscriber::registry()
@@ -231,7 +231,7 @@ pub(crate) fn init_tracing() {
 #[derive(Clone)]
 pub(crate) struct Observed {
     pub(crate) database: DatabaseConnection,
-    #[cfg(not(feature = "seaorm2"))]
+    #[cfg(not(feature = "seaorm"))]
     span: tracing::Span,
 }
 
@@ -242,7 +242,7 @@ pub(crate) fn observe(
     database: &DatabaseConnection,
     callback: impl Fn(&str) + Send + Sync + 'static,
 ) -> Observed {
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     {
         let mut database = database.clone();
         database.set_metric_callback(move |info| {
@@ -252,7 +252,7 @@ pub(crate) fn observe(
         });
         Observed { database }
     }
-    #[cfg(not(feature = "seaorm2"))]
+    #[cfg(not(feature = "seaorm"))]
     {
         Observed {
             database: database.clone(),
@@ -267,11 +267,11 @@ impl Observed {
         &self,
         router: axum::Router<T>,
     ) -> axum::Router<T> {
-        #[cfg(feature = "seaorm2")]
+        #[cfg(feature = "seaorm")]
         {
             router
         }
-        #[cfg(not(feature = "seaorm2"))]
+        #[cfg(not(feature = "seaorm"))]
         {
             use tracing::Instrument;
             let span = self.span.clone();
@@ -284,7 +284,7 @@ impl Observed {
     }
 }
 
-#[cfg(not(feature = "seaorm2"))]
+#[cfg(not(feature = "seaorm"))]
 mod statements {
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicU64, Ordering};

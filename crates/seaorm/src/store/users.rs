@@ -1,8 +1,9 @@
-use super::{SeaOrmStore, cancelled_by_hook, map_db_err};
+use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmUserModel};
 use async_trait::async_trait;
 use better_auth_core::AuthUser;
 use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::adapter::cancelled_by_hook;
 use better_auth_core::store::{NumericTextInput, UserStore};
 use better_auth_core::types::{CreateUser, ListUsersParams, UpdateUser};
 use chrono::Utc;
@@ -52,7 +53,7 @@ where
         let mut model = S::User::new_active(user_id, create_user, now);
         let backend = db.get_database_backend();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
-            let value = crate::session_fields::prepare_value(db, &column, value).await?;
+            let value = crate::additional_fields::prepare_value(db, &column, value).await?;
             S::User::set_additional_field(&mut model, column, value, backend)?;
         }
         S::User::prepare_json_metadata(&mut model, db.get_database_backend())?;
@@ -185,7 +186,7 @@ where
         let query = <S::User as SeaOrmUserModel>::Entity::find()
             .filter(<S::User as SeaOrmUserModel>::id_column().is_in(user_ids));
         let backend = self.connection().get_database_backend();
-        let statement = super::numeric_page::bind_page(query.build(backend), Some(limit), None)?;
+        let statement = super::bind_page(query.build(backend), Some(limit), None)?;
         <S::User as SeaOrmUserModel>::Entity::find()
             .from_raw_sql(statement)
             .all(self.connection())
@@ -255,7 +256,7 @@ where
         let backend = self.connection().get_database_backend();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value =
-                crate::session_fields::prepare_value(self.connection(), &column, value).await?;
+                crate::additional_fields::prepare_value(self.connection(), &column, value).await?;
             S::User::set_additional_field(&mut active, column, value, backend)?;
         }
         S::User::prepare_json_metadata(&mut active, self.connection().get_database_backend())?;

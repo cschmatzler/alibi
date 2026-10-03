@@ -1,34 +1,34 @@
 //! A concrete application-owned session schema shared by SDK and native consumers.
 #[cfg_attr(
-    feature = "seaorm2",
+    feature = "seaorm",
     expect(
         unreachable_pub,
         reason = "SeaORM public Entity requires public Model and Relation associated types"
     )
 )]
 pub mod application_session {
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     use better_auth::seaorm::JsonMetadata;
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
-    #[cfg(not(feature = "seaorm2"))]
+    #[cfg(not(feature = "seaorm"))]
     use better_auth::sqlx::JsonMetadata;
     use chrono::{DateTime, Utc};
     use serde::Serialize;
     #[cfg_attr(
-        feature = "seaorm2",
+        feature = "seaorm",
         derive(better_auth::seaorm::AuthEntity, DeriveEntityModel),
         sea_orm(table_name = "sessions")
     )]
     #[cfg_attr(
-        not(feature = "seaorm2"),
+        not(feature = "seaorm"),
         derive(better_auth::sqlx::AuthEntity, sqlx::FromRow),
         auth(table = "sessions")
     )]
     #[derive(Clone, Debug, PartialEq, Serialize)]
     #[auth(role = "session", secondary_storage)]
     pub struct Model {
-        #[cfg_attr(feature = "seaorm2", sea_orm(primary_key, auto_increment = false))]
+        #[cfg_attr(feature = "seaorm", sea_orm(primary_key, auto_increment = false))]
         pub id: String,
         pub expires_at: DateTime<Utc>,
         pub token: String,
@@ -48,10 +48,10 @@ pub mod application_session {
         pub transformed: Option<String>,
         pub validated: Option<String>,
         pub callback: Option<String>,
-        #[cfg_attr(feature = "seaorm2", sea_orm(column_type = "JsonBinary"))]
+        #[cfg_attr(feature = "seaorm", sea_orm(column_type = "JsonBinary"))]
         pub payload: JsonMetadata,
     }
-    #[cfg(feature = "seaorm2")]
+    #[cfg(feature = "seaorm")]
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
     pub enum Relation {}
     // Each consumer implements `ActiveModelBehavior` for SeaORM: the native

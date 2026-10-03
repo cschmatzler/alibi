@@ -101,7 +101,7 @@ client-typecheck,reference-typecheck}.log`. Complete focused API-key family
 passes 60 owners/3248 assertions in `/tmp/api-key-source-usage-family-final.log`.
 Pinned Source self-control passes 5/392 in
 `/tmp/api-key-source-usage-source-final.log`. The downstream feature consumer
-passes `rustls,axum,seaorm2,redis-cache` without default features in
+passes `rustls,axum,seaorm,redis-cache` without default features in
 `/tmp/api-key-source-usage-consumer-rustls.log`; edition formatting and diff checks
 pass. No full canonical gate was run.
 

@@ -117,8 +117,16 @@ syn = { version = "2", features = ["full"] }
 
 [features]
 default = ["native-tls", "sqlx"]
-native-tls = ["better-auth-api/native-tls"]
-rustls = ["better-auth-api/rustls"]
+native-tls = [
+    "better-auth-api/native-tls",
+    "better-auth-sqlx?/tls-native-tls",
+    "better-auth-seaorm?/tls-native-tls",
+]
+rustls = [
+    "better-auth-api/rustls",
+    "better-auth-sqlx?/tls-rustls",
+    "better-auth-seaorm?/tls-rustls",
+]
 axum = [
     "dep:axum",
     "dep:tower",
@@ -126,8 +134,10 @@ axum = [
     "better-auth-core/axum",
     "better-auth-api/axum",
 ]
-seaorm2 = ["dep:better-auth-seaorm"]
-sqlx = ["dep:better-auth-sqlx"]
+seaorm = ["dep:better-auth-seaorm"]
+sqlx = ["sqlx-sqlite", "sqlx-postgres"]
+sqlx-sqlite = ["dep:better-auth-sqlx", "better-auth-sqlx/sqlite"]
+sqlx-postgres = ["dep:better-auth-sqlx", "better-auth-sqlx/postgres"]
 redis-cache = ["better-auth-core/redis-cache"]
 
 [dependencies]
@@ -135,7 +145,7 @@ redis-cache = ["better-auth-core/redis-cache"]
 better-auth-core = { workspace = true }
 better-auth-api = { workspace = true }
 better-auth-seaorm = { workspace = true, optional = true }
-better-auth-sqlx = { workspace = true, optional = true }
+better-auth-sqlx = { workspace = true, optional = true, default-features = false }
 
 # Asynchronous runtime
 tokio = { workspace = true }

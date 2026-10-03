@@ -1,17 +1,15 @@
 use chrono::{DateTime, Utc};
 
-bundled_model! {
-    table = "jwks", primary_key = "id";
-    #[derive(Clone, Debug, PartialEq, Eq)]
-    pub struct Model {
-        pub id: String = "id",
-        pub public_key: String = "public_key",
-        pub private_key: String = "private_key",
-        pub created_at: DateTime<Utc> = "created_at",
-        pub expires_at: Option<DateTime<Utc>> = "expires_at",
-        pub alg: Option<String> = "alg",
-        pub crv: Option<String> = "crv",
-    }
+#[derive(Clone, Debug, PartialEq, Eq, sqlx::FromRow, crate::SqlxModel)]
+#[auth(table = "jwks")]
+pub struct Model {
+    pub id: String,
+    pub public_key: String,
+    pub private_key: String,
+    pub created_at: DateTime<Utc>,
+    pub expires_at: Option<DateTime<Utc>>,
+    pub alg: Option<String>,
+    pub crv: Option<String>,
 }
 
 impl From<Model> for better_auth_core::types::Jwk {

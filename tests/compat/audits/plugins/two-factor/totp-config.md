@@ -61,7 +61,7 @@ helper; no production export exists solely for testing.
 
 Both pinned runtimes pass 12 SDK scenarios / 204 assertions
 (`/tmp/two-factor-totp-sdk-final.log`). Nine existing native two-factor tests,
-client TypeScript, production workspace Clippy with seaorm2, Rust formatting
+client TypeScript, production workspace Clippy with seaorm, Rust formatting
 and diff checks pass. The coordinator owns the full canonical gates and shared
 inventory. No schema, migration, lockfile or comparator changes occur here.
 
