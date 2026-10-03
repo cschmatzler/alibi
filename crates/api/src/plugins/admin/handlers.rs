@@ -596,7 +596,7 @@ pub(in crate::plugins) async fn impersonate_user_core(
     if target.banned() {
         if target
             .ban_expires()
-            .is_some_and(|expires| expires <= Utc::now())
+            .is_some_and(|expires| expires < Utc::now())
         {
             drop(
                 ctx.database
@@ -635,7 +635,18 @@ pub(in crate::plugins) async fn impersonate_user_core(
         active_organization_id: None,
     };
 
-    let session = ctx.database.create_session_record(create_session).await?;
+    let session = ctx
+        .database
+        .create_session_record(create_session)
+        .await
+        .map_err(|error| match error {
+            AuthError::SessionCreationCancelled => AuthError::Upstream {
+                status: 500,
+                code: "FAILED_TO_CREATE_USER",
+                message: "Failed to create user",
+            },
+            other => other,
+        })?;
     let token = session.token().to_owned();
     let response = SessionUserResponse {
         session: ctx.session_view(&session),

@@ -163,8 +163,25 @@ fn compare_option_dates(
 /// Apply Better Auth admin list-users semantics to a user collection.
 #[must_use]
 pub fn apply_list_users<T: AuthUser + Clone>(
+    users: Vec<T>,
+    params: &ListUsersParams,
+) -> (Vec<T>, usize) {
+    apply(users, params, false)
+}
+
+/// Filter and page users whose configured column order was applied by storage.
+#[must_use]
+pub fn apply_list_users_presorted<T: AuthUser + Clone>(
+    users: Vec<T>,
+    params: &ListUsersParams,
+) -> (Vec<T>, usize) {
+    apply(users, params, true)
+}
+
+fn apply<T: AuthUser + Clone>(
     mut users: Vec<T>,
     params: &ListUsersParams,
+    presorted: bool,
 ) -> (Vec<T>, usize) {
     users.retain(|user| matches_search(user, params) && matches_filter(user, params));
 
@@ -179,27 +196,29 @@ pub fn apply_list_users<T: AuthUser + Clone>(
             "desc"
         });
 
-    users.sort_by(|lhs, rhs| match sort_by {
-        "id" | "_id" | "email" | "name" | "username" | "role" => compare_option_strings(
-            string_field(lhs, sort_by).as_deref(),
-            string_field(rhs, sort_by).as_deref(),
-            sort_direction,
-        ),
-        "createdAt" | "updatedAt" | "banExpires" => compare_option_dates(
-            date_field(lhs, sort_by),
-            date_field(rhs, sort_by),
-            sort_direction,
-        ),
-        "banned" => match sort_direction {
-            "asc" => bool_field(lhs, sort_by).cmp(&bool_field(rhs, sort_by)),
-            _ => bool_field(rhs, sort_by).cmp(&bool_field(lhs, sort_by)),
-        },
-        _ => compare_option_dates(
-            date_field(lhs, "createdAt"),
-            date_field(rhs, "createdAt"),
-            sort_direction,
-        ),
-    });
+    if !presorted {
+        users.sort_by(|lhs, rhs| match sort_by {
+            "id" | "_id" | "email" | "name" | "username" | "role" => compare_option_strings(
+                string_field(lhs, sort_by).as_deref(),
+                string_field(rhs, sort_by).as_deref(),
+                sort_direction,
+            ),
+            "createdAt" | "updatedAt" | "banExpires" => compare_option_dates(
+                date_field(lhs, sort_by),
+                date_field(rhs, sort_by),
+                sort_direction,
+            ),
+            "banned" => match sort_direction {
+                "asc" => bool_field(lhs, sort_by).cmp(&bool_field(rhs, sort_by)),
+                _ => bool_field(rhs, sort_by).cmp(&bool_field(lhs, sort_by)),
+            },
+            _ => compare_option_dates(
+                date_field(lhs, "createdAt"),
+                date_field(rhs, "createdAt"),
+                sort_direction,
+            ),
+        });
+    }
 
     let total = users.len();
     let offset = params.offset.unwrap_or(0);

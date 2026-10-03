@@ -48,7 +48,8 @@ where
         for hook in self.hooks() {
             if hook
                 .before_create_session(&mut create_session, &hook_context)
-                .await?
+                .await
+                .map_err(better_auth_core::store::adapter::callback_error)?
                 .is_cancelled()
             {
                 return Err(AuthError::SessionCreationCancelled);
@@ -116,7 +117,9 @@ where
         };
         if tx.is_none() && complete {
             for hook in self.hooks() {
-                hook.after_create_session(&session, &hook_context).await?;
+                hook.after_create_session(&session, &hook_context)
+                    .await
+                    .map_err(better_auth_core::store::adapter::callback_error)?;
             }
         }
         Ok(session)
@@ -356,7 +359,9 @@ where
     async fn complete_secondary_session_creation(&self, session: &S::Session) -> AuthResult<()> {
         let context = self.hook_context(None);
         for hook in self.hooks() {
-            hook.after_create_session(session, &context).await?;
+            hook.after_create_session(session, &context)
+                .await
+                .map_err(better_auth_core::store::adapter::callback_error)?;
         }
         Ok(())
     }

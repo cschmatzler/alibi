@@ -18,6 +18,16 @@ pub fn cancelled_by_hook(operation: &str) -> AuthError {
     AuthError::forbidden(format!("{operation} cancelled by database hook"))
 }
 
+/// Preserve an ordinary application callback exception as an empty HTTP 500.
+/// Explicit API errors retain their public status and body.
+#[must_use]
+pub fn callback_error(error: AuthError) -> AuthError {
+    match error {
+        AuthError::Internal(_) => AuthError::CallbackFailure(Box::new(error)),
+        other => other,
+    }
+}
+
 /// Parse an RFC 3339 timestamp of a string-dated plugin field.
 ///
 /// # Errors
@@ -66,7 +76,10 @@ impl<S: AuthSchema> AfterHook<S> {
         match self {
             Self::UserCreated(user) => hook.after_create_user(user, ctx).await,
             Self::AccountCreated(account) => hook.after_create_account(account, ctx).await,
-            Self::SessionCreated(session) => hook.after_create_session(session, ctx).await,
+            Self::SessionCreated(session) => hook
+                .after_create_session(session, ctx)
+                .await
+                .map_err(callback_error),
             Self::SessionUpdated(session) => hook.after_update_session(session, ctx).await,
             Self::SessionUpdateMissing(token) => {
                 hook.after_update_session_missing(token, ctx).await

@@ -643,7 +643,7 @@ async fn issue_user_session_inner<S: better_auth_core::AuthSchema>(
     if admin_plugin_enabled(ctx) && user.banned() {
         if user
             .ban_expires()
-            .is_some_and(|expires| expires <= Utc::now())
+            .is_some_and(|expires| expires < Utc::now())
         {
             drop(
                 ctx.database

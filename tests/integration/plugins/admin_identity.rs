@@ -17,6 +17,9 @@ type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 macro_rules! user_contract {
     () => {
         impl AuthUser for Model {
+            fn additional_fields(&self) -> better_auth_core::field_policy::FieldOutput {
+                serde_json::json!({"score":self.score,"reviewedAt":self.reviewed_at.to_rfc3339_opts(chrono::SecondsFormat::Millis,true),"profile":self.profile}).as_object().cloned().unwrap_or_default()
+            }
             fn id(&self) -> Cow<'_, str> {
                 Cow::Owned(self.id.to_string())
             }
@@ -50,15 +53,9 @@ macro_rules! user_contract {
             fn role(&self) -> Option<&str> {
                 self.role.as_deref()
             }
-            fn banned(&self) -> bool {
-                false
-            }
-            fn ban_reason(&self) -> Option<&str> {
-                None
-            }
-            fn ban_expires(&self) -> Option<chrono::DateTime<Utc>> {
-                None
-            }
+            fn banned(&self) -> bool { self.banned }
+            fn ban_reason(&self) -> Option<&str> { self.ban_reason.as_deref() }
+            fn ban_expires(&self) -> Option<chrono::DateTime<Utc>> { self.ban_expires }
             fn metadata(&self) -> &serde_json::Value {
                 &serde_json::Value::Null
             }
@@ -79,6 +76,12 @@ mod sqlx_numeric {
         pub email: Option<String>,
         pub name: Option<String>,
         pub role: Option<String>,
+        pub banned: bool,
+        pub ban_reason: Option<String>,
+        pub ban_expires: Option<chrono::DateTime<Utc>>,
+        pub score: i64,
+        pub reviewed_at: chrono::DateTime<Utc>,
+        pub profile: serde_json::Value,
         pub created_at: chrono::DateTime<Utc>,
         pub updated_at: chrono::DateTime<Utc>,
     }
@@ -95,6 +98,18 @@ mod sqlx_numeric {
         }
         fn created_at_column() -> &'static str {
             "created_at"
+        }
+        fn list_users_column(field: &str) -> Option<&'static str> {
+            match field {
+                "id" => Some("id"),
+                "email" => Some("email"),
+                "name" => Some("name"),
+                "createdAt" => Some("created_at"),
+                "score" => Some("score"),
+                "reviewedAt" => Some("reviewed_at"),
+                "profile" => Some("profile"),
+                _ => None,
+            }
         }
         fn parse_id(id: &str) -> AuthResult<SqlValue> {
             Ok(SqlValue::BigInt(Some(id.parse().map_err(|_| {
@@ -113,6 +128,9 @@ mod sqlx_numeric {
             row.set("email", user.email);
             row.set("name", user.name);
             row.set("role", user.role);
+            row.set("banned", user.banned.unwrap_or(false));
+            row.set("ban_reason", Option::<String>::None);
+            row.set("ban_expires", Option::<chrono::DateTime<Utc>>::None);
             row.set("created_at", now);
             row.set("updated_at", now);
             row
@@ -127,6 +145,15 @@ mod sqlx_numeric {
             if let Some(role) = user.role {
                 row.set("role", role);
             }
+            if let Some(banned) = user.banned {
+                row.set("banned", banned);
+            }
+            row.set("ban_reason", user.ban_reason);
+            if let Some(expiry) = user.ban_expires {
+                row.set("ban_expires", expiry);
+            } else if user.banned == Some(false) {
+                row.set("ban_expires", Option::<chrono::DateTime<Utc>>::None);
+            }
             row.set("updated_at", now);
         }
     }
@@ -136,6 +163,29 @@ mod sqlx_numeric {
         type Session = better_auth_sqlx::store::entities::session::Model;
         type Account = better_auth_sqlx::store::entities::account::Model;
         type Verification = better_auth_sqlx::store::entities::verification::Model;
+    }
+    #[tokio::test]
+    #[ignore = "requires CLOCK_REALTIME proof clock; see admin closure audit"]
+    async fn strict_expiry_and_mutation_hook_order() -> TestResult {
+        let pool = SqlxPool::connect("sqlite::memory:").await?;
+        better_auth_sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
+        let raw = pool.as_sqlite().ok_or("not SQLite")?.clone();
+        install(&raw).await?;
+        let hooks = Arc::new(AdmissionEvents::default());
+        exercise_admission(
+            Arc::new(SqlxStore::<Schema>::new(config(), pool).with_hooks(vec![hooks.clone()])),
+            &raw,
+            hooks,
+        )
+        .await
+    }
+    #[tokio::test]
+    async fn configured_scalar_filters_and_physical_paging() -> TestResult {
+        let pool = SqlxPool::connect("sqlite::memory:").await?;
+        better_auth_sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
+        let raw = pool.as_sqlite().ok_or("not SQLite")?.clone();
+        install(&raw).await?;
+        exercise_custom_query(Arc::new(SqlxStore::<Schema>::new(config(), pool)), &raw).await
     }
     #[tokio::test]
     async fn date_sort_default_pages_ascending() -> TestResult {
@@ -168,6 +218,12 @@ mod seaorm_numeric {
         pub email: Option<String>,
         pub name: Option<String>,
         pub role: Option<String>,
+        pub banned: bool,
+        pub ban_reason: Option<String>,
+        pub ban_expires: Option<chrono::DateTime<Utc>>,
+        pub score: i64,
+        pub reviewed_at: chrono::DateTime<Utc>,
+        pub profile: serde_json::Value,
         pub created_at: chrono::DateTime<Utc>,
         pub updated_at: chrono::DateTime<Utc>,
     }
@@ -192,6 +248,18 @@ mod seaorm_numeric {
         fn created_at_column() -> Column {
             Column::CreatedAt
         }
+        fn list_users_column(field: &str) -> Option<Column> {
+            match field {
+                "id" => Some(Column::Id),
+                "email" => Some(Column::Email),
+                "name" => Some(Column::Name),
+                "createdAt" => Some(Column::CreatedAt),
+                "score" => Some(Column::Score),
+                "reviewedAt" => Some(Column::ReviewedAt),
+                "profile" => Some(Column::Profile),
+                _ => None,
+            }
+        }
         fn parse_id(id: &str) -> AuthResult<i64> {
             id.parse()
                 .map_err(|_| better_auth_core::AuthError::bad_request("invalid numeric ID"))
@@ -206,6 +274,12 @@ mod seaorm_numeric {
                 email: Set(user.email),
                 name: Set(user.name),
                 role: Set(user.role),
+                banned: Set(user.banned.unwrap_or(false)),
+                ban_reason: Set(None),
+                ban_expires: Set(None),
+                score: Set(0),
+                reviewed_at: Set(now),
+                profile: Set(serde_json::json!({})),
                 created_at: Set(now),
                 updated_at: Set(now),
             }
@@ -220,6 +294,15 @@ mod seaorm_numeric {
             if let Some(role) = user.role {
                 row.role = Set(Some(role));
             }
+            if let Some(banned) = user.banned {
+                row.banned = Set(banned);
+            }
+            row.ban_reason = Set(user.ban_reason);
+            if let Some(expiry) = user.ban_expires {
+                row.ban_expires = Set(expiry);
+            } else if user.banned == Some(false) {
+                row.ban_expires = Set(None);
+            }
             row.updated_at = Set(now);
         }
     }
@@ -229,6 +312,37 @@ mod seaorm_numeric {
         type Session = better_auth_seaorm::store::entities::session::Model;
         type Account = better_auth_seaorm::store::entities::account::Model;
         type Verification = better_auth_seaorm::store::entities::verification::Model;
+    }
+    #[tokio::test]
+    #[ignore = "requires CLOCK_REALTIME proof clock; see admin closure audit"]
+    async fn strict_expiry_and_mutation_hook_order() -> TestResult {
+        let database = better_auth::seaorm::Database::connect("sqlite::memory:").await?;
+        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+            .await?;
+        let raw = database.get_sqlite_connection_pool().clone();
+        install(&raw).await?;
+        let hooks = Arc::new(AdmissionEvents::default());
+        exercise_admission(
+            Arc::new(
+                SeaOrmStore::<Schema>::new(config(), database).with_hooks(vec![hooks.clone()]),
+            ),
+            &raw,
+            hooks,
+        )
+        .await
+    }
+    #[tokio::test]
+    async fn configured_scalar_filters_and_physical_paging() -> TestResult {
+        let database = better_auth::seaorm::Database::connect("sqlite::memory:").await?;
+        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+            .await?;
+        let raw = database.get_sqlite_connection_pool().clone();
+        install(&raw).await?;
+        exercise_custom_query(
+            Arc::new(SeaOrmStore::<Schema>::new(config(), database)),
+            &raw,
+        )
+        .await
     }
     #[tokio::test]
     async fn date_sort_default_pages_ascending() -> TestResult {
@@ -259,13 +373,27 @@ mod seaorm_numeric {
 }
 
 fn config() -> AuthConfig {
-    AuthConfig::new("numeric-admin-identity-secret-at-least-32")
+    let mut config = AuthConfig::new("numeric-admin-identity-secret-at-least-32");
+    for (name, schema, column) in [
+        ("score", serde_json::json!({"type":"number"}), "score"),
+        (
+            "reviewedAt",
+            serde_json::json!({"type":"string","format":"date-time"}),
+            "reviewed_at",
+        ),
+        ("profile", serde_json::json!({"type":"object"}), "profile"),
+    ] {
+        let mut field = better_auth_core::field_policy::FieldConfig::new(schema);
+        field.field_name = Some(column.into());
+        _ = config.user.additional_fields.insert(name.into(), field);
+    }
+    config
 }
 async fn install(raw: &sqlx::SqlitePool) -> TestResult {
     _ = sqlx::query(sqlx::AssertSqlSafe("DROP TABLE users"))
         .execute(raw)
         .await?;
-    _ = sqlx::query(sqlx::AssertSqlSafe("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, name TEXT, role TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")).execute(raw).await?;
+    _ = sqlx::query(sqlx::AssertSqlSafe("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT, name TEXT, role TEXT, banned BOOLEAN NOT NULL DEFAULT 0, ban_reason TEXT, ban_expires TEXT, score INTEGER NOT NULL DEFAULT 0, reviewed_at TEXT NOT NULL DEFAULT '2020-01-01T00:00:00Z', profile TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, updated_at TEXT NOT NULL)")).execute(raw).await?;
     for (id, role) in [
         (1, "operator"),
         (2, "operator,elevated"),
@@ -274,7 +402,7 @@ async fn install(raw: &sqlx::SqlitePool) -> TestResult {
         (43, "user"),
     ] {
         _ = sqlx::query(sqlx::AssertSqlSafe(
-            "INSERT INTO users VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO users (id,email,name,role,created_at,updated_at) VALUES (?, ?, ?, ?, ?, ?)",
         ))
         .bind(id)
         .bind(format!("id-{id}@identity.fixture.test"))
@@ -571,5 +699,558 @@ async fn exercise_query<S: AuthSchema>(
         serde_json::json!({"adapter": std::any::type_name::<S>(), "before": before, "after": after})
     );
     assert_eq!(after, before);
+    Ok(())
+}
+
+// Scalar application columns were previously filtered against a fixed built-in
+// projection. Numeric physical ordering must also precede pagination.
+async fn exercise_custom_query<S: AuthSchema>(
+    store: Arc<dyn AuthStore<S>>,
+    raw: &sqlx::SqlitePool,
+) -> TestResult {
+    for (id, score, day, tier) in [
+        (1, 1, 1, "a"),
+        (2, 20, 5, "b"),
+        (3, 10, 4, "a"),
+        (42, 3, 3, "b"),
+        (43, 2, 2, "a"),
+    ] {
+        _ = sqlx::query(sqlx::AssertSqlSafe(
+            "UPDATE users SET score=?, reviewed_at=?, profile=?, created_at=?, updated_at=? WHERE id=?",
+        ))
+        .bind(score)
+        .bind(format!("2020-01-{day:02}T00:00:00Z"))
+        .bind(serde_json::json!({"tier":tier}).to_string())
+        .bind("2019-01-01T00:00:00Z")
+        .bind("2019-01-01T00:00:00Z")
+        .bind(id)
+        .execute(raw)
+        .await?;
+    }
+    let auth = AuthBuilder::<S>::new(config())
+        .store_arc(Arc::clone(&store))
+        .plugin(AdminPlugin::with_config(AdminConfig {
+            admin_user_ids: Some(vec!["1".into()]),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let session = store
+        .create_session(CreateSession {
+            user_id: "1".into(),
+            expires_at: Utc::now() + chrono::Duration::days(7),
+            additional_fields: Default::default(),
+            token: None,
+            active_team_id: None,
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+        })
+        .await?;
+    let before = [
+        rows(raw, "users").await?,
+        rows(raw, "accounts").await?,
+        rows(raw, "sessions").await?,
+    ];
+    for (field, operator, value, sort, direction, expected, total) in [
+        ("score", "gte", "3", "score", "asc", vec!["3", "2"], 3),
+        ("score", "gte", "3", "score", "desc", vec!["3", "42"], 3),
+        (
+            "reviewedAt",
+            "gt",
+            "2020-01-01T00:00:00Z",
+            "reviewedAt",
+            "asc",
+            vec!["42", "3"],
+            4,
+        ),
+        (
+            "profile",
+            "eq",
+            r#"{"tier":"a"}"#,
+            "score",
+            "asc",
+            vec!["43", "3"],
+            3,
+        ),
+        ("profile", "contains", "b", "id", "asc", vec!["42"], 2),
+        ("score", "gte", "3", "profile", "asc", vec!["2", "42"], 3),
+        ("score", "lt", "3", "id", "desc", vec!["1"], 2),
+    ] {
+        let mut request = AuthRequest::new(better_auth_core::HttpMethod::Get, "/admin/list-users");
+        _ = request.headers.insert(
+            "cookie".into(),
+            format!(
+                "better-auth.session_token={}",
+                better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    session.token(),
+                    config().current_secret()
+                )
+            ),
+        );
+        for (key, value) in [
+            ("filterField", field),
+            ("filterOperator", operator),
+            ("filterValue", value),
+            ("sortBy", sort),
+            ("sortDirection", direction),
+            ("offset", "1"),
+            ("limit", "2"),
+        ] {
+            _ = request.query.insert(key.into(), value.into());
+        }
+        let response = auth.handle_request(request).await?;
+        let body: serde_json::Value = serde_json::from_slice(&response.body)?;
+        let after = [
+            rows(raw, "users").await?,
+            rows(raw, "accounts").await?,
+            rows(raw, "sessions").await?,
+        ];
+        println!(
+            "custom observation: {}",
+            serde_json::json!({"adapter":std::any::type_name::<S>(),"field":field,"operator":operator,"value":value,"sort":sort,"direction":direction,"status":response.status,"body":body,"before":before,"after":after})
+        );
+        assert_eq!(response.status, 200);
+        let ids = body["users"]
+            .as_array()
+            .ok_or("no users")?
+            .iter()
+            .map(|u| u["id"].as_str().ok_or("no id"))
+            .collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(ids, expected, "{field} {operator} {direction}");
+        assert_eq!(body["total"], serde_json::json!(total));
+        assert_eq!(body["offset"], 1);
+        assert_eq!(body["limit"], 2);
+        assert_eq!(after, before);
+    }
+    Ok(())
+}
+
+#[derive(Default)]
+struct AdmissionEvents {
+    mode: std::sync::atomic::AtomicU8,
+    events: tokio::sync::Mutex<Vec<String>>,
+}
+impl AdmissionEvents {
+    async fn event(&self, event: &str, failure: u8) -> AuthResult<()> {
+        self.events.lock().await.push(event.into());
+        let mode = self.mode.load(std::sync::atomic::Ordering::SeqCst);
+        if mode == failure {
+            return Err(better_auth_core::AuthError::Upstream {
+                status: 409,
+                code: "HOOK_REFUSED".into(),
+                message: "configured hook refused".into(),
+            });
+        }
+        if (mode == 2 && event == "session-before")
+            || (mode == 8 && event == "user-before")
+            || (mode == 9 && event == "user-after")
+            || (mode == 10 && event == "session-after")
+        {
+            return Err(better_auth_core::AuthError::internal(
+                "ordinary hook failure",
+            ));
+        }
+        Ok(())
+    }
+}
+#[async_trait::async_trait]
+impl<S: AuthSchema, B: better_auth_core::store::HookBackend>
+    better_auth_core::store::DatabaseHooks<S, B> for AdmissionEvents
+{
+    async fn before_create_session(
+        &self,
+        input: &mut CreateSession,
+        _: &better_auth_core::store::DatabaseHookContext<'_, B>,
+    ) -> AuthResult<better_auth_core::store::HookControl> {
+        self.event("session-before", 1).await?;
+        if self.mode.load(std::sync::atomic::Ordering::SeqCst) == 5 {
+            input.user_id = "42".into();
+        }
+        if self.mode.load(std::sync::atomic::Ordering::SeqCst) == 6 {
+            return Ok(better_auth_core::store::HookControl::Cancel);
+        }
+        Ok(better_auth_core::store::HookControl::Continue)
+    }
+    async fn after_create_session(
+        &self,
+        _: &S::Session,
+        _: &better_auth_core::store::DatabaseHookContext<'_, B>,
+    ) -> AuthResult<()> {
+        self.event("session-after", 7).await
+    }
+    async fn before_update_user(
+        &self,
+        _: &str,
+        _: &mut UpdateUser,
+        _: &better_auth_core::store::DatabaseHookContext<'_, B>,
+    ) -> AuthResult<better_auth_core::store::HookControl> {
+        self.event("user-before", 3).await?;
+        Ok(better_auth_core::store::HookControl::Continue)
+    }
+    async fn after_update_user(
+        &self,
+        _: &S::User,
+        _: &better_auth_core::store::DatabaseHookContext<'_, B>,
+    ) -> AuthResult<()> {
+        self.event("user-after", 4).await
+    }
+}
+
+async fn exercise_admission<S: AuthSchema>(
+    store: Arc<dyn AuthStore<S>>,
+    raw: &sqlx::SqlitePool,
+    hooks: Arc<AdmissionEvents>,
+) -> TestResult {
+    let clock = Utc::now();
+    assert_eq!(
+        clock.timestamp_millis(),
+        1893456000000,
+        "run under supplied frozen realtime clock"
+    );
+    assert_eq!(clock.timestamp_subsec_nanos(), 0);
+    let auth = AuthBuilder::<S>::new(config())
+        .store_arc(store.clone())
+        .plugin(AdminPlugin::with_config(AdminConfig {
+            admin_user_ids: Some(vec!["1".into()]),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let original = store
+        .create_session(CreateSession {
+            user_id: "1".into(),
+            expires_at: clock + chrono::Duration::days(7),
+            additional_fields: Default::default(),
+            token: None,
+            active_team_id: None,
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+        })
+        .await?;
+    let peer = store
+        .create_session(CreateSession {
+            user_id: "42".into(),
+            expires_at: clock + chrono::Duration::days(7),
+            additional_fields: Default::default(),
+            token: None,
+            active_team_id: None,
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+        })
+        .await?;
+    for (mode, delta, target, status, events, cleared, inserted) in [
+        (0, 0, "00042", 403, vec![], false, false),
+        (0, 1, "00042", 403, vec![], false, false),
+        (
+            0,
+            -1,
+            "00042",
+            200,
+            vec![
+                "user-before",
+                "user-after",
+                "session-before",
+                "session-after",
+            ],
+            true,
+            true,
+        ),
+        (
+            1,
+            -1,
+            "00042",
+            409,
+            vec!["user-before", "user-after", "session-before"],
+            true,
+            false,
+        ),
+        (
+            2,
+            -1,
+            "00042",
+            500,
+            vec!["user-before", "user-after", "session-before"],
+            true,
+            false,
+        ),
+        (3, -1, "00042", 409, vec!["user-before"], false, false),
+        (
+            4,
+            -1,
+            "00042",
+            409,
+            vec!["user-before", "user-after"],
+            true,
+            false,
+        ),
+        (
+            5,
+            0,
+            "43",
+            200,
+            vec!["session-before", "session-after"],
+            false,
+            true,
+        ),
+        (
+            6,
+            -1,
+            "00042",
+            500,
+            vec!["user-before", "user-after", "session-before"],
+            true,
+            false,
+        ),
+        (
+            7,
+            -1,
+            "00042",
+            409,
+            vec![
+                "user-before",
+                "user-after",
+                "session-before",
+                "session-after",
+            ],
+            true,
+            true,
+        ),
+        (8, -1, "00042", 500, vec!["user-before"], false, false),
+        (
+            9,
+            -1,
+            "00042",
+            500,
+            vec!["user-before", "user-after"],
+            true,
+            false,
+        ),
+        (
+            10,
+            -1,
+            "00042",
+            500,
+            vec![
+                "user-before",
+                "user-after",
+                "session-before",
+                "session-after",
+            ],
+            true,
+            true,
+        ),
+    ] {
+        _=sqlx::query(sqlx::AssertSqlSafe("UPDATE users SET banned=1,ban_reason='boundary',ban_expires=?,updated_at=? WHERE id=42")).bind(clock+chrono::Duration::milliseconds(delta)).bind(clock).execute(raw).await?;
+        hooks.events.lock().await.clear();
+        hooks.mode.store(mode, std::sync::atomic::Ordering::SeqCst);
+        let before = [
+            rows(raw, "users").await?,
+            rows(raw, "accounts").await?,
+            rows(raw, "sessions").await?,
+        ];
+        let mut request = AuthRequest::new(
+            better_auth_core::HttpMethod::Post,
+            "/admin/impersonate-user",
+        );
+        _ = request
+            .headers
+            .insert("origin".into(), config().base_url.clone());
+        _ = request
+            .headers
+            .insert("content-type".into(), "application/json".into());
+        _ = request.headers.insert(
+            "cookie".into(),
+            format!(
+                "better-auth.session_token={}",
+                better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    original.token(),
+                    config().current_secret()
+                )
+            ),
+        );
+        request.body = Some(serde_json::to_vec(&serde_json::json!({"userId":target}))?);
+        let response = auth.handle_request(request).await?;
+        let observed = hooks.events.lock().await.clone();
+        let after = [
+            rows(raw, "users").await?,
+            rows(raw, "accounts").await?,
+            rows(raw, "sessions").await?,
+        ];
+        println!(
+            "admission observation: {}",
+            serde_json::json!({"adapter":std::any::type_name::<S>(),"clockMs":clock.timestamp_millis(),"mode":mode,"delta":delta,"target":target,"status":response.status,"body":String::from_utf8_lossy(&response.body),"events":observed,"before":before,"after":after})
+        );
+        assert_eq!(response.status, status, "mode={mode} delta={delta}");
+        assert_eq!(observed, events);
+        let target = store
+            .get_user_by_id("42")
+            .await?
+            .ok_or("missing principal")?;
+        assert_eq!(target.banned(), !cleared);
+        assert_eq!(target.ban_expires().is_none(), cleared);
+        assert_eq!(target.ban_reason().is_none(), cleared);
+        if !cleared {
+            assert_eq!(before[0], after[0]);
+        } else {
+            for row in before[0].iter().filter(|row| !row.starts_with("[42,")) {
+                assert!(after[0].contains(row));
+            }
+        }
+        assert_eq!(before[1], after[1]);
+        assert_eq!(after[2].len(), before[2].len() + usize::from(inserted));
+        for row in &before[2] {
+            assert!(after[2].contains(row));
+        }
+        assert_eq!(
+            store
+                .get_session(peer.token())
+                .await?
+                .ok_or("peer removed")?
+                .user_id(),
+            "42"
+        );
+        if status == 200 {
+            let body: serde_json::Value = serde_json::from_slice(&response.body)?;
+            assert_eq!(body["session"]["userId"], "42");
+            assert_eq!(body["session"]["impersonatedBy"], "1");
+        }
+        if matches!(mode, 2 | 8 | 9 | 10) {
+            assert!(
+                response.body.is_empty(),
+                "ordinary callback exception must remain empty HTTP 500"
+            );
+        }
+    }
+    Ok(())
+}
+
+// No database uses cookie-only sessions and the real initialized memory store.
+// This guards the shared sign-in ban check independently of impersonation.
+#[tokio::test]
+#[ignore = "requires CLOCK_REALTIME proof clock; see admin closure audit"]
+async fn no_database_strict_expiry() -> TestResult {
+    let clock = Utc::now();
+    assert_eq!(clock.timestamp_millis(), 1893456000000);
+    let auth =
+        AuthBuilder::without_database(AuthConfig::new("numeric-admin-identity-secret-at-least-32"))
+            .plugin(AdminPlugin::new())
+            .plugin(better_auth::plugins::EmailPasswordPlugin::new())
+            .build()
+            .await?;
+    let store = auth.store();
+    let actor = store
+        .create_user(CreateUser {
+            id: Some("1".into()),
+            email: Some("actor@no-db.fixture.test".into()),
+            name: Some("Actor".into()),
+            role: Some("admin".into()),
+            ..Default::default()
+        })
+        .await?;
+    let target = store
+        .create_user(CreateUser {
+            id: Some("42".into()),
+            email: Some("target@no-db.fixture.test".into()),
+            name: Some("Target".into()),
+            ..Default::default()
+        })
+        .await?;
+    let _account = store
+        .create_account(better_auth_core::CreateAccount {
+            user_id: target.id().into_owned(),
+            account_id: target.id().into_owned(),
+            provider_id: "credential".into(),
+            password: Some(auth.context().hash_password(None, "Password123!").await?),
+            additional_fields: Default::default(),
+            access_token: None,
+            refresh_token: None,
+            id_token: None,
+            access_token_expires_at: None,
+            refresh_token_expires_at: None,
+            scope: None,
+        })
+        .await?;
+    let original = store
+        .create_session(CreateSession {
+            user_id: actor.id().into_owned(),
+            expires_at: clock + chrono::Duration::days(7),
+            additional_fields: Default::default(),
+            token: None,
+            active_team_id: None,
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+        })
+        .await?;
+    for path in ["/admin/impersonate-user", "/sign-in/email"] {
+        for (delta, status) in [(0, 403), (1, 403), (-1, 200)] {
+            drop(
+                store
+                    .update_user(
+                        target.id().as_ref(),
+                        UpdateUser {
+                            banned: Some(true),
+                            ban_reason: Some("boundary".into()),
+                            ban_expires: Some(Some(clock + chrono::Duration::milliseconds(delta))),
+                            ..Default::default()
+                        },
+                    )
+                    .await?,
+            );
+            let before = serde_json::json!({"actor":store.get_user_by_id(actor.id().as_ref()).await?,"target":store.get_user_by_id(target.id().as_ref()).await?,"accounts":store.get_user_accounts(target.id().as_ref()).await?,"actorSessions":store.get_user_sessions(actor.id().as_ref()).await?,"targetSessions":store.get_user_sessions(target.id().as_ref()).await?});
+            let mut request = AuthRequest::new(better_auth_core::HttpMethod::Post, path);
+            _ = request
+                .headers
+                .insert("origin".into(), auth.config().base_url.clone());
+            _ = request
+                .headers
+                .insert("content-type".into(), "application/json".into());
+            _ = request.headers.insert(
+                "cookie".into(),
+                format!(
+                    "better-auth.session_token={}",
+                    better_auth_core::utils::cookie_utils::sign_cookie_value(
+                        original.token(),
+                        auth.config().current_secret()
+                    )
+                ),
+            );
+            request.body = Some(serde_json::to_vec(&if path == "/sign-in/email" {
+                serde_json::json!({"email":"target@no-db.fixture.test","password":"Password123!"})
+            } else {
+                serde_json::json!({"userId":target.id()})
+            })?);
+            let response = auth.handle_request(request).await?;
+            let after = serde_json::json!({"actor":store.get_user_by_id(actor.id().as_ref()).await?,"target":store.get_user_by_id(target.id().as_ref()).await?,"accounts":store.get_user_accounts(target.id().as_ref()).await?,"actorSessions":store.get_user_sessions(actor.id().as_ref()).await?,"targetSessions":store.get_user_sessions(target.id().as_ref()).await?});
+            println!(
+                "no-db observation: {}",
+                serde_json::json!({"path":path,"delta":delta,"clockMs":clock.timestamp_millis(),"status":response.status,"body":String::from_utf8_lossy(&response.body),"before":before,"after":after})
+            );
+            assert_eq!(response.status, status);
+            assert_eq!(before["actor"], after["actor"]);
+            assert_eq!(before["accounts"], after["accounts"]);
+            assert_eq!(before["actorSessions"], after["actorSessions"]);
+            if status == 403 {
+                assert_eq!(before, after);
+            } else {
+                let body: serde_json::Value = serde_json::from_slice(&response.body)?;
+                assert_eq!(body["user"]["id"], target.id().as_ref());
+                assert!(
+                    !store
+                        .get_user_by_id(target.id().as_ref())
+                        .await?
+                        .ok_or("missing target")?
+                        .banned()
+                );
+            }
+        }
+    }
     Ok(())
 }
