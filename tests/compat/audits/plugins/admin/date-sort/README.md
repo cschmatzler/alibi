@@ -38,7 +38,7 @@ owner module, with `--features sqlx,seaorm date_sort_default_pages_ascending
 -- --nocapture`: 2 passed, 2 unrelated identity scenarios filtered out. The
 temporary manifest target was removed. Focused Clippy passes with warnings
 denied except the existing core `double_must_use` warning, explicitly allowed;
-no unrestricted strict-Clippy pass is claimed. Scoped Rust and Source formatting,
+no unrestricted strict-Clippy pass is claimed. Source lint uses the available Oxlint 1.85.0. Scoped Rust and Source formatting,
 Source lint and `git diff --check` pass. Existing unrelated repository-wide
 formatting differences are outside this change. No full suite or coverage gate
 was run. GitHub Actions is disabled; there are no hosted check results.
@@ -53,3 +53,9 @@ replayed for that rebase.
 This bounded repair does not close #198. Custom numeric/JSON interactions,
 alternative access-control operators and strict ban-expiry equality/mutation
 hook ordering remain open. Canonical target identity behavior is unchanged.
+
+For normal owner execution, use `cargo test --locked --test integration
+--features sqlx,seaorm date_sort_default_pages_ascending -- --nocapture`.
+The isolated validation target used here imported that same module without
+compiling unrelated integration owners. Local environment and target setup
+remain in `/tmp/admin-query198-evidence/native.sh` and `focused-main.rs`.
