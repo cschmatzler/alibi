@@ -69,3 +69,12 @@ ID/role classification, elevated actor permission, and canonical session
 creation. The repair occurs before ban mutation or session creation and changes
 only the target identity supplied to the existing predicate. No new production
 seam, permission grant, metadata projection or fail-open path was introduced.
+
+Raw response pairing (`paired-raw-responses.json`) compares all ten native
+observations with the five Source cases: status, error code/message, resolved
+user ID and exact session userId/impersonatedBy match. Generated IDs/tokens,
+runtime timestamps and the application schemas' different optional/default
+fields are excluded explicitly; full physical preservation is independently
+asserted within each runtime. Concurrent stderr initially interleaved the raw
+JSON, so the existing test binary was replayed serially for capture only
+(`after-raw-serial.log`), without a rebuild or broader tests.
