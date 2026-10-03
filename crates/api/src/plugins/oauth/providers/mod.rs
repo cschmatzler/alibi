@@ -1,3 +1,5 @@
+mod reddit;
+pub use reddit::RedditOptions;
 mod railway;
 pub use railway::RailwayOptions;
 mod paypal;
@@ -397,6 +399,8 @@ pub struct OAuthAuthorizationPolicy {
     pub fixed_authorization_params: Vec<(String, String)>,
     /// Optional application client key sent in authorization-code forms only.
     pub authorization_code_client_key: Option<String>,
+    /// Trusted provider headers applied to authorization-code grants only.
+    pub authorization_code_headers: Vec<(String, String)>,
     /// Required by private_key_jwt; invoked afresh for each real token grant.
     pub client_assertion: Option<OAuthClientAssertion>,
     /// Exact configured refresh scope, including an explicitly empty value.
@@ -435,6 +439,7 @@ impl Default for OAuthAuthorizationPolicy {
             refresh_token_endpoint_auth: None,
             fixed_authorization_params: Vec::new(),
             authorization_code_client_key: None,
+            authorization_code_headers: Vec::new(),
             client_assertion: None,
             refresh_scope: None,
             response_type: "code".into(),

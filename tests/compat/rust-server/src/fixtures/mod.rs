@@ -91,3 +91,4 @@ pub(crate) mod polar_provider_fixture;
 
 pub(crate) mod paypal_provider_fixture;
 pub(crate) mod railway_provider_fixture;
+pub(crate) mod reddit_provider_fixture;

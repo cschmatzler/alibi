@@ -475,6 +475,20 @@ async fn provider_token_request(
         .map_err(|error| AuthError::internal(format!("Token HTTP client failed: {error}")))?
         .post(&provider.token_url)
         .header("Accept", "application/json");
+    let mut request = request;
+    if grant_type == OAuthTokenGrant::AuthorizationCode
+        && let Some(policy) = &provider.authorization
+    {
+        let mut headers = reqwest::header::HeaderMap::new();
+        for (name, value) in &policy.authorization_code_headers {
+            let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
+                .map_err(|error| AuthError::config(format!("Invalid code grant header: {error}")))?;
+            let value = reqwest::header::HeaderValue::from_str(value)
+                .map_err(|error| AuthError::config(format!("Invalid code grant header: {error}")))?;
+            drop(headers.insert(name, value));
+        }
+        request = request.headers(headers);
+    }
     let request = match provider.authorization.as_ref().and_then(|policy| {
         if grant_type == OAuthTokenGrant::RefreshToken {
             policy

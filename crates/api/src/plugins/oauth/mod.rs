@@ -35,7 +35,7 @@ pub use providers::{
     OAuthProvider, OAuthRefreshTokenHandler, OAuthScopeEncoding, OAuthScopeOrder,
     OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse, PayPalEnvironment, PayPalOptions, PaybinOptions,
-    PolarOptions, RailwayOptions,
+    PolarOptions, RailwayOptions, RedditOptions,
 };
 pub(in crate::plugins) use state::{
     CapturedOAuthServerContext, OAuthServerContext, RecoveredOAuthServerContext,

@@ -85,6 +85,7 @@ import { createPhoneFixture } from "./fixtures/phone-fixture";
 import { physicalCookieProfiles } from "./fixtures/physical-cookie-fixture";
 import { polarProviderFixture } from "./fixtures/polar-provider-fixture";
 import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
+import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
@@ -632,6 +633,7 @@ const passkeyAuthentication = passkeyAuthenticationFixture(
   `http://localhost:${PORT}`,
 );
 const railwayFixture = railwayProviderFixture(authOptions);
+const redditFixture = redditProviderFixture(authOptions);
 const polarFixture = polarProviderFixture(authOptions);
 const paypalFixture = paypalProviderFixture(authOptions);
 const notionFixture = notionProviderFixture(authOptions);
@@ -674,6 +676,9 @@ for (const [path, instance] of railwayFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of paypalFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of redditFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of notionFixture.profiles) {
@@ -1877,7 +1882,9 @@ const server = Bun.serve({
       const managedProxyControl = await managedProxyProfiles.handle(request);
       if (managedProxyControl) return managedProxyControl;
       const railwayControl = await railwayFixture.handle(request);
+      const redditControl = await redditFixture.handle(request);
       if (railwayControl) return railwayControl;
+      if (redditControl) return redditControl;
       const polarControl = await polarFixture.handle(request);
       if (polarControl) return polarControl;
       const paypalControl = await paypalFixture.handle(request);
@@ -2774,6 +2781,7 @@ const server = Bun.serve({
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
         await apiKeyStorage.reset();
         railwayFixture.reset();
+        redditFixture.reset();
         polarFixture.reset();
         notionFixture.reset();
         paypalFixture.reset();
