@@ -1,0 +1,13 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 21.9ms
+• Running devenv:files
+✓ Running devenv:files in 26.9ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 12.9ms
+   Compiling better-auth-macros v1.0.0-alpha.3 (/tmp/better-auth-popup-132/crates/derive)
+    Checking better-auth-schema-registry v1.0.0-alpha.3 (/tmp/better-auth-popup-132/crates/schema-registry)
+    Checking better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-popup-132/crates/core)
+    Checking better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-popup-132/crates/api)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.25s
+mbx[cache]: 3 hits, 0 misses, 1 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: every checkout believes it owns 683.7 GiB of outputs. the disk keeps one copy and says nothing.

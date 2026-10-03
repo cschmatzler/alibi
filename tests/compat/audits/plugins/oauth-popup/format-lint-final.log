@@ -1,0 +1,7 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 22.4ms
+• Running devenv:files
+✓ Running devenv:files in 32.5ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 13.0ms
+Finished in 19ms on 3 files using 20 threads.

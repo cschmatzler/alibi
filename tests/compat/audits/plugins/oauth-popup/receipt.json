@@ -1,0 +1,31 @@
+{
+  "issue": 132,
+  "referenceVersion": "1.7.6",
+  "testedBase": "9220de08",
+  "testedHead": "e84ee2f8c42bfc77306df4a2b88f658c577210e5",
+  "rebasedBase": "27424d9f0b7c350f840bbc793dc51c7e9fa80c68",
+  "rebasedProductionHead": "fb5b9a2f8e5934d00708f3319e711391b326b564",
+  "publishedTarballSha256": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+  "actionsEnabled": false,
+  "selectedOwner": "tests/plugins/oauth-popup/popup.test.ts",
+  "assertionsPerAdapter": 232,
+  "fullSweepsRun": false,
+  "sourceModules": {
+    "index": {
+      "sha256": "ebd2004fe7f62b5d35d8c32798d356d2a2ea5e2f731654aa005488f31ba1c14e",
+      "privateLinkCount": 1
+    },
+    "client": {
+      "sha256": "6190ffd8b6eda0a771d7004f4603fe0db994e563a6792f0e0a4dd9a772c5f7e9",
+      "privateLinkCount": 1
+    },
+    "constants": {
+      "sha256": "a62a6d8c748bd4ff71c1ee4d4b596a748a66db06600e3c7e90580cac3ec4cbe9",
+      "privateLinkCount": 1
+    }
+  },
+  "artifacts": {
+    "sqlx": "fe645b34bfe29b3604995240592d36fb718b79fc476c06a03a611b5937b0c4b7",
+    "seaorm": "0012d6122d828d4690b84ce7fbdcbeb4dfc3af5a12b74c66ed06075a76eeb8d2"
+  }
+}

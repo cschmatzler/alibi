@@ -1,0 +1,15 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 16.6ms
+• Running devenv:files
+✓ Running devenv:files in 41.2ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 12.3ms
+bun test v1.4.2 (744846f84)
+
+tests/compat/client-tests/tests/plugins/oauth-popup/popup.test.ts:
+(pass) OAuth popup trusted start, stored lifecycle and official Chromium completion [13827.57ms]
+
+ 1 pass
+ 0 fail
+ 232 expect() calls
+Ran 1 test across 1 file. [14.05s]
