@@ -1,0 +1,15 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/session/cookie-cache.test.ts:
+(pass) compact cache chunking attributes uses real writer limits and canonical server chunk indices with base-cookie precedence [669.49ms]
+(pass) compact override-fractional uses only session_data override for header and payload lifetime [440.28ms]
+(pass) compact override-nan uses only session_data override for header and payload lifetime [443.42ms]
+(pass) compact override-positive uses only session_data override for header and payload lifetime [437.38ms]
+(pass) compact override-zero uses only session_data override for header and payload lifetime [467.68ms]
+(pass) compact override-negative uses only session_data override for header and payload lifetime [464.67ms]
+
+ 6 pass
+ 32 filtered out
+ 0 fail
+ 228 expect() calls
+Ran 6 tests across 1 file. [3.00s]

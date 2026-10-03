@@ -1,0 +1,32 @@
+{
+  "install": "private copy, no package mutation",
+  "packages": [
+    {
+      "name": "better-auth",
+      "version": "1.7.6",
+      "integrity": "sha512-WTMqOpmTTj+oBoX7zzPOzL85342Upyf+/v0IkH1kvGRA85lV4JGRFIYMIRKqvjZ6ShsuL5VX/c9C13jtoZXcKA==",
+      "publishedFilesVerified": 465,
+      "mismatches": [],
+      "nonPrivateInodes": [],
+      "packageMutation": false
+    },
+    {
+      "name": "@better-auth/core",
+      "version": "1.7.6",
+      "integrity": "sha512-yBDDO0J4VCHT1qEZtzj6aMexX4etyLesitoxehcWHzPrzYqrFHwe/hgskye+imlGhQVOysuljMg8M8BA6GrtIg==",
+      "publishedFilesVerified": 350,
+      "mismatches": [],
+      "nonPrivateInodes": [],
+      "packageMutation": false
+    },
+    {
+      "name": "better-call",
+      "version": "1.4.0",
+      "integrity": "sha512-bBKOT4vv1kZLDgxVePdilk/Jwkn+dtRRsmi3DzHcDP+WnswyVl6dR59l2HEeP/0cB+bDoopASAesWDPIdd/zZA==",
+      "publishedFilesVerified": 90,
+      "mismatches": [],
+      "nonPrivateInodes": [],
+      "packageMutation": false
+    }
+  ]
+}
