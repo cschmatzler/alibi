@@ -317,6 +317,22 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
           }
         }
 
+        // Phone invalid attempts recreate the live row. Source selects by
+        // createdAt DESC with no tie breaker, so rotation needs a strictly
+        // later millisecond, even when the HTTP requests finish in one tick.
+        const orderedPhoneRotation = plugin === "phone" && budget === Infinity;
+        const livePhoneRows = orderedPhoneRotation ? await storedVerification(ctx, key) : [];
+        if (orderedPhoneRotation) {
+          expect(livePhoneRows).toHaveLength(1);
+          expect(livePhoneRows[0]?.value).toBe(`${code}:4`);
+          const createdAt = Date.parse(z.string().parse(livePhoneRows[0]?.createdAt));
+          expect(Number.isFinite(createdAt)).toBe(true);
+          expect(createdAt).toBeLessThanOrEqual(Date.now());
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.max(2, createdAt + 2 - Date.now())),
+          );
+        }
+
         const reissued = await issue();
         expect(reissued.error).toBeNull();
 
@@ -342,6 +358,14 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
         const nextStored = await storedVerification(ctx, nextKey);
         expect(nextStored).toHaveLength(plugin !== "magic-link" && budget === Infinity ? 2 : 1);
         expect(nextStored[0]?.id).not.toBe(stored[0]?.id);
+        if (orderedPhoneRotation) {
+          expect(Date.parse(z.string().parse(nextStored[0]?.createdAt))).toBeGreaterThan(
+            Date.parse(z.string().parse(livePhoneRows[0]?.createdAt)),
+          );
+          expect(nextStored[0]?.value).toBe(`${nextCode}:0`);
+          expect(nextStored[1]).toEqual(livePhoneRows[0]);
+          expect((await client.getSession()).data).toBeNull();
+        }
 
         // Rotation appends a row when a live proof remains; consumption clears the identifier.
         const verified = await consume(nextCode);
