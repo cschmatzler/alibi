@@ -1565,6 +1565,16 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
+        self.inner.list_jwks().await
+    }
+    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<Jwk>> {
+        self.inner.get_jwk_by_id(id).await
+    }
+    async fn create_jwk(&self, data: CreateJwk) -> AuthResult<Jwk> {
+        self.inner.create_jwk(data).await
+    }
+
     async fn create_user_record(
         &self,
         create_user: CreateUser,
@@ -1940,6 +1950,25 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     ) -> AuthResult<Option<S::Session>> {
         Err(AuthError::NotImplemented(
             "Transactional secondary session updates are unsupported".into(),
+        ))
+    }
+
+    /// Read the managed signing keyring on this transaction's connection.
+    async fn list_jwks(&self) -> AuthResult<Vec<Jwk>> {
+        Err(crate::AuthError::config(
+            "Transactional JWKS reads are unsupported by this store",
+        ))
+    }
+    /// Find a managed signing key on this transaction's connection.
+    async fn get_jwk_by_id(&self, _id: &str) -> AuthResult<Option<Jwk>> {
+        Err(crate::AuthError::config(
+            "Transactional JWKS reads are unsupported by this store",
+        ))
+    }
+    /// Persist a newly generated managed signing key in this transaction.
+    async fn create_jwk(&self, _data: CreateJwk) -> AuthResult<Jwk> {
+        Err(crate::AuthError::config(
+            "Transactional JWKS writes are unsupported by this store",
         ))
     }
 

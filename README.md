@@ -362,6 +362,25 @@ See [Tests](tests/README.md) for the unit, integration and compat tiers, and
 [Compatibility testing](tests/compat/README.md) for focused checks and the
 compatibility contract.
 
+### Session cookie cache formats
+
+Enable `CookieCacheConfig` with `CookieCacheStrategy::Compact`, `Jwt`, or `Jwe`.
+The JWT default signs with the current authentication secret. To use the local
+JWT plugin keyring instead, combine `CookieCacheStrategy::Jwt` with
+`JwtPluginConfig { session_cookie_cache: true, ..Default::default() }`.
+Remote JWT signers cannot protect session cookies in this mode.
+
+JWE cookies use direct-key AES-256-CBC/HMAC-SHA512, with the session-specific
+HKDF salt and a protected key thumbprint. Managed secrets write with the current
+key and read retained keys; retiring a key rejects its encrypted cookies.
+The separately signed session token still uses only the current secret.
+
+Every format retains the configured public user/session projection, cache
+version, expiry, cookie chunk lifecycle and existing authoritative-read guards.
+A cache snapshot does not reconstruct a database model or bypass a sensitive
+operation's physical-session or credential checks.
+
+
 ## License
 
 Licensed under either of:
