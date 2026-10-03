@@ -390,6 +390,8 @@ pub(crate) async fn profiles(
         "org-numeric-async-infinity",
         "org-numeric-async-negative-infinity",
         "org-deletion-disabled",
+        "org-team-hooks",
+        "org-team-factory",
         "org-teams",
         "org-teams-no-default",
         "org-teams-limited",
@@ -451,6 +453,7 @@ pub(crate) async fn profiles(
             roles: (name == "org-roles-delegated").then(delegated_roles),
             ..Default::default()
         };
+        super::team_config_fixture::configure(name, database, &mut organization);
         if name == "org-roles-delegated" {
             let _ = organization
                 .access_control
@@ -504,6 +507,10 @@ struct OrganizationQuery {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum TeamOperation {
+    TeamConfigEvidence {
+        #[serde(rename = "organizationId")]
+        organization_id: String,
+    },
     NumericEvents {
         #[serde(rename = "organizationId")]
         organization_id: String,
@@ -619,6 +626,7 @@ struct ServerRequest {
     profile: Option<String>,
     #[serde(flatten)]
     operation: TeamOperation,
+    authority: Option<String>,
 }
 
 fn timestamp(value: DateTime<Utc>) -> String {
@@ -652,7 +660,7 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
     let operation_profiles = profiles.clone();
     let operation_database = database.clone();
     router
-        .route("/__test/organization-api", post(move |Json(body): Json<ServerRequest>| {
+        .route("/__test/organization-api", post(move |headers: axum::http::HeaderMap, Json(body): Json<ServerRequest>| {
             let profiles = operation_profiles.clone();
             let database = operation_database.clone();
             async move {
@@ -661,7 +669,10 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                     return failure(AuthError::bad_request("Unknown fixture profile"));
                 };
                 let plugin = OrganizationPlugin::with_config(profile.config.clone());
+                let headers = headers.iter().filter_map(|(name,value)|value.to_str().ok().map(|value|(name.as_str().to_owned(),value.to_owned()))).collect::<HashMap<_,_>>();
+                let signed = body.authority.as_deref() == Some("headers");
                 let result = match body.operation {
+                    TeamOperation::TeamConfigEvidence {organization_id} => super::team_config_fixture::evidence(&database, &organization_id).await,
                     TeamOperation::NumericEvents {organization_id} => numeric_events().lock().map_err(|_| AuthError::internal("Numeric observations unavailable")).map(|events| json!(events.get(&organization_id).cloned().unwrap_or_default())),
                     TeamOperation::OrphanOrganization { organization_id } => {
                         async {
@@ -702,13 +713,13 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                         control_role_policy(profile, organization_id, stage).await
                     },
                     TeamOperation::CreateTeam { organization_id, name } => {
-                        plugin.create_team(profile.auth.context(), CreateTeam {
-                            organization_id, name, updated_at: Some(Utc::now()),
-                        }).await.and_then(|team| serde_json::to_value(team).map_err(AuthError::from))
+                        let data = CreateTeam {organization_id, name, updated_at: Some(Utc::now())};
+                        let result = if signed {plugin.create_team_with_headers(profile.auth.context(), &headers, data).await} else {plugin.create_team(profile.auth.context(), data).await};
+                        result.and_then(|team| serde_json::to_value(team).map_err(AuthError::from))
                     }
                     TeamOperation::RemoveTeam { organization_id, team_id } => {
-                        plugin.remove_team(profile.auth.context(), &organization_id, &team_id).await
-                            .map(|()| json!({"message":"Team removed successfully."}))
+                        let result = if signed {plugin.remove_team_with_headers(profile.auth.context(), &headers, &organization_id, &team_id).await} else {plugin.remove_team(profile.auth.context(), &organization_id, &team_id).await};
+                        result.map(|()| json!({"message":"Team removed successfully."}))
                     }
                     TeamOperation::SeedMember { organization_id, id, email, name } => {
                         async {
@@ -736,7 +747,7 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                         }.await
                     },
                 };
-                match result { Ok(value) => (StatusCode::OK, Json(value)), Err(error) => failure(error) }
+                match result { Ok(value) => (StatusCode::OK, Json(value)), Err(error) if signed => (StatusCode::from_u16(error.status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR), Json(json!({"status":error.status_code()}))), Err(error) => failure(error) }
             }
         }))
         .route("/__test/organization-state", get(move |Query(query): Query<OrganizationQuery>| {

@@ -65,6 +65,7 @@ pub(crate) mod set_password_fixture;
 pub(crate) mod signup_policy_fixture;
 pub(crate) mod siwe_fixture;
 pub(crate) mod social_provider_fixture;
+pub(crate) mod team_config_fixture;
 pub(crate) mod team_fixture;
 pub(crate) mod two_factor_delivery_fixture;
 pub(crate) mod two_factor_otp_fixture;

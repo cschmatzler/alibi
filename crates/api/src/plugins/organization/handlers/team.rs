@@ -83,6 +83,68 @@ impl OrganizationPlugin {
         }
         create_team_core(data, None, None, ctx, &self.config).await
     }
+    /// Create a team with the actual signed-cookie principal from supplied headers.
+    /// This low-level server API enforces the same organization permissions as HTTP;
+    /// builder-wide dispatch hooks and API-key session injection require normal dispatch.
+    ///
+    /// # Errors
+    /// Returns an error if authentication, authorization, policy, hooks, or storage fail.
+    pub async fn create_team_with_headers<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        headers: &std::collections::HashMap<String, String>,
+        data: CreateTeam,
+    ) -> AuthResult<Team> {
+        if !self.config.teams.enabled {
+            return Err(better_auth_core::AuthError::NotImplemented(
+                "Teams are disabled".to_owned(),
+            ));
+        }
+        let mut resolution = AuthRequest::new(HttpMethod::Post, "/organization/create-team");
+        resolution.headers = headers
+            .iter()
+            .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
+            .collect();
+        let (user, current) = session(&resolution, ctx).await?;
+        let user = ctx.user_view(&user);
+        create_team_core(data, Some((&user, &current)), None, ctx, &self.config).await
+    }
+
+    /// Remove a team with the actual signed-cookie principal from supplied headers.
+    /// Current active-team and organization permission checks also apply to server calls.
+    /// This low-level helper does not execute builder-wide dispatch hooks.
+    ///
+    /// # Errors
+    /// Returns an error if authentication, authorization, hooks, or storage fail.
+    pub async fn remove_team_with_headers<S: AuthSchema>(
+        &self,
+        ctx: &AuthContext<S>,
+        headers: &std::collections::HashMap<String, String>,
+        organization_id: &str,
+        team_id: &str,
+    ) -> AuthResult<()> {
+        if !self.config.teams.enabled {
+            return Err(better_auth_core::AuthError::NotImplemented(
+                "Teams are disabled".to_owned(),
+            ));
+        }
+        let mut resolution = AuthRequest::new(HttpMethod::Post, "/organization/remove-team");
+        resolution.headers = headers
+            .iter()
+            .map(|(name, value)| (name.to_ascii_lowercase(), value.clone()))
+            .collect();
+        let (user, current) = session(&resolution, ctx).await?;
+        let user = ctx.user_view(&user);
+        remove_team_core(
+            organization_id,
+            team_id,
+            Some((&user, &current)),
+            ctx,
+            &self.config,
+        )
+        .await
+    }
+
     ///
     /// # Errors
     ///
@@ -201,11 +263,17 @@ pub async fn create_team_core<S: AuthSchema>(
         data.updated_at = Some(chrono::Utc::now());
     }
     if let Some(callback) = &config.teams.hooks {
-        callback.before_create(&mut data, &hooks).await?;
+        callback
+            .before_create(&mut data, &hooks)
+            .await
+            .map_err(super::super::extensions::team_callback_error)?;
     }
     let team = ctx.database.create_team(data).await?;
     if let Some(callback) = &config.teams.hooks {
-        callback.after_create(&team, &hooks).await?;
+        callback
+            .after_create(&team, &hooks)
+            .await
+            .map_err(super::super::extensions::team_callback_error)?;
     }
     Ok(team)
 }
@@ -249,11 +317,17 @@ pub async fn remove_team_core<S: AuthSchema>(
     }
     let hooks = hook_context(ctx, organization_id, actor.map(|(user, _)| user.clone())).await?;
     if let Some(callback) = &config.teams.hooks {
-        callback.before_delete(&team, &hooks).await?;
+        callback
+            .before_delete(&team, &hooks)
+            .await
+            .map_err(super::super::extensions::team_callback_error)?;
     }
     let _ignored_delete_team = ctx.database.delete_team(organization_id, team_id).await?;
     if let Some(callback) = &config.teams.hooks {
-        callback.after_delete(&team, &hooks).await?;
+        callback
+            .after_delete(&team, &hooks)
+            .await
+            .map_err(super::super::extensions::team_callback_error)?;
     }
     Ok(())
 }
@@ -362,14 +436,20 @@ pub async fn handle_team_request<S: AuthSchema>(
                 name: body.data.name,
             };
             if let Some(callback) = &config.teams.hooks {
-                callback.before_update(&team, &mut updates, &hooks).await?;
+                callback
+                    .before_update(&team, &mut updates, &hooks)
+                    .await
+                    .map_err(super::super::extensions::team_callback_error)?;
             }
             let team_2 = ctx
                 .database
                 .update_team(&org, &body.team_id, updates)
                 .await?;
             if let Some(callback) = &config.teams.hooks {
-                callback.after_update(&team_2, &hooks).await?;
+                callback
+                    .after_update(&team_2, &hooks)
+                    .await
+                    .map_err(super::super::extensions::team_callback_error)?;
             }
             AuthResponse::json(200, &team_2)?
         }
@@ -575,7 +655,10 @@ pub async fn handle_team_request<S: AuthSchema>(
             let hooks = hook_context(ctx, &org, Some(user_view)).await?;
             if add {
                 if let Some(callback) = &config.teams.hooks {
-                    callback.before_add_member(&team, &target, &hooks).await?;
+                    callback
+                        .before_add_member(&team, &target, &hooks)
+                        .await
+                        .map_err(super::super::extensions::team_callback_error)?;
                 }
                 let limit_ctx = TeamLimitContext {
                     organization_id: org,
@@ -603,7 +686,8 @@ pub async fn handle_team_request<S: AuthSchema>(
                 if let Some(callback) = &config.teams.hooks {
                     callback
                         .after_add_member(&member, &team, &target, &hooks)
-                        .await?;
+                        .await
+                        .map_err(super::super::extensions::team_callback_error)?;
                 }
                 AuthResponse::json(200, &member)?
             } else {
@@ -615,7 +699,8 @@ pub async fn handle_team_request<S: AuthSchema>(
                 if let Some(callback) = &config.teams.hooks {
                     callback
                         .before_remove_member(&member, &team, &target, &hooks)
-                        .await?;
+                        .await
+                        .map_err(super::super::extensions::team_callback_error)?;
                 }
                 let _ignored_remove_team_member = ctx
                     .database
@@ -624,7 +709,8 @@ pub async fn handle_team_request<S: AuthSchema>(
                 if let Some(callback) = &config.teams.hooks {
                     callback
                         .after_remove_member(&member, &team, &target, &hooks)
-                        .await?;
+                        .await
+                        .map_err(super::super::extensions::team_callback_error)?;
                 }
                 AuthResponse::json(
                     200,
