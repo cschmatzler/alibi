@@ -265,7 +265,8 @@ export function compareValues(
     string,
     ClockReceipt & { lifetime: number; trust?: boolean }
   >();
-  const sessionCookieName = /^(?:__Secure-)?better-auth\.session_token$/;
+  const sessionCookieName =
+    /^(?:__Secure-)?(?:better-auth\.session_token|device-proof\.session_token|configured-device-token)$/;
 
   const issuedSignatureKeys = new Map<string, string>();
 
@@ -3298,8 +3299,8 @@ export function compareValues(
     // Preserve the complete raw header around its credential: name, spacing,
     // order, every other cookie and all Set-Cookie attributes remain literal.
     const pattern = setCookie
-      ? /(?:^|,\s*)((?:__Secure-)?better-auth\.session_token)=([^;,\s]*)/g
-      : /(?:^|;\s*)((?:__Secure-)?better-auth\.session_token)=([^;\s]*)/g;
+      ? /(?:^|,\s*)((?:__Secure-)?(?:better-auth\.session_token|device-proof\.session_token|configured-device-token))=([^;,\s]*)/g
+      : /(?:^|;\s*)((?:__Secure-)?(?:better-auth\.session_token|device-proof\.session_token|configured-device-token))=([^;\s]*)/g;
     const left = [...a.matchAll(pattern)];
     const right = [...b.matchAll(pattern)];
 

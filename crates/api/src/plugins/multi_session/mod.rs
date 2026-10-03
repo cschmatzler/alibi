@@ -4,7 +4,7 @@ use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use super::helpers::delete_session_cookie_headers;
 use async_trait::async_trait;
 use better_auth_core::utils::cookie_utils::{
-    create_clear_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
+    create_derived_session_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
     related_cookie_name, sign_cookie_value, verify_cookie_value,
 };
 use better_auth_core::{
@@ -18,13 +18,16 @@ use serde_json::json;
 /// Number of distinct accounts retained in this browser's signed cookies.
 #[derive(Clone, Debug)]
 pub struct MultiSessionConfig {
-    pub maximum_sessions: usize,
+    /// Raw JavaScript number comparison: zero and negative limits suppress proofs,
+    /// fractional limits admit their integer floor, and NaN/positive infinity
+    /// admit every proof. No eviction or defaulting is performed.
+    pub maximum_sessions: f64,
 }
 
 impl Default for MultiSessionConfig {
     fn default() -> Self {
         Self {
-            maximum_sessions: 5,
+            maximum_sessions: 5.0,
         }
     }
 }
@@ -53,7 +56,7 @@ impl MultiSessionPlugin {
     fn cookie_name(token: &str, ctx: &AuthContext<impl AuthSchema>) -> String {
         format!(
             "{}_multi-{}",
-            ctx.config.session.cookie_name,
+            related_cookie_name(&ctx.config, "session_token"),
             token.to_lowercase()
         )
     }
@@ -182,9 +185,10 @@ impl MultiSessionPlugin {
         if revoke {
             ctx.database.delete_session(&token).await?;
             let mut response = AuthResponse::json(200, &json!({"status":true}))?;
-            response
-                .headers
-                .append("set-cookie", create_clear_cookie(&name, &ctx.config));
+            response.headers.append(
+                "set-cookie",
+                create_derived_session_cookie(&name, "", true, &ctx.config),
+            );
             if current
                 .as_ref()
                 .is_some_and(|(_, session)| session.token() == token)
@@ -235,9 +239,10 @@ impl MultiSessionPlugin {
         let session = session.filter(|session| session.expires_at() > Utc::now());
         let Some(session) = session else {
             let mut response = invalid_token().to_auth_response();
-            response
-                .headers
-                .append("set-cookie", create_clear_cookie(&name, &ctx.config));
+            response.headers.append(
+                "set-cookie",
+                create_derived_session_cookie(&name, "", true, &ctx.config),
+            );
             return Ok(response);
         };
         let user = ctx
@@ -320,8 +325,10 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
                 ctx.database.delete_session(&token).await?;
                 response.headers.append(
                     "set-cookie",
-                    create_clear_cookie(
+                    create_derived_session_cookie(
                         &name.to_lowercase().replacen("__secure-", "__Secure-", 1),
+                        "",
+                        true,
                         &ctx.config,
                     ),
                 );
@@ -343,7 +350,7 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
             return Ok(response);
         }
         let cookies = Self::signed_tokens(req, ctx);
-        let mut removed = 0;
+        let mut tokens_to_delete = Vec::new();
         for (old_name, token) in &cookies {
             if token.is_empty() {
                 continue;
@@ -351,27 +358,32 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
             if let Some(old) = ctx.database.get_session_record(token).await?
                 && old.user_id() == user.id()
             {
-                ctx.database.delete_session(token).await?;
-                response
-                    .headers
-                    .append("set-cookie", create_clear_cookie(old_name, &ctx.config));
-                removed += 1;
+                tokens_to_delete.push(token);
+                response.headers.append(
+                    "set-cookie",
+                    create_derived_session_cookie(old_name, "", true, &ctx.config),
+                );
             }
         }
+        // Resolve every proof before deleting: multiple names can carry the same token.
+        for token in &tokens_to_delete {
+            ctx.database.delete_session(token).await?;
+        }
+        let removed = tokens_to_delete.len();
         // Upstream counts every named cookie, including invalid signatures.
         let count = Self::multi_cookies(req).len();
-        if count.saturating_sub(removed) + 1 > self.config.maximum_sessions {
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "Match upstream JavaScript numeric comparison"
+        )]
+        let budget = (count.saturating_sub(removed) + 1) as f64;
+        if budget > self.config.maximum_sessions {
             return Ok(response);
         }
         let signed = sign_cookie_value(session.token(), ctx.config.current_secret());
         response.headers.append(
             "set-cookie",
-            create_session_like_cookie(
-                &name,
-                &signed,
-                Some(ctx.config.session.expires_in.num_seconds()),
-                &ctx.config,
-            ),
+            create_derived_session_cookie(&name, &signed, false, &ctx.config),
         );
         Ok(response)
     }

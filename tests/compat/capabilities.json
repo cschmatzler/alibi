@@ -2410,7 +2410,17 @@
           "multiple sessions rotate same-user login and honor configured browser account limit",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-zero raw limit controls proofs without evicting stored sessions",
+          "multi-session-fractional raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative raw limit controls proofs without evicting stored sessions",
+          "multi-session-nan raw limit controls proofs without evicting stored sessions",
+          "multi-session-infinite raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative-infinite raw limit controls proofs without evicting stored sessions"
         ],
         "rejection": {
           "notApplicable": "Takes no input and returns [] without session cookies; there is nothing to reject."
@@ -2422,7 +2432,17 @@
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-zero raw limit controls proofs without evicting stored sessions",
+          "multi-session-fractional raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative raw limit controls proofs without evicting stored sessions",
+          "multi-session-nan raw limit controls proofs without evicting stored sessions",
+          "multi-session-infinite raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative-infinite raw limit controls proofs without evicting stored sessions"
         ]
       }
     },
@@ -4191,17 +4211,33 @@
         "success": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner"
         ],
         "rejection": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
-          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner"
         ],
-        "authorization": "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+        "authorization": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback"
+        ],
         "state": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner"
         ]
       }
     },
@@ -4214,22 +4250,51 @@
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-fractional raw limit controls proofs without evicting stored sessions",
+          "multi-session-nan raw limit controls proofs without evicting stored sessions",
+          "multi-session-infinite raw limit controls proofs without evicting stored sessions",
+          "multiple sessions retire repeated genuine proofs before applying fractional capacity"
         ],
         "rejection": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-zero raw limit controls proofs without evicting stored sessions",
+          "multi-session-fractional raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative-infinite raw limit controls proofs without evicting stored sessions"
         ],
         "authorization": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback"
         ],
         "state": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-zero raw limit controls proofs without evicting stored sessions",
+          "multi-session-fractional raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative raw limit controls proofs without evicting stored sessions",
+          "multi-session-nan raw limit controls proofs without evicting stored sessions",
+          "multi-session-infinite raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative-infinite raw limit controls proofs without evicting stored sessions",
+          "multiple sessions retire repeated genuine proofs before applying fractional capacity"
         ]
       }
     },
@@ -5820,7 +5885,8 @@
           "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots"
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots",
+          "multiple sessions retire repeated genuine proofs before applying fractional capacity"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -6076,7 +6142,8 @@
           "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots"
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots",
+          "multiple sessions retire repeated genuine proofs before applying fractional capacity"
         ]
       }
     },

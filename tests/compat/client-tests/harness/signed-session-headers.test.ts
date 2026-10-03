@@ -885,478 +885,491 @@ test("actual Source co-present compact cookie headers bind authenticated cache t
   }
 });
 
-test("actual Source factor rotation binds multi-session issuance and later tombstones to authenticated request ownership", async () => {
-  async function captureRotation(multiple = false) {
-    const database = new Database(":memory:");
-    const traces: TraceEntry[] = [];
-    const requests: Data[] = [];
-    let handler: (request: Request) => Promise<Response>;
-    const server = Bun.serve({
-      port: 0,
-      async fetch(request) {
-        requests.push({
-          url: request.url,
-          method: request.method,
-          headers: Object.fromEntries(request.headers),
-          body: await request.clone().text(),
-        });
-        return handler(request);
-      },
-    });
-    const baseURL = `http://localhost:${server.port}`;
-    const options = {
-      baseURL,
-      secret,
-      database,
-      rateLimit: { enabled: false },
-      emailAndPassword: { enabled: true },
-      plugins: [twoFactor({ otpOptions: { sendOTP: async () => {} } }), multiSession()],
-    };
-    const startedAt = Date.now();
-
-    try {
-      await (await getMigrations(options)).runMigrations();
-      handler = betterAuth(options).handler;
-      const owner = createAuthClient({
-        baseURL,
-        fetchOptions: { customFetchImpl: createTracingFetch(baseURL, "owner", traces) },
-      });
-      const foreign = createAuthClient({
-        baseURL,
-        fetchOptions: { customFetchImpl: createTracingFetch(baseURL, "foreign", traces) },
-      });
-      const signup = await owner.signUp.email({
-        email: "rotation-owner@fixture.test",
-        name: "Owner",
-        password: "password123",
-      });
-      const other = await foreign.signUp.email({
-        email: "rotation-foreign@fixture.test",
-        name: "Foreign",
-        password: "password123",
-      });
-      expect(signup.error).toBeNull();
-      expect(other.error).toBeNull();
-      const state = (id: string) => ({
-        user: database.query("SELECT * FROM user WHERE id=?").get(id),
-        accounts: database.query("SELECT * FROM account WHERE userId=? ORDER BY id").all(id),
-        sessions: database.query("SELECT * FROM session WHERE userId=? ORDER BY id").all(id),
-      });
-      const foreignBefore = state(other.data!.user.id);
-      const beforeRotation = state(signup.data!.user.id);
-
-      const enabled = await owner.$fetch("/two-factor/enable", {
-        method: "POST",
-        body: { method: "otp", password: "password123" },
-      });
-      expect(enabled.data).toEqual({ method: "otp" });
-
-      const rows = database
-        .query("SELECT token,userId FROM session WHERE userId=?")
-        .all(signup.data!.user.id) as { token: string; userId: string }[];
-      expect(rows).toHaveLength(1);
-      expect(rows[0]!.token).not.toBe(signup.data!.token!);
-
-      const rotated = traces[2]![requestWindow]!;
-      expect(rotated.issuedSessionCookie).toContain(encodeURIComponent(rows[0]!.token));
-      const beforeLogout = state(signup.data!.user.id);
-
-      const cookies = [
-        rotated.issuedSessionCookie!,
-        ...rotated.issuedMultiSessionCookies!.map((raw) => raw.split(";")[0]!),
-        ...(multiple
-          ? traces[0]![requestWindow]!.issuedMultiSessionCookies!.map((raw) => raw.split(";")[0]!)
-          : []),
-      ];
-      const cookie = cookies.join("; ");
-      expect((await owner.signOut({ fetchOptions: { headers: { cookie } } })).error).toBeNull();
-      expect(
-        database.query("SELECT token FROM session WHERE userId=?").all(signup.data!.user.id),
-      ).toEqual([]);
-      const afterLogout = state(signup.data!.user.id);
-      const foreignAfter = state(other.data!.user.id);
-      expect(foreignAfter).toEqual(foreignBefore);
-      const retired = traces[3]![requestWindow]!.issuedMultiSessionCookies!;
-      expect(retired).toHaveLength(multiple ? 2 : 1);
-      expect(new Set(retired.map((raw) => raw.slice(0, raw.indexOf("=")))).size).toBe(
-        retired.length,
-      );
-      for (const raw of retired) {
-        expect(raw).toContain("=;");
-        expect(raw).toContain("Max-Age=0");
-      }
-      const presented = cookie.split("; ").filter((raw) => raw.includes("_multi-"));
-      for (const raw of presented) {
-        const [name, encoded] = raw.split("=");
-        const decoded = decodeURIComponent(encoded!);
-        const dot = decoded.lastIndexOf(".");
-        const token = decoded.slice(0, dot);
-        expect(name!.endsWith(`_multi-${token.toLowerCase()}`)).toBe(true);
-        expect(decoded.slice(dot + 1)).toBe(
-          createHmac("sha256", secret).update(token).digest("base64"),
-        );
-        expect([signup.data!.token!, rows[0]!.token]).toContain(token);
-      }
-
-      return {
-        value: { traces },
-        windows: traces.map((trace) => trace[requestWindow]!),
-        baseURL,
-        startedAt,
-        finishedAt: Date.now(),
-        receipts: {
-          requests,
-          signup: normalizeClientValue(signup),
-          foreign: normalizeClientValue(other),
-          enabled,
-          beforeRotation,
-          beforeLogout,
-          afterLogout,
-          foreignBefore,
-          foreignAfter,
-          presented,
-          retired,
+for (const cookieName of [
+  "better-auth.session_token",
+  "device-proof.session_token",
+  "configured-device-token",
+]) {
+  test(`${cookieName} actual Source factor rotation binds multi-session issuance and later tombstones to authenticated request ownership`, async () => {
+    async function captureRotation(multiple = false) {
+      const database = new Database(":memory:");
+      const traces: TraceEntry[] = [];
+      const requests: Data[] = [];
+      let handler: (request: Request) => Promise<Response>;
+      const server = Bun.serve({
+        port: 0,
+        async fetch(request) {
+          requests.push({
+            url: request.url,
+            method: request.method,
+            headers: Object.fromEntries(request.headers),
+            body: await request.clone().text(),
+          });
+          return handler(request);
         },
+      });
+      const baseURL = `http://localhost:${server.port}`;
+      const options = {
+        baseURL,
+        secret,
+        advanced: { cookies: { session_token: { name: cookieName } } },
+        database,
+        rateLimit: { enabled: false },
+        emailAndPassword: { enabled: true },
+        plugins: [twoFactor({ otpOptions: { sendOTP: async () => {} } }), multiSession()],
       };
-    } finally {
-      server.stop(true);
-      database.close();
-    }
-  }
+      const startedAt = Date.now();
 
-  const left = await captureRotation();
-  const right = await captureRotation();
-  const context: ComparisonContext = {
-    leftBaseURL: left.baseURL,
-    rightBaseURL: right.baseURL,
-    sessionCookieSecret: secret,
-    leftStartedAt: left.startedAt,
-    rightStartedAt: right.startedAt,
-    leftFinishedAt: left.finishedAt,
-    rightFinishedAt: right.finishedAt,
-    leftRequestWindows: left.windows,
-    rightRequestWindows: right.windows,
-  };
-  expect(compareValues(left.value, right.value, context)).toEqual([]);
+      try {
+        await (await getMigrations(options)).runMigrations();
+        handler = betterAuth(options).handler;
+        const owner = createAuthClient({
+          baseURL,
+          fetchOptions: { customFetchImpl: createTracingFetch(baseURL, "owner", traces) },
+        });
+        const foreign = createAuthClient({
+          baseURL,
+          fetchOptions: { customFetchImpl: createTracingFetch(baseURL, "foreign", traces) },
+        });
+        const signup = await owner.signUp.email({
+          email: "rotation-owner@fixture.test",
+          name: "Owner",
+          password: "password123",
+        });
+        const other = await foreign.signUp.email({
+          email: "rotation-foreign@fixture.test",
+          name: "Foreign",
+          password: "password123",
+        });
+        expect(signup.error).toBeNull();
+        expect(other.error).toBeNull();
+        const state = (id: string) => ({
+          user: database.query("SELECT * FROM user WHERE id=?").get(id),
+          accounts: database.query("SELECT * FROM account WHERE userId=? ORDER BY id").all(id),
+          sessions: database.query("SELECT * FROM session WHERE userId=? ORDER BY id").all(id),
+        });
+        const foreignBefore = state(other.data!.user.id);
+        const beforeRotation = state(signup.data!.user.id);
 
-  const multipleLeft = await captureRotation(true);
-  const multipleRight = await captureRotation(true);
-  const multipleContext: ComparisonContext = {
-    ...context,
-    leftBaseURL: multipleLeft.baseURL,
-    rightBaseURL: multipleRight.baseURL,
-    leftStartedAt: multipleLeft.startedAt,
-    rightStartedAt: multipleRight.startedAt,
-    leftFinishedAt: multipleLeft.finishedAt,
-    rightFinishedAt: multipleRight.finishedAt,
-    leftRequestWindows: multipleLeft.windows,
-    rightRequestWindows: multipleRight.windows,
-  };
-  expect(compareValues(multipleLeft.value, multipleRight.value, multipleContext)).toEqual([]);
-  // These are authentic independent Source response headers, not fabricated
-  // credentials. Their unique retirements commute; every raw header survives.
-  const reordered = structuredClone(multipleRight.windows);
-  reordered[3]!.issuedMultiSessionCookies!.reverse();
-  expect(
-    compareValues(multipleLeft.value, multipleRight.value, {
-      ...multipleContext,
-      rightRequestWindows: reordered,
-    }),
-  ).toEqual([]);
+        const enabled = await owner.$fetch("/two-factor/enable", {
+          method: "POST",
+          body: { method: "otp", password: "password123" },
+        });
+        expect(enabled.data).toEqual({ method: "otp" });
 
-  const ownership = "multi-session credential lacks corresponding observed issuance and ownership";
-  const credential = "multi-session cookie name does not identify its signed credential";
-  type Mutation = { value: { traces: TraceEntry[] }; windows: RequestWindow[] };
-  const multipleChanges: {
-    name: string;
-    mutate: (capture: Mutation) => void;
-    reason: string;
-    index?: number;
-  }[] = [
-    {
-      name: "retirement name changed",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies![0] =
-          c.windows[3]!.issuedMultiSessionCookies![0]!.replace("_multi-", "_multi-unobserved");
-      },
-      reason: credential,
-    },
-    {
-      name: "retirement expiry becomes live",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies![0] =
-          c.windows[3]!.issuedMultiSessionCookies![0]!.replace("Max-Age=0", "Max-Age=1");
-      },
-      reason: credential,
-    },
-    {
-      name: "retirement Expires attribute changed",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies![0] += "; Expires=Wed, 01 Jan 2031 00:00:00 GMT";
-      },
-      reason: "multi-session cookie bytes, order or attributes differ",
-    },
-    {
-      name: "retirement HttpOnly attribute lost",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies![0] =
-          c.windows[3]!.issuedMultiSessionCookies![0]!.replace("; HttpOnly", "");
-      },
-      reason: "multi-session cookie bytes, order or attributes differ",
-    },
-    {
-      name: "retirement path differs from observed issuance",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies![0] =
-          c.windows[3]!.issuedMultiSessionCookies![0]!.replace("Path=/", "Path=/changed");
-      },
-      reason: "multi-session retirement scope differs from observed issuance",
-    },
-    {
-      name: "retirement scope observation lost",
-      mutate: (c) => {
-        const key = Object.keys(c.value.traces[3]!.responseCookies).find((key) =>
-          key.includes("_multi-"),
-        )!;
-        delete c.value.traces[3]!.responseCookies[key];
-      },
-      reason: "multi-session cookie scope observation is missing",
-    },
-    {
-      name: "retirement removed",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies!.pop();
-      },
-      reason: "multi-session cookie count differs",
-    },
-    {
-      name: "same-count duplicate retirement",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies![1] = c.windows[3]!.issuedMultiSessionCookies![0]!;
-      },
-      reason: "multi-session cookie scope is duplicated",
-    },
-    {
-      name: "retired credential signer corrupted at issuance",
-      mutate: (c) => {
-        c.windows[2]!.issuedMultiSessionCookies![0] =
-          c.windows[2]!.issuedMultiSessionCookies![0]!.replace(";", "corrupt;");
-      },
-      reason: credential,
-      index: 2,
-    },
-    {
-      name: "authentic foreign live credential in mixed retirement array",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies![0] = c.windows[1]!.issuedMultiSessionCookies![0]!;
-      },
-      reason: credential,
-    },
-    {
-      name: "unrelated cookie cannot enter retirement alignment",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies![0] =
-          c.windows[3]!.issuedMultiSessionCookies![0]!.replace(
-            /^([^=]+)=/,
-            "application.literal-cookie=",
+        const rows = database
+          .query("SELECT token,userId FROM session WHERE userId=?")
+          .all(signup.data!.user.id) as { token: string; userId: string }[];
+        expect(rows).toHaveLength(1);
+        expect(rows[0]!.token).not.toBe(signup.data!.token!);
+
+        const rotated = traces[2]![requestWindow]!;
+        expect(rotated.issuedSessionCookie).toContain(encodeURIComponent(rows[0]!.token));
+        const beforeLogout = state(signup.data!.user.id);
+
+        const cookies = [
+          rotated.issuedSessionCookie!,
+          ...rotated.issuedMultiSessionCookies!.map((raw) => raw.split(";")[0]!),
+          ...(multiple
+            ? traces[0]![requestWindow]!.issuedMultiSessionCookies!.map((raw) => raw.split(";")[0]!)
+            : []),
+        ];
+        const cookie = cookies.join("; ");
+        expect((await owner.signOut({ fetchOptions: { headers: { cookie } } })).error).toBeNull();
+        expect(
+          database.query("SELECT token FROM session WHERE userId=?").all(signup.data!.user.id),
+        ).toEqual([]);
+        const afterLogout = state(signup.data!.user.id);
+        const foreignAfter = state(other.data!.user.id);
+        expect(foreignAfter).toEqual(foreignBefore);
+        const retired = traces[3]![requestWindow]!.issuedMultiSessionCookies!;
+        expect(retired).toHaveLength(multiple ? 2 : 1);
+        expect(new Set(retired.map((raw) => raw.slice(0, raw.indexOf("=")))).size).toBe(
+          retired.length,
+        );
+        for (const raw of retired) {
+          expect(raw).toContain("=;");
+          expect(raw).toContain("Max-Age=0");
+        }
+        const presented = cookie.split("; ").filter((raw) => raw.includes("_multi-"));
+        for (const raw of presented) {
+          const [name, encoded] = raw.split("=");
+          const decoded = decodeURIComponent(encoded!);
+          const dot = decoded.lastIndexOf(".");
+          const token = decoded.slice(0, dot);
+          expect(name!.endsWith(`_multi-${token.toLowerCase()}`)).toBe(true);
+          expect(decoded.slice(dot + 1)).toBe(
+            createHmac("sha256", secret).update(token).digest("base64"),
           );
-      },
-      reason: "multi-session cookie prefix or encoding differs",
-    },
-  ];
-  for (const change of multipleChanges) {
-    const altered: Mutation = {
-      value: structuredClone(multipleRight.value),
-      windows: structuredClone(multipleRight.windows),
-    };
-    change.mutate(altered);
-    expect(
-      compareValues(multipleLeft.value, altered.value, {
-        ...multipleContext,
-        rightRequestWindows: altered.windows,
-      }),
-      change.name,
-    ).toContainEqual({
-      path: `traces.${change.index ?? 3}.responseCookies`,
-      reason: change.reason,
-    });
-  }
-  // Matching duplicate or incorrectly scoped receipts cannot admit themselves.
-  for (const change of multipleChanges.filter((change) =>
-    ["same-count duplicate retirement", "retirement path differs from observed issuance"].includes(
-      change.name,
-    ),
-  )) {
-    const altered: Mutation = {
-      value: structuredClone(multipleRight.value),
-      windows: structuredClone(multipleRight.windows),
-    };
-    change.mutate(altered);
-    expect(
-      compareValues(altered.value, altered.value, {
-        ...multipleContext,
-        leftBaseURL: multipleRight.baseURL,
-        leftStartedAt: multipleRight.startedAt,
-        leftFinishedAt: multipleRight.finishedAt,
-        leftRequestWindows: altered.windows,
-        rightRequestWindows: altered.windows,
-      }),
-      `matching ${change.name}`,
-    ).toContainEqual({ path: "traces.3.responseCookies", reason: change.reason });
-  }
-  const changes: {
-    name: string;
-    mutate: (capture: Mutation) => void;
-    reason: string;
-    index?: number;
-  }[] = [
-    {
-      name: "missing primary",
-      mutate: (c) => {
-        delete c.windows[2]!.issuedSessionCookie;
-      },
-      reason: ownership,
-    },
-    {
-      name: "corrupt primary",
-      mutate: (c) => {
-        c.windows[2]!.issuedSessionCookie += "corrupt";
-      },
-      reason: ownership,
-    },
-    {
-      name: "missing request authority",
-      mutate: (c) => {
-        delete c.windows[2]!.sessionCookie;
-      },
-      reason: ownership,
-    },
-    {
-      name: "foreign request authority",
-      mutate: (c) => {
-        c.windows[2]!.sessionCookie = c.windows[1]!.issuedSessionCookie;
-      },
-      reason: ownership,
-    },
-    {
-      name: "unproved previous issuance",
-      mutate: (c) => {
-        c.windows[0]!.issuedSessionCookie += "corrupt";
-        c.windows[2]!.sessionCookie = c.windows[0]!.issuedSessionCookie;
-      },
-      reason: ownership,
-    },
-    {
-      name: "failed rotation",
-      mutate: (c) => {
-        c.value.traces[2]!.responseStatus = 400;
-      },
-      reason: ownership,
-    },
-    {
-      name: "unrelated route",
-      mutate: (c) => {
-        c.value.traces[2]!.path = "/api/auth/unrelated";
-      },
-      reason: ownership,
-    },
-    {
-      name: "reused primary",
-      mutate: (c) => {
-        c.windows[2]!.issuedSessionCookie = c.windows[0]!.issuedSessionCookie;
-      },
-      reason: ownership,
-    },
-    {
-      name: "corrupt multi signature",
-      mutate: (c) => {
-        c.windows[2]!.issuedMultiSessionCookies![0] =
-          c.windows[2]!.issuedMultiSessionCookies![0]!.replace(";", "corrupt;");
-      },
-      reason: credential,
-    },
-    {
-      name: "wrong multi suffix",
-      mutate: (c) => {
-        c.windows[2]!.issuedMultiSessionCookies![0] =
-          c.windows[2]!.issuedMultiSessionCookies![0]!.replace("_multi-", "_multi-other");
-      },
-      reason: credential,
-    },
-    {
-      name: "altered attributes",
-      mutate: (c) => {
-        c.windows[2]!.issuedMultiSessionCookies![0] =
-          c.windows[2]!.issuedMultiSessionCookies![0]!.replace("Path=/", "Path=/changed");
-      },
-      reason: "multi-session cookie bytes, order or attributes differ",
-    },
-    {
-      name: "missing scope",
-      mutate: (c) => {
-        const key = Object.keys(c.value.traces[2]!.responseCookies).find((key) =>
-          key.includes("_multi-"),
-        )!;
-        delete c.value.traces[2]!.responseCookies[key];
-      },
-      reason: "multi-session cookie scope observation is missing",
-    },
-    {
-      name: "unproved tombstone",
-      mutate: (c) => {
-        c.windows[2]!.issuedMultiSessionCookies = [];
-      },
-      reason: credential,
-      index: 3,
-    },
-    {
-      name: "duplicate tombstone",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies!.push(c.windows[3]!.issuedMultiSessionCookies![0]!);
-      },
-      reason: "multi-session cookie count differs",
-      index: 3,
-    },
-    {
-      name: "live empty cookie",
-      mutate: (c) => {
-        c.windows[3]!.issuedMultiSessionCookies![0] =
-          c.windows[3]!.issuedMultiSessionCookies![0]!.replace("Max-Age=0", "Max-Age=1");
-      },
-      reason: credential,
-      index: 3,
-    },
-  ];
+          expect([signup.data!.token!, rows[0]!.token]).toContain(token);
+        }
 
-  for (const change of changes) {
-    const altered: Mutation = {
-      value: structuredClone(right.value),
-      windows: structuredClone(right.windows),
-    };
-    change.mutate(altered);
-    expect(
-      compareValues(left.value, altered.value, {
-        ...context,
-        rightRequestWindows: altered.windows,
-      }),
-      change.name,
-    ).toContainEqual({
-      path: `traces.${change.index ?? 2}.responseCookies`,
-      reason: change.reason,
-    });
-  }
+        return {
+          value: { traces },
+          windows: traces.map((trace) => trace[requestWindow]!),
+          baseURL,
+          startedAt,
+          finishedAt: Date.now(),
+          receipts: {
+            requests,
+            signup: normalizeClientValue(signup),
+            foreign: normalizeClientValue(other),
+            enabled,
+            beforeRotation,
+            beforeLogout,
+            afterLogout,
+            foreignBefore,
+            foreignAfter,
+            presented,
+            retired,
+          },
+        };
+      } finally {
+        server.stop(true);
+        database.close();
+      }
+    }
 
-  // Identical corrupt credentials must fail before literal equality can hide them.
-  const windows = structuredClone(right.windows);
-  windows[2]!.issuedMultiSessionCookies![0] = windows[2]!.issuedMultiSessionCookies![0]!.replace(
-    ";",
-    "corrupt;",
-  );
-  expect(
-    compareValues(right.value, right.value, {
+    const left = await captureRotation();
+    const right = await captureRotation();
+    const context: ComparisonContext = {
+      leftBaseURL: left.baseURL,
+      rightBaseURL: right.baseURL,
+      sessionCookieSecret: secret,
+      leftStartedAt: left.startedAt,
+      rightStartedAt: right.startedAt,
+      leftFinishedAt: left.finishedAt,
+      rightFinishedAt: right.finishedAt,
+      leftRequestWindows: left.windows,
+      rightRequestWindows: right.windows,
+    };
+    expect(compareValues(left.value, right.value, context)).toEqual([]);
+
+    const multipleLeft = await captureRotation(true);
+    const multipleRight = await captureRotation(true);
+    const multipleContext: ComparisonContext = {
       ...context,
-      leftRequestWindows: windows,
-      rightRequestWindows: windows,
-    }),
-  ).toContainEqual({ path: "traces.2.responseCookies", reason: credential });
-});
+      leftBaseURL: multipleLeft.baseURL,
+      rightBaseURL: multipleRight.baseURL,
+      leftStartedAt: multipleLeft.startedAt,
+      rightStartedAt: multipleRight.startedAt,
+      leftFinishedAt: multipleLeft.finishedAt,
+      rightFinishedAt: multipleRight.finishedAt,
+      leftRequestWindows: multipleLeft.windows,
+      rightRequestWindows: multipleRight.windows,
+    };
+    expect(compareValues(multipleLeft.value, multipleRight.value, multipleContext)).toEqual([]);
+    // These are authentic independent Source response headers, not fabricated
+    // credentials. Their unique retirements commute; every raw header survives.
+    const reordered = structuredClone(multipleRight.windows);
+    reordered[3]!.issuedMultiSessionCookies!.reverse();
+    expect(
+      compareValues(multipleLeft.value, multipleRight.value, {
+        ...multipleContext,
+        rightRequestWindows: reordered,
+      }),
+    ).toEqual([]);
+
+    const ownership =
+      "multi-session credential lacks corresponding observed issuance and ownership";
+    const credential = "multi-session cookie name does not identify its signed credential";
+    type Mutation = { value: { traces: TraceEntry[] }; windows: RequestWindow[] };
+    const multipleChanges: {
+      name: string;
+      mutate: (capture: Mutation) => void;
+      reason: string;
+      index?: number;
+    }[] = [
+      {
+        name: "retirement name changed",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies![0] =
+            c.windows[3]!.issuedMultiSessionCookies![0]!.replace("_multi-", "_multi-unobserved");
+        },
+        reason: credential,
+      },
+      {
+        name: "retirement expiry becomes live",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies![0] =
+            c.windows[3]!.issuedMultiSessionCookies![0]!.replace("Max-Age=0", "Max-Age=1");
+        },
+        reason: credential,
+      },
+      {
+        name: "retirement Expires attribute changed",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies![0] += "; Expires=Wed, 01 Jan 2031 00:00:00 GMT";
+        },
+        reason: "multi-session cookie bytes, order or attributes differ",
+      },
+      {
+        name: "retirement HttpOnly attribute lost",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies![0] =
+            c.windows[3]!.issuedMultiSessionCookies![0]!.replace("; HttpOnly", "");
+        },
+        reason: "multi-session cookie bytes, order or attributes differ",
+      },
+      {
+        name: "retirement path differs from observed issuance",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies![0] =
+            c.windows[3]!.issuedMultiSessionCookies![0]!.replace("Path=/", "Path=/changed");
+        },
+        reason: "multi-session retirement scope differs from observed issuance",
+      },
+      {
+        name: "retirement scope observation lost",
+        mutate: (c) => {
+          const key = Object.keys(c.value.traces[3]!.responseCookies).find((key) =>
+            key.includes("_multi-"),
+          )!;
+          delete c.value.traces[3]!.responseCookies[key];
+        },
+        reason: "multi-session cookie scope observation is missing",
+      },
+      {
+        name: "retirement removed",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies!.pop();
+        },
+        reason: "multi-session cookie count differs",
+      },
+      {
+        name: "same-count duplicate retirement",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies![1] =
+            c.windows[3]!.issuedMultiSessionCookies![0]!;
+        },
+        reason: "multi-session cookie scope is duplicated",
+      },
+      {
+        name: "retired credential signer corrupted at issuance",
+        mutate: (c) => {
+          c.windows[2]!.issuedMultiSessionCookies![0] =
+            c.windows[2]!.issuedMultiSessionCookies![0]!.replace(";", "corrupt;");
+        },
+        reason: credential,
+        index: 2,
+      },
+      {
+        name: "authentic foreign live credential in mixed retirement array",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies![0] =
+            c.windows[1]!.issuedMultiSessionCookies![0]!;
+        },
+        reason: credential,
+      },
+      {
+        name: "unrelated cookie cannot enter retirement alignment",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies![0] =
+            c.windows[3]!.issuedMultiSessionCookies![0]!.replace(
+              /^([^=]+)=/,
+              "application.literal-cookie=",
+            );
+        },
+        reason: "multi-session cookie prefix or encoding differs",
+      },
+    ];
+    for (const change of multipleChanges) {
+      const altered: Mutation = {
+        value: structuredClone(multipleRight.value),
+        windows: structuredClone(multipleRight.windows),
+      };
+      change.mutate(altered);
+      expect(
+        compareValues(multipleLeft.value, altered.value, {
+          ...multipleContext,
+          rightRequestWindows: altered.windows,
+        }),
+        change.name,
+      ).toContainEqual({
+        path: `traces.${change.index ?? 3}.responseCookies`,
+        reason: change.reason,
+      });
+    }
+    // Matching duplicate or incorrectly scoped receipts cannot admit themselves.
+    for (const change of multipleChanges.filter((change) =>
+      [
+        "same-count duplicate retirement",
+        "retirement path differs from observed issuance",
+      ].includes(change.name),
+    )) {
+      const altered: Mutation = {
+        value: structuredClone(multipleRight.value),
+        windows: structuredClone(multipleRight.windows),
+      };
+      change.mutate(altered);
+      expect(
+        compareValues(altered.value, altered.value, {
+          ...multipleContext,
+          leftBaseURL: multipleRight.baseURL,
+          leftStartedAt: multipleRight.startedAt,
+          leftFinishedAt: multipleRight.finishedAt,
+          leftRequestWindows: altered.windows,
+          rightRequestWindows: altered.windows,
+        }),
+        `matching ${change.name}`,
+      ).toContainEqual({ path: "traces.3.responseCookies", reason: change.reason });
+    }
+    const changes: {
+      name: string;
+      mutate: (capture: Mutation) => void;
+      reason: string;
+      index?: number;
+    }[] = [
+      {
+        name: "missing primary",
+        mutate: (c) => {
+          delete c.windows[2]!.issuedSessionCookie;
+        },
+        reason: ownership,
+      },
+      {
+        name: "corrupt primary",
+        mutate: (c) => {
+          c.windows[2]!.issuedSessionCookie += "corrupt";
+        },
+        reason: ownership,
+      },
+      {
+        name: "missing request authority",
+        mutate: (c) => {
+          delete c.windows[2]!.sessionCookie;
+        },
+        reason: ownership,
+      },
+      {
+        name: "foreign request authority",
+        mutate: (c) => {
+          c.windows[2]!.sessionCookie = c.windows[1]!.issuedSessionCookie;
+        },
+        reason: ownership,
+      },
+      {
+        name: "unproved previous issuance",
+        mutate: (c) => {
+          c.windows[0]!.issuedSessionCookie += "corrupt";
+          c.windows[2]!.sessionCookie = c.windows[0]!.issuedSessionCookie;
+        },
+        reason: ownership,
+      },
+      {
+        name: "failed rotation",
+        mutate: (c) => {
+          c.value.traces[2]!.responseStatus = 400;
+        },
+        reason: ownership,
+      },
+      {
+        name: "unrelated route",
+        mutate: (c) => {
+          c.value.traces[2]!.path = "/api/auth/unrelated";
+        },
+        reason: ownership,
+      },
+      {
+        name: "reused primary",
+        mutate: (c) => {
+          c.windows[2]!.issuedSessionCookie = c.windows[0]!.issuedSessionCookie;
+        },
+        reason: ownership,
+      },
+      {
+        name: "corrupt multi signature",
+        mutate: (c) => {
+          c.windows[2]!.issuedMultiSessionCookies![0] =
+            c.windows[2]!.issuedMultiSessionCookies![0]!.replace(";", "corrupt;");
+        },
+        reason: credential,
+      },
+      {
+        name: "wrong multi suffix",
+        mutate: (c) => {
+          c.windows[2]!.issuedMultiSessionCookies![0] =
+            c.windows[2]!.issuedMultiSessionCookies![0]!.replace("_multi-", "_multi-other");
+        },
+        reason: credential,
+      },
+      {
+        name: "altered attributes",
+        mutate: (c) => {
+          c.windows[2]!.issuedMultiSessionCookies![0] =
+            c.windows[2]!.issuedMultiSessionCookies![0]!.replace("Path=/", "Path=/changed");
+        },
+        reason: "multi-session cookie bytes, order or attributes differ",
+      },
+      {
+        name: "missing scope",
+        mutate: (c) => {
+          const key = Object.keys(c.value.traces[2]!.responseCookies).find((key) =>
+            key.includes("_multi-"),
+          )!;
+          delete c.value.traces[2]!.responseCookies[key];
+        },
+        reason: "multi-session cookie scope observation is missing",
+      },
+      {
+        name: "unproved tombstone",
+        mutate: (c) => {
+          c.windows[2]!.issuedMultiSessionCookies = [];
+        },
+        reason: credential,
+        index: 3,
+      },
+      {
+        name: "duplicate tombstone",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies!.push(
+            c.windows[3]!.issuedMultiSessionCookies![0]!,
+          );
+        },
+        reason: "multi-session cookie count differs",
+        index: 3,
+      },
+      {
+        name: "live empty cookie",
+        mutate: (c) => {
+          c.windows[3]!.issuedMultiSessionCookies![0] =
+            c.windows[3]!.issuedMultiSessionCookies![0]!.replace("Max-Age=0", "Max-Age=1");
+        },
+        reason: credential,
+        index: 3,
+      },
+    ];
+
+    for (const change of changes) {
+      const altered: Mutation = {
+        value: structuredClone(right.value),
+        windows: structuredClone(right.windows),
+      };
+      change.mutate(altered);
+      expect(
+        compareValues(left.value, altered.value, {
+          ...context,
+          rightRequestWindows: altered.windows,
+        }),
+        change.name,
+      ).toContainEqual({
+        path: `traces.${change.index ?? 2}.responseCookies`,
+        reason: change.reason,
+      });
+    }
+
+    // Identical corrupt credentials must fail before literal equality can hide them.
+    const windows = structuredClone(right.windows);
+    windows[2]!.issuedMultiSessionCookies![0] = windows[2]!.issuedMultiSessionCookies![0]!.replace(
+      ";",
+      "corrupt;",
+    );
+    expect(
+      compareValues(right.value, right.value, {
+        ...context,
+        leftRequestWindows: windows,
+        rightRequestWindows: windows,
+      }),
+    ).toContainEqual({ path: "traces.2.responseCookies", reason: credential });
+  });
+}
