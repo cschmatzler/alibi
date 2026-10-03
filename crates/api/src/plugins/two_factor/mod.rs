@@ -1548,7 +1548,7 @@ async fn verify_backup_code_core(
 
     let codes = match config
         .backup_storage
-        .load_codes(two_factor.backup_codes(), &ctx.config)
+        .load_value(two_factor.backup_codes(), &ctx.config)
         .await
     {
         Ok(codes) => codes,
@@ -1557,18 +1557,38 @@ async fn verify_backup_code_core(
             return Err(error);
         }
     };
-    let Some(mut backup_codes) = codes.filter(|codes| codes.contains(&body.code)) else {
+    let codes = match codes {
+        Some(serde_json::Value::Array(codes)) => Some(codes),
+        None | Some(serde_json::Value::Null | serde_json::Value::Bool(false)) => None,
+        Some(serde_json::Value::Number(number)) if number.as_f64() == Some(0.0) => None,
+        Some(serde_json::Value::String(value)) if value.is_empty() => None,
+        Some(_) => {
+            // Source's includes/filter calls throw for truthy non-arrays inside
+            // the decode-stage try/catch. Do not turn corrupted storage into
+            // a failed proof or spend the pending challenge's attempt budget.
+            rearm_factor_attempt(attempt.as_ref(), false, ctx).await;
+            return Err(AuthError::Encryption(
+                "Backup code JSON is not an array".into(),
+            ));
+        }
+    };
+    let Some(mut backup_codes) = codes.filter(|codes| {
+        codes.iter().any(|code| {
+            code.as_str()
+                .is_some_and(|text| text == body.code && backup_storage::json_date(text).is_none())
+        })
+    }) else {
         rearm_factor_attempt(attempt.as_ref(), true, ctx).await;
         if pending {
             record_account_failure(config, &two_factor, ctx).await?;
         }
         return Err(AuthError::authentication_failed("Invalid backup code"));
     };
-    backup_codes.retain(|candidate| candidate != &body.code);
+    backup_codes.retain(|candidate| candidate.as_str() != Some(body.code.as_str()));
 
     let encrypted = config
         .backup_storage
-        .store_codes(&backup_codes, &ctx.config)
+        .store_json(serde_json::to_string(&backup_codes)?, &ctx.config)
         .await?;
     if !ctx
         .database
