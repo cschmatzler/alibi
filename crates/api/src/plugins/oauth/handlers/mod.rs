@@ -1260,8 +1260,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         disable_sign_up,
         meta,
         ctx,
-        None,
-        None,
+        (None, None),
     )
     .await
 }
@@ -1277,8 +1276,10 @@ async fn process_oauth_sign_in_with_output(
     disable_sign_up: bool,
     meta: &better_auth_core::RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    raw_output: Option<&better_auth_core::field_policy::FieldOutput>,
-    raw_policy: Option<&super::providers::OAuthAuthorizationPolicy>,
+    (raw_output, raw_policy): (
+        Option<&better_auth_core::field_policy::FieldOutput>,
+        Option<&super::providers::OAuthAuthorizationPolicy>,
+    ),
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
     let raw_verification = raw_output.and_then(|output| output.get("emailVerified"));
     let OAuthIdentity {
@@ -1673,8 +1674,7 @@ pub(in crate::plugins) async fn complete_link_social(
         tokens,
         link,
         ctx,
-        None,
-        None,
+        (None, None),
     )
     .await
     .map(|_| ())
@@ -1692,8 +1692,10 @@ async fn complete_link_social_with_raw_email(
     tokens: &OAuthTokenSet,
     link: &OAuthStateLink,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    raw_email: Option<&serde_json::Value>,
-    raw_policy: Option<&super::providers::OAuthAuthorizationPolicy>,
+    (raw_email, raw_policy): (
+        Option<&serde_json::Value>,
+        Option<&super::providers::OAuthAuthorizationPolicy>,
+    ),
 ) -> Result<LinkSocialOutcome, OAuthSignInError> {
     // Explicit linking validates fresh provider data before its trust/email
     // guards or account lookup. The candidate retains the selected local ID.
@@ -2668,8 +2670,7 @@ pub(super) async fn handle_callback(
             &tokens,
             link,
             ctx,
-            raw_email,
-            provider.authorization.as_ref(),
+            (raw_email, provider.authorization.as_ref()),
         )
         .await;
         if matches!(link_result, Ok(LinkSocialOutcome::InvalidRawEmail)) {
@@ -2724,12 +2725,14 @@ pub(super) async fn handle_callback(
         disable_sign_up,
         &meta,
         ctx,
-        provider
-            .authorization
-            .as_ref()
-            .filter(|policy| policy.preserve_raw_profile_scalars)
-            .and(user_info.user_output.as_ref()),
-        provider.authorization.as_ref(),
+        (
+            provider
+                .authorization
+                .as_ref()
+                .filter(|policy| policy.preserve_raw_profile_scalars)
+                .and(user_info.user_output.as_ref()),
+            provider.authorization.as_ref(),
+        ),
     )
     .await
     {

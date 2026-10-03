@@ -14,7 +14,10 @@ use better_auth::plugins::{
     UserManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_core::{CreateAccount, store::AccountStore};
+use better_auth_core::{
+    CreateAccount,
+    store::{AccountStore, UserStore},
+};
 use better_auth_seaorm::DatabaseConnection;
 use better_auth_seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
@@ -301,17 +304,18 @@ pub(crate) async fn router(
         }),
     );
     let store = database.clone();
+    let user_settings = config.clone();
     let observer = fixture.clone();
     let control = fixture.clone();
     router = router.route("/__test/social-provider/profile", post(move |Json(value): Json<Value>| { let control = control.clone(); async move {
         *control.profile.lock().await = value.clone(); Json(json!({"status": true, "profile": value}))
-    }})).route("/__test/social-provider/state", get(move || { let store = store.clone(); let observer = observer.clone(); async move {
-        let users = user::Entity::find().order_by_asc(user::Column::CreatedAt).all(&store).await;
+    }})).route("/__test/social-provider/state", get(move || { let store = store.clone(); let observer = observer.clone(); let user_settings=user_settings.clone(); async move {
+        let users = observed_users(&store,&user_settings).await;
         let accounts = account::Entity::find().order_by_asc(account::Column::CreatedAt).all(&store).await;
         let sessions = session::Entity::find().order_by_asc(session::Column::CreatedAt).all(&store).await;
         match (users, accounts, sessions) {
             (Ok(users), Ok(accounts), Ok(sessions)) => Ok(Json(json!({
-                "users": users.into_iter().map(|row| json!({"id": row.id, "name": row.name, "email": row.email, "emailVerified": row.email_verified, "image": row.image, "createdAt": date(row.created_at), "updatedAt": date(row.updated_at)})).collect::<Vec<_>>(),
+                "users": users,
                 "accounts": accounts.into_iter().map(|row| json!({"id": row.id, "userId": row.user_id, "accountId": row.account_id, "providerId": row.provider_id, "accessToken": row.access_token, "refreshToken": row.refresh_token, "idToken": row.id_token, "scope": row.scope, "accessTokenExpiresAt": row.access_token_expires_at.map(date), "refreshTokenExpiresAt": row.refresh_token_expires_at.map(date), "createdAt": date(row.created_at), "updatedAt": date(row.updated_at)})).collect::<Vec<_>>(),
                 "sessions": sessions.into_iter().map(|row| json!({"id": row.id, "userId": row.user_id, "token": row.token, "expiresAt": date(row.expires_at), "createdAt": date(row.created_at), "updatedAt": date(row.updated_at), "ipAddress": row.ip_address, "userAgent": row.user_agent})).collect::<Vec<_>>(),
                 "receipts": observer.receipts.lock().await.clone(),
@@ -320,14 +324,15 @@ pub(crate) async fn router(
         }
     }}));
     let store = database.clone();
+    let user_settings = config.clone();
     let observer = fixture.clone();
-    router = router.route("/__test/social-provider/duplicate-state", get(move || { let store = store.clone(); let observer = observer.clone(); async move {
-        let users = user::Entity::find().order_by_asc(user::Column::CreatedAt).all(&store).await;
+    router = router.route("/__test/social-provider/duplicate-state", get(move || { let store = store.clone(); let observer = observer.clone(); let user_settings=user_settings.clone(); async move {
+        let users = observed_users(&store,&user_settings).await;
         let accounts = account::Entity::find().order_by_asc(account::Column::CreatedAt).all(&store).await;
         let sessions = session::Entity::find().order_by_asc(session::Column::CreatedAt).all(&store).await;
         match (users, accounts, sessions) {
             (Ok(users), Ok(accounts), Ok(sessions)) => Ok(Json(json!({
-                "users": users.into_iter().map(|row| json!({"id": row.id, "name": row.name, "email": row.email, "emailVerified": row.email_verified, "image": row.image, "createdAt": date(row.created_at), "updatedAt": date(row.updated_at)})).collect::<Vec<_>>(),
+                "users": users,
                 "accounts": accounts.into_iter().map(|row| json!({"password":row.password,"id": row.id, "userId": row.user_id, "accountId": row.account_id, "providerId": row.provider_id, "accessToken": row.access_token, "refreshToken": row.refresh_token, "idToken": row.id_token, "scope": row.scope, "accessTokenExpiresAt": row.access_token_expires_at.map(date), "refreshTokenExpiresAt": row.refresh_token_expires_at.map(date), "createdAt": date(row.created_at), "updatedAt": date(row.updated_at)})).collect::<Vec<_>>(),
                 "sessions": sessions.into_iter().map(|row| json!({"id": row.id, "userId": row.user_id, "token": row.token, "expiresAt": date(row.expires_at), "createdAt": date(row.created_at), "updatedAt": date(row.updated_at), "ipAddress": row.ip_address, "userAgent": row.user_agent})).collect::<Vec<_>>(),
                 "receipts": observer.receipts.lock().await.clone(),
@@ -358,4 +363,28 @@ pub(crate) async fn router(
             Json(state.profile.lock().await.clone())
         })).with_state(fixture.clone());
     Ok((router.merge(provider), fixture))
+}
+
+// The state endpoint exposes adapter output, rather than SeaORM's permissive
+// SQLite bool decoder. Raw SQL is separately retained by the batch endpoint.
+async fn observed_users(
+    database: &DatabaseConnection,
+    config: &AuthConfig,
+) -> Result<Vec<Value>, axum::http::StatusCode> {
+    let rows = user::Entity::find()
+        .order_by_asc(user::Column::CreatedAt)
+        .all(database)
+        .await
+        .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+    let store = crate::backend::store::<TestSchema>(config.clone(), database.clone());
+    let mut output = Vec::new();
+    for row in rows {
+        let verification = store
+            .provider_verification_output(&row.id)
+            .await
+            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?
+            .unwrap_or(Value::Bool(row.email_verified));
+        output.push(json!({"id":row.id,"name":row.name,"email":row.email,"emailVerified":verification,"image":row.image,"createdAt":date(row.created_at),"updatedAt":date(row.updated_at)}));
+    }
+    Ok(output)
 }

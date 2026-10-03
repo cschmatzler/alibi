@@ -129,7 +129,8 @@ fn scopes(account: &AccountCookiePayload) -> Vec<String> {
         .scope
         .as_deref()
         .unwrap_or_default()
-        .split([' ', ','])
+        .split(',')
+        .map(str::trim)
         .filter(|scope| !scope.is_empty())
         .map(str::to_owned)
         .collect()

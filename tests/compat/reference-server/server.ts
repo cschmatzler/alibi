@@ -86,6 +86,7 @@ import { physicalCookieProfiles } from "./fixtures/physical-cookie-fixture";
 import { polarProviderFixture } from "./fixtures/polar-provider-fixture";
 import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
 import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
+import { providerBatchFixture } from "./fixtures/provider-batch-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
@@ -660,6 +661,7 @@ const anonymousProfiles = await anonymousFixture(authOptions, database);
 const sessionCookieCacheProfiles = await sessionCookieCacheFixture(authOptions, database);
 const userLifecycleFixture = createUserLifecycleFixture(authOptions, database);
 const additionalFields = await additionalFieldsFixture(authOptions);
+const providerBatch = providerBatchFixture(authOptions,database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -679,6 +681,9 @@ for (const [path, instance] of paypalFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of redditFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
+for (const [path, instance] of providerBatch.profiles) {
   verificationProfiles.set(path, instance);
 }
 for (const [path, instance] of notionFixture.profiles) {
@@ -1883,6 +1888,8 @@ const server = Bun.serve({
       if (managedProxyControl) return managedProxyControl;
       const railwayControl = await railwayFixture.handle(request);
       const redditControl = await redditFixture.handle(request);
+      const providerBatchControl=await providerBatch.handle(request);
+      if (providerBatchControl) return providerBatchControl;
       if (railwayControl) return railwayControl;
       if (redditControl) return redditControl;
       const polarControl = await polarFixture.handle(request);
@@ -2782,6 +2789,7 @@ const server = Bun.serve({
         await apiKeyStorage.reset();
         railwayFixture.reset();
         redditFixture.reset();
+        providerBatch.reset();
         polarFixture.reset();
         notionFixture.reset();
         paypalFixture.reset();

@@ -13,6 +13,45 @@ function variants<P extends string, S extends string>(
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  ...(
+    [
+      "notion",
+      "paybin",
+      "paypal",
+      "polar",
+      "railway",
+      "reddit",
+      "roblox",
+      "salesforce",
+      "slack",
+      "spotify",
+      "tiktok",
+      "twitch",
+      "twitter",
+      "vercel",
+      "vk",
+      "wechat",
+      "zoom",
+    ] as const
+  ).flatMap((provider) =>
+    variants(`provider-batch-${provider}-`, [
+      "default",
+      "configured",
+      "disabled-configured",
+      "mapped-async",
+      "custom-async",
+      "custom-error",
+      "mapper-error",
+      "refresh-callback",
+      "override",
+      "encrypted",
+      "client-array",
+      "empty-primary",
+      "signup-disabled",
+      "implicit-disabled",
+      "required",
+    ] as const),
+  ),
   ...variants("social-paypal-", [
     "default",
     "live",

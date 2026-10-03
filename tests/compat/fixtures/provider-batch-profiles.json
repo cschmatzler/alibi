@@ -1,0 +1,130 @@
+{
+  "notion": {
+    "bot": {
+      "owner": {
+        "user": {
+          "id": "batch-subject",
+          "name": "Batch Name",
+          "person": {
+            "email": "batch@example.invalid"
+          },
+          "avatar_url": "https://images.example.invalid/batch.png"
+        }
+      }
+    }
+  },
+  "paybin": {
+    "sub": "batch-subject",
+    "name": "Batch Name",
+    "email": "batch@example.invalid",
+    "picture": "https://images.example.invalid/batch.png",
+    "email_verified": true
+  },
+  "paypal": {
+    "user_id": "batch-subject",
+    "name": "Batch Name",
+    "email": "batch@example.invalid",
+    "picture": "https://images.example.invalid/batch.png",
+    "email_verified": true
+  },
+  "polar": {
+    "id": "batch-subject",
+    "public_name": "Batch Name",
+    "email": "batch@example.invalid",
+    "avatar_url": "https://images.example.invalid/batch.png",
+    "email_verified": true
+  },
+  "railway": {
+    "sub": "batch-subject",
+    "name": "Batch Name",
+    "email": "batch@example.invalid",
+    "picture": "https://images.example.invalid/batch.png"
+  },
+  "reddit": {
+    "id": "batch-subject",
+    "name": "Batch Name",
+    "icon_img": "https://images.example.invalid/batch.png?size=large"
+  },
+  "roblox": {
+    "sub": "batch-subject",
+    "nickname": "Batch Name",
+    "picture": "https://images.example.invalid/batch.png"
+  },
+  "salesforce": {
+    "user_id": "batch-subject",
+    "name": "Batch Name",
+    "email": "batch@example.invalid",
+    "photos": {
+      "picture": "https://images.example.invalid/batch.png"
+    },
+    "email_verified": true
+  },
+  "slack": {
+    "https://slack.com/user_id": "batch-subject",
+    "name": "Batch Name",
+    "email": "batch@example.invalid",
+    "picture": "https://images.example.invalid/batch.png",
+    "email_verified": true
+  },
+  "spotify": {
+    "id": "batch-subject",
+    "display_name": "Batch Name",
+    "email": "batch@example.invalid",
+    "images": [
+      {
+        "url": "https://images.example.invalid/batch.png"
+      }
+    ]
+  },
+  "tiktok": {
+    "data": {
+      "user": {
+        "open_id": "batch-subject",
+        "display_name": "Batch Name",
+        "avatar_large_url": "https://images.example.invalid/batch.png"
+      }
+    }
+  },
+  "twitch": {
+    "sub": "batch-subject",
+    "preferred_username": "Batch Name",
+    "email": "batch@example.invalid",
+    "picture": "https://images.example.invalid/batch.png",
+    "email_verified": true
+  },
+  "twitter": {
+    "data": {
+      "id": "batch-subject",
+      "name": "Batch Name",
+      "profile_image_url": "https://images.example.invalid/batch.png"
+    }
+  },
+  "vercel": {
+    "sub": "batch-subject",
+    "name": "Batch Name",
+    "email": "batch@example.invalid",
+    "picture": "https://images.example.invalid/batch.png",
+    "email_verified": true
+  },
+  "vk": {
+    "user": {
+      "user_id": "batch-subject",
+      "first_name": "Batch",
+      "last_name": "Name",
+      "email": "batch@example.invalid",
+      "avatar": "https://images.example.invalid/batch.png"
+    }
+  },
+  "wechat": {
+    "openid": "batch-subject",
+    "nickname": "Batch Name",
+    "headimgurl": "https://images.example.invalid/batch.png"
+  },
+  "zoom": {
+    "id": "batch-subject",
+    "display_name": "Batch Name",
+    "email": "batch@example.invalid",
+    "pic_url": "https://images.example.invalid/batch.png",
+    "verified": true
+  }
+}

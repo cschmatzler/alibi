@@ -123,22 +123,25 @@ impl OAuthProvider {
                 claims.push((claim, better_auth_core::utils::json::JsValue::Null));
             }
         }
-        provider.authorization_params.push((
-            "claims".into(),
-            better_auth_core::utils::json::to_string(
-                &better_auth_core::utils::json::JsValue::Object(
-                    [(
-                        "id_token".into(),
-                        better_auth_core::utils::json::JsValue::Object(
-                            claims.into_iter().collect(),
-                        ),
-                    )]
-                    .into_iter()
-                    .collect(),
-                ),
-            )
-            .expect("Twitch claim names and null values are JSON serializable"),
-        ));
+        // Only string property names and null values enter this object.
+        #[expect(
+            clippy::expect_used,
+            reason = "Claim keys and null values cannot fail JSON serialization"
+        )]
+        let serialized_claims = better_auth_core::utils::json::to_string(
+            &better_auth_core::utils::json::JsValue::Object(
+                [(
+                    "id_token".into(),
+                    better_auth_core::utils::json::JsValue::Object(claims.into_iter().collect()),
+                )]
+                .into_iter()
+                .collect(),
+            ),
+        )
+        .expect("Twitch claim names and null values are JSON serializable");
+        provider
+            .authorization_params
+            .push(("claims".into(), serialized_claims));
         policy.propagate_grant_profile_errors = true;
         provider.authorization = Some(policy);
         provider.get_user_info = Some(std::sync::Arc::new(PublishedProfile {

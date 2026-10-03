@@ -77,8 +77,12 @@ pub(crate) async fn router(
             options.authorization_endpoint = Some(String::new());
             options.redirect_uri = Some(String::new());
         }
-        if mode == "permanent" { options.duration = Some("permanent".into()); }
-        if mode == "empty-duration" { options.duration = Some(String::new()); }
+        if mode == "permanent" {
+            options.duration = Some("permanent".into());
+        }
+        if mode == "empty-duration" {
+            options.duration = Some(String::new());
+        }
         options.disable_default_scope = mode.starts_with("disabled-");
         if mode == "configured-endpoint" {
             options.authorization_endpoint =
@@ -86,7 +90,11 @@ pub(crate) async fn router(
             options.redirect_uri = Some("https://configured.example.invalid/callback".into());
         }
         if mode == "mapped" || mode == "mapped-empty-email" {
-            options.map_profile_to_user = Some(if mode == "mapped-empty-email" { map_empty_email } else { map_profile });
+            options.map_profile_to_user = Some(if mode == "mapped-empty-email" {
+                map_empty_email
+            } else {
+                map_profile
+            });
         }
         let mut provider = OAuthProvider::reddit_with_options(options);
         provider.token_url = format!("{}/__test/reddit/token", config.base_url);
@@ -95,12 +103,16 @@ pub(crate) async fn router(
         provider.require_email_verification = mode == "required";
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(settings.clone())
-                .store(crate::backend::store::<TestSchema>(settings, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    settings,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())
                 .plugin(OAuthPlugin::new().add_provider("reddit", provider))
-                .build().await?,
+                .build()
+                .await?,
         );
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
@@ -108,27 +120,29 @@ pub(crate) async fn router(
     Ok((router.merge(controls), fixture))
 }
 fn map_profile(profile: Value) -> Result<better_auth::plugins::oauth::OAuthUserInfo, String> {
-                MAPPER_RECEIPTS
-                    .lock()
-                    .map_err(|error| error.to_string())?
-                    .push(profile.clone());
-                Ok(better_auth::plugins::oauth::OAuthUserInfo {
-                    additional_fields: Default::default(),
-                    id: "cannot-replace-account-subject".into(),
-                    name: Some(format!(
-                        "Mapped {}",
-                        profile
-                            .get("name")
-                            .and_then(Value::as_str)
-                            .unwrap_or_default()
-                    )),
-                    email: "mapped-reddit@example.invalid".into(),
-                    email_verified: true,
-                    image: Some("https://images.example.invalid/mapped-reddit.png".into()),
-                })
+    MAPPER_RECEIPTS
+        .lock()
+        .map_err(|error| error.to_string())?
+        .push(profile.clone());
+    Ok(better_auth::plugins::oauth::OAuthUserInfo {
+        additional_fields: Default::default(),
+        id: "cannot-replace-account-subject".into(),
+        name: Some(format!(
+            "Mapped {}",
+            profile
+                .get("name")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+        )),
+        email: "mapped-reddit@example.invalid".into(),
+        email_verified: true,
+        image: Some("https://images.example.invalid/mapped-reddit.png".into()),
+    })
 }
 fn map_empty_email(profile: Value) -> Result<better_auth::plugins::oauth::OAuthUserInfo, String> {
- let mut user=map_profile(profile)?;user.email.clear();Ok(user)
+    let mut user = map_profile(profile)?;
+    user.email.clear();
+    Ok(user)
 }
 fn controls(fixture: Fixture) -> Router {
     let controls = Router::new()
