@@ -3,11 +3,12 @@
 //! This store has no database connection. The initialized store wrapper keeps
 //! ephemeral session records for cookie bypass and instance-local logout.
 //! User/account/verification provisioning is instance-local, as in the pinned
-//! no-database memory adapter. Native two-factor/passkey/API-key/device-code records share that
+//! no-database memory adapter. Native two-factor/passkey/API-key/device-code/JWK records share that
 //! instance-local lifetime; other optional records require an application store.
 //! Applications can also use cookie-only sessions with durable SQL user storage.
 mod api_keys;
 mod device_codes;
+mod jwks;
 mod optional_records;
 
 use super::*;
@@ -42,6 +43,7 @@ struct IdentityState {
     passkeys: indexmap::IndexMap<String, Passkey>,
     api_keys: indexmap::IndexMap<String, ApiKey>,
     device_codes: indexmap::IndexMap<String, DeviceCode>,
+    jwks: indexmap::IndexMap<String, Jwk>,
 }
 
 impl StatelessStore {
@@ -102,7 +104,6 @@ unsupported_store!(InvitationStore, {
 impl TeamStore for StatelessStore {}
 impl OrganizationRoleStore for StatelessStore {}
 impl WalletAddressStore for StatelessStore {}
-impl JwkStore for StatelessStore {}
 
 #[async_trait]
 impl SessionStore<StatelessSchema> for StatelessStore {

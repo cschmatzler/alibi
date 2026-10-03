@@ -30,6 +30,7 @@ mod members;
 mod migrations;
 mod native_api_keys;
 mod native_device_codes;
+mod native_jwks;
 mod optional_records;
 mod organizations;
 mod rate_limit;
