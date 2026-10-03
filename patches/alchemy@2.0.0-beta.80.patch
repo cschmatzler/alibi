@@ -1,0 +1,43 @@
+diff --git a/lib/Railway/Website/Astro.js b/lib/Railway/Website/Astro.js
+index 4c52cc06ca4c51bfbfbb3c1187e8e1dc44bc0429..766b25bc36dd2809212d9a19ef1ca259ea9d94ed 100644
+--- a/lib/Railway/Website/Astro.js
++++ b/lib/Railway/Website/Astro.js
+@@ -59,7 +59,15 @@ export const Astro = (id, props = {}) => {
+         name: "Astro",
+         framework: ASTRO_FRAMEWORK_SPECIFIER,
+         target: ASTRO_NODE_TARGET_SPECIFIER,
+-        options: { astro: { ...props.astro, output } },
++        options: {
++            astro: { ...props.astro, output },
++            targetConfig: {
++                notFoundHandling: props.assets?.notFoundHandling === "single-page-application"
++                    ? "spa"
++                    : props.assets?.notFoundHandling,
++                htmlHandling: props.assets?.htmlHandling,
++            },
++        },
+         static: output === "static" ? staticConfigFromAssets(props.assets) : undefined,
+     }).pipe(Namespace.push(id));
+ };
+diff --git a/src/Railway/Website/Astro.ts b/src/Railway/Website/Astro.ts
+index db5eadb87051c1b1c78394d6dd24aa561e757a6b..c266de88af883b2bc284a2dd7674c3b4bde91df6 100644
+--- a/src/Railway/Website/Astro.ts
++++ b/src/Railway/Website/Astro.ts
+@@ -98,7 +98,16 @@ export const Astro = (id: string, props: AstroProps = {}) => {
+     name: "Astro",
+     framework: ASTRO_FRAMEWORK_SPECIFIER,
+     target: ASTRO_NODE_TARGET_SPECIFIER,
+-    options: { astro: { ...props.astro, output } },
++    options: {
++      astro: { ...props.astro, output },
++      targetConfig: {
++        notFoundHandling:
++          props.assets?.notFoundHandling === "single-page-application"
++            ? "spa"
++            : props.assets?.notFoundHandling,
++        htmlHandling: props.assets?.htmlHandling,
++      },
++    },
+     static:
+       output === "static" ? staticConfigFromAssets(props.assets) : undefined,
+   }).pipe(Namespace.push(id));
