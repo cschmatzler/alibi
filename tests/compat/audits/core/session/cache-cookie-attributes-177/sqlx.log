@@ -1,0 +1,43 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/session/cookie-cache.test.ts:
+1723 |     expect(restored.data!.user.id).toBe(signup.data!.user.id);
+1724 |     expect(restored.data!.user.name).toBe("x".repeat(6000));
+1725 |     const logout = await owner.sdk.signOut();
+1726 |     expect(logout.error).toBeNull();
+1727 |     const cleared = owner.headers.at(-1)!.getSetCookie().filter((raw) => raw.startsWith(cookieName + "."));
+1728 |     expect(cleared.length).toBe(parts.length);
+       ^
+error: expect(received).toBe(expected)
+
+Expected: 3
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-cookie-config177/tests/compat/client-tests/tests/core/session/cookie-cache.test.ts:1728:28
+      at runScenario (/tmp/better-auth-cookie-config177/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-cookie-config177/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) compact cache chunking standard uses real writer limits and canonical server chunk indices with base-cookie precedence [643.81ms]
+1723 |     expect(restored.data!.user.id).toBe(signup.data!.user.id);
+1724 |     expect(restored.data!.user.name).toBe("x".repeat(6000));
+1725 |     const logout = await owner.sdk.signOut();
+1726 |     expect(logout.error).toBeNull();
+1727 |     const cleared = owner.headers.at(-1)!.getSetCookie().filter((raw) => raw.startsWith(cookieName + "."));
+1728 |     expect(cleared.length).toBe(parts.length);
+       ^
+error: expect(received).toBe(expected)
+
+Expected: 3
+Received: 0
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-cookie-config177/tests/compat/client-tests/tests/core/session/cookie-cache.test.ts:1728:28
+      at runScenario (/tmp/better-auth-cookie-config177/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-cookie-config177/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) compact cache chunking attributes uses real writer limits and canonical server chunk indices with base-cookie precedence [520.14ms]
+
+ 0 pass
+ 30 filtered out
+ 2 fail
+ 192 expect() calls
+Ran 2 tests across 1 file. [1253.00ms]
