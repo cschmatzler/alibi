@@ -1,59 +1,49 @@
 # LinkedIn provider (issue #151)
 
-Authority is the unchanged installed Better Auth 1.7.6 LinkedIn public factory,
-LinkedInProfile/LinkedInOptions and actual grant helpers. Actual Source factory
-registration and independently implemented Native transport retain all remote
-requests and responses.
+The unchanged installed Better Auth 1.7.6 LinkedIn public factory and grant
+helpers are the authority. Genuine SDK scenarios configure the published
+factory; Native independently implements the public transport and mapping.
 
-Authorization uses www.linkedin.com/oauth/v2/authorization with ordered profile,
-email,openid defaults, configured and requested scopes, preserving duplicates.
-The factory omits codeVerifier: no authorization challenge or code grant verifier.
-loginHint, trusted endpoint and redirect overrides remain. Code/refresh use
-www.linkedin.com/oauth/v2/accessToken with public or secret-post authentication;
-client_key is code-only because the actual refresh helper ignores clientKey.
+Authorization retains ordered `profile email openid` defaults, configured and
+requested scopes including duplicates, trusted endpoint/redirect overrides and
+login hints. The factory omits PKCE. Code and refresh grants use the LinkedIn
+access-token endpoint with public or secret-post authentication; `client_key`
+is code-only, matching the pinned refresh helper.
 
-User lookup is bearer GET api.linkedin.com/v2/userinfo. The original profile.sub
-owns account identity independently of mapProfileToUser ID. name,email,picture
-map from the profile; email_verified uses nullish false (valid booleans retained).
-Original locale/name fields remain original data. Mapper runs on the returned
-profile before raw identity admission. No built-in ID-token verifier/JWKS or
-remote logout is supplied. Returned providers retain generic asynchronous
-user-info/refresh callbacks and signup/link policy options.
+Bearer GET userinfo retains the full original profile and mapper inputs. The
+raw `sub` owns the physical account independently of a mapped public ID.
+Default public output preserves missing/null/numeric name, email and image
+values; `email_verified` uses the factory's nullish false default. Typed
+persistence remains separate. Trusted mapped extras and public values overlay
+the original defaults through the existing output contract. No built-in direct
+ID-token verifier, JWKS discovery or remote logout is supplied; generic
+asynchronous user-info/refresh callbacks remain configurable.
 
-Authoring gate: one actual factory/client table independently owns ordered
-provider defaults, absent PKCE, exact endpoints, raw profile authority and
-nullish verified-email mapping. Existing unrelated defaults and GraphQL/envelope
-owners cannot detect these differences. Retain complete HTTP, mapper, physical
-rows, foreign principals, signed-session/state/replay, refresh/rotation, link,
-getter and local logout observations. No private-predicate test or production
-seam only for tests. Arbitrary malformed output transforms and broader callback
-composition remain181/184/188/193, preserving any actual failures encountered.
+The strongest owners are the existing 45 genuine factory/SDK scenarios, extended
+rather than duplicated. They retain complete HTTP/form/mapper receipts,
+physical rows, unrelated principals, issued session/state, callback replay,
+refresh rotation, explicit linking, owned getters and local logout. Getter
+extensions assert exact public output, foreign denial and unchanged complete
+SQL state. No production test seam, Source patch or comparator exemption is
+introduced. Broader arbitrary mapper composition remains tracked separately.
 
-Before proof, implementation, independent review and all final gates pending.
+The isolated original generic constructor previously failed the genuine ordered
+scope owner (`/tmp/issue151-generic-before-owner.log`). Resuming on current main
+required only this PR's two commits, modern fixture registration and strict
+lint migration; no old LINE or Linear stack implementation was carried.
 
-Initial API and real fixture strict compilation pass. Typecheck stopped before
-runtime because this fresh worktree had no installed dependencies (tsc absent).
-Install the unchanged frozen Bun lockfiles before executing the genuine table.
-Add four nullish/boolean verified-email cases and one original nonobject profile
-mapper-order denial to the actual SDK table, retaining all callback/physical
-and foreign observations. The output trait still bounds arbitrary malformed
-nonboolean projection under184; no permissive cast or provider-specific shim.
+The unchanged Source passes all 45 enhanced owners, 2,080 assertions
+(`/tmp/pr294-source-self-final.log`). Before publication repair, Native passes
+40 and fails five owners at their intended exact public profile assertions:
+numeric/null name, numeric/null image, and the existing account-info getter
+with null/numeric/missing email (`/tmp/pr294-native-before-final.log`). The
+repair uses existing `OAuthUserInfoResponse.user_output`, preserving original
+JSON separately from typed persistence and account admission.
 
-Actual45-owner collection passes45/45,1,710assertions on the first executed run:
-/tmp/issue151-first45-real-owner.log. Full original HTTP GET/form receipts,
-mapper inputs, subject ownership, verified-email true/false/null/missing,
-nonobject mapper-before-denial, all foreign rows, physical account/session
-relationships, signed session/state, callback replay, refresh/link/getter and
-local logout remain observed. Initial API/fixture all-target strict checks pass;
-TypeScript passes after installing unchanged frozen Bun lockfiles.
-
-Actual90385caed6b86f82d2390153c9e51972244b0267 production with genuine fixture
-registration and old public generic constructor reproduces missing ordered
-profile/email/openid defaults after Source passes; exit1/28assertions,
-/tmp/issue151-generic-before-owner.log. Production and both Cargo.lock files
-are unchanged. Only real fixture registration is adapted for the baseline API.
-
-Preserve all5,874 parent requirements and append270 freshly measured
-cells from45passing owners, totaling6,144; verify exact set inclusion against
-actual passing artifacts. No Source/comparer edit, crypto allowance, dependency
-patch or hook bypass. Independent review and frozen broad gates remain pending.
+Focused repaired SDK passes 45/45 with 2,080 assertions. The unchanged original
+harness passes 89/89 with 2,367 assertions. Strict TypeScript/lint, all-target
+workspace clippy and strict documentation pass (`/tmp/pr294-focused-after.log`).
+The complete
+unchanged canonical gate and coverage floor remain pending. Original baseline
+capability requirements and duplicates are preserved; new requirements are
+limited to independently measured Source/Native owner receipts.

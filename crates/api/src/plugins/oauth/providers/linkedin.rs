@@ -140,9 +140,32 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
             .mapper
             .map(|mapper| mapper(profile.clone()))
             .transpose()?;
+        // Keep the factory's original JSON publication separate from typed
+        // persistence and raw account-subject admission.
+        let mut output = serde_json::Map::new();
+        for (source, target) in [("name", "name"), ("email", "email"), ("picture", "image")] {
+            if let Some(value) = profile.get(source) {
+                drop(output.insert(target.into(), value.clone()));
+            }
+        }
+        drop(
+            output.insert(
+                "emailVerified".into(),
+                profile
+                    .get("email_verified")
+                    .filter(|value| !value.is_null())
+                    .cloned()
+                    .unwrap_or(Value::Bool(false)),
+            ),
+        );
+        if let Some(user) = &mapped {
+            output.extend(user.public_profile(true));
+        }
+        let user_output = Some(output);
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: scalar(profile.get("sub"))?.unwrap_or_default(),
                 name: scalar(profile.get("name"))?,
                 email: profile
@@ -158,6 +181,7 @@ impl OAuthUserInfoHandler for LinkedInUserInfo {
             },
         };
         Ok(OAuthUserInfoResponse {
+            user_output,
             user,
             data: profile,
         })

@@ -1,6 +1,4 @@
-import { linkedinProviderFixture } from "./fixtures/linkedin-provider-fixture";
 #!/usr/bin/env bun
-
 import { Database } from "bun:sqlite";
 
 import { apiKey } from "@better-auth/api-key";
@@ -53,6 +51,7 @@ import { kakaoProviderFixture } from "./fixtures/kakao-provider-fixture";
 import { kickProviderFixture } from "./fixtures/kick-provider-fixture";
 import { createLastLoginMethodFixture } from "./fixtures/last-login-method-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./fixtures/lifecycle-fixture";
+import { linkedinProviderFixture } from "./fixtures/linkedin-provider-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";

@@ -13,7 +13,19 @@ function variants<P extends string, S extends string>(
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
-  ...variants("social-linkedin-",["default","public","configured","disabled-scope","disabled-configured","mapped","implicit-disabled","signup-disabled","configured-endpoint","empty-clients","client-key"] as const),
+  ...variants("social-linkedin-", [
+    "default",
+    "public",
+    "configured",
+    "disabled-scope",
+    "disabled-configured",
+    "mapped",
+    "implicit-disabled",
+    "signup-disabled",
+    "configured-endpoint",
+    "empty-clients",
+    "client-key",
+  ] as const),
   "managed-old",
   "managed-retained",
   "managed-retired",

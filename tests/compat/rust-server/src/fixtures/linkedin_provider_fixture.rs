@@ -18,18 +18,18 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 static MAPPER_RECEIPTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
 #[derive(Clone, Default)]
-pub(super) struct Fixture {
+pub(crate) struct Fixture {
     control: Arc<Mutex<Value>>,
     receipts: Arc<Mutex<Vec<Value>>>,
 }
 impl Fixture {
-    pub(super) async fn reset(&self) {
+    pub(crate) async fn reset(&self) {
         *self.control.lock().await = json!({});
         self.receipts.lock().await.clear();
         MAPPER_RECEIPTS.lock().expect("mapper receipt lock").clear();
     }
 }
-pub(super) async fn router(
+pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
 ) -> AuthResult<(Router, Fixture)> {
@@ -76,6 +76,10 @@ pub(super) async fn router(
                     .expect("mapper receipt lock")
                     .push(profile);
                 Ok(OAuthUserInfo {
+                    additional_fields: serde_json::from_value(
+                        json!({"providerExtra":{"retained":true}}),
+                    )
+                    .expect("mapped extras"),
                     id: "cannot-replace-raw-account".into(),
                     name: Some("Mapped LinkedIn User".into()),
                     email: "mapped-linkedin@example.invalid".into(),
