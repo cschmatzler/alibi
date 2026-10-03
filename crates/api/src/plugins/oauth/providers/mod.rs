@@ -955,3 +955,5 @@ mod tests {
 
 mod linkedin;
 pub use linkedin::LinkedInOptions;
+mod linear;
+pub use linear::LinearOptions;

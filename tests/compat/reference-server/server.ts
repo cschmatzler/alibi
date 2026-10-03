@@ -30,6 +30,7 @@ import { apiKeyBackgroundFixture } from "./fixtures/api-key-background-fixture";
 import { createApiKeyGenerationFixture } from "./fixtures/api-key-generation-fixture";
 import { createApiKeyHookFixture } from "./fixtures/api-key-hook-fixture";
 import { createApiKeyOptionsFixture } from "./fixtures/api-key-options-fixture";
+import { apiKeyStorageFixture } from "./fixtures/api-key-storage-fixture";
 import { appleProviderFixture } from "./fixtures/apple-provider-fixture";
 import { atlassianProviderFixture } from "./fixtures/atlassian-provider-fixture";
 import { createBearerFixture } from "./fixtures/bearer-fixture";
@@ -52,6 +53,7 @@ import { kickProviderFixture } from "./fixtures/kick-provider-fixture";
 import { createLastLoginMethodFixture } from "./fixtures/last-login-method-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./fixtures/lifecycle-fixture";
 import { linkedinProviderFixture } from "./fixtures/linkedin-provider-fixture";
+import { linearProviderFixture } from "./fixtures/linear-provider-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
@@ -618,6 +620,7 @@ const figmaFixture = figmaProviderFixture(authOptions);
 const huggingfaceFixture = huggingfaceProviderFixture(authOptions);
 const linkedinFixture = linkedinProviderFixture(authOptions);
 const kakaoFixture = kakaoProviderFixture(authOptions);
+const linearFixture = linearProviderFixture(authOptions);
 const kickFixture = kickProviderFixture(authOptions);
 const atlassianFixture = atlassianProviderFixture(authOptions);
 const appleFixture = appleProviderFixture(authOptions);
@@ -659,6 +662,9 @@ for (const [path, instance] of linkedinFixture.profiles) verificationProfiles.se
 for (const [path, instance] of kakaoFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
+for (const [path, instance] of linearFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
 for (const [path, instance] of kickFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
@@ -677,6 +683,9 @@ for (const [path, instance] of anonymousProfiles.profiles) {
 for (const [path, instance] of sessionCookieCacheProfiles.profiles) {
   verificationProfiles.set(path, instance);
 }
+const apiKeyStorage = await apiKeyStorageFixture(database, authOptions);
+for (const [path, instance] of apiKeyStorage.profiles) verificationProfiles.set(path, instance);
+
 const apiKeyBackground = await apiKeyBackgroundFixture(database, authOptions);
 for (const [path, instance] of apiKeyBackground.profiles) {
   verificationProfiles.set(path, instance);
@@ -1634,6 +1643,8 @@ const server = Bun.serve({
       if (kakaoControl) {
         return kakaoControl;
       }
+      const linearControl = await linearFixture.handle(request);
+      if (linearControl) return linearControl;
       const kickControl = await kickFixture.handle(request);
       if (kickControl) {
         return kickControl;
@@ -2294,6 +2305,8 @@ const server = Bun.serve({
       if (url.pathname === "/__test/api-key/update" && request.method === "POST") {
         return jsonResponse(await auth.api.updateApiKey({ body: await readJson(request) }));
       }
+      const apiKeyStorageControl = await apiKeyStorage.control(request);
+      if (apiKeyStorageControl) return apiKeyStorageControl;
       const apiKeyBackgroundControl = await apiKeyBackground.control(request);
       if (apiKeyBackgroundControl) {
         return apiKeyBackgroundControl;
@@ -2464,6 +2477,7 @@ const server = Bun.serve({
         return jsonResponse(databaseResidue());
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
+        await apiKeyStorage.reset();
         cloudflareFixture.reset();
         cognitoFixture.reset();
         dropboxFixture.reset();
@@ -2472,6 +2486,7 @@ const server = Bun.serve({
         huggingfaceFixture.reset();
         linkedinFixture.reset();
         kakaoFixture.reset();
+        linearFixture.reset();
         kickFixture.reset();
         atlassianFixture.reset();
         appleFixture.reset();
