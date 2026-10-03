@@ -1,0 +1,12 @@
+{
+  "better-auth": {
+    "modules": 462,
+    "identicalToPublishedTarball": true,
+    "differences": []
+  },
+  "@better-auth/memory-adapter": {
+    "modules": 2,
+    "identicalToPublishedTarball": true,
+    "differences": []
+  }
+}

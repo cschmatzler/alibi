@@ -1,0 +1,16 @@
+{
+  "better-auth": {
+    "version": "1.7.6",
+    "modules": 252,
+    "maxLinks": 100
+  },
+  "@better-auth/memory-adapter": {
+    "version": "1.7.6",
+    "modules": 1,
+    "maxLinks": 93
+  },
+  "tarballs": {
+    "memory-adapter-1.7.6.tgz": "96520ab210c9cdd84f9724a2f9304493ac169554731a36a91b807db00299e3a7",
+    "better-auth-1.7.6.tgz": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99"
+  }
+}

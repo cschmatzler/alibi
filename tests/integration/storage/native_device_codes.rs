@@ -2,7 +2,7 @@
 use super::{Backend, Db, TestResult, backend_tests};
 use better_auth::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use better_auth_core::{AuthRequest, AuthResponse, AuthSession, HttpMethod};
+use better_auth_core::{AuthRequest, AuthResponse, AuthSession, HttpMethod, UpdateDeviceCode};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -61,11 +61,13 @@ async fn native_device_workflow<B: Backend>(db: Db) -> TestResult {
         plugins(AuthBuilder::new(config.clone()).store(B::store(Arc::new(config), &connection)))
             .build()
             .await?;
-    workflow(
-        &auth,
-        std::any::type_name::<B>().rsplit("::").next().unwrap(),
-    )
-    .await?;
+    drop(
+        workflow(
+            &auth,
+            std::any::type_name::<B>().rsplit("::").next().unwrap(),
+        )
+        .await?,
+    );
     assert_eq!(db.count("device_code").await?, 0);
     assert_eq!(db.count("sessions").await?, 0);
     B::close(connection).await
@@ -76,7 +78,7 @@ async fn without_database_native_device_workflow() -> TestResult {
     let auth = plugins(AuthBuilder::without_database(config.clone()))
         .build()
         .await?;
-    workflow(&auth, "without-database").await?;
+    let cookie = workflow(&auth, "without-database").await?;
     let mut trace = Vec::new();
     let issued = call(
         &auth,
@@ -107,9 +109,81 @@ async fn without_database_native_device_workflow() -> TestResult {
             .await?
             .is_some()
     );
+    let old = auth
+        .store()
+        .get_device_code_by_device_code(&code)
+        .await?
+        .unwrap();
+    let review = call(
+        &restarted,
+        &mut trace,
+        "/device",
+        None,
+        &cookie,
+        Some(&old.user_code),
+    )
+    .await?;
+    assert_eq!(body(&review)["error"], "invalid_request");
+    let update = UpdateDeviceCode {
+        status: Some("approved".into()),
+        user_id: Some(Some("absent-owner".into())),
+        ..Default::default()
+    };
+    assert!(matches!(
+        restarted
+            .store()
+            .update_device_code(&old.id, update.clone())
+            .await,
+        Err(better_auth_core::AuthError::NotFound(_))
+    ));
+    assert!(
+        !restarted
+            .store()
+            .claim_device_code(&old.id, "absent-owner")
+            .await?
+    );
+    assert!(
+        !restarted
+            .store()
+            .update_device_code_if_status(&old.id, "pending", update)
+            .await?
+    );
+    assert!(
+        !restarted
+            .store()
+            .delete_device_code_if_status(&old.id, "approved")
+            .await?
+    );
+    restarted.store().delete_device_code(&old.id).await?;
+    assert!(
+        restarted
+            .store()
+            .get_device_code_by_device_code(&code)
+            .await?
+            .is_none()
+    );
+    assert!(
+        restarted
+            .store()
+            .get_device_code_by_user_code(&old.user_code)
+            .await?
+            .is_none()
+    );
+    if let Ok(dir) = std::env::var("DEVICE_172_EVIDENCE") {
+        std::fs::write(
+            std::path::Path::new(&dir).join("native-restart-workflow.json"),
+            serde_json::to_vec_pretty(&trace)?,
+        )?;
+        std::fs::write(
+            std::path::Path::new(&dir).join("native-record-effects.json"),
+            serde_json::to_vec_pretty(
+                &json!({"restartLost":true,"originalRetained":true,"missingUpdate":"NotFound","missingClaim":false,"missingDecision":false,"missingConsume":false,"freshRecord":null}),
+            )?,
+        )?;
+    }
     Ok(())
 }
-async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestResult {
+async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestResult<String> {
     let mut trace = Vec::new();
     let mut cookies = Vec::new();
     for name in ["owner", "other"] {
@@ -347,5 +421,5 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestRes
             serde_json::to_vec_pretty(&trace)?,
         )?;
     }
-    Ok(())
+    Ok(cookies.remove(0))
 }

@@ -5,6 +5,8 @@ description: "Authorize a CLI or constrained device through a browser on another
 
 `DeviceAuthorizationPlugin` lets a user authorize a CLI or constrained device from another device.
 
+With `AuthBuilder::without_database`, device codes live in the built-in store for that auth instance. Restarting or creating a new instance loses pending and approved codes. Use a durable application store when grants must survive a restart.
+
 ## Setup
 
 ```bash
