@@ -70,6 +70,24 @@ where
         if persist {
             fields.apply_adapter_transforms_async().await?;
         }
+        // These fields are persisted by new_active, including on handwritten
+        // schemas with renamed columns and no generic additional-field bindings.
+        for (name, destination) in [
+            (
+                "activeOrganizationId",
+                &mut create_session.active_organization_id,
+            ),
+            ("activeTeamId", &mut create_session.active_team_id),
+            ("impersonatedBy", &mut create_session.impersonated_by),
+        ] {
+            if let Some(value) = fields.shift_remove(name) {
+                *destination = crate::session_fields::prepare_string_value(
+                    db,
+                    crate::session_fields::raw_value(&value)?,
+                )
+                .await?;
+            }
+        }
         let mut active = S::Session::new_active(None, token, create_session, now);
         if !fields.is_empty() {
             for (column, value) in
