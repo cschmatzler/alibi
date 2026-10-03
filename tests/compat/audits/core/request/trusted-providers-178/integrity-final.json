@@ -1,0 +1,20 @@
+[
+  {
+    "package": "better-auth",
+    "version": "1.7.6",
+    "integrity": "sha512-WTMqOpmTTj+oBoX7zzPOzL85342Upyf+/v0IkH1kvGRA85lV4JGRFIYMIRKqvjZ6ShsuL5VX/c9C13jtoZXcKA==",
+    "tarballSHA256": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+    "privateInodes": true,
+    "filesBeforeAndAfterVerified": 465,
+    "mutatedSourceFiles": 0
+  },
+  {
+    "package": "core",
+    "version": "1.7.6",
+    "integrity": "sha512-yBDDO0J4VCHT1qEZtzj6aMexX4etyLesitoxehcWHzPrzYqrFHwe/hgskye+imlGhQVOysuljMg8M8BA6GrtIg==",
+    "tarballSHA256": "e77e869a604083abf292ba9045f5182bd25cc2e57697e8fc1e3965651613f908",
+    "privateInodes": true,
+    "filesBeforeAndAfterVerified": 350,
+    "mutatedSourceFiles": 0
+  }
+]

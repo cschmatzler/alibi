@@ -1,0 +1,27 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 16.5ms
+• Running devenv:files
+✓ Running devenv:files in 35.2ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 13.1ms
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-close178)
+warning: unused result of type `tokio::sync::BarrierWaitResult`
+  --> tests/integration/core/dynamic_providers.rs:42:13
+   |
+42 |             self.barrier.wait().await;
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: requested on the command line with `-W unused-results`
+
+warning: `better-auth` (test "integration") generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 9.95s
+     Running tests/integration/main.rs (/tmp/close178-target/debug/deps/integration-f5dd00c4cdaeb563)
+
+running 2 tests
+test core::dynamic_providers::on_seaorm::dynamic_provider_callbacks ... ok
+test core::dynamic_providers::on_sqlx::dynamic_provider_callbacks ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 432 filtered out; finished in 0.33s
+
+mbx[cache]: 0 hits, 0 misses, 1 not looked up, 1 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: 1.9 TiB logical of old files removed to date. the broom sends its regards.

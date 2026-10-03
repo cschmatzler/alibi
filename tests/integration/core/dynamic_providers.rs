@@ -5,7 +5,7 @@
     clippy::too_many_lines,
     reason = "endpoint regression setup and independent storage receipts fail fast"
 )]
-use crate::storage::{Backend, Db, TestResult, backend_tests};
+use crate::storage::{Backend, Db, Raw, TestResult, backend_tests};
 use async_trait::async_trait;
 use better_auth::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedProvidersResolver};
 use better_auth::plugins::{OAuthPlugin, oauth::OAuthProvider};
@@ -182,6 +182,22 @@ fn callback(code: &str, host: &str, trust: &str, state: &str, cookies: &str) -> 
     _ = r.headers.insert("cookie".into(), cookies.into());
     r
 }
+async fn physical_account(db: &Db, id: &str) -> TestResult<Value> {
+    use better_auth_sqlx::sqlx::{self, Row};
+    Ok(crate::storage::on_raw!(&db.raw, |pool| {
+        let row = sqlx::query(sqlx::AssertSqlSafe(String::from(
+            "SELECT id, user_id, account_id, access_token, scope FROM accounts WHERE id=$1",
+        )))
+        .bind(id)
+        .fetch_one(pool)
+        .await?;
+        json!({"id":row.try_get::<String,_>("id")?,
+            "userId":row.try_get::<String,_>("user_id")?,
+            "accountId":row.try_get::<String,_>("account_id")?,
+            "accessToken":row.try_get::<String,_>("access_token")?,
+            "scope":row.try_get::<String,_>("scope")?})
+    }))
+}
 async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
     struct InitFailure;
     #[async_trait]
@@ -348,6 +364,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
             password: None,
         })
         .await?;
+    let foreign_before = physical_account(&db, &foreign_account.id().to_string()).await?;
     let actor = auth
         .store()
         .get_user_by_email("actor@example.test")
@@ -380,25 +397,27 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
     assert_eq!(unchanged.user_id(), foreign.id());
     assert_eq!(unchanged.access_token(), Some("foreign-token"));
     assert_eq!(unchanged.scope(), Some("foreign-scope"));
-    receipts.push(json!({"case":"foreign","start":start,"callbackLocation":foreign_result.headers.get("location"),"ownerUnchanged":true}));
+    let foreign_after = physical_account(&db, &foreign_account.id().to_string()).await?;
+    assert_eq!(foreign_before, foreign_after);
+    receipts.push(json!({"case":"foreign","start":start,"callbackLocation":foreign_result.headers.get("location"),"physicalBefore":foreign_before,"physicalAfter":foreign_after}));
     assert_eq!(db.count_where(
         "SELECT COUNT(*) FROM accounts WHERE id=$1 AND user_id=$2 AND access_token='foreign-token' AND scope='foreign-scope'",
         &[&foreign_account.id().to_string(), &foreign.id().to_string()],
     ).await?, 1);
     for mode in ["error", "api-error"] {
-    let calls_before = policy.calls.lock().unwrap().len();
-    let failed = auth
-        .handle_request(req(
-            HttpMethod::Post,
-            "/sign-in/social",
-            "a.example.test",
-            mode,
-            json!({"provider":"gitlab"}),
-        ))
-        .await?;
-    assert_eq!(failed.status, 500);
-    assert!(failed.body.is_empty());
-    assert_eq!(policy.calls.lock().unwrap().len(), calls_before + 1);
+        let calls_before = policy.calls.lock().unwrap().len();
+        let failed = auth
+            .handle_request(req(
+                HttpMethod::Post,
+                "/sign-in/social",
+                "a.example.test",
+                mode,
+                json!({"provider":"gitlab"}),
+            ))
+            .await?;
+        assert_eq!(failed.status, 500);
+        assert!(failed.body.is_empty());
+        assert_eq!(policy.calls.lock().unwrap().len(), calls_before + 1);
     }
     assert_eq!(db.count("accounts").await?, 3);
     assert_eq!(db.count("sessions").await?, 3);
@@ -414,7 +433,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
                 std::any::type_name::<B>().rsplit("::").next().unwrap()
             ),
             serde_json::to_vec_pretty(
-                &json!({"callbacks":receipts,"policyCalls":*policy.calls.lock().unwrap(),"providerHTTP":*provider_receipts.lock().unwrap(),"physical":{"users":6,"accounts":3,"sessions":3}}),
+                &json!({"callbacks":receipts,"policyCalls":*policy.calls.lock().unwrap(),"providerHTTP":*provider_receipts.lock().unwrap(),"physical":{"users":db.count("users").await?,"accounts":db.count("accounts").await?,"sessions":db.count("sessions").await?}}),
             )?,
         )?;
     }
