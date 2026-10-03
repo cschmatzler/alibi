@@ -2,13 +2,13 @@
 use crate::TestSchema;
 use async_trait::async_trait;
 use axum::{
-    Form, Json, Router,
     extract::{Query, Request, State},
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{any, get, post},
+    Form, Json, Router,
 };
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::oauth::OAuthProvider;
@@ -23,12 +23,27 @@ use better_auth_seaorm::sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Stat
 use better_auth_seaorm::store::entities::{account, session, user, verification};
 use better_auth_seaorm::{Database, DatabaseConnection, DatabaseHooks, HookControl};
 use chrono::{DateTime, SecondsFormat, Utc};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 use tower::ServiceExt;
 const PATH: &str = "/__test/profiles/oauth-proxy/api/auth";
+const OPTION_MODES: &[&str] = &[
+    "dedicated",
+    "request",
+    "dynamic",
+    "environment",
+    "error",
+    "empty-error",
+    "fractional",
+    "nan",
+    "infinity",
+    "negative-infinity",
+    "cache",
+    "signup-absent",
+    "signup-disabled",
+];
 const SECRET: &str = "local-fixture-dedicated-oauth-proxy-secret-32";
 struct Grant {
     challenge: String,
@@ -231,7 +246,7 @@ async fn build_router(
         for mode in if managed {
             vec!["old", "retained", "retired", "legacy", "bare"]
         } else {
-            vec!["dedicated"]
+            OPTION_MODES.to_vec()
         } {
             let mut settings = config
                 .clone()
@@ -239,6 +254,27 @@ async fn build_router(
                 .base_path(path)
                 .trusted_origin(config.base_url.clone())
                 .trusted_origin(production_origin.clone());
+            if mode == "dynamic" {
+                settings.dynamic_base_url = Some(better_auth_core::config::DynamicBaseUrl {
+                    allowed_hosts: vec!["localhost:*".into(), "127.0.0.1:*".into()],
+                    protocol: Some(better_auth_core::config::BaseUrlProtocol::Http),
+                    fallback: Some(origin.clone()),
+                });
+            }
+            if mode == "error" {
+                settings.api_error_url =
+                    Some(format!("{}/configured-error?kept=yes", config.base_url));
+            }
+            if mode == "empty-error" {
+                settings.api_error_url = Some(String::new());
+            }
+            if mode == "cache" {
+                settings.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+                    enabled: true,
+                    max_age: 120.0,
+                    ..Default::default()
+                });
+            }
             if cookie {
                 settings.account.store_state_strategy =
                     better_auth_core::OAuthStateStrategy::Cookie;
@@ -262,6 +298,12 @@ async fn build_router(
                     _ => None,
                 };
             }
+            let mut provider = OAuthProvider::gitlab_with_issuer(
+                "proxy-fixture-client",
+                "proxy-fixture-secret",
+                &format!("{}{control}/provider", config.base_url),
+            );
+            provider.disable_sign_up = mode == "signup-disabled";
             let auth = Arc::new(
                 AuthBuilder::<TestSchema>::new(settings.clone())
                     .store(
@@ -271,17 +313,18 @@ async fn build_router(
                     .rate_limit(RateLimitConfig::new().enabled(false))
                     .plugin(EmailPasswordPlugin::new().enable_username(false))
                     .plugin(SessionManagementPlugin::new())
-                    .plugin(OAuthPlugin::new().add_provider(
-                        "gitlab",
-                        OAuthProvider::gitlab_with_issuer(
-                            "proxy-fixture-client",
-                            "proxy-fixture-secret",
-                            &format!("{}{control}/provider", config.base_url),
-                        ),
-                    ))
+                    .plugin(OAuthPlugin::new().add_provider("gitlab", provider))
                     .plugin(OAuthProxyPlugin::with_config(OAuthProxyConfig {
-                        current_url: Some(origin.clone()),
-                        production_url: Some(production_origin.clone()),
+                        current_url: (!["request", "dynamic", "environment"].contains(&mode))
+                            .then(|| origin.clone()),
+                        max_age_seconds: match mode {
+                            "fractional" => 0.125,
+                            "nan" => f64::NAN,
+                            "infinity" => f64::INFINITY,
+                            "negative-infinity" => f64::NEG_INFINITY,
+                            _ => 60.0,
+                        },
+                        production_url: (mode != "environment").then(|| production_origin.clone()),
                         secret: (!managed).then(|| SECRET.into()),
                         ..Default::default()
                     }))
@@ -307,6 +350,11 @@ async fn build_router(
         let mut modes=fixture.key_modes.lock().await;
         for(index,origin_value)in [preview,production].iter().enumerate(){if origin.is_none_or(|origin|origin==origin_value){modes[index]=mode.into();}}
         Json(json!({"status":true})).into_response()
+    }}}))
+    .route(&format!("{control}/options"),post({let preview=config.base_url.clone();let production=production_origin.clone();move |State(fixture):State<Fixture>,Json(value):Json<Value>|{let preview=preview.clone();let production=production.clone();async move{
+        let mode=value.get("mode").and_then(Value::as_str).unwrap_or("");let origin=value.get("origin").and_then(Value::as_str);
+        if managed || !OPTION_MODES.contains(&mode) || origin.is_some_and(|origin|origin!=preview&&origin!=production){return (StatusCode::BAD_REQUEST,Json(json!({"error":"Unknown option runtime"}))).into_response();}
+        let mut modes=fixture.key_modes.lock().await;for(index,origin_value)in [preview,production].iter().enumerate(){if origin.is_none_or(|origin|origin==origin_value){modes[index]=mode.into();}}Json(json!({"status":true})).into_response()
     }}}))
     .route(&format!("{control}/state"),get(state))
     .route(&format!("{control}/control"),post(|State(fixture):State<Fixture>,Json(value):Json<Value>|async move{

@@ -947,3 +947,375 @@ compatScenario(
   undefined,
   comparison,
 );
+
+// These owners exercise remaining configuration contracts through the actual
+// two-host endpoint; default login/link proofs above are not replayed.
+compatScenario(
+  "OAuth proxy remaining URL POST error and pending maxAge configuration contracts",
+  async (ctx) => {
+    const owner = ctx.actor("remaining-options", "oauth-proxy");
+    const options = async (mode: string, origin?: string) => {
+      const result = await ctx.rawRequest({
+        path: "/__test/oauth-proxy/options",
+        method: "POST",
+        json: { mode, origin },
+      });
+      expect(result.status).toBe(200);
+      return result;
+    };
+    const initial = await state(ctx);
+    const selectedRequest = await options("request");
+    const issued = await issue(ctx, owner);
+    const approval = await response(
+      await owner.fetch(issued.authorization, { redirect: "manual" }),
+    );
+    const approved = new URL(approval.location!);
+    const postURL = new URL(approved);
+    postURL.searchParams.delete("state");
+    postURL.searchParams.delete("code");
+    // Query code wins over the deliberately invalid body code; state comes
+    // from the form body, so GET-only forwarding cannot satisfy this owner.
+    postURL.searchParams.set("code", approved.searchParams.get("code")!);
+    const posted = await response(
+      await owner.fetch(postURL, {
+        method: "POST",
+        redirect: "manual",
+        credentials: "omit",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          state: approved.searchParams.get("state")!,
+          code: "invalid-body-code",
+        }),
+      }),
+    );
+    expect(posted.status).toBe(302);
+    const bridge = new URL(posted.location!);
+    expect(bridge.origin).toBe(ctx.baseURL);
+    const token = bridge.searchParams.get("profile")!;
+    const payload = JSON.parse(await symmetricDecrypt({ key: secret, data: token }));
+    expect(payload.state).toBe(issued.state);
+    const afterExchange = await state(ctx);
+    expect(afterExchange.production).toEqual(initial.production);
+    expect(afterExchange.preview.users).toEqual(initial.preview.users);
+    expect(
+      afterExchange.receipts.filter((receipt) => receipt.stage === "token").at(-1)!.body!.code,
+    ).toBe(approved.searchParams.get("code")!);
+    const selectedError = await options("error", ctx.baseURL);
+    const noProfile = new URL(bridge);
+    noProfile.searchParams.delete("profile");
+    const missing = await response(await owner.fetch(noProfile, { redirect: "manual" }));
+    expect(missing.location).toBe(`${ctx.baseURL}/configured-error?kept=yes&error=missing_profile`);
+    const selectedEmpty = await options("empty-error", ctx.baseURL);
+    const empty = await response(await owner.fetch(noProfile, { redirect: "manual" }));
+    expect(empty.location).toBe(`${ctx.baseURL}/api/auth/error?error=missing_profile`);
+    const selectedFractional = await options("fractional", ctx.baseURL);
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const expired = await response(await owner.fetch(bridge, { redirect: "manual" }));
+    expect(new URL(expired.location!).searchParams.get("error")).toBe("payload_expired");
+    expect((await state(ctx)).preview.verification).toHaveLength(1);
+    const selectedNegative = await options("negative-infinity", ctx.baseURL);
+    const negative = await response(await owner.fetch(bridge, { redirect: "manual" }));
+    expect(new URL(negative.location!).searchParams.get("error")).toBe("payload_expired");
+    const selectedNaN = await options("nan", ctx.baseURL);
+    const accepted = await response(await owner.fetch(bridge, { redirect: "manual" }));
+    expect(accepted.location).toBe(`${ctx.baseURL}/proxy-new`);
+    const current = await owner.client.getSession();
+    expect(current.data!.user.email).toBe("proxy-owner@fixture.test");
+    const final = await state(ctx);
+    expect(final.preview.verification).toHaveLength(0);
+    expect(final.preview.sessions).toHaveLength(1);
+    expect(final.production).toEqual(initial.production);
+    // Positive infinity is exercised on a second genuine grant, using the
+    // existing account so this assertion owns age selection rather than signup.
+    await options("dedicated");
+    const second = await issue(ctx, owner);
+    const forwarded = await forward(ctx, owner, second);
+    const selectedInfinity = await options("infinity", ctx.baseURL);
+    const infinite = await response(await owner.fetch(forwarded.bridge, { redirect: "manual" }));
+    expect(infinite.location).toBe(`${ctx.baseURL}/proxy-done?application=kept`);
+    const afterInfinity = await state(ctx);
+    expect(afterInfinity.preview.sessions).toHaveLength(2);
+    expect(afterInfinity.production).toEqual(initial.production);
+    return {
+      selectedRequest,
+      issuedState: issued.issuedState,
+      approval,
+      posted,
+      oauthProxyProfile: { token, payload },
+      initial: observations(initial),
+      afterExchange: observations(afterExchange),
+      selectedError,
+      missing,
+      selectedEmpty,
+      empty,
+      selectedFractional,
+      expired,
+      selectedNegative,
+      negative,
+      selectedNaN,
+      accepted,
+      current,
+      final: observations(final),
+      secondState: second.issuedState,
+      secondProfile: { oauthProxyProfile: forwarded.atom },
+      selectedInfinity,
+      infinite,
+      afterInfinity: observations(afterInfinity),
+    };
+  },
+  ["POST /sign-in/social", "POST /callback/{id}", "GET /callback/{id}/oauth-proxy"],
+  undefined,
+  comparison,
+);
+
+compatScenario(
+  "OAuth proxy remaining signed preference cache and concurrent cookie restoration composition",
+  async (ctx) => {
+    const owner = ctx.actor("remaining-composition", "oauth-proxy-cookie");
+    const initial = await state(ctx, true);
+    // Seed the actual signed preference through a public email signin.
+    const signup = await owner.client.signUp.email({
+      email: ctx.uniqueEmail("remaining-preference"),
+      name: "Preference",
+      password: "password123",
+    });
+    expect(signup.error).toBeNull();
+    const signin = await owner.fetch(
+      `${ctx.baseURL}${authProfilePath("oauth-proxy-cookie")}/sign-in/email`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: signup.data!.user.email,
+          password: "password123",
+          rememberMe: false,
+        }),
+      },
+    );
+    expect(signin.status).toBe(200);
+    const signedPreference = signin.headers
+      .getSetCookie()
+      .find((cookie) => cookie.startsWith("better-auth.dont_remember="))!;
+    expect(signedPreference).toBeDefined();
+    const preference = signedPreference.split(";")[0]!;
+    const issued = await issue(ctx, owner, false, true);
+    const forwarded = await forward(ctx, owner, issued, true);
+    const selected = await ctx.rawRequest({
+      path: "/__test/oauth-proxy-cookie/options",
+      method: "POST",
+      json: { mode: "cache", origin: ctx.baseURL },
+    });
+    expect(selected.status).toBe(200);
+    const raw = await owner.fetch(forwarded.bridge, {
+      redirect: "manual",
+      headers: { cookie: `${preference}; better-auth.oauth_state=${issued.issuedCookie!.token}` },
+    });
+    const cookies = raw.headers.getSetCookie();
+    expect(cookies.find((cookie) => cookie.startsWith("better-auth.session_token="))).not.toContain(
+      "Max-Age",
+    );
+    expect(cookies.find((cookie) => cookie.startsWith("better-auth.dont_remember="))).toBeDefined();
+    expect(cookies.find((cookie) => cookie.startsWith("better-auth.session_data="))).not.toContain(
+      "Max-Age",
+    );
+    const completed = await response(raw);
+    expect(completed.location).toBe(`${ctx.baseURL}/proxy-new`);
+    const current = await owner.client.getSession();
+    expect(current.data!.user.email).toBe("proxy-owner@fixture.test");
+    const beforeConcurrent = await state(ctx, true);
+    // Source allows restored live cookie replay. Two requests with the exact
+    // authentic cookie exercise concurrent completion, with no invented ledger.
+    const completions = await Promise.all(
+      [0, 1].map(async () =>
+        response(
+          await owner.fetch(forwarded.bridge, {
+            redirect: "manual",
+            credentials: "omit",
+            headers: { cookie: `better-auth.oauth_state=${issued.issuedCookie!.token}` },
+          }),
+        ),
+      ),
+    );
+    for (const completion of completions)
+      expect(completion.location).toBe(`${ctx.baseURL}/proxy-done?application=kept`);
+    const final = await state(ctx, true);
+    expect(final.preview.sessions).toHaveLength(beforeConcurrent.preview.sessions.length + 2);
+    expect(final.preview.users).toEqual(beforeConcurrent.preview.users);
+    expect(final.preview.verification).toEqual([]);
+    expect(final.production).toEqual(initial.production);
+    return {
+      initial: observations(initial),
+      signup,
+      signin: { status: signin.status, body: await signin.json() },
+      signedPreference,
+      issuedState: issued.issuedState,
+      cookieState: {
+        token: issued.issuedCookie!.token,
+        payload: issued.issuedState.stateCookie.payload,
+      },
+      oauthProxyProfile: forwarded.atom,
+      selected,
+      completed,
+      current,
+      beforeConcurrent: observations(beforeConcurrent),
+      completions,
+      final: observations(final),
+    };
+  },
+  ["POST /sign-in/social", "GET /callback/{id}/oauth-proxy"],
+  undefined,
+  comparison,
+);
+
+compatScenario(
+  "OAuth proxy remaining dynamic transport and environment URL resolution",
+  async (ctx) => {
+    const owner = ctx.actor("remaining-urls", "oauth-proxy");
+    const initial = await state(ctx);
+    const dynamic = await ctx.rawRequest({
+      path: "/__test/oauth-proxy/options",
+      method: "POST",
+      json: { mode: "dynamic" },
+    });
+    expect(dynamic.status).toBe(200);
+    const issued = await issue(ctx, owner);
+    const forwarded = await forward(ctx, owner, issued);
+    const result = await response(await owner.fetch(forwarded.bridge, { redirect: "manual" }));
+    expect(result.location).toBe(`${ctx.baseURL}/proxy-new`);
+    const afterDynamic = await state(ctx);
+    expect(afterDynamic.production).toEqual(initial.production);
+    const environment = await ctx.rawRequest({
+      path: "/__test/oauth-proxy/options",
+      method: "POST",
+      json: { mode: "environment" },
+    });
+    expect(environment.status).toBe(200);
+    // An untrusted transport Host must fall back to the configured vendor URL,
+    // never receive the authenticated provider profile.
+    const vendorStart = await owner.fetch(`${ctx.baseURL}${path}/sign-in/social`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { host: "untrusted.fixture.test", "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "gitlab",
+        callbackURL: `${ctx.baseURL}/vendor-done`,
+        disableRedirect: true,
+      }),
+    });
+    expect(vendorStart.status).toBe(200);
+    const vendorBody = await vendorStart.json();
+    const vendorURL = new URL(vendorBody.url);
+    const vendorPack = JSON.parse(
+      await symmetricDecrypt({ key: secret, data: vendorURL.searchParams.get("state")! }),
+    );
+    const vendorState = JSON.parse(
+      await symmetricDecrypt({ key: secret, data: vendorPack.stateCookie }),
+    );
+    expect(new URL(vendorState.callbackURL).origin).toBe(ctx.baseURL);
+    const vendorApproved = await response(await owner.fetch(vendorURL, { redirect: "manual" }));
+    const vendorTransfer = await response(
+      await owner.fetch(vendorApproved.location!, { redirect: "manual", credentials: "omit" }),
+    );
+    const vendorBridge = new URL(vendorTransfer.location!);
+    const vendorToken = vendorBridge.searchParams.get("profile")!;
+    const vendorPayload = JSON.parse(await symmetricDecrypt({ key: secret, data: vendorToken }));
+    const vendorCompleted = await response(await owner.fetch(vendorBridge, { redirect: "manual" }));
+    expect(vendorCompleted.location).toBe(`${ctx.baseURL}/vendor-done`);
+    // BETTER_AUTH_URL selects whether to skip; it does not replace the auth
+    // base for exchange when productionURL is absent in the plugin options.
+    const start = await owner.fetch(`${ctx.baseURL}${path}/sign-in/social`, {
+      method: "POST",
+      redirect: "manual",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "gitlab",
+        callbackURL: `${ctx.baseURL}/environment-done`,
+        disableRedirect: true,
+      }),
+    });
+    expect(start.status).toBe(200);
+    const started = await start.json();
+    const authURL = new URL(started.url);
+    const packed = JSON.parse(
+      await symmetricDecrypt({ key: secret, data: authURL.searchParams.get("state")! }),
+    );
+    expect(packed.isOAuthProxy).toBe(true);
+    expect(authURL.searchParams.get("redirect_uri")).toBe(`${ctx.baseURL}${path}/callback/gitlab`);
+    const stateBytes = await symmetricDecrypt({ key: secret, data: packed.stateCookie });
+    const saved = JSON.parse(stateBytes);
+    expect(saved.oauthState).toBe(packed.state);
+    const retained = {
+      ...saved,
+      oauthState: { state: saved.oauthState },
+      codeVerifier: { token: saved.codeVerifier },
+      expiresAt: new Date(saved.expiresAt).toISOString(),
+    };
+    const approved = await response(await owner.fetch(authURL, { redirect: "manual" }));
+    const transfer = await response(
+      await owner.fetch(approved.location!, { redirect: "manual", credentials: "omit" }),
+    );
+    const bridge = new URL(transfer.location!);
+    const token = bridge.searchParams.get("profile")!;
+    const payload = JSON.parse(await symmetricDecrypt({ key: secret, data: token }));
+    const completed = await response(await owner.fetch(bridge, { redirect: "manual" }));
+    expect(completed.location).toBe(`${ctx.baseURL}/environment-done`);
+    // The actual production transport matches BETTER_AUTH_URL and skips the
+    // wrapper. This separate request only issues ordinary production state.
+    const production = ctx.baseURL.replace("localhost", "127.0.0.1");
+    const skipped = await owner.fetch(`${production}${path}/sign-in/social`, {
+      method: "POST",
+      redirect: "manual",
+      credentials: "omit",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        provider: "gitlab",
+        callbackURL: `${ctx.baseURL}/environment-done`,
+        disableRedirect: true,
+      }),
+    });
+    expect(skipped.status).toBe(200);
+    const skippedBody = await skipped.json();
+    const ordinaryState = new URL(skippedBody.url).searchParams.get("state")!;
+    expect(ordinaryState).toHaveLength(32);
+    return {
+      vendorBody,
+      vendorState: {
+        ...vendorPack,
+        stateCookie: {
+          token: vendorPack.stateCookie,
+          payload: {
+            ...vendorState,
+            oauthState: { state: vendorState.oauthState },
+            codeVerifier: { token: vendorState.codeVerifier },
+            expiresAt: new Date(vendorState.expiresAt).toISOString(),
+          },
+        },
+      },
+      vendorApproved,
+      vendorTransfer,
+      vendorProfile: { oauthProxyProfile: { token: vendorToken, payload: vendorPayload } },
+      vendorCompleted,
+      dynamic,
+      issuedState: issued.issuedState,
+      oauthProxyProfile: forwarded.atom,
+      result,
+      initial: observations(initial),
+      afterDynamic: observations(afterDynamic),
+      environment,
+      started,
+      environmentState: {
+        ...packed,
+        stateCookie: { token: packed.stateCookie, payload: retained },
+      },
+      approved,
+      transfer,
+      environmentProfile: { oauthProxyProfile: { token, payload } },
+      completed,
+      skipped: { status: skipped.status, body: skippedBody },
+      final: observations(await state(ctx)),
+    };
+  },
+  ["POST /sign-in/social", "GET /callback/{id}/oauth-proxy"],
+  undefined,
+  comparison,
+);

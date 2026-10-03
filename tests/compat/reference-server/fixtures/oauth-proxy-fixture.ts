@@ -22,6 +22,21 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
       ? "/__test/managed-proxy"
       : "/__test/oauth-proxy";
   const modes = new Map<string, string>();
+  const optionModes = [
+    "dedicated",
+    "request",
+    "dynamic",
+    "environment",
+    "error",
+    "empty-error",
+    "fractional",
+    "nan",
+    "infinity",
+    "negative-infinity",
+    "cache",
+    "signup-absent",
+    "signup-disabled",
+  ];
   const preview = String(base.baseURL);
   const production = preview.replace("localhost", "127.0.0.1");
   const records: unknown[] = [];
@@ -47,7 +62,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
     const database = new Database(":memory:");
     databases.set(origin, database);
     modes.set(origin, managed ? "old" : "dedicated");
-    for (const mode of managed ? ["old", "retained", "retired", "legacy", "bare"] : ["dedicated"]) {
+    for (const mode of managed ? ["old", "retained", "retired", "legacy", "bare"] : optionModes) {
       const old = "managed-old-reader-key-at-least-32-characters";
       const current = "compat-test-only-key-not-real-minimum-32chars";
       const legacy = "managed-legacy-reader-key-at-least-32-characters";
@@ -69,13 +84,34 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
           : {}),
         database,
         ...(cookie ? { account: { ...base.account, storeStateStrategy: "cookie" as const } } : {}),
-        baseURL: origin,
+        baseURL:
+          mode === "dynamic"
+            ? { allowedHosts: ["localhost:*", "127.0.0.1:*"], protocol: "http", fallback: origin }
+            : origin,
+        ...(mode === "error"
+          ? { onAPIError: { errorURL: `${preview}/configured-error?kept=yes` } }
+          : mode === "empty-error"
+            ? { onAPIError: { errorURL: "" } }
+            : {}),
+        ...(mode === "cache"
+          ? { session: { cookieCache: { enabled: true, strategy: "compact", maxAge: 120 } } }
+          : {}),
         basePath: path,
         trustedOrigins: [preview, production],
         plugins: [
           oAuthProxy({
-            currentURL: origin,
-            productionURL: production,
+            ...(["request", "dynamic", "environment"].includes(mode) ? {} : { currentURL: origin }),
+            ...(mode === "environment" ? {} : { productionURL: production }),
+            maxAge:
+              mode === "fractional"
+                ? 0.125
+                : mode === "nan"
+                  ? NaN
+                  : mode === "infinity"
+                    ? Infinity
+                    : mode === "negative-infinity"
+                      ? -Infinity
+                      : 60,
             ...(managed ? {} : { secret: OAUTH_PROXY_SECRET }),
           }),
           {
@@ -132,7 +168,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
             clientSecret: "proxy-fixture-secret",
             issuer: `${preview}${control}/provider`,
             disableImplicitSignUp: false,
-            disableSignUp: false,
+            ...(mode === "signup-absent" ? {} : { disableSignUp: mode === "signup-disabled" }),
           },
         },
       };
@@ -236,7 +272,8 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
       const url = new URL(request.url);
 
       if (url.pathname.startsWith(`${path}/`)) {
-        return instances.get(`${url.origin}:${modes.get(url.origin)}`)!.handler(request);
+        const origin = databases.has(url.origin) ? url.origin : preview;
+        return instances.get(`${origin}:${modes.get(origin)}`)!.handler(request);
       }
 
       if (url.pathname === `${control}/keys` && managed && request.method === "POST") {
@@ -250,6 +287,17 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
         for (const origin of input.origin ? [input.origin] : [preview, production]) {
           modes.set(origin, input.mode);
         }
+        return Response.json({ status: true });
+      }
+      if (url.pathname === `${control}/options` && !managed && request.method === "POST") {
+        const input = (await request.json()) as { mode: string; origin?: string };
+        if (
+          !optionModes.includes(input.mode) ||
+          (input.origin && ![preview, production].includes(input.origin))
+        )
+          return Response.json({ error: "Unknown option runtime" }, { status: 400 });
+        for (const origin of input.origin ? [input.origin] : [preview, production])
+          modes.set(origin, input.mode);
         return Response.json({ status: true });
       }
       if (url.pathname === `${control}/state`) {
