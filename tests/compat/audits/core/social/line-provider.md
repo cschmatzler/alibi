@@ -247,3 +247,90 @@ four existing parent duplicates, plus 262 actual LINE additions: 6,004 entries,
 6,000 distinct triples. Every addition is independently backed by the retained
 370 raw LINE trace cells (/tmp/pr289-independent-requirement-recount.json).
 The complete unchanged canonical gate is still required after this repair.
+
+The genuinely detached unchanged canonical gate on e137195c terminates 100:
+/tmp/pr289-post-repair-canonical.log and its atomic .exit marker. Static gates,
+default native 788/788, optional native 841/841, fixture 2/2, doctests,
+route inventory, harness 90/2,400, Chromium 2/22, full SDK 1,714/1,714
+with 119,478 assertions, all four process-environment suites and documentation
+pass. Coverage native 841/841 passes, but instrumented core stops at 1,022 pass,
+one fail and 50,418 assertions: the existing dispatch media/syntax owner has
+physical session expiresAt drift of 2.15 seconds. Six remaining instrumented SDK
+groups do not run after fail-fast. This is not a complete canonical pass.
+
+Independent pinned LINE factory review finds a concrete public-profile gap:
+default name/picture retain numeric JSON values, explicit null picture remains
+null, absent picture is omitted, and null/absent name becomes the empty string.
+Native default publication had used the typed persistence projection. Extend the
+existing nine raw-profile mapping owners, preserving their original SQL/session
+assertions, to exercise the genuine owned SDK account-info endpoint. Each also
+checks foreign denial without remote traffic or writes, exact public user/raw
+profile/account shape, literal bearer GET receipt, complete unchanged physical
+state and foreign authority. Before production repair, actual Source/native
+has six pass and three fail with 480 assertions: numeric name is stringified,
+null image is omitted and numeric image is stringified. Exact proof:
+/tmp/pr289-default-publication-native-before.log. Two actual Source servers pass
+all nine with 504 assertions:
+/tmp/pr289-default-publication-source-self-before.log.
+
+LINE now supplies default public JSON through the existing user_output channel,
+as its mapped profile already does. This preserves raw name/email/picture types
+and explicit nulls, Source's truthy-name fallback and false emailVerified. Typed
+persistence conversion, mapper behavior and original raw account subject remain
+unchanged. Authoring gate: the existing mapping owners are the strongest genuine
+SDK boundary for this distinct publication regression; physical typed storage
+alone could not catch it, and no test-only production seam is added. No scenario
+is duplicated or original assertion/capture removed. Initial strict formatting
+failure is retained at /tmp/pr289-default-publication-native-build.log; canonical
+format plus fixture build passes in native-build2.log.
+
+The repeated dispatch coverage failure is independently reproduced with actual
+Source servers through the existing dispatch profile, genuine SDK signup and
+get-session, multipart and form password sign-ins, authenticated original HMAC
+cookies and the real narrow SQL observer. Delaying the real second-runtime media
+request makes the original comparator fail only two physical expiry paths, with
+32 assertions: /tmp/pr289-dispatch-clock-before.log. Complete original transport,
+signed cookies, immutable SQL bodies/digests and actual request windows remain
+outside the checkout at /tmp/pr289-dispatch-clock-original-receipts.json. Installed
+Source's default session policy is seven days; dispatch inherits that policy
+without a session override. Each actual stored expiry minus exactly 604800000
+milliseconds independently falls inside its authentic issuing request interval.
+
+The shared comparator repair adds only dispatch-default beside org-member-addition
+in the existing narrow seven-day producer allowlist. Exact signed token/user,
+signature, both complete SQL observations, owner and request-window guards remain
+required. The global 1,500 ms fallback is unchanged. The actual Source clock owner
+protects this distinct narrow-observer admission contract while every existing
+synthetic canary control remains. Its coherent wrong-lifetime, foreign token and
+owner SQL counterfactuals plus invalid signature, foreign profile, missing SQL
+observation and tampered digest each require denial at the exact physical expiry
+path. It adds no production or observer seam and no fixed artifact-file write.
+Focused actual owner passes 39 assertions; combined unchanged canary plus owner
+passes 8/8 and 164 assertions. Logs: /tmp/pr289-dispatch-clock-final-focused.log
+and /tmp/pr289-dispatch-clock-after2.log. Earlier typecheck iterations retain
+terminal results in dispatch-clock-after.log. Right-runtime real delay includes
+the measured left issuance offset to preserve actual greater-than-1,500 ms drift
+under load rather than supplying fabricated timestamps.
+
+After both repairs, actual Source/native and Source/self LINE collections each
+pass all 70 scenarios and 2,720 assertions:
+/tmp/pr289-default-publication-line-native-after.log and
+/tmp/pr289-default-publication-line-self-after.log. Full harness passes 91/91
+with 2,439 assertions (/tmp/pr289-default-publication-harness-after.log).
+Canonical TypeScript format/lint/typecheck and Rust fixture strict Clippy/fmt
+pass (/tmp/pr289-default-publication-statics.log,
+/tmp/pr289-dispatch-clock-final-focused.log,
+/tmp/pr289-default-publication-rust-static.log). No source or test is edited
+while a Bun collection runs.
+
+Only 27 actually measured GET account-info success/rejection/state cells from
+those nine retained mapping owners are newly claimed. Independent recount now
+preserves all 5,742 parent entries and four original duplicates, plus 289 LINE
+additions from the same 69 required owners: 6,031 entries and 6,027 distinct triples.
+Every LINE addition is backed by 397 raw measured cells, retained at
+/tmp/pr289-default-publication-measured-cells.json; full requirement recount is
+/tmp/pr289-default-publication-independent-recount.json. The latest complete
+LINE evidence/oracle captures are preserved outside canonical cleanup in
+/tmp/pr289-default-publication-preserved-artifacts. A fresh unchanged complete
+canonical gate is required after freezing these repairs and integrating any
+independently reviewed shared clock fix from the concurrent open-PR batch.

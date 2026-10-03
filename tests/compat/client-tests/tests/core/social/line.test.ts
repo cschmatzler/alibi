@@ -305,10 +305,11 @@ const mappings: Array<{
   name: string;
   patch: Row;
   expectedName: string;
+  expectedPublicName?: number;
   expectedImage?: string | null;
   expectedSubject?: string;
 }> = [
-  { name: "numeric name", patch: { name: 7 }, expectedName: "7" },
+  { name: "numeric name", patch: { name: 7 }, expectedName: "7", expectedPublicName: 7 },
   { name: "empty name", patch: { name: "" }, expectedName: "" },
   { name: "null name", patch: { name: null }, expectedName: "" },
   { name: "missing name", patch: { name: undefined }, expectedName: "" },
@@ -346,15 +347,52 @@ for (const mapping of mappings) {
       });
       expect(account.accountId).toBe(mapping.expectedSubject ?? original.sub);
       expect((await flow.actor.client.getSession()).data?.user.id).toBe(user.id);
+      const requests = await receipts(ctx);
+      const denied = await other.actor.client.$fetch("/account-info", {
+        query: { accountId: account.id },
+      });
+      expect(denied.error).not.toBeNull();
+      expect(await state(ctx)).toEqual(stored);
+      expect(await receipts(ctx)).toEqual(requests);
+      const info = await flow.actor.client.$fetch("/account-info", {
+        query: { accountId: account.id },
+      });
+      expect(info.error).toBeNull();
+      expect(info.data).toEqual({
+        user: {
+          name: mapping.expectedPublicName ?? mapping.expectedName,
+          email: original.email,
+          emailVerified: false,
+          ...(original.picture !== undefined ? { image: original.picture } : {}),
+        },
+        data: JSON.parse(JSON.stringify(original)),
+        account: { id: account.id, providerId: "line", accountId: account.accountId },
+      });
+      const after = await state(ctx);
+      expect(after).toEqual(stored);
+      unchangedForeign(other.before, after);
+      expect(await receipts(ctx)).toEqual([
+        ...requests,
+        {
+          path: "/userinfo",
+          method: "GET",
+          authorization: "Bearer fixture-line-access",
+          contentType: null,
+          body: "",
+        },
+      ]);
       return {
         before: other.before,
         start: ctx.snapshot(flow.start),
         callback: { status: flow.response.status, location: flow.response.headers.get("location") },
         stored,
+        denied: ctx.snapshot(denied),
+        info: ctx.snapshot(info),
+        after,
         receipts: await receipts(ctx),
       };
     },
-    ["POST /sign-in/social", "GET /callback/{}"],
+    ["POST /sign-in/social", "GET /callback/{}", "GET /account-info"],
   );
 }
 

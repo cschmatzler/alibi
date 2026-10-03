@@ -20,7 +20,16 @@
           "line delegated signed direct proof nonce binds actual remote receipt and raw account",
           "line delegated signed direct proof public binds actual remote receipt and raw account",
           "line existing account info uses real GET without readmitting a changed raw account subject",
-          "line delegated signed direct proof mapped binds actual remote receipt and raw account"
+          "line delegated signed direct proof mapped binds actual remote receipt and raw account",
+          "line empty image userinfo profile retains original raw account and typed persistence",
+          "line empty name userinfo profile retains original raw account and typed persistence",
+          "line missing image userinfo profile retains original raw account and typed persistence",
+          "line missing name userinfo profile retains original raw account and typed persistence",
+          "line null image userinfo profile retains original raw account and typed persistence",
+          "line null name userinfo profile retains original raw account and typed persistence",
+          "line numeric image userinfo profile retains original raw account and typed persistence",
+          "line numeric name userinfo profile retains original raw account and typed persistence",
+          "line numeric subject userinfo profile retains original raw account and typed persistence"
         ],
         "rejection": [
           "account info requires an explicit account selector",
@@ -36,7 +45,16 @@
           "line delegated signed direct proof nonce binds actual remote receipt and raw account",
           "line delegated signed direct proof public binds actual remote receipt and raw account",
           "line existing account info uses real GET without readmitting a changed raw account subject",
-          "line delegated signed direct proof mapped binds actual remote receipt and raw account"
+          "line delegated signed direct proof mapped binds actual remote receipt and raw account",
+          "line empty image userinfo profile retains original raw account and typed persistence",
+          "line empty name userinfo profile retains original raw account and typed persistence",
+          "line missing image userinfo profile retains original raw account and typed persistence",
+          "line missing name userinfo profile retains original raw account and typed persistence",
+          "line null image userinfo profile retains original raw account and typed persistence",
+          "line null name userinfo profile retains original raw account and typed persistence",
+          "line numeric image userinfo profile retains original raw account and typed persistence",
+          "line numeric name userinfo profile retains original raw account and typed persistence",
+          "line numeric subject userinfo profile retains original raw account and typed persistence"
         ],
         "authorization": "session-gated routes reject requests without a session",
         "state": [
@@ -53,7 +71,16 @@
           "line delegated signed direct proof nonce binds actual remote receipt and raw account",
           "line delegated signed direct proof public binds actual remote receipt and raw account",
           "line existing account info uses real GET without readmitting a changed raw account subject",
-          "line delegated signed direct proof mapped binds actual remote receipt and raw account"
+          "line delegated signed direct proof mapped binds actual remote receipt and raw account",
+          "line empty image userinfo profile retains original raw account and typed persistence",
+          "line empty name userinfo profile retains original raw account and typed persistence",
+          "line missing image userinfo profile retains original raw account and typed persistence",
+          "line missing name userinfo profile retains original raw account and typed persistence",
+          "line null image userinfo profile retains original raw account and typed persistence",
+          "line null name userinfo profile retains original raw account and typed persistence",
+          "line numeric image userinfo profile retains original raw account and typed persistence",
+          "line numeric name userinfo profile retains original raw account and typed persistence",
+          "line numeric subject userinfo profile retains original raw account and typed persistence"
         ]
       }
     },

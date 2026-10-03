@@ -158,7 +158,31 @@ impl OAuthUserInfoHandler for LineUserInfo {
             .mapper
             .map(|mapper| mapper(profile.clone()))
             .transpose()?;
-        let user_output = mapped.as_ref().map(|user| user.public_profile(true));
+        // The published profile preserves JSON types and explicit nulls; its
+        // typed persistence values remain separate from this public output.
+        let user_output = Some(mapped.as_ref().map_or_else(
+            || {
+                let mut output = serde_json::Map::new();
+                drop(
+                    output.insert(
+                        "name".into(),
+                        profile
+                            .get("name")
+                            .filter(|value| truthy(value))
+                            .cloned()
+                            .unwrap_or_else(|| Value::String(String::new())),
+                    ),
+                );
+                for (source, target) in [("email", "email"), ("picture", "image")] {
+                    if let Some(value) = profile.get(source) {
+                        drop(output.insert(target.into(), value.clone()));
+                    }
+                }
+                drop(output.insert("emailVerified".into(), Value::Bool(false)));
+                output
+            },
+            |user| user.public_profile(true),
+        ));
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
