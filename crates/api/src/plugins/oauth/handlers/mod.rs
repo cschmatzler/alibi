@@ -521,7 +521,10 @@ async fn provider_token_request(
         };
         for (key, value) in additions {
             if grant_type == OAuthTokenGrant::RefreshToken {
-                if matches!(key.as_str(), "grant_type" | "refresh_token" | "__proto__" | "constructor" | "prototype") {
+                if matches!(
+                    key.as_str(),
+                    "grant_type" | "refresh_token" | "__proto__" | "constructor" | "prototype"
+                ) {
                     continue;
                 }
                 form.retain(|(existing, _)| existing != key);
@@ -565,14 +568,20 @@ async fn provider_token_request(
     });
     let has_field = |name: &str| form.iter().any(|(key, _)| key == name);
     if has_field("client_assertion") != has_field("client_assertion_type") {
-        return Err(AuthError::config("client_assertion and client_assertion_type must both be provided"));
+        return Err(AuthError::config(
+            "client_assertion and client_assertion_type must both be provided",
+        ));
     }
     if has_field("client_assertion") {
         if authentication.is_some() {
-            return Err(AuthError::config("client_assertion body parameters cannot be combined with tokenEndpointAuth"));
+            return Err(AuthError::config(
+                "client_assertion body parameters cannot be combined with tokenEndpointAuth",
+            ));
         }
         if !provider.client_secret.is_empty() || has_field("client_secret") {
-            return Err(AuthError::config("private_key_jwt token endpoint authentication cannot be combined with clientSecret"));
+            return Err(AuthError::config(
+                "private_key_jwt token endpoint authentication cannot be combined with clientSecret",
+            ));
         }
         if !provider.client_id.is_empty() {
             form.retain(|(key, _)| key != "client_id");
@@ -580,6 +589,22 @@ async fn provider_token_request(
         }
         return Ok(request.form(&form));
     }
+    // Generic parameter policies use the published automatic authentication
+    // selection. Retain the legacy transport for providers with no additions.
+    let authentication = authentication.or_else(|| {
+        provider.authorization.as_ref().and_then(|policy| {
+            let additions = if grant_type == OAuthTokenGrant::RefreshToken {
+                &policy.refresh_token_params
+            } else {
+                &policy.authorization_code_params
+            };
+            (!additions.is_empty()).then_some(if provider.client_secret.is_empty() {
+                OAuthTokenEndpointAuth::None
+            } else {
+                OAuthTokenEndpointAuth::ClientSecretPost
+            })
+        })
+    });
     let request = match authentication {
         None => {
             form.retain(|(key, _)| key != "client_id" && key != "client_secret");
@@ -590,7 +615,10 @@ async fn provider_token_request(
             request
         }
         Some(OAuthTokenEndpointAuth::None) => {
-            if provider.client_id.is_empty() || !provider.client_secret.is_empty() || has_field("client_secret") {
+            if provider.client_id.is_empty()
+                || !provider.client_secret.is_empty()
+                || has_field("client_secret")
+            {
                 return Err(AuthError::config(
                     "Public token authentication requires client ID and no secret",
                 ));
@@ -600,7 +628,10 @@ async fn provider_token_request(
             request
         }
         Some(OAuthTokenEndpointAuth::PrivateKeyJwt) => {
-            if provider.client_id.is_empty() || !provider.client_secret.is_empty() || has_field("client_secret") {
+            if provider.client_id.is_empty()
+                || !provider.client_secret.is_empty()
+                || has_field("client_secret")
+            {
                 return Err(AuthError::config(
                     "Client assertion requires client ID and no secret",
                 ));
@@ -645,7 +676,9 @@ async fn provider_token_request(
             }
             if method == OAuthTokenEndpointAuth::ClientSecretBasic {
                 if has_field("client_secret") {
-                    return Err(AuthError::config("client_secret_basic token endpoint authentication cannot be combined with client_secret body parameters"));
+                    return Err(AuthError::config(
+                        "client_secret_basic token endpoint authentication cannot be combined with client_secret body parameters",
+                    ));
                 }
                 let encode = |value: &str| {
                     url::form_urlencoded::Serializer::new(String::new())
