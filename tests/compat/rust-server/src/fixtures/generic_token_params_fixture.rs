@@ -125,6 +125,47 @@ impl OAuthRefreshTokenParamsResolver for DynamicParams {
         ))
     }
 }
+struct SubjectKey {
+    fixture: Fixture,
+    mode: String,
+}
+#[async_trait::async_trait]
+impl better_auth::plugins::oauth::OAuthAccountKeyResolver for SubjectKey {
+    async fn resolve(
+        &self,
+        context: better_auth::plugins::oauth::OAuthAccountKeyContext,
+    ) -> Result<Value, String> {
+        tokio::task::yield_now().await;
+        let tokens = json!({"accessToken":context.tokens.access_token,"refreshToken":context.tokens.refresh_token,"accessTokenExpiresAt":context.tokens.access_token_expires_at.map(|v| v.to_rfc3339_opts(chrono::SecondsFormat::Millis,true)),"scopes":context.tokens.scopes});
+        self.fixture
+            .receipts
+            .lock()
+            .await
+            .push(json!({"kind":"subject","tokens":tokens,"profile":context.profile}));
+        if self.mode == "subject-error" {
+            return Err("subject resolver denied".into());
+        }
+        if self.mode == "subject-invalid" {
+            return Ok(self.fixture.control.lock().await["subject"].clone());
+        }
+        Ok(json!(format!(
+            "{}:{}:{}",
+            context.tokens.access_token.unwrap_or_default(),
+            context.profile["id"].as_str().unwrap(),
+            context.profile["raw_claim"].as_str().unwrap()
+        )))
+    }
+}
+struct SubjectMapper;
+#[async_trait::async_trait]
+impl better_auth::plugins::oauth::OAuthProfileMapper for SubjectMapper {
+    async fn map_profile(&self, _: Value) -> Result<serde_json::Map<String, Value>, String> {
+        Ok(json!({"id":"mapped-id-must-not-own-account"})
+            .as_object()
+            .unwrap()
+            .clone())
+    }
+}
 struct CustomCode {
     fixture: Fixture,
     denied: bool,
@@ -228,9 +269,24 @@ pub(crate) async fn router(
         "jwt-ES512",
         "jwt-EdDSA",
         "jwt-pem",
+        "jwt-pem-ES256",
+        "jwt-pem-ES384",
+        "jwt-pem-ES512",
+        "jwt-pem-EdDSA",
+        "jwt-both",
+        "jwt-empty-kid",
+        "jwt-fractional",
+        "subject-key",
+        "subject-error",
+        "subject-invalid",
+        "subject-default",
         "jwt-embedded",
         "jwt-expired",
         "jwt-bad-key",
+        "jwt-padded",
+        "jwt-missing-crt",
+        "jwt-duplicate-ops",
+        "jwt-invalid-ext",
         "jwt-secret",
         "jwt-manual",
         "jwt-getter-error",
@@ -252,7 +308,8 @@ pub(crate) async fn router(
             serde_json::from_str(include_str!("../../../fixtures/client-assertion-keys.json"))
                 .unwrap();
         let algorithm = mode
-            .strip_prefix("jwt-")
+            .strip_prefix("jwt-pem-")
+            .or_else(|| mode.strip_prefix("jwt-"))
             .filter(|a| keys.get(*a).is_some())
             .unwrap_or("RS256");
         let mut jwk = keys[algorithm]["private"].clone();
@@ -263,15 +320,46 @@ pub(crate) async fn router(
         if mode == "jwt-bad-key" {
             jwk["kty"] = json!("EC");
         }
+        if mode == "jwt-padded" {
+            jwk["n"] = json!(format!("{}==", jwk["n"].as_str().unwrap()));
+        }
+        if mode == "jwt-missing-crt" {
+            for name in ["dp", "dq", "qi"] {
+                jwk.as_object_mut().unwrap().remove(name);
+            }
+        }
+        if mode == "jwt-duplicate-ops" {
+            jwk["key_ops"] = json!(["sign", "sign"]);
+        }
+        if mode == "jwt-invalid-ext" {
+            jwk["ext"] = json!("true");
+        }
         let assertion = mode.starts_with("jwt-").then(|| {
             OAuthPrivateKeyJwtOptions {
-                private_key_jwk: (mode != "jwt-pem").then_some(jwk),
-                private_key_pem: (mode == "jwt-pem")
-                    .then(|| keys["RS256"]["pem"].as_str().unwrap().to_owned()),
+                private_key_jwk: (!mode.starts_with("jwt-pem")).then_some(jwk),
+                private_key_pem: if mode == "jwt-both" {
+                    Some("invalid PEM ignored".into())
+                } else {
+                    mode.starts_with("jwt-pem")
+                        .then(|| keys[algorithm]["pem"].as_str().unwrap().to_owned())
+                },
                 algorithm: (!matches!(mode, "jwt-embedded" | "jwt-pem"))
                     .then(|| algorithm.to_owned()),
-                kid: (mode != "jwt-embedded").then(|| "configured-kid".into()),
-                expires_in: (mode == "jwt-expired").then_some(-1.0),
+                kid: (mode != "jwt-embedded").then(|| {
+                    if mode == "jwt-empty-kid" {
+                        ""
+                    } else {
+                        "configured-kid"
+                    }
+                    .into()
+                }),
+                expires_in: if mode == "jwt-expired" {
+                    Some(-1.0)
+                } else if mode == "jwt-fractional" {
+                    Some(17.5)
+                } else {
+                    None
+                },
             }
             .into_assertion()
             .unwrap()
@@ -366,6 +454,7 @@ pub(crate) async fn router(
         };
         let provider = if mode.starts_with("dynamic")
             || mode == "none"
+            || mode.starts_with("subject-")
             || mode.starts_with("expiry-")
             || mode.starts_with("custom-token")
         {
@@ -374,6 +463,15 @@ pub(crate) async fn router(
             generic.token_url = Some(provider.token_url.clone());
             generic.user_info_url = provider.user_info_url.clone();
             generic.provider = provider;
+            if mode.starts_with("subject-") && mode != "subject-default" {
+                generic.account_key = Some(better_auth::plugins::oauth::OAuthAccountKey(Arc::new(
+                    SubjectKey {
+                        fixture: fixture.clone(),
+                        mode: mode.into(),
+                    },
+                )));
+                generic.map_profile = Some(Arc::new(SubjectMapper));
+            }
             generic.access_token_expires_in =
                 if mode.starts_with("expiry-") || mode.starts_with("custom-token") {
                     Some(match mode {

@@ -107,9 +107,25 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "jwt-ES512",
     "jwt-EdDSA",
     "jwt-pem",
+    "jwt-pem-ES256",
+    "jwt-pem-ES384",
+    "jwt-pem-ES512",
+    "jwt-pem-EdDSA",
+    "jwt-both",
+    "jwt-empty-kid",
+    "jwt-fractional",
+    "subject-key",
+    "subject-error",
+    "subject-invalid",
+    "subject-default",
+
     "jwt-embedded",
     "jwt-expired",
     "jwt-bad-key",
+    "jwt-padded",
+    "jwt-missing-crt",
+    "jwt-duplicate-ops",
+    "jwt-invalid-ext",
     "jwt-secret",
     "jwt-manual",
     "jwt-getter-error",
@@ -128,6 +144,19 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
               {
                 providerId: "generic",
                 overrideUserInfo: mode === "override",
+                ...(mode.startsWith("subject-") && mode !== "subject-default"
+                  ? {
+                      mapProfileToUser: async () => ({ id: "mapped-id-must-not-own-account" }),
+                      accountSubject: async ({ tokens, profile }: any) => {
+                        await Promise.resolve();
+                        receipts.push({ kind: "subject", tokens, profile });
+                        if (mode === "subject-error") throw new Error("subject resolver denied");
+                        return mode === "subject-invalid"
+                          ? control.subject
+                          : `${tokens.accessToken}:${profile.id}:${profile.raw_claim}`;
+                      },
+                    }
+                  : {}),
                 ...(mode.startsWith("expiry-") || mode.startsWith("custom-token")
                   ? {
                       accessTokenExpiresIn:
@@ -191,8 +220,15 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                                 throw new Error("assertion getter denied");
                               }
                             : createPrivateKeyJwtClientAssertionGetter({
-                                ...(mode === "jwt-pem"
-                                  ? { privateKeyPem: assertionKeys.RS256.pem }
+                                ...(mode.startsWith("jwt-pem")
+                                  ? {
+                                      privateKeyPem:
+                                        assertionKeys[
+                                          (mode.slice(8) in assertionKeys
+                                            ? mode.slice(8)
+                                            : "RS256") as keyof typeof assertionKeys
+                                        ].pem,
+                                    }
                                   : {
                                       privateKeyJwk: {
                                         ...assertionKeys[
@@ -203,17 +239,42 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                                         kid: "embedded-kid",
                                         ...(mode === "jwt-embedded" ? { alg: "RS256" } : {}),
                                         ...(mode === "jwt-bad-key" ? { kty: "EC" } : {}),
+                                        ...(mode === "jwt-padded"
+                                          ? { n: assertionKeys.RS256.private.n + "==" }
+                                          : {}),
+                                        ...(mode === "jwt-missing-crt"
+                                          ? { dp: undefined, dq: undefined, qi: undefined }
+                                          : {}),
+                                        ...(mode === "jwt-duplicate-ops"
+                                          ? { key_ops: ["sign", "sign"] }
+                                          : {}),
+                                        ...(mode === "jwt-invalid-ext"
+                                          ? { ext: "true" as any }
+                                          : {}),
                                       },
                                     }),
+                                ...(mode === "jwt-both"
+                                  ? { privateKeyPem: "invalid PEM ignored" }
+                                  : {}),
                                 ...(mode === "jwt-embedded" || mode === "jwt-pem"
                                   ? {}
                                   : {
-                                      algorithm: (mode.slice(4) in assertionKeys
-                                        ? mode.slice(4)
+                                      algorithm: ((mode.startsWith("jwt-pem-")
+                                        ? mode.slice(8)
+                                        : mode.slice(4)) in assertionKeys
+                                        ? mode.startsWith("jwt-pem-")
+                                          ? mode.slice(8)
+                                          : mode.slice(4)
                                         : "RS256") as "RS256",
                                     }),
-                                ...(mode === "jwt-embedded" ? {} : { kid: "configured-kid" }),
-                                ...(mode === "jwt-expired" ? { expiresIn: -1 } : {}),
+                                ...(mode === "jwt-embedded"
+                                  ? {}
+                                  : { kid: mode === "jwt-empty-kid" ? "" : "configured-kid" }),
+                                ...(mode === "jwt-expired"
+                                  ? { expiresIn: -1 }
+                                  : mode === "jwt-fractional"
+                                    ? { expiresIn: 17.5 }
+                                    : {}),
                               }),
                       } as const,
                     }
@@ -221,11 +282,9 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                 tokenUrlParams:
                   mode === "jwt-secret"
                     ? { client_secret: "forbidden-secret" }
-                    : mode === "jwt-secret"
-                      ? { client_secret: "forbidden-secret" }
-                      : mode === "jwt-manual"
-                        ? { client_assertion: "manual", client_assertion_type: "manual" }
-                        : params(mode, false),
+                    : mode === "jwt-manual"
+                      ? { client_assertion: "manual", client_assertion_type: "manual" }
+                      : params(mode, false),
                 refreshTokenParams: mode.startsWith("dynamic")
                   ? async (ctx) => {
                       await Promise.resolve();

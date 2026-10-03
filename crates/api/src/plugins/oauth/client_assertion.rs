@@ -1,6 +1,12 @@
 //! Published RFC 7523 client assertions for application-owned token endpoints.
 use super::{OAuthClientAssertion, OAuthClientAssertionContext, OAuthClientAssertionGetter};
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use base64::{
+    Engine,
+    alphabet::URL_SAFE,
+    engine::{
+        DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig, general_purpose::URL_SAFE_NO_PAD,
+    },
+};
 use rand::rngs::OsRng;
 use rsa::{
     pkcs8::DecodePrivateKey,
@@ -75,10 +81,16 @@ impl OAuthPrivateKeyJwtOptions {
         let jwk = self.private_key_jwk.as_ref().filter(|v| !v.is_null());
         let pem = self.private_key_pem.as_deref().unwrap_or_default();
         if let Some(jwk) = jwk {
+            if jwk.get("ext").is_some_and(|value| !value.is_boolean()) {
+                return Err("JWK ext must be a boolean".into());
+            }
             if let Some(ops) = jwk.get("key_ops")
-                && !ops
-                    .as_array()
-                    .is_some_and(|ops| ops.iter().any(|op| op.as_str() == Some("sign")))
+                && !ops.as_array().is_some_and(|ops| {
+                    ops.iter().any(|op| op.as_str() == Some("sign"))
+                        && ops.iter().enumerate().all(|(index, op)| {
+                            op.is_string() && ops.iter().take(index).all(|previous| previous != op)
+                        })
+                })
             {
                 return Err("JWK does not permit signing".into());
             }
@@ -97,6 +109,10 @@ impl OAuthPrivateKeyJwtOptions {
         }
         if algorithm.starts_with("RS") || algorithm.starts_with("PS") {
             let key = if let Some(jwk) = jwk {
+                // WebCrypto imports the complete two-prime private JWK.
+                for name in ["dp", "dq", "qi"] {
+                    let _component = field(jwk, name)?;
+                }
                 rsa::RsaPrivateKey::from_components(
                     rsa::BigUint::from_bytes_be(&field(jwk, "n")?),
                     rsa::BigUint::from_bytes_be(&field(jwk, "e")?),
@@ -209,13 +225,18 @@ impl OAuthClientAssertionGetter for OAuthPrivateKeyJwtOptions {
     }
 }
 fn field(key: &Value, name: &str) -> Result<Vec<u8>, String> {
-    URL_SAFE_NO_PAD
-        .decode(
-            key.get(name)
-                .and_then(Value::as_str)
-                .ok_or("Missing JWK field")?,
-        )
-        .map_err(key_error)
+    GeneralPurpose::new(
+        &URL_SAFE,
+        GeneralPurposeConfig::new()
+            .with_decode_padding_mode(DecodePaddingMode::Indifferent)
+            .with_decode_allow_trailing_bits(true),
+    )
+    .decode(
+        key.get(name)
+            .and_then(Value::as_str)
+            .ok_or("Missing JWK field")?,
+    )
+    .map_err(key_error)
 }
 fn key_error(_: impl std::fmt::Display) -> String {
     "Client assertion key operation failed".into()

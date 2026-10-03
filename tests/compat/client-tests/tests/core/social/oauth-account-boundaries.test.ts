@@ -460,3 +460,90 @@ for (const mode of [
     ["POST /sign-in/social", "GET /callback/{}", "POST /refresh-token"],
   );
 }
+
+// Account-key callbacks need the original claims and grant, even after the public
+// user mapping changes id. The callback is application code and can reject.
+for (const mode of ["key", "error", "invalid", "default"] as const) {
+  const name = `oauth generic subject ${mode} resolves original token and profile before account writes`;
+  compatScenario(
+    name,
+    async (ctx) => {
+      const fixture =
+        `generic-token-subject-${mode}` as import("../../../support/profiles").FixtureProfile;
+      const actor = ctx.actor("owner", fixture);
+      const values = mode === "invalid" ? [null, " \uFEFF ", "undefined", "null"] : ["unused"];
+      const results = [];
+      for (const subject of values) {
+        const email = ctx.uniqueEmail("subject");
+        const profile = {
+          id: mode === "default" ? 0 : "original-id",
+          raw_claim: "original-claim",
+          email,
+          name: "Subject",
+          email_verified: true,
+        };
+        await ctx.rawRequest({
+          path: "/__test/generic-token/control",
+          method: "POST",
+          json: { profile, subject },
+        });
+        const before = await state(ctx);
+        const start = await actor.client.signIn.social({
+          provider: "generic",
+          callbackURL: "/dashboard",
+        });
+        expect(start.error).toBeNull();
+        const authorization = new URL(start.data!.url!);
+        const response = await actor.fetch(
+          ctx.baseURL +
+            authProfilePath(fixture) +
+            `/callback/generic?code=subject-code&state=${encodeURIComponent(authorization.searchParams.get("state")!)}`,
+          { redirect: "manual" },
+        );
+        const after = await state(ctx);
+        const location = new URL(response.headers.get("location")!, ctx.baseURL);
+        expect(response.status).toBe(302);
+        if (mode === "error" || mode === "invalid") {
+          expect(location.searchParams.get("error")).toBe("unable_to_get_user_info");
+          expect(after).toEqual(before);
+        } else {
+          expect(location.pathname).toBe("/dashboard");
+          const account = after.accounts.find(
+            (a: any) => !before.accounts.some((b: any) => b.id === a.id),
+          );
+          expect(account.accountId).toBe(
+            mode === "default" ? "0" : "generic-access:original-id:original-claim",
+          );
+          expect(account.providerId).toBe("generic");
+          expect(after.users.find((u: any) => u.id === account.userId).email).toBe(email);
+          expect(after.sessions.some((s: any) => s.userId === account.userId)).toBe(true);
+        }
+        const receipts: any[] = await (
+          await fetch(ctx.baseURL + "/__test/generic-token/receipts")
+        ).json();
+        const resolved = receipts.filter((r) => r.kind === "subject").at(-1);
+        if (mode !== "default") {
+          expect(resolved.profile).toEqual({ ...profile, emailVerified: true });
+          expect(resolved.tokens.accessToken).toBe("generic-access");
+          expect(resolved.tokens.refreshToken).toBe("generic-refresh");
+          expect(resolved.tokens.scopes).toEqual(["profile"]);
+          expect(
+            Math.abs(
+              new Date(resolved.tokens.accessTokenExpiresAt).getTime() - Date.now() - 3600000,
+            ),
+          ).toBeLessThan(10000);
+        }
+        results.push({
+          subject,
+          before,
+          after,
+          status: response.status,
+          location: response.headers.get("location"),
+        });
+      }
+      await save(ctx, name, results);
+      return results;
+    },
+    ["POST /sign-in/social", "GET /callback/{}"],
+  );
+}

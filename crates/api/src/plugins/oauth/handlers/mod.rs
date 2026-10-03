@@ -2077,6 +2077,9 @@ async fn sign_in_with_id_token_core(
         &OAuthTokenSet {
             access_token: id_token.access_token.clone(),
             refresh_token: id_token.refresh_token.clone(),
+            access_token_expires_at: id_token
+                .expires_at
+                .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
             id_token: Some(id_token.token.clone()),
             scopes: id_token.scopes.clone().unwrap_or_default(),
             ..Default::default()
@@ -2209,6 +2212,9 @@ async fn link_with_id_token_core(
         &OAuthTokenSet {
             access_token: id_token.access_token.clone(),
             refresh_token: id_token.refresh_token.clone(),
+            access_token_expires_at: id_token
+                .expires_at
+                .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
             id_token: Some(id_token.token.clone()),
             scopes: id_token.scopes.clone().unwrap_or_default(),
             ..Default::default()

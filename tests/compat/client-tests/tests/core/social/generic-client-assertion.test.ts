@@ -25,9 +25,20 @@ async function save(ctx: ScenarioContext, name: string, value: unknown) {
 const modes = [
   ...Object.keys(keys),
   "pem",
+  "pem-ES256",
+  "pem-ES384",
+  "pem-ES512",
+  "pem-EdDSA",
+  "both",
+  "empty-kid",
+  "fractional",
   "embedded",
   "expired",
   "bad-key",
+  "padded",
+  "missing-crt",
+  "duplicate-ops",
+  "invalid-ext",
   "secret",
   "manual",
   "getter-error",
@@ -39,7 +50,15 @@ for (const mode of modes) {
     async (ctx) => {
       const fixture = `generic-token-jwt-${mode}` as FixtureProfile;
       const actor = ctx.actor("owner", fixture);
-      const deny = ["bad-key", "secret", "manual", "getter-error"].includes(mode);
+      const deny = [
+        "bad-key",
+        "missing-crt",
+        "duplicate-ops",
+        "invalid-ext",
+        "secret",
+        "manual",
+        "getter-error",
+      ].includes(mode);
       await ctx.rawRequest({
         path: "/__test/generic-token/control",
         method: "POST",
@@ -129,16 +148,20 @@ for (const mode of modes) {
         const jwt = form.client_assertion;
         const h = decodeProtectedHeader(jwt);
         const claims = decodeJwt(jwt);
-        const algorithm = mode in keys ? mode : "RS256";
+        const algorithm = mode.startsWith("pem-") ? mode.slice(4) : mode in keys ? mode : "RS256";
         expect(h).toEqual({
           alg: algorithm,
           typ: "JWT",
-          kid: mode === "embedded" ? "embedded-kid" : "configured-kid",
+          ...(mode === "empty-kid"
+            ? {}
+            : { kid: mode === "embedded" ? "embedded-kid" : "configured-kid" }),
         });
         expect(claims.iss).toBe("client :+&");
         expect(claims.sub).toBe(claims.iss);
         expect(String(claims.aud)).toMatch(/^http:\/\/.*\/token$/);
-        expect(claims.exp! - claims.iat!).toBe(mode === "expired" ? -1 : 120);
+        expect(claims.exp! - claims.iat!).toBe(
+          mode === "expired" ? -1 : mode === "fractional" ? 17.5 : 120,
+        );
         expect(Math.abs(Date.now() / 1000 - claims.iat!)).toBeLessThan(10);
         expect(claims.jti).toMatch(/^[0-9a-f-]{36}$/);
         expect(claims.jti).not.toBe(last);
