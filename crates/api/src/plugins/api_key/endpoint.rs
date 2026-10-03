@@ -15,9 +15,9 @@ use better_auth_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser,
 use serde::{Deserialize, Serialize};
 
 /// Input to the registered server-only verification operation.
+#[serde_with::skip_serializing_none]
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[serde_with::skip_serializing_none]
 pub struct ApiKeyVerificationInput {
     pub key: String,
     pub config_id: Option<String>,

@@ -28,6 +28,7 @@ mod invitations;
 mod jwks;
 mod members;
 mod migrations;
+mod native_api_keys;
 mod optional_records;
 mod organizations;
 mod rate_limit;
