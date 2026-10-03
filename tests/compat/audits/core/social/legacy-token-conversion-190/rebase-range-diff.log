@@ -1,3 +1,4 @@
-1:  6c4ebd89 = 1:  6c4ebd89 Add explicit operator-controlled legacy OAuth token conversion
-2:  205af2ea = 2:  205af2ea Prove exact conversion CAS and correct SeaORM placeholder rendering
-3:  fb9d0edd = 3:  fb9d0edd Roll back OAuth conversion transactions after trigger failures
+1:  6c4ebd89 = 1:  5701909a Add explicit operator-controlled legacy OAuth token conversion
+2:  205af2ea = 2:  63f2988b Prove exact conversion CAS and correct SeaORM placeholder rendering
+3:  fb9d0edd = 3:  bf01a9a7 Roll back OAuth conversion transactions after trigger failures
+4:  845b63db = 4:  348d8dd5 Retain bounded conversion evidence and operator upgrade guidance

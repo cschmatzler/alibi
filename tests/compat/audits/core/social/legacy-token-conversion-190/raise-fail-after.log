@@ -9,4 +9,3 @@ test core::schema::legacy_token_conversion::sqlx_schema::legacy_conversion_sqlx 
 test core::schema::legacy_token_conversion::seaorm_schema::legacy_conversion_seaorm ... ok
 
 test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.15s
-
