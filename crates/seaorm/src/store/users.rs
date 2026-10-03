@@ -10,7 +10,7 @@ use chrono::Utc;
 use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, QueryFilter, QuerySelect, QueryTrait, TransactionTrait,
+    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, QueryTrait, TransactionTrait,
 };
 
 pub(super) fn user_query<M: SeaOrmUserModel>(
@@ -440,7 +440,8 @@ where
         for hook in self.hooks() {
             if hook
                 .before_update_user(id, &mut update, &hook_context)
-                .await?
+                .await
+                .map_err(better_auth_core::store::adapter::callback_error)?
                 .is_cancelled()
             {
                 return Err(cancelled_by_hook("user update"));
@@ -484,7 +485,9 @@ where
             save_provider_user::<S::User, _>(active, self.connection(), verification, Some(id))
                 .await?;
         for hook in self.hooks() {
-            hook.after_update_user(&user, &hook_context).await?;
+            hook.after_update_user(&user, &hook_context)
+                .await
+                .map_err(better_auth_core::store::adapter::callback_error)?;
         }
         Ok(user)
     }
@@ -548,7 +551,19 @@ where
         let mut query = user_query::<S::User>(self.connection().get_database_backend());
         if let Some(value) = &params.filter_value {
             let operator = params.filter_operator.as_deref().unwrap_or("eq");
-            if matches!(value, UserFilterValue::Multiple(_)) || matches!(operator, "in" | "not_in")
+            if matches!(value, UserFilterValue::Multiple(_))
+                || matches!(operator, "in" | "not_in")
+                || !matches!(
+                    params.filter_field.as_deref().unwrap_or("email"),
+                    "email"
+                        | "name"
+                        | "username"
+                        | "role"
+                        | "banned"
+                        | "createdAt"
+                        | "updatedAt"
+                        | "banExpires"
+                )
             {
                 let field = params
                     .filter_field
@@ -614,11 +629,41 @@ where
                 params.filter_value = None;
             }
         }
+        // Numeric IDs and application fields retain physical column ordering.
+        // The shared projection cannot know the application's column types.
+        let physical_sort = params.sort_by.as_deref().filter(|field| {
+            !matches!(
+                *field,
+                "email"
+                    | "name"
+                    | "username"
+                    | "role"
+                    | "banned"
+                    | "createdAt"
+                    | "updatedAt"
+                    | "banExpires"
+            )
+        });
+        let presorted = if let Some(field) = physical_sort {
+            let column = S::User::list_users_column(field).ok_or_else(|| {
+                AuthError::bad_request("User sort field has no configured column")
+            })?;
+            query = if params.sort_direction.as_deref() == Some("desc") {
+                query.order_by_desc(column)
+            } else {
+                query.order_by_asc(column)
+            };
+            true
+        } else {
+            false
+        };
         let models = query.all(self.connection()).await.map_err(map_db_err)?;
 
-        Ok(better_auth_core::user_query::apply_list_users(
-            models, &params,
-        ))
+        Ok(if presorted {
+            better_auth_core::user_query::apply_list_users_presorted(models, &params)
+        } else {
+            better_auth_core::user_query::apply_list_users(models, &params)
+        })
     }
 }
 

@@ -1,0 +1,1 @@
+46 Source/native pairs match: 14 custom, 26 admission, 6 no-database. Every runtime independently preserves full physical/actual store before/after snapshots.

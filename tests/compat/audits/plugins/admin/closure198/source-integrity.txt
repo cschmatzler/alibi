@@ -1,0 +1,2 @@
+Registry 1.7.6 integrity sha512-WTMqOpmTTj+oBoX7zzPOzL85342Upyf+/v0IkH1kvGRA85lV4JGRFIYMIRKqvjZ6ShsuL5VX/c9C13jtoZXcKA==
+465 installed files byte-identical to fresh verified tarball after all Source controls. All private inodes. No published dependency byte mutations.

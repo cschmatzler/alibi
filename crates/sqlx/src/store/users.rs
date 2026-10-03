@@ -356,7 +356,8 @@ where
         for hook in self.hooks() {
             if hook
                 .before_update_user(id, &mut update, &hook_context)
-                .await?
+                .await
+                .map_err(better_auth_core::store::adapter::callback_error)?
                 .is_cancelled()
             {
                 return Err(cancelled_by_hook("user update"));
@@ -399,7 +400,9 @@ where
             .await?
             .ok_or_else(record_not_updated)?;
         for hook in self.hooks() {
-            hook.after_update_user(&user, &hook_context).await?;
+            hook.after_update_user(&user, &hook_context)
+                .await
+                .map_err(better_auth_core::store::adapter::callback_error)?;
         }
         Ok(user)
     }
@@ -459,7 +462,19 @@ where
         let mut sql = model::select_model::<S::User>(self.exec());
         if let Some(value) = &params.filter_value {
             let operator = params.filter_operator.as_deref().unwrap_or("eq");
-            if matches!(value, UserFilterValue::Multiple(_)) || matches!(operator, "in" | "not_in")
+            if matches!(value, UserFilterValue::Multiple(_))
+                || matches!(operator, "in" | "not_in")
+                || !matches!(
+                    params.filter_field.as_deref().unwrap_or("email"),
+                    "email"
+                        | "name"
+                        | "username"
+                        | "role"
+                        | "banned"
+                        | "createdAt"
+                        | "updatedAt"
+                        | "banExpires"
+                )
             {
                 let field = params
                     .filter_field
@@ -558,11 +573,43 @@ where
                 params.filter_value = None;
             }
         }
+        // Numeric IDs and application fields retain physical column ordering.
+        // The shared projection cannot know the application's column types.
+        let physical_sort = params.sort_by.as_deref().filter(|field| {
+            !matches!(
+                *field,
+                "email"
+                    | "name"
+                    | "username"
+                    | "role"
+                    | "banned"
+                    | "createdAt"
+                    | "updatedAt"
+                    | "banExpires"
+            )
+        });
+        let presorted = if let Some(field) = physical_sort {
+            let column = S::User::list_users_column(field).ok_or_else(|| {
+                AuthError::bad_request("User sort field has no configured column")
+            })?;
+            sql.push(" ORDER BY ");
+            sql.column(table, column);
+            sql.push(if params.sort_direction.as_deref() == Some("desc") {
+                " DESC"
+            } else {
+                " ASC"
+            });
+            true
+        } else {
+            false
+        };
         let models = self.exec().fetch_all(sql).await?;
 
-        Ok(better_auth_core::user_query::apply_list_users(
-            models, &params,
-        ))
+        Ok(if presorted {
+            better_auth_core::user_query::apply_list_users_presorted(models, &params)
+        } else {
+            better_auth_core::user_query::apply_list_users(models, &params)
+        })
     }
 }
 
