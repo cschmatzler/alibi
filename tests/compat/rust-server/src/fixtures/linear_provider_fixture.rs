@@ -74,9 +74,9 @@ pub(crate) async fn router(
                 MAPPER_RECEIPTS
                     .lock()
                     .expect("mapper receipt lock")
-                    .push(profile);
+                    .push(profile.clone());
                 Ok(OAuthUserInfo {
-                additional_fields: Default::default(),
+                    additional_fields: [("linearPublic".into(), json!({"source":profile.get("id").cloned().unwrap_or(Value::Null),"scopes":["read"]}))].into_iter().collect(),
                     id: "cannot-replace-raw-account".into(),
                     name: Some("Mapped Linear User".into()),
                     email: "mapped-linear@example.invalid".into(),

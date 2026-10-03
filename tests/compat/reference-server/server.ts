@@ -49,10 +49,10 @@ import { huggingfaceProviderFixture } from "./fixtures/huggingface-provider-fixt
 import { createJwtKeyringFixture } from "./fixtures/jwt-keyring-fixture";
 import { createRemoteJwtFixture } from "./fixtures/jwt-remote-fixture";
 import { kakaoProviderFixture } from "./fixtures/kakao-provider-fixture";
-import { linearProviderFixture } from "./fixtures/linear-provider-fixture";
 import { kickProviderFixture } from "./fixtures/kick-provider-fixture";
 import { createLastLoginMethodFixture } from "./fixtures/last-login-method-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./fixtures/lifecycle-fixture";
+import { linearProviderFixture } from "./fixtures/linear-provider-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
@@ -659,7 +659,9 @@ for (const [path, instance] of huggingfaceFixture.profiles) {
 for (const [path, instance] of kakaoFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
-for (const [path, instance] of linearFixture.profiles) { verificationProfiles.set(path, instance); }
+for (const [path, instance] of linearFixture.profiles) {
+  verificationProfiles.set(path, instance);
+}
 for (const [path, instance] of kickFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
