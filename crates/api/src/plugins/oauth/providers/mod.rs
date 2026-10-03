@@ -955,5 +955,7 @@ mod tests {
 }
 // LCOV_EXCL_STOP
 
+mod linkedin;
+pub use linkedin::LinkedInOptions;
 mod linear;
 pub use linear::LinearOptions;

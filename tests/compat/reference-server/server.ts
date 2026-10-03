@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-
 import { Database } from "bun:sqlite";
 
 import { apiKey } from "@better-auth/api-key";
@@ -53,6 +52,7 @@ import { kakaoProviderFixture } from "./fixtures/kakao-provider-fixture";
 import { kickProviderFixture } from "./fixtures/kick-provider-fixture";
 import { createLastLoginMethodFixture } from "./fixtures/last-login-method-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./fixtures/lifecycle-fixture";
+import { linkedinProviderFixture } from "./fixtures/linkedin-provider-fixture";
 import { lineProviderFixture } from "./fixtures/line-provider-fixture";
 import { linearProviderFixture } from "./fixtures/linear-provider-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
@@ -619,6 +619,7 @@ const dropboxFixture = dropboxProviderFixture(authOptions);
 const facebookFixture = facebookProviderFixture(authOptions);
 const figmaFixture = figmaProviderFixture(authOptions);
 const huggingfaceFixture = huggingfaceProviderFixture(authOptions);
+const linkedinFixture = linkedinProviderFixture(authOptions);
 const kakaoFixture = kakaoProviderFixture(authOptions);
 const lineFixture = lineProviderFixture(authOptions);
 const linearFixture = linearProviderFixture(authOptions);
@@ -659,6 +660,7 @@ for (const [path, instance] of figmaFixture.profiles) {
 for (const [path, instance] of huggingfaceFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
+for (const [path, instance] of linkedinFixture.profiles) verificationProfiles.set(path, instance);
 for (const [path, instance] of kakaoFixture.profiles) {
   verificationProfiles.set(path, instance);
 }
@@ -1640,6 +1642,8 @@ const server = Bun.serve({
       if (huggingfaceControl) {
         return huggingfaceControl;
       }
+      const linkedinControl = await linkedinFixture.handle(request);
+      if (linkedinControl) return linkedinControl;
       const kakaoControl = await kakaoFixture.handle(request);
       if (kakaoControl) {
         return kakaoControl;
@@ -2489,6 +2493,7 @@ const server = Bun.serve({
         facebookFixture.reset();
         figmaFixture.reset();
         huggingfaceFixture.reset();
+        linkedinFixture.reset();
         kakaoFixture.reset();
         lineFixture.reset();
         linearFixture.reset();
