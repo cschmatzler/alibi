@@ -74,6 +74,7 @@ export function createTwoFactorPolicyFixture(
       "two-factor-skip-session-forbidden",
       "two-factor-pending-session-cancel",
       "two-factor-pending-session-forbidden",
+      "two-factor-pending-session-ordinary",
       "two-factor-passwordless",
       "two-factor-passwordless-child-required",
       "two-factor-passwordless-child-optional",
@@ -143,6 +144,9 @@ export function createTwoFactorPolicyFixture(
                           ) {
                             if (name.endsWith("-cancel")) {
                               return false;
+                            }
+                            if (name.endsWith("-ordinary")) {
+                              throw new Error("session creation cancelled by database hook");
                             }
                             throw new APIError("FORBIDDEN", {
                               message: "session creation cancelled by database hook",

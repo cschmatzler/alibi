@@ -50,6 +50,7 @@ impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for 
 struct RejectSessionCreate {
     cancel: bool,
     pending: bool,
+    ordinary: bool,
 }
 #[async_trait::async_trait]
 impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
@@ -69,6 +70,13 @@ impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
         }) {
             if self.cancel {
                 return Ok(better_auth_seaorm::HookControl::Cancel);
+            }
+            if self.ordinary {
+                return Err(better_auth_core::AuthError::CallbackFailure(Box::new(
+                    better_auth_core::AuthError::internal(
+                        "session creation cancelled by database hook",
+                    ),
+                )));
             }
             return Err(better_auth_core::AuthError::forbidden(
                 "session creation cancelled by database hook",
@@ -195,6 +203,7 @@ pub(crate) async fn router(
         "two-factor-skip-session-forbidden",
         "two-factor-pending-session-cancel",
         "two-factor-pending-session-forbidden",
+        "two-factor-pending-session-ordinary",
         "two-factor-passwordless",
         "two-factor-passwordless-child-required",
         "two-factor-passwordless-child-optional",
@@ -249,6 +258,7 @@ pub(crate) async fn router(
             store.with_hooks(vec![Arc::new(RejectSessionCreate {
                 cancel: name.ends_with("-cancel"),
                 pending: name.starts_with("two-factor-pending-"),
+                ordinary: name.ends_with("-ordinary"),
             })])
         } else {
             store

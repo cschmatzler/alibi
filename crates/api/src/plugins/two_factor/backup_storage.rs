@@ -52,74 +52,47 @@ impl TwoFactorBackupStorage {
         }
     }
 
-    ///
-    /// # Errors
-    /// Returns an error when validation, storage, or an application callback fails.
-    pub(in crate::plugins) async fn load_codes(
-        &self,
-        stored: &str,
-        secret: &better_auth_core::AuthConfig,
-    ) -> AuthResult<Option<Vec<String>>> {
-        Ok(self
-            .load_value(stored, secret)
-            .await?
-            .and_then(|value| serde_json::from_value(value).ok()))
-    }
-
-    // Verification must retain non-string elements in installed arrays. The
-    // typed server-only view continues to require an array of strings.
+    // Keep the parsed value until the operation's truthiness/shape checks have
+    // run. JSON.stringify maps Infinity to null; doing that during decoding
+    // would incorrectly spend a pending attempt instead of restoring it.
     pub(in crate::plugins) async fn load_value(
         &self,
         stored: &str,
         secret: &better_auth_core::AuthConfig,
-    ) -> AuthResult<Option<serde_json::Value>> {
+    ) -> AuthResult<Option<better_auth_core::utils::json::JsValue>> {
         let json = match self {
             Self::Encrypted => super::decrypt_value(secret, stored)?,
             Self::Plain => stored.to_owned(),
             Self::CustomCipher(cipher) => cipher.decrypt(stored).await?,
         };
-        Ok(serde_json::from_str(&json).ok().map(|mut value| {
-            normalize_json_dates(&mut value);
-            value
-        }))
+        Ok(better_auth_core::utils::json::parse_value(&json).ok())
     }
 }
 
-// Published safeJSONParse revives matching ISO strings into Date objects.
-// Keep representable canonical dates from authenticating as string codes and
-// preserve their JSON serialization when another code consumes the array.
-pub(super) fn json_date(value: &str) -> Option<chrono::DateTime<chrono::Utc>> {
-    use chrono::Timelike;
-
-    if !value.ends_with('Z')
-        || value.get(10..11) != Some("T")
-        || !value
-            .get(..4)
-            .is_some_and(|year| year.bytes().all(|byte| byte.is_ascii_digit()))
-        || !(value.len() == 20
-            || (value.as_bytes().get(19) == Some(&b'.')
-                && value
-                    .get(20..value.len().checked_sub(1)?)
-                    .is_some_and(|fraction| {
-                        !fraction.is_empty() && fraction.bytes().all(|byte| byte.is_ascii_digit())
-                    })))
-    {
-        return None;
-    }
-    let date = chrono::DateTime::parse_from_rfc3339(value).ok()?;
-    // JavaScript Date does not accept leap seconds.
-    (date.nanosecond() < 1_000_000_000).then(|| date.with_timezone(&chrono::Utc))
+pub(super) fn json_date(value: &str) -> Option<String> {
+    better_auth_core::utils::datetime::normalize_json_date(value)
 }
 
-fn normalize_json_dates(value: &mut serde_json::Value) {
+pub(super) fn normalize_json_dates(value: &mut better_auth_core::utils::json::JsValue) {
+    use better_auth_core::utils::json::JsValue;
     match value {
-        serde_json::Value::String(text) => {
+        JsValue::String(text) => {
             if let Some(date) = json_date(text) {
-                *text = date.to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
+                *text = date;
             }
         }
-        serde_json::Value::Array(values) => values.iter_mut().for_each(normalize_json_dates),
-        serde_json::Value::Object(values) => values.values_mut().for_each(normalize_json_dates),
+        JsValue::Array(values) => values.iter_mut().for_each(normalize_json_dates),
+        JsValue::Object(values) => values.values_mut().for_each(normalize_json_dates),
         _ => {}
+    }
+}
+
+pub(super) fn truthy(value: &better_auth_core::utils::json::JsValue) -> bool {
+    use better_auth_core::utils::json::JsValue;
+    match value {
+        JsValue::Null | JsValue::Bool(false) => false,
+        JsValue::Number(number) => *number != 0.0 && !number.is_nan(),
+        JsValue::String(text) => !text.is_empty(),
+        _ => true,
     }
 }

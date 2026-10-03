@@ -1379,8 +1379,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             })),
                         ),
                         Err(error) => (
-                            axum::http::StatusCode::from_u16(error.status_code())
-                                .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR),
+                            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                             Json(serde_json::json!({
                                 "message": error.to_string(),
                             })),
