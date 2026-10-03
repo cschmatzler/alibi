@@ -142,9 +142,26 @@ impl OAuthUserInfoHandler for NaverUserInfo {
             .mapper
             .map(|mapper| mapper(profile.clone()))
             .transpose()?;
+        // Keep Source's original JSON publication separate from typed persistence.
+        let mut output = better_auth_core::field_policy::FieldOutput::new();
+        let name = account.and_then(|value| value.get("name")).filter(|value| truthy(value))
+            .or_else(|| account.and_then(|value| value.get("nickname")).filter(|value| truthy(value)))
+            .cloned().unwrap_or_else(|| Value::String(String::new()));
+        drop(output.insert("name".into(), name));
+        drop(output.insert("emailVerified".into(), Value::Bool(false)));
+        for (public, remote) in [("email", "email"), ("image", "profile_image")] {
+            if let Some(value) = account.and_then(|value| value.get(remote)) {
+                drop(output.insert(public.into(), value.clone()));
+            }
+        }
+        if let Some(user) = &mapped {
+            output.extend(user.public_profile(true));
+            output.extend(user.additional_fields.clone());
+        }
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
+                additional_fields: Default::default(),
                 id: scalar(account.and_then(|value| value.get("id")))?.unwrap_or_default(),
                 name: Some(
                     scalar(
@@ -169,6 +186,7 @@ impl OAuthUserInfoHandler for NaverUserInfo {
             },
         };
         Ok(OAuthUserInfoResponse {
+            user_output: Some(output),
             user,
             data: profile,
         })

@@ -50,13 +50,13 @@ import { huggingfaceProviderFixture } from "./fixtures/huggingface-provider-fixt
 import { createJwtKeyringFixture } from "./fixtures/jwt-keyring-fixture";
 import { createRemoteJwtFixture } from "./fixtures/jwt-remote-fixture";
 import { kakaoProviderFixture } from "./fixtures/kakao-provider-fixture";
-import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
 import { kickProviderFixture } from "./fixtures/kick-provider-fixture";
 import { createLastLoginMethodFixture } from "./fixtures/last-login-method-fixture";
 import { lifecycleEvents, lifecycleFixture } from "./fixtures/lifecycle-fixture";
 import { linearProviderFixture } from "./fixtures/linear-provider-fixture";
 import { createManagedSecretsFixture } from "./fixtures/managed-secrets-fixture";
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
+import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./fixtures/one-tap-fixture";
 import { openApiProfiles } from "./fixtures/open-api-fixture";

@@ -63,3 +63,16 @@ User steering: OAuth providers last. Preserve this implementation and all actual
 proof on the draft PR. Broad frozen canonical/native coverage/docs/browser and
 actual-main composition are NOT yet run; no final landing claim. Work resumes
 only after nonprovider issues. No Source/comparer changes or hook bypass.
+
+Resumed October 3: own Naver changes isolated from the old provider stack and
+migrated to current core/social and fixture layout. All 342 existing Naver
+requirements and every main requirement retained. The existing 14 mapping
+owners now observe real owned and foreign SDK account-info, complete original
+JSON envelope and account shape, unchanged physical rows and actual GET receipts.
+Actual unchanged Source-self passes all 57 owners with 2,326 assertions. Raw
+numeric/null/absent public fields are published independently from typed SQL
+values using the existing user_output contract; mapper output and additional
+fields preserve mapped public ID independently from original account authority.
+The native-before unique build was interrupted at the user's explicit deadline;
+verification was explicitly waived by the user. No full gate or native-after
+pass is claimed. Frozen dependencies, comparators and gate scripts unchanged.
