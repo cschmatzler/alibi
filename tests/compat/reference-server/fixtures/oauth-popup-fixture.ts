@@ -66,12 +66,25 @@ export async function oauthPopupFixture(base: BetterAuthOptions) {
             ? new Response(null, { status: 204 })
             : await auth.handler(request);
         const origin = request.headers.get("origin");
-        if(origin && [String(base.baseURL),String(base.baseURL).replace("localhost","127.0.0.1"),"http://app.fixture.test"].includes(origin)) {
-          response.headers.set("access-control-allow-origin",origin);
-          response.headers.set("access-control-allow-credentials","true");
-          response.headers.set("access-control-allow-headers","Content-Type, Authorization, X-Requested-With");
-          response.headers.set("access-control-allow-methods","GET, POST, PUT, DELETE, PATCH, OPTIONS");
-          response.headers.set("access-control-max-age","86400");
+        if (
+          origin &&
+          [
+            String(base.baseURL),
+            String(base.baseURL).replace("localhost", "127.0.0.1"),
+            "http://app.fixture.test",
+          ].includes(origin)
+        ) {
+          response.headers.set("access-control-allow-origin", origin);
+          response.headers.set("access-control-allow-credentials", "true");
+          response.headers.set(
+            "access-control-allow-headers",
+            "Content-Type, Authorization, X-Requested-With",
+          );
+          response.headers.set(
+            "access-control-allow-methods",
+            "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+          );
+          response.headers.set("access-control-max-age", "86400");
         }
         return response;
       }

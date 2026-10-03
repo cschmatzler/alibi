@@ -146,7 +146,7 @@ compatScenario(
           .actor()
           .fetch(
             `${base}${PATH}/oauth-popup/start?${new URLSearchParams({ provider: "missing", popupOrigin: APP, popupNonce: dangerous })}`,
-            { redirect: "manual", headers:{origin:APP} },
+            { redirect: "manual", headers: { origin: APP } },
           ),
       );
       expect(payload(unknown.body).error.code).toBe("provider_not_found");
@@ -223,6 +223,15 @@ compatScenario(
       const replay = await responseRecord(await request.get(callback, { maxRedirects: 0 }));
       expect(replay.status).toBe(302);
       expect((await readState(request)).session).toEqual(after.session);
+      await context.addCookies([marker]);
+      const popupReplay = await responseRecord(await request.get(callback, { maxRedirects: 0 }));
+      expect(popupReplay.status).toBe(200);
+      expect(payload(popupReplay.body).error.code).toBe("state_mismatch");
+      expect(payload(popupReplay.body).nonce).toBe("nonce-132");
+      expect((await readState(request)).session).toEqual(after.session);
+      observations.push({
+        popupReplay: { status: popupReplay.status, error: payload(popupReplay.body).error },
+      });
       observations.push({
         success: {
           nonce: data.nonce,
@@ -325,7 +334,9 @@ compatScenario(
         (window as any).popupClient.signIn.popup({ provider: "gitlab" }),
       );
       expect(blocked.error.code).toBe("POPUP_BLOCKED");
-      expect((await readState(request)).session).toHaveLength(0);
+      const blockedState = await readState(request);
+      expect(blockedState.session).toHaveLength(0);
+      expect(blockedState.verification).toHaveLength(0);
       observations.push({ blocked });
       await request.post(`${base}${CONTROL}/hold`);
       const popupEvent = context.waitForEvent("page");
@@ -337,7 +348,9 @@ compatScenario(
       await popup.close();
       const closed = await closing;
       expect(closed.error.code).toBe("POPUP_CLOSED");
-      expect((await readState(request)).session).toHaveLength(0);
+      const closedState = await readState(request);
+      expect(closedState.session).toHaveLength(0);
+      expect(closedState.verification).toHaveLength(1);
       observations.push({ closed });
       await reset();
       await request.post(`${base}${CONTROL}/hold`);

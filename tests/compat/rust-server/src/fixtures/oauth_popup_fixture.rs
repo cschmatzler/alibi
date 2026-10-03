@@ -62,7 +62,8 @@ pub(crate) async fn router(config: &AuthConfig) -> AuthResult<Router> {
             .store(crate::backend::store::<TestSchema>(settings, database))
             .rate_limit(RateLimitConfig::new().enabled(false))
             .cors(
-                CorsConfig::new().allowed_origin("http://app.fixture.test")
+                CorsConfig::new()
+                    .allowed_origin("http://app.fixture.test")
                     .allowed_origin(config.base_url.clone())
                     .allowed_origin(config.base_url.replace("localhost", "127.0.0.1")),
             )
@@ -218,7 +219,7 @@ async fn state(State(f): State<Fixture>) -> Result<Json<Value>, String> {
         .map_err(|e| e.to_string())?;
     Ok(Json(json!({
         "user":users.iter().map(|r|json!({"id":r.id,"name":r.name,"email":r.email,"emailVerified":r.email_verified,"image":r.image,"createdAt":r.created_at,"updatedAt":r.updated_at})).collect::<Vec<_>>(),
-        "account":accounts.iter().map(|r|json!({"id":r.id,"userId":r.user_id,"providerId":r.provider_id,"accountId":r.account_id,"accessToken":r.access_token,"refreshToken":r.refresh_token,"idToken":r.id_token,"scope":r.scope,"accessTokenExpiresAt":r.access_token_expires_at,"refreshTokenExpiresAt":r.refresh_token_expires_at,"createdAt":r.created_at,"updatedAt":r.updated_at})).collect::<Vec<_>>(),
+        "account":accounts.iter().map(|r|json!({"id":r.id,"userId":r.user_id,"providerId":r.provider_id,"accountId":r.account_id,"accessToken":r.access_token,"refreshToken":r.refresh_token,"idToken":r.id_token,"password":r.password,"scope":r.scope,"accessTokenExpiresAt":r.access_token_expires_at,"refreshTokenExpiresAt":r.refresh_token_expires_at,"createdAt":r.created_at,"updatedAt":r.updated_at})).collect::<Vec<_>>(),
         "session":sessions.iter().map(|r|json!({"id":r.id,"userId":r.user_id,"token":r.token,"ipAddress":r.ip_address,"userAgent":r.user_agent,"createdAt":r.created_at,"updatedAt":r.updated_at,"expiresAt":r.expires_at})).collect::<Vec<_>>(),
         "verification":verification.iter().map(|r|json!({"id":r.id,"identifier":r.identifier,"value":r.value,"createdAt":r.created_at,"updatedAt":r.updated_at,"expiresAt":r.expires_at})).collect::<Vec<_>>(),
         "receipts":f.provider.lock().await.receipts
