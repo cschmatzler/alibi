@@ -219,6 +219,9 @@ for (const mode of [
   "packed-uv-absent-backed",
   "eddsa-none-uv-absent",
   "eddsa-packed-uv-absent",
+  "packed-binding-present",
+  "packed-binding-supported",
+  "packed-binding-not-supported",
 ] as const) {
   compatScenario(
     `passkey ${mode} registration verifies genuine credential before callback session and signed authentication`,
@@ -231,6 +234,9 @@ for (const mode of [
       const response = {
         ...device.register(options.data, ctx.baseURL, {
           userVerified: false,
+          ...(mode.startsWith("packed-binding-")
+            ? { tokenBinding: { status: mode.slice("packed-binding-".length) } }
+            : {}),
           attestation: mode.includes("packed") ? "packed" : "none",
           backupEligible: backed,
           backedUp: backed,
@@ -458,6 +464,8 @@ compatScenario(
       "origin-case",
       "challenge",
       "malformed-key",
+      "token-binding-status",
+      "token-binding-auth-spelling",
       "foreign-owner",
       "eddsa-signature",
       "eddsa-signature-length",
@@ -466,6 +474,11 @@ compatScenario(
       const options = await fixture.options();
       const flags = {
         attestation: "packed" as const,
+        ...(mode === "token-binding-status"
+          ? { tokenBinding: { status: "invalid" } }
+          : mode === "token-binding-auth-spelling"
+            ? { tokenBinding: { status: "notSupported" } }
+            : {}),
         ...(mode === "signature" || mode === "eddsa-signature"
           ? { badSignature: true }
           : mode === "signature-der" || mode === "eddsa-signature-length"
@@ -546,6 +559,37 @@ compatScenario(
       outputs.push({ mode, options, result, cookies, events, replay, state });
     }
 
+    const retryOptions = await fixture.options();
+    const retryProof = device.register(retryOptions.data, ctx.baseURL, {
+      attestation: "packed",
+      tokenBinding: { status: "not-supported" },
+      userVerified: false,
+    });
+    const retry = await fixture.owner.$fetch("/passkey/verify-registration", {
+      method: "POST",
+      body: { response: retryProof, createSession: true },
+    });
+    expect(retry.error).toBeNull();
+    expect(retry.data).toMatchObject({
+      userId: fixture.signup.data!.user.id,
+      credentialID: retryProof.id,
+      counter: 0,
+      user: { id: fixture.signup.data!.user.id },
+      session: { userId: fixture.signup.data!.user.id },
+    });
+    const retryState = await fixture.state();
+    expect(retryState).toMatchObject({
+      passkeys: [{ userId: fixture.signup.data!.user.id, counter: 0 }],
+      sessions: { count: 1 },
+      challenges: { count: 0 },
+    });
+    const retryReplay = await fixture.owner.$fetch("/passkey/verify-registration", {
+      method: "POST",
+      body: { response: retryProof, createSession: true },
+    });
+    expect(retryReplay.error).toMatchObject({ status: 400, code: "CHALLENGE_NOT_FOUND" });
+    expect(await fixture.state()).toEqual(retryState);
+
     return {
       signup: fixture.signup,
       foreignSignup: fixture.foreignSignup,
@@ -553,6 +597,13 @@ compatScenario(
       before: fixture.before,
       foreignBefore: fixture.foreignBefore,
       outputs,
+      recovery: {
+        retryOptions,
+        response: registration(retryProof),
+        retry,
+        retryReplay,
+        retryState,
+      },
       submitted: fixture.submitted(),
       after: await ctx.readUserState({ userId: fixture.signup.data!.user.id }),
       foreignAfter: await ctx.readUserState({ userId: fixture.foreignSignup.data!.user.id }),

@@ -85,6 +85,7 @@ type BackupFlags = {
   malformedSignature?: boolean;
   malformedKey?: boolean;
   statementAlgorithm?: -7 | -8;
+  tokenBinding?: { status: string; id?: string };
 };
 
 const flags = (base: number, state: BackupFlags) =>
@@ -129,6 +130,7 @@ export class Authenticator {
         challenge: parsed.challenge,
         origin,
         crossOrigin: false,
+        ...(backup.tokenBinding === undefined ? {} : { tokenBinding: backup.tokenBinding }),
       }),
     );
     const length = Buffer.alloc(2);
@@ -204,6 +206,7 @@ export class Authenticator {
         challenge: parsed.challenge,
         origin,
         crossOrigin: false,
+        ...(backup.tokenBinding === undefined ? {} : { tokenBinding: backup.tokenBinding }),
       }),
     );
     const counter = Buffer.alloc(4);
