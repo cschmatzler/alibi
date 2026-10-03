@@ -45,4 +45,38 @@ while the rejected owner's row stays unchanged.
 Before enabling the native plugin, the same client owner fails because the
 native core response has no application projection. Exploratory traces and
 before/after logs stay outside the repository. Focused validation is reported in
-the PR; the coordinator runs the canonical broad gate after batches of changes.
+the PR; this issue uses targeted checks on both adapters only.
+
+
+## Whole-second JWT publications (#380)
+
+Published `better-auth@1.7.6` `dist/plugins/jwt/sign.mjs` builds `iat` with
+`Math.floor(Date.now() / 1e3)` in `getJwtToken`; its default expiry is 900 seconds
+later. The default EdDSA signer produces the same token for the same key and
+claims within that second. The custom-session after hook signs the genuine
+principal even when the application filters the response. Native signing has
+the same whole-second contract.
+
+The frozen SQLx sweep on `ef4c299a` reported token-bijection drift at the filtered
+read's raw `set-auth-jwt` header. The original sweep retained its log but no raw
+pair for this scenario. Its SeaORM phase was cancelled by the user, not reported
+as a compatibility failure. Focused experiments from `e7effea3` captured both
+adapters: start the initial read just inside a second, then delay only Rust's
+filtered read by 1.1 seconds. Source reuses the earlier JWT while Rust advances
+`iat`, reproducing precisely the reported raw token-rotation difference. This
+is an observation timing ambiguity, not a production authority error.
+
+The existing owner now waits beyond the last observed JWT's issuance second
+before each subsequent signing request. It independently checks the signup
+subject/name, integer `iat`, default lifetime, increasing issuance time and
+changed token. This makes rotation intentional on both sides while retaining
+the entire raw token/claim comparison and all physical storage observations.
+No production, fixture, shared comparator or dependency changes are needed.
+
+Before/after pairs, native timing diagnostics and observation-only negative
+controls are retained under `/tmp/better-auth-issue380-evidence`. Controls on both
+actual adapter pairs still reject stale complete tokens, foreign subjects,
+changed raw names/lifetimes, omitted headers, changed persisted user/account/
+session ownership and removed cookie protection. Existing generic JWT/identity
+negative controls remain the primary comparator tests; no duplicate success
+scenario or test-only production seam is introduced.
