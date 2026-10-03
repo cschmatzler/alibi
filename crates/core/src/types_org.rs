@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use uuid::Uuid;
 
 /// Organization entity - matches `OpenAPI` schema
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Organization {
     pub id: String,
     pub name: String,
@@ -26,7 +26,7 @@ pub struct Organization {
 }
 
 /// Organization member
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Member {
     pub id: String,
     #[serde(rename = "organizationId")]
@@ -73,7 +73,7 @@ impl std::fmt::Display for InvitationStatus {
 }
 
 /// Organization invitation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Invitation {
     pub id: String,
     #[serde(rename = "organizationId")]
@@ -330,7 +330,7 @@ impl<T: AuthInvitation> From<&T> for Invitation {
 }
 
 /// A team within one organization. The durable capacity counter is private to storage.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Team {
     pub id: String,
@@ -357,7 +357,7 @@ pub struct UpdateTeam {
 }
 
 /// A user membership in a team. The uniqueness key is never returned on the wire.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TeamMember {
     pub id: String,
@@ -383,7 +383,7 @@ pub type OrganizationPermissions = indexmap::IndexMap<String, Vec<String>>;
 ///
 /// Legacy rows may contain non-record or malformed JSON. Storage must retain
 /// those bytes until the organization consumer parses and validates them.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct StoredOrganizationPermissions(String);
 
@@ -400,7 +400,7 @@ impl From<String> for StoredOrganizationPermissions {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrganizationRole {
     pub id: String,

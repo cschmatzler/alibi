@@ -1834,6 +1834,17 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         token: &str,
         team_id: Option<&str>,
     ) -> AuthResult<S::Session> {
+        if self.config.session.stateless {
+            let mut fields = crate::field_policy::FieldValues::new();
+            drop(fields.insert(
+                "activeTeamId".into(),
+                team_id.map_or(crate::utils::json::JsValue::Null, |value| {
+                    crate::utils::json::JsValue::String(value.to_owned())
+                }),
+            ));
+            return self.record_store.update_ephemeral_session(token, None, fields)
+                .await?.ok_or(AuthError::SessionNotFound);
+        }
         if self.record_store.secondary().is_some()
             && (!self.record_store.session_uses_database()
                 || self.record_store.cached_session(token).await?.is_some())
@@ -1855,6 +1866,17 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         token: &str,
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session> {
+        if self.config.session.stateless {
+            let mut fields = crate::field_policy::FieldValues::new();
+            drop(fields.insert(
+                "activeOrganizationId".into(),
+                organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
+                    crate::utils::json::JsValue::String(value.to_owned())
+                }),
+            ));
+            return self.record_store.update_ephemeral_session(token, None, fields)
+                .await?.ok_or(AuthError::SessionNotFound);
+        }
         if self.record_store.secondary().is_some()
             && (!self.record_store.session_uses_database()
                 || self.record_store.cached_session(token).await?.is_some())

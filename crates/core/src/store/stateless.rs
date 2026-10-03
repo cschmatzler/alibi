@@ -3,13 +3,19 @@
 //! This store has no database connection. The initialized store wrapper keeps
 //! ephemeral session records for cookie bypass and instance-local logout.
 //! User/account/verification provisioning is instance-local, as in the pinned
-//! no-database memory adapter. Native two-factor/passkey/API-key/device-code/JWK records share that
+//! no-database memory adapter. Native two-factor/passkey/API-key/device-code/JWK/organization records share that
 //! instance-local lifetime; other optional records require an application store.
 //! Applications can also use cookie-only sessions with durable SQL user storage.
 mod api_keys;
 mod device_codes;
 mod jwks;
 mod optional_records;
+mod organizations;
+mod members;
+mod invitations;
+mod teams;
+mod roles;
+mod transaction;
 
 use super::*;
 use crate::{AccountView, SessionView, UserView, VerificationView};
@@ -29,9 +35,10 @@ impl AuthSchema for StatelessSchema {
 
 /// Instance-local provisioning without durable persistence. Session ownership
 /// comes from trusted issuance; the initialized wrapper retains ephemeral sessions.
-#[derive(Default)]
 pub struct StatelessStore {
     state: std::sync::Mutex<IdentityState>,
+    organizations: std::sync::Mutex<OrganizationState>,
+    find_many_limit: usize,
 }
 
 #[derive(Default)]
@@ -46,7 +53,31 @@ struct IdentityState {
     jwks: indexmap::IndexMap<String, Jwk>,
 }
 
+#[derive(Default, Clone)]
+struct OrganizationState {
+    organizations: indexmap::IndexMap<String, Organization>,
+    members: indexmap::IndexMap<String, Member>,
+    invitations: indexmap::IndexMap<String, Invitation>,
+    teams: indexmap::IndexMap<String, Team>,
+    team_members: indexmap::IndexMap<String, TeamMember>,
+    roles: indexmap::IndexMap<String, OrganizationRole>,
+}
+
+impl Default for StatelessStore {
+    fn default() -> Self { Self::with_find_many_limit(100) }
+}
+
 impl StatelessStore {
+    /// Use the configured adapter page bound for native organization rows.
+    #[must_use]
+    pub fn with_find_many_limit(find_many_limit: usize) -> Self {
+        Self { state: Default::default(), organizations: Default::default(), find_many_limit }
+    }
+
+    fn organization_state(&self) -> AuthResult<std::sync::MutexGuard<'_, OrganizationState>> {
+        self.organizations.lock().map_err(|_| AuthError::internal("No-database organization state poisoned"))
+    }
+
     fn lock(&self) -> AuthResult<std::sync::MutexGuard<'_, IdentityState>> {
         self.state
             .lock()
@@ -54,55 +85,6 @@ impl StatelessStore {
     }
 }
 
-macro_rules! unsupported_store {
-    ($trait:ty, { $(async fn $name:ident($($arg:ident: $ty:ty),* $(,)?) -> $ret:ty;)* }) => {
-        #[async_trait]
-        impl $trait for StatelessStore {
-            $(async fn $name(&self, $($arg: $ty),*) -> $ret {
-                $(let _ = $arg;)*
-                Err(AuthError::NotImplemented(concat!(stringify!($name), " requires an application store").into()))
-            })*
-        }
-    };
-}
-
-unsupported_store!(OrganizationStore, {
-    async fn create_organization(org: CreateOrganization) -> AuthResult<Organization>;
-    async fn get_organization_by_id(id: &str) -> AuthResult<Option<Organization>>;
-    async fn get_organization_by_slug(slug: &str) -> AuthResult<Option<Organization>>;
-    async fn list_organizations_by_ids(ids: &[String]) -> AuthResult<Vec<Organization>>;
-    async fn update_organization(id: &str, update: UpdateOrganization) -> AuthResult<Organization>;
-    async fn delete_organization(id: &str) -> AuthResult<()>;
-    async fn list_user_organizations(user_id: &str) -> AuthResult<Vec<Organization>>;
-});
-
-unsupported_store!(MemberStore, {
-    async fn create_member(member: CreateMember) -> AuthResult<Member>;
-    async fn get_member(organization_id: &str, user_id: &str) -> AuthResult<Option<Member>>;
-    async fn get_member_by_id(id: &str) -> AuthResult<Option<Member>>;
-    async fn update_member_role(member_id: &str, role: &str) -> AuthResult<Member>;
-    async fn delete_member(member_id: &str) -> AuthResult<()>;
-    async fn list_organization_members(org_id: &str) -> AuthResult<Vec<Member>>;
-    async fn query_organization_members(
-        params: &ListOrganizationMembersParams,
-    ) -> AuthResult<(Vec<Member>, usize)>;
-    async fn count_organization_members(org_id: &str) -> AuthResult<i64>;
-    async fn count_organization_owners(org_id: &str) -> AuthResult<i64>;
-});
-
-unsupported_store!(InvitationStore, {
-    async fn create_invitation(invitation: CreateInvitation) -> AuthResult<Invitation>;
-    async fn get_invitation_by_id(id: &str) -> AuthResult<Option<Invitation>>;
-    async fn get_pending_invitation(org_id: &str, email: &str) -> AuthResult<Option<Invitation>>;
-    async fn update_invitation_status(id: &str, status: InvitationStatus)
-    -> AuthResult<Invitation>;
-    async fn list_organization_invitations(org_id: &str) -> AuthResult<Vec<Invitation>>;
-    async fn count_pending_organization_invitations(org_id: &str) -> AuthResult<i64>;
-    async fn list_user_invitations(email: &str) -> AuthResult<Vec<Invitation>>;
-});
-
-impl TeamStore for StatelessStore {}
-impl OrganizationRoleStore for StatelessStore {}
 impl WalletAddressStore for StatelessStore {}
 
 #[async_trait]
@@ -815,38 +797,3 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
     }
 }
 
-#[async_trait]
-impl TransactionStore<StatelessSchema> for StatelessStore {
-    async fn transaction_boxed(
-        &self,
-        work: Box<TransactionWork<StatelessSchema>>,
-    ) -> AuthResult<BoxedTransactionValue> {
-        // The pinned memory adapter has no transactional rollback. All methods
-        // use instance-local identity maps; sessions are never inserted into them.
-        work(self).await
-    }
-}
-
-#[async_trait]
-impl AuthTransaction<StatelessSchema> for StatelessStore {
-    async fn prepare_secondary_session_creation(
-        &self,
-        input: CreateSession,
-        persist: bool,
-    ) -> AuthResult<SessionView> {
-        SessionStore::<StatelessSchema>::prepare_secondary_session_creation(self, input, persist)
-            .await
-    }
-    async fn create_user(&self, data: CreateUser) -> AuthResult<UserView> {
-        UserStore::<StatelessSchema>::create_user(self, data).await
-    }
-    async fn create_user_prepared(&self, data: PreparedUserCreation) -> AuthResult<UserView> {
-        UserStore::<StatelessSchema>::create_user_prepared(self, data).await
-    }
-    async fn create_account(&self, data: CreateAccount) -> AuthResult<AccountView> {
-        AccountStore::<StatelessSchema>::create_account(self, data).await
-    }
-    async fn create_session(&self, data: CreateSession) -> AuthResult<SessionView> {
-        SessionStore::<StatelessSchema>::create_session(self, data).await
-    }
-}
