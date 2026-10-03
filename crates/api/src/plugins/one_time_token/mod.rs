@@ -280,6 +280,7 @@ impl OneTimeTokenPlugin {
                     | AuthError::Plugin { .. }
                     | AuthError::CallbackFailure(_)
                     | AuthError::Internal(_)
+                    | AuthError::Encryption(_)
                     | AuthError::PasswordHash(_)
                     | AuthError::Jwt(_)) => error,
                 })?;
@@ -336,7 +337,7 @@ impl OneTimeTokenPlugin {
         // expiry, including on the expired-session rejection response.
         if !self.config.disable_set_session_cookie {
             let dont_remember = get_cookie(req, &related_cookie_name(&ctx.config, "dont_remember"))
-                .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+                .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
                 .is_some_and(|value| !value.is_empty());
             response.headers.append(
                 "set-cookie",
@@ -351,7 +352,7 @@ impl OneTimeTokenPlugin {
                     "set-cookie",
                     create_session_like_cookie(
                         &related_cookie_name(&ctx.config, "dont_remember"),
-                        &sign_cookie_value("true", &ctx.config.secret),
+                        &sign_cookie_value("true", ctx.config.current_secret()),
                         None,
                         &ctx.config,
                     ),

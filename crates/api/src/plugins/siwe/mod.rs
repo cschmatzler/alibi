@@ -378,7 +378,7 @@ impl SiwePlugin {
         };
         let name = related_cookie_name(&ctx.config, "dont_remember");
         let preference = super::helpers::get_cookie(request, &name)
-            .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+            .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
             .is_some_and(|value| !value.is_empty());
         response.headers.append(
             "Set-Cookie",
@@ -393,7 +393,7 @@ impl SiwePlugin {
                 "Set-Cookie",
                 create_session_like_cookie(
                     &name,
-                    &sign_cookie_value("true", &ctx.config.secret),
+                    &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
                 ),

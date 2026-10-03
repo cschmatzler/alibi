@@ -71,3 +71,5 @@ pub(crate) mod two_factor_totp_fixture;
 pub(crate) mod user_lifecycle_fixture;
 pub(crate) mod user_validation_fixture;
 pub(crate) mod verification_storage_fixture;
+
+pub(crate) mod managed_secrets_fixture;

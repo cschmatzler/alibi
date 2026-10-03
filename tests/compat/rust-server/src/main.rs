@@ -1,5 +1,6 @@
 mod additional_field_models;
 mod fixtures;
+use fixtures::managed_secrets_fixture;
 mod magic_profiles;
 mod otp_profiles;
 mod parity_controls;
@@ -853,6 +854,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let bearer_router =
         bearer_fixture::router(&config, database.clone(), multiple_session_counter.clone()).await?;
+    let managed_secrets_router = managed_secrets_fixture::router(&config, database.clone(), || {
+        mock_oauth_plugin(
+            port,
+            social_profile.clone(),
+            social_id_token_valid.clone(),
+            oauth_refresh_mode.clone(),
+        )
+    })
+    .await?;
     let custom_session_router =
         custom_session_fixture::router(&config, database.clone(), multiple_session_counter.clone())
             .await?;
@@ -867,6 +877,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let admin_permission_router =
         admin_permission_fixture::router(&config, database.clone()).await?;
     let (oauth_proxy_router, oauth_proxy_reset) = oauth_proxy_fixture::router(&config).await?;
+    let (managed_proxy_router, managed_proxy_reset) =
+        oauth_proxy_fixture::managed_router(&config).await?;
     let (cloudflare_router, cloudflare_reset) =
         cloudflare_provider_fixture::router(&config, database.clone()).await?;
     let (facebook_router, facebook_reset) =
@@ -1391,6 +1403,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let apple_reset = apple_reset.clone();
                 let social_provider_reset = social_provider_reset.clone();
                 let oauth_proxy_reset = oauth_proxy_reset.clone();
+                let managed_proxy_reset = managed_proxy_reset.clone();
                 let invitation_acceptance_reset = invitation_acceptance_reset.clone();
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
@@ -1409,6 +1422,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     apple_reset.reset().await;
                     social_provider_reset.reset().await;
                     if let Err(error) = oauth_proxy_reset.reset().await {
+                        return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"message":error.to_string()})));
+                    }
+                    if let Err(error) = managed_proxy_reset.reset().await {
                         return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"message":error.to_string()})));
                     }
                     invitation_acceptance_reset.reset().await;
@@ -2032,6 +2048,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(apple_router)
         .merge(social_provider_router)
         .merge(oauth_proxy_router)
+        .merge(managed_proxy_router)
         .merge(anonymous_router)
         .merge(membership_router)
         .merge(invitation_acceptance_router)
@@ -2046,6 +2063,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(server_endpoint_version_router)
         .merge(multiple_session_router)
         .merge(custom_session_router)
+        .merge(managed_secrets_router)
         .merge(admin_permission_router)
         .merge(admin_banned_message_router)
         .merge(api_key_generation_router)

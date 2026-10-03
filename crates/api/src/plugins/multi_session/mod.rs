@@ -76,7 +76,7 @@ impl MultiSessionPlugin {
     ) {
         let name = related_cookie_name(&ctx.config, "dont_remember");
         let dont_remember = Self::cookie_value(req, &name)
-            .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+            .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
             .is_some_and(|value| !value.is_empty());
         response.headers.append(
             "set-cookie",
@@ -95,7 +95,7 @@ impl MultiSessionPlugin {
                 "set-cookie",
                 create_session_like_cookie(
                     &name,
-                    &sign_cookie_value("true", &ctx.config.secret),
+                    &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
                 ),
@@ -130,7 +130,7 @@ impl MultiSessionPlugin {
         Self::multi_cookies(req)
             .into_iter()
             .filter_map(|(name, value)| {
-                verify_cookie_value(&value, &ctx.config.secret).map(|token| (name, token))
+                verify_cookie_value(&value, ctx.config.current_secret()).map(|token| (name, token))
             })
             .collect()
     }
@@ -176,7 +176,7 @@ impl MultiSessionPlugin {
         };
         let name = Self::cookie_name(&body.session_token, ctx);
         let token = Self::cookie_value(req, &name)
-            .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+            .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
             .filter(|token| !token.is_empty())
             .ok_or_else(invalid_token)?;
         if revoke {
@@ -363,7 +363,7 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
         if count.saturating_sub(removed) + 1 > self.config.maximum_sessions {
             return Ok(response);
         }
-        let signed = sign_cookie_value(session.token(), &ctx.config.secret);
+        let signed = sign_cookie_value(session.token(), ctx.config.current_secret());
         response.headers.append(
             "set-cookie",
             create_session_like_cookie(

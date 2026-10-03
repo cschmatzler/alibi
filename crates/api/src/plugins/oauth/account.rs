@@ -1,4 +1,4 @@
-use super::encryption::{encrypt_token_set, maybe_decrypt};
+use super::encryption::{encrypt_token_set, maybe_decrypt_with_config};
 use super::handlers::{
     create_account_cookie_header, decode_account_cookie, fetch_user_info_from_provider,
     refresh_tokens_via_provider,
@@ -87,7 +87,7 @@ impl AccountSelection {
                 .find(|account| account.id().as_ref() == account_id.as_str())
                 .map(AccountCookiePayload::from_account),
             Self::Cookie if ctx.config.account.store_account_cookie => {
-                decode_account_cookie(req, &ctx.config, &ctx.config.secret)?
+                decode_account_cookie(req, &ctx.config)?
                     .filter(|account| account.user_id == user_id)
             }
             Self::Cookie => None,
@@ -195,7 +195,7 @@ async fn valid_access_token(
             .as_deref()
             .filter(|token| !token.is_empty())
     {
-        let refresh_token = maybe_decrypt(Some(stored_refresh), encrypted, &ctx.config.secret)
+        let refresh_token = maybe_decrypt_with_config(Some(stored_refresh), encrypted, &ctx.config)
             .map_err(|_error| access_token_failure())?
             .unwrap_or_default();
         let tokens = refresh_tokens_via_provider(provider, &refresh_token)
@@ -211,13 +211,9 @@ async fn valid_access_token(
     Ok((
         AccessTokenResponse {
             access_token: Some(
-                maybe_decrypt(
-                    account.access_token.as_deref(),
-                    encrypted,
-                    &ctx.config.secret,
-                )
-                .map_err(|_error| access_token_failure())?
-                .unwrap_or_default(),
+                maybe_decrypt_with_config(account.access_token.as_deref(), encrypted, &ctx.config)
+                    .map_err(|_error| access_token_failure())?
+                    .unwrap_or_default(),
             ),
             access_token_expires_at: account
                 .access_token_expires_at
@@ -239,7 +235,7 @@ fn token_response(
     if set_cookie && ctx.config.account.store_account_cookie {
         response = response.with_appended_header(
             "Set-Cookie",
-            create_account_cookie_header(&ctx.config, &ctx.config.secret, account)?,
+            create_account_cookie_header(&ctx.config, account)?,
         );
     }
     Ok(response)
@@ -257,7 +253,13 @@ pub(super) async fn handle_get_access_token(
         Ok(selection) => selection,
         Err(message) => return invalid_selection("body", &message),
     };
-    let (_, session) = match ctx.require_session(req).await {
+    let mut session_request = req.clone();
+    drop(
+        session_request
+            .query
+            .insert("disableCookieCache".into(), "true".into()),
+    );
+    let (_, session) = match ctx.require_cached_session(&session_request).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
@@ -281,7 +283,13 @@ pub(super) async fn handle_refresh_token(
         Ok(selection) => selection,
         Err(message) => return invalid_selection("body", &message),
     };
-    let (_, session) = match ctx.require_session(req).await {
+    let mut session_request = req.clone();
+    drop(
+        session_request
+            .query
+            .insert("disableCookieCache".into(), "true".into()),
+    );
+    let (_, session) = match ctx.require_cached_session(&session_request).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::new(401).with_header("Content-Type", "application/json"));
@@ -300,10 +308,10 @@ pub(super) async fn handle_refresh_token(
         .as_deref()
         .filter(|value| !value.is_empty())
         .ok_or_else(|| AuthError::bad_request("Refresh token not found"))?;
-    let refresh_token = maybe_decrypt(
+    let refresh_token = maybe_decrypt_with_config(
         Some(stored_refresh),
         ctx.config.account.encrypt_oauth_tokens,
-        &ctx.config.secret,
+        &ctx.config,
     )
     .map_err(|_error| refresh_token_failure())?
     .unwrap_or_default();

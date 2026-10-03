@@ -829,7 +829,7 @@ fn append_dont_remember_cookie(
             "Set-Cookie",
             create_session_like_cookie(
                 &related_cookie_name(config, "dont_remember"),
-                &sign_cookie_value("true", &config.secret),
+                &sign_cookie_value("true", config.current_secret()),
                 None,
                 config,
             ),
@@ -1345,6 +1345,7 @@ pub(in crate::plugins) async fn sign_in_username_core(
             | AuthError::Plugin { .. }
             | AuthError::CallbackFailure(_)
             | AuthError::Internal(_)
+            | AuthError::Encryption(_)
             | AuthError::PasswordHash(_)
             | AuthError::Jwt(_)) => SignInUsernameFailure::Auth(other),
         })?;

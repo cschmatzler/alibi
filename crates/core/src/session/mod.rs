@@ -233,7 +233,7 @@ impl<S: AuthSchema> SessionManager<S> {
                     .and_then(|cookie| {
                         crate::utils::cookie_utils::verify_cookie_value(
                             cookie.value(),
-                            &self.config.secret,
+                            self.config.current_secret(),
                         )
                     })
                     .is_some_and(|value| !value.is_empty())
@@ -377,7 +377,10 @@ impl<S: AuthSchema> SessionManager<S> {
             .flatten()
             .find(|cookie| cookie.name() == self.config.session.cookie_name)
             .and_then(|cookie| {
-                crate::utils::cookie_utils::verify_cookie_value(cookie.value(), &self.config.secret)
+                crate::utils::cookie_utils::verify_cookie_value(
+                    cookie.value(),
+                    self.config.current_secret(),
+                )
             })
             .filter(|token| !token.is_empty())
     }

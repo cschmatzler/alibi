@@ -776,11 +776,10 @@ fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> f64 {
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn create_account_cookie_header(
     config: &better_auth_core::AuthConfig,
-    secret: &str,
     payload: &AccountCookiePayload,
 ) -> AuthResult<String> {
     let max_age = account_cookie_max_age(config);
-    let value = create_account_cookie_value(secret, payload, max_age)?;
+    let value = create_account_cookie_value(config, payload, max_age)?;
     better_auth_core::cache::cookie_header(
         &account_cookie_name(config),
         &value,
@@ -795,12 +794,11 @@ pub(in crate::plugins) fn create_account_cookie_header(
 pub(super) fn decode_account_cookie(
     req: &AuthRequest,
     config: &better_auth_core::AuthConfig,
-    secret: &str,
 ) -> AuthResult<Option<AccountCookiePayload>> {
     let Some(value) = get_cookie(req, &account_cookie_name(config)) else {
         return Ok(None);
     };
-    decode_account_cookie_value(secret, &value).map(Some)
+    decode_account_cookie_value(config, &value).map(Some)
 }
 
 fn attach_state_cookie(
@@ -824,16 +822,15 @@ fn attach_state_cookie(
 fn attach_cookie_state_payload(
     response: AuthResponse,
     config: &better_auth_core::AuthConfig,
-    secret: &str,
     payload: &OAuthStatePayload,
 ) -> AuthResult<AuthResponse> {
-    let value = create_cookie_state_value(secret, payload)?;
+    let value = create_cookie_state_value(config, payload)?;
     Ok(response.with_appended_header(
         "Set-Cookie",
         better_auth_core::utils::cookie_utils::create_cookie(
             &state_cookie_name(config),
             &value,
-            Duration::minutes(5).num_seconds(),
+            Duration::minutes(10).num_seconds(),
             config,
         ),
     ))
@@ -1956,7 +1953,7 @@ async fn initiate_oauth_flow_core(
         request.request_sign_up,
         request.additional_data,
     );
-    capture_server_context(&mut payload, &state, &ctx.config.secret)?;
+    capture_server_context(&mut payload, &state, ctx.config.current_secret())?;
     drop(payload.additional_data.insert(
         "oauthState".to_owned(),
         serde_json::Value::String(state.clone()),
@@ -2085,18 +2082,18 @@ pub(super) async fn handle_social_sign_in(
             if response.token.is_some() {
                 return Ok(auth_response);
             }
-            attach_state_cookie(auth_response, &ctx.config, &ctx.config.secret, &flow.state)
+            attach_state_cookie(
+                auth_response,
+                &ctx.config,
+                ctx.config.current_secret(),
+                &flow.state,
+            )
         }
         better_auth_core::OAuthStateStrategy::Cookie => {
             if response.token.is_some() {
                 return Ok(auth_response);
             }
-            attach_cookie_state_payload(
-                auth_response,
-                &ctx.config,
-                &ctx.config.secret,
-                &flow.payload,
-            )
+            attach_cookie_state_payload(auth_response, &ctx.config, &flow.payload)
         }
     }
 }
@@ -2231,7 +2228,7 @@ pub(super) async fn handle_callback(
             if !ctx.config.account.skip_state_cookie_check {
                 let persisted_state =
                     get_cookie(req, &state_cookie_name(&ctx.config)).and_then(|value| {
-                        decode_database_state_cookie_value(&ctx.config.secret, &value).ok()
+                        decode_database_state_cookie_value(ctx.config.current_secret(), &value).ok()
                     });
                 if persisted_state.as_deref() != Some(state_param.as_str()) {
                     return Ok(state_mismatch());
@@ -2257,7 +2254,7 @@ pub(super) async fn handle_callback(
                     "{default_error_url}?error=please_restart_the_process"
                 )));
             };
-            match decode_cookie_state_value(&ctx.config.secret, &cookie_value) {
+            match decode_cookie_state_value(&ctx.config, &cookie_value) {
                 Ok(payload)
                     if payload
                         .additional_data
@@ -2312,7 +2309,17 @@ pub(super) async fn handle_callback(
         ));
     }
 
-    if let Some(context) = verified_server_context(&payload, &state_param, &ctx.config.secret) {
+    let authenticated_state_cookie = get_cookie(req, &state_cookie_name(&ctx.config));
+    let context_secret = match ctx.config.account.store_state_strategy {
+        better_auth_core::OAuthStateStrategy::Cookie => super::super::token_crypto::decryption_key(
+            authenticated_state_cookie
+                .as_deref()
+                .ok_or_else(|| AuthError::internal("Authenticated state cookie disappeared"))?,
+            &ctx.config,
+        )?,
+        better_auth_core::OAuthStateStrategy::Database => ctx.config.current_secret(),
+    };
+    if let Some(context) = verified_server_context(&payload, &state_param, context_secret) {
         req.extensions()
             .insert(RecoveredOAuthServerContext(context));
     }
@@ -2439,7 +2446,7 @@ pub(super) async fn handle_callback(
     if let Some(account_cookie) = outcome.account_cookie.as_ref() {
         response = response.with_appended_header(
             "Set-Cookie",
-            create_account_cookie_header(&ctx.config, &ctx.config.secret, account_cookie)?,
+            create_account_cookie_header(&ctx.config, account_cookie)?,
         );
     }
     Ok(response)
@@ -2488,6 +2495,7 @@ pub(super) async fn handle_link_social(
             | AuthError::Plugin { .. }
             | AuthError::CallbackFailure(_)
             | AuthError::Internal(_)
+            | AuthError::Encryption(_)
             | AuthError::PasswordHash(_)
             | AuthError::Jwt(_)) => error,
         })?;
@@ -2528,15 +2536,15 @@ pub(super) async fn handle_link_social(
     }
 
     match ctx.config.account.store_state_strategy {
-        better_auth_core::OAuthStateStrategy::Database => {
-            attach_state_cookie(auth_response, &ctx.config, &ctx.config.secret, &flow.state)
-        }
-        better_auth_core::OAuthStateStrategy::Cookie => attach_cookie_state_payload(
+        better_auth_core::OAuthStateStrategy::Database => attach_state_cookie(
             auth_response,
             &ctx.config,
-            &ctx.config.secret,
-            &flow.payload,
+            ctx.config.current_secret(),
+            &flow.state,
         ),
+        better_auth_core::OAuthStateStrategy::Cookie => {
+            attach_cookie_state_payload(auth_response, &ctx.config, &flow.payload)
+        }
     }
 }
 

@@ -259,31 +259,37 @@ compatScenario(
     });
 
     const configuredReceipt = await receipts(ctx);
+    const preservedFrom = Math.floor(Date.now() / 1000);
     const preserved = await control(ctx, {
       operation: "sign",
       profile: "jwt-remote-result",
       payload: { customResult: "application-owned result: exact % bytes" },
     });
+    const preservedTo = Math.floor(Date.now() / 1000);
     expect(preserved.status).toBe(200);
     expect(preserved.body).toEqual({
       token: "application-owned result: exact % bytes",
     });
 
+    const ordinaryFrom = Math.floor(Date.now() / 1000);
     const ordinary = await control(ctx, {
       operation: "sign",
       profile: "jwt-remote-error",
       payload: { applicationError: "ordinary" },
     });
+    const ordinaryTo = Math.floor(Date.now() / 1000);
     expect(ordinary.status).toBe(500);
     expect(ordinary.body).toEqual({
       error: { message: "application signer failed" },
     });
 
+    const codedFrom = Math.floor(Date.now() / 1000);
     const coded = await control(ctx, {
       operation: "sign",
       profile: "jwt-remote-error",
       payload: { applicationError: "api" },
     });
+    const codedTo = Math.floor(Date.now() / 1000);
     expect(coded.status).toBe(403);
     expect(coded.body).toEqual({
       error: {
@@ -298,6 +304,30 @@ compatScenario(
     const after = await ctx.rawRequest({ path: "/__test/jwks-state" });
     expect(after.body).toEqual(keysBefore.body);
 
+    const finalReceipts = await receipts(ctx);
+    expect(finalReceipts.events).toHaveLength(4);
+    expect(finalReceipts.events[0]!.payload.exp).toBe(160);
+
+    const defaultWindows = [
+      [preservedFrom, preservedTo],
+      [ordinaryFrom, ordinaryTo],
+      [codedFrom, codedTo],
+    ] as const;
+
+    for (const [index, [issuedFrom, issuedTo]] of defaultWindows.entries()) {
+      const payload = finalReceipts.events[index + 1]!.payload;
+      expect(payload.iat).toEqual({ $undefined: true });
+      expect(payload.iss).toBe(ctx.baseURL);
+      expect(payload.aud).toBe(ctx.baseURL);
+      expect(payload.exp).toBeNumber();
+      expect(Number.isInteger(payload.exp)).toBe(true);
+      expect(payload.exp as number).toBeGreaterThanOrEqual(issuedFrom + 900);
+      expect(payload.exp as number).toBeLessThanOrEqual(issuedTo + 900);
+      // Compare the independently validated lifetime in seconds. Keep the
+      // configured lifetime and every other application claim literal.
+      payload.exp = 900;
+    }
+
     return ctx.snapshot({
       configured,
       configuredReceipt,
@@ -305,7 +335,7 @@ compatScenario(
       ordinary,
       coded,
       after,
-      finalReceipts: await receipts(ctx),
+      finalReceipts,
     });
   },
 );

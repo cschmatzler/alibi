@@ -152,8 +152,17 @@ impl OAuthProxyPlugin {
     pub const fn with_config(config: OAuthProxyConfig) -> Self {
         Self { config }
     }
-    fn secret<'a, S: AuthSchema>(&'a self, ctx: &'a AuthContext<S>) -> &'a str {
-        self.config.secret.as_deref().unwrap_or(&ctx.config.secret)
+    fn encrypt<S: AuthSchema>(&self, plain: &str, ctx: &AuthContext<S>) -> AuthResult<String> {
+        match &self.config.secret {
+            Some(secret) => super::token_crypto::encrypt(plain, secret),
+            None => super::token_crypto::encrypt_with_config(plain, &ctx.config),
+        }
+    }
+    fn decrypt<S: AuthSchema>(&self, stored: &str, ctx: &AuthContext<S>) -> AuthResult<String> {
+        match &self.config.secret {
+            Some(secret) => super::token_crypto::decrypt(stored, secret),
+            None => super::token_crypto::decrypt_with_config(stored, &ctx.config),
+        }
     }
     fn current<S: AuthSchema>(&self, req: &AuthRequest, ctx: &AuthContext<S>) -> String {
         if let Some(value) = self
@@ -197,7 +206,7 @@ impl OAuthProxyPlugin {
         let Some(encrypted) = req.query.get("state") else {
             return Ok(None);
         };
-        let Ok(plain) = super::token_crypto::decrypt(encrypted, self.secret(ctx)) else {
+        let Ok(plain) = self.decrypt(encrypted, ctx) else {
             return Ok(None);
         };
         let Ok(package) =
@@ -208,8 +217,7 @@ impl OAuthProxyPlugin {
         if !package.is_oauth_proxy || package.state.is_empty() || package.state_cookie.is_empty() {
             return Ok(None);
         }
-        let Ok(plain_2) = super::token_crypto::decrypt(&package.state_cookie, self.secret(ctx))
-        else {
+        let Ok(plain_2) = self.decrypt(&package.state_cookie, ctx) else {
             return Ok(None);
         };
         let Ok(state) =
@@ -326,10 +334,7 @@ impl OAuthProxyPlugin {
         };
         _ = callback.query_pairs_mut().append_pair(
             "profile",
-            &super::token_crypto::encrypt(
-                &better_auth_core::utils::json::to_string(&payload)?,
-                self.secret(ctx),
-            )?,
+            &self.encrypt(&better_auth_core::utils::json::to_string(&payload)?, ctx)?,
         );
         Ok(Some(redirect(callback.as_str())))
     }
@@ -368,7 +373,7 @@ impl OAuthProxyPlugin {
         else {
             return error_redirect(&default_error, "missing_profile", None);
         };
-        let Ok(plain) = super::token_crypto::decrypt(profile, self.secret(ctx)) else {
+        let Ok(plain) = self.decrypt(profile, ctx) else {
             return error_redirect(&default_error, "invalid_profile", None);
         };
         let Ok(raw) = better_auth_core::utils::json::from_slice::<Value>(plain.as_bytes()) else {
@@ -442,7 +447,15 @@ impl OAuthProxyPlugin {
         if state.is_expired() {
             return error_redirect(error_url, "state_mismatch", None);
         }
-        if let Some(context) = verified_server_context(&state, &payload.state, &ctx.config.secret) {
+        // This is the consumed server-owned state row, after authenticated
+        // profile admission, provider/nonce/expiry checks and one-use deletion.
+        // Reader keys retain its native proof; browser HMAC cookies still use
+        // only the current key.
+        if let Some(context) = ctx
+            .config
+            .verification_secrets()
+            .find_map(|secret| verified_server_context(&state, &payload.state, secret))
+        {
             req.extensions()
                 .insert(RecoveredOAuthServerContext(context));
         }
@@ -557,6 +570,7 @@ impl OAuthProxyPlugin {
                         | AuthError::Plugin { .. }
                         | AuthError::CallbackFailure(_)
                         | AuthError::Internal(_)
+                        | AuthError::Encryption(_)
                         | AuthError::PasswordHash(_)
                         | AuthError::Jwt(_))
                             if error.status_code() < 500
@@ -590,6 +604,7 @@ impl OAuthProxyPlugin {
                         | AuthError::Plugin { .. }
                         | AuthError::CallbackFailure(_)
                         | AuthError::Internal(_)
+                        | AuthError::Encryption(_)
                         | AuthError::PasswordHash(_)
                         | AuthError::Jwt(_)) => {
                             // Source's ordinary exception response discards the
@@ -625,7 +640,7 @@ impl OAuthProxyPlugin {
         if let Some(account) = outcome.account_cookie.as_ref() {
             response = response.with_appended_header(
                 "Set-Cookie",
-                create_account_cookie_header(&ctx.config, &ctx.config.secret, account)?,
+                create_account_cookie_header(&ctx.config, account)?,
             );
         }
         Ok(response)
@@ -763,19 +778,15 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         {
             return Ok(response);
         }
-        let secret = self.secret(ctx);
         let package = StatePackage {
             state: issued.state.clone(),
-            state_cookie: super::token_crypto::encrypt(
+            state_cookie: self.encrypt(
                 &better_auth_core::utils::json::to_string(&issued.payload)?,
-                secret,
+                ctx,
             )?,
             is_oauth_proxy: true,
         };
-        let encrypted = super::token_crypto::encrypt(
-            &better_auth_core::utils::json::to_string(&package)?,
-            secret,
-        )?;
+        let encrypted = self.encrypt(&better_auth_core::utils::json::to_string(&package)?, ctx)?;
         let pairs: Vec<_> = url
             .query_pairs()
             .filter(|(key, _)| key != "state")

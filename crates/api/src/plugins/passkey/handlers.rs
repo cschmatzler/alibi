@@ -577,6 +577,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                             | AuthError::Plugin { .. }
                             | AuthError::CallbackFailure(_)
                             | AuthError::Internal(_)
+                            | AuthError::Encryption(_)
                             | AuthError::PasswordHash(_)
                             | AuthError::UserCreationCancelled
                             | AuthError::Jwt(_)) => other,

@@ -337,7 +337,7 @@ mod tests {
                     "{}_multi-{}={}",
                     ctx.config.session.cookie_name,
                     token.to_lowercase(),
-                    sign_cookie_value(token, &ctx.config.secret)
+                    sign_cookie_value(token, ctx.config.current_secret())
                 )
             })
             .collect::<Vec<_>>();

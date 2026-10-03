@@ -155,7 +155,7 @@ impl PasskeyPlugin {
                     };
                     let preference = related_cookie_name(&ctx.config, "dont_remember");
                     let dont_remember = crate::plugins::helpers::get_cookie(req, &preference)
-                        .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+                        .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
                         .is_some_and(|value| !value.is_empty());
                     let mut response = response.with_appended_header(
                         "Set-Cookie",
@@ -174,7 +174,7 @@ impl PasskeyPlugin {
                             "Set-Cookie",
                             create_session_like_cookie(
                                 &preference,
-                                &sign_cookie_value("true", &ctx.config.secret),
+                                &sign_cookie_value("true", ctx.config.current_secret()),
                                 None,
                                 &ctx.config,
                             ),

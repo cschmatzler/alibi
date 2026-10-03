@@ -530,6 +530,7 @@ impl TwoFactorPlugin {
                 | AuthError::Plugin { .. }
                 | AuthError::CallbackFailure(_)
                 | AuthError::Internal(_)
+                | AuthError::Encryption(_)
                 | AuthError::PasswordHash(_)
                 | AuthError::Jwt(_)) => other,
             })?;
@@ -781,7 +782,8 @@ pub(in crate::plugins) async fn inspect_trusted_device(
     };
 
     let clear_header = create_clear_cookie(&cookie_name, &ctx.config);
-    let Some(signed_value) = verify_trusted_device_cookie_value(&ctx.config.secret, &raw_cookie)
+    let Some(signed_value) =
+        verify_trusted_device_cookie_value(ctx.config.current_secret(), &raw_cookie)
     else {
         return Ok(TrustedDeviceCheck {
             trusted: false,
@@ -802,7 +804,7 @@ pub(in crate::plugins) async fn inspect_trusted_device(
     }
 
     let expected_token = sign_value(
-        &ctx.config.secret,
+        ctx.config.current_secret(),
         &format!("{}!{}", user.id(), trust_identifier),
     )?;
     if token != expected_token {
@@ -878,7 +880,7 @@ pub(in crate::plugins) async fn begin_sign_in_challenge(
         ))
     });
     headers.push(create_signed_cookie_header(
-        &ctx.config.secret,
+        ctx.config.current_secret(),
         &ctx.config,
         TWO_FACTOR_COOKIE_SUFFIX,
         &identifier,
@@ -887,7 +889,7 @@ pub(in crate::plugins) async fn begin_sign_in_challenge(
 
     if remember_me == Some(false) {
         headers.push(create_signed_cookie_header(
-            &ctx.config.secret,
+            ctx.config.current_secret(),
             &ctx.config,
             DONT_REMEMBER_COOKIE_SUFFIX,
             "true",
@@ -1005,9 +1007,8 @@ async fn enable_core(
     }
 
     let secret = generate_secret();
-    let encrypted_secret = encrypt_value(&ctx.config.secret, &secret)?;
-    let (backup_codes, encrypted_backup_codes) =
-        generate_backup_codes(config, &ctx.config.secret).await?;
+    let encrypted_secret = encrypt_value(&ctx.config, &secret)?;
+    let (backup_codes, encrypted_backup_codes) = generate_backup_codes(config, &ctx.config).await?;
 
     let mut set_cookie_headers = Vec::new();
     if config.skip_verification_on_enable {
@@ -1132,7 +1133,7 @@ async fn disable_core(
     )];
     if dont_remember {
         set_cookie_headers.push(create_signed_cookie_header(
-            &ctx.config.secret,
+            ctx.config.current_secret(),
             &ctx.config,
             DONT_REMEMBER_COOKIE_SUFFIX,
             "true",
@@ -1162,7 +1163,7 @@ async fn get_totp_uri_core(
 ) -> AuthResult<TotpUriResponse> {
     require_totp_enabled(config)?;
     let two_factor = load_two_factor_record(user, ctx).await?;
-    let secret = decrypt_value(&ctx.config.secret, two_factor.secret())?;
+    let secret = decrypt_value(&ctx.config, two_factor.secret())?;
     verify_user_password(
         ctx,
         user,
@@ -1206,7 +1207,7 @@ async fn verify_totp_core(
     }
     let attempt = begin_factor_attempt(&state, ctx).await?;
     let checked = (|| {
-        let secret = decrypt_value(&ctx.config.secret, two_factor.secret())?;
+        let secret = decrypt_value(&ctx.config, two_factor.secret())?;
         build_totp(config, &secret)?
             .check_current(&body.code)
             .map_err(|error| AuthError::internal(format!("Failed to verify TOTP: {error}")))
@@ -1308,7 +1309,7 @@ async fn send_otp_core(
     let otp: String = (0..digits.ceil() as usize)
         .map(|_| char::from(b'0' + rand::thread_rng().gen_range(0..10u8)))
         .collect();
-    let stored_otp = config.otp_storage.store(&otp, &ctx.config.secret).await?;
+    let stored_otp = config.otp_storage.store(&otp, &ctx.config).await?;
     let identifier = otp_verification_identifier(state.key());
     let period = if config.otp_period_minutes == 0.0 || config.otp_period_minutes.is_nan() {
         3.0
@@ -1415,7 +1416,7 @@ async fn verify_otp_core(
 
     let is_valid = config
         .otp_storage
-        .verify(stored_otp, &body.code, &ctx.config.secret)
+        .verify(stored_otp, &body.code, &ctx.config)
         .await?;
 
     if !is_valid {
@@ -1492,7 +1493,7 @@ async fn generate_backup_codes_core(
         .await?
         .ok_or_else(|| AuthError::bad_request("Two factor isn't enabled"))?;
 
-    let (backup_codes, encrypted) = generate_backup_codes(config, &ctx.config.secret).await?;
+    let (backup_codes, encrypted) = generate_backup_codes(config, &ctx.config).await?;
     drop(
         ctx.database
             .update_two_factor(
@@ -1531,7 +1532,7 @@ async fn verify_backup_code_core(
 
     let codes = match config
         .backup_storage
-        .load_codes(two_factor.backup_codes(), &ctx.config.secret)
+        .load_codes(two_factor.backup_codes(), &ctx.config)
         .await
     {
         Ok(codes) => codes,
@@ -1551,7 +1552,7 @@ async fn verify_backup_code_core(
 
     let encrypted = config
         .backup_storage
-        .store_codes(&backup_codes, &ctx.config.secret)
+        .store_codes(&backup_codes, &ctx.config)
         .await?;
     if !ctx
         .database
@@ -1622,7 +1623,7 @@ async fn view_backup_codes_core<S: better_auth_core::AuthSchema>(
         .ok_or_else(|| AuthError::bad_request("Backup codes aren't enabled"))?;
     let Some(backup_codes) = config
         .backup_storage
-        .load_codes(two_factor.backup_codes(), &ctx.config.secret)
+        .load_codes(two_factor.backup_codes(), &ctx.config)
         .await?
     else {
         return Err(AuthError::bad_request("Invalid backup code"));
@@ -1929,6 +1930,7 @@ async fn verify_existing_session_factor(
             | AuthError::Plugin { .. }
             | AuthError::CallbackFailure(_)
             | AuthError::Internal(_)
+            | AuthError::Encryption(_)
             | AuthError::PasswordHash(_)
             | AuthError::UserCreationCancelled
             | AuthError::Jwt(_)) => ExistingSessionFactorError::Auth(error),
@@ -2020,7 +2022,7 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
         ));
         if pending.dont_remember {
             set_cookie_headers.push(create_signed_cookie_header(
-                &ctx.config.secret,
+                ctx.config.current_secret(),
                 &ctx.config,
                 DONT_REMEMBER_COOKIE_SUFFIX,
                 "true",
@@ -2217,7 +2219,7 @@ fn generate_secret() -> String {
 )]
 async fn generate_backup_codes(
     config: &TwoFactorConfig,
-    secret: &str,
+    secret: &better_auth_core::AuthConfig,
 ) -> Result<(Vec<String>, String), BackupOperationError> {
     let codes = if let Some(generate) = &config.custom_backup_codes_generate {
         generate()?
@@ -2320,7 +2322,10 @@ async fn create_trust_device_cookie_header(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<String> {
     let identifier = format!("trust-device-{}", uuid::Uuid::new_v4());
-    let token = sign_value(&ctx.config.secret, &format!("{}!{}", user.id(), identifier))?;
+    let token = sign_value(
+        ctx.config.current_secret(),
+        &format!("{}!{}", user.id(), identifier),
+    )?;
     let value = format!("{token}!{identifier}");
     let expires_at = cookie_expiry(trust_device_max_age(ctx))?;
     drop(
@@ -2333,7 +2338,7 @@ async fn create_trust_device_cookie_header(
             .await?,
     );
     create_signed_cookie_header(
-        &ctx.config.secret,
+        ctx.config.current_secret(),
         &ctx.config,
         TRUST_DEVICE_COOKIE_SUFFIX,
         &value,
@@ -2377,7 +2382,7 @@ fn read_signed_cookie<S: better_auth_core::AuthSchema>(
 ) -> Option<String> {
     let cookie_name = related_cookie_name(&ctx.config, suffix);
     let raw_cookie = get_cookie(req, &cookie_name)?;
-    verify_signed_cookie_value(&ctx.config.secret, &raw_cookie)
+    verify_signed_cookie_value(ctx.config.current_secret(), &raw_cookie)
 }
 
 // Better Call requires a nonempty payload and a 44-character padded outer
@@ -2428,15 +2433,19 @@ fn derive_encryption_key(secret: &str) -> AuthResult<Key<Aes256Gcm>> {
     Ok(*Key::<Aes256Gcm>::from_slice(&okm))
 }
 
-fn encrypt_value(secret: &str, plaintext: &str) -> AuthResult<String> {
-    super::token_crypto::encrypt(plaintext, secret)
+fn encrypt_value(secret: &better_auth_core::AuthConfig, plaintext: &str) -> AuthResult<String> {
+    super::token_crypto::encrypt_with_config(plaintext, secret)
 }
 
-fn decrypt_value(secret: &str, encrypted: &str) -> AuthResult<String> {
+fn decrypt_value(secret: &better_auth_core::AuthConfig, encrypted: &str) -> AuthResult<String> {
     // New factor rows use the pinned runtime's XChaCha/hex encoding. Installed
     // Rust rows retain an authenticated AES/HKDF reader; legacy writes are gone.
-    super::token_crypto::decrypt(encrypted, secret)
-        .or_else(|_| decrypt_legacy_value(secret, encrypted))
+    super::token_crypto::decrypt_with_config(encrypted, secret).or_else(|error| {
+        if secret.managed_secrets.is_some() {
+            return Err(error);
+        }
+        decrypt_legacy_value(secret.current_secret(), encrypted)
+    })
 }
 
 fn decrypt_legacy_value(secret: &str, encrypted: &str) -> AuthResult<String> {
@@ -2616,13 +2625,9 @@ mod tests {
                         ctx.database
                             .create_two_factor(CreateTwoFactor {
                                 user_id: user.id.clone(),
-                                secret: encrypt_value(&ctx.config.secret, "historical-secret")
+                                secret: encrypt_value(&ctx.config, "historical-secret").unwrap(),
+                                backup_codes: encrypt_value(&ctx.config, "[\"historical-backup\"]")
                                     .unwrap(),
-                                backup_codes: encrypt_value(
-                                    &ctx.config.secret,
-                                    "[\"historical-backup\"]",
-                                )
-                                .unwrap(),
                                 verified: Some(false),
                                 failed_verification_count: Some(0.5),
                                 locked_until: Some(Utc::now() + Duration::minutes(1)),
@@ -3293,7 +3298,7 @@ mod tests {
             Ok(update)
         });
         ctx.database = init.database_with_registered_transforms();
-        let plaintext = decrypt_value(&ctx.config.secret, &factor.secret).unwrap();
+        let plaintext = decrypt_value(&ctx.config, &factor.secret).unwrap();
         let code = plugin.generate_totp(&plaintext).unwrap();
         let mut verification = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-totp");
         verification.headers = enrollment.headers;
@@ -3397,7 +3402,7 @@ mod tests {
 
         let expected_codes = vec!["ABCDE-12345".to_owned(), "FGHIJ-67890".to_owned()];
         let encrypted = encrypt_value(
-            &ctx.config.secret,
+            &ctx.config,
             &serde_json::to_string(&expected_codes).unwrap(),
         )
         .unwrap();
@@ -3405,7 +3410,7 @@ mod tests {
             ctx.database
                 .create_two_factor(CreateTwoFactor {
                     user_id: user.id.clone(),
-                    secret: encrypt_value(&ctx.config.secret, "totp-secret").unwrap(),
+                    secret: encrypt_value(&ctx.config, "totp-secret").unwrap(),
                     backup_codes: encrypted,
                     ..Default::default()
                 })
@@ -3427,8 +3432,8 @@ mod tests {
             ctx.database
                 .create_two_factor(CreateTwoFactor {
                     user_id: user.id.clone(),
-                    secret: encrypt_value(&ctx.config.secret, "totp-secret").unwrap(),
-                    backup_codes: encrypt_value(&ctx.config.secret, "\"not-an-array\"").unwrap(),
+                    secret: encrypt_value(&ctx.config, "totp-secret").unwrap(),
+                    backup_codes: encrypt_value(&ctx.config, "\"not-an-array\"").unwrap(),
                     ..Default::default()
                 })
                 .await

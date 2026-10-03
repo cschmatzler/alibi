@@ -62,7 +62,7 @@ impl EmailOtpPlugin {
             Some(value) => value,
             None => super::super::passwordless_numeric::generate_code(self.config.otp_length)?,
         };
-        let stored = self.config.storage.store(&otp, &ctx.config.secret).await?;
+        let stored = self.config.storage.store(&otp, &ctx.config).await?;
         let verification = CreateVerification {
             identifier: identifier_override.unwrap_or_else(|| identifier(otp_type, email)),
             value: format!("{stored}:0"),
@@ -108,11 +108,7 @@ impl EmailOtpPlugin {
             let (stored, attempts) = split_value(value.value()?);
             if super::super::passwordless_numeric::attempts_number(attempts)
                 < self.allowed_attempts()
-                && let Some(otp) = self
-                    .config
-                    .storage
-                    .reusable(stored, &ctx.config.secret)
-                    .await?
+                && let Some(otp) = self.config.storage.reusable(stored, &ctx.config).await?
                 && !otp.is_empty()
             {
                 drop(
@@ -219,12 +215,7 @@ impl EmailOtpPlugin {
         {
             return Err(too_many_attempts());
         }
-        if !self
-            .config
-            .storage
-            .verify(stored, otp, &ctx.config.secret)
-            .await?
-        {
+        if !self.config.storage.verify(stored, otp, &ctx.config).await? {
             drop(
                 ctx.verifications()
                     .create(CreateVerification {
@@ -323,7 +314,7 @@ impl EmailOtpPlugin {
         if !self
             .config
             .storage
-            .verify(stored, &body.otp, &ctx.config.secret)
+            .verify(stored, &body.otp, &ctx.config)
             .await?
         {
             drop(
@@ -761,6 +752,7 @@ async fn require_authoritative_session<S: AuthSchema>(
         | AuthError::Plugin { .. }
         | AuthError::CallbackFailure(_)
         | AuthError::Internal(_)
+        | AuthError::Encryption(_)
         | AuthError::PasswordHash(_)
         | AuthError::Jwt(_)) => error,
     })

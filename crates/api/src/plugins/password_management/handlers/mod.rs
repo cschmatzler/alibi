@@ -350,6 +350,7 @@ pub(in crate::plugins) async fn verify_password_core(
         | AuthError::Plugin { .. }
         | AuthError::CallbackFailure(_)
         | AuthError::Internal(_)
+        | AuthError::Encryption(_)
         | AuthError::PasswordHash(_)
         | AuthError::Jwt(_)) => other,
     })?;

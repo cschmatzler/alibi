@@ -161,6 +161,7 @@ impl AnonymousPlugin {
                 | better_auth_core::AuthError::Plugin { .. }
                 | better_auth_core::AuthError::CallbackFailure(_)
                 | better_auth_core::AuthError::Internal(_)
+                | better_auth_core::AuthError::Encryption(_)
                 | better_auth_core::AuthError::PasswordHash(_)
                 | better_auth_core::AuthError::Jwt(_)) => error,
             })?;
@@ -203,6 +204,7 @@ impl AnonymousPlugin {
                     | better_auth_core::AuthError::Plugin { .. }
                     | better_auth_core::AuthError::CallbackFailure(_)
                     | better_auth_core::AuthError::Internal(_)
+                    | better_auth_core::AuthError::Encryption(_)
                     | better_auth_core::AuthError::PasswordHash(_)
                     | better_auth_core::AuthError::Jwt(_)) => cause,
                 })?;
@@ -216,7 +218,7 @@ impl AnonymousPlugin {
 
         let preference_name = related_cookie_name(&ctx.config, "dont_remember");
         let dont_remember = get_cookie(req, &preference_name)
-            .and_then(|value| verify_cookie_value(&value, &ctx.config.secret))
+            .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
             .is_some_and(|value| !value.is_empty());
         response.headers.append(
             "set-cookie",
@@ -235,7 +237,7 @@ impl AnonymousPlugin {
                 "set-cookie",
                 create_session_like_cookie(
                     &preference_name,
-                    &sign_cookie_value("true", &ctx.config.secret),
+                    &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
                 ),
@@ -287,6 +289,7 @@ impl AnonymousPlugin {
                     | better_auth_core::AuthError::Plugin { .. }
                     | better_auth_core::AuthError::CallbackFailure(_)
                     | better_auth_core::AuthError::Internal(_)
+                    | better_auth_core::AuthError::Encryption(_)
                     | better_auth_core::AuthError::PasswordHash(_)
                     | better_auth_core::AuthError::Jwt(_)) => error,
                 })?;

@@ -246,7 +246,7 @@ impl EmailVerificationPlugin {
             return sender.0.send(&ctx.trusted_user_view(user), None, ctx).await;
         }
         let verification_token = token::create_email_verification_token(
-            &ctx.config.secret,
+            ctx.config.current_secret(),
             email,
             None,
             self.config.verification_token_expiry,
@@ -396,7 +396,7 @@ pub(in crate::plugins) async fn send_signup_verification<S: better_auth_core::Au
         return Ok(());
     };
     let token = token::create_email_verification_token(
-        &ctx.config.secret,
+        ctx.config.current_secret(),
         email,
         None,
         config.verification_token_expiry,

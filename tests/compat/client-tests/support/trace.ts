@@ -14,6 +14,8 @@ export type RequestWindow = {
   inputOwner?: { field: "id" | "token"; value: string };
   sessionCookie?: string;
   issuedSessionCookie?: string;
+  /** Exact account JWE observed from the real issuing response. */
+  issuedAccountCookie?: string;
   /** Complete multi-session Set-Cookie headers observed from the real response. */
   issuedMultiSessionCookies?: string[];
   /** Exact email and signed challenge returned by the real password sign-in. */
@@ -29,7 +31,7 @@ export type RequestWindow = {
   verificationObserverDigest?: string;
   /** Original narrow physical controls; their values are not transport output. */
   controlObservation?: {
-    kind: "member-addition" | "social-provider" | "user-validation";
+    kind: "member-addition" | "social-provider" | "user-validation" | "managed-secrets";
     body: unknown;
     digest: string;
   };
@@ -119,6 +121,16 @@ function sessionReceipt(request: Headers, response: Headers) {
   };
   const sessionCookie = select((request.get("cookie") ?? "").split(";"));
   const issuedSessionCookie = select(response.getSetCookie());
+  const account = response
+    .getSetCookie()
+    .map((raw) => Cookie.parse(raw))
+    .filter(
+      (cookie) =>
+        cookie &&
+        /^(?:__Secure-)?better-auth\.account_data$/.test(cookie.key) &&
+        cookie.value &&
+        cookie.maxAge !== 0,
+    );
   const trust = response
     .getSetCookie()
     .map((raw) => Cookie.parse(raw))
@@ -129,6 +141,7 @@ function sessionReceipt(request: Headers, response: Headers) {
   return {
     ...(sessionCookie ? { sessionCookie } : {}),
     ...(issuedSessionCookie ? { issuedSessionCookie } : {}),
+    ...(account.length === 1 ? { issuedAccountCookie: account[0]!.value } : {}),
     ...(trust.length === 1 ? { issuedTrustCookie: `${trust[0]!.key}=${trust[0]!.value}` } : {}),
     issuedMultiSessionCookies: response
       .getSetCookie()
@@ -276,6 +289,7 @@ export function createTracingFetch(
           "/__test/organization-member-addition/state",
           "/__test/social-provider/state",
           "/__test/user-validation/state",
+          "/__test/managed-secrets/state",
         ].includes(url.pathname)
       ) {
         try {
@@ -283,9 +297,11 @@ export function createTracingFetch(
           controlObservation = {
             kind: url.pathname.includes("organization-member-addition")
               ? "member-addition"
-              : url.pathname.includes("user-validation")
-                ? "user-validation"
-                : "social-provider",
+              : url.pathname.includes("managed-secrets")
+                ? "managed-secrets"
+                : url.pathname.includes("user-validation")
+                  ? "user-validation"
+                  : "social-provider",
             body,
             digest: createHash("sha256").update(JSON.stringify(body)).digest("hex"),
           };

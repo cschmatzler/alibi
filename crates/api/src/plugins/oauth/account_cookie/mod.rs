@@ -244,7 +244,7 @@ mod tests {
         .unwrap();
         for name in ["valid", "noKid"] {
             let decoded = crate::plugins::oauth::state::decode_account_cookie_value(
-                secret,
+                &better_auth_core::AuthConfig::new(secret),
                 (*(vectors)
                     .get(name)
                     .expect("fixture contains the requested index"))
@@ -262,7 +262,7 @@ mod tests {
         for name in ["wrongSalt", "wrongSecret", "expired", "gcm", "jws"] {
             assert!(
                 crate::plugins::oauth::state::decode_account_cookie_value(
-                    secret,
+                    &better_auth_core::AuthConfig::new(secret),
                     (*(vectors)
                         .get(name)
                         .expect("fixture contains the requested index"))
@@ -290,8 +290,11 @@ mod tests {
             *bytes.first_mut().expect("decoded fixture is nonempty") ^= 1;
             *parts.get_mut(segment).expect("fixture segment exists") = BASE64.encode(bytes);
             assert!(
-                crate::plugins::oauth::state::decode_account_cookie_value(secret, &parts.join("."))
-                    .is_err(),
+                crate::plugins::oauth::state::decode_account_cookie_value(
+                    &better_auth_core::AuthConfig::new(secret),
+                    &parts.join(".")
+                )
+                .is_err(),
                 "changed segment {segment} must not authenticate"
             );
         }

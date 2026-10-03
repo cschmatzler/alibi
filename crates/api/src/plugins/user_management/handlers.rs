@@ -65,7 +65,10 @@ pub(super) async fn authoritative_session<S: better_auth_core::AuthSchema>(
         &better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, "dont_remember"),
     )
     .and_then(|value| {
-        better_auth_core::utils::cookie_utils::verify_cookie_value(&value, &ctx.config.secret)
+        better_auth_core::utils::cookie_utils::verify_cookie_value(
+            &value,
+            ctx.config.current_secret(),
+        )
     })
     .is_some_and(|value| !value.is_empty());
     if !dont_remember
@@ -164,7 +167,7 @@ pub(in crate::plugins) async fn change_email_core(
         .is_some()
     {
         drop(create_email_verification_token(
-            &ctx.config.secret,
+            ctx.config.current_secret(),
             user.email().unwrap_or_default(),
             Some(&new_email),
             expiry,
@@ -189,7 +192,7 @@ pub(in crate::plugins) async fn change_email_core(
         renew_session_snapshot(&projection, session, ctx).await?;
         if can_send {
             let token = create_email_verification_token(
-                &ctx.config.secret,
+                ctx.config.current_secret(),
                 &new_email,
                 None,
                 expiry,
@@ -207,7 +210,7 @@ pub(in crate::plugins) async fn change_email_core(
         "change-email-verification"
     };
     let token = create_email_verification_token(
-        &ctx.config.secret,
+        ctx.config.current_secret(),
         user.email().unwrap_or_default(),
         Some(&new_email),
         expiry,

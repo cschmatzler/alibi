@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
+import { symmetricDecrypt, symmetricEncrypt, type SecretConfig } from "better-auth/crypto";
 
 import { type ComparisonContext, compareValues } from "../support/compare";
 
@@ -10,7 +10,7 @@ const rightBaseURL = "http://localhost:3200";
 
 type Payload = Record<string, any>;
 
-async function issue(baseURL: string) {
+async function issue(baseURL: string, key: string | SecretConfig = secret) {
   const start = Date.now();
   const payload: Payload = {
     userInfo: { id: "777", email: "proxy-owner@fixture.test", name: "Owner", emailVerified: true },
@@ -35,8 +35,8 @@ async function issue(baseURL: string) {
     disableSignUp: false,
     timestamp: Date.now(),
   };
-  const token = await symmetricEncrypt({ key: secret, data: JSON.stringify(payload) });
-  const decrypted = JSON.parse(await symmetricDecrypt({ key: secret, data: token }));
+  const token = await symmetricEncrypt({ key, data: JSON.stringify(payload) });
+  const decrypted = JSON.parse(await symmetricDecrypt({ key, data: token }));
   expect(decrypted).toEqual(payload);
 
   const url = new URL(
@@ -126,6 +126,61 @@ test("published authenticated OAuth proxy ciphertext links only complete claims 
       ctx,
     ),
   ).toEqual([]);
+});
+
+test("published managed proxy envelopes use only their declared version and preserve writing versions", async () => {
+  const managed = {
+    keys: new Map([
+      [0, secret],
+      [2, "managed-proxy-new-key-at-least-32-characters"],
+    ]),
+    currentVersion: 0,
+  };
+  const left = await issue(leftBaseURL, managed);
+  const right = await issue(rightBaseURL, managed);
+  const ctx = {
+    ...context(left, right),
+    oauthProxyProfileSecret: undefined,
+    oauthProxyProfileManagedKeys: { keys: Object.fromEntries(managed.keys), legacySecret: secret },
+  };
+  expect(compareValues(values(left), values(right), ctx)).toEqual([]);
+  expect(
+    compareValues(values(left), values(right), {
+      ...ctx,
+      oauthProxyProfileManagedKeys: { keys: { 2: secret } },
+    }).length,
+  ).toBeGreaterThan(0);
+  expect(
+    compareValues(values(left), values(right), {
+      ...ctx,
+      oauthProxyProfileManagedKeys: { keys: { 0: "wrong-managed-key-at-least-32-characters" } },
+    }).length,
+  ).toBeGreaterThan(0);
+  const current = await issue(rightBaseURL, { ...managed, currentVersion: 2 });
+  expect(compareValues(values(left), values(current), ctx)).toContainEqual({
+    path: "oauthProxyProfile.token",
+    reason: "OAuth proxy encrypted envelope version differs",
+  });
+  const malformed = {
+    ...right,
+    oauthProxyProfile: {
+      ...right.oauthProxyProfile,
+      token: right.oauthProxyProfile.token.replace("$ba$0$", "$ba$x$"),
+    },
+  };
+  expect(compareValues(values(left), values(malformed), ctx)).toContainEqual({
+    path: "oauthProxyProfile",
+    reason: "unverified or application OAuth proxy profile differs literally",
+  });
+  const bareLeft = await issue(leftBaseURL);
+  const bareRight = await issue(rightBaseURL);
+  expect(compareValues(values(bareLeft), values(bareRight), ctx)).toEqual([]);
+  expect(
+    compareValues(values(bareLeft), values(bareRight), {
+      ...ctx,
+      oauthProxyProfileManagedKeys: { keys: ctx.oauthProxyProfileManagedKeys.keys },
+    }).length,
+  ).toBeGreaterThan(0);
 });
 
 test("proxy authentication retains provider JSON claims arrays expiry state and every callback selector", async () => {

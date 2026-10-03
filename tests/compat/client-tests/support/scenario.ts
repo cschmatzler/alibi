@@ -10,7 +10,12 @@ import {
 } from "better-auth/client/plugins";
 import { ZodError } from "zod";
 
-import { compareValues, type Difference, type PhysicalObservation } from "./compare";
+import {
+  type ComparisonContext,
+  compareValues,
+  type Difference,
+  type PhysicalObservation,
+} from "./compare";
 import { recordCoverage } from "./coverage";
 import { authProfilePath, type FixtureProfile } from "./profiles";
 
@@ -357,6 +362,9 @@ export function compatScenario(
   timeoutMs = 30_000,
   options: {
     readonly oauthProxyProfileSecret?: string;
+    readonly oauthProxyProfileManagedKeys?: ComparisonContext["oauthProxyProfileManagedKeys"];
+    readonly sessionCookieSecretsByAuthPath?: Readonly<Record<string, string>>;
+    readonly managedAccountCookieProfiles?: ComparisonContext["managedAccountCookieProfiles"];
     /** Deliberate unrouted or failing reference requests; see `support/oracle.ts`. */
     readonly oracle?: OracleExpectations;
   } = {},

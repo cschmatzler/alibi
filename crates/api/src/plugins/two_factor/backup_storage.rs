@@ -35,7 +35,7 @@ impl TwoFactorBackupStorage {
     pub(in crate::plugins) async fn store_codes(
         &self,
         codes: &[String],
-        secret: &str,
+        secret: &better_auth_core::AuthConfig,
     ) -> AuthResult<String> {
         let json = serde_json::to_string(codes)?;
         match self {
@@ -51,7 +51,7 @@ impl TwoFactorBackupStorage {
     pub(in crate::plugins) async fn load_codes(
         &self,
         stored: &str,
-        secret: &str,
+        secret: &better_auth_core::AuthConfig,
     ) -> AuthResult<Option<Vec<String>>> {
         let json = match self {
             Self::Encrypted => super::decrypt_value(secret, stored)?,

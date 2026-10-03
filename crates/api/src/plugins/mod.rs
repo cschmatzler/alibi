@@ -174,7 +174,10 @@ pub(in crate::plugins) mod test_helpers {
                 format!(
                     "{}={}",
                     config.session.cookie_name,
-                    better_auth_core::utils::cookie_utils::sign_cookie_value(token, &config.secret)
+                    better_auth_core::utils::cookie_utils::sign_cookie_value(
+                        token,
+                        config.current_secret()
+                    )
                 ),
             );
         }

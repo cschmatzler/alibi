@@ -46,7 +46,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
         }
 
         let token = create_email_verification_token(
-            &ctx.config.secret,
+            ctx.config.current_secret(),
             &body.email,
             None,
             config.verification_token_expiry,
@@ -76,7 +76,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
         {
             async {
                 let token = create_email_verification_token(
-                    &ctx.config.secret,
+                    ctx.config.current_secret(),
                     &body.email,
                     None,
                     config.verification_token_expiry,
@@ -106,7 +106,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
             // Missing and already-verified mailboxes perform the same local
             // signing work and retain the same timing floor without delivery.
             drop(create_email_verification_token(
-                &ctx.config.secret,
+                ctx.config.current_secret(),
                 &body.email,
                 None,
                 config.verification_token_expiry,
@@ -198,7 +198,7 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
     let ip_address = meta.ip_address;
     let user_agent = meta.user_agent;
 
-    let claims = match decode_email_verification_token(&ctx.config.secret, &query.token) {
+    let claims = match decode_email_verification_token(ctx.config.current_secret(), &query.token) {
         Ok(claims) => claims,
         Err(AuthError::Jwt(error)) => {
             return if matches!(error.kind(), ErrorKind::ExpiredSignature) {
@@ -229,7 +229,7 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
         match claims.request_type.as_deref() {
             Some("change-email-confirmation") => {
                 let new_token = create_email_verification_token(
-                    &ctx.config.secret,
+                    ctx.config.current_secret(),
                     &claims.email,
                     Some(update_to),
                     config.verification_token_expiry,
@@ -344,7 +344,7 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
                     )
                     .await?;
                 let new_token = create_email_verification_token(
-                    &ctx.config.secret,
+                    ctx.config.current_secret(),
                     update_to,
                     None,
                     chrono::Duration::hours(1),
