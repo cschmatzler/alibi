@@ -127,7 +127,7 @@ where
             sql.push(if index == 0 { " WHERE " } else { " AND " });
             sql.column(table, column);
             sql.push(operator);
-            sql.bind(value.clone());
+            sql.bind(S::Verification::column_value(column, value.clone()));
         }
         sql.push(" ORDER BY ");
         sql.column(table, S::Verification::created_at_column());
@@ -178,16 +178,21 @@ where
             let mut delete = Sql::with(exec.engine(), "DELETE FROM ");
             delete.ident(table);
             delete.push(" WHERE ");
-            delete.compare(table, S::Verification::id_column(), " = ", id);
+            delete.compare_model::<S::Verification>(table, S::Verification::id_column(), " = ", id);
             delete.push(" AND ");
-            delete.compare(table, S::Verification::value_column(), " = ", model.value());
+            delete.compare_model::<S::Verification>(
+                table,
+                S::Verification::value_column(),
+                " = ",
+                model.value(),
+            );
             if exec.execute(delete).await? != 1 {
                 return Ok(None);
             }
             let mut siblings = Sql::with(exec.engine(), "DELETE FROM ");
             siblings.ident(table);
             siblings.push(" WHERE ");
-            siblings.compare(
+            siblings.compare_model::<S::Verification>(
                 table,
                 S::Verification::identifier_column(),
                 " = ",
@@ -237,7 +242,10 @@ where
         );
         if let Some(value) = value {
             sql.push(", ");
-            sql.assign(S::Verification::value_column(), value);
+            sql.assign(
+                S::Verification::value_column(),
+                S::Verification::column_value(S::Verification::value_column(), value.into()),
+            );
         }
         if let Some(expires_at) = expires_at {
             sql.push(", ");
@@ -248,7 +256,7 @@ where
         }
         for (index, (column, value)) in filters.iter().enumerate() {
             sql.push(if index == 0 { " WHERE " } else { " AND " });
-            sql.compare(table, column, " = ", value.clone());
+            sql.compare_model::<S::Verification>(table, column, " = ", value.clone());
         }
         model::returning::<S::Verification>(&mut sql);
         // The statement updates every matching row; the first returned row is the snapshot.
@@ -396,7 +404,7 @@ where
         let table = Self::verification_table();
         let mut select = model::select_model::<S::Verification>(self.exec());
         select.push(" WHERE ");
-        select.compare(
+        select.compare_model::<S::Verification>(
             table,
             S::Verification::identifier_column(),
             " = ",
@@ -426,7 +434,7 @@ where
         let mut delete = Sql::with(self.exec().engine(), "DELETE FROM ");
         delete.ident(table);
         delete.push(" WHERE ");
-        delete.compare(
+        delete.compare_model::<S::Verification>(
             table,
             S::Verification::identifier_column(),
             " = ",
@@ -511,7 +519,12 @@ where
                 let table = Self::verification_table();
                 let mut existing = model::select_model::<S::Verification>(self.exec());
                 existing.push(" WHERE ");
-                existing.compare(table, S::Verification::id_column(), " = ", id);
+                existing.compare_model::<S::Verification>(
+                    table,
+                    S::Verification::id_column(),
+                    " = ",
+                    id,
+                );
                 existing.push(" LIMIT 1");
                 if self
                     .exec()
@@ -578,7 +591,7 @@ where
         let table = Self::verification_table();
         let mut select = model::select_model::<S::Verification>(self.exec());
         select.push(" WHERE ");
-        select.compare(
+        select.compare_model::<S::Verification>(
             table,
             S::Verification::id_column(),
             " = ",
@@ -604,7 +617,12 @@ where
         let mut delete = Sql::with(self.exec().engine(), "DELETE FROM ");
         delete.ident(table);
         delete.push(" WHERE ");
-        delete.compare(table, S::Verification::id_column(), " = ", verification_id);
+        delete.compare_model::<S::Verification>(
+            table,
+            S::Verification::id_column(),
+            " = ",
+            verification_id,
+        );
         _ = self.exec().execute(delete).await?;
         if let Some(verification) = &verification {
             for hook in self.hooks() {
@@ -622,7 +640,7 @@ where
         let table = Self::verification_table();
         let mut select = model::select_model::<S::Verification>(self.exec());
         select.push(" WHERE ");
-        select.compare(
+        select.compare_model::<S::Verification>(
             table,
             S::Verification::expires_at_column(),
             " < ",
@@ -649,7 +667,7 @@ where
         let mut delete = Sql::with(self.exec().engine(), "DELETE FROM ");
         delete.ident(table);
         delete.push(" WHERE ");
-        delete.compare(
+        delete.compare_model::<S::Verification>(
             table,
             S::Verification::expires_at_column(),
             " < ",

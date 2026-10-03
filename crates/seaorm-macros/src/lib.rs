@@ -28,21 +28,25 @@ fn found_crate_tokens(name: &str) -> Option<TokenStream> {
 struct Roots {
     seaorm: TokenStream,
     core: TokenStream,
+    id_generator: TokenStream,
 }
 
 fn resolve_roots() -> Roots {
     if let Some(better_auth_root) = found_crate_tokens("better-auth") {
         return Roots {
+            id_generator: quote! {},
             seaorm: quote!(#better_auth_root::seaorm),
             core: quote!(#better_auth_root::__private_core),
         };
     }
     match crate_name("better-auth-seaorm") {
         Ok(FoundCrate::Itself) => Roots {
+            id_generator: quote! {},
             seaorm: quote!(crate),
             core: quote!(crate::__private_core),
         },
         _ => Roots {
+            id_generator: quote! {},
             seaorm: syn::Error::new(
                 Span::call_site(),
                 "AuthEntity must be used through better_auth::seaorm with the `seaorm` feature enabled",
@@ -121,8 +125,9 @@ fn model_fields(fields: &FieldsNamed) -> syn::Result<Vec<Field>> {
 }
 
 fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let roots = resolve_roots();
+    let mut roots = resolve_roots();
     let attributes = codegen::parse_auth_attributes(input, false)?;
+    roots.id_generator = codegen::generated_id(&attributes, &roots.core);
     let fields = codegen::named_fields(input)?;
     codegen::validate_core_fields(input, attributes.role, fields)?;
     let model_fields = model_fields(fields)?;
@@ -185,6 +190,7 @@ fn set_field(roots: &Roots) -> impl Fn(&Ident, &Insert) -> TokenStream {
 fn new_active(role: EntityRole, fields: &FieldsNamed, roots: &Roots) -> TokenStream {
     let seaorm_root = &roots.seaorm;
     let core_root = &roots.core;
+    let generated_id = &roots.id_generator;
     let assignments = codegen::insert_values(role, fields)
         .into_iter()
         .map(|(field, insert)| match insert {
@@ -202,7 +208,7 @@ fn new_active(role: EntityRole, fields: &FieldsNamed, roots: &Roots) -> TokenStr
     quote! {
         Self::ActiveModel {
             id: #seaorm_root::sea_orm::ActiveValue::Set(
-                id.unwrap_or_else(|| #core_root::uuid::Uuid::new_v4().to_string())
+                id.unwrap_or_else(|| #generated_id)
             ),
             #(#assignments,)*
         }
@@ -562,7 +568,8 @@ fn verification_impl(ident: &Ident, fields: &FieldsNamed, roots: &Roots) -> Toke
 ///
 /// Annotate a `SeaORM` `Model` struct with `#[derive(AuthEntity)]` and
 /// `#[auth(role = "...")]` where role is one of `user`, `session`, `account`,
-/// or `verification`.
+/// or `verification`. `id_generator = "path::to::function"` selects a String ID
+/// factory; the default remains a UUID.
 ///
 /// ```ignore
 /// #[derive(DeriveEntityModel, AuthEntity)]

@@ -25,9 +25,9 @@ where
         let table = <S::Session as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::Session>(exec);
         sql.push(" WHERE ");
-        sql.compare(table, S::Session::token_column(), " = ", token);
+        sql.compare_model::<S::Session>(table, S::Session::token_column(), " = ", token);
         sql.push(" AND ");
-        sql.compare(table, S::Session::active_column(), " = ", true);
+        sql.compare_model::<S::Session>(table, S::Session::active_column(), " = ", true);
         sql.push(" LIMIT 1");
         sql
     }
@@ -267,10 +267,10 @@ where
         let table = <S::Session as SqlxModel>::TABLE;
         let mut query = model::select_model::<S::Session>(self.exec());
         query.push(" WHERE ");
-        query.compare(table, S::Session::token_column(), " = ", token);
+        query.compare_model::<S::Session>(table, S::Session::token_column(), " = ", token);
         if expires_at.is_some() {
             query.push(" AND ");
-            query.compare(table, S::Session::active_column(), " = ", true);
+            query.compare_model::<S::Session>(table, S::Session::active_column(), " = ", true);
         }
         query.push(" LIMIT 1");
         let Some(model) = self.exec().fetch_optional::<S::Session>(query).await? else {
@@ -423,9 +423,9 @@ where
             S::Session::timestamp_value(S::Session::expires_at_column(), now),
         );
         sql.push(" WHERE ");
-        sql.compare(table, S::Session::token_column(), " = ", token);
+        sql.compare_model::<S::Session>(table, S::Session::token_column(), " = ", token);
         sql.push(" AND ");
-        sql.compare(
+        sql.compare_model::<S::Session>(
             table,
             S::Session::expires_at_column(),
             " > ",
@@ -443,9 +443,14 @@ where
         let table = <S::Session as SqlxModel>::TABLE;
         let mut live = model::select_model::<S::Session>(self.exec());
         live.push(" WHERE ");
-        live.compare(table, S::Session::user_id_column(), " = ", user_id.clone());
+        live.compare_model::<S::Session>(
+            table,
+            S::Session::user_id_column(),
+            " = ",
+            user_id.clone(),
+        );
         live.push(" AND ");
-        live.compare(
+        live.compare_model::<S::Session>(
             table,
             S::Session::expires_at_column(),
             " > ",
@@ -474,9 +479,9 @@ where
             S::Session::timestamp_value(S::Session::expires_at_column(), now),
         );
         sql.push(" WHERE ");
-        sql.compare(table, S::Session::user_id_column(), " = ", user_id);
+        sql.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", user_id);
         sql.push(" AND ");
-        sql.compare(
+        sql.compare_model::<S::Session>(
             table,
             S::Session::expires_at_column(),
             " > ",
@@ -511,10 +516,14 @@ where
         } else {
             sql.column(table, S::Session::token_column());
             sql.push(" IN ");
-            sql.bind_list(tokens.iter().cloned());
+            sql.bind_list(
+                tokens.iter().cloned().map(|token| {
+                    S::Session::column_value(S::Session::token_column(), token.into())
+                }),
+            );
         }
         sql.push(" AND ");
-        sql.compare(table, S::Session::active_column(), " = ", true);
+        sql.compare_model::<S::Session>(table, S::Session::active_column(), " = ", true);
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         self.exec().fetch_all(sql).await
@@ -525,9 +534,9 @@ where
         let table = <S::Session as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::Session>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(table, S::Session::user_id_column(), " = ", user_id);
+        sql.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", user_id);
         sql.push(" AND ");
-        sql.compare(table, S::Session::active_column(), " = ", true);
+        sql.compare_model::<S::Session>(table, S::Session::active_column(), " = ", true);
         sql.push(" ORDER BY ");
         sql.column(table, S::Session::created_at_column());
         sql.push(" ASC");
@@ -590,7 +599,7 @@ where
         let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(table);
         sql.push(" WHERE ");
-        sql.compare(table, S::Session::token_column(), " = ", token);
+        sql.compare_model::<S::Session>(table, S::Session::token_column(), " = ", token);
         _ = self.exec().execute(sql).await?;
         if let Some(session) = &session {
             for hook in self.hooks() {
@@ -606,7 +615,7 @@ where
         let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(table);
         sql.push(" WHERE ");
-        sql.compare(table, S::Session::user_id_column(), " = ", user_id);
+        sql.compare_model::<S::Session>(table, S::Session::user_id_column(), " = ", user_id);
         self.exec().execute(sql).await.map(drop)
     }
 
@@ -615,14 +624,14 @@ where
         let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(table);
         sql.push(" WHERE ");
-        sql.compare(
+        sql.compare_model::<S::Session>(
             table,
             S::Session::expires_at_column(),
             " < ",
             S::Session::timestamp_value(S::Session::expires_at_column(), Utc::now()),
         );
         sql.push(" OR ");
-        sql.compare(table, S::Session::active_column(), " = ", false);
+        sql.compare_model::<S::Session>(table, S::Session::active_column(), " = ", false);
         let deleted = self.exec().execute(sql).await?;
         usize::try_from(deleted)
             .map_err(|_error| AuthError::internal("Affected row count exceeds usize"))

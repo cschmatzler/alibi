@@ -29,7 +29,7 @@ pub(super) async fn find_user_by_id<M: SqlxUserModel>(
     let id = M::parse_id(id)?;
     let mut sql = model::select_model::<M>(exec);
     sql.push(" WHERE ");
-    sql.compare(M::TABLE, M::id_column(), " = ", id);
+    sql.compare_model::<M>(M::TABLE, M::id_column(), " = ", id);
     sql.push(" LIMIT 1");
     match lock {
         Lock::None => {}
@@ -123,7 +123,7 @@ where
     fn user_lookup(&self, column: &str, value: impl Into<SqlValue>) -> Sql {
         let mut sql = model::select_model::<S::User>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(<S::User as SqlxModel>::TABLE, column, " = ", value);
+        sql.compare_model::<S::User>(<S::User as SqlxModel>::TABLE, column, " = ", value);
         sql.push(" LIMIT 1");
         sql
     }
@@ -311,7 +311,7 @@ where
             let mut users = Sql::with(exec.engine(), "DELETE FROM ");
             users.ident(<S::User as SqlxModel>::TABLE);
             users.push(" WHERE ");
-            users.compare(
+            users.compare_model::<S::User>(
                 <S::User as SqlxModel>::TABLE,
                 S::User::id_column(),
                 " = ",
@@ -364,7 +364,11 @@ where
                         .map(|value_2| (value_2 == "true").into())
                         .collect()
                 } else {
-                    operands.iter().cloned().map(Into::into).collect()
+                    operands
+                        .iter()
+                        .cloned()
+                        .map(|value| S::User::column_value(column, value.into()))
+                        .collect()
                 };
                 sql.push(" WHERE ");
                 match operator {
@@ -385,13 +389,28 @@ where
                     // comma-joined value into a bound LIKE pattern. Actual SQL
                     // retains backend case, wildcard and NULL semantics.
                     "contains" => {
-                        sql.compare(table, column, " LIKE ", format!("%{}%", operands.join(",")));
+                        sql.compare_model::<S::User>(
+                            table,
+                            column,
+                            " LIKE ",
+                            format!("%{}%", operands.join(",")),
+                        );
                     }
                     "starts_with" => {
-                        sql.compare(table, column, " LIKE ", format!("{}%", operands.join(",")));
+                        sql.compare_model::<S::User>(
+                            table,
+                            column,
+                            " LIKE ",
+                            format!("{}%", operands.join(",")),
+                        );
                     }
                     "ends_with" => {
-                        sql.compare(table, column, " LIKE ", format!("%{}", operands.join(",")));
+                        sql.compare_model::<S::User>(
+                            table,
+                            column,
+                            " LIKE ",
+                            format!("%{}", operands.join(",")),
+                        );
                     }
                     "eq" | "ne" | "lt" | "lte" | "gt" | "gte" => {
                         let comparison = match operator {
