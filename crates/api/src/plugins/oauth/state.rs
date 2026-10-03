@@ -34,6 +34,8 @@ pub(in crate::plugins) struct OAuthStatePayload {
     pub callback_url: String,
     #[serde(rename = "codeVerifier")]
     pub code_verifier: String,
+    #[serde(rename = "idTokenNonce", default, skip_serializing_if = "Option::is_none")]
+    pub id_token_nonce: Option<String>,
     #[serde(rename = "errorURL", skip_serializing_if = "Option::is_none")]
     pub error_url: Option<String>,
     #[serde(rename = "newUserURL", skip_serializing_if = "Option::is_none")]
@@ -80,6 +82,7 @@ impl OAuthStatePayload {
         Self {
             callback_url,
             code_verifier,
+            id_token_nonce: None,
             error_url,
             new_user_url,
             link,
@@ -362,6 +365,7 @@ fn reserved_state_key(key: &str) -> bool {
         key,
         "callbackURL"
             | "codeVerifier"
+            | "idTokenNonce"
             | "errorURL"
             | "newUserURL"
             | "link"

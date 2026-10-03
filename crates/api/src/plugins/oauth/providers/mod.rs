@@ -1,4 +1,6 @@
 pub(super) mod remaining_profile;
+mod generic;
+pub use generic::{GenericOAuthConfig, GenericOAuthMetadata, GenericOAuthResolved, GenericOAuthError};
 mod roblox;
 pub use roblox::RobloxOptions;
 mod salesforce;
@@ -505,6 +507,12 @@ impl std::fmt::Debug for OAuthAuthorizationCodeCallback {
 /// opt into removing exact duplicates.
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationPolicy {
+    /// Verify code-grant ID tokens against trusted discovery metadata before profile admission.
+    pub verify_grant_id_token: bool,
+    /// Bind discovered ID tokens to a nonce in authenticated OAuth state.
+    pub id_token_nonce_binding: bool,
+    /// Discovery advertised OIDC signing algorithms; prepend openid if absent.
+    pub discovery_openid_scope: bool,
     /// Application-owned or provider-specific code grant implementation.
     pub authorization_code: Option<OAuthAuthorizationCodeCallback>,
     /// A code grant can retain PKCE even when authorization disables it (Zoom).
@@ -586,6 +594,9 @@ pub struct OAuthAuthorizationPolicy {
 impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
+            verify_grant_id_token: false,
+            id_token_nonce_binding: false,
+            discovery_openid_scope: false,
             authorization_code: None,
             authorization_code_pkce: None,
             client_id_parameter: "client_id".into(),

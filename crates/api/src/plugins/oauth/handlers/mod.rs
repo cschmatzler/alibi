@@ -215,7 +215,7 @@ fn build_authorization_url(
     {
         return Err(AuthError::config("Client ID is required"));
     }
-    let effective_scopes: Vec<&str> = provider.authorization.as_ref().map_or_else(
+    let mut effective_scopes: Vec<&str> = provider.authorization.as_ref().map_or_else(
         || {
             scopes.map_or_else(
                 || provider.scopes.iter().map(String::as_str).collect(),
@@ -249,6 +249,10 @@ fn build_authorization_url(
             effective
         },
     );
+    if provider.authorization.as_ref().is_some_and(|policy| policy.discovery_openid_scope)
+        && !effective_scopes.contains(&"openid") {
+        effective_scopes.insert(0, "openid");
+    }
     let scope_str = effective_scopes.join(
         provider
             .authorization
@@ -2331,6 +2335,9 @@ async fn initiate_oauth_flow_core(
         request.request_sign_up,
         request.additional_data,
     );
+    if request.provider.authorization.as_ref().is_some_and(|policy| policy.id_token_nonce_binding) {
+        payload.id_token_nonce = Some(better_auth_core::utils::id::generate_id(32));
+    }
     capture_server_context(&mut payload, &state, ctx.config.current_secret())?;
     drop(payload.additional_data.insert(
         "oauthState".to_owned(),
@@ -2363,7 +2370,7 @@ async fn initiate_oauth_flow_core(
         better_auth_core::OAuthStateStrategy::Cookie => {}
     }
 
-    let url = build_authorization_url(
+    let mut url = build_authorization_url(
         request.provider,
         &format!(
             "{}/callback/{}",
@@ -2379,6 +2386,11 @@ async fn initiate_oauth_flow_core(
         request.login_hint,
         request.additional_params,
     )?;
+    if let Some(nonce) = &payload.id_token_nonce {
+        let mut parsed = url::Url::parse(&url).map_err(|_| AuthError::config("Invalid authorization endpoint"))?;
+        set_authorization_param(&mut parsed, "nonce", nonce);
+        url = parsed.to_string();
+    }
 
     Ok(InitiatedOAuthFlow {
         response: SocialSignInResponse {
@@ -2724,6 +2736,12 @@ pub(super) async fn handle_callback(
     else {
         return Ok(redirect_on_error("invalid_code", None));
     };
+
+    if provider.authorization.as_ref().is_some_and(|policy| policy.verify_grant_id_token)
+        && let Some(token) = tokens.id_token.as_deref().filter(|token| !token.is_empty())
+        && !super::id_token::verify_provider_token(provider, token, payload.id_token_nonce.as_deref()).await {
+        return Ok(redirect_on_error("unable_to_get_user_info", None));
+    }
 
     let user_info_result = fetch_user_info_from_provider(
         provider,

@@ -26,7 +26,7 @@ pub use id_token::{
     OAuthJwksSource, OAuthNonceComparison,
 };
 pub use providers::{
-    AppleOptions, AtlassianOptions, CloudflareOptions, CognitoOptions, DropboxAccessType,
+    GenericOAuthConfig, GenericOAuthMetadata, GenericOAuthResolved, GenericOAuthError, AppleOptions, AtlassianOptions, CloudflareOptions, CognitoOptions, DropboxAccessType,
     DropboxOptions, FacebookOptions, FigmaOptions, HuggingFaceOptions, KakaoOptions, KickOptions,
     LineOptions, LinearOptions, LinkedInOptions, MicrosoftOptions, MicrosoftProfilePhotoSize,
     NaverOptions, NotionOptions, OAuthAccountSubject, OAuthAuthorizationCodeCallback,
