@@ -76,7 +76,7 @@ pub(crate) async fn router(
                     .expect("mapper receipt lock")
                     .push(profile);
                 Ok(OAuthUserInfo {
-        additional_fields: Default::default(),
+                    additional_fields: Default::default(),
                     id: "cannot-replace-raw-account".into(),
                     name: Some("Mapped Naver User".into()),
                     email: "mapped-naver@example.invalid".into(),
