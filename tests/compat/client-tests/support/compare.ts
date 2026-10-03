@@ -2871,11 +2871,18 @@ export function compareValues(
     const cachePattern = setCookie
       ? /(?:^|,\s*)(better-auth\.session_data(?:\.\d+)?)=([^;,\s]*)/g
       : /(?:^|;\s*)(better-auth\.session_data(?:\.\d+)?)=([^;\s]*)/g;
-    const leftCache = [...a.matchAll(cachePattern)];
-    const rightCache = [...b.matchAll(cachePattern)];
+    const effectiveCache = (raw: string) => {
+      const matches = [...raw.matchAll(cachePattern)];
+      const base = matches.filter((match) => match[1] === "better-auth.session_data");
+      // The live base cookie takes precedence. Unselected chunk bytes remain
+      // literal in the complete scaffold, including any duplicate or foreign data.
+      return base.length ? base : matches;
+    };
+    const leftCache = effectiveCache(a);
+    const rightCache = effectiveCache(b);
     if (leftCache.length || rightCache.length) {
       if (leftCache.length !== rightCache.length) {
-        fail(path, "session cache chunk count differs");
+        fail(path, "compact cookie does not match authenticated corresponding session issuance");
         return true;
       }
       for (let index = 0; index < leftCache.length; index++) {
