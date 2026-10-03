@@ -667,9 +667,10 @@ pub struct IpAddressConfig {
 }
 
 /// Configuration for sharing cookies across sub-domains.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct CrossSubDomainConfig {
-    /// The parent domain (e.g. `".example.com"`).
+    /// Explicit cookie domain (e.g. `".example.com"`). An empty value infers
+    /// the hostname of the configured or request-resolved base URL, without a port.
     pub domain: String,
 }
 
@@ -685,7 +686,11 @@ pub struct CookieAttributes {
     /// Override `Path`.
     pub path: Option<String>,
     /// Override `Max-Age` (seconds).
-    pub max_age: Option<i64>,
+    pub max_age: Option<f64>,
+    /// Explicit expiry, checked at emission against the published 400-day limit.
+    pub expires: Option<chrono::DateTime<chrono::Utc>>,
+    /// Emit the published `Partitioned` attribute after SameSite.
+    pub partitioned: Option<bool>,
     /// Override cookie `Domain`.
     pub domain: Option<String>,
 }
@@ -1040,6 +1045,16 @@ impl AuthConfig {
         self.advanced.cross_sub_domain_cookies = Some(CrossSubDomainConfig {
             domain: domain.into(),
         });
+        self
+    }
+
+    /// Share cookies using the configured or request-resolved base URL's hostname.
+    /// This follows the published hostname directly; it does not infer a parent
+    /// or registrable domain. Use [`cross_sub_domain_cookies`](Self::cross_sub_domain_cookies)
+    /// when a deployment needs an explicit parent domain.
+    #[must_use]
+    pub fn cross_sub_domain_cookies_from_base_url(mut self) -> Self {
+        self.advanced.cross_sub_domain_cookies = Some(CrossSubDomainConfig::default());
         self
     }
 

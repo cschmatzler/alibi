@@ -51,7 +51,8 @@ async fn issued(auth: &BetterAuth<Schema>, email: &str) -> (String, String, Stri
     let cookie = better_auth_core::utils::cookie_utils::create_session_cookie(
         session.token(),
         auth.config(),
-    );
+    )
+    .unwrap();
     (
         user.id().into_owned(),
         session.token().to_owned(),
@@ -685,7 +686,8 @@ mod secondary {
             let signed = better_auth_core::utils::cookie_utils::create_session_cookie(
                 &new_token,
                 auth.config(),
-            );
+            )
+            .unwrap();
             let (_, surviving) = request(
                 &auth,
                 HttpMethod::Get,

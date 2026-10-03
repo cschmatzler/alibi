@@ -66,7 +66,8 @@ mod tests {
         let cookie = better_auth_core::utils::cookie_utils::create_session_cookie(
             issued.token(),
             auth.config(),
-        );
+        )
+        .unwrap();
         let cookie = cookie.split(';').next().unwrap();
         let (accepted, session) = get(&auth, "/get-session", cookie).await;
         assert_eq!(accepted.status, 200, "{session}");
@@ -167,7 +168,8 @@ mod tests {
         let valid_cookie = better_auth_core::utils::cookie_utils::create_session_cookie(
             valid.token(),
             auth.config(),
-        );
+        )
+        .unwrap();
         let valid_cookie = valid_cookie.split(';').next().unwrap();
         for cookie in [
             empty_cookie.to_owned(),

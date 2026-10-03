@@ -2504,6 +2504,7 @@ mod tests {
                 &session.token,
                 &ctx.config,
             )
+            .unwrap()
             .split(';')
             .next()
             .unwrap()

@@ -453,7 +453,7 @@ async fn perform_user_deletion(
     {
         if clear_cookie_errors {
             for cookie in
-                better_auth_core::utils::cookie_utils::delete_session_cookie_headers(&ctx.config)
+                better_auth_core::utils::cookie_utils::delete_session_cookie_headers(&ctx.config)?
             {
                 request.queue_response_header("Set-Cookie", cookie);
             }

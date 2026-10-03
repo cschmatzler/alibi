@@ -25,6 +25,22 @@ fn auth_config(secret: &str) -> AuthConfig {
 
 Use `cross_sub_domain_cookies("example.com")` only when those subdomains are trusted. A separate frontend origin also needs matching credentialed CORS configuration on the server.
 
+`cross_sub_domain_cookies_from_base_url()` infers the configured or resolved URL's
+hostname without its port. It does not select a registrable parent domain.
+Explicit domains and per-cookie attributes retain their precedence.
+
+`CookieAttributes` accepts floating point `max_age`, an optional UTC `expires`,
+and `partitioned`. Cookie emitters such as `create_session_cookie` now return
+`AuthResult<String>`; callers propagate serialization errors with `?` before
+publishing headers. The published 400-day limits apply at emission, rather than
+initialization. Clearing sets Max-Age to zero while retaining the other attributes.
+
+Session-token issuance uses the actual session lifetime or omits Max-Age for a
+browser session. Session-cache cookies use their own configured `session_data`
+age; a zero age expires the cookie but retains the compact payload's 60-second
+fallback. Negative ages omit Max-Age. These settings do not replace the embedded
+session expiry or change the renewal policy.
+
 ## Cache strategies
 
 | Strategy | Protection |

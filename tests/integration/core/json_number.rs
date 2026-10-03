@@ -193,7 +193,8 @@ mod tests {
                 .as_str()
                 .unwrap(),
             auth.config(),
-        );
+        )
+        .unwrap();
         let (created_response, created) = post(
             &auth,
             "/api-key/create",
@@ -259,7 +260,8 @@ mod tests {
             .as_str()
             .unwrap(),
             auth.config(),
-        );
+        )
+        .unwrap();
         let (denied, _) = post(
             &auth,
             "/api-key/update",

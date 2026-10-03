@@ -229,7 +229,7 @@ impl SiwePlugin {
                 .map_err(|error| storage_error(error.into_auth_error()))?;
         let token = issued.session.token();
         let mut response = AuthResponse::json(200, &json!({"token":token,"success":true,"user":{"id":issued.user.id(),"walletAddress":address,"chainId":chain_id}})).map_err(|error| storage_error(error.into()))?;
-        Self::session_cookies(request, ctx, token, &mut response);
+        Self::session_cookies(request, ctx, token, &mut response).map_err(storage_error)?;
         Ok(response)
     }
 
@@ -371,7 +371,7 @@ impl SiwePlugin {
         ctx: &AuthContext<S>,
         token: &str,
         response: &mut AuthResponse,
-    ) {
+    ) -> AuthResult<()> {
         use better_auth_core::utils::cookie_utils::{
             create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
             sign_cookie_value, verify_cookie_value,
@@ -386,7 +386,7 @@ impl SiwePlugin {
                 Some(token),
                 (!preference).then(|| ctx.config.session.expires_in.num_seconds()),
                 &ctx.config,
-            ),
+            )?,
         );
         if preference {
             response.headers.append(
@@ -396,9 +396,10 @@ impl SiwePlugin {
                     &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
-                ),
+                )?,
             );
         }
+        Ok(())
     }
 }
 

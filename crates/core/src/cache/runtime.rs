@@ -341,13 +341,21 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
         None => "1".into(),
     };
     let now = chrono::Utc::now().timestamp_millis();
+    let configured_age = crate::utils::cookie_utils::session_cache_max_age(
+        &ctx.config,
+        super::effective_max_age(config.max_age),
+    );
     let value = match config.strategy {
         crate::CookieCacheStrategy::Compact => super::encode_compact(
             context.public_user(),
             context.public_session(),
             &version,
             now,
-            config.max_age,
+            if configured_age == 0.0 || configured_age.is_nan() {
+                60.0
+            } else {
+                configured_age
+            },
             dont_remember,
             ctx.config.current_secret(),
         )?,
@@ -361,7 +369,7 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
             let max_age = if dont_remember {
                 300.0
             } else {
-                super::effective_max_age(config.max_age)
+                super::effective_max_age(configured_age)
             };
             if config.strategy == crate::CookieCacheStrategy::Jwe {
                 crate::utils::jwe::encode(
@@ -381,7 +389,7 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
         }
     };
     let name = related_cookie_name(&ctx.config, "session_data");
-    let max_age = (!dont_remember).then(|| super::effective_max_age(config.max_age));
+    let max_age = (!dont_remember).then_some(configured_age);
     chunked_cookie_headers(&name, &value, max_age, &ctx.config, headers, false)
 }
 

@@ -203,7 +203,7 @@ impl EmailVerificationPlugin {
                         req,
                         &token,
                         &ctx.config,
-                    );
+                    )?;
                 }
                 Ok(response)
             }
@@ -218,7 +218,7 @@ impl EmailVerificationPlugin {
                         req,
                         &token,
                         &ctx.config,
-                    );
+                    )?;
                 }
                 Ok(response)
             }
@@ -752,7 +752,7 @@ mod tests {
             if let Some(response) = response {
                 assert_eq!(
                     response.headers.get("set-cookie"),
-                    Some(&create_session_cookie(session.token(), &ctx.config))
+                    Some(&create_session_cookie(session.token(), &ctx.config).unwrap())
                 );
             }
             let updated = ctx
@@ -1944,7 +1944,7 @@ mod tests {
         use better_auth_core::utils::cookie_utils::create_session_cookie;
 
         let ctx = test_helpers::create_test_context_blocking();
-        let cookie_str = create_session_cookie("my-token-123", &ctx.config);
+        let cookie_str = create_session_cookie("my-token-123", &ctx.config).unwrap();
         // Should contain the cookie name and value
         assert!(cookie_str.contains("better-auth.session_token=my-token-123"));
         // Should contain Path
@@ -1962,7 +1962,7 @@ mod tests {
 
         let ctx = test_helpers::create_test_context_blocking();
         let token = "token+with/special=chars&more";
-        let cookie_str = create_session_cookie(token, &ctx.config);
+        let cookie_str = create_session_cookie(token, &ctx.config).unwrap();
         // The cookie crate should handle encoding properly
         assert!(cookie_str.contains("better-auth.session_token="));
     }

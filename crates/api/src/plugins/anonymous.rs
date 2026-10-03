@@ -230,7 +230,7 @@ impl AnonymousPlugin {
                     Some(ctx.config.session.expires_in.num_seconds())
                 },
                 &ctx.config,
-            ),
+            )?,
         );
         if dont_remember {
             response.headers.append(
@@ -240,7 +240,7 @@ impl AnonymousPlugin {
                     &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
-                ),
+                )?,
             );
         }
         Ok(response)
@@ -320,7 +320,7 @@ impl AnonymousPlugin {
             ));
         }
         let mut response = AuthResponse::json(200, &json!({"success":true}))?;
-        for cookie in delete_session_cookie_headers(&ctx.config) {
+        for cookie in delete_session_cookie_headers(&ctx.config)? {
             response.headers.append("set-cookie", cookie);
         }
         Ok(response)

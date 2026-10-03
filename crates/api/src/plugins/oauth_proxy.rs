@@ -510,7 +510,7 @@ impl OAuthProxyPlugin {
         let clear = better_auth_core::utils::cookie_utils::create_clear_cookie(
             &state_cookie_name(&ctx.config),
             &ctx.config,
-        );
+        )?;
         req.queue_response_header("Set-Cookie", clear);
         if matches!(
             ctx.config.account.store_state_strategy,
@@ -729,7 +729,7 @@ impl OAuthProxyPlugin {
                 Some(outcome.session.token()),
                 (!dont_remember).then(|| ctx.config.session.expires_in.num_seconds()),
                 &ctx.config,
-            ),
+            )?,
         );
         if dont_remember {
             response.headers.append(

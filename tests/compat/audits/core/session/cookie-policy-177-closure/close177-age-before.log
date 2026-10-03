@@ -1,0 +1,85 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/session/cookie-cache.test.ts:
+1977 |     expect(signup.error).toBeNull();
+1978 |     const headers = owner.headers.at(-1)!;
+1979 |     const issued = await atom(headers, age, age >= 0);
+1980 |     const lifetime = issued.compactSessionCache.envelope.expiresAt - issued.compactSessionCache.envelope.session.updatedAt;
+1981 |     expect(lifetime).toBeGreaterThanOrEqual(ttl);
+1982 |     expect(lifetime).toBeLessThanOrEqual(ttl + 10);
+       ^
+error: expect(received).toBeLessThanOrEqual(expected)
+
+Expected: <= 17010
+Received: 300000
+
+      at toBeLessThanOrEqual (unknown:1:1)
+      at /tmp/better-auth-close177/tests/compat/client-tests/tests/core/session/cookie-cache.test.ts:1982:22
+      at runScenario (/tmp/better-auth-close177/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-close177/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) compact override-positive uses only session_data override for header and payload lifetime [513.20ms]
+1977 |     expect(signup.error).toBeNull();
+1978 |     const headers = owner.headers.at(-1)!;
+1979 |     const issued = await atom(headers, age, age >= 0);
+1980 |     const lifetime = issued.compactSessionCache.envelope.expiresAt - issued.compactSessionCache.envelope.session.updatedAt;
+1981 |     expect(lifetime).toBeGreaterThanOrEqual(ttl);
+1982 |     expect(lifetime).toBeLessThanOrEqual(ttl + 10);
+       ^
+error: expect(received).toBeLessThanOrEqual(expected)
+
+Expected: <= 60010
+Received: 300000
+
+      at toBeLessThanOrEqual (unknown:1:1)
+      at /tmp/better-auth-close177/tests/compat/client-tests/tests/core/session/cookie-cache.test.ts:1982:22
+      at runScenario (/tmp/better-auth-close177/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-close177/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) compact override-zero uses only session_data override for header and payload lifetime [392.32ms]
+1167 |   });
+1168 | 
+1169 |   if (expectDecoded) {
+1170 |     expect(decoded).not.toBeNull();
+1171 |   } else {
+1172 |     expect(decoded).toBeNull();
+       ^
+error: expect(received).toBeNull()
+
+Received: {
+  session: {
+    id: "bbdc7a03-2b65-4c40-a166-d27047426d64",
+    createdAt: 2026-10-03T20:55:18.011Z,
+    updatedAt: 2026-10-03T20:55:18.011Z,
+    userId: "b42e224b-55af-4d64-83a3-5df62c6c1f95",
+    expiresAt: 2026-10-10T20:55:18.011Z,
+    token: "b1jKLHtQDYNzVOHJo9Ntrd6c00PNIo8Z",
+    ipAddress: "",
+    userAgent: "Bun/1.4.2",
+    activeOrganizationId: null,
+    label: "cache-public-label",
+  },
+  user: {
+    id: "b42e224b-55af-4d64-83a3-5df62c6c1f95",
+    createdAt: 2026-10-03T20:55:18.010Z,
+    updatedAt: 2026-10-03T20:55:18.010Z,
+    email: "override-negative-179106091761@test.com",
+    emailVerified: false,
+    name: "Override owner",
+    image: null,
+    isAnonymous: false,
+  },
+  updatedAt: 1791060918012,
+  version: "1",
+}
+
+      at toBeNull (unknown:1:1)
+      at atom (/tmp/better-auth-close177/tests/compat/client-tests/tests/core/session/cookie-cache.test.ts:1172:21)
+      at /tmp/better-auth-close177/tests/compat/client-tests/tests/core/session/cookie-cache.test.ts:1979:26
+      at runScenario (/tmp/better-auth-close177/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-close177/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) compact override-negative uses only session_data override for header and payload lifetime [403.61ms]
+
+ 0 pass
+ 33 filtered out
+ 3 fail
+ 34 expect() calls
+Ran 3 tests across 1 file. [1387.00ms]

@@ -1,10 +1,10 @@
 //! Real discovery and provider HTTP authority for the generic SDK owner.
 use crate::TestSchema;
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::{HeaderMap, StatusCode},
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
@@ -15,7 +15,7 @@ use better_auth::plugins::oauth::{
 use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::DatabaseConnection;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 #[derive(Clone, Default)]

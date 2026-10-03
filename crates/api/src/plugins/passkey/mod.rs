@@ -167,7 +167,7 @@ impl PasskeyPlugin {
                                 Some(ctx.config.session.expires_in.num_seconds())
                             },
                             &ctx.config,
-                        ),
+                        )?,
                     );
                     if dont_remember {
                         response.headers.append(
@@ -177,7 +177,7 @@ impl PasskeyPlugin {
                                 &sign_cookie_value("true", ctx.config.current_secret()),
                                 None,
                                 &ctx.config,
-                            ),
+                            )?,
                         );
                     }
                     Ok(response)
@@ -255,7 +255,7 @@ impl PasskeyPlugin {
         .await?
         {
             PasskeyHandlerOutcome::Success((response, token)) => {
-                let cookie_header = create_session_cookie(&token, &ctx.config);
+                let cookie_header = create_session_cookie(&token, &ctx.config)?;
                 Ok(AuthResponse::json(200, &response)?.with_header("Set-Cookie", cookie_header))
             }
             PasskeyHandlerOutcome::Response(response) => Ok(response),

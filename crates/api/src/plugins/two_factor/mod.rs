@@ -18,7 +18,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth_core::entity::{AuthSession, AuthTwoFactor, AuthUser};
 use better_auth_core::utils::cookie_utils::{
     create_clear_cookie, create_session_cookie, create_session_cookie_with_max_age,
-    create_session_like_cookie, related_cookie_name,
+    related_cookie_name,
 };
 use better_auth_core::wire::UserView;
 use better_auth_core::{
@@ -34,7 +34,6 @@ use rand::Rng;
 use rand::distributions::Alphanumeric;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
-use std::fmt::Write;
 use std::sync::Arc;
 use validator::Validate;
 
@@ -799,7 +798,7 @@ pub(in crate::plugins) async fn inspect_trusted_device(
         });
     };
 
-    let clear_header = create_clear_cookie(&cookie_name, &ctx.config);
+    let clear_header = create_clear_cookie(&cookie_name, &ctx.config)?;
     let Some(signed_value) = verify_factor_cookie_value(ctx.config.current_secret(), &raw_cookie)
     else {
         return Ok(TrustedDeviceCheck {
@@ -995,7 +994,7 @@ async fn enable_core(
         ctx.database.delete_session(current_session.token()).await?;
         return Ok((
             EnableResponse::Otp,
-            vec![create_session_cookie(issued.session.token(), &ctx.config)],
+            vec![create_session_cookie(issued.session.token(), &ctx.config)?],
         ));
     }
     if config.totp_disabled {
@@ -1049,7 +1048,7 @@ async fn enable_core(
         .await
         .map_err(SessionIssueError::into_auth_error)?;
         ctx.database.delete_session(current_session.token()).await?;
-        set_cookie_headers.push(create_session_cookie(issued.session.token(), &ctx.config));
+        set_cookie_headers.push(create_session_cookie(issued.session.token(), &ctx.config)?);
     }
 
     if let Some(existing) = existing {
@@ -1147,7 +1146,7 @@ async fn disable_core(
         issued.session.token(),
         dont_remember,
         &ctx.config,
-    )];
+    )?];
     if dont_remember {
         set_cookie_headers.push(create_signed_cookie_header(
             ctx.config.current_secret(),
@@ -1166,7 +1165,10 @@ async fn disable_core(
         {
             ctx.verifications().delete(trust_identifier).await?;
         }
-        set_cookie_headers.push(clear_cookie_header(&ctx.config, TRUST_DEVICE_COOKIE_SUFFIX));
+        set_cookie_headers.push(clear_cookie_header(
+            &ctx.config,
+            TRUST_DEVICE_COOKIE_SUFFIX,
+        )?);
     }
 
     Ok((StatusResponse { status: true }, set_cookie_headers))
@@ -1912,7 +1914,7 @@ fn verification_error_response(
     ) {
         Ok(error.to_auth_response().with_appended_header(
             "Set-Cookie",
-            clear_cookie_header(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX),
+            clear_cookie_header(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX)?,
         ))
     } else {
         Err(error)
@@ -1996,7 +1998,7 @@ async fn verify_existing_session_factor(
                     ctx.user_view(&user)
                 },
             },
-            vec![create_session_cookie(issued.session.token(), &ctx.config)],
+            vec![create_session_cookie(issued.session.token(), &ctx.config)?],
         ));
     }
 
@@ -2058,13 +2060,13 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
         }
     })?;
 
-    let mut set_cookie_headers = vec![clear_cookie_header(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX)];
+    let mut set_cookie_headers = vec![clear_cookie_header(&ctx.config, TWO_FACTOR_COOKIE_SUFFIX)?];
     if set_session_cookie {
         set_cookie_headers.push(create_session_cookie_for_dont_remember(
             issued.session.token(),
             pending.dont_remember,
             &ctx.config,
-        ));
+        )?);
         if pending.dont_remember {
             set_cookie_headers.push(create_signed_cookie_header(
                 ctx.config.current_secret(),
@@ -2080,7 +2082,7 @@ async fn finalize_pending_two_factor<S: better_auth_core::AuthSchema>(
         set_cookie_headers.push(clear_cookie_header(
             &ctx.config,
             DONT_REMEMBER_COOKIE_SUFFIX,
-        ));
+        )?);
     }
 
     Ok((
@@ -2429,7 +2431,7 @@ fn create_session_cookie_for_dont_remember(
     token: &str,
     dont_remember: bool,
     config: &better_auth_core::AuthConfig,
-) -> String {
+) -> AuthResult<String> {
     if dont_remember {
         create_session_cookie_with_max_age(Some(token), None, config)
     } else {
@@ -2437,7 +2439,7 @@ fn create_session_cookie_for_dont_remember(
     }
 }
 
-fn clear_cookie_header(config: &better_auth_core::AuthConfig, suffix: &str) -> String {
+fn clear_cookie_header(config: &better_auth_core::AuthConfig, suffix: &str) -> AuthResult<String> {
     create_clear_cookie(&related_cookie_name(config, suffix), config)
 }
 
@@ -2485,18 +2487,12 @@ fn create_signed_cookie_header(
 ) -> AuthResult<String> {
     let cookie_name = related_cookie_name(config, suffix);
     let signed_value = sign_cookie_value(secret, value);
-    // The pinned cookie serializer floors nonnegative Max-Age, omits negative
-    // values and does not synthesize an Expires attribute from Max-Age.
-    let mut header = create_session_like_cookie(&cookie_name, &signed_value, None, config);
-    if let Some(seconds) = max_age_seconds.filter(|seconds| *seconds >= 0.0) {
-        if seconds > 34_560_000.0 {
-            return Err(AuthError::internal(
-                "Two-factor cookie lifetime exceeds 400 days",
-            ));
-        }
-        _ = write!(header, "; Max-Age={}", seconds.floor() as u32);
-    }
-    Ok(header)
+    better_auth_core::utils::cookie_utils::create_cookie_with_max_age(
+        &cookie_name,
+        &signed_value,
+        max_age_seconds,
+        config,
+    )
 }
 
 // Match Better Call's separately trimmed key, retaining the first duplicate
@@ -2831,7 +2827,7 @@ mod tests {
                 let parts = init.into_parts();
                 ctx.metadata = parts.metadata;
                 ctx.extensions = parts.extensions;
-                let cookie = create_session_cookie(&session.token, &ctx.config);
+                let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
                 let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
                 drop(
                     request
@@ -2968,7 +2964,7 @@ mod tests {
         let parts = init.into_parts();
         ctx.extensions = parts.extensions;
         ctx.metadata = parts.metadata;
-        let cookie = create_session_cookie(&session.token, &ctx.config);
+        let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
         let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
         drop(
             request
@@ -3417,7 +3413,7 @@ mod tests {
             .await
             .unwrap();
         ctx.metadata = configured.into_parts().metadata;
-        let cookie = create_session_cookie(&session.token, &ctx.config);
+        let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
         let mut enrollment = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
         drop(
             enrollment
@@ -3857,6 +3853,7 @@ mod tests {
             request.headers.insert(
                 "cookie".into(),
                 create_session_cookie(&session.token, &ctx.config)
+                    .unwrap()
                     .split(';')
                     .next()
                     .unwrap()
@@ -4004,6 +4001,7 @@ mod tests {
         request.headers.insert(
             "cookie".into(),
             create_session_cookie(&session.token, &ctx.config)
+                .unwrap()
                 .split(';')
                 .next()
                 .unwrap()
@@ -4083,7 +4081,7 @@ mod tests {
         );
         let request = |path: &str, body: serde_json::Value| {
             let mut request = AuthRequest::new(HttpMethod::Post, path);
-            let cookie = create_session_cookie(&session.token, &ctx.config);
+            let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
             request
                 .headers
                 .insert("cookie".into(), cookie.split(';').next().unwrap().into());
@@ -4282,7 +4280,7 @@ mod tests {
                     )),
                     ..Default::default()
                 });
-                let cookie = create_session_cookie(&session.token, &ctx.config);
+                let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
                 let mut request = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
                 drop(
                     request
@@ -4754,6 +4752,7 @@ mod tests {
             request.headers.insert(
                 "cookie".into(),
                 create_session_cookie(&session.token, &ctx.config)
+                    .unwrap()
                     .split(';')
                     .next()
                     .unwrap()
@@ -4961,6 +4960,7 @@ mod tests {
             request.headers.insert(
                 "cookie".into(),
                 create_session_cookie(&session.token, &ctx.config)
+                    .unwrap()
                     .split(';')
                     .next()
                     .unwrap()

@@ -970,7 +970,7 @@ pub async fn handle_set_active_organization(
                     Some(ctx.config.session.expires_in.num_seconds())
                 },
                 &ctx.config,
-            ),
+            )?,
         );
         if dont_remember {
             response = response.with_appended_header(
@@ -980,7 +980,7 @@ pub async fn handle_set_active_organization(
                     &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
-                ),
+                )?,
             );
         }
     }

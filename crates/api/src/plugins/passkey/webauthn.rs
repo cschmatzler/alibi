@@ -359,7 +359,7 @@ pub(super) fn create_challenge_cookie(
         &signed,
         ttl_secs,
         auth_config,
-    ))
+    )?)
 }
 
 ///

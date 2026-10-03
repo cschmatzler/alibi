@@ -508,7 +508,7 @@ pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
                     Some(ctx.config.session.expires_in.num_seconds())
                 },
                 &ctx.config,
-            ),
+            )?,
         );
     if dont_remember {
         response.headers.append(
@@ -518,7 +518,7 @@ pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
                 &sign_cookie_value("true", ctx.config.current_secret()),
                 None,
                 &ctx.config,
-            ),
+            )?,
         );
     }
     Ok((payload, response))

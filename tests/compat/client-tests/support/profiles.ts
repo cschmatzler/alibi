@@ -613,6 +613,9 @@ export const FIXTURE_PROFILES = [
   "two-factor-pending-lookup-zero",
   "two-factor-pending-lookup-zero-disabled",
   ...variants("session-cache-", [
+    "override-positive",
+    "override-zero",
+    "override-negative",
     "standard",
     "attributes",
     "defaults",

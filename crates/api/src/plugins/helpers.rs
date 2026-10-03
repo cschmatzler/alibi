@@ -708,6 +708,8 @@ pub fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
 
 /// TS-style cookie clearing used by `deleteSessionCookie`.
 #[must_use]
-pub fn delete_session_cookie_headers(config: &better_auth_core::AuthConfig) -> Vec<String> {
+pub fn delete_session_cookie_headers(
+    config: &better_auth_core::AuthConfig,
+) -> AuthResult<Vec<String>> {
     better_auth_core::utils::cookie_utils::delete_session_cookie_headers(config)
 }

@@ -1,12 +1,12 @@
 //! Actual application columns, adapter callbacks and retained output observers.
 use crate::additional_field_models::{
-    application_account, application_session, application_user, ApplicationSchema,
+    ApplicationSchema, application_account, application_session, application_user,
 };
 use crate::backend::entities::verification;
 use axum::{
+    Json, Router,
     extract::Query,
     routing::{get, post},
-    Json, Router,
 };
 use better_auth::field_policy::{FieldConfig, FieldConfigs};
 use better_auth::integrations::axum::AxumIntegration;
@@ -20,16 +20,16 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::{
+    AuthAccount, AuthInitContext, AuthPlugin, AuthRoute, AuthSession, AuthUser,
     store::{AdapterAfterHook, AdapterEvent, AuthStore},
     utils::json::JsValue,
-    AuthAccount, AuthInitContext, AuthPlugin, AuthRoute, AuthSession, AuthUser,
 };
 use better_auth_seaorm::sea_orm::{
     ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement,
 };
 use better_auth_seaorm::{DatabaseHooks, HookControl};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
 type Events = Arc<Mutex<Vec<Value>>>;
@@ -771,10 +771,12 @@ impl Application {
         let events = self.events.lock().expect("application receipts").clone();
         let mut state = json!({"users":users,"sessions":sessions,"accounts":accounts,"verifications":verifications,"events":events});
         if self.mode == "provider" {
-            state["mapperReceipts"] = json!(MAPPER_RECEIPTS
-                .lock()
-                .expect("application mapper receipts")
-                .clone());
+            state["mapperReceipts"] = json!(
+                MAPPER_RECEIPTS
+                    .lock()
+                    .expect("application mapper receipts")
+                    .clone()
+            );
         }
         Ok(state)
     }
