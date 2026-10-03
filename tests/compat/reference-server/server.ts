@@ -67,6 +67,7 @@ import { createOrganizationCreationFixture } from "./fixtures/organization-creat
 import { organizationCreationHooksFixture } from "./fixtures/organization-creation-hooks-fixture";
 import { organizationDeletionHooksFixture } from "./fixtures/organization-deletion-hooks-fixture";
 import { organizationInvitationAcceptanceFixture } from "./fixtures/organization-invitation-acceptance-fixture";
+import { organizationInvitationLifecycleFixture } from "./fixtures/organization-invitation-lifecycle-fixture";
 import { organizationMemberAdditionFixture } from "./fixtures/organization-member-addition-fixture";
 import { organizationMemberRemovalHooksFixture } from "./fixtures/organization-member-removal-hooks-fixture";
 import { organizationMemberRoleHooksFixture } from "./fixtures/organization-member-role-hooks-fixture";
@@ -571,6 +572,11 @@ const organizationHooksFixture = organizationCreationHooksFixture(
   organizationTransport,
 );
 const organizationMembershipFixture = organizationMembershipPolicyFixture(
+  database,
+  authOptions,
+  `http://localhost:${PORT}`,
+);
+const organizationInvitationLifecycle = organizationInvitationLifecycleFixture(
   database,
   authOptions,
   `http://localhost:${PORT}`,
@@ -2006,6 +2012,26 @@ const server = Bun.serve({
       ) {
         return organizationMembershipFixture.server(request);
       }
+      for (const [name, profile] of organizationInvitationLifecycle.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
+          return profile.handler(request);
+        }
+      }
+      if (
+        url.pathname === "/__test/organization-invitation-life/configure" &&
+        request.method === "POST"
+      ) {
+        return organizationInvitationLifecycle.configure(await request.json());
+      }
+      if (url.pathname === "/__test/organization-invitation-life/state") {
+        return organizationInvitationLifecycle.state(url.searchParams.get("wait"));
+      }
+      if (
+        url.pathname === "/__test/organization-invitation-life/release" &&
+        request.method === "POST"
+      ) {
+        return organizationInvitationLifecycle.release();
+      }
       for (const [name, profile] of organizationInvitationFixture.profiles) {
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return profile.handler(request);
@@ -2748,6 +2774,7 @@ const server = Bun.serve({
         await oauthProxyProfiles.reset();
         await managedProxyProfiles.reset();
         organizationInvitationFixture.reset();
+        organizationInvitationLifecycle.reset();
         anonymousProfiles.reset();
         userValidationFixture.reset();
         additionalFields.reset();

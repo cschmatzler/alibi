@@ -945,6 +945,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     )
     .await?;
     let passkey_router = passkey_fixture::router(&config, database.clone()).await?;
+    let (invitation_lifecycle_router, invitation_lifecycle_reset) =
+        fixtures::organization_invitation_lifecycle_fixture::router(&config, database.clone())
+            .await?;
     let (invitation_acceptance_router, invitation_acceptance_reset) =
         organization_invitation_acceptance_fixture::router(
             &config,
@@ -1439,6 +1442,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let oauth_proxy_reset = oauth_proxy_reset.clone();
                 let managed_proxy_reset = managed_proxy_reset.clone();
                 let invitation_acceptance_reset = invitation_acceptance_reset.clone();
+                let invitation_lifecycle_reset = invitation_lifecycle_reset.clone();
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
                     api_key_storage_reset.reset().await;
@@ -1472,6 +1476,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         return (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"message":error.to_string()})));
                     }
                     invitation_acceptance_reset.reset().await;
+                    invitation_lifecycle_reset.reset().await;
                     anonymous_reset.reset();
                     user_validation_app.reset();
                     verification_storage_reset.reset();
@@ -2105,6 +2110,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(anonymous_router)
         .merge(membership_router)
         .merge(invitation_acceptance_router)
+        .merge(invitation_lifecycle_router)
         .merge(verification_profile_router)
         .merge(session_profile_router)
         .merge(bearer_router)

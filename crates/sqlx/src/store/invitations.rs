@@ -38,16 +38,30 @@ where
     S::Session: SqlxSessionModel,
 {
     async fn create_invitation(&self, invitation: CreateInvitation) -> AuthResult<Invitation> {
+        self.create_invitation_with_options(
+            invitation,
+            better_auth_core::store::InvitationCreateOptions::default(),
+        )
+        .await
+    }
+    async fn create_invitation_with_options(
+        &self,
+        invitation: CreateInvitation,
+        options: better_auth_core::store::InvitationCreateOptions,
+    ) -> AuthResult<Invitation> {
         let mut active = ActiveRow::new();
-        active.set("id", Uuid::new_v4().to_string());
+        active.set(
+            "id",
+            options.id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+        );
         active.set("organization_id", invitation.organization_id);
         active.set("email", invitation.email);
         active.set("role", invitation.role);
         active.set("team_id", invitation.team_id);
-        active.set("status", InvitationStatus::Pending.to_string());
+        active.set("status", options.status.unwrap_or_default().to_string());
         active.set("inviter_id", invitation.inviter_id);
         active.set("expires_at", invitation.expires_at);
-        active.set("created_at", Utc::now());
+        active.set("created_at", options.created_at.unwrap_or_else(Utc::now));
         model::insert::<Model>(self.exec(), &active)
             .await
             .map(|model| Invitation::from(&model))
@@ -282,6 +296,51 @@ where
             .map(Invitation::from))
     }
 
+    async fn pending_invitation_page(
+        &self,
+        org_id: &str,
+        email: Option<&str>,
+    ) -> AuthResult<Vec<Invitation>> {
+        let mut sql = model::select_model::<Model>(self.exec());
+        sql.push(" WHERE ");
+        sql.compare(Model::TABLE, "organization_id", " = ", org_id);
+        sql.push(" AND ");
+        sql.compare(
+            Model::TABLE,
+            "status",
+            " = ",
+            InvitationStatus::Pending.to_string(),
+        );
+        if let Some(email) = email {
+            sql.push(" AND ");
+            sql.compare(Model::TABLE, "email", " = ", email.to_lowercase());
+        }
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
+        Ok(self
+            .exec()
+            .fetch_all::<Model>(sql)
+            .await?
+            .iter()
+            .map(Invitation::from)
+            .collect())
+    }
+    async fn update_invitation_expiry(
+        &self,
+        id: &str,
+        expires_at: chrono::DateTime<Utc>,
+    ) -> AuthResult<Invitation> {
+        let model = self
+            .find_invitation(id)
+            .await?
+            .ok_or_else(|| AuthError::not_found("Invitation not found"))?;
+        let mut active = model.into_active();
+        active.set("expires_at", expires_at);
+        model::update::<Model>(self.exec(), &active)
+            .await?
+            .map(|model| Invitation::from(&model))
+            .ok_or_else(record_not_updated)
+    }
     async fn get_pending_invitation(
         &self,
         org_id: &str,
@@ -330,9 +389,8 @@ where
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
         sql.compare(Model::TABLE, "organization_id", " = ", org_id);
-        sql.push(" ORDER BY ");
-        sql.column(Model::TABLE, "created_at");
-        sql.push(" DESC");
+        sql.push(" LIMIT ");
+        sql.bind(self.find_many_limit());
         Ok(self
             .exec()
             .fetch_all::<Model>(sql)
