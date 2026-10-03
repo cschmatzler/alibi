@@ -248,7 +248,15 @@ impl ApiKeyPlugin {
             } else if config.custom_storage.is_some() {
                 format!("custom:{}", config.config_id)
             } else {
-                format!("secondary:{}", config.fallback_to_database)
+                format!(
+                    "secondary:{:p}:{}",
+                    config
+                        .secondary_storage
+                        .as_ref()
+                        .map_or(std::ptr::null::<()>(), |storage| Arc::as_ptr(storage)
+                            .cast::<()>()),
+                    config.fallback_to_database
+                )
             };
             if stores.insert(identifier) {
                 for key in config.list_stored_keys(ctx, reference).await? {
@@ -284,10 +292,16 @@ pub(super) async fn read_storage(
     } else {
         id_index(value)
     };
-    Ok(storage
-        .get(&index)
-        .await?
-        .and_then(|data| serde_json::from_str(&data).ok()))
+    let Some(data) = storage.get(&index).await? else {
+        return Ok(None);
+    };
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&data) else {
+        return Ok(None);
+    };
+    if let Some(metadata) = value.get_mut("metadata") {
+        *metadata = serde_json::Value::String(serde_json::to_string(metadata)?);
+    }
+    Ok(serde_json::from_value(value).ok())
 }
 pub(super) async fn write_storage(
     storage: &dyn ApiKeyStorage,
@@ -301,15 +315,38 @@ pub(super) async fn write_storage(
         .map(|date| date.signed_duration_since(Utc::now()).num_seconds())
         .filter(|seconds| *seconds > 0)
         .map(Duration::seconds);
-    let data = serde_json::to_string(key)?;
+    let mut value = serde_json::to_value(key)?;
+    value["metadata"] = key
+        .metadata
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()?
+        .unwrap_or(serde_json::Value::Null);
+    if !fallback && key.permissions.is_none() {
+        drop(
+            value
+                .as_object_mut()
+                .ok_or_else(|| AuthError::internal("Invalid API key"))?
+                .remove("permissions"),
+        );
+    }
+    let data = serde_json::to_string(&value)?;
     let hash = hash_index(&key.key_hash);
     let id = id_index(&key.id);
-    let (a, b) = tokio::join!(storage.set(&hash, &data, ttl), storage.set(&id, &data, ttl));
-    a?;
-    b?;
     if fallback {
-        storage.delete(&ref_index(&key.reference_id)).await
+        let reference = ref_index(&key.reference_id);
+        let (a, b, c) = tokio::join!(
+            storage.set(&hash, &data, ttl),
+            storage.set(&id, &data, ttl),
+            storage.delete(&reference)
+        );
+        a?;
+        b?;
+        c
     } else {
+        let (a, b) = tokio::join!(storage.set(&hash, &data, ttl), storage.set(&id, &data, ttl));
+        a?;
+        b?;
         modify_reference(storage, &key.reference_id, &key.id, true).await
     }
 }
@@ -366,12 +403,15 @@ pub(super) async fn remove_storage(
 ) -> AuthResult<()> {
     let hash = hash_index(&key.key_hash);
     let id = id_index(&key.id);
-    let (a, b) = tokio::join!(storage.delete(&hash), storage.delete(&id));
+    let reference = ref_index(&key.reference_id);
+    let (a, b, c) = tokio::join!(storage.delete(&hash), storage.delete(&id), async {
+        if fallback {
+            storage.delete(&reference).await
+        } else {
+            modify_reference(storage, &key.reference_id, &key.id, false).await
+        }
+    });
     a?;
     b?;
-    if fallback {
-        storage.delete(&ref_index(&key.reference_id)).await
-    } else {
-        modify_reference(storage, &key.reference_id, &key.id, false).await
-    }
+    c
 }

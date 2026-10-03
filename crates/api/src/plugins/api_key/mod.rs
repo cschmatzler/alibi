@@ -3730,7 +3730,9 @@ mod crud_tests {
         }
     }
     #[derive(Default)]
-    struct ApplicationCompletions(std::sync::Mutex<Vec<better_auth_core::BackgroundTaskCompletion>>);
+    struct ApplicationCompletions(
+        std::sync::Mutex<Vec<better_auth_core::BackgroundTaskCompletion>>,
+    );
     impl better_auth_core::BackgroundTaskHandler for ApplicationCompletions {
         fn handle(&self, completion: better_auth_core::BackgroundTaskCompletion) -> AuthResult<()> {
             self.0.lock().unwrap().push(completion);

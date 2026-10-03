@@ -380,7 +380,14 @@ pub(in crate::plugins) async fn list_keys_core(
         let _ignored_resolve_configuration = plugin.resolve_configuration(config_id)?;
     }
 
-    let keys = plugin.list_storage_keys(ctx, reference_id).await?;
+    let keys = if let Some(config_id) = config_id {
+        plugin
+            .resolve_configuration(Some(config_id))?
+            .list_stored_keys(ctx, reference_id)
+            .await?
+    } else {
+        plugin.list_storage_keys(ctx, reference_id).await?
+    };
     let mut views: Vec<ApiKeyView> = keys
         .iter()
         .filter(|key| {
@@ -390,7 +397,8 @@ pub(in crate::plugins) async fn list_keys_core(
                 .find(|config| super::config_id_matches(&key.config_id, &config.config_id))
                 .map(|config| config.references)
                 .unwrap_or_default();
-            key_references == references
+            key.reference_id == reference_id
+                && key_references == references
                 && config_id.is_none_or(|id| super::config_id_matches(&key.config_id, id))
         })
         .map(ApiKeyView::from)
