@@ -230,9 +230,9 @@ for (const provider of Object.keys(contracts) as Array<keyof typeof contracts>)
           expect(grant.code_verifier).toMatch(/^[A-Za-z0-9_-]+$/);
           expect(
             createHash("sha256")
-              .update(grant.code_verifier)
+              .update(grant.code_verifier as string)
               .digest("base64url"),
-          ).toBe(completed.url.searchParams.get("code_challenge"));
+          ).toBe(completed.url.searchParams.get("code_challenge")!);
         }
         if (provider === "twitter")
           expect(
@@ -517,3 +517,142 @@ for (const provider of ["spotify", "wechat", "vercel"] as const) {
     ["GET /callback/{}", "POST /get-access-token"],
   );
 }
+
+// Exercise the changed persistence branch, including Zoom's absent options.
+for (const provider of providers) {
+  compatScenario(
+    `provider batch ${provider} override updates only original owned profile`,
+    async (ctx) => {
+      await control(ctx, provider);
+      const first = await flow(ctx, provider, "override");
+      expect(first.response.headers.get("location")).toBe("/dashboard");
+      const before = await first.actor.client.getSession();
+      const updated: any = structuredClone(inputs[provider]);
+      const data =
+        provider === "notion"
+          ? updated.bot.owner.user
+          : provider === "tiktok"
+            ? updated.data.user
+            : provider === "twitter"
+              ? updated.data
+              : provider === "vk"
+                ? updated.user
+                : updated;
+      const nameKey =
+        provider === "polar"
+          ? "public_name"
+          : ["roblox", "wechat"].includes(provider)
+            ? "nickname"
+            : provider === "twitch"
+              ? "preferred_username"
+              : ["spotify", "tiktok"].includes(provider)
+                ? "display_name"
+                : "name";
+      if (provider === "vk") {
+        data.first_name = "Updated";
+        data.last_name = "Name";
+      } else if (provider === "zoom") data.display_name = "Updated Name";
+      else data[nameKey] = "Updated Name";
+      await control(ctx, provider, { profile: updated });
+      const second = await flow(ctx, provider, "override");
+      expect(second.response.headers.get("location")).toBe("/dashboard");
+      const after = await second.actor.client.getSession();
+      expect(after.data?.user.id).toBe(before.data?.user.id);
+      expect(after.data?.user.name).toBe(
+        provider === "zoom" ? "Batch Name" : "Updated Name",
+      );
+      const sql: any = await read(ctx, "sql-state");
+      const source = "user" in sql;
+      expect(sql[source ? "user" : "users"]).toHaveLength(1);
+      expect(sql[source ? "account" : "accounts"]).toHaveLength(1);
+      expect(sql[source ? "session" : "sessions"]).toHaveLength(2);
+      expect(
+        sql[source ? "account" : "accounts"][0][
+          source ? "accountId" : "account_id"
+        ],
+      ).toBe("batch-subject");
+      await archive(ctx, `${provider}-override`, { before, after });
+      return { before: ctx.snapshot(before), after: ctx.snapshot(after) };
+    },
+    ["GET /callback/{}", "GET /get-session"],
+  );
+}
+
+for (const provider of ["spotify", "wechat", "vercel"] as const) {
+  compatScenario(
+    `provider batch ${provider} refresh callback follows factory support`,
+    async (ctx) => {
+      await control(ctx, provider);
+      const completed = await flow(ctx, provider, "refresh-callback");
+      expect(completed.response.headers.get("location")).toBe("/dashboard");
+      const sql: any = await read(ctx, "sql-state");
+      const source = "user" in sql;
+      const account = sql[source ? "account" : "accounts"][0];
+      const token = await completed.actor.client.refreshToken({
+        accountId: String(account.id),
+      });
+      const callbacks: any[] = await read(ctx, "callbacks");
+      if (provider === "vercel") {
+        expect(token.error?.code).toBe("TOKEN_REFRESH_NOT_SUPPORTED");
+        expect(callbacks).toEqual([]);
+        expect(await read(ctx, "sql-state")).toEqual(sql);
+      } else {
+        expect(token.error).toBeNull();
+        expect(token.data?.accessToken).toBe("callback-access");
+        expect(token.data?.refreshToken).toBe("callback-refresh");
+        expect(callbacks).toEqual([
+          { kind: "refresh", provider, refreshToken: "batch-refresh" },
+        ]);
+        const after: any = await read(ctx, "sql-state");
+        expect(
+          after[source ? "account" : "accounts"][0][
+            source ? "accessToken" : "access_token"
+          ],
+        ).toBe("callback-access");
+        expect(
+          after[source ? "account" : "accounts"][0][
+            source ? "refreshToken" : "refresh_token"
+          ],
+        ).toBe("callback-refresh");
+        expect(after[source ? "user" : "users"]).toEqual(
+          sql[source ? "user" : "users"],
+        );
+        expect(after[source ? "session" : "sessions"]).toEqual(
+          sql[source ? "session" : "sessions"],
+        );
+      }
+      await archive(ctx, `${provider}-refresh-callback`, { token });
+      return { token: ctx.snapshot(token), callbacks };
+    },
+    ["POST /refresh-token"],
+  );
+}
+
+compatScenario(
+  "provider batch stored scopes use comma boundaries and JavaScript trim",
+  async (ctx) => {
+    await control(ctx, "wechat", {
+      tokenResponse: {
+        access_token: "batch-access",
+        openid: "batch-subject",
+        refresh_token: "batch-refresh",
+        expires_in: 3600,
+        scope: "\u0085alpha\u0085,\ufeffbeta\ufeff",
+      },
+    });
+    const completed = await flow(ctx, "wechat", "default");
+    expect(completed.response.headers.get("location")).toBe("/dashboard");
+    const sql: any = await read(ctx, "sql-state");
+    const source = "user" in sql;
+    const account = sql[source ? "account" : "accounts"][0];
+    expect(account.scope).toBe("\u0085alpha\u0085,\ufeffbeta\ufeff");
+    const token = await completed.actor.client.getAccessToken({
+      accountId: String(account.id),
+    });
+    expect(token.error).toBeNull();
+    expect(token.data?.scopes).toEqual(["\u0085alpha\u0085", "beta"]);
+    await archive(ctx, "stored-scopes", { token });
+    return { token: ctx.snapshot(token), storedScope: account.scope };
+  },
+  ["POST /get-access-token"],
+);

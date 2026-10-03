@@ -1,5 +1,8 @@
 # Railway provider contract (issue #158)
 
+Historical bounded slice. Its production residuals are superseded by [consolidated PR #374](provider-batch-154-170.md); observations and failures below remain historical evidence.
+
+
 Authority: authentic published `@better-auth/core` **1.7.6** tarball's `dist/social-providers/railway.mjs`, declarations and actual authorization, token-auth, code, refresh and expiry helpers. Both installed factories are byte-identical to that tarball. The reference fixture executes the unchanged published factory and redirects only its fixed token/userinfo HTTP destinations. Dependencies are hardlinked; no installed package is mutated. Official-client owner: `tests/core/social/railway.test.ts`.
 
 Authoring gate: this owner protects Railway's actual ordered scopes, fixed destinations, Basic grant authentication, S256 proof binding, direct profile mapping and original `sub` account authority. Credible regressions include replacing Basic with form credentials, removing PKCE, copying Polar's scope order/name fallback, trusting `email_verified`, or allowing mapper ID to replace raw identity. Existing generic or sibling tests cannot exercise Railway's factory. Table variants share setup and production entry points. Fixtures provide responses/receipts, never callback admission or auth-row writes. Comparator, raw observations, pins and excluded package boundaries remain unchanged.

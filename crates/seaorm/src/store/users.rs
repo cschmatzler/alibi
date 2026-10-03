@@ -29,8 +29,8 @@ pub(super) fn user_query<M: SeaOrmUserModel>(
     for column in <M::Entity as EntityTrait>::Column::iter() {
         if column.to_string() == verification_name {
             query = query.column_as(Expr::cust_with_exprs(
-                "CASE WHEN typeof($1) IN ('integer', 'real') THEN $1 = 1 WHEN $1 IS NULL THEN NULL ELSE $1 <> '' END",
-                [Expr::col(column)],
+                "CASE WHEN typeof(?) IN ('integer', 'real') THEN ? = 1 WHEN ? IS NULL THEN NULL ELSE ? <> '' END",
+                [Expr::col(column), Expr::col(column), Expr::col(column), Expr::col(column)],
             ),column);
         } else {
             query = query.column(column);
@@ -52,8 +52,8 @@ pub(super) async fn provider_verification_output<M: SeaOrmUserModel, C: Connecti
         return Ok(None);
     };
     let query = Query::select().expr_as(Expr::cust_with_exprs(
-        "CASE typeof($1) WHEN 'text' THEN json_quote($1) WHEN 'null' THEN 'null' ELSE CASE WHEN $1 = 1 THEN 'true' ELSE 'false' END END",
-        [Expr::col(column)],
+        "CASE typeof(?) WHEN 'text' THEN json_quote(?) WHEN 'null' THEN 'null' ELSE CASE WHEN ? = 1 THEN 'true' ELSE 'false' END END",
+        [Expr::col(column), Expr::col(column), Expr::col(column)],
     ), sea_orm::sea_query::Alias::new("provider_verification"))
         .from(M::Entity::default().table_ref())
         .and_where(M::id_column().eq(M::parse_id(id)?)).to_owned();
@@ -145,7 +145,7 @@ async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
             values.push(physical.save_as(expression));
         }
         returning.push(if verification_column && db.get_database_backend() == sea_orm::DbBackend::Sqlite {
-            Expr::cust_with_exprs("CASE WHEN typeof($1) IN ('integer', 'real') THEN $1 = 1 WHEN $1 IS NULL THEN NULL ELSE $1 <> '' END AS $2",[Expr::col(physical),Expr::col(physical)])
+            Expr::cust_with_exprs("CASE WHEN typeof(?) IN ('integer', 'real') THEN ? = 1 WHEN ? IS NULL THEN NULL ELSE ? <> '' END AS ?",[Expr::col(physical),Expr::col(physical),Expr::col(physical),Expr::col(physical),Expr::col(physical)])
         } else { Expr::col(physical) });
     }
     let statement = if let Some(id) = id {

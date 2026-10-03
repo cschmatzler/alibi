@@ -130,7 +130,7 @@ fn scopes(account: &AccountCookiePayload) -> Vec<String> {
         .as_deref()
         .unwrap_or_default()
         .split(',')
-        .map(str::trim)
+        .map(|scope| scope.trim_matches(super::providers::remaining_profile::js_whitespace))
         .filter(|scope| !scope.is_empty())
         .map(str::to_owned)
         .collect()

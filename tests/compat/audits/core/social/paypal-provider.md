@@ -1,5 +1,8 @@
 # PayPal provider contract (issue #156)
 
+Historical bounded slice. Its production residuals are superseded by [consolidated PR #374](provider-batch-154-170.md); observations and failures below remain historical evidence.
+
+
 Authority: the installed, published Better Auth **1.7.6** `@better-auth/core/dist/social-providers/paypal.mjs`, its declarations and OAuth authorization/token helpers. The official-client owner is `tests/core/social/paypal.test.ts`. Source runs its unchanged factory against deterministic local HTTP. Native uses `OAuthProvider::paypal_with_options`; transport rewrites follow the actual factory's original token/userinfo destinations and retain those destinations in real HTTP receipts. Controls supply provider responses, never callback admission or SQL rows. The shared comparator and excluded packages are unchanged.
 
 Authoring gate: this boundary protects PayPal's empty scopes, sandbox/live destination selection, PKCE, Basic authentication on both grants, versioned userinfo query, decoded token/profile subject consistency and independently persisted `user_id`. Credible regressions include merging requested scopes, using post authentication on refresh, selecting live by default, omitting the query or using OIDC/mapper IDs as account authority. Sibling owners cannot exercise this factory. Table-driven profile and proof cases have distinct observable contracts; no private-helper test or new production-only test export is introduced. Full users/accounts/sessions and foreign rows remain in comparisons.

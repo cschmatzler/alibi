@@ -1,5 +1,8 @@
 # Polar provider contract (issue #157)
 
+Historical bounded slice. Its production residuals are superseded by [consolidated PR #374](provider-batch-154-170.md); observations and failures below remain historical evidence.
+
+
 Authority: published Better Auth **1.7.6** `@better-auth/core/dist/social-providers/polar.mjs`, its `polar.d.mts` declarations, and the installed authorization/code/refresh/token-auth helpers. The downloaded factory and installed factory are byte-identical. The unchanged factory runs in `polar-provider-fixture.ts`; only its two fixed HTTP destinations are redirected to deterministic local HTTP. Native uses the public factory plus trusted application transport overrides. Fixtures supply HTTP responses and retain actual receipts; they never admit callbacks or write auth rows. The official client owner is `tests/core/social/polar.test.ts`. Comparator rules, package pins and excluded package boundaries are unchanged.
 
 Authoring gate: Polar's factory boundary protects its ordered defaults, PKCE, prompt precedence, production destinations, form credentials, two-level name fallback and original profile account identity. Credible regressions include removing PKCE, deduplicating scopes, forwarding login hints, substituting sandbox endpoints, using Basic authentication, collapsing raw null/absence, or allowing mapped IDs to replace account identity. Existing owners cannot exercise Polar's actual factory. Variants share tables and use production entry points; no private helper test or production test-only export is added.

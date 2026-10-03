@@ -278,7 +278,7 @@ pub(crate) async fn router(
                     .rate_limit(RateLimitConfig::new().enabled(false))
                     .plugin(EmailPasswordPlugin::new().enable_username(false))
                     .plugin(SessionManagementPlugin::new())
-                    .plugin(OAuthPlugin::new().add_provider(*provider_id, provider))
+                    .plugin(OAuthPlugin::new().add_provider(provider_id, provider))
                     .build()
                     .await?,
             );

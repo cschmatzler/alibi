@@ -1,5 +1,8 @@
 # Paybin provider contract (issue #155)
 
+Historical bounded slice. Its production residuals are superseded by [consolidated PR #374](provider-batch-154-170.md); observations and failures below remain historical evidence.
+
+
 Authority: published Better Auth **1.7.6** `@better-auth/core/dist/social-providers/paybin.mjs`, its declarations, account-subject resolver, authorization helper and code/refresh token helpers. The unchanged published Source factory runs on deterministic local HTTP: only its actual fixed issuer token destinations are redirected. Native uses `OAuthProvider::paybin` / `paybin_with_options(PaybinOptions)`. Controls supply grant responses, never callback admission or database rows. The official-client owner is `tests/core/social/paybin.test.ts`.
 
 Authoring gate: this owner independently protects Paybin's issuer endpoint construction, PKCE grant, ordered scopes, decoded grant-profile fallback and original account subject. Credible regressions include normalizing issuer slashes, deduplicating scopes, dropping PKCE, using Basic credentials, fetching an invented userinfo URL, replacing raw subject with mapper ID, or inventing JWT verification. Other provider owners do not instantiate this factory. Mapping variants share one table; lifecycle cases retain actual transport and persisted owner/foreign rows. No production test-only seam is added. Optional `COMPAT_OBSERVATIONS_DIR` diagnostics retain both complete observations and raw traces before the unchanged comparator runs.
