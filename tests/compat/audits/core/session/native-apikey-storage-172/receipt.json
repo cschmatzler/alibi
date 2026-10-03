@@ -1,0 +1,32 @@
+{
+  "issue": 172,
+  "pr": "https://github.com/cschmatzler/better-auth-rs/pull/405",
+  "base": "f12408bb12e1be3cd713db96413b19ccb57e627a",
+  "productionCheckpoint": "c5b19e26",
+  "focusedCheckpoint": "7d8b71ca",
+  "sourceVersion": "1.7.6",
+  "compileSelection": "cargo test --test integration --features seaorm: default SQLx features plus actual SeaORM Backend implementation; NoDB uses StatelessSchema/StatelessStore from without_database, no database connection",
+  "checks": {
+    "initialFocused": "3 passed: actual SQLx, actual SeaORM, true NoDB",
+    "additionalNativeControls": "1 passed: real multithreaded refill CAS and distinct combined-operation fractional quota/rate rejection",
+    "rawPairs": "48 original pairs, statuses/top-level key sets/error codes agree; generated values remain different",
+    "clippyProduction": "strict blocked by existing core endpoint.rs double_must_use; passes with only that lint category allowed",
+    "sourceIntegrity": "365 published mjs modules match fresh npm 1.7.6 tarballs; link counts 1"
+  },
+  "actionsEnabled": false,
+  "remaining": [
+    "organization/member/invitation/team/role, device-code and JWK native storage",
+    "cache-aware interfaces for physical application models",
+    "lossless unpaired UTF-16 API-key start schema",
+    "exhaustive concurrency/callback-failure differential coverage",
+    "independent second-agent review",
+    "whole issue 172 closure"
+  ],
+  "sha256": {
+    "crates/core/src/store/stateless.rs": "849b6a29f4ecfd6ab1040212a84289c399950ad283214b831b3aa02693c7c48c",
+    "crates/core/src/store/stateless/api_keys.rs": "2acf23d71425f1ac5417aeee6ea64ed177aae72c3d19efcaf113f8a8dad8d3f1",
+    "crates/api/src/plugins/api_key/endpoint.rs": "65f04a9403bcac30dec1efcc2b5de974bd9c7e77e8e7fd9cd8fde20da1a06fef",
+    "tests/integration/storage/native_api_keys.rs": "cbf6d5a559c3f7d569ca4e0ab31fbaf740e33ec7bf738c6f907daa1f700efe58",
+    "tests/compat/reference-server/fixtures/native-apikey-172-evidence.ts": "67c7bdc9e5454aa6e9562aa7f972634383c1fcdc461a7540eeadf2d878b9561c"
+  }
+}
