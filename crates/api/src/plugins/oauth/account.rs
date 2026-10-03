@@ -212,6 +212,7 @@ async fn persist_tokens(
 async fn valid_access_token(
     account: &mut AccountCookiePayload,
     config: &OAuthConfig,
+    req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<(AccessTokenResponse, bool)> {
     let provider = config.providers.get(&account.provider_id).ok_or_else(|| {
@@ -238,9 +239,13 @@ async fn valid_access_token(
         let refresh_token = maybe_decrypt_with_config(Some(stored_refresh), encrypted, &ctx.config)
             .map_err(|_error| access_token_failure())?
             .unwrap_or_default();
-        let tokens = refresh_tokens_via_provider(provider, &refresh_token)
-            .await
-            .map_err(|_error| access_token_failure())?;
+        let tokens = refresh_tokens_via_provider(
+            provider,
+            &refresh_token,
+            Some(super::providers::OAuthRefreshContext { request: req }),
+        )
+        .await
+        .map_err(|_error| access_token_failure())?;
         persist_tokens(account, &tokens, ctx, provider)
             .await
             .map_err(|_error| access_token_failure())?;
@@ -307,7 +312,7 @@ pub(super) async fn handle_get_access_token(
         Err(error) => return Err(error),
     };
     let mut account = selection.resolve(req, &session.user_id, ctx).await?;
-    let (response, refreshed) = valid_access_token(&mut account, config, ctx).await?;
+    let (response, refreshed) = valid_access_token(&mut account, config, req, ctx).await?;
     token_response(&response, &account, refreshed, req, ctx)
 }
 
@@ -366,9 +371,13 @@ pub(super) async fn handle_refresh_token(
     )
     .map_err(|_error| refresh_token_failure())?
     .unwrap_or_default();
-    let tokens = refresh_tokens_via_provider(provider, &refresh_token)
-        .await
-        .map_err(|_error| refresh_token_failure())?;
+    let tokens = refresh_tokens_via_provider(
+        provider,
+        &refresh_token,
+        Some(super::providers::OAuthRefreshContext { request: req }),
+    )
+    .await
+    .map_err(|_error| refresh_token_failure())?;
     persist_tokens(&mut account, &tokens, ctx, provider)
         .await
         .map_err(|_error| refresh_token_failure())?;
@@ -467,7 +476,7 @@ pub(super) async fn handle_account_info(
             code: "PROVIDER_NOT_CONFIGURED",
             message: "Account is not associated with a configured social provider.",
         })?;
-    let (tokens, refreshed) = valid_access_token(&mut account, config, ctx).await?;
+    let (tokens, refreshed) = valid_access_token(&mut account, config, req, ctx).await?;
     let access_token = tokens
         .access_token
         .filter(|token| !token.is_empty())

@@ -42,6 +42,10 @@ export const FIXTURE_PROFILES = [
     "conflict",
     "refresh-basic-secret",
     "refresh-none-secret",
+    "dynamic",
+    "dynamic-none",
+    "dynamic-error",
+    "dynamic-custom",
   ] as const),
   ...(
     [

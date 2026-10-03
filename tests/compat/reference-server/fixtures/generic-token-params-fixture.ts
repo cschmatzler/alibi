@@ -82,9 +82,13 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "conflict",
     "refresh-basic-secret",
     "refresh-none-secret",
+    "dynamic",
+    "dynamic-none",
+    "dynamic-error",
+    "dynamic-custom",
   ]) {
     const path = `/__test/profiles/generic-token-${mode}/api/auth`;
-    const configuredMode = mode.replace(/^refresh-/, "");
+    const configuredMode = mode.startsWith("dynamic") ? "post" : mode.replace(/^refresh-/, "");
     profiles.set(
       path,
       betterAuth<BetterAuthOptions>({
@@ -119,10 +123,75 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                 userInfoUrl: `${transport.url}user`,
                 scopes: ["profile"],
                 tokenUrlParams: params(mode, false),
-                refreshTokenParams: params(mode, true),
+                refreshTokenParams: mode.startsWith("dynamic")
+                  ? async (ctx) => {
+                      await Promise.resolve();
+                      const tenant = ctx?.headers?.get("x-refresh-tenant");
+                      const cookie =
+                        ctx?.headers
+                          ?.get("cookie")
+                          ?.split(";")
+                          .map((x) => x.trim())
+                          .find((x) => x.startsWith("refresh_meta="))
+                          ?.slice("refresh_meta=".length) ?? null;
+                      receipts.push({
+                        kind: "params",
+                        tenant,
+                        cookie,
+                        method: ctx?.request?.method ?? null,
+                        path: ctx?.request ? new URL(ctx.request.url).pathname : null,
+                      });
+                      if (mode === "dynamic-error") throw new Error("refresh policy rejected");
+                      if (mode === "dynamic-none") return undefined;
+                      if (!["allowed-one", "allowed-two"].includes(tenant ?? "")) {
+                        throw new Error("tenant not allowed");
+                      }
+                      return {
+                        resource: `tenant ${tenant} :+&=/%é`,
+                        scope: `profile ${tenant}`,
+                        client_id: "wrong-client",
+                        client_secret: "wrong-secret",
+                        grant_type: "wrong-grant",
+                        refresh_token: "wrong-refresh",
+                      };
+                    }
+                  : params(mode, true),
               },
             ],
           }),
+          ...(mode === "dynamic-custom"
+            ? [
+                {
+                  id: "application-refresh",
+                  init(ctx: import("better-auth").AuthContext) {
+                    const provider = ctx.socialProviders.find((p) => p.id === "generic")!;
+                    provider.refreshAccessToken = async (refreshToken, context) => {
+                      await Promise.resolve();
+                      receipts.push({
+                        kind: "custom",
+                        refreshToken,
+                        tenant: context?.headers?.get("x-refresh-tenant") ?? null,
+                        cookie:
+                          context?.headers
+                            ?.get("cookie")
+                            ?.split(";")
+                            .map((x) => x.trim())
+                            .find((x) => x.startsWith("refresh_meta="))
+                            ?.slice("refresh_meta=".length) ?? null,
+                        method: context?.request?.method ?? null,
+                        path: context?.request ? new URL(context.request.url).pathname : null,
+                      });
+                      return {
+                        accessToken: "custom-access",
+                        refreshToken: "custom-refresh",
+                        accessTokenExpiresAt: new Date(Date.now() + 3600000),
+                        scopes: ["custom-scope"],
+                      };
+                    };
+                  },
+                },
+              ]
+            : []),
         ],
       }),
     );

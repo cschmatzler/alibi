@@ -9,7 +9,9 @@ use axum::{
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::oauth::{
-    OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
+    GenericOAuthConfig, OAuthAuthorizationPolicy, OAuthProvider, OAuthRefreshContext,
+    OAuthRefreshTokenHandler, OAuthRefreshTokenParams, OAuthRefreshTokenParamsResolver,
+    OAuthTokenEndpointAuth, OAuthTokenSet, OAuthUserInfo,
 };
 use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
@@ -80,6 +82,78 @@ fn params(mode: &str, refresh: bool) -> BTreeMap<String, String> {
     }
     result
 }
+struct DynamicParams {
+    fixture: Fixture,
+    mode: String,
+}
+#[async_trait::async_trait]
+impl OAuthRefreshTokenParamsResolver for DynamicParams {
+    async fn resolve(
+        &self,
+        context: Option<OAuthRefreshContext<'_>>,
+    ) -> Result<Option<BTreeMap<String, String>>, String> {
+        tokio::task::yield_now().await;
+        let req = context.map(|ctx| ctx.request);
+        let tenant = req.and_then(|r| r.headers.get("x-refresh-tenant"));
+        let cookie = req.and_then(|r| r.headers.get("cookie")).and_then(|c| {
+            c.split(';')
+                .map(str::trim)
+                .find_map(|part| part.strip_prefix("refresh_meta="))
+        });
+        self.fixture.receipts.lock().await.push(json!({"kind":"params", "tenant":tenant, "cookie":cookie, "method":req.map(|r| format!("{:?}", r.method).to_uppercase()), "path":req.and_then(|r| r.url()).map(url::Url::path)}));
+        if self.mode == "dynamic-error" {
+            return Err("refresh policy rejected".into());
+        }
+        if self.mode == "dynamic-none" {
+            return Ok(None);
+        }
+        let tenant = tenant
+            .filter(|t| ["allowed-one", "allowed-two"].contains(&t.as_str()))
+            .ok_or("tenant not allowed")?;
+        Ok(Some(
+            [
+                ("resource", format!("tenant {tenant} :+&=/%é")),
+                ("scope", format!("profile {tenant}")),
+                ("client_id", "wrong-client".into()),
+                ("client_secret", "wrong-secret".into()),
+                ("grant_type", "wrong-grant".into()),
+                ("refresh_token", "wrong-refresh".into()),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.into(), v))
+            .collect(),
+        ))
+    }
+}
+struct CustomRefresh(Fixture);
+#[async_trait::async_trait]
+impl OAuthRefreshTokenHandler for CustomRefresh {
+    async fn refresh_access_token(&self, _token: &str) -> Result<OAuthTokenSet, String> {
+        Err("request context missing".into())
+    }
+    async fn refresh_access_token_with_context(
+        &self,
+        token: &str,
+        context: Option<OAuthRefreshContext<'_>>,
+    ) -> Result<OAuthTokenSet, String> {
+        tokio::task::yield_now().await;
+        let req = context.map(|ctx| ctx.request);
+        let tenant = req.and_then(|r| r.headers.get("x-refresh-tenant"));
+        let cookie = req.and_then(|r| r.headers.get("cookie")).and_then(|c| {
+            c.split(';')
+                .map(str::trim)
+                .find_map(|part| part.strip_prefix("refresh_meta="))
+        });
+        self.0.receipts.lock().await.push(json!({"kind":"custom", "refreshToken":token, "tenant":tenant, "cookie":cookie, "method":req.map(|r| format!("{:?}", r.method).to_uppercase()), "path":req.and_then(|r| r.url()).map(url::Url::path)}));
+        Ok(OAuthTokenSet {
+            access_token: Some("custom-access".into()),
+            refresh_token: Some("custom-refresh".into()),
+            access_token_expires_at: Some(chrono::Utc::now() + chrono::Duration::hours(1)),
+            scopes: vec!["custom-scope".into()],
+            ..Default::default()
+        })
+    }
+}
 pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
@@ -99,10 +173,18 @@ pub(crate) async fn router(
         "conflict",
         "refresh-basic-secret",
         "refresh-none-secret",
+        "dynamic",
+        "dynamic-none",
+        "dynamic-error",
+        "dynamic-custom",
     ] {
         let path = format!("/__test/profiles/generic-token-{mode}/api/auth");
         let settings = config.clone().base_path(&path);
-        let configured_mode = mode.strip_prefix("refresh-").unwrap_or(mode);
+        let configured_mode = if mode.starts_with("dynamic") {
+            "post"
+        } else {
+            mode.strip_prefix("refresh-").unwrap_or(mode)
+        };
         let secret = if ["post", "basic", "basic-secret", "default-post"].contains(&configured_mode)
         {
             "secret :+&"
@@ -118,6 +200,12 @@ pub(crate) async fn router(
             },
             authorization_code_params: params(mode, false),
             refresh_token_params: params(mode, true),
+            refresh_token_params_resolver: mode.starts_with("dynamic").then(|| {
+                OAuthRefreshTokenParams(Arc::new(DynamicParams {
+                    fixture: fixture.clone(),
+                    mode: mode.into(),
+                }))
+            }),
             ..Default::default()
         };
         let provider = OAuthProvider {
@@ -144,13 +232,30 @@ pub(crate) async fn router(
                 })
             }),
             get_user_info: None,
-            refresh_access_token: None,
+            refresh_access_token: (mode == "dynamic-custom").then(|| {
+                Arc::new(CustomRefresh(fixture.clone())) as Arc<dyn OAuthRefreshTokenHandler>
+            }),
             verify_id_token: None,
             id_token: None,
             disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
             override_user_info_on_sign_in: false,
+        };
+        let provider = if mode.starts_with("dynamic") {
+            let mut generic = GenericOAuthConfig::new("client :+&", secret);
+            generic.authorization_url = Some(provider.auth_url.clone());
+            generic.token_url = Some(provider.token_url.clone());
+            generic.user_info_url = provider.user_info_url.clone();
+            generic.provider = provider;
+            generic
+                .resolve()
+                .await
+                .map_err(|e| better_auth::AuthError::config(e.to_string()))?
+                .ok_or_else(|| better_auth::AuthError::config("Generic fixture unavailable"))?
+                .provider
+        } else {
+            provider
         };
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(settings.clone())

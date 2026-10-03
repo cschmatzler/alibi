@@ -463,13 +463,35 @@ fn validate_authorization_params(
 pub(super) async fn refresh_tokens_via_provider(
     provider: &OAuthProvider,
     refresh_token: &str,
+    context: Option<super::providers::OAuthRefreshContext<'_>>,
 ) -> AuthResult<OAuthTokenSet> {
     if let Some(handler) = &provider.refresh_access_token {
         return handler
-            .refresh_access_token(refresh_token)
+            .refresh_access_token_with_context(refresh_token, context)
             .await
             .map_err(AuthError::internal);
     }
+
+    // Resolve once per real grant, without mutating the shared provider config.
+    let mut resolved_provider;
+    let provider = if let Some(resolver) = provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.refresh_token_params_resolver.as_ref())
+    {
+        let params = resolver
+            .0
+            .resolve(context)
+            .await
+            .map_err(AuthError::internal)?;
+        resolved_provider = provider.clone();
+        if let Some(policy) = &mut resolved_provider.authorization {
+            policy.refresh_token_params = params.unwrap_or_default();
+        }
+        &resolved_provider
+    } else {
+        provider
+    };
 
     let mut form = vec![
         ("grant_type", "refresh_token"),

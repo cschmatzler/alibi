@@ -231,6 +231,31 @@ pub(super) fn apply_application_mapping(
     Ok(())
 }
 
+/// Metadata of the request triggering an OAuth token refresh.
+/// Headers, cookies and body fields are untrusted. Applications must validate
+/// tenant/scope/audience entitlements before forwarding derived values.
+#[derive(Clone, Copy)]
+pub struct OAuthRefreshContext<'a> {
+    pub request: &'a better_auth_core::AuthRequest,
+}
+
+/// An asynchronous alternative to static `refreshTokenParams`.
+#[async_trait]
+pub trait OAuthRefreshTokenParamsResolver: Send + Sync {
+    async fn resolve(
+        &self,
+        context: Option<OAuthRefreshContext<'_>>,
+    ) -> Result<Option<std::collections::BTreeMap<String, String>>, String>;
+}
+
+#[derive(Clone)]
+pub struct OAuthRefreshTokenParams(pub Arc<dyn OAuthRefreshTokenParamsResolver>);
+impl std::fmt::Debug for OAuthRefreshTokenParams {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("OAuthRefreshTokenParams(..)")
+    }
+}
+
 #[async_trait]
 pub trait OAuthRefreshTokenHandler: Send + Sync {
     /// Reconfigure a factory transport that directly interpolates client IDs.
@@ -239,6 +264,16 @@ pub trait OAuthRefreshTokenHandler: Send + Sync {
     }
 
     async fn refresh_access_token(&self, refresh_token: &str) -> Result<OAuthTokenSet, String>;
+
+    /// Context-aware application handlers may override this method. Existing
+    /// factory handlers retain their token-only implementation.
+    async fn refresh_access_token_with_context(
+        &self,
+        refresh_token: &str,
+        _context: Option<OAuthRefreshContext<'_>>,
+    ) -> Result<OAuthTokenSet, String> {
+        self.refresh_access_token(refresh_token).await
+    }
 }
 
 #[async_trait]
@@ -570,6 +605,10 @@ pub struct OAuthAuthorizationPolicy {
     /// fields replace defaults; grant type and refresh token cannot be replaced.
     /// Validate tenant, scope, and audience entitlements before configuring them.
     pub refresh_token_params: std::collections::BTreeMap<String, String>,
+    /// When configured, replaces the static map at each default refresh grant.
+    /// `Ok(None)` supplies no additions; errors abort before transport/writes.
+    /// Custom refresh handlers take precedence and bypass this resolver.
+    pub refresh_token_params_resolver: Option<OAuthRefreshTokenParams>,
     /// Required by private_key_jwt; invoked afresh for each real token grant.
     pub client_assertion: Option<OAuthClientAssertion>,
     /// Exact configured refresh scope, including an explicitly empty value.
@@ -633,6 +672,7 @@ impl Default for OAuthAuthorizationPolicy {
             authorization_code_headers: Vec::new(),
             authorization_code_params: std::collections::BTreeMap::new(),
             refresh_token_params: std::collections::BTreeMap::new(),
+            refresh_token_params_resolver: None,
             client_assertion: None,
             refresh_scope: None,
             response_type: "code".into(),
