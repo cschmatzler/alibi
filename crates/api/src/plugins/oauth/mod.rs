@@ -19,7 +19,7 @@ use better_auth_core::AuthResult;
 use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
 use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 pub(in crate::plugins) use handlers::{
-    OAuthProcessPolicy, OAuthSignInError, create_account_cookie_header, process_oauth_sign_in,
+    OAuthProcessPolicy, OAuthSignInError, create_account_cookie_headers, process_oauth_sign_in,
 };
 pub use id_token::{
     HttpOAuthJwksSource, OAuthIdTokenClaimsVerifier, OAuthIdTokenConfig, OAuthJwksSelection,
@@ -178,12 +178,21 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         let Ok(Some(account)) = handlers::decode_account_cookie(req, &ctx.config) else {
             return Ok(response);
         };
-        let header = if account.user_id == user.id {
-            handlers::create_account_cookie_header(&ctx.config, &account)?
+        let headers = if account.user_id == user.id {
+            handlers::create_account_cookie_headers(&ctx.config, &account, req)?
         } else {
-            better_auth_core::utils::cookie_utils::create_clear_cookie(&account_name, &ctx.config)
+            better_auth_core::cache::runtime::chunked_cookie_headers(
+                &account_name,
+                "",
+                Some(0.0),
+                &ctx.config,
+                &req.headers,
+                true,
+            )?
         };
-        response.headers.append("set-cookie", header);
+        for header in headers {
+            response.headers.append("set-cookie", header);
+        }
         Ok(response)
     }
 }

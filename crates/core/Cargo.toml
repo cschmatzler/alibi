@@ -54,6 +54,7 @@ hmac = { workspace = true }
 jsonwebtoken = { workspace = true }
 aes-gcm = { workspace = true }
 hkdf = { workspace = true }
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 # Cache (optional)
 redis = { workspace = true, optional = true }

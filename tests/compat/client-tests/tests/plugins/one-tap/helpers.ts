@@ -84,6 +84,7 @@ export async function oneTap(
   let received: unknown;
   let sessionMaxAge: number | null = null;
   let accountCookie: z.infer<typeof accountCookieSchema> | null = null;
+  let accountChunkCount = 0;
   const browser = {
     document: {},
     googleScriptInitialized: true,
@@ -122,13 +123,24 @@ export async function oneTap(
       callbackURL,
       fetchOptions: {
         async onSuccess(context) {
-          const account = context.response.headers
-            .getSetCookie()
+          const rawCookies = context.response.headers.getSetCookie();
+          const accountCookies = rawCookies
             .map((value) => Cookie.parse(value))
-            .find((cookie) => cookie?.key.endsWith("account_data"));
-
-          if (account) {
-            const token = decodeURIComponent(account.value);
+            .filter(
+              (cookie) => cookie && /account_data(?:\.\d+)?$/.test(cookie.key) && cookie.value,
+            );
+          const account = accountCookies.find((cookie) => cookie?.key.endsWith("account_data"));
+          const chunks = accountCookies
+            .filter((cookie) => /\.\d+$/.test(cookie!.key))
+            .sort((a, b) => Number(a!.key.split(".").at(-1)) - Number(b!.key.split(".").at(-1)));
+          for (const raw of rawCookies.filter((raw) => /account_data(?:\.\d+)?=/.test(raw))) {
+            expect(raw.length).toBeLessThanOrEqual(4050);
+          }
+          accountChunkCount = chunks.length;
+          if (account || chunks.length) {
+            const token = decodeURIComponent(
+              account?.value ?? chunks.map((cookie) => cookie!.value).join(""),
+            );
             accountCookie = accountCookieSchema.parse({
               token,
               header: decodeProtectedHeader(token),
@@ -140,6 +152,12 @@ export async function oneTap(
             });
           }
 
+          if (process.env.COMPAT_OBSERVATIONS_DIR && accountCookie) {
+            await Bun.write(
+              `${process.env.COMPAT_OBSERVATIONS_DIR}/account-raw-${new URL(ctx.baseURL).port}-${Date.now()}.json`,
+              JSON.stringify({ rawCookies, accountCookie }, null, 2),
+            );
+          }
           const cookie = context.response.headers
             .getSetCookie()
             .map((value) => Cookie.parse(value))
@@ -159,6 +177,7 @@ export async function oneTap(
       location: browser.location.href,
       sessionMaxAge,
       accountCookie,
+      accountChunkCount,
     };
   } finally {
     if (original) {
@@ -184,6 +203,7 @@ export const responseSchema = z.object({
   location: z.string(),
   sessionMaxAge: z.number().nullable(),
   accountCookie: accountCookieSchema.nullable(),
+  accountChunkCount: z.number(),
 });
 
 export async function successful(

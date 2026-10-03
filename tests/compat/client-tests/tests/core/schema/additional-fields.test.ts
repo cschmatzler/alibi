@@ -2,7 +2,9 @@ import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { getCookieCache } from "better-auth/cookies";
+import { symmetricDecodeJWT } from "better-auth/crypto";
 import { verifyPassword } from "better-auth/crypto";
+import { decodeProtectedHeader } from "jose";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -1424,6 +1426,40 @@ compatScenario(
     expect(account).toMatchObject({ accountId: original.account_id, providerId: "atlassian" });
     expect(account.userId).not.toBe("mapped-public-id-184");
 
+    const rawAccountCookies = response.headers
+      .getSetCookie()
+      .filter((raw) => raw.startsWith("better-auth.account_data="));
+    expect(rawAccountCookies).toHaveLength(1);
+    const accountToken = decodeURIComponent(
+      rawAccountCookies[0]!.split(";")[0]!.slice("better-auth.account_data=".length),
+    );
+    const payload = await symmetricDecodeJWT<Record<string, unknown>>(
+      accountToken,
+      "compat-test-only-key-not-real-minimum-32chars",
+      "better-auth-account",
+    );
+    expect(payload).not.toBeNull();
+    expect(payload!.label).toEqual({ stored: "account-initial" });
+    expect(payload!.hidden).toBe("ACCOUNT-SECRET");
+    expect(payload!.exp).toBe(Number(payload!.iat) + 1.75);
+    expect(rawAccountCookies[0]).toContain("Max-Age=1");
+    expect(rawAccountCookies[0]).not.toContain("HttpOnly");
+    expect(rawAccountCookies[0]).toContain("SameSite=Strict");
+    if (process.env.COMPAT_OBSERVATIONS_DIR)
+      await Bun.write(
+        `${process.env.COMPAT_OBSERVATIONS_DIR}/custom-raw-${new URL(ctx.baseURL).port}.json`,
+        JSON.stringify(
+          { rawAccountCookies, accountToken, payload, physical: created.body },
+          null,
+          2,
+        ),
+      );
+    expect(Object.hasOwn(payload!, "omitted")).toBe(false);
+    const accountCookie = {
+      token: accountToken,
+      header: decodeProtectedHeader(accountToken),
+      payload,
+    };
     const info = await owner.client.$fetch("/account-info", {
       method: "GET",
       query: { accountId: account.id },
@@ -1536,6 +1572,27 @@ compatScenario(
       expect(updateSession.data?.user).not.toHaveProperty(name);
     }
 
+    const renewedRaw = updateCallback.headers
+      .getSetCookie()
+      .find((raw) => raw.startsWith("better-auth.account_data="))!;
+    const renewedToken = decodeURIComponent(
+      renewedRaw.split(";")[0]!.slice("better-auth.account_data=".length),
+    );
+    const renewedPayload = await symmetricDecodeJWT<Record<string, unknown>>(
+      renewedToken,
+      "compat-test-only-key-not-real-minimum-32chars",
+      "better-auth-account",
+    );
+    expect(renewedPayload!.label).toEqual(payload!.label);
+    expect(renewedPayload!.hidden).toBe(payload!.hidden);
+    expect(Object.hasOwn(renewedPayload!, "omitted")).toBe(false);
+    const renewed = {
+      accountCookie: {
+        token: renewedToken,
+        header: decodeProtectedHeader(renewedToken),
+        payload: renewedPayload,
+      },
+    };
     const updated = await ctx.rawRequest({
       path: "/__test/additional-fields/state?profile=provider",
     });
@@ -1590,6 +1647,8 @@ compatScenario(
     expect(exchanges.map((row) => row.path)).toEqual(["/token", "/me", "/me", "/token", "/me"]);
 
     return {
+      accountCookie,
+      renewed,
       foreignSignup: ctx.snapshot(foreignSignup),
       before: await observedState(before.body),
       start: ctx.snapshot(start),

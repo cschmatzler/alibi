@@ -293,10 +293,11 @@ impl OneTapPlugin {
             );
         }
         if let Some(cookie) = outcome.account_cookie.as_ref() {
-            response = response.with_appended_header(
-                "Set-Cookie",
-                crate::plugins::oauth::create_account_cookie_header(&ctx.config, cookie)?,
-            );
+            for header in
+                crate::plugins::oauth::create_account_cookie_headers(&ctx.config, cookie, req)?
+            {
+                response.headers.append("Set-Cookie", header);
+            }
         }
         Ok(response)
     }

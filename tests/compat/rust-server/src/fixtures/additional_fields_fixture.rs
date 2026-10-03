@@ -1,12 +1,12 @@
 //! Actual application columns, adapter callbacks and retained output observers.
 use crate::additional_field_models::{
-    ApplicationSchema, application_account, application_session, application_user,
+    application_account, application_session, application_user, ApplicationSchema,
 };
 use crate::backend::entities::verification;
 use axum::{
-    Json, Router,
     extract::Query,
     routing::{get, post},
+    Json, Router,
 };
 use better_auth::field_policy::{FieldConfig, FieldConfigs};
 use better_auth::integrations::axum::AxumIntegration;
@@ -20,16 +20,16 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::{
-    AuthAccount, AuthInitContext, AuthPlugin, AuthRoute, AuthSession, AuthUser,
     store::{AdapterAfterHook, AdapterEvent, AuthStore},
     utils::json::JsValue,
+    AuthAccount, AuthInitContext, AuthPlugin, AuthRoute, AuthSession, AuthUser,
 };
 use better_auth_seaorm::sea_orm::{
     ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement,
 };
 use better_auth_seaorm::{DatabaseHooks, HookControl};
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::{Arc, Mutex};
 
 type Events = Arc<Mutex<Vec<Value>>>;
@@ -585,6 +585,27 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
         format!("/__test/profiles/additional-{mode}-fields/api/auth")
     };
     let mut settings = config.clone().base_path(&path);
+    settings.account.store_account_cookie = mode == "provider";
+    if mode == "provider" {
+        settings.account.cookie_max_age = Some(1.75);
+        settings.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+            enabled: false,
+            max_age: 1.75,
+            ..Default::default()
+        });
+        settings.advanced.cookies.insert(
+            "account_data".into(),
+            better_auth_core::config::CookieOverride {
+                name: None,
+                attributes: better_auth_core::config::CookieAttributes {
+                    max_age: None,
+                    http_only: Some(false),
+                    same_site: Some(better_auth_core::config::SameSite::Strict),
+                    ..Default::default()
+                },
+            },
+        );
+    }
     settings.user.additional_fields = fields(
         "user",
         mode,
@@ -750,12 +771,10 @@ impl Application {
         let events = self.events.lock().expect("application receipts").clone();
         let mut state = json!({"users":users,"sessions":sessions,"accounts":accounts,"verifications":verifications,"events":events});
         if self.mode == "provider" {
-            state["mapperReceipts"] = json!(
-                MAPPER_RECEIPTS
-                    .lock()
-                    .expect("application mapper receipts")
-                    .clone()
-            );
+            state["mapperReceipts"] = json!(MAPPER_RECEIPTS
+                .lock()
+                .expect("application mapper receipts")
+                .clone());
         }
         Ok(state)
     }

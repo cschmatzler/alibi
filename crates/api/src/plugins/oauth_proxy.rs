@@ -1,7 +1,7 @@
 //! OAuth code exchange on a production host, followed by stateful completion on
 //! the originating preview host with database or authenticated cookie state.
 use super::oauth::handlers::{
-    OAuthSignInError, complete_link_social, create_account_cookie_header,
+    OAuthSignInError, complete_link_social, create_account_cookie_headers,
     fetch_user_info_from_provider, parse_callback_user_payload, process_oauth_sign_in,
     validate_authorization_code_via_provider,
 };
@@ -672,10 +672,9 @@ impl OAuthProxyPlugin {
             ),
         );
         if let Some(account) = outcome.account_cookie.as_ref() {
-            response = response.with_appended_header(
-                "Set-Cookie",
-                create_account_cookie_header(&ctx.config, account)?,
-            );
+            for header in create_account_cookie_headers(&ctx.config, account, req)? {
+                response.headers.append("Set-Cookie", header);
+            }
         }
         Ok(response)
     }

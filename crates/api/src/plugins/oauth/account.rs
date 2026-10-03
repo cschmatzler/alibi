@@ -2,7 +2,7 @@ use super::encryption::{
     encrypt_provider_token_set, maybe_decrypt_with_config, provider_token_nulls,
 };
 use super::handlers::{
-    create_account_cookie_header, decode_account_cookie, fetch_user_info_from_provider,
+    create_account_cookie_headers, decode_account_cookie, fetch_user_info_from_provider,
     refresh_tokens_via_provider,
 };
 use super::providers::{OAuthConfig, OAuthTokenSet, OAuthUserInfoRequest};
@@ -269,14 +269,14 @@ fn token_response(
     value: &impl serde::Serialize,
     account: &AccountCookiePayload,
     set_cookie: bool,
+    req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let mut response = AuthResponse::json(200, value)?;
     if set_cookie && ctx.config.account.store_account_cookie {
-        response = response.with_appended_header(
-            "Set-Cookie",
-            create_account_cookie_header(&ctx.config, account)?,
-        );
+        for header in create_account_cookie_headers(&ctx.config, account, req)? {
+            response.headers.append("Set-Cookie", header);
+        }
     }
     Ok(response)
 }
@@ -308,7 +308,7 @@ pub(super) async fn handle_get_access_token(
     };
     let mut account = selection.resolve(req, &session.user_id, ctx).await?;
     let (response, refreshed) = valid_access_token(&mut account, config, ctx).await?;
-    token_response(&response, &account, refreshed, ctx)
+    token_response(&response, &account, refreshed, req, ctx)
 }
 
 ///
@@ -426,6 +426,7 @@ pub(super) async fn handle_refresh_token(
         &response,
         &account,
         matches!(selection, AccountSelection::Cookie),
+        req,
         ctx,
     )
 }
@@ -500,5 +501,5 @@ pub(super) async fn handle_account_info(
             account_id: account.account_id.clone(),
         },
     };
-    token_response(&response, &account, refreshed, ctx)
+    token_response(&response, &account, refreshed, req, ctx)
 }

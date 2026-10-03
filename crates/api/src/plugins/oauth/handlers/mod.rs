@@ -931,29 +931,46 @@ fn redirect_response(location: &str) -> AuthResponse {
 }
 
 fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> f64 {
-    better_auth_core::cache::effective_max_age(
-        config
-            .session
-            .cookie_cache
-            .as_ref()
-            .map_or(300.0, |cache| cache.max_age),
-    )
+    if let Some(age) = config.account.cookie_max_age {
+        return age;
+    }
+    config
+        .advanced
+        .cookies
+        .get("account_data")
+        .and_then(|cookie| cookie.attributes.max_age)
+        .map_or_else(
+            || {
+                better_auth_core::cache::effective_max_age(
+                    config
+                        .session
+                        .cookie_cache
+                        .as_ref()
+                        .map_or(300.0, |cache| cache.max_age),
+                )
+            },
+            |age| age as f64,
+        )
 }
 
+/// Emit the encrypted account snapshot and clear stale incoming chunks.
 ///
 /// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub(in crate::plugins) fn create_account_cookie_header(
+/// Propagates encryption or cookie attribute errors.
+pub(in crate::plugins) fn create_account_cookie_headers(
     config: &better_auth_core::AuthConfig,
     payload: &AccountCookiePayload,
-) -> AuthResult<String> {
+    req: &AuthRequest,
+) -> AuthResult<Vec<String>> {
     let max_age = account_cookie_max_age(config);
     let value = create_account_cookie_value(config, payload, max_age)?;
-    better_auth_core::cache::cookie_header(
+    better_auth_core::cache::runtime::chunked_cookie_headers(
         &account_cookie_name(config),
         &value,
         Some(max_age),
         config,
+        &req.headers,
+        true,
     )
 }
 
@@ -964,7 +981,10 @@ pub(super) fn decode_account_cookie(
     req: &AuthRequest,
     config: &better_auth_core::AuthConfig,
 ) -> AuthResult<Option<AccountCookiePayload>> {
-    let Some(value) = get_cookie(req, &account_cookie_name(config)) else {
+    let Some(value) = better_auth_core::cache::runtime::chunked_cookie_value(
+        &req.headers,
+        &account_cookie_name(config),
+    ) else {
         return Ok(None);
     };
     decode_account_cookie_value(config, &value).map(Some)
@@ -1426,6 +1446,7 @@ async fn process_oauth_sign_in_with_output(
                 password: existing_account.password().map(str::to_owned),
                 created_at: Some(existing_account.created_at()),
                 updated_at: Some(existing_account.updated_at()),
+                ..AccountCookiePayload::from_account(&existing_account)
             }
         });
 
@@ -1636,6 +1657,23 @@ async fn process_oauth_sign_in_with_output(
                 }
             })?;
 
+        if ctx.config.account.store_account_cookie {
+            let age = account_cookie_max_age(&ctx.config);
+            // Published registration commits the identity first, then catches
+            // account-cookie configuration failures before issuing a session.
+            if !age.is_finite()
+                || better_auth_core::utils::cookie_utils::create_account_cookie_header(
+                    &account_cookie_name(&ctx.config),
+                    &account_cookie_name(&ctx.config),
+                    "",
+                    age,
+                    &ctx.config,
+                )
+                .is_err()
+            {
+                return Err(OAuthSignInError::Generic("unable to create user".into()));
+            }
+        }
         let issued = finish_oauth_session(&persisted_user, true, policy, meta, ctx).await?;
         let account_cookie = ctx
             .config
@@ -2768,10 +2806,9 @@ pub(super) async fn handle_callback(
             ),
         );
     if let Some(account_cookie) = outcome.account_cookie.as_ref() {
-        response = response.with_appended_header(
-            "Set-Cookie",
-            create_account_cookie_header(&ctx.config, account_cookie)?,
-        );
+        for header in create_account_cookie_headers(&ctx.config, account_cookie, req)? {
+            response.headers.append("Set-Cookie", header);
+        }
     }
     Ok(response)
 }

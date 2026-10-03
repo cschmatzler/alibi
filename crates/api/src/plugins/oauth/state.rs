@@ -134,12 +134,18 @@ pub(in crate::plugins) struct AccountCookiePayload {
         serialize_with = "better_auth_core::utils::datetime::serialize_optional"
     )]
     pub updated_at: Option<chrono::DateTime<Utc>>,
+    #[serde(flatten)]
+    pub additional: Map<String, Value>,
+    #[serde(skip)]
+    pub snapshot: Option<Map<String, Value>>,
+    #[serde(skip)]
+    pub original: Option<Map<String, Value>>,
 }
 
 impl AccountCookiePayload {
     #[must_use]
     pub(in crate::plugins) fn from_account(account: &impl AuthAccount) -> Self {
-        Self {
+        let mut payload = Self {
             id: Some(account.id().to_string()),
             user_id: account.user_id().to_string(),
             provider_id: account.provider_id().to_owned(),
@@ -153,7 +159,39 @@ impl AccountCookiePayload {
             password: account.password().map(str::to_owned),
             created_at: Some(account.created_at()),
             updated_at: Some(account.updated_at()),
+            additional: account.additional_fields(),
+            snapshot: account
+                .adapter_snapshot()
+                .map(|output| output.values().clone()),
+            original: None,
+        };
+        payload.original = serde_json::to_value(&payload)
+            .ok()
+            .and_then(|value| value.as_object().cloned());
+        payload
+    }
+
+    pub(in crate::plugins) fn wire_value(&self) -> AuthResult<Value> {
+        let Value::Object(current) = serde_json::to_value(self)? else {
+            return Err(AuthError::internal("Account cookie must be an object"));
+        };
+        let Some(snapshot) = &self.snapshot else {
+            return Ok(Value::Object(current));
+        };
+        let mut output = snapshot.clone();
+        // Retain raw projection values and omissions until a token field is
+        // actually changed by sign-in/refresh. Physical getters remain authority.
+        for (key, value) in current {
+            if self
+                .original
+                .as_ref()
+                .and_then(|original| original.get(&key))
+                != Some(&value)
+            {
+                drop(output.insert(key, value));
+            }
         }
+        Ok(Value::Object(output))
     }
 }
 
@@ -225,7 +263,7 @@ pub(in crate::plugins) fn state_cookie_name(config: &AuthConfig) -> String {
 }
 
 pub(super) fn account_cookie_name(config: &AuthConfig) -> String {
-    related_cookie_name(config, "account_data")
+    better_auth_core::utils::cookie_utils::related_cookie_name(config, "account_data")
 }
 
 /// Sign the database-backed state's correlation cookie using Better Call's wire format.

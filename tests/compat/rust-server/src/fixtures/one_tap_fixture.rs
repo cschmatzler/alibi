@@ -1,7 +1,7 @@
 //! Local Google JWKS transport and actual persisted One Tap configuration profiles.
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use async_trait::async_trait;
-use axum::{Json, Router, routing::get};
+use axum::{routing::get, Json, Router};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::oauth::{OAuthIdTokenVerifier, OAuthProvider};
@@ -13,12 +13,12 @@ use better_auth::plugins::{
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::sea_orm::{DatabaseConnection, EntityTrait};
 use better_auth_seaorm::store::entities::{account, session, user};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::{
     collections::HashMap,
     sync::{
-        Arc,
         atomic::{AtomicUsize, Ordering},
+        Arc,
     },
 };
 use tokio::sync::Mutex;
@@ -73,6 +73,16 @@ pub(crate) async fn router(
         "one-tap-required-no-mail",
         "one-tap-no-override",
         "one-tap-account-cookie",
+        "one-tap-account-cookie-account-fractional",
+        "one-tap-account-cookie-account-zero",
+        "one-tap-account-cookie-account-negative",
+        "one-tap-account-cookie-account-nan",
+        "one-tap-account-cookie-fractional",
+        "one-tap-account-cookie-zero",
+        "one-tap-account-cookie-negative",
+        "one-tap-account-cookie-nan",
+        "one-tap-account-cookie-infinity",
+        "one-tap-account-cookie-override",
         "one-tap-update-link",
         "one-tap-encrypted",
         "one-tap-retain-account",
@@ -80,7 +90,7 @@ pub(crate) async fn router(
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut profile_config = config.clone().base_path(&path);
         profile_config.account.store_account_cookie =
-            name == "one-tap-account-cookie" || name == "one-tap-retain-account";
+            name.starts_with("one-tap-account-cookie") || name == "one-tap-retain-account";
         profile_config
             .account
             .account_linking
@@ -90,6 +100,44 @@ pub(crate) async fn router(
         }
         profile_config.account.encrypt_oauth_tokens = name == "one-tap-encrypted";
         profile_config.account.update_account_on_sign_in = name != "one-tap-retain-account";
+        profile_config.account.cookie_max_age = match name {
+            "one-tap-account-cookie-account-fractional" => Some(1.75),
+            "one-tap-account-cookie-account-zero" => Some(0.0),
+            "one-tap-account-cookie-account-negative" => Some(-4.25),
+            "one-tap-account-cookie-account-nan" => Some(f64::NAN),
+            _ => None,
+        };
+        let age = match name {
+            "one-tap-account-cookie-fractional" => Some(1.75),
+            "one-tap-account-cookie-zero" => Some(0.0),
+            "one-tap-account-cookie-negative" => Some(-4.25),
+            "one-tap-account-cookie-nan" => Some(f64::NAN),
+            "one-tap-account-cookie-infinity" => Some(f64::INFINITY),
+            "one-tap-account-cookie-override" => Some(1.75),
+            _ => None,
+        };
+        if let Some(max_age) = age {
+            profile_config.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+                enabled: false,
+                max_age,
+                ..Default::default()
+            });
+        }
+        if name == "one-tap-account-cookie-override" {
+            profile_config.advanced.cookies.insert(
+                "account_data".into(),
+                better_auth_core::config::CookieOverride {
+                    name: None,
+                    attributes: better_auth_core::config::CookieAttributes {
+                        max_age: Some(7),
+                        http_only: Some(false),
+                        same_site: Some(better_auth_core::config::SameSite::Strict),
+                        ..Default::default()
+                    },
+                },
+            );
+        }
+
         let mut provider =
             OAuthProvider::google("one-tap-provider-client", "local-unused-google-secret");
         provider.verify_id_token = Some(Arc::new(RejectProviderVerifier));

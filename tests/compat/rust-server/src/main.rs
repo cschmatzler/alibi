@@ -1893,23 +1893,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             );
                         }
                     };
-                    for account in accounts {
-                        if account.provider_id() == provider_id
-                            && account.account_id() == account_id
-                        {
-                            if let Err(error) = auth.store().delete_account(&account.id()).await {
-                                return (
-                                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                                    Json(serde_json::json!({ "message": error.to_string() })),
-                                );
-                            }
-                        }
-                    }
-
-                    let account = match auth
-                        .store()
-                        .create_account(CreateAccount {
-            additional_fields: Default::default(),
+                    let existing = accounts.iter().find(|account|
+                        account.provider_id() == provider_id && account.account_id() == account_id
+                    );
+                    let result = if let Some(existing) = existing {
+                        auth.store().update_account(&existing.id(), better_auth_core::UpdateAccount {
+                            provider_token_nulls: [body.access_token.is_none(), body.refresh_token.is_none(), body.id_token.is_none()],
+                            access_token: body.access_token,
+                            refresh_token: body.refresh_token,
+                            id_token: body.id_token,
+                            access_token_expires_at,
+                            refresh_token_expires_at,
+                            scope: body.scope,
+                            ..Default::default()
+                        }).await
+                    } else {
+                        auth.store().create_account(CreateAccount {
+                            additional_fields: Default::default(),
                             user_id: user.id.to_string(),
                             account_id,
                             provider_id,
@@ -1920,9 +1920,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             refresh_token_expires_at,
                             scope: body.scope,
                             password: None,
-                        })
-                        .await
-                    {
+                        }).await
+                    };
+                    let account = match result {
                         Ok(account) => account,
                         Err(error) => {
                             return (

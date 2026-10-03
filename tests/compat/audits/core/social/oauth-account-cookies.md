@@ -5,8 +5,8 @@ account row with `symmetricEncodeJWT`, salt `better-auth-account`, and a default
 300-second lifetime. The former Rust shared account-cookie encoder instead
 issued an HS256 JWS, exposing provider tokens in readable base64 and failing the
 published decoder. The private `oauth/account_cookie.rs` port replaces that
-encoder and authenticated reader; it introduces no public crypto seam or
-additional dependency. Existing OAuth state cookies retain their own protocol.
+encoder and authenticated reader. Existing OAuth state cookies retain their own
+protocol. The later #230 bounded DEFLATE reader adds the flate2 dependency.
 
 `dist/crypto/jwt.mjs:18-143` derives 64 bytes using HKDF-SHA256, the exact info
 `BetterAuth.js Generated Encryption Key`, and the account salt. The protected
@@ -76,13 +76,29 @@ The pinned helper's allowlist includes A256GCM, but its actual unconditional
 64-byte derivation makes an otherwise valid JOSE A256GCM token fail; the port
 also rejects it. `/tmp/one-tap-review-cookie-vectors.log` records actual pinned
 acceptance/rejection, including CBC without a key ID and no legacy-JWS fallback.
-Source compressed CBC (`zip: DEF`) is accepted by installed JOSE; the native
-reader rejects compression pending a separate bounded implementation. Source
-account-cookie chunking, attribute overrides/default TTL interaction and rotating
-multi-secret configurations remain unimplemented branches. Native currently
-uses the existing session-cookie-cache max age when configured, unlike the source
-account-specific default. Arbitrary custom physical account columns cannot be
-projected by the existing typed account trait; canonical built-in columns match.
+The #230 implementation accepts protected `zip: DEF` after authentication and
+CBC decryption, with JOSE 6.2.12's 250,000-byte decompression limit. Its writer
+keeps the source helper's uncompressed format. Account values use the shared
+4050-byte/100-chunk store, expire stale chunks on reissue and clear incoming
+chunks on sign-out. Readers prefer a nonempty base value and otherwise join
+canonical numeric chunk names in order.
+
+Account cookie TTL inherits `session.cookieCache.maxAge || 300` until overridden.
+The integer `advanced.cookies.account_data.attributes.max_age` is honored;
+`AccountConfig::cookie_max_age` represents the account-specific numeric override,
+including fractions, zero, NaN and Infinity, without changing the general cookie
+attribute API. Claims retain fractional seconds while cookie Max-Age is floored;
+negative ages omit Max-Age. Invalid nonfinite registration ages reject after the
+identity/account transaction and before session issuance, as the published owner
+does. Account-specific HttpOnly, SameSite, name and other existing attributes are
+resolved against the base cookie for every chunk.
+
+Account payloads retain complete declared adapter output, including custom
+physical columns, transformed raw values, hidden fields and omitted values.
+Renewal overlays only actually changed typed token fields on that snapshot.
+Physical accessors and the authenticated session's owner check retain authority.
+The shared UserView and provider raw-scalar authority paths are unchanged.
+Rotating secret versions belong to #176 and general cookie configuration to #177.
 
 This repair does not claim normal OAuth ID-token sign-in always emits an account
 cookie, or that every endpoint's invalid-cookie fallback behavior matches source.
@@ -131,6 +147,27 @@ requirement. Final focused proof is recorded in
 `/tmp/account-cookie-alias-native-oauth-final.log` (18 real OAuth siblings),
 `/tmp/account-cookie-alias-typecheck-final.log`, and
 `/tmp/account-cookie-alias-clippy-final.log`. Canonical gates and publication stay
-coordinator-owned. Malformed URI error transport, compression, chunking, rotating
-secrets, custom account columns and the previously listed TTL boundaries remain
-separate gaps; this capability does not claim their closure.
+coordinator-owned. Malformed URI error transport and rotating secrets remained separate gaps at
+that checkpoint. The #230 follow-up below implements compression, chunking,
+custom account columns and account TTL; general cookie overrides and rotation
+stay with their existing owners.
+
+
+## #230 bounded production proof
+
+The existing live One Tap cookie owner now uses a large real stored provider grant.
+It verifies genuine published compressed JWEs, whole protected headers and claims,
+raw attributes and chunk-size limits, unordered incoming chunks, oversized inflation
+rejection, original/corrupt/expired cookies, source clock leeway, foreign sessions,
+large-to-small reissue, stale-chunk cleanup and revoked-session replay. The existing
+custom-column OAuth owner verifies account-specific fractional TTL alongside raw
+object projections, hidden fields and omissions on issuance and renewal. A focused
+lifetime table exercises inherited and explicit account ages on actual SQLx and
+SeaORM stores, including invalid nonfinite ages and retained physical state.
+
+Baseline 48a42c2d fails for oversized single-cookie issuance, dropped custom
+columns and rejection of a genuine compressed JWE. Fresh Better Auth 1.7.6 and
+JOSE 6.2.12 tarballs match the executed dist trees exactly. No producer mutation,
+comparator changes, exclusion changes or factory edits were used. Permanent raw
+observations, before/after logs, tested revisions and self-review are retained at
+`/home/cschmatzler/.local/share/better-auth-evidence/account230-20261003`.
