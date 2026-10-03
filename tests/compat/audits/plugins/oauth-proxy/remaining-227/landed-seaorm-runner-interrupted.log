@@ -1,0 +1,3 @@
+{"ok":true,"oauthBaseURL":"http://127.0.0.1:38483","upstreamVersion":"1.7.6"}
+{"ok":true,"upstreamVersion":"1.7.6"}
+/tmp/close227-evidence/run.sh: line 30: syntax error near unexpected token `f'http://localhost:{port}/__health',timeout=1'

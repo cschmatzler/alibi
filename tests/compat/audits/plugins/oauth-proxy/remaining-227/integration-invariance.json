@@ -1,0 +1,39 @@
+{
+  "combinedProductionHead": "c4b58b69f891ded5c5ed48ff61e095bcecbd0ba4",
+  "landedMain": "7a9d2fa325e633a4cd566db5996e76f34914f4bc",
+  "priorProof": "affected-tested-tree-manifest.json.gz",
+  "invariantFiles": {
+    "crates/api/src/plugins/oauth_proxy.rs": {
+      "sha256": "0e05307e9c2ab6502fdc33e18e8a6d26cc904e3c7c0caf5e57ea2a1f3bbd944a",
+      "matchesPrior": true
+    },
+    "crates/core/src/config/mod.rs": {
+      "sha256": "093060a2faa6785e194bc6d3d736b26ccc94e27af34ac95acb5c50a85e85344b",
+      "matchesPrior": true
+    },
+    "crates/api/src/plugins/oauth/account.rs": {
+      "sha256": "cbf2eda5c6b3603170d152ef01390f25af4615f8e078fa653bff07310b1855e8",
+      "matchesPrior": true
+    },
+    "crates/api/src/plugins/oauth/mod.rs": {
+      "sha256": "849b9785b3efff0e9f0ac0a5af7fe5b0eb577ad5b59df78f94beb5b0a992e58a",
+      "matchesPrior": true
+    },
+    "crates/api/src/plugins/oauth/providers/generic.rs": {
+      "sha256": "1e7e24dc554a01d67111d3a2d5fb6a0d78e6f5e2049c7f1968112b62b4099282",
+      "matchesPrior": true
+    },
+    "crates/api/src/plugins/oauth/providers/mod.rs": {
+      "sha256": "01cd184ec36329f80564c8aa5b656f7f8f39f3bcf001e3610b9f8a02192e9d20",
+      "matchesPrior": true
+    },
+    "crates/api/src/plugins/oauth/providers/remaining_profile.rs": {
+      "sha256": "4adfb9df927a5e89faea606a172166388bd2d3ad3885a2474ea96e52201b780f",
+      "matchesPrior": true
+    }
+  },
+  "reconstructedPriorHandlerSHA256": "50aa16ff1bb7d53925302a3e1424cceb8f8300b5a8306ca21ac479a3f0574eda",
+  "recordedPriorHandlerSHA256": "50aa16ff1bb7d53925302a3e1424cceb8f8300b5a8306ca21ac479a3f0574eda",
+  "handlerDelta": "Two ID-token token-set access_token_expires_at assignments; no standard/proxy callback delta. See integration-handler-delta.patch.",
+  "otherOAuthDelta": "client_assertion JWK/expiry validation and AccessTokenResponse absent expiry serialization; independently proven by #420, not used by these proxy grants."
+}

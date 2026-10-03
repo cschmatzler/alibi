@@ -43,8 +43,8 @@ witness pair record invalid_code and an extra token receipt before the review fi
 Source returns no_code without exchange. All failures are retained.
 
 `final-temp-{sqlx,seaorm}.log` and complete compressed pairs prove five remaining
-owners / 490 assertions on each adapter. `affected-seaorm.log` proves the two
-subsequently strengthened/repaired owners / 210 assertions. The exact temporary
+owners / 490 assertions on each adapter. `affected-{sqlx,seaorm}.log` prove the two
+subsequently strengthened/repaired owners / 210 assertions each. The exact temporary
 #420 dependency patch and full tracked tree manifests are retained; no dependency
 commit is duplicated in this PR. Later integration receipts qualify these proofs
 against actual landed production bytes, and record only affected reruns.
@@ -61,3 +61,40 @@ first POST-owner extension expected no pending state after an intentionally
 failed production exchange; its expected row count was corrected to preserve
 that authentic pending state. These are fixture/assertion corrections, not
 production regression evidence.
+
+## Landed integration qualification
+
+The production review qualified combined head
+`c4b58b69f891ded5c5ed48ff61e095bcecbd0ba4` on actual landed #420
+`7a9d2fa325e633a4cd566db5996e76f34914f4bc`. There are no temporary
+production dependency files or duplicated #420 commits. The complete tracked
+tested tree is retained in `landed-tested-tree-manifest.json.gz`.
+`integration-invariance.json` records matching proxy/config/account/provider
+hashes against the prior passing affected proof. The reconstructed prior tested
+handler matches its recorded hash exactly; `integration-handler-delta.patch`
+shows only #420's two ID-token expiry assignments, outside these standard
+callback paths. Other shared OAuth deltas concern #420's separately proven
+client assertions and direct access-token output, not the proxy grants.
+
+The strengthened environment fixture deliberately separates configured base
+(127.0.0.1) from vendor receiver (localhost), so ordinary base fallback cannot
+satisfy the vendor assertion. A separate mode proves environment production URL
+skip selection without changing exchange base. `landed-{sqlx,seaorm}.log` and
+full Source/Native pairs prove this sole affected owner / 24 assertions each.
+The other five remaining owners and the two later repaired owners reuse the
+actual both-adapter receipts above; no unchanged default inventory was replayed.
+
+Both TypeScript checks and strict landed fixture Clippy pass. The first SeaORM
+launch was interrupted by editing the temporary runner while it was executing;
+`landed-seaorm-runner-interrupted.log` preserves that shell diagnostic. The
+runner was fixed and the same owner passed. This was not a product/test failure.
+`integration-oracle-verification.json` confirms all 465 Better Auth and all 350
+core published files still match in each private tree after integration.
+
+For #188 dependency reconciliation, this combined tree provides the additive
+`api_error_url` option/default/builder, ordinary configured callback fallbacks
+with query-safe errors including `error=state_not_found`, and proxy consumers
+of landed callback-path/account-key/optional-signup APIs and raw userinfo field
+output. The ordinary and custom owners retain real state/provider receipts.
+No built-in custom callback route dispatcher or global error-dispatch parity is
+claimed. The final receipt commit changes only this evidence directory.

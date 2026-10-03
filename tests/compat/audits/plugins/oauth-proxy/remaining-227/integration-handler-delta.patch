@@ -1,0 +1,22 @@
+--- /tmp/close227-evidence/reconstructed-tested-handler.rs	2026-10-03 21:10:36.806050219 +0000
++++ /tmp/better-auth-close227/crates/api/src/plugins/oauth/handlers/mod.rs	2026-10-03 21:09:20.863676292 +0000
+@@ -2108,6 +2108,9 @@
+         &OAuthTokenSet {
+             access_token: id_token.access_token.clone(),
+             refresh_token: id_token.refresh_token.clone(),
++            access_token_expires_at: id_token
++                .expires_at
++                .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
+             id_token: Some(id_token.token.clone()),
+             scopes: id_token.scopes.clone().unwrap_or_default(),
+             ..Default::default()
+@@ -2240,6 +2243,9 @@
+         &OAuthTokenSet {
+             access_token: id_token.access_token.clone(),
+             refresh_token: id_token.refresh_token.clone(),
++            access_token_expires_at: id_token
++                .expires_at
++                .and_then(|timestamp| chrono::DateTime::<Utc>::from_timestamp(timestamp, 0)),
+             id_token: Some(id_token.token.clone()),
+             scopes: id_token.scopes.clone().unwrap_or_default(),
+             ..Default::default()

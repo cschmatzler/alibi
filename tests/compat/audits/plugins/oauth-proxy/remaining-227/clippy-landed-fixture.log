@@ -1,0 +1,9 @@
+    Checking better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-close227/crates/core)
+    Checking better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-close227/crates/sqlx)
+    Checking better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-close227/crates/seaorm)
+    Checking better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-close227/crates/api)
+    Checking better-auth v1.0.0-alpha.3 (/tmp/better-auth-close227)
+    Checking compat-rust-server v0.1.0 (/tmp/better-auth-close227/tests/compat/rust-server)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.89s
+warning: the following packages contain code that will be rejected by a future version of Rust: proc-macro-error2 v2.0.1
+note: to see what the problems were, use the option `--future-incompat-report`, or run `cargo report future-incompatibilities --id 1`
