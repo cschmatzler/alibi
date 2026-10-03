@@ -1,6 +1,0 @@
-HTTP/1.1 200 OK
-content-type: application/json
-set-cookie: __Secure-better-auth.session_token=wBExCUHhqGCvOHujv84VhXERSr8BN2qE.LTzFJHf1eRuUapc%2BRdWAepIQ5XZfsHiTYbE4qllHcDk%3D; Max-Age=604800; Path=/; HttpOnly; Secure; SameSite=Lax
-content-length: 261
-date: Sat, 03 Oct 2026 16:58:28 GMT
-
