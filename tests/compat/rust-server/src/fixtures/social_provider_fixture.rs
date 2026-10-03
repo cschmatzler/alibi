@@ -15,11 +15,11 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_core::{CreateAccount, store::AccountStore};
+use better_auth_seaorm::DatabaseConnection;
 use better_auth_seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
 };
 use better_auth_seaorm::store::entities::{account, session, user};
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -103,7 +103,10 @@ pub(crate) async fn router(
             };
             let auth = Arc::new(
                 AuthBuilder::<TestSchema>::new(settings.clone())
-                    .store(SeaOrmStore::<TestSchema>::new(settings, database.clone()))
+                    .store(crate::backend::store::<TestSchema>(
+                        settings,
+                        database.clone(),
+                    ))
                     .rate_limit(RateLimitConfig::new().enabled(false))
                     .plugin(EmailPasswordPlugin::new().enable_username(false))
                     .plugin(SessionManagementPlugin::new())
@@ -149,7 +152,10 @@ pub(crate) async fn router(
         }
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(settings.clone())
-                .store(SeaOrmStore::<TestSchema>::new(settings, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    settings,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())
@@ -189,7 +195,7 @@ pub(crate) async fn router(
             }
         }),
     );
-    let duplicate_store = Arc::new(SeaOrmStore::<TestSchema>::new(
+    let duplicate_store = Arc::new(crate::backend::store::<TestSchema>(
         config.clone(),
         database.clone(),
     ));
@@ -233,15 +239,14 @@ pub(crate) async fn router(
                     let date = DateTime::parse_from_rfc3339(timestamp)
                         .map_err(|_| axum::http::StatusCode::BAD_REQUEST)?
                         .with_timezone(&Utc);
-                    let mut active = created.clone().into_active_model();
-                    active.created_at = Set(date);
-                    active.updated_at = Set(date);
-                    drop(
-                        active
-                            .update(&db)
-                            .await
-                            .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?,
-                    );
+                    use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+                    db.execute_raw(Statement::from_sql_and_values(
+                        DbBackend::Sqlite,
+                        "UPDATE accounts SET created_at = ?, updated_at = ? WHERE id = ?",
+                        [date.into(), date.into(), created.id.clone().into()],
+                    ))
+                    .await
+                    .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
                 }
                 Ok::<_, axum::http::StatusCode>(Json(json!({"status":true,"accountId":created.id})))
             }

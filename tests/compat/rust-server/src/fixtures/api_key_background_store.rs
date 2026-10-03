@@ -4,10 +4,9 @@ use super::Application;
 use better_auth::__private_core::store::*;
 use better_auth::__private_core::types::*;
 use better_auth::__private_core::{AuthResult, AuthSchema};
-use better_auth_seaorm::SeaOrmStore;
 
 pub(crate) struct ControlledStore<S: AuthSchema> {
-    pub(crate) inner: SeaOrmStore<S>,
+    pub(crate) inner: crate::backend::Store<S>,
     pub(crate) application: Application,
     pub(crate) profile: &'static str,
 }
@@ -15,7 +14,7 @@ macro_rules! delegate_store {
     ($trait:ident $(<$schema:ident>)?, { $(async fn $name:ident(&self $(, $argument:ident: $ty:ty)* $(,)?) -> $output:ty;)* }) => {
         #[async_trait::async_trait]
         impl<S: AuthSchema> $trait $(<$schema>)? for ControlledStore<S>
-        where SeaOrmStore<S>: $trait $(<$schema>)? {
+        where crate::backend::Store<S>: $trait $(<$schema>)? {
             $(async fn $name(&self $(, $argument: $ty)*) -> $output {
                 self.inner.$name($($argument),*).await
             })*
@@ -352,7 +351,7 @@ delegate_store!(WalletAddressStore, {
 #[async_trait::async_trait]
 impl<S: AuthSchema> ApiKeyStore for ControlledStore<S>
 where
-    SeaOrmStore<S>: ApiKeyStore,
+    crate::backend::Store<S>: ApiKeyStore,
 {
     async fn consume_api_key_usage_from_snapshot(
         &self,

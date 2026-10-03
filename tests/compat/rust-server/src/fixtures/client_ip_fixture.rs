@@ -9,9 +9,9 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use better_auth_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute};
+use better_auth_seaorm::DatabaseConnection;
 use better_auth_seaorm::sea_orm::{EntityTrait, QueryOrder};
 use better_auth_seaorm::store::entities::session;
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use chrono::SecondsFormat;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -104,7 +104,7 @@ pub(crate) async fn router(
         };
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, db.clone()))
+                .store(crate::backend::store::<TestSchema>(config, db.clone()))
                 .rate_limit(
                     RateLimitConfig::new()
                         .default_limit(Duration::from_secs(60), 10000)

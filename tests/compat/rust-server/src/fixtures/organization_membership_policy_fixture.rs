@@ -24,7 +24,7 @@ use better_auth::{
     },
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use serde_json::{Value, json};
@@ -241,7 +241,10 @@ pub(crate) async fn router(
         }
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(

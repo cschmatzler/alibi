@@ -11,7 +11,7 @@ use better_auth::plugins::{
     SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
-use better_auth_seaorm::{SeaOrmStore, sea_orm::DatabaseConnection};
+use better_auth_seaorm::sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
 struct DocumentationSchema;
@@ -126,7 +126,7 @@ where
         >,
 {
     let mut builder = AuthBuilder::<S>::new(config.clone())
-        .store(SeaOrmStore::<S>::new(config, database.clone()))
+        .store(crate::backend::store::<S>(config, database.clone()))
         .rate_limit(RateLimitConfig::new().enabled(false));
     if name != "openapi-minimal" {
         builder = builder

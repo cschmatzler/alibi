@@ -15,7 +15,7 @@ use better_auth::plugins::oauth::{
 };
 use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -182,7 +182,10 @@ pub(crate) async fn router(
         // The pinned Microsoft factory does not forward disableSignUp.
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(settings.clone())
-                .store(SeaOrmStore::<TestSchema>::new(settings, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    settings,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())

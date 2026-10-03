@@ -13,7 +13,7 @@ use better_auth::plugins::{
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::{AuthPasskey, store::PasskeyStore, utils::json::JsValue, wire::PasskeyView};
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use serde_json::{Value, json};
@@ -25,7 +25,7 @@ fn database_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
 }
 struct Application {
     mode: &'static str,
-    store: Arc<SeaOrmStore<TestSchema>>,
+    store: Arc<crate::backend::Store<TestSchema>>,
     database: DatabaseConnection,
     events: Events,
 }
@@ -148,7 +148,7 @@ pub(crate) async fn router(
     ] {
         let path = format!("/__test/profiles/passkey-auth-{mode}/api/auth");
         let configured = config.clone().base_path(&path);
-        let store = Arc::new(SeaOrmStore::<TestSchema>::new(
+        let store = Arc::new(crate::backend::store::<TestSchema>(
             configured.clone(),
             database.clone(),
         ));

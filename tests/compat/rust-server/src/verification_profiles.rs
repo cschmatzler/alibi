@@ -10,7 +10,6 @@ use better_auth::plugins::{
 };
 use better_auth::wire::UserView;
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_seaorm::SeaOrmStore;
 use better_auth_seaorm::sea_orm::DatabaseConnection;
 use chrono::Duration;
 use std::collections::HashMap;
@@ -64,7 +63,10 @@ pub(super) async fn router(
         };
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(
                     EmailPasswordPlugin::new()

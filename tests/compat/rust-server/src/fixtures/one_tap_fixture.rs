@@ -11,11 +11,8 @@ use better_auth::plugins::{
     SessionManagementPlugin, TwoFactorPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
+use better_auth_seaorm::sea_orm::{DatabaseConnection, EntityTrait};
 use better_auth_seaorm::store::entities::{account, session, user};
-use better_auth_seaorm::{
-    SeaOrmStore,
-    sea_orm::{DatabaseConnection, EntityTrait},
-};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -142,7 +139,7 @@ pub(crate) async fn router(
         }
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(profile_config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(
+                .store(crate::backend::store::<TestSchema>(
                     profile_config,
                     database.clone(),
                 ))

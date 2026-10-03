@@ -22,6 +22,7 @@ tests/
 │   ├── main.rs
 │   ├── core/               upstream core API areas (session/, schema/, http_flow, ...)
 │   ├── plugins/            one module per plugin (organization/, anonymous/, jwt, ...)
+│   ├── storage/            store contract tests, run against SqlxStore and SeaOrmStore
 │   └── axum_integration/   the Axum adapter (feature `axum`)
 ├── compat/                 everything compared against upstream
 │   ├── main.rs             Cargo target `compat`
@@ -35,16 +36,31 @@ tests/
 │   └── audits/             per-capability implementation audits
 ├── repo/                   Cargo target `repo`
 ├── support/                helpers shared by `integration` and `compat`
-└── fixtures/               pinned vectors (SIWE, JWT, OAuth, One Tap)
+└── fixtures/               pinned vectors (SIWE, JWT, OAuth, One Tap) and CLI output
 ```
 
 Integration modules mirror the scenario tree in
 `tests/compat/client-tests/tests/{core,plugins}`, so the native and the
 differential evidence for one area sit under the same name.
 
+## Store backends
+
+Both bundled stores must behave identically. Each test in
+`tests/integration/storage/` is generic over a `Backend` and runs once for
+`SqlxStore` and once for `SeaOrmStore`, on file-backed SQLite. Tests that avoid
+SQLite-only SQL also have ignored PostgreSQL variants, run with
+`BETTER_AUTH_TEST_POSTGRES_URL=postgres://... cargo nextest run --test integration -E 'test(/^storage::/)' --run-ignored only`.
+Each test gets a fresh schema in that database.
+
+The Rust fixture server serves the compat suite from `SqlxStore`. Set
+`BETTER_AUTH_COMPAT_BACKEND=seaorm` (fixture feature `seaorm2`) to serve it from
+`SeaOrmStore`; `./scripts/compat.sh` runs both.
+
 ## Where a new test goes
 
 - It needs private items of one module: a unit test in that module.
+- It checks a store guarantee (atomicity, concurrency, hook phases, physical
+  rows): a generic test in `tests/integration/storage/`, so both backends run it.
 - It drives the public Rust API, a store or the Axum adapter and has no upstream
   counterpart (typed configuration errors, custom entity schemas, hook ordering,
   SQL-level guarantees): `tests/integration/<core|plugins>/<area>.rs`.

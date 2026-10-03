@@ -14,7 +14,7 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
 use serde::Deserialize;
@@ -23,12 +23,14 @@ use std::{collections::HashMap, sync::Arc};
 
 struct ApplicationDateErrors;
 #[async_trait::async_trait]
-impl better_auth_seaorm::SeaOrmHooks<TestSchema> for ApplicationDateErrors {
+impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
+    for ApplicationDateErrors
+{
     async fn before_update_user(
         &self,
         _id: &str,
         update: &mut better_auth_core::UpdateUser,
-        _context: &better_auth_seaorm::SeaOrmHookContext<'_>,
+        _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<better_auth_seaorm::HookControl> {
         if update.banned == Some(true) {
             return Err(better_auth_core::AuthError::Upstream {
@@ -42,7 +44,7 @@ impl better_auth_seaorm::SeaOrmHooks<TestSchema> for ApplicationDateErrors {
     async fn before_create_session(
         &self,
         session: &mut better_auth_core::CreateSession,
-        _context: &better_auth_seaorm::SeaOrmHookContext<'_>,
+        _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<better_auth_seaorm::HookControl> {
         if session.impersonated_by.is_some() {
             return Err(better_auth_core::AuthError::Upstream {
@@ -113,7 +115,7 @@ pub(crate) async fn router(
         } else {
             HashMap::new()
         };
-        let store = SeaOrmStore::<TestSchema>::new(config.clone(), database.clone());
+        let store = crate::backend::store::<TestSchema>(config.clone(), database.clone());
         let store = if name == "admin-duration-hook-error" {
             store.hook(ApplicationDateErrors)
         } else {
@@ -173,7 +175,10 @@ pub(crate) async fn router(
         );
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
-    let state_store = Arc::new(SeaOrmStore::<TestSchema>::new(config.clone(), database));
+    let state_store = Arc::new(crate::backend::store::<TestSchema>(
+        config.clone(),
+        database,
+    ));
     Ok(router.merge(
         Router::new()
             .route("/__test/admin-role-state", get(state))
@@ -191,15 +196,14 @@ struct StoredTimestamps {
 }
 
 async fn set_timestamps(
-    State(store): State<Arc<SeaOrmStore<TestSchema>>>,
+    State(store): State<Arc<crate::backend::Store<TestSchema>>>,
     Json(body): Json<StoredTimestamps>,
 ) -> Result<Json<Value>, better_auth::AuthError> {
     for value in [&body.created_at, &body.updated_at] {
         chrono::DateTime::parse_from_rfc3339(value)
             .map_err(|_| better_auth::AuthError::bad_request("valid stored timestamps required"))?;
     }
-    let result = store
-        .connection()
+    let result = crate::backend::database_of(&store)
         .execute_raw(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             "UPDATE users SET created_at=?,updated_at=? WHERE id=?",
@@ -218,8 +222,7 @@ async fn set_timestamps(
     if result.rows_affected() != 1 {
         return Err(better_auth::AuthError::NotFound("user required".into()));
     }
-    let row = store
-        .connection()
+    let row = crate::backend::database_of(&store)
         .query_one_raw(Statement::from_sql_and_values(
             DatabaseBackend::Sqlite,
             "SELECT id,created_at,updated_at FROM users WHERE id=?",
@@ -244,7 +247,7 @@ struct StateQuery {
     email: String,
 }
 async fn state(
-    State(store): State<Arc<SeaOrmStore<TestSchema>>>,
+    State(store): State<Arc<crate::backend::Store<TestSchema>>>,
     Query(query): Query<StateQuery>,
 ) -> Result<Json<Value>, better_auth::AuthError> {
     let Some(user) = store.get_user_by_email(&query.email).await? else {

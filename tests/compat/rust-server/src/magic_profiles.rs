@@ -12,7 +12,7 @@ use better_auth::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::{SeaOrmStore, sea_orm::DatabaseConnection};
+use better_auth_seaorm::sea_orm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -76,7 +76,7 @@ pub(super) async fn router(
             .base_path(format!("/__test/profiles/{name}/api/auth"));
         let auth = Arc::new(
             AuthBuilder::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(
+                .store(crate::backend::store::<TestSchema>(
                     config.clone(),
                     database.clone(),
                 ))

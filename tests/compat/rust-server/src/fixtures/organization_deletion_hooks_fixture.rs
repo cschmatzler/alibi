@@ -18,7 +18,7 @@ use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::UpdateOrganization;
 use better_auth_core::store::OrganizationStore;
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use serde_json::{Map, Value, json};
@@ -84,7 +84,7 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
 }
 struct Hooks {
     database: DatabaseConnection,
-    store: Arc<SeaOrmStore<TestSchema>>,
+    store: Arc<crate::backend::Store<TestSchema>>,
     mode: Mutex<String>,
     receipts: Mutex<Vec<Value>>,
     release: Mutex<Arc<Notify>>,
@@ -167,7 +167,7 @@ pub(crate) async fn router(
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let hooks = Arc::new(Hooks {
         database: database.clone(),
-        store: Arc::new(SeaOrmStore::new(base.clone(), database)),
+        store: Arc::new(crate::backend::store(base.clone(), database)),
         mode: Mutex::new("record".into()),
         receipts: Mutex::new(Vec::new()),
         release: Mutex::new(Arc::new(Notify::new())),
@@ -188,7 +188,7 @@ pub(crate) async fn router(
         let auth_config = base.clone().base_path(path.clone());
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(auth_config.clone())
-                .store(SeaOrmStore::new(auth_config, hooks.database.clone()))
+                .store(crate::backend::store(auth_config, hooks.database.clone()))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())

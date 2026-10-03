@@ -23,17 +23,9 @@ and genuinely signed Google direct tokens are replayed as primary transport
 owners; the shared callers are also inspected rather than duplicating these
 owners for every provider. Other callback error behavior remains unchanged.
 
-The appended `m20261001_000016_account_key_multiplicity` migration leaves the
-recorded initial schema unchanged, removes only the bundled pair unique index,
-and adds a nonunique lookup index. No account table is rebuilt or deduplicated.
-Incoming SQLite application composite foreign keys are inspected using bound
-catalog names and refused before any schema mutation. Applications must migrate
-such references to the stable account row ID first. PostgreSQL/MySQL native
-constraint checks refuse dependent index removal without CASCADE; those upgrade
-branches have not been measured as part of this issue. Application uniqueness
-constraints remain application-owned. Downgrade refuses existing duplicate rows;
-it does not invent a row to delete. With multiplicity resolved, downgrade restores
-the unique index before removing the lookup index, and re-upgrade is supported.
+The bundled account table has no unique provider/account index, only a
+nonunique lookup index. The single squashed auth migration installs this shape; there is no upgrade path from earlier bundled shapes. Application uniqueness constraints remain
+application-owned.
 
 Primary official-client evidence is `account-management/duplicates.test.ts`:
 
@@ -54,17 +46,14 @@ Primary official-client evidence is `account-management/duplicates.test.ts`:
   all persisted rows and previous sessions remain unchanged. The full token,
   header, payload, signature and actual HTTP trace are observed.
 
-Four native migration/store owners cover independent risks unreachable through
-those public scenarios: a populated prior schema retains full rows, rowids,
-application columns/check/index/trigger/view bytes; an incoming composite FK
-refuses unchanged and succeeds after a real application ID-reference migration;
-downgrade refuses duplicates then round-trips without row loss; two independently
-opened SQLite connections admit both real inserts with distinct row IDs while
-global lookup rejects the resulting ambiguity and foreign rows survive.
+A native store owner covers a risk unreachable through those public scenarios:
+two independently opened SQLite connections admit both real inserts with
+distinct row IDs while global lookup rejects the resulting ambiguity and
+foreign rows survive.
 Concurrent create does not promise a deterministic winner or scheduler order.
 Actual Source overlapping credential creation is separately captured in
 `/tmp/issue-185-source-dual-create.json`; the server-only setPassword operation's
-concurrency owner belongs to issue #185 rather than this storage migration.
+concurrency owner belongs to issue #185 rather than this storage contract.
 
 Meaningful pre-fix failures are retained in
 `/tmp/issue-187-migration-before.log` (the bundled unique index rejects the actual

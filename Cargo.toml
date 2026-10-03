@@ -15,7 +15,18 @@ workspace = true
 
 [workspace]
 resolver = "2"
-members = ["crates/core", "crates/api", "crates/derive", "crates/seaorm", "crates/seaorm-macros", "crates/schema-registry", "crates/cli"]
+members = [
+    "crates/core",
+    "crates/api",
+    "crates/derive",
+    "crates/entity-codegen",
+    "crates/seaorm",
+    "crates/seaorm-macros",
+    "crates/sqlx",
+    "crates/sqlx-macros",
+    "crates/schema-registry",
+    "crates/cli",
+]
 exclude = ["tests/compat/rust-server"]
 
 [workspace.package]
@@ -35,6 +46,8 @@ better-auth-api = { version = "1.0.0-alpha.3", path = "crates/api", default-feat
 better-auth-macros = { version = "1.0.0-alpha.3", path = "crates/derive", package = "better-auth-macros" }
 better-auth-seaorm = { version = "1.0.0-alpha.3", path = "crates/seaorm" }
 better-auth-schema-registry = { version = "1.0.0-alpha.3", path = "crates/schema-registry" }
+better-auth-entity-codegen = { version = "1.0.0-alpha.3", path = "crates/entity-codegen" }
+better-auth-sqlx = { version = "1.0.0-alpha.3", path = "crates/sqlx" }
 prettyplease = "0.2"
 
 # Asynchronous runtime
@@ -103,7 +116,7 @@ quote = "1"
 syn = { version = "2", features = ["full"] }
 
 [features]
-default = ["native-tls"]
+default = ["native-tls", "sqlx"]
 native-tls = ["better-auth-api/native-tls"]
 rustls = ["better-auth-api/rustls"]
 axum = [
@@ -114,6 +127,7 @@ axum = [
     "better-auth-api/axum",
 ]
 seaorm2 = ["dep:better-auth-seaorm"]
+sqlx = ["dep:better-auth-sqlx"]
 redis-cache = ["better-auth-core/redis-cache"]
 
 [dependencies]
@@ -121,6 +135,7 @@ redis-cache = ["better-auth-core/redis-cache"]
 better-auth-core = { workspace = true }
 better-auth-api = { workspace = true }
 better-auth-seaorm = { workspace = true, optional = true }
+better-auth-sqlx = { workspace = true, optional = true }
 
 # Asynchronous runtime
 tokio = { workspace = true }
@@ -158,6 +173,8 @@ http-body-util = { version = "0.1", optional = true }
 
 [dev-dependencies]
 better-auth-seaorm = { workspace = true }
+better-auth-sqlx = { workspace = true }
+sqlx = { version = "0.9", default-features = false, features = ["sqlite", "postgres", "chrono", "json", "derive"] }
 tokio = { workspace = true, features = ["full", "test-util"] }
 serde_yaml = "0.9"
 multer = { version = "3.1", features = ["tokio-io"] }

@@ -34,30 +34,20 @@ found insertion lacked the update path's backend guard; the coordinator repaired
 it so an unsupported RETURNING dialect cannot persist a row before reporting
 a missing return value.
 
-The namespaced `m20260930_000012_two_factor_verification_policy` migration adds
-missing nullable columns in place. It preserves existing factor rows, secret
-and backup bytes, owner identity, custom columns/indexes/triggers, rowids and
-timestamps. Both fresh and installed migration runs use the same registration.
+The bundled schema declares the nullable policy columns. The single squashed auth migration installs this shape; there is no upgrade path from earlier bundled shapes.
 
-Two native SQLite tests own distinct risks. An installed pre-policy table proves
-actual upgrade defaults, preservation, repeated migration, live trigger/index
-behavior and store readback of integral, fractional and null counters. It fails
-on the true frozen a1bd1c9 baseline with `no such column: verified`
-(`/tmp/two-factor-storage-upgrade-before.log`). The concurrent test uses eight
-separately opened, single-connection databases against one file. It proves all
-eight zero-based counter increments survive with unique returned snapshots, a
-future lock resists clearing, expired clearing has one winner, a stale threshold
-write cannot recreate a reset lock, and backup CAS has one winner. A second
-generation for the same owner remains byte-for-byte unchanged. The fixture
-removes the preexisting unique owner index to represent an installed/custom
-schema that permits multiple generations; this prerequisite does not silently
-change that unrelated existing constraint.
+A native concurrency test uses eight separately opened, single-connection
+databases against one file. It proves all eight zero-based counter increments
+survive with unique returned snapshots, a future lock resists clearing, expired
+clearing has one winner, a stale threshold write cannot recreate a reset lock,
+and backup CAS has one winner. A second generation for the same owner remains
+byte-for-byte unchanged.
 
 The published plugin comment says nullable historical counters are supported,
 but the actual 1.7.6 Kysely adapter assigns `field + delta` without COALESCE.
 Actual Bun SQLite failed-verification requests therefore retain NULL, and the
 threshold comparison cannot lock that row even with threshold zero. The API
-owner SDK configuration case preserves this behavior; the installed-store test
+owner SDK configuration case preserves this behavior; the native store test
 also asserts NULL increment/readback and no threshold-zero lock. That assertion
 fails against a1f2d431's original COALESCE implementation (Some(1) versus None),
 recorded in `/tmp/two-factor-storage-null-before.log`. Success still explicitly
@@ -74,11 +64,8 @@ owns canonical gates and independent review. Account/challenge enforcement,
 verified transitions, callbacks and official-client proofs follow separately.
 
 Coordinator independent review checked the pinned nullable arithmetic and all
-exact-row mutations, parameter binding, backend guards and upgrade registration.
-The existing installed user-reference regression now seeds the actual legacy
-SQL table before both upgrades, preserving its application-view/link proof and
-asserting new defaults. That focused test passed; no new production test seam
-was introduced. Full `devenv shell -- ./scripts/check.sh` passed: 274 SDK
+exact-row mutations, parameter binding and backend guards. No production test
+seam was introduced. Full `devenv shell -- ./scripts/check.sh` passed: 274 SDK
 scenarios / 8,168 assertions, 37 harness tests / 210 assertions, two Chromium
 tests / 22 assertions, 78.96% source lines (24,148 / 30,582). Log:
 `/tmp/two-factor-storage-reviewed-canonical.log`. Shared locks/inventory and

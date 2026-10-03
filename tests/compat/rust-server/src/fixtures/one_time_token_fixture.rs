@@ -18,7 +18,7 @@ use better_auth::plugins::{
 use better_auth::prelude::{AuthRequest, HttpMethod};
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
@@ -105,7 +105,10 @@ pub(crate) async fn router(
         config.session.defer_session_refresh = *name == "ott-refresh-deferred";
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_signup(true))
                 .plugin(SessionManagementPlugin::new())

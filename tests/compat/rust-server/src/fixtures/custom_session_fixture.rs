@@ -10,7 +10,7 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::{AuthContext, AuthRequest};
-use better_auth_seaorm::{SeaOrmStore, sea_orm::DatabaseConnection};
+use better_auth_seaorm::sea_orm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::{
     Arc,
@@ -18,11 +18,11 @@ use std::sync::{
 };
 struct TokenHook(Arc<AtomicUsize>);
 #[async_trait]
-impl better_auth_seaorm::SeaOrmHooks<TestSchema> for TokenHook {
+impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
         session: &mut better_auth::prelude::CreateSession,
-        _: &better_auth_seaorm::SeaOrmHookContext<'_>,
+        _: &crate::backend::HookContext<'_>,
     ) -> AuthResult<better_auth_seaorm::HookControl> {
         session.token = Some(format!(
             "custom{:027}",
@@ -123,7 +123,7 @@ pub(crate) async fn router(
         }
         let builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(
-                SeaOrmStore::<TestSchema>::new(config, database.clone())
+                crate::backend::store::<TestSchema>(config, database.clone())
                     .hook(TokenHook(counter.clone())),
             )
             .rate_limit(RateLimitConfig::new().enabled(false))

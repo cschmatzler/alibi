@@ -1,22 +1,39 @@
 //! A concrete application-owned session schema shared by SDK and native consumers.
-#[expect(
-    unreachable_pub,
-    reason = "SeaORM public Entity requires public Model and Relation associated types"
+#[cfg_attr(
+    feature = "seaorm2",
+    expect(
+        unreachable_pub,
+        reason = "SeaORM public Entity requires public Model and Relation associated types"
+    )
 )]
 pub mod application_session {
-    use better_auth::seaorm::{self, sea_orm::entity::prelude::*};
-    use seaorm::sea_orm::{self, Set, Statement};
+    #[cfg(feature = "seaorm2")]
+    use better_auth::seaorm::JsonMetadata;
+    #[cfg(feature = "seaorm2")]
+    use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
+    #[cfg(not(feature = "seaorm2"))]
+    use better_auth::sqlx::JsonMetadata;
+    use chrono::{DateTime, Utc};
     use serde::Serialize;
-    #[derive(seaorm::AuthEntity, Clone, Debug, PartialEq, Serialize, DeriveEntityModel)]
+    #[cfg_attr(
+        feature = "seaorm2",
+        derive(better_auth::seaorm::AuthEntity, DeriveEntityModel),
+        sea_orm(table_name = "sessions")
+    )]
+    #[cfg_attr(
+        not(feature = "seaorm2"),
+        derive(better_auth::sqlx::AuthEntity, sqlx::FromRow),
+        auth(table = "sessions")
+    )]
+    #[derive(Clone, Debug, PartialEq, Serialize)]
     #[auth(role = "session", secondary_storage)]
-    #[sea_orm(table_name = "sessions")]
     pub struct Model {
-        #[sea_orm(primary_key, auto_increment = false)]
+        #[cfg_attr(feature = "seaorm2", sea_orm(primary_key, auto_increment = false))]
         pub id: String,
-        pub expires_at: DateTimeUtc,
+        pub expires_at: DateTime<Utc>,
         pub token: String,
-        pub created_at: DateTimeUtc,
-        pub updated_at: DateTimeUtc,
+        pub created_at: DateTime<Utc>,
+        pub updated_at: DateTime<Utc>,
         pub ip_address: Option<String>,
         pub user_agent: Option<String>,
         pub user_id: String,
@@ -31,47 +48,19 @@ pub mod application_session {
         pub transformed: Option<String>,
         pub validated: Option<String>,
         pub callback: Option<String>,
-        #[sea_orm(column_type = "JsonBinary")]
-        pub payload: seaorm::JsonMetadata,
+        #[cfg_attr(feature = "seaorm2", sea_orm(column_type = "JsonBinary"))]
+        pub payload: JsonMetadata,
     }
+    #[cfg(feature = "seaorm2")]
     #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
     pub enum Relation {}
-    #[async_trait::async_trait]
-    impl ActiveModelBehavior for ActiveModel {
-        async fn before_save<C>(mut self, db: &C, insert: bool) -> Result<Self, DbErr>
-        where
-            C: ConnectionTrait,
-        {
-            let label = self.label.clone().unwrap();
-            _ = db
-                .execute_raw(Statement::from_sql_and_values(
-                    db.get_database_backend(),
-                    "INSERT INTO session_model_events (phase, label, is_insert) VALUES (?, ?, ?)",
-                    ["before".into(), label.clone().into(), insert.into()],
-                ))
-                .await?;
-            if label.as_deref() == Some("native-hook") {
-                self.label = Set(Some("model-override".into()));
-            }
-            Ok(self)
-        }
-        async fn after_save<C>(model: Model, db: &C, insert: bool) -> Result<Model, DbErr>
-        where
-            C: ConnectionTrait,
-        {
-            _ = db
-                .execute_raw(Statement::from_sql_and_values(
-                    db.get_database_backend(),
-                    "INSERT INTO session_model_events (phase, label, is_insert) VALUES (?, ?, ?)",
-                    ["after".into(), model.label.clone().into(), insert.into()],
-                ))
-                .await?;
-            Ok(model)
-        }
-    }
+    // Each consumer implements `ActiveModelBehavior` for SeaORM: the native
+    // integration tests observe model save hooks, while the fixture server
+    // keeps the default behavior so both stores serve identical scenarios.
 }
+// The including module supplies the bundled `entities` of its store backend.
+use super::entities::{account, user, verification};
 use better_auth::AuthSchema;
-use better_auth_seaorm::store::entities::{account, user, verification};
 
 #[expect(
     unreachable_pub,

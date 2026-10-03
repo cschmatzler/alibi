@@ -44,9 +44,9 @@ before binding, losing spelling and interpreting literal markers. No raw SQL
 interpolation or extra writes were added.
 
 UserStore::coerce_user_text_number preserves INTEGER versus REAL bindings and
-PluginStore forwards it. SQLite runs actual CAST, propagates errors and ports
-SQLite 3.53.2 finite REAL formatting for older engines; Inf/-Inf retain actual
-CAST output. NaN is rejected. The phone consumer selects INTEGER inside Bun's
+PluginStore forwards it. The store returns the database's actual CAST text and
+propagates its errors, so REAL formatting follows the installed SQLite version,
+as it does for the TypeScript adapter. NaN is rejected. The phone consumer selects INTEGER inside Bun's
 signed Int52 range, excluding negative zero, and REAL otherwise. Other backends
 retain their own CAST results; custom stores must implement the capability.
 
@@ -90,8 +90,8 @@ Two new native cases and one SDK scenario extend managed JWT coverage.
 A pinned Better Auth phone signup probe confirms raw 1e400/-1e400 stores Inf/-Inf;
 1e309/-1e309 duplicate signups fail 422 without users. JSON.parse rounding,
 negative zero/infinity and JSON.stringify null/zero are independently confirmed.
-Bun reportsSQLite 3.53.2. The finite CAST port was independently rerun against
-all 112,547 prior Bun oracle cases, all matching.
+Scenarios assert only values whose text is identical across SQLite versions;
+17-significant-digit REAL text depends on the engine (3.52+), not the library.
 
 Tests cover separate callback, wire, signed-byte, persistence and adapter risks;
 no wrapper/export exists only for a test. Expected SQL/claim text and binary

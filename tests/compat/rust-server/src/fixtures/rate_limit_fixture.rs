@@ -7,7 +7,7 @@ use better_auth::middleware::{
 };
 use better_auth::plugins::EmailPasswordPlugin;
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use std::{sync::Arc, time::Duration};
 
 #[derive(Debug)]
@@ -70,7 +70,10 @@ pub(crate) async fn router(
         }
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(limits)
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(otp_profiles::plugin(outbox.clone()))

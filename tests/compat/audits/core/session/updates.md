@@ -43,8 +43,8 @@ columns and then uses the normal insert/update lifecycle. Existing
 ActiveModelBehavior before_save/after_save and explicit overrides remain active.
 AuthEntity session derives generate actual column bindings and typed staging;
 manual model/store defaults fail closed for nonempty unsupported fields.
-TEXT numeric affinity uses the existing SQLite 3.53 formatting compatibility
-implementation while preserving raw Infinity and negative zero. JSON columns use
+TEXT numeric affinity uses the database's own CAST text, preserving raw
+Infinity and negative zero. JSON columns use
 prepared JsonMetadata, including ordinary application keys that resemble serde
 private keys. No generic metadata column substitutes for application columns.
 

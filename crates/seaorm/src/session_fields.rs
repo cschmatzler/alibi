@@ -39,11 +39,6 @@ pub(crate) async fn prepare_string_value<C: ConnectionTrait>(
     if let Value::String(value) = value {
         return Ok(value);
     }
-    let number = if let Value::Double(Some(number)) = &value {
-        Some(*number)
-    } else {
-        None
-    };
     if matches!(&value, Value::Json(_)) {
         return Err(AuthError::internal(
             "object cannot bind to a scalar session field",
@@ -65,13 +60,7 @@ pub(crate) async fn prepare_string_value<C: ConnectionTrait>(
         .await
         .map_err(crate::store::map_db_err)?
         .ok_or_else(|| AuthError::internal("session TEXT affinity returned no row"))?;
-    let actual: Option<String> = row.try_get("", "value").map_err(crate::store::map_db_err)?;
-    Ok(match (backend, number) {
-        (DbBackend::Sqlite, Some(number)) if number.is_finite() => {
-            Some(crate::store::sqlite_real_text(number))
-        }
-        _ => actual,
-    })
+    row.try_get("", "value").map_err(crate::store::map_db_err)
 }
 
 #[expect(

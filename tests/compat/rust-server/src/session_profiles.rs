@@ -13,11 +13,10 @@ use better_auth::plugins::{
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_core::store::{CacheAdapter, MemoryCacheAdapter};
-use better_auth_seaorm::store::entities::session;
-use better_auth_seaorm::{
-    SeaOrmStore,
-    sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, sea_query::Expr},
+use better_auth_seaorm::sea_orm::{
+    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, sea_query::Expr,
 };
+use better_auth_seaorm::store::entities::session;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -71,7 +70,10 @@ pub(super) async fn router(
             config.account.store_state_strategy = better_auth::config::OAuthStateStrategy::Cookie;
         }
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
-            .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+            .store(crate::backend::store::<TestSchema>(
+                config,
+                database.clone(),
+            ))
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new())
             .plugin(SessionManagementPlugin::new())

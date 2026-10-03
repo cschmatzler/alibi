@@ -18,7 +18,7 @@ use better_auth::{
     middleware::RateLimitConfig,
 };
 use better_auth_core::ManagedSecrets;
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use std::{
     collections::HashMap,
     sync::{
@@ -32,11 +32,11 @@ const CURRENT: &str = "compat-test-only-key-not-real-minimum-32chars";
 const LEGACY: &str = "managed-legacy-reader-key-at-least-32-characters";
 struct TokenHook(Arc<AtomicUsize>);
 #[async_trait]
-impl better_auth_seaorm::SeaOrmHooks<TestSchema> for TokenHook {
+impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
         session: &mut better_auth_core::CreateSession,
-        _: &better_auth_seaorm::SeaOrmHookContext<'_>,
+        _: &crate::backend::HookContext<'_>,
     ) -> AuthResult<better_auth_seaorm::HookControl> {
         let counter = self.0.fetch_add(1, Ordering::SeqCst) + 1;
         session.token = Some(format!("managed{counter:025}"));
@@ -117,7 +117,7 @@ pub(crate) async fn router(
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
                 .store(
-                    SeaOrmStore::<TestSchema>::new(config, database.clone())
+                    crate::backend::store::<TestSchema>(config, database.clone())
                         .hook(TokenHook(counter.clone())),
                 )
                 .rate_limit(RateLimitConfig::new().enabled(false))

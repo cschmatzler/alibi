@@ -7,7 +7,7 @@ use better_auth::plugins::{
     EmailPasswordPlugin, MultiSessionConfig, MultiSessionPlugin, SessionManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
-use better_auth_seaorm::{SeaOrmStore, sea_orm::DatabaseConnection};
+use better_auth_seaorm::sea_orm::DatabaseConnection;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -15,11 +15,11 @@ use std::sync::{
 
 struct TokenHook(Arc<AtomicUsize>);
 #[async_trait::async_trait]
-impl better_auth_seaorm::SeaOrmHooks<TestSchema> for TokenHook {
+impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
         session: &mut CreateSession,
-        _: &better_auth_seaorm::SeaOrmHookContext<'_>,
+        _: &crate::backend::HookContext<'_>,
     ) -> AuthResult<better_auth_seaorm::HookControl> {
         let count = self.0.fetch_add(1, Ordering::SeqCst) + 1;
         let rank = match count % 3 {
@@ -43,7 +43,7 @@ pub(crate) async fn router(
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
                 .store(
-                    SeaOrmStore::<TestSchema>::new(config, database.clone())
+                    crate::backend::store::<TestSchema>(config, database.clone())
                         .hook(TokenHook(counter.clone())),
                 )
                 .rate_limit(RateLimitConfig::new().enabled(false))

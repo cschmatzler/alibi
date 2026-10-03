@@ -15,12 +15,12 @@ use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManag
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::wire::UserView;
 use better_auth_core::{UpdateOrganization, store::OrganizationStore};
+use better_auth_seaorm::DatabaseConnection;
 use better_auth_seaorm::sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     Statement,
 };
 use better_auth_seaorm::store::entities::{member, organization, session, user};
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
@@ -163,7 +163,7 @@ pub(crate) async fn router(
         let auth_config = base.clone().base_path(&path);
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(auth_config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(
+                .store(crate::backend::store::<TestSchema>(
                     auth_config,
                     database.clone(),
                 ))
@@ -276,7 +276,7 @@ pub(crate) async fn router(
             }
         }),
     );
-    let legacy_store = Arc::new(SeaOrmStore::<TestSchema>::new(base.clone(), database));
+    let legacy_store = Arc::new(crate::backend::store::<TestSchema>(base.clone(), database));
     router = router.route(
         "/__test/organization-metadata-legacy",
         post(move |Json(body): Json<Value>| {

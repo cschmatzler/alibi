@@ -144,17 +144,8 @@ where
             .await
             .map_err(map_db_err)?
             .ok_or_else(|| AuthError::internal("Numeric text coercion returned no value"))?;
-        let actual: String = row.try_get("", "value").map_err(map_db_err)?;
-        // Older SQLite builds serialize REAL bindings with only 15 significant
-        // digits. Match the pinned Bun adapter's SQLite 3.53 conversion after
-        // executing the actual bound numeric CAST; errors still come from the
-        // configured backend. Other adapters retain their own CAST result.
-        match (backend, input) {
-            (DbBackend::Sqlite, NumericTextInput::Real(value_2)) if value_2.is_finite() => {
-                Ok(super::sqlite_real_text(value_2))
-            }
-            _ => Ok(actual),
-        }
+        // The configured database's own CAST decides the stored text.
+        row.try_get("", "value").map_err(map_db_err)
     }
 
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {

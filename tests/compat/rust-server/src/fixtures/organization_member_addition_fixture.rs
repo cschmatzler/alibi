@@ -25,7 +25,7 @@ use better_auth_core::{
     store::{MemberStore, OrganizationStore, UserStore},
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use serde_json::{Value, json};
@@ -137,7 +137,7 @@ async fn full_snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
 }
 struct Application {
     database: DatabaseConnection,
-    store: Arc<SeaOrmStore<TestSchema>>,
+    store: Arc<crate::backend::Store<TestSchema>>,
     mode: Mutex<String>,
     patch: Mutex<OrganizationMemberCreatePatch>,
     receipts: Mutex<Vec<Value>>,
@@ -383,7 +383,7 @@ pub(crate) async fn router(
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let application = Arc::new(Application {
         database: database.clone(),
-        store: Arc::new(SeaOrmStore::new(base.clone(), database)),
+        store: Arc::new(crate::backend::store(base.clone(), database)),
         mode: Mutex::new("off".into()),
         patch: Mutex::new(OrganizationMemberCreatePatch::default()),
         receipts: Mutex::new(Vec::new()),
@@ -445,7 +445,7 @@ pub(crate) async fn router(
         };
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(
+                .store(crate::backend::store::<TestSchema>(
                     config,
                     application.database.clone(),
                 ))

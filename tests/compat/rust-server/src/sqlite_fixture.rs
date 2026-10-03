@@ -47,7 +47,6 @@ pub(super) async fn connect()
 mod tests {
     use super::*;
     use better_auth_core::{AuthUser, CreateUser};
-    use better_auth_seaorm::SeaOrmStore;
     use std::time::Duration;
 
     #[tokio::test]
@@ -121,12 +120,10 @@ mod tests {
             configured.max_lifetime(interval);
         }
         let database = Database::connect(configured).await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
-            .await
-            .unwrap();
+        crate::backend::migrate(&database).await.unwrap();
         let config =
             better_auth::AuthConfig::new("fixture-database-retention-test-secret-at-least-32chars");
-        let store = SeaOrmStore::<crate::TestSchema>::new(config, database);
+        let store = crate::backend::store::<crate::TestSchema>(config, database);
         let issued = better_auth_core::store::UserStore::create_user(
             &store,
             CreateUser::new().with_email("retained@fixture.test"),

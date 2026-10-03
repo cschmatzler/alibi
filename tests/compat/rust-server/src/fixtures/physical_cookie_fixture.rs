@@ -6,10 +6,7 @@ use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult};
 use better_auth_core::{CookieAttributes, CookieOverride, SameSite};
-use better_auth_seaorm::{
-    SeaOrmStore,
-    sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement},
-};
+use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use chrono::Duration;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -81,7 +78,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         }
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::new(config, database.clone()))
+                .store(crate::backend::store(config, database.clone()))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())

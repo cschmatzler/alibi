@@ -16,10 +16,7 @@ use better_auth::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementP
 use better_auth::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion, BackgroundTaskHandler,
 };
-use better_auth_seaorm::{
-    SeaOrmStore,
-    sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement},
-};
+use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
@@ -274,7 +271,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             ..Default::default()
         });
         let store = ControlledStore {
-            inner: SeaOrmStore::<TestSchema>::new(config.clone(), database.clone()),
+            inner: crate::backend::store::<TestSchema>(config.clone(), database.clone()),
             application: application.clone(),
             profile: name,
         };

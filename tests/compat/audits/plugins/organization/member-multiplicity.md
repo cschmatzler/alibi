@@ -24,14 +24,8 @@ Actual isolated runtime evidence is preserved in these scripts and logs:
   creation with three physical memberships despite only two distinct
   organizations; smaller configured pages permit genuine creation and deletion.
 
-The appended `m20261001_000015_member_pair_multiplicity` migration drops only
-the bundled `idx_member_org_user_unique` index when present. The recorded initial
-schema remains unchanged. Fresh databases run the same appended upgrade as
-populated installations. No rows are rebuilt or deduplicated, and application
-constraints/indexes remain application-owned. SQLite upgrades first refuse an
-incoming application foreign key over the organization/user pair, as detailed
-below. There is no automatic downgrade
-that invents a choice of which duplicate rows to delete.
+The bundled member table has no unique organization/user index. The single squashed auth migration installs this shape; there is no upgrade path from earlier bundled shapes.
+Application constraints/indexes remain application-owned.
 
 `OrganizationStore::list_user_organizations` keeps its existing public return
 type. The bundled implementation selects the caller's physical member page with
@@ -46,19 +40,12 @@ captured original organization/user for team cleanup even when another member
 row for that pair remains. This is a low-level store contract; caller
 authorization remains in the existing route/helper logic.
 
-The three distinct native owners in `member_multiplicity_tests.rs` prove:
+The native owners prove:
 
-- A genuinely populated prior migration history enforces the old pair index,
-  then the appended upgrade permits a second public-store insert. Complete
-  physical row/rowid/text/date snapshots, table/foreign-key SQL, application
-  index/trigger/view and peer rows survive. Exact-ID role updates retain the
-  sibling and fire the actual application trigger. Repeated migration runs and
-  direct repeated execution with the index absent preserve rows/schema/ledger.
-- A separately prepared published-style unconstrained table protects the
-  consumer independently of the migration: full newer/older/newer output,
-  physical pages 100/2/1/0, first-member lookup and exact-ID deletion with scoped
-  team-seat cleanup retain full peer organization/user/member and foreign team
-  state.
+- A published-style unconstrained table protects the consumer: full
+  newer/older/newer output, physical pages 100/2/1/0, first-member lookup and
+  exact-ID deletion with scoped team-seat cleanup retain full peer
+  organization/user/member and foreign team state.
 - Two independently opened SQLite connections admit both actual inserts with
   distinct IDs and roles for one pair. Both connections read the persisted rows
   and the unrelated peer remains unchanged. This is a storage admission proof,
@@ -89,7 +76,7 @@ storage appends member rows, selects its first match, and counts physical rows.
 Custom persistent adapters are responsible for matching these row semantics;
 this change adds no new traits, models, macros or implicit pair deduplication.
 
-Limits: SQLite runtime and installed-upgrade behavior are proved. PostgreSQL
+Limits: SQLite runtime behavior is proved. PostgreSQL
 execution, unusual dangling rows, arbitrary joined custom columns, non-integer
 or nonfinite page configuration, and adapter-specific unordered query plans are
 not claimed. A dangling native member still omits its missing organization,
@@ -98,46 +85,6 @@ accept/reset, rollback failures, pre-transaction capacity checks and lifecycle
 hooks remain a separate capability. The server-only add-member duplicate-hook
 SDK extension follows its independently frozen helper dependency; this storage
 prerequisite does not claim that additional end-to-end evidence yet.
-
-## Dependent application foreign keys
-
-Independent review found a real installed-schema preservation failure in frozen
-0d0ba40c: SQLite permits dropping the old unique pair index even when an
-application foreign key depends on it. The drop succeeds, but subsequent
-`foreign_key_check` and real member deletion fail with foreign-key mismatch.
-The native prior-code reproduction is retained in
-`/tmp/organization-member-pair-fk-guard-before.log`; both operations reach the
-actual database. This is not a hypothetical constraint or a mocked migration.
-
-Before dropping a present index, the SQLite migration now reads actual catalog
-tables, passes each name as a bound value to `pragma_foreign_key_list`, groups
-references by their FK identity/sequence and detects the two referenced pair
-columns in either order. Quoted names and case-insensitive parent names remain
-data. It returns an explicit migration error before any index, row or ledger
-write. The application must migrate its reference to the member ID first; this
-migration does not drop its FK, rewrite its records or choose duplicate rows.
-The existing absent-index no-op and fresh/default migrations remain unchanged.
-
-The additional native owner creates two actual organization/user/member pairs
-and a quoted-name application table with real pair references and byte payloads.
-On refusal, complete schema, member rowids/text/dates, app records, migration
-ledger and full owner/peer records match their prior snapshots. The real FK
-check remains valid and the referenced member still rejects deletion. An actual
-application-owned change preserves both payloads while moving to member-ID
-references; upgrade retry then succeeds, permits a duplicate member insert and
-retains the peer and app records. The reference guard deliberately refuses pair
-references even if another application-owned unique index could also support
-them; arbitrary app constraint redesign remains application-owned.
-
-Focused storage family passes 61 native tests in
-`/tmp/organization-member-pair-fk-guard-seaorm-final.log`. Production strict Clippy passes in
-`/tmp/organization-member-pair-fk-guard-clippy-final.log`; formatting and diff
-checks pass on the isolated guard tree.
-PostgreSQL/MySQL dependency rejection relies on their existing DROP without
-CASCADE behavior and is not runtime proved here. Concurrent application-schema
-changes during migration are outside this bounded installed-upgrade contract.
-No store API, handler, model, initial schema, dependency, lock or inventory
-changed in this follow-up.
 
 ## Real SDK admission and consumer owners
 
@@ -151,10 +98,9 @@ fixture registrations, dependencies and inventories remain unchanged.
 
 The authoring contract is physical membership admission and its observable
 consumers. Earlier owners cannot reach duplicate rows because the old unique
-index rejects them. The native installed upgrade, application FK refusal/retry,
-and independently connected storage race retain their distinct boundaries;
-these SDK owners exercise the actual official client and unchanged published
-server-only helper, rather than replaying migration assertions.
+index rejects them. The independently connected storage race retains its
+distinct boundary; these SDK owners exercise the actual official client and
+unchanged published server-only helper.
 
 - A genuine trusted before-add patch retargets a new candidate to an existing
   member, creates a second physical row with an `admin` role, and observes the
@@ -227,8 +173,7 @@ fixture Clippy, client TypeScript, Rust formatting and diff checks pass in
 `/tmp/organization-member-multiplicity-sdk-fixture-clippy-final.log`,
 `/tmp/organization-member-multiplicity-sdk-typecheck-final.log`, and
 `/tmp/organization-member-multiplicity-sdk-fmt-check.log`.
-The frozen storage/FK prerequisites retain their separately proved native
-61-test family and installed schema evidence above. No full canonical gate was
+No full canonical gate was
 run by this owner. All focused fixture processes were stopped by their runner;
 source trees, scripts and nonpassing evidence are preserved.
 

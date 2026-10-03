@@ -16,7 +16,7 @@ use better_auth_core::{
     store::{UserStore, VerificationStore},
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -107,7 +107,7 @@ pub(crate) async fn router(
 ) -> AuthResult<Router<Auth>> {
     let trace = Arc::new(Mutex::new(Trace::default()));
     let delivery = Arc::new(Delivery::default());
-    let store = Arc::new(SeaOrmStore::<TestSchema>::new(
+    let store = Arc::new(crate::backend::store::<TestSchema>(
         base.clone(),
         database.clone(),
     ));
@@ -118,17 +118,14 @@ pub(crate) async fn router(
         "two-factor-pending-lookup-zero",
         "two-factor-pending-lookup-zero-disabled",
     ] {
-        let mut observed = database.clone();
         let recorded = trace.clone();
-        observed.set_metric_callback(move |info| {
-            if let Some(name) = phase(&info.statement.sql) {
-                if !info.failed {
-                    if let Ok(mut trace) = recorded.lock() {
-                        if trace.armed {
-                            trace.receipts.push(name.into());
-                            if name == "user" {
-                                trace.armed = false;
-                            }
+        let observed = crate::backend::observe(&database, move |sql| {
+            if let Some(name) = phase(sql) {
+                if let Ok(mut trace) = recorded.lock() {
+                    if trace.armed {
+                        trace.receipts.push(name.into());
+                        if name == "user" {
+                            trace.armed = false;
                         }
                     }
                 }
@@ -139,7 +136,10 @@ pub(crate) async fn router(
         config.verification.disable_cleanup = name.ends_with("-disabled");
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, observed))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    observed.database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())
@@ -153,7 +153,10 @@ pub(crate) async fn router(
                 .build()
                 .await?,
         );
-        router = router.nest(&path, auth.clone().axum_router().with_state(auth));
+        router = router.nest(
+            &path,
+            observed.scope(auth.clone().axum_router().with_state(auth)),
+        );
     }
     Ok(router.route(
         "/__test/two-factor-pending-lookup",

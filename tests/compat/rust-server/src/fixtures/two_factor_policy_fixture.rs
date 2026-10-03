@@ -18,7 +18,7 @@ use better_auth_core::{
     utils::json::{self, JsValue},
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
 use chrono::{Duration, Utc};
@@ -29,12 +29,12 @@ type Auth = Arc<BetterAuth<TestSchema>>;
 
 struct RejectUserUpdate;
 #[async_trait::async_trait]
-impl better_auth_seaorm::SeaOrmHooks<TestSchema> for RejectUserUpdate {
+impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for RejectUserUpdate {
     async fn before_update_user(
         &self,
         _id: &str,
         update: &mut better_auth_core::UpdateUser,
-        _context: &better_auth_seaorm::SeaOrmHookContext<'_>,
+        _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<better_auth_seaorm::HookControl> {
         if update.two_factor_enabled == Some(true) {
             return Err(better_auth_core::AuthError::Upstream {
@@ -52,11 +52,13 @@ struct RejectSessionCreate {
     pending: bool,
 }
 #[async_trait::async_trait]
-impl better_auth_seaorm::SeaOrmHooks<TestSchema> for RejectSessionCreate {
+impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
+    for RejectSessionCreate
+{
     async fn before_create_session(
         &self,
         _session: &mut better_auth_core::CreateSession,
-        context: &better_auth_seaorm::SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<better_auth_seaorm::HookControl> {
         if context.request.as_ref().is_some_and(|request| {
             if self.pending {
@@ -226,7 +228,7 @@ pub(crate) async fn router(
         if name == "two-factor-trust-cleanup-disabled" {
             config.verification.disable_cleanup = true;
         }
-        let store = SeaOrmStore::<TestSchema>::new(config.clone(), database.clone());
+        let store = crate::backend::store::<TestSchema>(config.clone(), database.clone());
         let store = if name == "two-factor-skip-user-hook" {
             store.with_hooks(vec![Arc::new(RejectUserUpdate)])
         } else if name.contains("-session-") {
@@ -287,7 +289,7 @@ pub(crate) async fn router(
         );
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
-    let store = Arc::new(SeaOrmStore::<TestSchema>::new(
+    let store = Arc::new(crate::backend::store::<TestSchema>(
         base.clone(),
         database.clone(),
     ));
@@ -311,7 +313,7 @@ pub(crate) async fn router(
 
 async fn control(
     body: Bytes,
-    store: Arc<SeaOrmStore<TestSchema>>,
+    store: Arc<crate::backend::Store<TestSchema>>,
     database: DatabaseConnection,
     delivery: Delivery,
     backup_configs: Arc<HashMap<String, TwoFactorConfig>>,

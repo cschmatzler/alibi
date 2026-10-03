@@ -11,7 +11,7 @@ use better_auth::prelude::{AuthRequest, AuthUser, CreateUser, HttpMethod};
 use better_auth::{AuthBuilder, AuthConfig};
 use better_auth_seaorm::sea_orm::sea_query::{Alias, ColumnDef, Expr, ExprTrait, Query, Table};
 use better_auth_seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection};
-use better_auth_seaorm::{HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore};
+use better_auth_seaorm::{DatabaseHooks, HookControl, SeaOrm, SeaOrmHookContext, SeaOrmStore};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -24,7 +24,7 @@ struct OrderingHook {
 }
 
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for OrderingHook {
+impl DatabaseHooks<TestSchema, SeaOrm> for OrderingHook {
     async fn before_create_user(
         &self,
         _user: &mut CreateUser,
@@ -44,7 +44,7 @@ struct RequestContextHook {
 }
 
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for RequestContextHook {
+impl DatabaseHooks<TestSchema, SeaOrm> for RequestContextHook {
     async fn before_create_user(
         &self,
         _user: &mut CreateUser,
@@ -116,7 +116,7 @@ struct OnboardingHook {
 }
 
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for OnboardingHook {
+impl DatabaseHooks<TestSchema, SeaOrm> for OnboardingHook {
     async fn after_create_user(
         &self,
         user: &<TestSchema as better_auth_core::AuthSchema>::User,
@@ -135,7 +135,7 @@ struct DeleteCaptureHook {
 }
 
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for DeleteCaptureHook {
+impl DatabaseHooks<TestSchema, SeaOrm> for DeleteCaptureHook {
     async fn before_delete_user(
         &self,
         user: &<TestSchema as better_auth_core::AuthSchema>::User,

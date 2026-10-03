@@ -15,9 +15,8 @@ use better_auth::plugins::api_key::{
 };
 use better_auth::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_seaorm::{
-    SeaOrmStore,
-    sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, QueryResult, Statement},
+use better_auth_seaorm::sea_orm::{
+    ConnectionTrait, DatabaseConnection, DbBackend, QueryResult, Statement,
 };
 use serde_json::{Value, json};
 use std::sync::{
@@ -398,7 +397,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let config = base.clone().base_path(path);
     let auth = Arc::new(
         AuthBuilder::<TestSchema>::new(config.clone())
-            .store(SeaOrmStore::<TestSchema>::new(
+            .store(crate::backend::store::<TestSchema>(
                 config.clone(),
                 database.clone(),
             ))

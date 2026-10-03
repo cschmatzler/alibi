@@ -8,7 +8,7 @@ use better_auth::{
     plugins::{EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin},
 };
 use better_auth_core::utils::json::{self, JsValue};
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 type Auth = Arc<BetterAuth<TestSchema>>;
@@ -52,7 +52,10 @@ pub(crate) async fn router(
         config.app_name = "Fixture Auth".to_owned();
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(
                     EmailPasswordPlugin::new()

@@ -1,5 +1,5 @@
 use better_auth_schema_registry::{self as registry, EntityRole, ExtraEntitySchema, FieldDef};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use std::fs;
@@ -14,13 +14,25 @@ struct Cli {
     command: Command,
 }
 
+/// The store backend whose entity definitions are generated.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+enum Backend {
+    #[default]
+    Sqlx,
+    Seaorm,
+}
+
 #[derive(Subcommand)]
 enum Command {
-    /// Generate the auth schema file with `SeaORM` entity definitions.
+    /// Generate the auth schema file with `SQLx` or `SeaORM` entity definitions.
     ///
     /// By default generates core-only entities. Use --plugins to include
     /// plugin-specific fields (e.g. username, admin ban fields).
     Generate {
+        /// Store backend to generate entities for.
+        #[arg(short, long, value_enum, default_value_t)]
+        backend: Backend,
+
         /// Write output to a file instead of stdout.
         #[arg(short, long)]
         output: Option<PathBuf>,
@@ -37,14 +49,18 @@ fn main() -> ExitCode {
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Generate { output, plugins } => {
+        Command::Generate {
+            backend,
+            output,
+            plugins,
+        } => {
             let plugins = if plugins.iter().any(|p| p == "all") {
                 list_plugins().into_iter().map(String::from).collect()
             } else {
                 plugins
             };
 
-            let schema = generate_schema(&plugins);
+            let schema = generate_schema(&plugins, backend);
 
             match output {
                 Some(path) => {
@@ -92,22 +108,238 @@ fn list_plugins() -> Vec<&'static str> {
     registry::plugin_schemas().iter().map(|p| p.name).collect()
 }
 
-fn generate_schema(plugins: &[String]) -> String {
-    // Collect plugin fields for user and session
-    let mut extra_user: Vec<FieldDef> = Vec::new();
-    let mut extra_session: Vec<FieldDef> = Vec::new();
-    let mut extra_entities: Vec<&ExtraEntitySchema> = Vec::new();
+/// Core and selected plugin fields of every generated entity.
+struct Selection {
+    user: Vec<FieldDef>,
+    session: Vec<FieldDef>,
+    extra: Vec<&'static ExtraEntitySchema>,
+}
 
+fn select(plugins: &[String]) -> Selection {
+    let mut selection = Selection {
+        user: Vec::new(),
+        session: Vec::new(),
+        extra: Vec::new(),
+    };
     for plugin_name in plugins {
         if let Some(schema) = registry::plugin_schemas()
             .iter()
             .find(|p| p.name == plugin_name.as_str())
         {
-            extra_user.extend_from_slice(schema.user_fields);
-            extra_session.extend_from_slice(schema.session_fields);
-            extra_entities.extend(schema.extra_entities.iter());
+            selection.user.extend_from_slice(schema.user_fields);
+            selection.session.extend_from_slice(schema.session_fields);
+            selection.extra.extend(schema.extra_entities.iter());
         }
     }
+    selection
+}
+
+fn generate_schema(plugins: &[String], backend: Backend) -> String {
+    let selection = select(plugins);
+    let tokens = match backend {
+        Backend::Sqlx => sqlx_schema(&selection),
+        Backend::Seaorm => seaorm_schema(&selection),
+    };
+    #[expect(
+        clippy::expect_used,
+        reason = "generated from hardcoded registry; parse failure is a bug"
+    )]
+    let file = syn::parse2(tokens).expect("generated code should be valid syntax");
+    prettyplease::unparse(&file)
+}
+
+const CORE_ENTITIES: [(&str, &str, EntityRole); 4] = [
+    ("user", "users", EntityRole::User),
+    ("session", "sessions", EntityRole::Session),
+    ("account", "accounts", EntityRole::Account),
+    ("verification", "verifications", EntityRole::Verification),
+];
+
+fn role_name(role: EntityRole) -> &'static str {
+    match role {
+        EntityRole::User => "user",
+        EntityRole::Session => "session",
+        EntityRole::Account => "account",
+        EntityRole::Verification => "verification",
+    }
+}
+
+/// Fields of a core entity: its core fields, then the selected plugin fields.
+fn entity_fields(selection: &Selection, role: EntityRole) -> Vec<&FieldDef> {
+    let plugin: &[FieldDef] = match role {
+        EntityRole::User => &selection.user,
+        EntityRole::Session => &selection.session,
+        EntityRole::Account | EntityRole::Verification => &[],
+    };
+    registry::core_fields(role).iter().chain(plugin).collect()
+}
+
+#[expect(
+    clippy::panic,
+    reason = "type strings come from hardcoded registry; parse failure is a bug"
+)]
+fn parse_type(field: &FieldDef, ty: &str) -> syn::Type {
+    syn::parse_str(ty)
+        .unwrap_or_else(|e| panic!("invalid type `{ty}` for field `{}`: {e}", field.name))
+}
+
+fn sqlx_schema(selection: &Selection) -> TokenStream {
+    let entities = CORE_ENTITIES.iter().map(|(module, table, role)| {
+        sqlx_entity(module, table, Some(*role), &entity_fields(selection, *role))
+    });
+    let extra = selection.extra.iter().map(|entity| {
+        sqlx_entity(
+            entity.mod_name,
+            entity.table_name,
+            entity.role,
+            &entity.fields.iter().collect::<Vec<_>>(),
+        )
+    });
+    let tables = CORE_ENTITIES
+        .iter()
+        .map(|(_, table, role)| (*table, entity_fields(selection, *role)))
+        .chain(
+            selection
+                .extra
+                .iter()
+                .map(|entity| (entity.table_name, entity.fields.iter().collect())),
+        )
+        .collect::<Vec<_>>();
+    let sqlite = tables
+        .iter()
+        .map(|(table, fields)| create_table(table, fields, SqlDialect::Sqlite));
+    let postgres = tables
+        .iter()
+        .map(|(table, fields)| create_table(table, fields, SqlDialect::Postgres));
+    quote! {
+        use better_auth::AuthSchema;
+        use better_auth::sqlx::SqlxPool;
+
+        #(#entities)*
+        #(#extra)*
+
+        pub struct AppAuthSchema;
+
+        impl AuthSchema for AppAuthSchema {
+            type User = user::Model;
+            type Session = session::Model;
+            type Account = account::Model;
+            type Verification = verification::Model;
+        }
+
+        const SQLITE_TABLES: &[&str] = &[#(#sqlite),*];
+        const POSTGRES_TABLES: &[&str] = &[#(#postgres),*];
+
+        pub async fn run_app_migrations(
+            pool: &SqlxPool,
+        ) -> Result<(), better_auth::sqlx::sqlx::Error> {
+            match pool {
+                SqlxPool::Sqlite(pool) => {
+                    for statement in SQLITE_TABLES {
+                        let _ = better_auth::sqlx::sqlx::query(*statement).execute(pool).await?;
+                    }
+                }
+                SqlxPool::Postgres(pool) => {
+                    for statement in POSTGRES_TABLES {
+                        let _ = better_auth::sqlx::sqlx::query(*statement).execute(pool).await?;
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+fn sqlx_entity(
+    module: &str,
+    table: &str,
+    role: Option<EntityRole>,
+    fields: &[&FieldDef],
+) -> TokenStream {
+    let module = format_ident!("{}", module);
+    let fields = fields.iter().map(|field| {
+        let name = format_ident!("{}", field.name);
+        let ty = parse_type(field, &sqlx_type(field.ty));
+        let rename = field
+            .column_name
+            .map(|column| quote! { #[sqlx(rename = #column)] });
+        quote! {
+            #rename
+            pub #name: #ty,
+        }
+    });
+    let derive = role.map_or_else(
+        || quote! { #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow)] },
+        |role| {
+            let role = role_name(role);
+            quote! {
+                #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+                #[auth(role = #role, table = #table)]
+            }
+        },
+    );
+    quote! {
+        pub mod #module {
+            #derive
+            pub struct Model {
+                #(#fields)*
+            }
+        }
+    }
+}
+
+/// The `SQLx` model type for a registry type.
+fn sqlx_type(ty: &str) -> String {
+    ty.replace("DateTimeUtc", "chrono::DateTime<chrono::Utc>")
+        .replace("Json", "better_auth::sqlx::JsonMetadata")
+}
+
+#[derive(Clone, Copy)]
+enum SqlDialect {
+    Sqlite,
+    Postgres,
+}
+
+/// `CREATE TABLE IF NOT EXISTS` for a generated model, as `SeaORM` derives
+/// tables from its entities: column types follow the registry types.
+fn create_table(table: &str, fields: &[&FieldDef], dialect: SqlDialect) -> String {
+    let columns = fields
+        .iter()
+        .map(|field| {
+            let (inner, nullable) = field
+                .ty
+                .strip_prefix("Option<")
+                .and_then(|inner| inner.strip_suffix('>'))
+                .map_or((field.ty, false), |inner| (inner, true));
+            let sql_type = match (inner, dialect) {
+                ("bool", _) => "BOOLEAN",
+                ("i64", SqlDialect::Sqlite) => "INTEGER",
+                ("i64", SqlDialect::Postgres) => "BIGINT",
+                ("f64", SqlDialect::Sqlite) => "REAL",
+                ("f64", SqlDialect::Postgres) => "DOUBLE PRECISION",
+                ("DateTimeUtc", SqlDialect::Postgres) => "TIMESTAMPTZ",
+                ("Json", SqlDialect::Postgres) => "JSONB",
+                _ => "TEXT",
+            };
+            let column = field.column_name.unwrap_or(field.name);
+            let constraint = if field.is_primary_key {
+                " NOT NULL PRIMARY KEY"
+            } else if nullable {
+                ""
+            } else {
+                " NOT NULL"
+            };
+            format!("\"{column}\" {sql_type}{constraint}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("CREATE TABLE IF NOT EXISTS \"{table}\" ({columns})")
+}
+
+fn seaorm_schema(selection: &Selection) -> TokenStream {
+    let extra_user = &selection.user;
+    let extra_session = &selection.session;
+    let extra_entities = &selection.extra;
 
     let imports = quote! {
         use better_auth::AuthSchema;
@@ -117,8 +349,8 @@ fn generate_schema(plugins: &[String]) -> String {
         use better_auth::seaorm::{AuthEntity, DatabaseConnection};
     };
 
-    let user_entity = gen_entity("user", "users", EntityRole::User, &extra_user);
-    let session_entity = gen_entity("session", "sessions", EntityRole::Session, &extra_session);
+    let user_entity = gen_entity("user", "users", EntityRole::User, extra_user);
+    let session_entity = gen_entity("session", "sessions", EntityRole::Session, extra_session);
     let account_entity = gen_entity("account", "accounts", EntityRole::Account, &[]);
     let verification_entity = gen_entity(
         "verification",
@@ -168,7 +400,7 @@ fn generate_schema(plugins: &[String]) -> String {
         }
     };
 
-    let tokens = quote! {
+    quote! {
         #imports
         #user_entity
         #session_entity
@@ -177,14 +409,7 @@ fn generate_schema(plugins: &[String]) -> String {
         #(#extra_entity_tokens)*
         #schema_impl
         #migration_fn
-    };
-
-    #[expect(
-        clippy::expect_used,
-        reason = "generated from hardcoded registry; parse failure is a bug"
-    )]
-    let file = syn::parse2(tokens).expect("generated code should be valid syntax");
-    prettyplease::unparse(&file)
+    }
 }
 
 fn gen_entity(
@@ -320,7 +545,11 @@ fn gen_extra_entity(entity: &ExtraEntitySchema) -> TokenStream {
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
-    use super::{generate_schema, list_plugins};
+    use super::{Backend, generate_schema, list_plugins};
+
+    fn all() -> Vec<String> {
+        list_plugins().into_iter().map(String::from).collect()
+    }
 
     #[test]
     fn list_plugins_includes_passkey() {
@@ -328,8 +557,8 @@ mod tests {
     }
 
     #[test]
-    fn generate_schema_with_passkey_emits_entity_and_migration() {
-        let schema = generate_schema(&["passkey".to_owned()]);
+    fn seaorm_schema_with_passkey_emits_entity_and_migration() {
+        let schema = generate_schema(&["passkey".to_owned()], Backend::Seaorm);
 
         assert!(schema.contains("mod passkey"));
         assert!(schema.contains("#[sea_orm(table_name = \"passkeys\")]"));
@@ -339,13 +568,16 @@ mod tests {
     }
 
     #[test]
-    fn generate_schema_builtin_plugins_emit_required_entities() {
-        let schema = generate_schema(&[
-            "device-authorization".to_owned(),
-            "api-key".to_owned(),
-            "organization".to_owned(),
-            "passkey".to_owned(),
-        ]);
+    fn seaorm_schema_builtin_plugins_emit_required_entities() {
+        let schema = generate_schema(
+            &[
+                "device-authorization".to_owned(),
+                "api-key".to_owned(),
+                "organization".to_owned(),
+                "passkey".to_owned(),
+            ],
+            Backend::Seaorm,
+        );
 
         assert!(schema.contains("mod device_code"));
         assert!(schema.contains("mod api_key"));
@@ -358,6 +590,32 @@ mod tests {
         assert!(schema.contains("schema.create_table_from_entity(organization::Entity)"));
         assert!(schema.contains("schema.create_table_from_entity(member::Entity)"));
         assert!(schema.contains("schema.create_table_from_entity(invitation::Entity)"));
+    }
+
+    #[test]
+    fn sqlx_schema_with_passkey_emits_row_type_and_tables() {
+        let schema = generate_schema(&["passkey".to_owned()], Backend::Sqlx);
+
+        assert!(schema.contains("pub mod passkey"));
+        assert!(schema.contains("#[auth(role = \"user\", table = \"users\")]"));
+        assert!(schema.contains("pub credential: String"));
+        assert!(schema.contains("pub created_at: chrono::DateTime<chrono::Utc>"));
+        assert!(schema.contains("CREATE TABLE IF NOT EXISTS \\\"passkeys\\\""));
+        assert!(schema.contains("\\\"created_at\\\" TIMESTAMPTZ NOT NULL"));
+    }
+
+    // The checked-in fixtures are compiled and exercised by the integration
+    // tests; regenerate them with `better-auth-rs generate --plugins all`.
+    #[test]
+    fn generated_schemas_match_compiled_fixtures() {
+        assert_eq!(
+            generate_schema(&all(), Backend::Sqlx),
+            include_str!("../../../tests/fixtures/cli/sqlx_all.rs")
+        );
+        assert_eq!(
+            generate_schema(&all(), Backend::Seaorm),
+            include_str!("../../../tests/fixtures/cli/seaorm_all.rs")
+        );
     }
 }
 // LCOV_EXCL_STOP

@@ -18,7 +18,7 @@ use better_auth::{
     middleware::RateLimitConfig,
 };
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -342,7 +342,10 @@ pub(crate) async fn router(
         let settings = config.clone().base_path(&path);
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(settings.clone())
-                .store(SeaOrmStore::<TestSchema>::new(settings, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    settings,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())

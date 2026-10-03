@@ -1,0 +1,656 @@
+use super::{SqlxStore, lock_exclusive};
+use crate::error::cancelled_by_hook;
+use crate::model::{self, SqlxModel};
+use crate::pool::{Exec, SqlxTransaction};
+use crate::schema::{AuthSchema, SqlxVerificationModel};
+use crate::sql::Sql;
+use async_trait::async_trait;
+use better_auth_core::entity::AuthVerification;
+use better_auth_core::error::{AuthError, AuthResult};
+use better_auth_core::store::{VerificationStore, verification_reservation_key};
+use better_auth_core::types::{CreateVerification, UpdateVerification};
+use better_auth_core::verification::{
+    VerificationCreation, VerificationPublication, VerificationSnapshot,
+};
+use chrono::{DateTime, SubsecRound, Utc};
+
+impl<S> SqlxStore<S>
+where
+    S: AuthSchema,
+    S::Verification: SqlxVerificationModel,
+{
+    fn verification_table() -> &'static str {
+        <S::Verification as SqlxModel>::TABLE
+    }
+
+    pub(crate) async fn create_verification_record_with_connection(
+        &self,
+        exec: Exec<'_>,
+        tx: Option<&SqlxTransaction>,
+        mut data: VerificationCreation,
+        publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        let hook_context = self.hook_context(tx);
+        for hook in self.hooks() {
+            if hook
+                .before_create_verification_record(&mut data, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Ok(None);
+            }
+        }
+        let snapshot = if publication.store_in_database {
+            let id = data
+                .id
+                .as_deref()
+                .map(S::Verification::parse_id)
+                .transpose()?;
+            let mut active = S::Verification::new_active(id, data.data(), data.created_at);
+            if let Some(updated) = S::Verification::updated_at_column() {
+                let column = <S::Verification as SqlxModel>::COLUMNS
+                    .iter()
+                    .find(|column| column.name == updated)
+                    .ok_or_else(|| {
+                        AuthError::internal(
+                            "the verification update timestamp binding has no column",
+                        )
+                    })?;
+                active.set(column.name, data.updated_at);
+            } else if data.updated_at != data.created_at {
+                return Err(AuthError::internal(
+                    "the verification schema cannot preserve a distinct update timestamp",
+                ));
+            }
+            let model = model::insert::<S::Verification>(exec, &active).await?;
+            VerificationSnapshot::from_model(&model)
+        } else {
+            data.snapshot()
+        };
+        publication.publish(&snapshot).await?;
+        if tx.is_none() {
+            for hook in self.hooks() {
+                hook.after_create_verification_record(&snapshot, &hook_context)
+                    .await?;
+            }
+        }
+        Ok(Some(snapshot))
+    }
+
+    async fn create_verification_with_connection(
+        &self,
+        exec: Exec<'_>,
+        tx: Option<&SqlxTransaction>,
+        mut verification: CreateVerification,
+    ) -> AuthResult<S::Verification> {
+        let hook_context = self.hook_context(tx);
+        for hook in self.hooks() {
+            if hook
+                .before_create_verification(&mut verification, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Err(cancelled_by_hook("verification creation"));
+            }
+        }
+        let active = S::Verification::new_active(None, verification, Utc::now());
+        let verification = model::insert::<S::Verification>(exec, &active).await?;
+        if tx.is_none() {
+            for hook in self.hooks() {
+                hook.after_create_verification(&verification, &hook_context)
+                    .await?;
+            }
+        }
+        Ok(verification)
+    }
+
+    pub(crate) async fn create_verification_in_tx(
+        &self,
+        tx: &SqlxTransaction,
+        verification: CreateVerification,
+    ) -> AuthResult<S::Verification> {
+        self.create_verification_with_connection(Exec::Tx(tx), Some(tx), verification)
+            .await
+    }
+
+    /// `SELECT ... WHERE identifier = ? [AND ...] ORDER BY created_at DESC LIMIT 1`.
+    fn newest_generation(
+        exec: Exec<'_>,
+        filters: &[(&'static str, &'static str, crate::SqlValue)],
+    ) -> Sql {
+        let table = Self::verification_table();
+        let mut sql = model::select_model::<S::Verification>(exec);
+        for (index, (column, operator, value)) in filters.iter().enumerate() {
+            sql.push(if index == 0 { " WHERE " } else { " AND " })
+                .column(table, column)
+                .push(operator)
+                .bind(value.clone());
+        }
+        sql.push(" ORDER BY ")
+            .column(table, S::Verification::created_at_column())
+            .push(" DESC LIMIT 1");
+        sql
+    }
+
+    async fn consume_verification_generation(
+        &self,
+        identifier: &str,
+        expected_value: Option<&str>,
+    ) -> AuthResult<Option<S::Verification>> {
+        // SQLite acquires its writer reservation before reading so racers
+        // cannot all hold read locks and fail when upgrading to a write.
+        // PostgreSQL locks the selected row; the affected-row gate still
+        // protects against another consumer using a separate store/process.
+        let transaction = self.pool().begin(true).await?;
+        let outcome = async {
+            let exec = Exec::Tx(&transaction);
+            let mut select = Self::newest_generation(
+                exec,
+                &[(
+                    S::Verification::identifier_column(),
+                    " = ",
+                    identifier.into(),
+                )],
+            );
+            lock_exclusive(&mut select);
+            let Some(model) = exec.fetch_optional::<S::Verification>(select).await? else {
+                return Ok(None);
+            };
+            if expected_value.is_some_and(|expected| model.value() != expected) {
+                return Ok(None);
+            }
+            let hook_context = self.hook_context(Some(&transaction));
+            for hook in self.hooks() {
+                if hook
+                    .before_delete_verification(&model, &hook_context)
+                    .await?
+                    .is_cancelled()
+                {
+                    // The upstream consume hook returns null when cancelled.
+                    return Ok(None);
+                }
+            }
+            let table = Self::verification_table();
+            let id = S::Verification::parse_id(model.id().as_ref())?;
+            let mut delete = Sql::with(exec.backend(), "DELETE FROM ");
+            delete
+                .ident(table)
+                .push(" WHERE ")
+                .column(table, S::Verification::id_column())
+                .push(" = ")
+                .bind(id)
+                .push(" AND ")
+                .column(table, S::Verification::value_column())
+                .push(" = ")
+                .bind(model.value());
+            if exec.execute(delete).await? != 1 {
+                return Ok(None);
+            }
+            let mut siblings = Sql::with(exec.backend(), "DELETE FROM ");
+            siblings
+                .ident(table)
+                .push(" WHERE ")
+                .column(table, S::Verification::identifier_column())
+                .push(" = ")
+                .bind(identifier);
+            exec.execute(siblings).await?;
+            Ok(Some(model))
+        }
+        .await;
+        let consumed = match outcome {
+            Ok(consumed) => {
+                transaction.commit().await?;
+                consumed
+            }
+            Err(error) => {
+                transaction.rollback().await?;
+                return Err(error);
+            }
+        };
+        if let Some(model) = &consumed {
+            let hook_context = self.hook_context(None);
+            for hook in self.hooks() {
+                hook.after_delete_verification(model, &hook_context).await?;
+            }
+        }
+        // Even an expired generation is removed. Older generations cannot
+        // become valid again when the newest token expires.
+        Ok(consumed)
+    }
+
+    /// `UPDATE ... RETURNING` every verification column; the winning snapshot
+    /// is captured by the update itself, not a later read.
+    async fn update_verifications_returning(
+        &self,
+        filters: &[(&'static str, crate::SqlValue)],
+        value: Option<String>,
+        expires_at: Option<DateTime<Utc>>,
+        updated_at_column: &'static str,
+    ) -> AuthResult<Option<S::Verification>> {
+        let table = Self::verification_table();
+        let mut sql = Sql::with(self.exec().backend(), "UPDATE ");
+        sql.ident(table)
+            .push(" SET ")
+            .ident(updated_at_column)
+            .push(" = ")
+            .bind(Utc::now());
+        if let Some(value) = value {
+            sql.push(", ")
+                .ident(S::Verification::value_column())
+                .push(" = ")
+                .bind(value);
+        }
+        if let Some(expires_at) = expires_at {
+            sql.push(", ")
+                .ident(S::Verification::expires_at_column())
+                .push(" = ")
+                .bind(expires_at);
+        }
+        for (index, (column, value)) in filters.iter().enumerate() {
+            sql.push(if index == 0 { " WHERE " } else { " AND " })
+                .column(table, column)
+                .push(" = ")
+                .bind(value.clone());
+        }
+        model::returning::<S::Verification>(&mut sql);
+        // The statement updates every matching row; the first returned row is the snapshot.
+        self.exec().fetch_optional::<S::Verification>(sql).await
+    }
+}
+
+#[async_trait]
+impl<S> VerificationStore<S> for SqlxStore<S>
+where
+    S: AuthSchema + Send + Sync,
+    S::Verification: SqlxVerificationModel,
+{
+    async fn create_verification_record(
+        &self,
+        data: VerificationCreation,
+        publication: VerificationPublication,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        self.create_verification_record_with_connection(self.exec(), None, data, publication)
+            .await
+    }
+
+    async fn create_verification(
+        &self,
+        verification: CreateVerification,
+    ) -> AuthResult<S::Verification> {
+        self.create_verification_with_connection(self.exec(), None, verification)
+            .await
+    }
+
+    async fn get_verification(
+        &self,
+        identifier: &str,
+        value: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        let sql = Self::newest_generation(
+            self.exec(),
+            &[
+                (
+                    S::Verification::identifier_column(),
+                    " = ",
+                    identifier.into(),
+                ),
+                (S::Verification::value_column(), " = ", value.into()),
+                (
+                    S::Verification::expires_at_column(),
+                    " > ",
+                    Utc::now().into(),
+                ),
+            ],
+        );
+        self.exec().fetch_optional(sql).await
+    }
+
+    async fn get_verification_by_value(&self, value: &str) -> AuthResult<Option<S::Verification>> {
+        let sql = Self::newest_generation(
+            self.exec(),
+            &[
+                (S::Verification::value_column(), " = ", value.into()),
+                (
+                    S::Verification::expires_at_column(),
+                    " > ",
+                    Utc::now().into(),
+                ),
+            ],
+        );
+        self.exec().fetch_optional(sql).await
+    }
+
+    async fn get_verification_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        let sql = Self::newest_generation(
+            self.exec(),
+            &[
+                (
+                    S::Verification::identifier_column(),
+                    " = ",
+                    identifier.into(),
+                ),
+                (
+                    S::Verification::expires_at_column(),
+                    " > ",
+                    Utc::now().into(),
+                ),
+            ],
+        );
+        self.exec().fetch_optional(sql).await
+    }
+
+    async fn consume_verification(
+        &self,
+        identifier: &str,
+        value: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        Ok(self
+            .consume_verification_generation(identifier, Some(value))
+            .await?
+            .filter(|model| model.expires_at() >= Utc::now()))
+    }
+
+    async fn get_latest_verification_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        let sql = Self::newest_generation(
+            self.exec(),
+            &[(
+                S::Verification::identifier_column(),
+                " = ",
+                identifier.into(),
+            )],
+        );
+        self.exec().fetch_optional(sql).await
+    }
+
+    async fn consume_verification_by_identifier(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        Ok(self
+            .consume_verification_generation(identifier, None)
+            .await?
+            .filter(|model| model.expires_at() >= Utc::now()))
+    }
+
+    async fn consume_verification_snapshot(
+        &self,
+        identifier: &str,
+    ) -> AuthResult<Option<S::Verification>> {
+        self.consume_verification_generation(identifier, None).await
+    }
+
+    async fn delete_verifications_by_identifier(&self, identifier: &str) -> AuthResult<()> {
+        let table = Self::verification_table();
+        let mut select = model::select_model::<S::Verification>(self.exec());
+        select
+            .push(" WHERE ")
+            .column(table, S::Verification::identifier_column())
+            .push(" = ")
+            .bind(identifier)
+            .push(" LIMIT 1");
+        let Some(model) = self
+            .exec()
+            .fetch_optional::<S::Verification>(select)
+            .await?
+        else {
+            return Ok(());
+        };
+        // Upstream deleteVerificationByIdentifier uses deleteWithHooks, not
+        // deleteManyWithHooks: one snapshot drives the lifecycle callbacks,
+        // while the identifier predicate invalidates every matching row.
+        let hook_context = self.hook_context(None);
+        for hook in self.hooks() {
+            if hook
+                .before_delete_verification(&model, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Ok(());
+            }
+        }
+        let mut delete = Sql::with(self.exec().backend(), "DELETE FROM ");
+        delete
+            .ident(table)
+            .push(" WHERE ")
+            .column(table, S::Verification::identifier_column())
+            .push(" = ")
+            .bind(identifier);
+        self.exec().execute(delete).await?;
+        for hook in self.hooks() {
+            hook.after_delete_verification(&model, &hook_context)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn compare_and_swap_verification(
+        &self,
+        id: &str,
+        expected_value: &str,
+        value: &str,
+        expires_at: DateTime<Utc>,
+    ) -> AuthResult<bool> {
+        let updated_at_column = S::Verification::updated_at_column().ok_or_else(|| {
+            AuthError::internal("the verification schema has no update timestamp binding")
+        })?;
+        let parsed_id = S::Verification::parse_id(id)?;
+        let mut update = UpdateVerification {
+            value: Some(value.to_owned()),
+            expires_at: Some(expires_at),
+        };
+        let hook_context = self.hook_context(None);
+        for hook in self.hooks() {
+            if hook
+                .before_update_verification(id, &mut update, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Ok(false);
+            }
+        }
+        // RETURNING preserves the winning snapshot in the update itself. A
+        // second SELECT can lose the row to consumption or observe a later
+        // mutation, including changes made by application database triggers.
+        let Some(model) = self
+            .update_verifications_returning(
+                &[
+                    (S::Verification::id_column(), parsed_id),
+                    (S::Verification::value_column(), expected_value.into()),
+                ],
+                update.value,
+                update.expires_at,
+                updated_at_column,
+            )
+            .await?
+        else {
+            return Ok(false);
+        };
+        for hook in self.hooks() {
+            hook.after_update_verification(&model, &hook_context)
+                .await?;
+        }
+        Ok(true)
+    }
+
+    async fn reserve_verification(&self, verification: CreateVerification) -> AuthResult<bool> {
+        let logical = verification.identifier.clone();
+        Ok(self
+            .reserve_verification_record(&logical, verification)
+            .await?
+            .is_some())
+    }
+
+    async fn reserve_verification_record(
+        &self,
+        logical_identifier: &str,
+        verification: CreateVerification,
+    ) -> AuthResult<Option<S::Verification>> {
+        let (encoded, digest) = verification_reservation_key(logical_identifier);
+        let id = S::Verification::parse_reservation_id(&encoded, digest)?;
+        let active = S::Verification::new_active(Some(id.clone()), verification, Utc::now());
+        match model::insert::<S::Verification>(self.exec(), &active).await {
+            Ok(model) => Ok(Some(model)),
+            Err(error) => {
+                let table = Self::verification_table();
+                let mut existing = model::select_model::<S::Verification>(self.exec());
+                existing
+                    .push(" WHERE ")
+                    .column(table, S::Verification::id_column())
+                    .push(" = ")
+                    .bind(id)
+                    .push(" LIMIT 1");
+                if self
+                    .exec()
+                    .fetch_optional::<S::Verification>(existing)
+                    .await?
+                    .is_some()
+                {
+                    Ok(None)
+                } else {
+                    Err(error)
+                }
+            }
+        }
+    }
+
+    async fn update_verification_by_identifier(
+        &self,
+        identifier: &str,
+        data: UpdateVerification,
+    ) -> AuthResult<Option<VerificationSnapshot>> {
+        let hook_context = self.hook_context(None);
+        let mut admitted = data.clone();
+        for hook in self.hooks() {
+            // Source gives every before-update hook the original patch, then
+            // merges each returned mutation into the admitted patch.
+            let mut candidate = data.clone();
+            if hook
+                .before_update_verification(identifier, &mut candidate, &hook_context)
+                .await?
+                .is_cancelled()
+            {
+                return Ok(None);
+            }
+            if candidate.value.is_some() {
+                admitted.value = candidate.value;
+            }
+            if candidate.expires_at.is_some() {
+                admitted.expires_at = candidate.expires_at;
+            }
+        }
+        let updated_at = S::Verification::updated_at_column().ok_or_else(|| {
+            AuthError::NotImplemented(
+                "Verification update snapshots require an updatedAt column".into(),
+            )
+        })?;
+        let model = self
+            .update_verifications_returning(
+                &[(S::Verification::identifier_column(), identifier.into())],
+                admitted.value,
+                admitted.expires_at,
+                updated_at,
+            )
+            .await?;
+        let snapshot = model.as_ref().map(VerificationSnapshot::from_model);
+        for hook in self.hooks() {
+            hook.after_update_verification_record(snapshot.as_ref(), &hook_context)
+                .await?;
+        }
+        Ok(snapshot)
+    }
+
+    async fn delete_verification(&self, id: &str) -> AuthResult<()> {
+        let verification_id = <S::Verification as SqlxVerificationModel>::parse_id(id)?;
+        let table = Self::verification_table();
+        let mut select = model::select_model::<S::Verification>(self.exec());
+        select
+            .push(" WHERE ")
+            .column(table, S::Verification::id_column())
+            .push(" = ")
+            .bind(verification_id.clone())
+            .push(" LIMIT 1");
+        let verification = self
+            .exec()
+            .fetch_optional::<S::Verification>(select)
+            .await?;
+        let hook_context = self.hook_context(None);
+        if let Some(verification) = &verification {
+            for hook in self.hooks() {
+                if hook
+                    .before_delete_verification(verification, &hook_context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Err(cancelled_by_hook("verification deletion"));
+                }
+            }
+        }
+        let mut delete = Sql::with(self.exec().backend(), "DELETE FROM ");
+        delete
+            .ident(table)
+            .push(" WHERE ")
+            .column(table, S::Verification::id_column())
+            .push(" = ")
+            .bind(verification_id);
+        self.exec().execute(delete).await?;
+        if let Some(verification) = &verification {
+            for hook in self.hooks() {
+                hook.after_delete_verification(verification, &hook_context)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn delete_expired_verifications(&self) -> AuthResult<usize> {
+        // Source's strict `expiresAt < new Date()` cleanup keeps proofs whose
+        // deadline equals the current millisecond, including zero-TTL OTPs.
+        let deadline = Utc::now().trunc_subsecs(3);
+        let table = Self::verification_table();
+        let mut select = model::select_model::<S::Verification>(self.exec());
+        select
+            .push(" WHERE ")
+            .column(table, S::Verification::expires_at_column())
+            .push(" < ")
+            .bind(deadline)
+            .push(" LIMIT ")
+            .bind(self.find_many_limit());
+        let snapshots: Vec<S::Verification> = self.exec().fetch_all(select).await?;
+        let hook_context = self.hook_context(None);
+        // deleteManyWithHooks snapshots a findMany page before mutation.
+        // Any before-hook veto cancels the entire batch, including rows whose
+        // callbacks already ran; after hooks receive those original snapshots.
+        for model in &snapshots {
+            for hook in self.hooks() {
+                if hook
+                    .before_delete_verification(model, &hook_context)
+                    .await?
+                    .is_cancelled()
+                {
+                    return Ok(0);
+                }
+            }
+        }
+        let mut delete = Sql::with(self.exec().backend(), "DELETE FROM ");
+        delete
+            .ident(table)
+            .push(" WHERE ")
+            .column(table, S::Verification::expires_at_column())
+            .push(" < ")
+            .bind(deadline);
+        let deleted = self.exec().execute(delete).await?;
+        for model in &snapshots {
+            for hook in self.hooks() {
+                hook.after_delete_verification(model, &hook_context).await?;
+            }
+        }
+        usize::try_from(deleted)
+            .map_err(|_error| AuthError::internal("Verification cleanup count overflow"))
+    }
+}

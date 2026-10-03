@@ -22,7 +22,6 @@ use better_auth_core::AuthUser;
 use better_auth_core::types::{
     CreateMember, CreateOrganizationRole, CreateTeam, CreateUser, OrganizationPermissions,
 };
-use better_auth_seaorm::SeaOrmStore;
 use better_auth_seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
 };
@@ -272,7 +271,10 @@ pub(crate) async fn profiles(
                 );
         }
         let auth = AuthBuilder::<TestSchema>::new(config.clone())
-            .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+            .store(crate::backend::store::<TestSchema>(
+                config,
+                database.clone(),
+            ))
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_signup(true))
             .plugin(

@@ -32,10 +32,7 @@ use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::utils::json::{self, JsValue};
 use better_auth_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, HttpMethod};
 use better_auth_core::{PasswordHasher, ScryptHasher};
-use better_auth_seaorm::{
-    SeaOrmStore,
-    sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement},
-};
+use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use serde::Deserialize;
 use serde_json::{Value, json as value};
 use std::{
@@ -457,7 +454,7 @@ pub(crate) async fn router(
             base.clone()
                 .base_path(format!("{control_path}/other/api/auth")),
         )
-        .store(SeaOrmStore::new(base.clone(), database.clone()))
+        .store(crate::backend::store(base.clone(), database.clone()))
         .plugin(SessionManagementPlugin::new())
         .build()
         .await?,
@@ -465,7 +462,7 @@ pub(crate) async fn router(
     *app.other.lock().unwrap() = Some(other);
     let auth = Arc::new(
         AuthBuilder::<TestSchema>::new(configured.clone())
-            .store(SeaOrmStore::new(configured, database.clone()))
+            .store(crate::backend::store(configured, database.clone()))
             .rate_limit(RateLimitConfig::new().enabled(false))
             .endpoint_hook(Observer {
                 id: "user",

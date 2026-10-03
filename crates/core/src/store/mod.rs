@@ -1,5 +1,7 @@
 pub mod cache;
 
+mod database_hooks;
+mod migrations;
 mod org_extensions;
 mod secondary_sessions;
 
@@ -27,7 +29,9 @@ use async_trait::async_trait;
 #[cfg(feature = "redis-cache")]
 pub use cache::RedisAdapter;
 pub use cache::{CacheAdapter, MemoryCacheAdapter};
+pub use database_hooks::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
 pub use jwks::JwkStore;
+pub use migrations::SchemaMigrator;
 pub use org_extensions::{OrganizationRoleStore, TeamStore, team_membership_key};
 use std::any::Any;
 use std::collections::BTreeSet;

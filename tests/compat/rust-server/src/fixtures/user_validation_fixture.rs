@@ -35,7 +35,7 @@ use better_auth_core::{
     wire::{AccountView, VerificationView},
 };
 use better_auth_seaorm::{
-    DatabaseConnection, HookControl, SeaOrmHookContext, SeaOrmHooks, SeaOrmStore,
+    DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr},
     store::entities::{account, session, user, verification, wallet_address},
 };
@@ -206,11 +206,11 @@ impl PasswordHasher for Application {
     }
 }
 #[async_trait]
-impl SeaOrmHooks<TestSchema> for Application {
+impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     async fn before_create_user(
         &self,
         user: &mut CreateUser,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.event(json!({"stage":"user-create-before","user":candidate(user),"path":context.request.as_ref().map(context_path)}));
         Ok(if self.mode() == "hook-deny" {
@@ -222,7 +222,7 @@ impl SeaOrmHooks<TestSchema> for Application {
     async fn after_create_user(
         &self,
         user: &<TestSchema as better_auth_core::AuthSchema>::User,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
         self.event(json!({"stage":"user-create-after","userId":user.id(),"path":context.request.as_ref().map(context_path)}));
         Ok(())
@@ -230,7 +230,7 @@ impl SeaOrmHooks<TestSchema> for Application {
     async fn before_create_account(
         &self,
         _: &mut better_auth_core::CreateAccount,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.event(json!({"stage":"account-create-before","path":context.request.as_ref().map(context_path)}));
         Ok(HookControl::Continue)
@@ -238,7 +238,7 @@ impl SeaOrmHooks<TestSchema> for Application {
     async fn before_create_session(
         &self,
         _: &mut better_auth_core::CreateSession,
-        context: &SeaOrmHookContext<'_>,
+        context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.event(json!({"stage":"session-create-before","path":context.request.as_ref().map(context_path)}));
         Ok(HookControl::Continue)
@@ -356,7 +356,7 @@ pub(crate) async fn router(
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
                 .store(
-                    SeaOrmStore::<TestSchema>::new(config, database.clone())
+                    crate::backend::store::<TestSchema>(config, database.clone())
                         .with_hooks(vec![app.clone()]),
                 )
                 .rate_limit(RateLimitConfig::new().enabled(false))

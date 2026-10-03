@@ -1,5 +1,6 @@
 //! Stored application fields and awaited callbacks on the real admin lifecycle.
 use crate::TestSchema;
+use crate::backend::entities::user::Model;
 use axum::{
     Json, Router,
     extract::{Query, State},
@@ -15,8 +16,7 @@ use better_auth::plugins::{
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
 use better_auth_core::store::UserStore;
 use better_auth_core::{AuthUser, CreateUser};
-use better_auth_seaorm::store::entities::user::Model;
-use better_auth_seaorm::{DatabaseConnection, SeaOrmStore};
+use better_auth_seaorm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -31,11 +31,13 @@ impl better_auth::plugins::anonymous::AnonymousIdentity for CallbackAnonymousIde
 }
 struct ApplicationMetadata;
 #[async_trait::async_trait]
-impl better_auth_seaorm::SeaOrmHooks<TestSchema> for ApplicationMetadata {
+impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
+    for ApplicationMetadata
+{
     async fn before_create_user(
         &self,
         input: &mut CreateUser,
-        _context: &better_auth_seaorm::SeaOrmHookContext<'_>,
+        _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<better_auth_seaorm::HookControl> {
         input.metadata = Some(json!({"supportCode":"private-fixture-code"}));
         Ok(better_auth_seaorm::HookControl::Continue)
@@ -84,7 +86,7 @@ impl AdminBannedUserMessage<Model> for ApplicationMessage {
 }
 #[derive(Clone)]
 struct FixtureState {
-    store: Arc<SeaOrmStore<TestSchema>>,
+    store: Arc<crate::backend::Store<TestSchema>>,
     events: Arc<Mutex<Vec<Value>>>,
 }
 #[derive(Deserialize)]
@@ -136,7 +138,8 @@ pub(crate) async fn router(
         }
         let builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(
-                SeaOrmStore::<TestSchema>::new(config, database.clone()).hook(ApplicationMetadata),
+                crate::backend::store::<TestSchema>(config, database.clone())
+                    .hook(ApplicationMetadata),
             )
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_username(true))
@@ -170,7 +173,7 @@ pub(crate) async fn router(
         Router::new()
             .route("/__test/admin-banned-message-events", get(events))
             .with_state(FixtureState {
-                store: Arc::new(SeaOrmStore::new(config.clone(), database)),
+                store: Arc::new(crate::backend::store(config.clone(), database)),
                 events: events_log,
             }),
     ))

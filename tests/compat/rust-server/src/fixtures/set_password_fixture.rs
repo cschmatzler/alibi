@@ -17,7 +17,7 @@ use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_core::utils::password::{PasswordHasher, ScryptHasher};
 use better_auth_core::{AuthRequest, CookieCacheConfig, HttpMethod};
 use better_auth_seaorm::{
-    DatabaseConnection, SeaOrmStore,
+    DatabaseConnection,
     sea_orm::{
         ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, IntoActiveModel,
         QueryFilter, QueryOrder, Set, Statement,
@@ -136,7 +136,10 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         }
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
-                .store(SeaOrmStore::<TestSchema>::new(config, database.clone()))
+                .store(crate::backend::store::<TestSchema>(
+                    config,
+                    database.clone(),
+                ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::with_config(EmailPasswordConfig {
                     password_min_length: if name == "set-password-policy" { 10 } else { 8 },

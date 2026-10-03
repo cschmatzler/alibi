@@ -8,6 +8,8 @@
 #   ./run-against-both.sh core|plugins             one scenario group
 #   ./run-against-both.sh browser|environment      browser or process-environment suites
 #   ./run-against-both.sh tests/plugins/jwt/keyring.test.ts  any client-test files or directories
+#
+# Fixtures use SqlxStore; BETTER_AUTH_COMPAT_BACKEND=seaorm serves them from SeaOrmStore.
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
 paths=()
