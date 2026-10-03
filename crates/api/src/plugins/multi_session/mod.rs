@@ -322,6 +322,11 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
     ) -> AuthResult<AuthResponse> {
         if req.path() == "/sign-out" {
             for (name, token) in Self::signed_tokens(req, ctx) {
+                // The logout hook grants retirement only to truthy signed payloads.
+                // List and fallback intentionally retain string-valued semantics.
+                if token.is_empty() {
+                    continue;
+                }
                 ctx.database.delete_session(&token).await?;
                 response.headers.append(
                     "set-cookie",

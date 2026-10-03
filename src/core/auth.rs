@@ -39,6 +39,9 @@ pub struct AuthBuilder<S: AuthSchema> {
     config: AuthConfig,
     telemetry: crate::telemetry::TelemetryConfig,
     store: Option<Arc<dyn AuthStore<S>>>,
+    // Explicit adapter configuration is a Source server store even when sessions
+    // use a nonpersistent policy; the native noDB constructor is separate.
+    has_external_store: bool,
     plugins: Vec<Box<dyn AuthPlugin<S>>>,
     csrf_config: Option<CsrfConfig>,
     rate_limit_config: Option<RateLimitConfig>,
@@ -65,6 +68,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
             config,
             telemetry: crate::telemetry::TelemetryConfig::default(),
             store: None,
+            has_external_store: false,
             plugins: Vec::new(),
             csrf_config: None,
             rate_limit_config: None,
@@ -89,6 +93,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
         T: AuthStore<S> + 'static,
     {
         self.store = Some(Arc::new(store));
+        self.has_external_store = true;
         self
     }
 
@@ -96,6 +101,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
     #[must_use]
     pub fn store_arc(mut self, store: Arc<dyn AuthStore<S>>) -> Self {
         self.store = Some(store);
+        self.has_external_store = true;
         self
     }
 
@@ -164,6 +170,19 @@ impl<S: AuthSchema> AuthBuilder<S> {
     ///
     /// Returns an error if configuration validation or plugin initialization fails.
     pub async fn build(mut self) -> AuthResult<BetterAuth<S>> {
+        // Resolve the published deployment default once, before exposing config
+        // to any plugin. A SQL user store is still a server store even when the
+        // session policy suppresses durable session rows.
+        if self.config.account.store_state_strategy
+            == better_auth_core::OAuthStateStrategy::Automatic
+        {
+            self.config.account.store_state_strategy =
+                if self.has_external_store || self.config.session.secondary_storage.is_some() {
+                    better_auth_core::OAuthStateStrategy::Database
+                } else {
+                    better_auth_core::OAuthStateStrategy::Cookie
+                };
+        }
         // Validate configuration
         self.config.validate()?;
 
@@ -1248,6 +1267,8 @@ impl AuthBuilder<crate::store::StatelessSchema> {
         let store = crate::store::StatelessStore::with_find_many_limit(
             config.advanced.database.default_find_many_limit,
         );
-        Self::new(config).store(store)
+        let mut builder = Self::new(config).store(store);
+        builder.has_external_store = false;
+        builder
     }
 }

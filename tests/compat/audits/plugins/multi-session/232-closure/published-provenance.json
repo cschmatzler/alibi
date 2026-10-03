@@ -1,0 +1,34 @@
+[
+  {
+    "project": "client-tests",
+    "package": "better-auth",
+    "files": 465,
+    "archiveSha256": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+    "private": true,
+    "publishedBytesMatch": true
+  },
+  {
+    "project": "client-tests",
+    "package": "@better-auth/core",
+    "files": 350,
+    "archiveSha256": "e77e869a604083abf292ba9045f5182bd25cc2e57697e8fc1e3965651613f908",
+    "private": true,
+    "publishedBytesMatch": true
+  },
+  {
+    "project": "reference-server",
+    "package": "better-auth",
+    "files": 465,
+    "archiveSha256": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+    "private": true,
+    "publishedBytesMatch": true
+  },
+  {
+    "project": "reference-server",
+    "package": "@better-auth/core",
+    "files": 350,
+    "archiveSha256": "e77e869a604083abf292ba9045f5182bd25cc2e57697e8fc1e3965651613f908",
+    "private": true,
+    "publishedBytesMatch": true
+  }
+]

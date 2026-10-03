@@ -778,6 +778,7 @@ export const FIXTURE_PROFILES = [
   "multi-session-negative-infinite",
   "multi-session-cookie-alias",
   "multi-session-cookie-prefix",
+  "multi-session-stateless",
 
   "two-factor-backup-plain",
   "two-factor-backup-zero",

@@ -1,0 +1,10 @@
+bun test v1.4.2 (744846f84)
+
+tests/plugins/multi-session/sessions.test.ts:
+(pass) multiple sessions retire repeated genuine proofs before applying fractional capacity [1080.22ms]
+
+ 1 pass
+ 13 filtered out
+ 0 fail
+ 34 expect() calls
+Ran 1 test across 1 file. [1148.00ms]

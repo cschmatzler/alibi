@@ -8,7 +8,6 @@ use better_auth::plugins::OAuthPlugin;
 use better_auth::plugins::oauth::OAuthProvider;
 use better_auth::{AuthBuilder, AuthConfig};
 use better_auth_core::entity::AuthVerification;
-use better_auth_core::store::AuthStore;
 use better_auth_core::{AuthRequest, AuthSchema, HttpMethod, OAuthStateStrategy};
 use serde_json::{Value, json};
 
@@ -22,13 +21,11 @@ fn config(strategy: OAuthStateStrategy) -> AuthConfig {
 }
 
 async fn rejection_restores_flow<S: AuthSchema>(
-    config: AuthConfig,
-    store: impl AuthStore<S> + 'static,
+    builder: AuthBuilder<S>,
+    strategy: OAuthStateStrategy,
     adapter: &str,
 ) {
-    let strategy = config.account.store_state_strategy;
-    let auth = AuthBuilder::new(config)
-        .store(store)
+    let auth = builder
         .plugin(OAuthPlugin::new().add_provider(
             "google",
             OAuthProvider::google("local-client", "local-secret"),
@@ -36,6 +33,7 @@ async fn rejection_restores_flow<S: AuthSchema>(
         .build()
         .await
         .unwrap();
+    assert_eq!(auth.config().account.store_state_strategy, strategy);
     let mut request = AuthRequest::new(HttpMethod::Post, "/api/auth/sign-in/social");
     drop(request.headers.insert("origin".into(), ORIGIN.into()));
     drop(
@@ -92,7 +90,7 @@ async fn rejection_restores_flow<S: AuthSchema>(
             );
             cookie_pair.clone()
         }
-        OAuthStateStrategy::Database => format!(
+        OAuthStateStrategy::Automatic | OAuthStateStrategy::Database => format!(
             "better-auth.state={}",
             better_auth_core::utils::cookie_utils::sign_cookie_value("foreign-state", SECRET)
         ),
@@ -174,8 +172,21 @@ async fn rejection_restores_flow<S: AuthSchema>(
 #[tokio::test]
 async fn cookie_nonce_rejection_restores_saved_error_seaorm() {
     type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-    for strategy in [OAuthStateStrategy::Cookie, OAuthStateStrategy::Database] {
-        let config = config(strategy);
+    for (strategy, stateless_policy) in [
+        (OAuthStateStrategy::Automatic, false),
+        (OAuthStateStrategy::Automatic, true),
+        (OAuthStateStrategy::Cookie, false),
+        (OAuthStateStrategy::Database, false),
+    ] {
+        let mut config = config(strategy);
+        if stateless_policy {
+            config.session = config.session.stateless();
+        }
+        let expected = if strategy == OAuthStateStrategy::Automatic {
+            OAuthStateStrategy::Database
+        } else {
+            strategy
+        };
         let database = better_auth_seaorm::Database::connect("sqlite::memory:")
             .await
             .unwrap();
@@ -183,8 +194,10 @@ async fn cookie_nonce_rejection_restores_saved_error_seaorm() {
             .await
             .unwrap();
         rejection_restores_flow(
-            config.clone(),
-            better_auth_seaorm::SeaOrmStore::<Schema>::new(config, database),
+            AuthBuilder::new(config.clone()).store_arc(std::sync::Arc::new(
+                better_auth_seaorm::SeaOrmStore::<Schema>::new(config, database),
+            )),
+            expected,
             "seaorm",
         )
         .await;
@@ -195,8 +208,21 @@ async fn cookie_nonce_rejection_restores_saved_error_seaorm() {
 #[tokio::test]
 async fn cookie_nonce_rejection_restores_saved_error_sqlx() {
     type Schema = better_auth_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
-    for strategy in [OAuthStateStrategy::Cookie, OAuthStateStrategy::Database] {
-        let config = config(strategy);
+    for (strategy, stateless_policy) in [
+        (OAuthStateStrategy::Automatic, false),
+        (OAuthStateStrategy::Automatic, true),
+        (OAuthStateStrategy::Cookie, false),
+        (OAuthStateStrategy::Database, false),
+    ] {
+        let mut config = config(strategy);
+        if stateless_policy {
+            config.session = config.session.stateless();
+        }
+        let expected = if strategy == OAuthStateStrategy::Automatic {
+            OAuthStateStrategy::Database
+        } else {
+            strategy
+        };
         let pool: better_auth_sqlx::SqlxPool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
@@ -207,9 +233,26 @@ async fn cookie_nonce_rejection_restores_saved_error_sqlx() {
             .await
             .unwrap();
         rejection_restores_flow(
-            config.clone(),
-            better_auth_sqlx::SqlxStore::<Schema>::new(config, pool),
+            AuthBuilder::new(config.clone())
+                .store(better_auth_sqlx::SqlxStore::<Schema>::new(config, pool)),
+            expected,
             "sqlx",
+        )
+        .await;
+    }
+}
+
+#[tokio::test]
+async fn no_database_oauth_state_default_and_explicit_overrides_preserve_flow() {
+    for (configured, expected) in [
+        (OAuthStateStrategy::Automatic, OAuthStateStrategy::Cookie),
+        (OAuthStateStrategy::Cookie, OAuthStateStrategy::Cookie),
+        (OAuthStateStrategy::Database, OAuthStateStrategy::Database),
+    ] {
+        rejection_restores_flow(
+            AuthBuilder::without_database(config(configured)),
+            expected,
+            "no-database",
         )
         .await;
     }

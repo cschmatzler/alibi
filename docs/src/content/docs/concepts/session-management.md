@@ -40,7 +40,7 @@ Use [Axum extractors](/integrations/axum/) in protected handlers. Sessions use S
 
 ## Without a database
 
-`AuthBuilder::without_database` provisions users, accounts, verification records and sessions in instance-local memory through the ordinary authentication paths. It needs no SQL connection:
+`AuthBuilder::without_database` provisions users, accounts, verification records and sessions in instance-local memory through the ordinary authentication paths. It needs no SQL connection. The default `OAuthStateStrategy::Automatic` resolves to cookie state for this constructor and database state for an explicitly configured store, even if its session policy is stateless. Explicit `Cookie` and `Database` choices are preserved; database state in noDB mode uses ephemeral verification records:
 
 ```rust
 use better_auth::{AuthBuilder, AuthConfig};

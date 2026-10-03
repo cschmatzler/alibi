@@ -425,7 +425,7 @@ impl OAuthProxyPlugin {
         let cookie_name = state_cookie_name(&ctx.config);
         let authenticated_cookie = get_cookie(req, &cookie_name);
         let state: OAuthStatePayload = match ctx.config.account.store_state_strategy {
-            OAuthStateStrategy::Database => {
+            OAuthStateStrategy::Automatic | OAuthStateStrategy::Database => {
                 let Ok(Some(row)) = ctx.verifications().find(&payload.state).await else {
                     return error_redirect(error_url, "state_mismatch", None);
                 };
@@ -468,8 +468,10 @@ impl OAuthProxyPlugin {
             &ctx.config,
         );
         req.queue_response_header("Set-Cookie", clear);
-        if ctx.config.account.store_state_strategy == OAuthStateStrategy::Database
-            && ctx.verifications().delete(&payload.state).await.is_err()
+        if matches!(
+            ctx.config.account.store_state_strategy,
+            OAuthStateStrategy::Automatic | OAuthStateStrategy::Database
+        ) && ctx.verifications().delete(&payload.state).await.is_err()
         {
             return error_redirect(error_url, "state_mismatch", None);
         }
@@ -480,7 +482,7 @@ impl OAuthProxyPlugin {
         // the key that authenticated that cookie; database state retains its
         // native proof across reader-key rotation.
         let context = match ctx.config.account.store_state_strategy {
-            OAuthStateStrategy::Database => ctx
+            OAuthStateStrategy::Automatic | OAuthStateStrategy::Database => ctx
                 .config
                 .verification_secrets()
                 .find_map(|secret| verified_server_context(&state, &payload.state, secret)),

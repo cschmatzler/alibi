@@ -85,8 +85,9 @@ cleared a cookie where upstream throws before doing so.
 
 Only selection filters the signed empty value. The post-issuance same-user
 cleanup loop also skips the empty token before lookup, matching its upstream
-truthiness guard; list/fallback/logout keep their separate string-valued
-semantics. Three native owner tests and three SDK scenarios / 194 assertions
+truthiness guard; list/fallback keep their separate string-valued
+semantics. Logout truthiness was missed in this historical review and is repaired
+by the issue-232 closure below. Three native owner tests and three SDK scenarios / 194 assertions
 pass after repair (`/tmp/multiple-sessions-signed-empty-native-final.log`,
 `/tmp/multiple-sessions-signed-empty-sdk-final.log`). Production Clippy and
 formatting pass; no inventory or shared schema changes were made.
@@ -193,3 +194,14 @@ and evidence-gate harnesses pass 38 tests / 379 assertions
 on this PR at landing. Remaining cookie-attribute/profile combinations and the
 wider dependency-backed composition/storage matrix remain under #232; this
 bounded slice establishes only the configurations named above.
+
+
+## Issue #232 closure
+
+The historical residual-scope statements above are superseded by the [closure
+reconciliation and retained raw proof](232-closure/README.md). PR #418 repairs
+signed-empty logout retirement and the actual noDB OAuth-state default cleanup
+mismatch, proves noDB selector/order/fallback/logout/cache replay, and reconciles
+all three #232 acceptance items with #359 and existing supported composition
+receipts. Broad dependency lifecycle matrices remain with #171-177. No new full
+suite, coverage or remote CI result is claimed.

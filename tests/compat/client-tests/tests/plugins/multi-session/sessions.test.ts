@@ -1,8 +1,11 @@
 import { expect } from "bun:test";
-import { createHmac } from "node:crypto";
+import { createHmac, hkdfSync } from "node:crypto";
 
 import { createAuthClient } from "better-auth/client";
 import { multiSessionClient } from "better-auth/client/plugins";
+import { getCookieCache } from "better-auth/cookies";
+import { decodeProtectedHeader, jwtDecrypt } from "jose";
+import { CookieJar } from "tough-cookie";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -567,7 +570,235 @@ compatScenario(
     expect(selected.status).toBe(200);
     const selection = await selected.json();
     expect(selection.session.token).toBe(rotated.token);
-    return { issued, before, rotated, after, selection };
+    // Logout acts on truthy signed proofs only; a valid signature of an empty
+    // payload is not a credential and must not acquire cleanup authority.
+    const foreign = await multiClient(ctx, profile, "foreign").signUp.email({
+      email: ctx.uniqueEmail("logout-foreign"),
+      password: "password123",
+      name: "Foreign browser",
+    });
+    expect(foreign.error).toBeNull();
+    if (!foreign.data) throw new Error("foreign persisted owner required");
+    const foreignBefore = await ctx.readUserState({ userId: foreign.data.user.id });
+    const secret = "compat-test-only-key-not-real-minimum-32chars";
+    const empty = `empty_multi-proof=${encodeURIComponent("." + createHmac("sha256", secret).update("").digest("base64"))}`;
+    const invalid = "invalid_multi-proof=bad";
+    const jar = new CookieJar();
+    for (const header of selected.headers.getSetCookie()) jar.setCookieSync(header, path);
+    jar.setCookieSync(replacement!, path);
+    const repeatedReplacement = `another_multi-${rotated.token}=${replacement!.split(";")[0]!.split("=")[1]}`;
+    for (const pair of [repeatedReplacement, empty, invalid]) {
+      jar.setCookieSync(`${pair}; Path=/`, path);
+    }
+    const logout = await actor.fetch(`${path}/sign-out`, {
+      method: "POST",
+      credentials: "omit",
+      headers: { "content-type": "application/json", cookie: jar.getCookieStringSync(path) },
+      body: "{}",
+    });
+    expect(logout.status).toBe(200);
+    const logoutBody = await logout.json();
+    const logoutCookies = logout.headers.getSetCookie();
+    expect(logoutCookies.some((raw) => raw.startsWith("empty_multi-proof="))).toBeFalse();
+    expect(logoutCookies.some((raw) => raw.startsWith("invalid_multi-proof="))).toBeFalse();
+    expect(
+      logoutCookies.filter((raw) => raw.includes("_multi-") && raw.includes("Max-Age=0")),
+    ).toHaveLength(2);
+    for (const header of logoutCookies) jar.setCookieSync(header, path);
+    expect(
+      jar
+        .getCookiesSync(path)
+        .map((cookie) => cookie.key)
+        .sort(),
+    ).toEqual(["empty_multi-proof", "invalid_multi-proof"]);
+    const retiredState = await ctx.readUserState({ userId: issued.user.id });
+    expect(stateSchema.parse(retiredState).sessions).toHaveLength(0);
+    const foreignAfter = await ctx.readUserState({ userId: foreign.data.user.id });
+    expect(foreignAfter).toEqual(foreignBefore);
+    return {
+      issued,
+      before,
+      rotated,
+      after,
+      selection,
+      foreign,
+      foreignBefore,
+      logoutBody,
+      retiredState,
+      foreignAfter,
+    };
   },
   ["POST /sign-in/email", "POST /multi-session/set-active"],
+);
+
+compatScenario(
+  "no-database multiple sessions preserve insertion order selector authority and cache replay limits",
+  async (ctx) => {
+    const profile = "multi-session-stateless";
+    const path = `${ctx.baseURL}${authProfilePath(profile)}`;
+    const responses: Headers[] = [];
+    const actor = ctx.actor("no-db-owner", profile);
+    const client = createAuthClient({
+      baseURL: path,
+      plugins: [multiSessionClient()],
+      fetchOptions: {
+        customFetchImpl: async (input, init) => {
+          const response = await actor.fetch(input, init);
+          responses.push(new Headers(response.headers));
+          return response;
+        },
+      },
+    });
+    const secret = "compat-test-only-key-not-real-minimum-32chars";
+    const key = Buffer.from(
+      hkdfSync(
+        "sha256",
+        secret,
+        "better-auth-session",
+        "BetterAuth.js Generated Encryption Key",
+        64,
+      ),
+    );
+    const cache = async (headers: Headers) => {
+      const rawCookies = headers
+        .getSetCookie()
+        .filter((raw) => raw.startsWith("better-auth.session_data="));
+      expect(rawCookies).toHaveLength(1);
+      const token = rawCookies[0]!.split(";")[0]!.slice("better-auth.session_data=".length);
+      const header = decodeProtectedHeader(token);
+      const payload = (
+        await jwtDecrypt(token, key, {
+          keyManagementAlgorithms: ["dir"],
+          contentEncryptionAlgorithms: ["A256CBC-HS512"],
+        })
+      ).payload;
+      const decoded = await getCookieCache(
+        new Headers({ cookie: rawCookies.map((raw) => raw.split(";")[0]).join("; ") }),
+        { secret, strategy: "jwe" },
+      );
+      expect(decoded).not.toBeNull();
+      expect(payload.exp! - payload.iat!).toBe(300);
+      expect(JSON.parse(JSON.stringify(decoded!.session))).toEqual(payload.session);
+      expect(JSON.parse(JSON.stringify(decoded!.user))).toEqual(payload.user);
+      return {
+        sessionCache: {
+          strategy: "jwe",
+          token,
+          header,
+          payload,
+          decoded,
+          rawCookies,
+          effectiveMaxAgeSeconds: 300,
+        },
+      };
+    };
+    const accounts = [];
+    const issuedCaches = [];
+    const sqlRows = [];
+    for (let index = 0; index < 3; index++) {
+      const account = await client.signUp.email({
+        email: ctx.uniqueEmail(`no-db-${index}`),
+        password: "password123",
+        name: `No database ${index}`,
+      });
+      expect(account.error).toBeNull();
+      if (!account.data?.token) throw new Error("actual no-database issuance required");
+      accounts.push(account.data);
+      const issuedCache = await cache(responses.at(-1)!);
+      expect(issuedCache.sessionCache.decoded!.session.token).toBe(account.data.token);
+      issuedCaches.push(issuedCache);
+      const rows = await ctx.readUserState({ userId: account.data.user.id });
+      expect(stateSchema.parse(rows)).toMatchObject({ user: null, accounts: [], sessions: [] });
+      sqlRows.push(rows);
+    }
+    const foreignClient = multiClient(ctx, profile, "no-db-foreign");
+    const foreign = await foreignClient.signUp.email({
+      email: ctx.uniqueEmail("no-db-foreign"),
+      password: "password123",
+      name: "Foreign no database",
+    });
+    expect(foreign.error).toBeNull();
+    const foreignBefore = await foreignClient.listSessions();
+    expect(foreignBefore.data).toHaveLength(1);
+    const list = await client.multiSession.listDeviceSessions();
+    expect(list.data?.map((item) => item.session.token)).toEqual(
+      accounts.map((item) => item.token),
+    );
+    const denied = await foreignClient.multiSession.setActive({ sessionToken: accounts[0]!.token });
+    expect(denied.error?.code).toBe("INVALID_SESSION_TOKEN");
+    const selected = await client.multiSession.setActive({ sessionToken: accounts[0]!.token });
+    expect(selected.data?.session.token).toBe(accounts[0]!.token);
+    const selectedCache = await cache(responses.at(-1)!);
+    expect(selectedCache.sessionCache.decoded!.user.id).toBe(accounts[0]!.user.id);
+    const revoked = await client.multiSession.revoke({ sessionToken: accounts[0]!.token });
+    expect(revoked.error).toBeNull();
+    const fallbackHeaders = responses.at(-1)!;
+    const fallbackCache = await cache(fallbackHeaders);
+    expect(fallbackCache.sessionCache.decoded!.session.token).toBe(accounts[1]!.token);
+    const active = await client.getSession();
+    expect(active.data?.user.id).toBe(accounts[1]!.user.id);
+    const remaining = await client.multiSession.listDeviceSessions();
+    expect(remaining.data?.map((item) => item.session.token)).toEqual([
+      accounts[1]!.token,
+      accounts[2]!.token,
+    ]);
+    const currentRows = await client.listSessions();
+    expect(currentRows.data?.map((item) => item.token)).toEqual([accounts[1]!.token]);
+    const captured = fallbackHeaders
+      .getSetCookie()
+      .filter((raw) => !raw.includes("Max-Age=0"))
+      .map((raw) => raw.split(";")[0])
+      .join("; ");
+    const logout = await client.signOut();
+    expect(logout.error).toBeNull();
+    expect((await client.multiSession.listDeviceSessions()).data).toEqual([]);
+    expect((await client.getSession()).data).toBeNull();
+    const replayFetch = ctx.actor("no-db-replay", profile).fetch;
+    const read = async (route: string, body?: unknown) => {
+      const response = await replayFetch(`${path}${route}`, {
+        method: body ? "POST" : "GET",
+        credentials: "omit",
+        headers: { cookie: captured, "content-type": "application/json" },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      return { status: response.status, body: await response.json() };
+    };
+    const cachedReplay = await read("/get-session");
+    expect(cachedReplay.body.session.token).toBe(accounts[1]!.token);
+    const physicalReplay = await read("/get-session?disableCookieCache=true");
+    expect(physicalReplay.body).toBeNull();
+    const selectorReplay = await read("/multi-session/set-active", {
+      sessionToken: accounts[1]!.token,
+    });
+    expect(selectorReplay.status).toBe(401);
+    const foreignAfter = await foreignClient.listSessions();
+    expect(foreignAfter).toEqual(foreignBefore);
+    return {
+      accounts,
+      issuedCaches,
+      sqlRows,
+      foreign,
+      foreignBefore,
+      list,
+      denied,
+      selected,
+      selectedCache,
+      revoked,
+      fallbackCache,
+      active,
+      remaining,
+      currentRows,
+      logout,
+      cachedReplay,
+      physicalReplay,
+      selectorReplay,
+      foreignAfter,
+    };
+  },
+  [
+    "GET /multi-session/list-device-sessions",
+    "POST /multi-session/set-active",
+    "POST /multi-session/revoke",
+    "POST /sign-out",
+  ],
 );

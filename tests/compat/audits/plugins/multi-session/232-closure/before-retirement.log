@@ -1,0 +1,25 @@
+bun test v1.4.2 (744846f84)
+
+tests/plugins/multi-session/sessions.test.ts:
+595 |       body: "{}",
+596 |     });
+597 |     expect(logout.status).toBe(200);
+598 |     const logoutBody = await logout.json();
+599 |     const logoutCookies = logout.headers.getSetCookie();
+600 |     expect(logoutCookies.some((raw) => raw.startsWith("empty_multi-proof="))).toBeFalse();
+      ^
+error: expect(received).toBeFalse()
+
+Received: true
+
+      at toBeFalse (unknown:1:1)
+      at /tmp/better-auth-multisession232/tests/compat/client-tests/tests/plugins/multi-session/sessions.test.ts:600:79
+      at runScenario (/tmp/better-auth-multisession232/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-multisession232/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) multiple sessions retire repeated genuine proofs before applying fractional capacity [1013.71ms]
+
+ 0 pass
+ 13 filtered out
+ 1 fail
+ 29 expect() calls
+Ran 1 test across 1 file. [1077.00ms]
