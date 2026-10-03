@@ -1245,6 +1245,9 @@ impl AuthBuilder<crate::store::StatelessSchema> {
     pub fn without_database(mut config: AuthConfig) -> Self {
         config.session = config.session.stateless();
         config.account.store_account_cookie = true;
-        Self::new(config).store(crate::store::StatelessStore::default())
+        let store = crate::store::StatelessStore::with_find_many_limit(
+            config.advanced.database.default_find_many_limit,
+        );
+        Self::new(config).store(store)
     }
 }

@@ -1643,6 +1643,7 @@ struct PluginTransaction<'a, S: AuthSchema> {
     creates: Vec<UserCreateTransform>,
     adapter_defaults: UserCreationDefaults,
     pending_sessions: Arc<std::sync::Mutex<Vec<S::Session>>>,
+    pending_scopes: Arc<std::sync::Mutex<std::collections::HashMap<String, S::Session>>>,
     session_fields: crate::field_policy::SessionFields,
     adapter_fields: crate::field_policy::SessionAdapterFields,
     record_store: PluginStore<S>,
@@ -1656,6 +1657,47 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
             .map_err(|_| AuthError::internal("Adapter callback queue poisoned"))?
             .push(event);
         Ok(())
+    }
+    async fn update_ephemeral_scope(
+        &self,
+        token: &str,
+        mut fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<S::Session> {
+        self.adapter_fields.attach(&mut fields, false);
+        let staged = self
+            .pending_scopes
+            .lock()
+            .map_err(|_| AuthError::internal("Ephemeral scope queue poisoned"))?
+            .get(token)
+            .cloned();
+        let session = match staged {
+            Some(session) => session,
+            None => self
+                .record_store
+                .ephemeral_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                .get(token)
+                .cloned()
+                .ok_or(AuthError::SessionNotFound)?,
+        };
+        let (updated, fields) = self
+            .inner
+            .prepare_secondary_session_update(session, None, fields)
+            .await?
+            .ok_or(AuthError::SessionNotFound)?;
+        let updated = self
+            .inner
+            .complete_secondary_session_update(updated, None, fields, false)
+            .await?
+            .ok_or(AuthError::SessionNotFound)?;
+        drop(
+            self.pending_scopes
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral scope queue poisoned"))?
+                .insert(token.to_owned(), updated.clone()),
+        );
+        Ok(updated)
     }
     async fn update_secondary_scope(
         &self,
@@ -1834,6 +1876,16 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         token: &str,
         team_id: Option<&str>,
     ) -> AuthResult<S::Session> {
+        if self.config.session.stateless {
+            let mut fields = crate::field_policy::FieldValues::new();
+            drop(fields.insert(
+                "activeTeamId".into(),
+                team_id.map_or(crate::utils::json::JsValue::Null, |value| {
+                    crate::utils::json::JsValue::String(value.to_owned())
+                }),
+            ));
+            return self.update_ephemeral_scope(token, fields).await;
+        }
         if self.record_store.secondary().is_some()
             && (!self.record_store.session_uses_database()
                 || self.record_store.cached_session(token).await?.is_some())
@@ -1855,6 +1907,16 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         token: &str,
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session> {
+        if self.config.session.stateless {
+            let mut fields = crate::field_policy::FieldValues::new();
+            drop(fields.insert(
+                "activeOrganizationId".into(),
+                organization_id.map_or(crate::utils::json::JsValue::Null, |value| {
+                    crate::utils::json::JsValue::String(value.to_owned())
+                }),
+            ));
+            return self.update_ephemeral_scope(token, fields).await;
+        }
         if self.record_store.secondary().is_some()
             && (!self.record_store.session_uses_database()
                 || self.record_store.cached_session(token).await?.is_some())
@@ -1986,6 +2048,8 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
         let config = Arc::clone(&self.config);
         let pending_sessions = Arc::new(std::sync::Mutex::new(Vec::new()));
         let pending_in_transaction = Arc::clone(&pending_sessions);
+        let pending_scopes = Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
+        let scopes_in_transaction = Arc::clone(&pending_scopes);
         let session_fields = self.session_fields.clone();
         let adapter_fields = self.adapter_fields.clone();
         let record_store = self.clone();
@@ -2001,6 +2065,7 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
                         creates,
                         adapter_defaults,
                         pending_sessions: pending_in_transaction,
+                        pending_scopes: scopes_in_transaction,
                         session_fields,
                         adapter_fields,
                         record_store,
@@ -2010,6 +2075,23 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
                 })
             }))
             .await?;
+        // Publish scope updates only after adapter success. Concurrent logout wins.
+        {
+            let scopes = std::mem::take(
+                &mut *pending_scopes
+                    .lock()
+                    .map_err(|_| AuthError::internal("Ephemeral scope queue poisoned"))?,
+            );
+            let mut sessions = self
+                .ephemeral_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?;
+            for (token, session) in scopes {
+                if let Some(destination) = sessions.get_mut(&token) {
+                    *destination = session;
+                }
+            }
+        }
         // The adapter owns commit/rollback. Callbacks observe only committed
         // sessions and run against the ordinary store, never a closed transaction.
         let sessions = std::mem::take(
