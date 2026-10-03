@@ -6,13 +6,44 @@ export function createMultipleSessionFixture(base: BetterAuthOptions) {
   let counter = 0;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
 
-  for (const name of ["multi-session", "multi-session-limited"]) {
+  const limits: Record<string, number> = {
+    "multi-session": 5,
+    "multi-session-limited": 2,
+    "multi-session-zero": 0,
+    "multi-session-fractional": 1.5,
+    "multi-session-negative": -1,
+    "multi-session-nan": Number.NaN,
+    "multi-session-infinite": Number.POSITIVE_INFINITY,
+    "multi-session-negative-infinite": Number.NEGATIVE_INFINITY,
+    "multi-session-cookie-alias": 5,
+    "multi-session-cookie-prefix": 5,
+  };
+  for (const [name, maximumSessions] of Object.entries(limits)) {
     const path = `/__test/profiles/${name}/api/auth`;
     profiles.set(
       path,
       betterAuth({
         ...base,
         basePath: path,
+        ...(name.startsWith("multi-session-cookie-")
+          ? {
+              advanced: {
+                ...base.advanced,
+                cookiePrefix: "device-proof",
+                defaultCookieAttributes: { path, httpOnly: false, sameSite: "strict", maxAge: 71 },
+                ...(name.endsWith("alias")
+                  ? {
+                      cookies: {
+                        session_token: {
+                          name: "configured-device-token",
+                          attributes: { httpOnly: true, sameSite: "lax", maxAge: 123 },
+                        },
+                      },
+                    }
+                  : {}),
+              },
+            }
+          : {}),
         databaseHooks: {
           session: {
             create: {
@@ -29,7 +60,7 @@ export function createMultipleSessionFixture(base: BetterAuthOptions) {
             },
           },
         },
-        plugins: [multiSession({ maximumSessions: name === "multi-session-limited" ? 2 : 5 })],
+        plugins: [multiSession({ maximumSessions })],
       }),
     );
   }

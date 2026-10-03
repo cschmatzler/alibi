@@ -101,3 +101,95 @@ successful configured/expiry flows and persisted-state evidence; selection and
 revocation also require rejection and browser-proof authorization evidence.
 The inventory enables this plugin independently of the matching baseline wire
 configuration.
+
+## Issue #232: raw numeric limits and configured token cookies
+
+The installed pinned `better-auth@1.7.6` `dist/plugins/multi-session/index.mjs`
+spreads options over `maximumSessions: 5`, then directly compares the number of
+named device cookies (including invalid signatures), less same-user retirements,
+plus the newly issued primary cookie against that value. It neither defaults
+falsy numbers nor evicts the database session when proof admission fails.
+All numeric probes here terminate after three real signups; no loops depend on
+an upstream numeric limit. Zero, -1 and negative infinity admit no proof; 1.5
+admits one; NaN and positive infinity admit all three. Native configuration uses
+`f64` to represent this contract, replacing `usize` (callers must use float
+literals). Existing integer/default capacity and invalid-signature evidence is
+retained.
+
+Pinned `dist/cookies/index.mjs` resolves token attributes in order: defaults,
+configured default attributes, session lifetime, then token-specific overrides.
+The multi-session hooks copy those resolved attributes for issuance and replace
+only Max-Age with zero for retirement. The implementation now derives the name
+and attributes from the configured logical session token. A configured default
+Max-Age must not replace the session lifetime; a token-specific Max-Age must.
+The prefixed and aliased profiles exercise actual signup, selection, foreign
+proof rejection, revoke/fallback and logout with configured path, HttpOnly,
+SameSite and Max-Age precedence.
+
+The existing lifecycle scenario is the primary owner for these profiles; the
+numeric table separately guards admission and non-eviction, retaining all three
+accounts' full before/after state and exact list order. Its credible regression
+is coercing NaN/negative/fractional limits to an integer/default or retiring an
+unadmitted session. No production test seam was added.
+
+Signed-cookie evidence recognizes the two explicit fixture token names in
+addition to the original name. It still authenticates the original signed
+bytes and binds proof suffixes, ownership and tombstones to observed issuance.
+The existing real-Source factor-rotation harness runs its negative controls for
+all three names, including corrupt credentials, foreign authority, missing
+receipts, duplicate retirement and altered path/HttpOnly/expiry. Cookie names,
+raw attribute order, complete cookie scopes and ordered session lists remain
+compared. No pin, exclusions, coverage floor or exception policy changes.
+
+Residual scope: #232 remains open for the wider combined plugin/storage matrix
+and unsupported JWT/stateless modes owned by the session dependency workpieces
+(#221 and #171–177). Existing compact/JWT/JWE cache composition scenarios cover
+some interactions, but this PR does not claim the entire matrix. The #154 and
+#213 workpieces are separate.
+
+Review traced selection and revoke through the ordinary-session guard, signed
+nonempty device-cookie verification and adapter mutations. Device authority
+matches Source: a token string alone does not authorize a foreign browser;
+a valid issued browser proof does. Configured aliases preserve this boundary.
+
+The repeated-proof regression obtains an actual signup Set-Cookie, presents the
+same signed bytes under two distinct device-cookie names, then signs in again
+with a fractional capacity. Source retires both named proofs before admission;
+Rust previously deleted during its lookup loop and retired only one. The new
+owner fails with two expected retirements versus one on the pre-repair loop
+(`/tmp/232-before-repeated-fix.log`). Cleanup now resolves all proofs before
+performing deletes. The scenario retains raw responses through the unchanged
+trace path, full physical before/after rows and actual replacement selection.
+The alias/prefix lifecycle regressions also fail with the prior cookie producer
+(`/tmp/232-before-cookie-fix.log`); the baseline keeps `f64` only so those
+previously unrepresentable fixture options compile.
+
+A read-only registry check found 605 pre-existing duplicate entries in the
+fixture profile registry on the inherited main baseline. Each of this slice's
+eight new profiles is registered once. The broad registry cleanup and canonical
+suite are coordinator-owned; no whole-repository green-gate claim is made.
+
+Targeted verification uses the orchestrator's selected-file runner for
+`tests/plugins/multi-session/sessions.test.ts`,
+`tests/core/session/cookie-cache.test.ts` and
+`tests/core/session/jwt-jwe-cache.test.ts`, with `CARGO_BUILD_JOBS=2`, isolated
+`CARGO_TARGET_DIR=/tmp/better-auth-232-target` and explicit SQLx/SeaORM backend
+selection. SQLx after the repeated-proof repair passes 52 scenarios / 3,216
+assertions (`/tmp/232-sqlx-final.log`). The prior SeaORM run passes 51 / 3,198
+(`/tmp/232-seaorm.log`); both backends are rerun after rebasing for landing.
+Actual-Source signed-header harness: 5 tests / 554 assertions
+(`/tmp/232-final-harness.log`). TypeScript type checking and changed-path lint
+pass. Strict production and SeaORM fixture Clippy passed before the final
+cleanup-order repair and are rerun for the final tree. No full compatibility
+runner, `scripts/compat.sh`, or `scripts/check.sh` was invoked by this workpiece.
+
+Final landing proof after rebasing on `origin/main` (`aa0d1388`): **SQLx and
+SeaORM each pass 52 scenarios / 3,216 assertions**, including the repeated-proof
+repair (`/tmp/232-post-rebase.log`). Two native multi-session owner tests and
+strict final production/SeaORM fixture Clippy pass (`/tmp/232-native-final.log`).
+Formatting, TypeScript and changed-path lint pass; focused comparator, trace
+and evidence-gate harnesses pass 38 tests / 379 assertions
+(`/tmp/232-verification-final.log`). No remote CI checks or reviews were reported
+on this PR at landing. Remaining cookie-attribute/profile combinations and the
+wider dependency-backed composition/storage matrix remain under #232; this
+bounded slice establishes only the configurations named above.

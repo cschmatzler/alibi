@@ -123,7 +123,9 @@ function sessionReceipt(request: Headers, response: Headers) {
       .filter(
         (cookie) =>
           cookie &&
-          /^(?:__Secure-)?better-auth\.session_token$/.test(cookie.key) &&
+          /^(?:__Secure-)?(?:better-auth\.session_token|device-proof\.session_token|configured-device-token)$/.test(
+            cookie.key,
+          ) &&
           cookie.value &&
           cookie.maxAge !== 0,
       );
@@ -155,7 +157,11 @@ function sessionReceipt(request: Headers, response: Headers) {
     ...(trust.length === 1 ? { issuedTrustCookie: `${trust[0]!.key}=${trust[0]!.value}` } : {}),
     issuedMultiSessionCookies: response
       .getSetCookie()
-      .filter((raw) => /^(?:__Secure-)?better-auth\.session_token_multi-/.test(raw)),
+      .filter((raw) =>
+        /^(?:__Secure-)?(?:better-auth\.session_token|device-proof\.session_token|configured-device-token)_multi-/.test(
+          raw,
+        ),
+      ),
   };
 }
 
