@@ -808,6 +808,17 @@ pub(in crate::plugins) fn parse_callback_user_payload(
     })
 }
 
+fn raw_truthy(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Null | serde_json::Value::Bool(false) => false,
+        serde_json::Value::Number(number) => number.as_f64() != Some(0.0),
+        serde_json::Value::String(value) => !value.is_empty(),
+        serde_json::Value::Bool(true)
+        | serde_json::Value::Array(_)
+        | serde_json::Value::Object(_) => true,
+    }
+}
+
 fn redirect_response(location: &str) -> AuthResponse {
     AuthResponse::new(302)
         .with_header("content-type", "application/json")
@@ -1487,6 +1498,25 @@ pub(in crate::plugins) async fn complete_link_social(
     link: &OAuthStateLink,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> Result<(), OAuthSignInError> {
+    complete_link_social_with_raw_email(provider_name, user_info, profile, tokens, link, ctx, None)
+        .await
+        .map(|_| ())
+}
+
+enum LinkSocialOutcome {
+    Linked,
+    InvalidRawEmail,
+}
+
+async fn complete_link_social_with_raw_email(
+    provider_name: &str,
+    user_info: &OAuthUserInfo,
+    profile: &serde_json::Value,
+    tokens: &OAuthTokenSet,
+    link: &OAuthStateLink,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    raw_email: Option<&serde_json::Value>,
+) -> Result<LinkSocialOutcome, OAuthSignInError> {
     // Explicit linking validates fresh provider data before its trust/email
     // guards or account lookup. The candidate retains the selected local ID.
     let mut candidate = provider_candidate(user_info, &link.user_id);
@@ -1512,6 +1542,10 @@ pub(in crate::plugins) async fn complete_link_social(
 
     if !linking.enabled || (!trusted_provider && !user_info.email_verified) {
         return Err("unable_to_link_account".to_owned().into());
+    }
+
+    if raw_email.is_some_and(|email| !email.is_null() && !email.is_string()) {
+        return Ok(LinkSocialOutcome::InvalidRawEmail);
     }
 
     if !linking.allow_different_emails && !user_info.email.eq_ignore_ascii_case(&link.email) {
@@ -1555,7 +1589,7 @@ pub(in crate::plugins) async fn complete_link_social(
                 .map_err(|error| error.to_string())?,
         );
 
-        return Ok(());
+        return Ok(LinkSocialOutcome::Linked);
     }
 
     let token_bundle = encrypt_token_set(
@@ -1586,7 +1620,7 @@ pub(in crate::plugins) async fn complete_link_social(
             .map_err(|_error| "unable_to_link_account".to_owned())?,
     );
 
-    Ok(())
+    Ok(LinkSocialOutcome::Linked)
 }
 
 async fn sign_in_with_id_token_core(
@@ -2400,7 +2434,7 @@ pub(super) async fn handle_callback(
         return Ok(redirect_on_error("invalid_code", None));
     };
 
-    let Ok(mut user_info) = fetch_user_info_from_provider(
+    let user_info_result = fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
             token_type: tokens.token_type.clone(),
@@ -2414,26 +2448,54 @@ pub(super) async fn handle_callback(
             user: parse_callback_user_payload(merged_2.get("user").map(String::as_str)),
         },
     )
-    .await
-    else {
-        return Ok(redirect_on_error("unable_to_get_user_info", None));
+    .await;
+    let mut user_info = match user_info_result {
+        Ok(user_info) => user_info,
+        Err(_) => {
+            if provider
+                .authorization
+                .as_ref()
+                .is_some_and(|policy| policy.propagate_grant_profile_errors)
+                && tokens
+                    .raw
+                    .as_ref()
+                    .and_then(|raw| raw.get("id_token"))
+                    .is_some_and(raw_truthy)
+            {
+                // The published factory throws outside callback redirect handling.
+                // State was consumed, but its pending clear-cookie is not emitted.
+                return Ok(AuthResponse::new(500));
+            }
+            return Ok(redirect_on_error("unable_to_get_user_info", None));
+        }
     };
 
     if resolve_account_subject(provider, &mut user_info).is_err() {
         return Ok(redirect_on_error("unable_to_get_user_info", None));
     }
 
+    let raw_email = provider
+        .authorization
+        .as_ref()
+        .filter(|policy| policy.preserve_raw_email_errors)
+        .and(user_info.user_output.as_ref())
+        .and_then(|output| output.get("email"));
+
     if let Some(link) = payload.link.as_ref() {
-        if let Err(error_3) = complete_link_social(
+        let link_result = complete_link_social_with_raw_email(
             provider_name,
             &user_info.user,
             &user_info.data,
             &tokens,
             link,
             ctx,
+            raw_email,
         )
-        .await
-        {
+        .await;
+        if matches!(link_result, Ok(LinkSocialOutcome::InvalidRawEmail)) {
+            return Ok(AuthResponse::new(500));
+        }
+        if let Err(error_3) = link_result {
             if error_3.is_ambiguous_account() {
                 return Ok(AuthResponse::new(500));
             }
@@ -2446,6 +2508,22 @@ pub(super) async fn handle_callback(
 
         return Ok(redirect_response(&payload.callback_url)
             .with_appended_header("Set-Cookie", clear_state_cookie));
+    }
+
+    if raw_email.is_some_and(|email| raw_truthy(email) && !email.is_string()) {
+        // Source first resolves account ownership, then lowercases email either
+        // in the caught email lookup (new identity) or uncaught validation (owned).
+        let existing_account = ctx
+            .database
+            .get_account_record(provider_name, &user_info.user.id)
+            .await;
+        return Ok(match existing_account {
+            Ok(Some(_)) => AuthResponse::new(500),
+            Ok(None) | Err(_) => {
+                redirect_response(&format!("{default_error_url}?error=internal_server_error"))
+                    .with_appended_header("Set-Cookie", clear_state_cookie.clone())
+            }
+        });
     }
 
     let disable_sign_up = provider.disable_implicit_sign_up

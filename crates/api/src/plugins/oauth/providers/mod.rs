@@ -415,6 +415,12 @@ pub struct OAuthAuthorizationPolicy {
     pub default_prompt: Option<String>,
     /// Discord emits this JS number only when the effective scopes contain `bot`.
     pub discord_permissions: Option<f64>,
+    /// Preserve thrown decoded grant-profile failures instead of redirecting.
+    /// Missing/falsy ID tokens still follow the absent-profile redirect.
+    pub propagate_grant_profile_errors: bool,
+    /// Preserve effective raw email type errors at their callback stage.
+    /// Typed native profile fields remain unchanged.
+    pub preserve_raw_email_errors: bool,
 }
 
 impl Default for OAuthAuthorizationPolicy {
@@ -442,6 +448,8 @@ impl Default for OAuthAuthorizationPolicy {
             prompt: None,
             default_prompt: None,
             discord_permissions: None,
+            propagate_grant_profile_errors: false,
+            preserve_raw_email_errors: false,
         }
     }
 }

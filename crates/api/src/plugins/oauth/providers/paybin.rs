@@ -97,6 +97,8 @@ impl OAuthProvider {
                 authorization_code_client_key: options.client_key,
                 redirect_uri: options.redirect_uri,
                 login_hint: true,
+                propagate_grant_profile_errors: true,
+                preserve_raw_email_errors: true,
                 ..OAuthAuthorizationPolicy::default()
             }),
             authorization_params: Vec::new(),

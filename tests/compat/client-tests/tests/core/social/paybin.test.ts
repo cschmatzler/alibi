@@ -158,13 +158,14 @@ async function callback(
   ctx: ScenarioContext,
   mode: FixtureProfile = "social-paybin-default",
   requestSignUp = false,
+  errorCallbackURL?: string,
+  linkSocial = false,
 ) {
   const actor = ctx.actor("paybin", mode);
-  const start = await actor.client.signIn.social({
-    provider: "paybin",
-    callbackURL: "/dashboard",
-    requestSignUp,
-  });
+  const options = { provider: "paybin", callbackURL: "/dashboard", errorCallbackURL };
+  const start = linkSocial
+    ? await actor.client.linkSocial(options)
+    : await actor.client.signIn.social({ ...options, requestSignUp });
   expect(start.error).toBeNull();
 
   const url = new URL(start.data!.url!);
@@ -434,6 +435,7 @@ for (const variant of [
   "empty-image",
   "numeric-image",
   "mapped",
+  "mapped-numeric-email",
 ] as const) {
   compatScenario(
     `paybin ${variant} profile preserves raw owner and account info`,
@@ -465,10 +467,11 @@ for (const variant of [
       if (variant === "null-image") data.picture = null;
       if (variant === "empty-image") data.picture = "";
       if (variant === "numeric-image") data.picture = 42;
+      if (variant === "mapped-numeric-email") data.email = 42;
       await control(ctx, { profile: data });
       const flow = await callback(
         ctx,
-        variant === "mapped" ? "social-paybin-mapped" : "social-paybin-default",
+        variant.startsWith("mapped") ? "social-paybin-mapped" : "social-paybin-default",
       );
       expect(flow.response.headers.get("location")).toBe("/dashboard");
       const persisted = await state(ctx);
@@ -476,7 +479,7 @@ for (const variant of [
       expect(persisted.accounts).toHaveLength(1);
       expect(persisted.sessions).toHaveLength(1);
       expect(persisted.accounts[0]!.accountId).toBe(String(data.sub));
-      const mapped = variant === "mapped";
+      const mapped = variant.startsWith("mapped");
       const name = ["missing-name", "null-name", "empty-name", "zero-name"].includes(variant)
         ? ""
         : variant === "username-fallback"
@@ -885,3 +888,183 @@ compatScenario(
   },
   ["GET /callback/{}"],
 );
+
+// Authoring gate: this table protects real published callback failure stages,
+// cookies, consumed database state, replay and complete owner/foreign storage.
+// It fails on the pre-fix callback's generic absent-profile/email redirects.
+// Existing positive cases cannot exercise decode exceptions or non-string email.
+const malformedGrantInputs: Record<string, unknown> = {
+  "two-parts": "a.b",
+  "four-parts": "not.a.valid.jwt",
+  "five-parts": "a.b.c.d.e",
+  "empty-payload": "a..c",
+  "bad-base64": "a.%.c",
+  "bad-json": "a.bm90LWpzb24.c",
+  "array-claims": "a.W10.c",
+  "null-claims": "a.bnVsbA.c",
+  "bad-utf8": "a._w.c",
+  "numeric-token": 42,
+  "true-token": true,
+  "array-token": [],
+  "object-token": {},
+};
+const absentGrantInputs: Record<string, unknown> = {
+  "missing-token": undefined,
+  "empty-token": "",
+  "zero-token": 0,
+  "false-token": false,
+  "null-token": null,
+};
+const invalidEmailInputs: Record<string, unknown> = {
+  "numeric-email": 42,
+  "zero-email": 0,
+  "false-email": false,
+  "true-email": true,
+  "array-email": [],
+  "object-email": {},
+  "numeric-invalid-subject": 42,
+  "existing-numeric": 42,
+  "numeric-link-unverified": 42,
+  "numeric-link-verified": 42,
+  "zero-link-verified": 0,
+  "false-link-verified": false,
+};
+for (const variant of [
+  ...Object.keys(malformedGrantInputs),
+  ...Object.keys(absentGrantInputs),
+  ...Object.keys(invalidEmailInputs),
+]) {
+  compatScenario(
+    `paybin ${variant} preserves callback error stage and consumed state without writes`,
+    async (ctx) => {
+      const foreign = ctx.actor("foreign");
+      expect(
+        (
+          await foreign.client.signUp.email({
+            email: ctx.uniqueEmail("foreign"),
+            password: "Password123!",
+            name: "Foreign Owner",
+          })
+        ).error,
+      ).toBeNull();
+      const original = profile(ctx);
+      const link = variant.includes("link-");
+      if (link) {
+        expect(
+          (
+            await ctx.actor("paybin", "social-paybin-default").client.signUp.email({
+              email: ctx.uniqueEmail("selected-owner"),
+              password: "Password123!",
+              name: "Selected Owner",
+            })
+          ).error,
+        ).toBeNull();
+      }
+      if (variant === "existing-numeric") {
+        await control(ctx, { profile: original });
+        const admitted = await callback(ctx);
+        expect(admitted.response.headers.get("location")).toBe("/dashboard");
+        expect((await admitted.actor.client.signOut()).error).toBeNull();
+      }
+      const before = await state(ctx);
+      const data: Record<string, unknown> = { ...original };
+      const malformed = Object.hasOwn(malformedGrantInputs, variant);
+      const absent = Object.hasOwn(absentGrantInputs, variant);
+      if (Object.hasOwn(invalidEmailInputs, variant)) data.email = invalidEmailInputs[variant];
+      if (variant === "numeric-invalid-subject") data.sub = null;
+      if (variant.endsWith("link-verified")) data.email_verified = true;
+      await control(
+        ctx,
+        malformed || absent
+          ? {
+              tokenResponse: {
+                access_token: "fixture-paybin-access",
+                id_token: (malformed ? malformedGrantInputs : absentGrantInputs)[variant],
+              },
+            }
+          : { profile: data },
+      );
+      const flow = await callback(
+        ctx,
+        "social-paybin-default",
+        false,
+        "/paybin-error?application=1",
+        link,
+      );
+      const fatal =
+        malformed || variant === "existing-numeric" || variant.endsWith("link-verified");
+      expect(flow.response.status).toBe(fatal ? 500 : 302);
+      const location = flow.response.headers.get("location");
+      const cookies = flow.response.headers.getSetCookie();
+      const body = await flow.response.text();
+      expect(body).toBe("");
+      if (fatal) {
+        expect(location).toBeNull();
+        expect(cookies).toEqual([]);
+      } else {
+        const url = new URL(location!, ctx.baseURL);
+        const defaultError = [
+          "numeric-email",
+          "true-email",
+          "array-email",
+          "object-email",
+        ].includes(variant);
+        expect(url.pathname).toBe(
+          defaultError ? authProfilePath("social-paybin-default") + "/error" : "/paybin-error",
+        );
+        expect(url.searchParams.get("application")).toBe(defaultError ? null : "1");
+        expect(url.searchParams.get("error")).toBe(
+          defaultError
+            ? "internal_server_error"
+            : absent || variant === "numeric-invalid-subject"
+              ? "unable_to_get_user_info"
+              : link
+                ? "unable_to_link_account"
+                : "email_not_found",
+        );
+        expect(cookies).toEqual(["better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"]);
+      }
+      const after = await state(ctx);
+      expect(after).toEqual(before);
+      const verification = await ctx.readVerificationState({
+        identifier: flow.url.searchParams.get("state")!,
+      });
+      expect(verification).toEqual([]);
+      const initialReceipts = await receipts(ctx);
+      expect(initialReceipts).toHaveLength(variant === "existing-numeric" ? 2 : 1);
+      expect(initialReceipts.at(-1)).toMatchObject({
+        path: "/oauth2/token",
+        authorization: null,
+        body: {
+          code: "fixture-code",
+          grant_type: "authorization_code",
+          client_id: "fixture-social-client",
+          client_secret: "fixture-social-secret",
+        },
+      });
+      const replay = await flow.actor.fetch(ctx.baseURL + flow.path, { redirect: "manual" });
+      expect(replay.status).toBe(302);
+      expect(new URL(replay.headers.get("location")!, ctx.baseURL).searchParams.get("error")).toBe(
+        "state_mismatch",
+      );
+      expect(await state(ctx)).toEqual(before);
+      expect(await receipts(ctx)).toEqual(initialReceipts);
+      if (!link) expect((await flow.actor.client.getSession()).data).toBeNull();
+      else expect((await flow.actor.client.getSession()).data?.user.name).toBe("Selected Owner");
+      return {
+        start: ctx.snapshot(flow.start),
+        before,
+        after,
+        callback: { status: flow.response.status, location, body, cookies },
+        verification,
+        replay: {
+          status: replay.status,
+          location: replay.headers.get("location"),
+          body: await replay.text(),
+        },
+        receipts: initialReceipts,
+      };
+    },
+    ["POST /sign-in/social", "POST /link-social", "GET /callback/{}"],
+  );
+}
