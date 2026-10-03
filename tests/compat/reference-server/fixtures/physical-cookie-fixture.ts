@@ -13,6 +13,14 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
     "short",
     "legacy",
     "legacy-alias",
+    "secure-prefix",
+    "https-default",
+    "https-disabled",
+    "secure-custom",
+    "secure-alias",
+    "dynamic-https",
+    "dynamic-http",
+    "dynamic-auto",
   ] as const) {
     const path = `/__test/profiles/physical-cookie-${mode}/api/auth`;
     const attributes =
@@ -28,6 +36,25 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
       betterAuth({
         ...base,
         basePath: path,
+        ...(mode.startsWith("https-") ? { baseURL: "https://localhost" } : {}),
+        ...(mode.startsWith("dynamic-")
+          ? {
+              baseURL: {
+                allowedHosts: ["localhost:*", "127.0.0.1:*"],
+                protocol:
+                  mode === "dynamic-https"
+                    ? ("https" as const)
+                    : mode === "dynamic-http"
+                      ? ("http" as const)
+                      : ("auto" as const),
+              },
+            }
+          : {}),
+        trustedOrigins: [
+          ...((base.trustedOrigins as string[] | undefined) ?? []),
+          String(base.baseURL),
+          "https://localhost",
+        ],
         plugins: [],
         session: {
           ...base.session,
@@ -36,8 +63,36 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
         },
         advanced: {
           ...base.advanced,
-          useSecureCookies: false,
+          ...(mode === "https-default" || mode.startsWith("dynamic-")
+            ? {}
+            : {
+                useSecureCookies:
+                  mode === "secure-prefix" || mode === "secure-custom" || mode === "secure-alias",
+              }),
           defaultCookieAttributes: attributes,
+          ...(mode === "secure-alias"
+            ? {
+                cookies: { session_token: { name: "alias.session_token" } },
+              }
+            : {}),
+          ...(mode === "secure-custom"
+            ? {
+                cookiePrefix: "policy",
+                defaultCookieAttributes: {
+                  secure: false,
+                  path: "/discarded",
+                  sameSite: "strict",
+                  httpOnly: false,
+                },
+                cookies: {
+                  session_token: {
+                    name: "configured_session",
+                    attributes: { path, httpOnly: true, sameSite: "lax", secure: false },
+                  },
+                  dont_remember: { attributes: { path, sameSite: "lax", httpOnly: true } },
+                },
+              }
+            : {}),
           ...(mode === "attributes"
             ? {
                 cookies: {

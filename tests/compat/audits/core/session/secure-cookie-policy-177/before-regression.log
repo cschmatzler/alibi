@@ -1,0 +1,26 @@
+bun test v1.4.2 (744846f84)
+
+tests/core/session/physical-cookie.test.ts:
+160 |         mode === "attributes"
+161 |           ? "physical_preference"
+162 |           : mode === "secure-custom"
+163 |             ? "__Secure-policy.dont_remember"
+164 |             : `${prefixed ? "__Secure-" : ""}better-auth.dont_remember`;
+165 |       expect(signupCookies[0]!.name).toBe(expectedTokenName);
+      ^
+error: expect(received).toBe(expected)
+
+Expected: "__Secure-better-auth.session_token"
+Received: "better-auth.session_token"
+
+      at toBe (unknown:1:1)
+      at /tmp/better-auth-cookie-policy-177/tests/compat/client-tests/tests/core/session/physical-cookie.test.ts:165:38
+      at runScenario (/tmp/better-auth-cookie-policy-177/tests/compat/client-tests/support/scenario.ts:329:47)
+      at /tmp/better-auth-cookie-policy-177/tests/compat/client-tests/support/scenario.ts:404:28
+(fail) physical session secure-prefix preserves full signed token preference bytes through signup signin restore corruption rotation and logout [1485.62ms]
+
+ 0 pass
+ 13 filtered out
+ 1 fail
+ 189 expect() calls
+Ran 1 test across 1 file. [1.55s]
