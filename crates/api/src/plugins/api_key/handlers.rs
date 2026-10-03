@@ -1,3 +1,5 @@
+mod metadata_sort;
+
 use super::ApiKeyPlugin;
 use super::types::{
     ApiKeyView, CreateKeyRequest, CreateKeyResponse, DeleteKeyRequest, ListKeysQuery,
@@ -499,74 +501,7 @@ pub(super) fn sort_keys(
     from_database: bool,
 ) -> AuthResult<()> {
     if sort_by == "metadata" && !from_database {
-        // Source-authored boxed primitives can make relational comparison
-        // cyclic. Slice sorting requires a total order and can panic; stable
-        // merging only needs the observed pairwise result and propagates
-        // actual coercion errors without mutating the stored rows.
-        let mut source = keys.to_vec();
-        let mut target = source.clone();
-        let mut width = 1;
-        while width < keys.len() {
-            for start in (0..keys.len()).step_by(width.saturating_mul(2)) {
-                let middle = start.saturating_add(width).min(keys.len());
-                let end = middle.saturating_add(width).min(keys.len());
-                let mut left = start;
-                let mut right = middle;
-                let run = target.get_mut(start..end).ok_or_else(|| {
-                    better_auth_core::AuthError::internal("Invalid metadata sort run")
-                })?;
-                for slot in run {
-                    let take_left = if left == middle {
-                        false
-                    } else if right == end {
-                        true
-                    } else {
-                        let ordering = compare_metadata(
-                            source
-                                .get(left)
-                                .ok_or_else(|| {
-                                    better_auth_core::AuthError::internal(
-                                        "Invalid metadata sort index",
-                                    )
-                                })?
-                                .metadata
-                                .as_deref(),
-                            source
-                                .get(right)
-                                .ok_or_else(|| {
-                                    better_auth_core::AuthError::internal(
-                                        "Invalid metadata sort index",
-                                    )
-                                })?
-                                .metadata
-                                .as_deref(),
-                        )?;
-                        let ordering = if direction == Some("desc") {
-                            ordering.reverse()
-                        } else {
-                            ordering
-                        };
-                        ordering != std::cmp::Ordering::Greater
-                    };
-                    let index = if take_left {
-                        let index = left;
-                        left += 1;
-                        index
-                    } else {
-                        let index = right;
-                        right += 1;
-                        index
-                    };
-                    slot.clone_from(source.get(index).ok_or_else(|| {
-                        better_auth_core::AuthError::internal("Invalid metadata sort index")
-                    })?);
-                }
-            }
-            std::mem::swap(&mut source, &mut target);
-            width = width.saturating_mul(2);
-        }
-        keys.clone_from_slice(&source);
-        return Ok(());
+        return metadata_sort::sort(keys, direction);
     }
     keys.sort_by(|left, right| {
         let a = ApiKeyView::from(left);

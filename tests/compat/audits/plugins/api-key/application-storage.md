@@ -119,10 +119,12 @@ serializer turns into primitive stored metadata. The coordinator's independent
 actual Source/official SDK artifact is `/tmp/better-auth-source-boxed-metadata.json`;
 a mixed sixty-four-key actual Source issuance/SDK artifact is
 `/tmp/issue203-source-boxed-mixed-metadata.json`. No fixture mutation produces
-these Source rows. Their relational comparator can be cyclic, so cached
-metadata uses a fallible stable merge rather than slice sorting's total-order
-assumption. Cyclic ordering is implementation-defined, but successful listing,
-membership, parsed metadata and unchanged indexes are required.
+these Source rows. Their relational comparator can be cyclic. Cached metadata now uses fallible
+binary insertion, natural run normalization, Powersort and galloping merge,
+matching the installed Bun/JavaScriptCore ordering rather than slice sorting's
+total-order assumption. While ECMAScript permits engine differences for cyclic
+comparators, this compatibility owner preserves the pinned runtime's ordering,
+parsed metadata and unchanged indexes.
 
 The native public HTTP owner
 `source_boxed_metadata_rows_list_successfully_without_mutating_storage` loads
@@ -184,3 +186,61 @@ required before readiness. Existing
 capability obligations, the pinned oracle, all harness negative controls and
 the 75% source line coverage floor remain unchanged. Counts above identify
 their actual runs and do not claim complete repository parity.
+
+
+## Resumed review on current main
+
+The branch incorporates main `74309f36`, including managed secrets and the
+independently established JWT request-window repairs. The existing six lifecycle
+owners now exercise successful official SDK deletion in each profile's selected
+backend and its isolated configuration. Before deletion, listing publishes the
+actual reference index. After deletion, full receipts prove hash/ID removal,
+reference removal or correct surviving IDs, database-row removal for fallback,
+unchanged unrelated stores/rows and a missing SDK get without resurrection.
+Source's fallback deletion invalidates the complete owner reference list;
+secondary-only deletion retains the other referenced IDs. Every issuance,
+mutation, response, transport and full before/after receipt remains observable.
+
+The authoring gate is satisfied by extending the existing primary public SDK
+owner: forgetting hash/ID/reference cleanup or selecting the wrong backend is a
+credible regression; expiry and partial-failure cases do not prove successful
+SDK deletion. No additional production seam was needed. An isolated actual
+native mutation omits only hash deletion while retaining ID/reference/database
+cleanup. All six lifecycle owners fail at the retained hash after the SDK has
+returned success in `/tmp/pr350-resumed-deletion-control.log`; its separate
+build and binary remain under `/tmp/pr350-deletion-control-target`.
+
+Independent unchanged Source trusted creation proves the serialized boxed
+metadata values `3`, `"10"`, `"2"` in `/tmp/parity-sort-source-3.json`, retaining
+complete issuance, stored strings and official SDK transports. The existing
+large metadata owner now consumes those real Source storage shapes through
+owned application IO, checks all six three-value permutations in both
+directions, preserves its original 64 supported API-issued rows and adds a
+257-row deterministic mixed-value phase crossing native run merging/galloping.
+Complete ordered responses and unchanged storage stay in the differential;
+metadata is never omitted or aliased. Before repair, the actual SDK owner fails
+at Source order `[boxed-0, boxed-1, boxed-2]` versus native
+`[boxed-2, boxed-0, boxed-1]` in `/tmp/pr350-resumed-boxed-before.log`.
+
+The private production metadata-sort owner now follows JavaScriptCore's
+comparison orientation and actual ordering strategy; coercion and invalid
+ranges return errors. Its source/license attribution is retained. Supplemental
+JS models match installed Bun for 10,000 deterministic mixtures of lengths
+3–72 and another 10,000 of lengths 3–402 in
+`/tmp/pr350-jsc-{probe,large-probe}.mjs`; these supplement the real native SDK
+proof and do not replace it.
+
+After the final repair, the actual Source-only control and strict native
+storage differential each pass **49 / 7,900 assertions**, in
+`/tmp/pr350-resumed-final-{source,diff}.log`. Strict API and fixture Clippy,
+locked fixture compilation and **77 native API-key selections** pass in
+`/tmp/pr350-resumed-{sort-clippy,sort-final-native}.log`. Client format, lint,
+typing and **90 harness controls / 2,395 assertions** pass in
+`/tmp/pr350-resumed-final-harness.log`.
+
+The replacement canonical gate is run only after freezing and publishing this
+reviewed checkpoint, with its exact head in `/tmp/pr350-resumed-frozen-head.txt`
+and full output in `/tmp/pr350-resumed-canonical.log`. The PR body records its
+actual outcome; the focused passes above do not claim a complete gate. The
+pinned oracle, negative controls, complete observations, capability obligations
+and 75% production line coverage floor remain unchanged.

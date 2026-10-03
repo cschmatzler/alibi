@@ -136,7 +136,7 @@ async function setup(ctx: ScenarioContext, profile: Profile) {
 }
 for (const profile of profiles) {
   compatScenario(
-    `api-key ${profile} application indexes preserve authority, TTL, fallback, refill, exhaustion and expiry`,
+    `api-key ${profile} application indexes preserve authority, TTL, fallback, SDK deletion, refill, exhaustion and expiry`,
     async (ctx) => {
       const s = await setup(ctx, profile);
       const observations: Data[] = [];
@@ -202,6 +202,73 @@ for (const profile of profiles) {
         selected: ctx.snapshot(selected),
         beforeIsolation,
       });
+      const deletionTarget = await s.owner.apiKey.create({ name: "sdk-deletion-target" });
+      expect(deletionTarget.error).toBeNull();
+      for (const [deletedKey, deletionStore] of [
+        [deletionTarget.data!, s.store],
+        [isolated.data!, "isolated"],
+      ] as const) {
+        const deletionList = await s.owner.apiKey.list({
+          query: { configId: deletedKey.configId! },
+        });
+        expect(deletionList.error).toBeNull();
+        expect(deletionList.data!.apiKeys.map((row) => row.id)).toContain(deletedKey.id);
+        const beforeDeletion = await snapshot(ctx);
+        indexes(beforeDeletion, deletionStore, deletedKey, s.fallback);
+        const referenceBefore = entries(beforeDeletion, deletionStore).find(
+          (entry) =>
+            entry.namespace === "reference" && entry.lookup.referenceId === deletedKey.referenceId,
+        )!;
+        expect(referenceBefore.value).toContainEqual({ id: deletedKey.id });
+        const deleted = await s.owner.apiKey.delete({
+          keyId: deletedKey.id,
+          configId: deletedKey.configId!,
+        });
+        expect(deleted.error).toBeNull();
+        expect(deleted.data).toEqual({ success: true });
+        const afterDeletion = await snapshot(ctx);
+        expect(cached(afterDeletion, deletionStore, deletedKey.id)).toBeUndefined();
+        expect(cached(afterDeletion, deletionStore, deletedKey.id, "id")).toBeUndefined();
+        const remainingReferences = referenceBefore.value.filter(
+          (row: Data) => row.id !== deletedKey.id,
+        );
+        const referenceAfter = entries(afterDeletion, deletionStore).find(
+          (entry) =>
+            entry.namespace === "reference" && entry.lookup.referenceId === deletedKey.referenceId,
+        );
+        if (s.fallback || remainingReferences.length === 0) expect(referenceAfter).toBeUndefined();
+        else expect(referenceAfter).toEqual({ ...referenceBefore, value: remainingReferences });
+        expect(afterDeletion.database).toEqual(
+          beforeDeletion.database.filter((row) => row.id !== deletedKey.id),
+        );
+        for (const beforeStore of beforeDeletion.stores) {
+          const afterStore = afterDeletion.stores.find(
+            (value) => value.store === beforeStore.store,
+          )!;
+          if (beforeStore.store !== deletionStore) expect(afterStore).toEqual(beforeStore);
+          else {
+            const unrelated = (entry: Data) =>
+              entry.namespace === "reference"
+                ? entry.lookup.referenceId !== deletedKey.referenceId
+                : entry.value.id !== deletedKey.id;
+            expect(afterStore.entries.filter(unrelated)).toEqual(
+              beforeStore.entries.filter(unrelated),
+            );
+          }
+        }
+        const missingAfterDeletion = await s.owner.apiKey.get({
+          query: { id: deletedKey.id, configId: deletedKey.configId! },
+        });
+        expect(missingAfterDeletion.error?.code).toBe("KEY_NOT_FOUND");
+        expect(await snapshot(ctx)).toEqual(afterDeletion);
+        observations.push({
+          deletionList: ctx.snapshot(deletionList),
+          beforeDeletion,
+          deleted: ctx.snapshot(deleted),
+          afterDeletion,
+          missingAfterDeletion: ctx.snapshot(missingAfterDeletion),
+        });
+      }
       // A stale reference index is real application data; it must not grant another user's row.
       await control(ctx, {
         action: "misindex",
@@ -287,6 +354,7 @@ for (const profile of profiles) {
         target: ctx.snapshot(target),
         foreign: ctx.snapshot(foreign),
         otherKey: ctx.snapshot(other),
+        deletionTarget: ctx.snapshot(deletionTarget),
         observations,
         foreignState,
       };
@@ -1214,6 +1282,73 @@ compatScenario(
   async (ctx) => {
     const profile = "api-key-storage-many-groups";
     const s = await setup(ctx, profile);
+    const boxedIssued = [];
+    for (let index = 0; index < 3; index++) {
+      const created = await s.owner.apiKey.create({
+        name: `boxed-${index}`,
+        configId: "group-0",
+        metadata: { initial: "SDK-created row" },
+      });
+      expect(created.error).toBeNull();
+      boxedIssued.push(created);
+    }
+    const boxedPermutations = [];
+    // Independently observed Source trusted creation serializes boxed Number(3),
+    // String("10") and String("2") to these cache shapes. JSON HTTP cannot carry
+    // boxed objects; install their actual serialized values at application IO.
+    for (const metadata of [
+      [3, "10", "2"],
+      [3, "2", "10"],
+      ["10", 3, "2"],
+      ["10", "2", 3],
+      ["2", 3, "10"],
+      ["2", "10", 3],
+    ]) {
+      const mutations = [];
+      for (let index = 0; index < boxedIssued.length; index++) {
+        mutations.push(
+          await control(ctx, {
+            action: "patch",
+            keyId: boxedIssued[index]!.data!.id,
+            patch: { metadata: metadata[index] },
+          }),
+        );
+      }
+      const before = await snapshot(ctx);
+      for (let index = 0; index < boxedIssued.length; index++) {
+        expect(cached(before, "group-0", boxedIssued[index]!.data!.id)!.value.metadata).toEqual(
+          metadata[index],
+        );
+      }
+      const ascending = await s.owner.apiKey.list({
+        query: { configId: "group-0", sortBy: "metadata" },
+      });
+      const descending = await s.owner.apiKey.list({
+        query: { configId: "group-0", sortBy: "metadata", sortDirection: "desc" },
+      });
+      expect(ascending.error).toBeNull();
+      expect(descending.error).toBeNull();
+      expect(ascending.data!.apiKeys).toHaveLength(3);
+      expect(descending.data!.apiKeys).toHaveLength(3);
+      if (metadata[0] === 3 && metadata[1] === "10") {
+        expect(ascending.data!.apiKeys.map((row) => row.name)).toEqual([
+          "boxed-0",
+          "boxed-1",
+          "boxed-2",
+        ]);
+      }
+      const after = await snapshot(ctx);
+      expect(after).toEqual(before);
+      boxedPermutations.push({
+        metadata,
+        mutations,
+        before,
+        ascending: ctx.snapshot(ascending),
+        descending: ctx.snapshot(descending),
+        after,
+      });
+    }
+    const cleared = await control(ctx, { action: "clear" });
     const issued = [];
     for (let index = 0; index < 64; index++) {
       const created = await s.owner.apiKey.create({
@@ -1237,14 +1372,62 @@ compatScenario(
     expect(descending.data!.apiKeys).toHaveLength(64);
     const after = await snapshot(ctx);
     expect(after).toEqual(before);
+    const boxedLargeIssued = [];
+    const allIssued = [...issued];
+    for (let index = 64; index < 257; index++) {
+      const created = await s.owner.apiKey.create({
+        name: `mixed-${String(index).padStart(3, "0")}`,
+        configId: "group-0",
+        metadata: { initial: "additional SDK-created row" },
+      });
+      expect(created.error).toBeNull();
+      const issuedRow = ctx.snapshot(created);
+      boxedLargeIssued.push(issuedRow);
+      allIssued.push(issuedRow);
+    }
+    const boxedLargeMutations = [];
+    const mixedValues = [3, "10", "2", null, { literal: "object" }, ["10"], ["2"]];
+    let seed = 371;
+    for (const created of allIssued) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      boxedLargeMutations.push(
+        await control(ctx, {
+          action: "patch",
+          keyId: (created as Data).data.id,
+          patch: { metadata: mixedValues[seed % mixedValues.length] },
+        }),
+      );
+    }
+    const beforeBoxedLarge = await snapshot(ctx);
+    const boxedLargeAscending = await s.owner.apiKey.list({
+      query: { configId: "group-0", sortBy: "metadata" },
+    });
+    const boxedLargeDescending = await s.owner.apiKey.list({
+      query: { configId: "group-0", sortBy: "metadata", sortDirection: "desc" },
+    });
+    expect(boxedLargeAscending.error).toBeNull();
+    expect(boxedLargeDescending.error).toBeNull();
+    expect(boxedLargeAscending.data!.apiKeys).toHaveLength(257);
+    expect(boxedLargeDescending.data!.apiKeys).toHaveLength(257);
+    const afterBoxedLarge = await snapshot(ctx);
+    expect(afterBoxedLarge).toEqual(beforeBoxedLarge);
     return {
       signup: s.signup,
       other: s.other,
+      boxedIssued: ctx.snapshot(boxedIssued),
+      boxedPermutations,
+      cleared,
       issued,
       before,
       ascending: ctx.snapshot(ascending),
       descending: ctx.snapshot(descending),
       after,
+      boxedLargeIssued,
+      boxedLargeMutations,
+      beforeBoxedLarge,
+      boxedLargeAscending: ctx.snapshot(boxedLargeAscending),
+      boxedLargeDescending: ctx.snapshot(boxedLargeDescending),
+      afterBoxedLarge,
     };
   },
 );
