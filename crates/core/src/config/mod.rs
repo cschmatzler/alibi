@@ -138,6 +138,9 @@ pub enum AwaitedNotificationErrorPolicy {
     LogAndContinue,
 }
 
+mod origin;
+pub use origin::{BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver};
+
 /// Main configuration for `BetterAuth`
 #[derive(Clone)]
 pub struct AuthConfig {
@@ -155,6 +158,12 @@ pub struct AuthConfig {
 
     /// Base URL for the authentication service (e.g. `"http://localhost:3000"`).
     pub base_url: String,
+
+    /// Request-dependent host allowlist. Static `base_url` remains the default.
+    pub dynamic_base_url: Option<DynamicBaseUrl>,
+
+    /// Application callback resolving additional trusted origins from the real request.
+    pub trusted_origins_resolver: Option<std::sync::Arc<dyn TrustedOriginsResolver>>,
 
     /// Base path where the auth routes are mounted.
     ///
@@ -555,6 +564,10 @@ impl std::fmt::Display for SameSite {
 /// Advanced configuration options (mirrors TS `advanced` block).
 #[derive(Debug, Clone, Default)]
 pub struct AdvancedConfig {
+    /// Trust forwarded host/protocol for URL resolution. Enable only behind a
+    /// proxy that replaces client-supplied forwarding headers. Defaults to false.
+    pub trust_forwarded_host: bool,
+
     /// IP address extraction configuration.
     pub ip_address: IpAddressConfig,
 
@@ -681,6 +694,8 @@ impl Default for AuthConfig {
             managed_secrets: None,
             app_name: "Better Auth".to_owned(),
             base_url: "http://localhost:3000".to_owned(),
+            dynamic_base_url: None,
+            trusted_origins_resolver: None,
             base_path: "/api/auth".to_owned(),
             trusted_origins: Vec::new(),
             disabled_paths: Vec::new(),
@@ -1006,7 +1021,8 @@ impl AuthConfig {
     #[must_use]
     pub fn is_origin_trusted(&self, origin: &str) -> bool {
         // Check base_url origin
-        if let Some(base_origin) = extract_origin(&self.base_url)
+        if self.dynamic_base_url.is_none()
+            && let Some(base_origin) = extract_origin(&self.base_url)
             && (origin == base_origin
                 || (self.base_url.split_once(':').is_some_and(|(scheme, _)| {
                     scheme.eq_ignore_ascii_case("http") || scheme.eq_ignore_ascii_case("https")
@@ -1014,11 +1030,9 @@ impl AuthConfig {
         {
             return true;
         }
-        // Check trusted_origins patterns
-        self.trusted_origins.iter().any(|pattern| {
-            let pattern_origin = legacy_pattern_origin(pattern).unwrap_or_default();
-            glob_match::glob_match(&pattern_origin, origin)
-        })
+        self.trusted_origins
+            .iter()
+            .any(|pattern| origin::matches_origin(origin, pattern))
     }
 
     /// Check whether a URL is a safe redirect target.
@@ -1034,7 +1048,7 @@ impl AuthConfig {
         if is_safe_relative_path(url) {
             return true;
         }
-        extract_origin(url).is_some_and(|origin| self.is_origin_trusted(&origin))
+        self.is_origin_trusted(url)
     }
 
     /// Check whether a given path is disabled.

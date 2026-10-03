@@ -419,6 +419,16 @@ impl<S: AuthSchema> BetterAuth<S> {
         req.extensions()
             .insert(self.config.advanced.ip_address.clone());
 
+        let context = match self.config.resolve_request(&req).await {
+            Ok(config) => AuthContext {
+                config: Arc::new(config),
+                database: Arc::clone(&self.context.database),
+                email_provider: self.context.email_provider.clone(),
+                metadata: self.context.metadata.clone(),
+                extensions: self.context.extensions.clone(),
+            },
+            Err(error) => return Ok(error.to_auth_response()),
+        };
         let request_context = RequestHookContext::from_request(&req);
         better_auth_core::endpoint::without_endpoint_call_context(with_request_hook_context_value(
             request_context,
@@ -426,17 +436,21 @@ impl<S: AuthSchema> BetterAuth<S> {
                 let mut run_after_hooks = false;
                 // Keep the public request future bounded while scoped context
                 // and route-specific authentication retain their actual state.
-                let mut response =
-                    match Box::pin(self.handle_request_inner(&mut req, &mut run_after_hooks)).await
-                    {
-                        Ok(response) => response,
-                        Err(err) => {
-                            if matches!(err, AuthError::CallbackFailure(_)) {
-                                run_after_hooks = false;
-                            }
-                            err.to_auth_response()
+                let mut response = match Box::pin(self.handle_request_inner(
+                    &mut req,
+                    &mut run_after_hooks,
+                    &context,
+                ))
+                .await
+                {
+                    Ok(response) => response,
+                    Err(err) => {
+                        if matches!(err, AuthError::CallbackFailure(_)) {
+                            run_after_hooks = false;
                         }
-                    };
+                        err.to_auth_response()
+                    }
+                };
                 let (cache_headers, ordinary_cache_error) =
                     better_auth_core::cache::runtime::take_issuance(req.extensions());
                 if ordinary_cache_error {
@@ -471,7 +485,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                 for plugin in self.plugins.iter().filter(|_| run_after_hooks) {
                     let accumulated_headers = response.headers.clone();
                     response = match plugin
-                        .after_request(&hook_request, &self.context, response)
+                        .after_request(&hook_request, &context, response)
                         .await
                     {
                         Ok(response) => response,
@@ -514,6 +528,7 @@ impl<S: AuthSchema> BetterAuth<S> {
         &self,
         req: &mut AuthRequest,
         run_after_hooks: &mut bool,
+        context: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
         let base_path = self.config.base_path.trim_end_matches('/');
         let requested_path = req
@@ -535,7 +550,7 @@ impl<S: AuthSchema> BetterAuth<S> {
         }
 
         for plugin in &self.plugins {
-            if let Some(response) = plugin.on_http_request(req, &self.context).await? {
+            if let Some(response) = plugin.on_http_request(req, context).await? {
                 return Ok(response);
             }
         }
@@ -601,6 +616,7 @@ impl<S: AuthSchema> BetterAuth<S> {
         );
         parse_dispatch_body(&internal_req, &allowed_media_types).await?;
         self.request_protection
+            .with_auth_config(Arc::clone(&context.config))
             .check_request_origin(&internal_req)?;
 
         let context_path = plugin_route
@@ -629,7 +645,7 @@ impl<S: AuthSchema> BetterAuth<S> {
         // Run plugin before_request hooks (e.g. API-key → session emulation)
         // Plugins now see the normalised (base_path-stripped) path.
         for plugin in &self.plugins {
-            if let Some(action) = plugin.before_request(&internal_req, &self.context).await? {
+            if let Some(action) = plugin.before_request(&internal_req, context).await? {
                 match action {
                     BeforeRequestAction::Respond(response) => {
                         return Ok(response);
@@ -653,14 +669,14 @@ impl<S: AuthSchema> BetterAuth<S> {
         *run_after_hooks = true;
 
         // Handle core endpoints first
-        if let Some(response) = self.handle_core_request(&internal_req).await? {
+        if let Some(response) = self.handle_core_request(&internal_req, context).await? {
             return Ok(response);
         }
 
         // Dispatch only the resolved HTTP endpoint. A server-only handler from
         // another plugin may share this path and must never receive the call.
         if let Some((plugin, _route)) = plugin_route
-            && let Some(response) = plugin.on_request(&internal_req, &self.context).await?
+            && let Some(response) = plugin.on_request(&internal_req, context).await?
         {
             return Ok(response);
         }
@@ -757,7 +773,11 @@ impl<S: AuthSchema> BetterAuth<S> {
     }
 
     /// Handle core authentication requests.
-    async fn handle_core_request(&self, req: &AuthRequest) -> AuthResult<Option<AuthResponse>> {
+    async fn handle_core_request(
+        &self,
+        req: &AuthRequest,
+        context: &AuthContext<S>,
+    ) -> AuthResult<Option<AuthResponse>> {
         match (req.method(), req.path()) {
             (HttpMethod::Get, core_paths::OK) => {
                 Ok(Some(AuthResponse::json(200, &OkResponse { ok: true })?))
@@ -790,7 +810,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                 Ok(Some(AuthResponse::json(200, &spec)?))
             }
             (HttpMethod::Post, core_paths::UPDATE_USER) => {
-                Ok(Some(self.handle_update_user(req).await?))
+                Ok(Some(self.handle_update_user(req, context).await?))
             }
             _ => Ok(None),
         }
@@ -801,12 +821,13 @@ impl<S: AuthSchema> BetterAuth<S> {
         clippy::too_many_lines,
         reason = "Keep field validation and user-update callbacks adjacent to the persistence operation"
     )]
-    async fn handle_update_user(&self, req: &AuthRequest) -> AuthResult<AuthResponse> {
-        let (current_user, current_session) = self
-            .context
-            .require_cached_session(req)
-            .await
-            .map_err(|error| {
+    async fn handle_update_user(
+        &self,
+        req: &AuthRequest,
+        context: &AuthContext<S>,
+    ) -> AuthResult<AuthResponse> {
+        let (current_user, current_session) =
+            context.require_cached_session(req).await.map_err(|error| {
                 if matches!(
                     error,
                     AuthError::Unauthenticated
@@ -849,14 +870,14 @@ impl<S: AuthSchema> BetterAuth<S> {
 
         let raw_body: better_auth_core::utils::json::JsValue = req.body_as_json()?;
         better_auth_api::plugins::last_login_method::reject_last_login_method_input(
-            &self.context,
+            context,
             raw_body.get("lastLoginMethod"),
         )?;
 
         let update_req: UpdateUserRequest =
             serde_json::from_value(serde_json::Value::Object(body.clone()))
                 .map_err(|e| AuthError::bad_request(format!("Invalid JSON: {e}")))?;
-        let policy = self.context.extensions.get::<UsernameConfig>();
+        let policy = context.extensions.get::<UsernameConfig>();
         if let Some(policy) = &policy {
             if let Some(value) = &update_req.username {
                 policy.validate_hook_value(value).await?;
@@ -900,19 +921,20 @@ impl<S: AuthSchema> BetterAuth<S> {
         {
             drop(input_fields.shift_remove("displayUsername"));
         }
-        let additional_fields = self
-            .context
-            .parse_user_fields(&input_fields, false)
-            .map_err(|error| match error {
-                better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
-                    AuthError::Api {
+        let additional_fields =
+            context
+                .parse_user_fields(&input_fields, false)
+                .map_err(|error| match error {
+                    better_auth_core::field_policy::FieldInputError::Validation {
+                        code,
+                        message,
+                    } => AuthError::Api {
                         status: 400,
                         code: Some(code.into()),
                         message,
-                    }
-                }
-                better_auth_core::field_policy::FieldInputError::Transform(error) => error,
-            })?;
+                    },
+                    better_auth_core::field_policy::FieldInputError::Transform(error) => error,
+                })?;
         let username = additional_fields
             .get("username")
             .and_then(better_auth_core::utils::json::JsValue::as_str)
@@ -922,8 +944,7 @@ impl<S: AuthSchema> BetterAuth<S> {
             .and_then(better_auth_core::utils::json::JsValue::as_str)
             .map(str::to_owned);
 
-        let clear_phone = self
-            .context
+        let clear_phone = context
             .get_metadata("phone-number.enabled")
             .and_then(serde_json::Value::as_bool)
             == Some(true)
@@ -971,13 +992,13 @@ impl<S: AuthSchema> BetterAuth<S> {
             Ok(updated_user) => better_auth_core::CacheVersionContext::created(
                 updated_user.clone(),
                 current_session.clone(),
-                self.context.user_view(&updated_user),
+                context.user_view(&updated_user),
                 current_session.clone(),
             ),
             Err(AuthError::UserNotFound) => {
                 // Source retains the authenticated output snapshot when the
                 // adapter no longer has this user. This does not recreate a row.
-                let mut user = self.context.user_view(&current_user);
+                let mut user = context.user_view(&current_user);
                 if let Some(name) = update_user.name {
                     user.name = Some(name);
                 }
@@ -1015,15 +1036,16 @@ impl<S: AuthSchema> BetterAuth<S> {
             }
             Err(error) => return Err(error),
         };
-        better_auth_core::cache::runtime::emit_issuance_snapshot(&self.context, publication)
-            .await?;
+        better_auth_core::cache::runtime::emit_issuance_snapshot(context, publication).await?;
 
         let mut response =
             AuthResponse::json(200, &better_auth_core::StatusResponse { status: true })?;
 
-        if let Some(token) = self.session_manager.extract_session_token(req) {
-            let cookie_header =
-                better_auth_core::utils::cookie_utils::create_session_cookie(&token, &self.config);
+        if let Some(token) = context.session_manager().extract_session_token(req) {
+            let cookie_header = better_auth_core::utils::cookie_utils::create_session_cookie(
+                &token,
+                &context.config,
+            );
             response = response.with_header("Set-Cookie", cookie_header);
         }
 

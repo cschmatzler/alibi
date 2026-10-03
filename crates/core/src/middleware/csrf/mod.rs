@@ -71,6 +71,12 @@ impl CsrfMiddleware {
         }
     }
 
+    /// Retain protection settings with the effective request-local URL policy.
+    #[must_use]
+    pub fn with_auth_config(&self, auth_config: Arc<AuthConfig>) -> Self {
+        Self::new(self.config.clone(), auth_config)
+    }
+
     const fn is_state_changing(method: &HttpMethod) -> bool {
         matches!(
             method,
