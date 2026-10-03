@@ -10,6 +10,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import {
   admin,
+  anonymous,
   deviceAuthorization,
   emailOTP,
   jwt,
@@ -1049,13 +1050,14 @@ const serverEndpointVersionFixture = createServerEndpointFixture(
 verificationProfiles.set(serverEndpointVersionFixture.path, serverEndpointVersionFixture.auth);
 const userValidationFixture = await createUserValidationFixture(database, authOptions);
 
-const ottCallbackState = { mode: "success", events: [] as unknown[] };
+const ottCallbackState = { mode: "success", events: [] as unknown[], serial: 0 };
 function ottCallbackResult(stage: string) {
   if (ottCallbackState.mode === `${stage}-ordinary`) throw new Error("private OTT callback cause");
   if (ottCallbackState.mode === `${stage}-veto`)
     throw new APIError("FORBIDDEN", { code: "OTT_VETO", message: "OTT callback veto" });
 }
 const OTT_PROFILE_NAMES = [
+  "ott-composed",
   "ott-custom-callback",
   "ott-default",
   "ott-hashed",
@@ -1088,9 +1090,41 @@ const ottProfiles = new Map(
       session: {
         disableSessionRefresh: name === "ott-refresh-disabled",
         deferSessionRefresh: name === "ott-refresh-deferred",
+        ...(name === "ott-composed"
+          ? { cookieCache: { enabled: true, strategy: "compact" as const } }
+          : {}),
       },
+      ...(name === "ott-composed"
+        ? {
+            databaseHooks: {
+              ...authOptions.databaseHooks,
+              session: { create: { before: async (session) => ({data:{...session,token:String(++ottCallbackState.serial).padStart(32,"0")}}) } },
+            verification: {
+                create: {
+                  before: async (verification) => {
+                    if (
+                      verification.identifier.startsWith("one-time-token:") &&
+                      ottCallbackState.mode === "verification-cancel"
+                    ) {
+                      ottCallbackState.events.push({
+                        stage: "verification-cancel",
+                        identifier: verification.identifier,
+                        value: verification.value,
+                      });
+                      return false;
+                    }
+                    return { data: verification };
+                  },
+                },
+              },
+            },
+          }
+        : {}),
       plugins: [
-        ...authOptions.plugins,
+        ...authOptions.plugins.filter(
+          (plugin) => name !== "ott-composed" || plugin.id !== "two-factor",
+        ),
+        ...(name === "ott-composed" ? [twoFactor()] : []),
         ...(name === "ott-server-header" ? [ottExposedHeaderFixture] : []),
         oneTimeToken({
           ...(name === "ott-custom-callback"
@@ -1114,7 +1148,7 @@ const ottProfiles = new Map(
                       : null,
                   });
                   ottCallbackResult("generate");
-                  return "ott-custom-token";
+                  return ctx.request ? "ott-custom-token" : "ott-custom-server-token";
                 },
               }
             : {}),
@@ -1133,8 +1167,15 @@ const ottProfiles = new Map(
                 : "plain",
           disableSetSessionCookie: name === "ott-no-cookie",
           disableClientRequest: name === "ott-server-header",
-          setOttHeaderOnNewSession: name === "ott-server-header",
+          setOttHeaderOnNewSession: name === "ott-server-header" || name === "ott-composed",
         }),
+        ...(name === "ott-composed"
+          ? [
+              anonymous({ generateRandomEmail: () => "ott-composed-anonymous@fixture.test" }),
+              multiSession(),
+              jwt(),
+            ]
+          : []),
       ],
     };
     return [name, { auth: betterAuth(options), options }] as const;

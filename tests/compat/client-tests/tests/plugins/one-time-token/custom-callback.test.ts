@@ -92,6 +92,26 @@ compatScenario(
       }
     }
     await control("callbacks", "success");
+    const serverGenerated = await control("generate-endpoint");
+    expect(serverGenerated).toEqual({ token: "ott-custom-server-token" });
+    const serverReceipt = await control("callbacks");
+    expect(serverReceipt.events.map((event: { stage: string }) => event.stage)).toEqual([
+      "generate",
+      "hash",
+    ]);
+    expect(serverReceipt.events[0].request).toBeNull();
+    const serverIdentifier = "one-time-token:digest-ott-custom-server-token";
+    const serverPending = await ctx.readVerificationState({ identifier: serverIdentifier });
+    expect(serverPending).toMatchObject([{ value: original.data.session.token }]);
+    const serverConsumed = await client.oneTimeToken.verify({ token: serverGenerated.token });
+    expect(serverConsumed.data?.session).toEqual(original.data.session);
+    expect(await ctx.readVerificationState({ identifier: serverIdentifier })).toEqual([]);
+    observations.push({
+      serverGenerated,
+      serverReceipt,
+      serverPending,
+      serverConsumed: ctx.snapshot(serverConsumed),
+    });
     const generated = await client.oneTimeToken.generate();
     expect(generated.data?.token).toBe("ott-custom-token");
     const pending = await ctx.readVerificationState({ identifier });

@@ -7,14 +7,17 @@ use axum::{
 };
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
+use better_auth::plugins::anonymous::{AnonymousConfig, AnonymousIdentity};
+use better_auth::plugins::jwt::JwtPlugin;
 use better_auth::plugins::one_time_token::{
     GenerateOneTimeToken, HashOneTimeToken, OneTimeTokenConfig, OneTimeTokenPlugin,
     OneTimeTokenSession, OneTimeTokenStorage,
 };
 use better_auth::plugins::{
-    AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
-    EmailPasswordPlugin, EmailVerificationPlugin, OrganizationPlugin, PasskeyPlugin,
-    PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
+    AccountManagementPlugin, AdminPlugin, AnonymousPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
+    EmailPasswordPlugin, EmailVerificationPlugin, MultiSessionPlugin, OrganizationPlugin,
+    PasskeyPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
+    UserManagementPlugin,
 };
 use better_auth::prelude::{AuthRequest, HttpMethod};
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
@@ -29,6 +32,7 @@ use std::{
 
 type Auth = Arc<BetterAuth<TestSchema>>;
 const PROFILES: &[&str] = &[
+    "ott-composed",
     "ott-custom-callback",
     "ott-default",
     "ott-hashed",
@@ -41,10 +45,47 @@ const PROFILES: &[&str] = &[
 #[derive(Default)]
 struct CallbackState {
     mode: String,
+    serial: usize,
     events: Vec<serde_json::Value>,
 }
 #[derive(Clone, Default)]
 struct CustomCallbacks(Arc<Mutex<CallbackState>>);
+
+struct ComposedIdentity;
+#[async_trait::async_trait]
+impl AnonymousIdentity for ComposedIdentity {
+    async fn email(&self) -> AuthResult<Option<String>> {
+        Ok(Some("ott-composed-anonymous@fixture.test".into()))
+    }
+}
+#[async_trait::async_trait]
+impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for CustomCallbacks {
+    async fn before_create_session(
+        &self,
+        session: &mut better_auth_core::CreateSession,
+        _: &crate::backend::HookContext<'_>,
+    ) -> AuthResult<better_auth_seaorm::HookControl> {
+        let mut state = self.0.lock().unwrap();
+        state.serial += 1;
+        session.token = Some(format!("{:032}", state.serial));
+        Ok(better_auth_seaorm::HookControl::Continue)
+    }
+    async fn before_create_verification(
+        &self,
+        verification: &mut better_auth_core::CreateVerification,
+        _: &crate::backend::HookContext<'_>,
+    ) -> AuthResult<better_auth_seaorm::HookControl> {
+        let mut state = self.0.lock().unwrap();
+        if verification.identifier.starts_with("one-time-token:")
+            && state.mode == "verification-cancel"
+        {
+            state.events.push(json!({"stage":"verification-cancel", "identifier":verification.identifier, "value":verification.value}));
+            Ok(better_auth_seaorm::HookControl::Cancel)
+        } else {
+            Ok(better_auth_seaorm::HookControl::Continue)
+        }
+    }
+}
 
 fn callback_result(mode: &str, stage: &str) -> AuthResult<()> {
     if mode == format!("{stage}-ordinary") {
@@ -69,7 +110,12 @@ impl GenerateOneTimeToken for CustomCallbacks {
         let mut state = self.0.lock().unwrap();
         state.events.push(json!({"stage":"generate", "userId":session.user.id, "session":{"id":session.session.id, "userId":session.session.user_id, "token":session.session.token, "expiresAt":session.session.expires_at.to_rfc3339_opts(chrono::SecondsFormat::Millis, true)}, "request":request.map(|req| json!({"path":req.path(), "method":format!("{:?}", req.method()).to_uppercase(), "marker":req.headers.get("x-ott-marker")}))}));
         callback_result(&state.mode, "generate")?;
-        Ok("ott-custom-token".into())
+        Ok(if request.is_none() {
+            "ott-custom-server-token"
+        } else {
+            "ott-custom-token"
+        }
+        .into())
     }
 }
 #[async_trait::async_trait]
@@ -151,42 +197,55 @@ pub(crate) async fn router(
             },
             disable_client_request: *name == "ott-server-header",
             disable_set_session_cookie: *name == "ott-no-cookie",
-            set_ott_header_on_new_session: *name == "ott-server-header",
+            set_ott_header_on_new_session: *name == "ott-server-header" || *name == "ott-composed",
             ..Default::default()
         });
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
         config.session.disable_session_refresh = *name == "ott-refresh-disabled";
         config.session.defer_session_refresh = *name == "ott-refresh-deferred";
-        let auth = Arc::new(
-            AuthBuilder::<TestSchema>::new(config.clone())
-                .store(crate::backend::store::<TestSchema>(
-                    config,
-                    database.clone(),
-                ))
-                .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(EmailPasswordPlugin::new().enable_signup(true))
-                .plugin(SessionManagementPlugin::new())
-                .plugin(AccountManagementPlugin::new())
-                .plugin(DeviceAuthorizationPlugin::new())
-                .plugin(ApiKeyPlugin::builder().enable_metadata(true).build())
-                .plugin(OrganizationPlugin::new())
-                .plugin(AdminPlugin::new())
-                .plugin(PasskeyPlugin::new())
-                .plugin(PasswordManagementPlugin::new())
-                .plugin(EmailVerificationPlugin::new())
-                .plugin(
-                    UserManagementPlugin::new()
-                        .change_email_enabled(true)
-                        .delete_user_enabled(true)
-                        .require_delete_verification(false),
-                )
-                .plugin(TwoFactorPlugin::new())
-                .plugin(ExposedHeaderFixture(*name == "ott-server-header"))
-                .plugin(ott.clone())
-                .build()
-                .await?,
-        );
+        if *name == "ott-composed" {
+            config.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+                enabled: true,
+                ..Default::default()
+            });
+        }
+        let mut store = crate::backend::store::<TestSchema>(config.clone(), database.clone());
+        if *name == "ott-composed" {
+            store = store.with_hooks(vec![Arc::new(callbacks.clone())]);
+        }
+        let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
+            .store(store)
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new().enable_signup(true))
+            .plugin(SessionManagementPlugin::new())
+            .plugin(AccountManagementPlugin::new())
+            .plugin(DeviceAuthorizationPlugin::new())
+            .plugin(ApiKeyPlugin::builder().enable_metadata(true).build())
+            .plugin(OrganizationPlugin::new())
+            .plugin(AdminPlugin::new())
+            .plugin(PasskeyPlugin::new())
+            .plugin(PasswordManagementPlugin::new())
+            .plugin(EmailVerificationPlugin::new())
+            .plugin(
+                UserManagementPlugin::new()
+                    .change_email_enabled(true)
+                    .delete_user_enabled(true)
+                    .require_delete_verification(false),
+            )
+            .plugin(TwoFactorPlugin::new())
+            .plugin(ExposedHeaderFixture(*name == "ott-server-header"))
+            .plugin(ott.clone());
+        if *name == "ott-composed" {
+            builder = builder
+                .plugin(AnonymousPlugin::with_config(AnonymousConfig {
+                    identity: Some(Arc::new(ComposedIdentity)),
+                    ..Default::default()
+                }))
+                .plugin(MultiSessionPlugin::new())
+                .plugin(JwtPlugin::new());
+        }
+        let auth = Arc::new(builder.build().await?);
         let routes: Router<Auth> = auth.clone().axum_router().with_state(auth.clone());
         router = router.nest(&path, routes);
         let _ = profiles.insert((*name).to_owned(), (auth, ott));
