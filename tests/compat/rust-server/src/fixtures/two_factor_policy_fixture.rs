@@ -50,6 +50,7 @@ impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for 
 struct RejectSessionCreate {
     cancel: bool,
     pending: bool,
+    ordinary: bool,
 }
 #[async_trait::async_trait]
 impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
@@ -69,6 +70,13 @@ impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
         }) {
             if self.cancel {
                 return Ok(better_auth_seaorm::HookControl::Cancel);
+            }
+            if self.ordinary {
+                return Err(better_auth_core::AuthError::CallbackFailure(Box::new(
+                    better_auth_core::AuthError::internal(
+                        "session creation cancelled by database hook",
+                    ),
+                )));
             }
             return Err(better_auth_core::AuthError::forbidden(
                 "session creation cancelled by database hook",
@@ -109,14 +117,49 @@ struct BackupCipher {
     profile: String,
     receipts: BackupReceipts,
 }
+impl BackupCipher {
+    fn reject(input: &str, phase: &str) -> AuthResult<()> {
+        let parsed = serde_json::from_str::<serde_json::Value>(input).ok();
+        let mode = if phase == "decrypt" {
+            input.split_once("throw-decrypt-").map(|(_, mode)| mode)
+        } else {
+            parsed
+                .as_ref()
+                .and_then(serde_json::Value::as_array)
+                .and_then(|values| {
+                    values
+                        .iter()
+                        .find_map(|value| value.get("reject").and_then(serde_json::Value::as_str))
+                })
+        };
+        match mode {
+            Some("ordinary") => Err(better_auth_core::AuthError::internal(
+                "session creation cancelled by database hook",
+            )),
+            Some("explicit") => Err(better_auth_core::AuthError::Upstream {
+                status: 403,
+                code: "BACKUP_CALLBACK_DENIED",
+                message: "session creation cancelled by database hook",
+            }),
+            Some("explicit500") => Err(better_auth_core::AuthError::Api {
+                status: 500,
+                code: Some("BACKUP_CALLBACK_DENIED".into()),
+                message: "session creation cancelled by database hook".into(),
+            }),
+            _ => Ok(()),
+        }
+    }
+}
 #[async_trait::async_trait]
 impl TwoFactorBackupCipher for BackupCipher {
     async fn encrypt(&self, input: &str) -> AuthResult<String> {
         self.receipts.record(&self.profile, "encrypt", input);
+        Self::reject(input, "encrypt")?;
         Ok(format!("backup-{input}"))
     }
     async fn decrypt(&self, input: &str) -> AuthResult<String> {
         self.receipts.record(&self.profile, "decrypt", input);
+        Self::reject(input, "decrypt")?;
         Ok(input.strip_prefix("backup-").unwrap_or("").into())
     }
 }
@@ -195,6 +238,7 @@ pub(crate) async fn router(
         "two-factor-skip-session-forbidden",
         "two-factor-pending-session-cancel",
         "two-factor-pending-session-forbidden",
+        "two-factor-pending-session-ordinary",
         "two-factor-passwordless",
         "two-factor-passwordless-child-required",
         "two-factor-passwordless-child-optional",
@@ -249,6 +293,7 @@ pub(crate) async fn router(
             store.with_hooks(vec![Arc::new(RejectSessionCreate {
                 cancel: name.ends_with("-cancel"),
                 pending: name.starts_with("two-factor-pending-"),
+                ordinary: name.ends_with("-ordinary"),
             })])
         } else {
             store

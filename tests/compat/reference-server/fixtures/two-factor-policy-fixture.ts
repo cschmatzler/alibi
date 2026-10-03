@@ -15,6 +15,21 @@ export function createTwoFactorPolicyFixture(
     rows.push({ phase, input });
     backupReceipts.set(profile, rows);
   };
+  const rejectBackup = (input: string, phase: string) => {
+    const mode =
+      phase === "decrypt"
+        ? input.split("throw-decrypt-")[1]
+        : JSON.parse(input).find(
+            (value: unknown) => value && typeof value === "object" && "reject" in value,
+          )?.reject;
+    if (mode === "ordinary") throw new Error("session creation cancelled by database hook");
+    if (mode === "explicit" || mode === "explicit500") {
+      throw new APIError(mode === "explicit500" ? "INTERNAL_SERVER_ERROR" : "FORBIDDEN", {
+        code: "BACKUP_CALLBACK_DENIED",
+        message: "session creation cancelled by database hook",
+      });
+    }
+  };
   const numericBackup: Record<
     string,
     { amount: number; length: number; storeBackupCodes: "plain" }
@@ -54,10 +69,12 @@ export function createTwoFactorPolicyFixture(
                     storeBackupCodes: {
                       encrypt: async (input: string) => {
                         recordBackup(name, "encrypt", input);
+                        rejectBackup(input, "encrypt");
                         return "backup-" + input;
                       },
                       decrypt: async (input: string) => {
                         recordBackup(name, "decrypt", input);
+                        rejectBackup(input, "decrypt");
                         return input.slice(7);
                       },
                     },
@@ -74,6 +91,7 @@ export function createTwoFactorPolicyFixture(
       "two-factor-skip-session-forbidden",
       "two-factor-pending-session-cancel",
       "two-factor-pending-session-forbidden",
+      "two-factor-pending-session-ordinary",
       "two-factor-passwordless",
       "two-factor-passwordless-child-required",
       "two-factor-passwordless-child-optional",
@@ -143,6 +161,9 @@ export function createTwoFactorPolicyFixture(
                           ) {
                             if (name.endsWith("-cancel")) {
                               return false;
+                            }
+                            if (name.endsWith("-ordinary")) {
+                              throw new Error("session creation cancelled by database hook");
                             }
                             throw new APIError("FORBIDDEN", {
                               message: "session creation cancelled by database hook",

@@ -795,6 +795,7 @@ export const FIXTURE_PROFILES = [
   "two-factor-otp-custom-cipher",
   "two-factor-pending-session-cancel",
   "two-factor-pending-session-forbidden",
+  "two-factor-pending-session-ordinary",
   "two-factor-skip-session-cancel",
   "two-factor-skip-session-forbidden",
   "two-factor-skip-user-hook",

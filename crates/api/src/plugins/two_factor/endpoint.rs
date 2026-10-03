@@ -12,7 +12,7 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase")]
 pub struct BackupCodesOutput {
     pub status: bool,
-    pub backup_codes: Vec<String>,
+    pub backup_codes: serde_json::Value,
 }
 
 #[derive(Debug, Deserialize)]

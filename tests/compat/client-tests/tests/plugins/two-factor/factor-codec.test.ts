@@ -1,5 +1,6 @@
 import { Database } from "bun:sqlite";
 import { expect } from "bun:test";
+import { createHmac } from "node:crypto";
 
 import { betterAuth } from "better-auth";
 import { createAuthClient } from "better-auth/client";
@@ -7,6 +8,7 @@ import { twoFactorClient } from "better-auth/client/plugins";
 import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { twoFactor } from "better-auth/plugins";
+import { Cookie } from "tough-cookie";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -396,3 +398,625 @@ compatScenario(
   },
   ["POST /two-factor/verify-backup-code"],
 );
+
+compatScenario("two-factor remaining heterogeneous view and serializer contracts", async (ctx) => {
+  const profile = "two-factor-skip-verification";
+  const owner = createAuthClient({
+    baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
+    plugins: [twoFactorClient()],
+    fetchOptions: { customFetchImpl: ctx.actor("owner", profile).fetch },
+  });
+  const password = "password123";
+  const email = ctx.uniqueEmail("remaining-json");
+  const signup = await owner.signUp.email({ email, password, name: "Remaining Owner" });
+  expect(signup.error).toBeNull();
+  const userId = signup.data!.user.id;
+  const absent = await ctx.rawRequest({
+    path: `/__test/view-backup-codes?userId=${userId}`,
+    method: "GET",
+  });
+  expect(absent.status).toBe(500);
+  expect(absent.body).toEqual({ message: "Backup codes aren't enabled" });
+  expect((await owner.twoFactor.enable({ password })).error).toBeNull();
+  const published = await publishedFactor(email);
+  const code = published.enrollment.backupCodes[0]!;
+  const install = async (json: string) => {
+    const response = await ctx.rawRequest({
+      path: "/__test/two-factor-policy",
+      method: "POST",
+      json: {
+        userId,
+        importFactor: {
+          secret: published.row.secret,
+          backupCodes: await symmetricEncrypt({ key: secret, data: json }),
+        },
+      },
+    });
+    expect(response.status).toBe(200);
+    return factorSchema.passthrough().parse(response.body);
+  };
+  const view = async () =>
+    ctx.rawRequest({ path: `/__test/view-backup-codes?userId=${userId}`, method: "GET" });
+  const observations = [];
+  for (const [json, expected] of [
+    [
+      '{"nested":["2025-02-30T00:00:00Z",1e400],"__proto__":{"keep":true}}',
+      { nested: ["2025-03-02T00:00:00.000Z", null], __proto__: { keep: true } },
+    ],
+    ["true", true],
+    ["42", 42],
+    ['"present"', "present"],
+    ["1e400", null],
+    ["[]", []],
+  ] as const) {
+    const installed = await install(json);
+    const result = await view();
+    expect(result.status).toBe(200);
+    // Object literal __proto__ is a setter; use parsed expected JSON for that own key.
+    const expectedValue = json.startsWith("{")
+      ? JSON.parse('{"nested":["2025-03-02T00:00:00.000Z",null],"__proto__":{"keep":true}}')
+      : expected;
+    expect(result.body).toEqual({ status: true, backupCodes: expectedValue });
+    expect(
+      (
+        await ctx.rawRequest({
+          path: "/__test/two-factor-policy",
+          method: "POST",
+          json: { userId },
+        })
+      ).body,
+    ).toEqual(installed);
+    observations.push(result);
+  }
+  for (const json of ["[", "null", "false", "0", "-0", '""']) {
+    await install(json);
+    const result = await view();
+    expect(result.status).toBe(500);
+    expect(result.body).toEqual({ message: "Invalid backup code" });
+    observations.push(result);
+  }
+  const dates = ["2025-02-30T00:00:00Z", "9999-12-31T24:00:00Z", "2025-01-02T03:04:05.123456Z"];
+  const invalidDates = [
+    "+275760-09-13T00:00:00.000Z",
+    "2025-02-32T00:00:00Z",
+    "2025-01-02T03:04:60Z",
+  ];
+  const json = `[${JSON.stringify(code)},${dates.map((x) => JSON.stringify(x)).join(",")},1e400,-1e400,9007199254740993,${invalidDates.map((x) => JSON.stringify(x)).join(",")}]`;
+  await install(json);
+  for (const date of dates) {
+    const denied = await owner.twoFactor.verifyBackupCode({ code: date });
+    expect(denied.error?.code).toBe("INVALID_BACKUP_CODE");
+  }
+  const completed = await owner.twoFactor.verifyBackupCode({ code });
+  expect(completed.error).toBeNull();
+  const after = await ctx.rawRequest({
+    path: "/__test/two-factor-policy",
+    method: "POST",
+    json: { userId },
+  });
+  const row = factorSchema.parse(after.body);
+  const plaintext = await symmetricDecrypt({ key: secret, data: row.backupCodes });
+  expect(plaintext).toBe(
+    JSON.stringify([
+      "2025-03-02T00:00:00.000Z",
+      "+010000-01-01T00:00:00.000Z",
+      "2025-01-02T03:04:05.123Z",
+      null,
+      null,
+      9007199254740992,
+      ...invalidDates,
+    ]),
+  );
+  // Expanded-year strings are outside the actual reviver grammar and remain string proofs.
+  const expanded = await owner.twoFactor.verifyBackupCode({ code: invalidDates[0]! });
+  expect(expanded.error).toBeNull();
+  return ctx.snapshot({ absent, observations, completed, expanded, plaintext });
+});
+
+for (const profile of [
+  "two-factor-pending-session-cancel",
+  "two-factor-pending-session-forbidden",
+  "two-factor-pending-session-ordinary",
+] as const) {
+  compatScenario(
+    `two-factor remaining corruption before ${profile} preserves error stage and retirement`,
+    async (ctx) => {
+      const client = (actor: string) =>
+        createAuthClient({
+          baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
+          plugins: [twoFactorClient()],
+          fetchOptions: { customFetchImpl: ctx.actor(actor, profile).fetch },
+        });
+      const owner = client("owner");
+      const foreign = client("foreign");
+      const password = "password123";
+      const email = ctx.uniqueEmail("combined-corruption");
+      const signup = await owner.signUp.email({ email, password, name: "Combined Owner" });
+      expect(signup.error).toBeNull();
+      const userId = signup.data!.user.id;
+      expect((await owner.twoFactor.enable({ password })).error).toBeNull();
+      const other = await foreign.signUp.email({
+        email: ctx.uniqueEmail("foreign"),
+        password,
+        name: "Foreign",
+      });
+      expect(other.error).toBeNull();
+      const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
+      const published = await publishedFactor(email);
+      const code = published.enrollment.backupCodes[0]!;
+      const policy = async (body: Record<string, unknown> = {}) => {
+        const result = await ctx.rawRequest({
+          path: "/__test/two-factor-policy",
+          method: "POST",
+          json: { userId, ...body },
+        });
+        expect(result.status).toBe(200);
+        return result.body;
+      };
+      const install = async (json: string) =>
+        factorSchema.passthrough().parse(
+          await policy({
+            importFactor: {
+              secret: published.row.secret,
+              backupCodes: await symmetricEncrypt({ key: secret, data: json }),
+            },
+          }),
+        );
+      await owner.signOut();
+      expect((await owner.signIn.email({ email, password })).data).toMatchObject({
+        twoFactorRedirect: true,
+      });
+      const before = z
+        .object({
+          key: z.string(),
+          challenge: z.boolean(),
+          attempts: z.string().nullable(),
+          trustCount: z.number(),
+        })
+        .passthrough()
+        .parse(await policy({ pendingState: true }));
+      const shape = await install("1e400");
+      const failed = await ctx
+        .actor("owner", profile)
+        .fetch(`${authProfilePath(profile)}/two-factor/verify-backup-code`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code, trustDevice: true }),
+        });
+      expect(failed.status).toBe(500);
+      expect(await failed.text()).toBe("");
+      expect(await policy({ pendingState: true })).toEqual(before);
+      expect(await policy()).toEqual(shape);
+      const mixed = await install(JSON.stringify([code, { keep: true }, code]));
+      const result = await ctx
+        .actor("owner", profile)
+        .fetch(`${authProfilePath(profile)}/two-factor/verify-backup-code`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ code, trustDevice: true }),
+        });
+      const text = await result.text();
+      expect(result.headers.getSetCookie()).toEqual([]);
+      if (profile.endsWith("ordinary")) {
+        expect(result.status).toBe(500);
+        expect(text).toBe("");
+      } else if (profile.endsWith("cancel")) {
+        expect(result.status).toBe(500);
+        expect(JSON.parse(text)).toEqual({
+          message: "failed to create session",
+          code: "FAILED_TO_CREATE_SESSION",
+        });
+      } else {
+        expect(result.status).toBe(403);
+        expect(JSON.parse(text)).toEqual({
+          message: "session creation cancelled by database hook",
+        });
+      }
+      const after = z
+        .object({ challenge: z.boolean(), attempts: z.string().nullable(), trustCount: z.number() })
+        .passthrough()
+        .parse(await policy({ pendingState: true, pendingKey: before.key }));
+      expect(after).toMatchObject({ challenge: false, attempts: null, trustCount: 0 });
+      const stored = factorSchema.passthrough().parse(await policy());
+      expect(stored).toEqual({ ...mixed, backupCodes: stored.backupCodes });
+      expect(JSON.parse(await symmetricDecrypt({ key: secret, data: stored.backupCodes }))).toEqual(
+        [{ keep: true }],
+      );
+      const state = z
+        .object({ sessions: z.array(z.unknown()) })
+        .passthrough()
+        .parse(await ctx.readUserState({ userId }));
+      expect(state.sessions).toEqual([]);
+      const replay = await owner.twoFactor.verifyBackupCode({ code });
+      expect(replay.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
+      expect(await policy()).toEqual(stored);
+      expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+      return ctx.snapshot({
+        status: result.status,
+        body: text ? JSON.parse(text) : null,
+        after: { ...after, key: { token: before.key } },
+        state,
+        replay,
+      });
+    },
+  );
+}
+
+const signedRaw = (payload: string) =>
+  `${payload}.${createHmac("sha256", secret).update(payload).digest("base64")}`;
+const bitAlias = (raw: string) => {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  const i = raw.length - 2;
+  const next = alphabet[alphabet.indexOf(raw[i]!) + 1]!;
+  const result = raw.slice(0, i) + next + raw.slice(i + 1);
+  expect(Buffer.from(result.slice(result.lastIndexOf(".") + 1), "base64")).toEqual(
+    Buffer.from(raw.slice(raw.lastIndexOf(".") + 1), "base64"),
+  );
+  return result;
+};
+
+const wireCases = [
+  {
+    name: "uri",
+    key: "2fa-雪-é.uri",
+    pref: "雪-é",
+    wire: (x: string) =>
+      encodeURIComponent(x)
+        .replace(/%[0-9A-F]{2}/g, (x) => x.toLowerCase())
+        .replace(/\./g, "%2e"),
+  },
+  {
+    name: "base64",
+    key: "2fa-bits",
+    pref: "yes",
+    wire: (x: string) => encodeURIComponent(bitAlias(x)),
+  },
+  { name: "malformed-uri", key: "2fa-%E9", pref: "%E9", wire: (x: string) => x },
+  {
+    name: "quoted",
+    key: "2fa-quoted",
+    pref: "temporary",
+    wire: (x: string) => `"${encodeURIComponent(x)}"`,
+  },
+  {
+    name: "key-whitespace",
+    key: "2fa-key-whitespace",
+    pref: "yes",
+    wire: (x: string) => encodeURIComponent(x),
+  },
+] as const;
+for (const c of wireCases) {
+  compatScenario(
+    `two-factor remaining pending preference and disable cookie wire aliases ${c.name}`,
+    async (ctx) => {
+      const profile = "two-factor-pending-lookup";
+      const history: Cookie[] = [];
+      const owner = createAuthClient({
+        baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
+        plugins: [twoFactorClient()],
+        fetchOptions: {
+          customFetchImpl: ctx.actor("owner", profile).fetch,
+          onResponse: ({ response }) => {
+            for (const raw of response.headers.getSetCookie()) {
+              const cookie = Cookie.parse(raw);
+              if (cookie) history.push(cookie);
+            }
+          },
+        },
+      });
+      const password = "password123";
+      const email = ctx.uniqueEmail("wire-alias");
+      const signup = await owner.signUp.email({ email, password, name: "Wire Owner" });
+      expect(signup.error).toBeNull();
+      const userId = signup.data!.user.id;
+      const enabled = await owner.twoFactor.enable({ password });
+      expect(enabled.error).toBeNull();
+      const codes = enrollmentSchema.parse(enabled.data).backupCodes;
+      const other = createAuthClient({
+        baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
+        plugins: [twoFactorClient()],
+        fetchOptions: { customFetchImpl: ctx.actor("foreign", profile).fetch },
+      });
+      const foreign = await other.signUp.email({
+        email: ctx.uniqueEmail("foreign-wire"),
+        password,
+        name: "Foreign",
+      });
+      expect(foreign.error).toBeNull();
+      const foreignBefore = await ctx.readUserState({ userId: foreign.data!.user.id });
+      const control = async (body: Record<string, unknown>) => {
+        const r = await ctx.rawRequest({
+          path: "/__test/two-factor-pending-lookup",
+          method: "POST",
+          json: { profile, ...body },
+        });
+        expect(r.status).toBe(200);
+        return r.body;
+      };
+      const rows = async (identifier: string) => await ctx.readVerificationState({ identifier });
+      await owner.signOut();
+
+      const observations = [];
+      const index = 0;
+      {
+        for (const [identifier, value] of [
+          [c.key, userId],
+          [`2fa-attempts-${c.key}`, "0"],
+        ]) {
+          await control({
+            action: "seed",
+            identifier,
+            value,
+            expiresAt: "2030-01-01T00:00:00.000Z",
+          });
+        }
+        const pair = (suffix: string, payload: string) =>
+          `better-auth.${suffix}${c.name === "key-whitespace" ? " \t" : ""}=${c.wire(signedRaw(payload))}`;
+        const cookie = `${pair("two_factor", c.key)}; ${pair("dont_remember", c.pref)}${c.name === "key-whitespace" ? "; better-auth.two_factor=invalid; better-auth.dont_remember=invalid" : ""}`;
+        const before = await rows(c.key);
+        const attempts = await rows(`2fa-attempts-${c.key}`);
+        // Valid HMAC bytes without required padding must fail before attempt consumption.
+        const bad = await owner.twoFactor.verifyBackupCode(
+          { code: codes[index]! },
+          {
+            headers: {
+              cookie: `better-auth.two_factor=${encodeURIComponent(signedRaw(c.key).slice(0, -1))}`,
+            },
+          },
+        );
+        expect(bad.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
+        expect(await rows(c.key)).toEqual(before);
+        expect(await rows(`2fa-attempts-${c.key}`)).toEqual(attempts);
+        let malformedPreference: unknown = null;
+        if (c.name === "uri") {
+          const key = "2fa-malformed-preference";
+          for (const [identifier, value] of [
+            [key, userId],
+            [`2fa-attempts-${key}`, "0"],
+          ]) {
+            await control({
+              action: "seed",
+              identifier,
+              value,
+              expiresAt: "2030-01-01T00:00:00.000Z",
+            });
+          }
+          const offset = history.length;
+          malformedPreference = await owner.twoFactor.verifyBackupCode(
+            { code: codes[1]! },
+            {
+              headers: {
+                cookie: `better-auth.two_factor=${encodeURIComponent(signedRaw(key))}; better-auth.dont_remember=${encodeURIComponent(signedRaw("temporary").slice(0, -1))}`,
+              },
+            },
+          );
+          expect((malformedPreference as { error: unknown }).error).toBeNull();
+          expect(await rows(key)).toEqual([]);
+          expect(await rows(`2fa-attempts-${key}`)).toEqual([]);
+          expect(
+            history.slice(offset).findLast((x) => x.key === "better-auth.session_token")?.maxAge,
+          ).toBe(604800);
+          expect(
+            history.slice(offset).filter((x) => x.key === "better-auth.dont_remember"),
+          ).toEqual([]);
+          await owner.signOut();
+        }
+        const start = history.length;
+        const result = await owner.twoFactor.verifyBackupCode(
+          { code: codes[index]!, trustDevice: true },
+          { headers: { cookie } },
+        );
+        expect(result.error).toBeNull();
+        expect(result.data?.user.id).toBe(userId);
+        expect(await rows(c.key)).toEqual([]);
+        expect(await rows(`2fa-attempts-${c.key}`)).toEqual([]);
+        const issued = history.slice(start);
+        expect(issued.findLast((x) => x.key === "better-auth.two_factor")).toMatchObject({
+          value: "",
+          maxAge: 0,
+        });
+        expect(issued.findLast((x) => x.key === "better-auth.dont_remember")).toMatchObject({
+          value: "",
+          maxAge: 0,
+        });
+        const session = issued.findLast((x) => x.key === "better-auth.session_token");
+        expect(session?.maxAge).toBeNull();
+        const trust = issued.findLast((x) => x.key === "better-auth.trust_device");
+        expect(trust).toBeDefined();
+        const trustPayload = decodeURIComponent(trust!.value).split(".").slice(0, -1).join(".");
+        const trustIdentifier = trustPayload.split("!")[1]!;
+        expect(await rows(trustIdentifier)).not.toEqual([]);
+        // Disable reads its trust proof independently of the inner trust-token check.
+        // Give that route a Unicode/malformed-URI payload and the issued row identity.
+        const disablePayload = `${c.pref}!${trustIdentifier}`;
+        let sessionPair = `${session!.key}=${session!.value}`;
+        const invalidDisable = await owner.twoFactor.disable(
+          { password: "wrong" },
+          {
+            headers: {
+              cookie: `${sessionPair}; ${pair("trust_device", disablePayload)}${c.name === "key-whitespace" ? "; better-auth.trust_device=invalid" : ""}`,
+            },
+          },
+        );
+        expect(invalidDisable.error?.code).toBe("INVALID_PASSWORD");
+        expect(await rows(trustIdentifier)).not.toEqual([]);
+        let malformedDisable: unknown = null;
+        if (c.name === "uri") {
+          const offset = history.length;
+          malformedDisable = await owner.twoFactor.disable(
+            { password },
+            {
+              headers: {
+                cookie: `${sessionPair}; better-auth.trust_device=${encodeURIComponent(signedRaw(disablePayload).slice(0, -1))}`,
+              },
+            },
+          );
+          expect((malformedDisable as { error: unknown }).error).toBeNull();
+          expect(await rows(trustIdentifier)).not.toEqual([]);
+          expect(history.slice(offset).filter((x) => x.key === "better-auth.trust_device")).toEqual(
+            [],
+          );
+          expect((await owner.twoFactor.enable({ password })).error).toBeNull();
+          const current = history.findLast(
+            (x) => x.key === "better-auth.session_token" && x.value,
+          )!;
+          sessionPair = `${current.key}=${current.value}`;
+        }
+        const clearedStart = history.length;
+        const disabled = await owner.twoFactor.disable(
+          { password },
+          {
+            headers: {
+              cookie: `${sessionPair}; ${pair("trust_device", disablePayload)}${c.name === "key-whitespace" ? "; better-auth.trust_device=invalid" : ""}`,
+            },
+          },
+        );
+        expect(disabled.error).toBeNull();
+        expect(await rows(trustIdentifier)).toEqual([]);
+        expect(
+          history.slice(clearedStart).findLast((x) => x.key === "better-auth.trust_device"),
+        ).toMatchObject({ value: "", maxAge: 0 });
+        expect(await ctx.readUserState({ userId: foreign.data!.user.id })).toEqual(foreignBefore);
+        observations.push({
+          bad,
+          result,
+          malformedPreference,
+          invalidDisable,
+          malformedDisable,
+          disabled,
+        });
+        await owner.signOut();
+      }
+      return ctx.snapshot({ observations });
+    },
+  );
+}
+
+for (const phase of ["decrypt", "encrypt"] as const) {
+  for (const mode of ["ordinary", "explicit", "explicit500"] as const) {
+    compatScenario(
+      `two-factor remaining custom cipher ${phase} ${mode} error with installed corruption`,
+      async (ctx) => {
+        const profile = "two-factor-backup-custom";
+        let challengeCookie = "";
+        const owner = createAuthClient({
+          baseURL: `${ctx.baseURL}${authProfilePath(profile)}`,
+          plugins: [twoFactorClient()],
+          fetchOptions: {
+            customFetchImpl: ctx.actor("owner", profile).fetch,
+            onResponse: ({ response }) => {
+              for (const raw of response.headers.getSetCookie()) {
+                const cookie = Cookie.parse(raw);
+                if (cookie?.key === "better-auth.two_factor" && cookie.value) {
+                  challengeCookie = cookie.value;
+                }
+              }
+            },
+          },
+        });
+        const password = "password123";
+        const email = ctx.uniqueEmail("cipher-corruption");
+        const signup = await owner.signUp.email({ email, password, name: "Cipher Owner" });
+        expect(signup.error).toBeNull();
+        const userId = signup.data!.user.id;
+        const enabled = await owner.twoFactor.enable({ password });
+        expect(enabled.error).toBeNull();
+        const code = enrollmentSchema.parse(enabled.data).backupCodes[0]!;
+        const policy = async (body: Record<string, unknown> = {}) => {
+          const result = await ctx.rawRequest({
+            path: "/__test/two-factor-policy",
+            method: "POST",
+            json: { userId, ...body },
+          });
+          expect(result.status).toBe(200);
+          return result.body;
+        };
+        const original = factorSchema.passthrough().parse(await policy());
+        await owner.signOut();
+        expect((await owner.signIn.email({ email, password })).data).toMatchObject({
+          twoFactorRedirect: true,
+        });
+        const before = z
+          .object({ key: z.string(), attempts: z.string().nullable(), challenge: z.boolean() })
+          .passthrough()
+          .parse(await policy({ pendingState: true }));
+        const json = JSON.stringify([code, { reject: mode }, code]);
+        const installed = factorSchema.passthrough().parse(
+          await policy({
+            importFactor: {
+              secret: original.secret,
+              backupCodes: phase === "decrypt" ? `backup-throw-decrypt-${mode}` : `backup-${json}`,
+            },
+          }),
+        );
+        const stateBefore = await ctx.readUserState({ userId });
+        const response = await ctx
+          .actor("owner", profile)
+          .fetch(`${authProfilePath(profile)}/two-factor/verify-backup-code`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ code, trustDevice: true }),
+          });
+        const text = await response.text();
+        expect(response.headers.getSetCookie()).toEqual([]);
+        expect(response.status).toBe(mode === "explicit" ? 403 : 500);
+        if (mode === "ordinary") expect(text).toBe("");
+        else {
+          expect(JSON.parse(text)).toEqual({
+            message: "session creation cancelled by database hook",
+            code: "BACKUP_CALLBACK_DENIED",
+          });
+        }
+        expect(await policy()).toEqual(installed);
+        expect(await ctx.readUserState({ userId })).toEqual(stateBefore);
+        const after = z
+          .object({ key: z.string(), attempts: z.string().nullable(), challenge: z.boolean() })
+          .passthrough()
+          .parse(await policy({ pendingState: true }));
+        expect(after).toEqual({ ...before, attempts: phase === "decrypt" ? "0" : null });
+        // Restore only the application's installed storage; the actual pending
+        // attempt/challenge owner decides whether the same proof can complete.
+        await policy({
+          importFactor: {
+            secret: original.secret,
+            backupCodes: `backup-${JSON.stringify([code, code, { keep: true }])}`,
+          },
+        });
+        let completionKey = before.key;
+        if (phase === "encrypt") {
+          const deniedRetry = await owner.twoFactor.verifyBackupCode({ code });
+          expect(deniedRetry.error?.code).toBe("INVALID_TWO_FACTOR_COOKIE");
+          expect(await policy({ pendingState: true, pendingKey: before.key })).toEqual(after);
+          expect((await owner.signIn.email({ email, password })).data).toMatchObject({
+            twoFactorRedirect: true,
+          });
+          const raw = decodeURIComponent(challengeCookie);
+          completionKey = raw.slice(0, raw.lastIndexOf("."));
+          expect(completionKey).not.toBe(before.key);
+        }
+        const completed = await owner.twoFactor.verifyBackupCode({ code, trustDevice: true });
+        expect(completed.error).toBeNull();
+        expect(completed.data?.user.id).toBe(userId);
+        const retired = z
+          .object({ challenge: z.boolean(), attempts: z.string().nullable() })
+          .passthrough()
+          .parse(await policy({ pendingState: true, pendingKey: completionKey }));
+        expect(retired).toMatchObject({ challenge: false, attempts: null });
+        const consumed = factorSchema.passthrough().parse(await policy());
+        expect(consumed.id).toBe(original.id);
+        expect(consumed.secret).toBe(original.secret);
+        expect(consumed.backupCodes).toBe('backup-[{"keep":true}]');
+        const replay = await owner.twoFactor.verifyBackupCode({ code });
+        expect(replay.error?.code).toBe("INVALID_BACKUP_CODE");
+        expect(await policy()).toEqual(consumed);
+        return ctx.snapshot({
+          status: response.status,
+          body: text ? JSON.parse(text) : null,
+          after: { ...after, key: { token: before.key } },
+          completed,
+          replay,
+        });
+      },
+    );
+  }
+}
