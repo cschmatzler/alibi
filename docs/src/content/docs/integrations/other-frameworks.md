@@ -33,7 +33,7 @@ async fn dispatch(
 }
 ```
 
-Your host owns the dispatch future. If requests must finish after a disconnect, supervise them in an application-owned task. Cancelling dispatch can leave earlier database writes committed. The [Axum integration](/integrations/axum/) provides this supervision automatically.
+Your host owns the dispatch future. If requests must finish after a disconnect, supervise them in an application-owned task. Cancelling dispatch can leave earlier database writes committed. The [Axum integration](/integrations/axum/) and [Poem integration](/integrations/poem/) provide this supervision automatically.
 
 ## Trusted server operations
 

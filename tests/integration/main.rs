@@ -18,3 +18,6 @@ mod axum_integration;
 mod core;
 mod plugins;
 mod storage;
+
+#[cfg(feature = "poem")]
+mod poem_integration;
