@@ -56,12 +56,12 @@ async function retain(ctx: ScenarioContext, label: string, value: unknown) {
   }
 }
 
-for (const format of formats)
+for (const format of formats) {
   compatScenario(
     `passkey certificate ${format} verifies genuine authority, UV-absent enrollment, denial, retry, replay and current-row counters`,
     async (ctx) => {
-      const owner = client(ctx, "owner"),
-        foreign = client(ctx, "foreign");
+      const owner = client(ctx, "owner");
+      const foreign = client(ctx, "foreign");
       const signup = await owner.signUp.email({
         email: ctx.uniqueEmail("certificate-owner"),
         name: "Certificate owner",
@@ -82,8 +82,8 @@ for (const format of formats)
       );
       expect(signup.error).toBeNull();
       expect(other.error).toBeNull();
-      const id = signup.data!.user.id,
-        foreignId = other.data!.user.id;
+      const id = signup.data!.user.id;
+      const foreignId = other.data!.user.id;
       const foreignBefore = await physical(ctx, foreignId);
       const modes: CeremonyMode[] = [
         "wrong-rp",
@@ -291,6 +291,7 @@ for (const format of formats)
       };
     },
   );
+}
 
 compatScenario(
   "passkey current publicKey authority and request admission preserve genuine ceremony order",
@@ -344,7 +345,7 @@ compatScenario(
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         credentialId: proof.id,
-        publicKey: replacementPublicKey.toString("base64"),
+        publicKey: Buffer.concat([replacementPublicKey, Buffer.from([0])]).toString("base64"),
       }),
     });
     expect(swapped.body).toEqual({ updated: 1 });
@@ -448,8 +449,8 @@ compatScenario(
       password: "password123",
     });
     expect(signup.error).toBeNull();
-    const id = signup.data!.user.id,
-      device = new CertificateDevice("revoked-certificate");
+    const id = signup.data!.user.id;
+    const device = new CertificateDevice("revoked-certificate");
     const before = await physical(ctx, id);
     const options = await owner.$fetch("/passkey/generate-register-options", { method: "GET" });
     const proof = device.register(options.data, ctx.baseURL, "packed", "revoked");
@@ -510,8 +511,8 @@ compatScenario(
       "internal",
       17,
     ].entries()) {
-      const before = await physical(ctx, id),
-        options = await owner.$fetch("/passkey/generate-register-options", { method: "GET" });
+      const before = await physical(ctx, id);
+      const options = await owner.$fetch("/passkey/generate-register-options", { method: "GET" });
       const proof = new CertificateDevice("transport-" + index).register(
         options.data,
         ctx.baseURL,
@@ -527,7 +528,7 @@ compatScenario(
         expect((result.data as any).transports).toBe(
           index === 0 ? "" : "internal,unlisted,,17,[object Object]",
         );
-        expect(Object.hasOwn(result.data as object, "name")).toBe(false);
+        expect((result.data as any).name).toBeNull();
         expect((result.data as any).user.id).toBe(id);
       } else {
         expect((result.error as any).status).toBe(500);
@@ -550,8 +551,8 @@ compatScenario(
         after,
       });
     }
-    const before = await physical(ctx, id),
-      options = await owner.$fetch("/passkey/generate-register-options", { method: "GET" });
+    const before = await physical(ctx, id);
+    const options = await owner.$fetch("/passkey/generate-register-options", { method: "GET" });
     const missing = await owner.$fetch("/passkey/verify-registration", {
       method: "POST",
       body: { createSession: true },
@@ -590,27 +591,27 @@ compatScenario(
       password: "password123",
     });
     expect(signup.error).toBeNull();
-    const id = signup.data!.user.id,
-      results = [];
+    const id = signup.data!.user.id;
+    const results = [];
     for (const mode of ["timestamp-omitted", "timestamp-string", "version-number"] as const) {
-      const options = await owner.$fetch("/passkey/generate-register-options", { method: "GET" }),
-        proof = new CertificateDevice("safetynet-" + mode).register(
-          options.data,
-          ctx.baseURL,
-          "android-safetynet",
-          mode,
-        );
+      const options = await owner.$fetch("/passkey/generate-register-options", { method: "GET" });
+      const proof = new CertificateDevice("safetynet-" + mode).register(
+        options.data,
+        ctx.baseURL,
+        "android-safetynet",
+        mode,
+      );
       const result = await owner.$fetch("/passkey/verify-registration", {
         method: "POST",
         body: { response: proof, name: "SafetyNet field proof" },
       });
       expect(result.error).toBeNull();
       expect((result.data as any).userId).toBe(id);
-      const before = await physical(ctx, id),
-        replay = await owner.$fetch("/passkey/verify-registration", {
-          method: "POST",
-          body: { response: proof },
-        });
+      const before = await physical(ctx, id);
+      const replay = await owner.$fetch("/passkey/verify-registration", {
+        method: "POST",
+        body: { response: proof },
+      });
       expect((replay.error as any).code).toBe("CHALLENGE_NOT_FOUND");
       expect(await physical(ctx, id)).toEqual(before);
       await retain(ctx, "safetynet-" + mode, { options, proof, result, replay, before });

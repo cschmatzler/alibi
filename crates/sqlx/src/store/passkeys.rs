@@ -82,9 +82,6 @@ impl<S: AuthSchema + Send + Sync> PasskeyStore for SqlxStore<S> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
         sql.compare(Model::TABLE, "user_id", " = ", user_id);
-        sql.push(" ORDER BY ");
-        sql.column(Model::TABLE, "created_at");
-        sql.push(" DESC");
         Ok(self
             .exec()
             .fetch_all::<Model>(sql)

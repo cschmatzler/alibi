@@ -42,8 +42,8 @@ export const replacementPublicKey = Buffer.from(
 );
 const attestationKeys = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
 const jwk = ecKeys.publicKey.export({ format: "jwk" });
-const x = Buffer.from(jwk.x!, "base64url"),
-  y = Buffer.from(jwk.y!, "base64url");
+const x = Buffer.from(jwk.x!, "base64url");
+const y = Buffer.from(jwk.y!, "base64url");
 export const publicKey = Buffer.from(
   encodeCBOR(
     new Map<number, CBORType>([
@@ -71,8 +71,8 @@ function certificate(key: typeof ecKeys, subject: string, extra: string, wrongRo
       join(directory, "extensions.cnf"),
       `[leaf]\nbasicConstraints=critical,CA:FALSE\n${extra}\n`,
     );
-    let issuer = new URL(ca).pathname,
-      issuerKey = new URL(caKey).pathname;
+    let issuer = new URL(ca).pathname;
+    let issuerKey = new URL(caKey).pathname;
     if (wrongRoot) {
       openssl([
         "req",
@@ -114,8 +114,9 @@ function certificate(key: typeof ecKeys, subject: string, extra: string, wrongRo
       "leaf",
     ]);
     const leaf = new X509Certificate(readFileSync(join(directory, "leaf.pem")));
-    if (!leaf.verify(new X509Certificate(readFileSync(issuer)).publicKey))
+    if (!leaf.verify(new X509Certificate(readFileSync(issuer)).publicKey)) {
       throw new Error("leaf signature was not genuine");
+    }
     return leaf.raw;
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -172,14 +173,16 @@ export class CertificateDevice {
           )
         : Buffer.alloc(0);
     let credentialKey = publicKey;
-    if (mode === "noncanonical")
+    if (mode === "noncanonical") {
       credentialKey = Buffer.concat([Buffer.from([0xb8, 5]), publicKey.subarray(1)]);
-    if (mode === "duplicate")
+    }
+    if (mode === "duplicate") {
       credentialKey = Buffer.concat([
         Buffer.from([0xa6]),
         publicKey.subarray(1),
         Buffer.from([3, 0x26]),
       ]);
+    }
     const authData = Buffer.concat([
       hash(mode === "wrong-rp" ? "wrong.example" : options.rp.id),
       Buffer.from([extension.length ? 0xc1 : 0x41]),

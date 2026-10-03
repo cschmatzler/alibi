@@ -746,8 +746,7 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
         match &mut stored {
             super::raw_none::StoredCredential::Raw(raw) => raw.replace_public_key(public_key),
             super::raw_none::StoredCredential::Core(saved) => {
-                let Ok(key): Result<serde_cbor_2::Value, _> = serde_cbor_2::from_slice(&public_key)
-                else {
+                let Ok((key, _)) = super::raw_none::decode_first(&public_key) else {
                     return passkey_authentication_failure();
                 };
                 let Ok(key) = webauthn_rs_core::proto::COSEKey::try_from(&key) else {
@@ -938,9 +937,9 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
 pub(super) async fn list_user_passkeys_core(
     user: &impl AuthUser,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<Vec<PasskeyView>> {
+) -> AuthResult<Vec<Value>> {
     let passkeys = ctx.database.list_passkeys_by_user(&user.id()).await?;
-    Ok(passkeys.iter().map(PasskeyView::from).collect())
+    passkeys.iter().map(registration_value).collect()
 }
 
 ///
@@ -1003,14 +1002,14 @@ pub(super) async fn update_passkey_core(
     }))
 }
 
-// Source's create response omits an unresolved name; later list/update responses
-// read the database's nullable field. Keep this specific to registration.
+// The pinned adapter returns the database's nullable name in passkey rows.
+// Keep this serialization local to passkey endpoints.
 fn registration_value(passkey: &better_auth_core::Passkey) -> AuthResult<Value> {
     let mut value = serde_json::to_value(PasskeyView::from(passkey))?;
     if passkey.name.is_none()
         && let Some(object) = value.as_object_mut()
     {
-        drop(object.remove("name"));
+        drop(object.insert("name".into(), Value::Null));
     }
     Ok(value)
 }
