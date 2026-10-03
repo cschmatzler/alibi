@@ -379,13 +379,42 @@ pub enum AddTeamMemberResult {
 /// Preserve insertion order because upstream stores permission JSON as a string.
 pub type OrganizationPermissions = indexmap::IndexMap<String, Vec<String>>;
 
+/// Literal organization-role permission JSON from storage.
+///
+/// Legacy rows may contain non-record or malformed JSON. Storage must retain
+/// those bytes until the organization consumer parses and validates them.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct StoredOrganizationPermissions(String);
+
+impl StoredOrganizationPermissions {
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Encode a validated permission record for a newly created or updated role.
+    ///
+    /// # Errors
+    /// Returns a JSON serialization error if encoding fails.
+    pub fn from_record(permission: &OrganizationPermissions) -> Result<Self, serde_json::Error> {
+        serde_json::to_string(permission).map(Self)
+    }
+}
+
+impl From<String> for StoredOrganizationPermissions {
+    fn from(raw: String) -> Self {
+        Self(raw)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OrganizationRole {
     pub id: String,
     pub organization_id: String,
     pub role: String,
-    pub permission: OrganizationPermissions,
+    pub permission: StoredOrganizationPermissions,
     #[serde(serialize_with = "crate::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(serialize_with = "crate::utils::datetime::serialize_optional")]

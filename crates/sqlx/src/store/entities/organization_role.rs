@@ -18,7 +18,7 @@ impl TryFrom<Model> for better_auth_core::types::OrganizationRole {
             id: model.id,
             organization_id: model.organization_id,
             role: model.role,
-            permission: serde_json::from_str(&model.permission)?,
+            permission: model.permission.into(),
             created_at: model.created_at,
             updated_at: model.updated_at,
         })

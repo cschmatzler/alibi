@@ -2,8 +2,9 @@
 pub use super::types_org::{
     AddTeamMemberResult, CreateInvitation, CreateMember, CreateOrganization,
     CreateOrganizationRole, CreateTeam, Invitation, InvitationStatus, Member, Organization,
-    OrganizationPermissions, OrganizationRole, OrganizationRoleSelector, Team, TeamMember,
-    UpdateOrganization, UpdateOrganizationRole, UpdateTeam,
+    OrganizationPermissions, OrganizationRole, OrganizationRoleSelector,
+    StoredOrganizationPermissions, Team, TeamMember, UpdateOrganization, UpdateOrganizationRole,
+    UpdateTeam,
 };
 pub use super::types_plugin::{
     ApiKey, ApiKeyStartText, ApiKeyStartingCharacters, CreateApiKey, CreateDeviceCode, CreateJwk,

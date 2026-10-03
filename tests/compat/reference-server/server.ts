@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import { genericTokenParamsFixture } from "./fixtures/generic-token-params-fixture";
 import { Database } from "bun:sqlite";
 
 import { apiKey } from "@better-auth/api-key";
@@ -45,6 +44,7 @@ import { createDispatchFixture } from "./fixtures/dispatch-fixture";
 import { dropboxProviderFixture } from "./fixtures/dropbox-provider-fixture";
 import { facebookProviderFixture } from "./fixtures/facebook-provider-fixture";
 import { figmaProviderFixture } from "./fixtures/figma-provider-fixture";
+import { genericTokenParamsFixture } from "./fixtures/generic-token-params-fixture";
 import { googleIdTokenProfiles } from "./fixtures/google-id-token-fixture";
 import { huggingfaceProviderFixture } from "./fixtures/huggingface-provider-fixture";
 import { createJwtKeyringFixture } from "./fixtures/jwt-keyring-fixture";
@@ -86,10 +86,10 @@ import { paypalProviderFixture } from "./fixtures/paypal-provider-fixture";
 import { createPhoneFixture } from "./fixtures/phone-fixture";
 import { physicalCookieProfiles } from "./fixtures/physical-cookie-fixture";
 import { polarProviderFixture } from "./fixtures/polar-provider-fixture";
-import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
-import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
 import { providerBatchFixture } from "./fixtures/provider-batch-fixture";
+import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
+import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
 import { createSessionFieldsFixture } from "./fixtures/session-fields-fixture";
@@ -666,7 +666,7 @@ const anonymousProfiles = await anonymousFixture(authOptions, database);
 const sessionCookieCacheProfiles = await sessionCookieCacheFixture(authOptions, database);
 const userLifecycleFixture = createUserLifecycleFixture(authOptions, database);
 const additionalFields = await additionalFieldsFixture(authOptions);
-const providerBatch = providerBatchFixture(authOptions,database);
+const providerBatch = providerBatchFixture(authOptions, database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
@@ -1670,13 +1670,14 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
         body?.operation === "seed-role" &&
         typeof body.organizationId === "string" &&
         typeof body.role === "string" &&
-        body.permission &&
-        typeof body.permission === "object"
+        (typeof body.permissionJson === "string" ||
+          (body.permission && typeof body.permission === "object"))
       ) {
         const permissionJson = body.permissionJson ?? JSON.stringify(body.permission);
         if (
           typeof permissionJson !== "string" ||
-          JSON.stringify(JSON.parse(permissionJson)) !== JSON.stringify(body.permission)
+          (body.permission !== undefined &&
+            JSON.stringify(JSON.parse(permissionJson)) !== JSON.stringify(body.permission))
         ) {
           return jsonResponse({ message: "Legacy permission mismatch" }, { status: 400 });
         }
@@ -1915,7 +1916,7 @@ const server = Bun.serve({
       if (managedProxyControl) return managedProxyControl;
       const railwayControl = await railwayFixture.handle(request);
       const redditControl = await redditFixture.handle(request);
-      const providerBatchControl=await providerBatch.handle(request);
+      const providerBatchControl = await providerBatch.handle(request);
       if (providerBatchControl) return providerBatchControl;
       if (railwayControl) return railwayControl;
       if (redditControl) return redditControl;
