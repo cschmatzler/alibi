@@ -152,7 +152,10 @@ pub(in crate::plugins) async fn create_organization_core(
             user: Some(ctx.user_view(user)),
         };
         if let Some(callback) = &config.teams.hooks {
-            callback.before_create(&mut data, &hooks).await?;
+            callback
+                .before_create(&mut data, &hooks)
+                .await
+                .map_err(crate::plugins::organization::extensions::team_callback_error)?;
         }
         let custom = match &config.teams.default_team_factory {
             Some(factory) => {
@@ -165,7 +168,8 @@ pub(in crate::plugins) async fn create_organization_core(
                     };
                 factory
                     .create(&organization, &factory_context, ctx.database.as_ref())
-                    .await?
+                    .await
+                    .map_err(crate::plugins::organization::extensions::team_callback_error)?
             }
             None => None,
         };
@@ -179,7 +183,10 @@ pub(in crate::plugins) async fn create_organization_core(
                 .await?,
         );
         if let Some(callback) = &config.teams.hooks {
-            callback.after_create(&team, &hooks).await?;
+            callback
+                .after_create(&team, &hooks)
+                .await
+                .map_err(crate::plugins::organization::extensions::team_callback_error)?;
         }
         Some(team.id)
     } else {

@@ -197,3 +197,17 @@ pub fn default_organization_statements() -> OrganizationPermissions {
     })
     .collect()
 }
+
+/// Preserve explicit application API errors; ordinary team callback failures
+/// use the pinned empty HTTP 500 contract without exposing their private cause.
+pub(super) fn team_callback_error(
+    error: better_auth_core::AuthError,
+) -> better_auth_core::AuthError {
+    match error {
+        error @ (better_auth_core::AuthError::Api { .. }
+        | better_auth_core::AuthError::Upstream { .. }
+        | better_auth_core::AuthError::CallbackFailure(_)) => error,
+        error if error.status_code() != 500 => error,
+        error => better_auth_core::AuthError::CallbackFailure(Box::new(error)),
+    }
+}

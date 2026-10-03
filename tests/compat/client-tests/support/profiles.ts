@@ -913,6 +913,8 @@ export const FIXTURE_PROFILES = [
   "org-deletion-disabled",
   "org-deletion-hooks",
   "org-deletion-hooks-disabled",
+  "org-team-hooks",
+  "org-team-factory",
   "org-teams",
   "org-teams-no-default",
   "org-teams-limited",

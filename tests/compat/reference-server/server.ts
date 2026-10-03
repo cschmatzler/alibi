@@ -92,6 +92,11 @@ import { createSetPasswordFixture } from "./fixtures/set-password-fixture";
 import { createSignupPolicyFixture } from "./fixtures/signup-policy-fixture";
 import { createSiweFixture } from "./fixtures/siwe-fixture";
 import { socialProviderFixture } from "./fixtures/social-provider-fixture";
+import {
+  TEAM_CONFIG_PROFILES,
+  teamConfigOptions,
+  teamConfigEvidence,
+} from "./fixtures/team-config-fixture";
 import { createTwoFactorDeliveryFixture } from "./fixtures/two-factor-delivery-fixture";
 import { createTwoFactorOtpFixture } from "./fixtures/two-factor-otp-fixture";
 import { createTwoFactorPendingLookupFixture } from "./fixtures/two-factor-pending-lookup-fixture";
@@ -1365,6 +1370,7 @@ function teamNumericValue(name: string): number | undefined {
   )[mode];
 }
 const TEAM_PROFILES = [
+  ...TEAM_CONFIG_PROFILES,
   ...NUMERIC_TEAM_PROFILES,
   "org-deletion-disabled",
   "org-teams",
@@ -1495,6 +1501,7 @@ const teamProfiles = new Map(
                 }
               : {}),
           },
+          ...(TEAM_CONFIG_PROFILES.includes(name as any) ? teamConfigOptions(name, database) : {}),
         }),
       ],
     };
@@ -1583,6 +1590,9 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
     }
     try {
+      if (body?.operation === "team-config-evidence" && typeof body.organizationId === "string") {
+        return jsonResponse(teamConfigEvidence(database, body.organizationId));
+      }
       if (body?.operation === "numeric-events" && typeof body.organizationId === "string") {
         return jsonResponse(numericPolicyEvents.get(body.organizationId) ?? []);
       }
@@ -1698,6 +1708,7 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
         return jsonResponse(
           await selected.api.createTeam({
             body: { organizationId: body.organizationId, name: body.name },
+            ...(body.authority === "headers" ? { headers: request.headers } : {}),
           }),
         );
       }
@@ -1734,13 +1745,17 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
         return jsonResponse(
           await selected.api.removeTeam({
             body: { organizationId: body.organizationId, teamId: body.teamId },
+            ...(body.authority === "headers" ? { headers: request.headers } : {}),
           }),
         );
       }
       return jsonResponse({ message: "Invalid organization operation" }, { status: 400 });
     } catch (error) {
       if (error instanceof APIError) {
-        return jsonResponse(error.body, { status: error.statusCode });
+        return jsonResponse(
+          body?.authority === "headers" ? { status: error.statusCode } : (error.body ?? null),
+          { status: error.statusCode },
+        );
       }
       throw error;
     }
