@@ -78,6 +78,17 @@ Explicit `*_with_config` helpers support managed versions, and the production
 account paths use the actual configuration. Existing integration callers and
 their assertions continue exercising the single-secret contract unchanged.
 
+The canonical coverage run exposed an existing remote-JWT receipt comparison
+that kept three default wall-clock expirations literal. A deliberate gap
+between the actual Source and native calls reproduced only those three drift
+paths. The existing owner now verifies each integer expiration against its
+actual operation window plus the independent 900-second default, along with
+undefined issued-at and exact runtime issuer/audience. Only after those checks
+does its observation retain the validated lifetime in seconds. The explicit
+configured expiration and all other claims stay literal; a mutated longer
+lifetime fails at the bound. No comparator exception or production seam was
+introduced. All 36 existing JWT SDK owners pass against the coverage binary.
+
 Focused validation: eight managed and existing dedicated-secret proxy owners
 pass with 1,498 assertions. The full canonical `scripts/check.sh` gate and
 independent review remain required before landing and closing #176.
