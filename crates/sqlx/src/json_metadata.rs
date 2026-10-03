@@ -110,6 +110,7 @@ impl SqlxValue for JsonMetadata {
             | SqlValue::Bytes(_)
             | SqlValue::Json(None)
             | SqlValue::Timestamp(_)
+            | SqlValue::NaiveTimestamp(_)
             | SqlValue::Uuid(_) => Err(ValueTypeError),
         }
     }

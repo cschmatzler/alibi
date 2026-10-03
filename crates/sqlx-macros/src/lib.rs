@@ -403,8 +403,14 @@ fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStream {
 }
 
 /// A field value converted into the declared field type, as a model literal requires.
-fn typed(ty: &syn::Type, value: &TokenStream) -> TokenStream {
-    quote! { { let value: #ty = ::std::convert::Into::into(#value); value } }
+fn typed(column: &Column, value: &TokenStream, roots: &Roots) -> TokenStream {
+    let ty = &column.ty;
+    if codegen::is_auth_timestamp(&column.ident.to_string()) {
+        let core_root = &roots.core;
+        quote! { <#ty as #core_root::entity::AuthTimestamp>::from_utc(#value) }
+    } else {
+        quote! { { let value: #ty = ::std::convert::Into::into(#value); value } }
+    }
 }
 
 /// The declared optional field type's `None`.
@@ -425,7 +431,7 @@ fn staged(
             let name = &column.physical;
             match values.get(column.ident.to_string().as_str()) {
                 Some(value) => {
-                    let value = typed(&column.ty, value);
+                    let value = typed(column, value, roots);
                     quote! {
                         active.set(#name, #sqlx_root::value::SqlxValue::into_sql_value(#value));
                     }
@@ -547,7 +553,7 @@ fn user_impl(
     let set = |name: &str, value: TokenStream| -> syn::Result<TokenStream> {
         let field = column_of(columns, name)?;
         let column = &field.physical;
-        let value = typed(&field.ty, &value);
+        let value = typed(field, &value, roots);
         Ok(quote! { active.set(#column, #sqlx_root::value::SqlxValue::into_sql_value(#value)); })
     };
     let clear = |name: &str| -> syn::Result<TokenStream> {
@@ -775,18 +781,21 @@ fn session_impl(
     let created_at_column = column("created_at")?;
     let updated_at_column = column("updated_at")?;
     let expires_at = typed(
-        &column_of(columns, "expires_at")?.ty,
+        column_of(columns, "expires_at")?,
         &quote! { expires_at },
+        roots,
     );
     let updated_at = typed(
-        &column_of(columns, "updated_at")?.ty,
+        column_of(columns, "updated_at")?,
         &quote! { updated_at },
+        roots,
     );
     let set_active_org = if has("active_organization_id") {
         let name = column("active_organization_id")?;
         let value = typed(
-            &column_of(columns, "active_organization_id")?.ty,
+            column_of(columns, "active_organization_id")?,
             &quote! { organization_id },
+            roots,
         );
         quote! {
             fn set_active_organization_id(
@@ -809,8 +818,9 @@ fn session_impl(
     let set_active_team = if has("active_team_id") {
         let name = column("active_team_id")?;
         let value = typed(
-            &column_of(columns, "active_team_id")?.ty,
+            column_of(columns, "active_team_id")?,
             &quote! { team_id },
+            roots,
         );
         quote! {
             fn set_active_team_id(
@@ -914,8 +924,9 @@ fn account_impl(ident: &Ident, columns: &[Column], roots: &Roots) -> syn::Result
         let definition = column_of(columns, name)?;
         let column = &definition.physical;
         let value = typed(
-            &definition.ty,
+            definition,
             &quote! { ::std::option::Option::Some(#field) },
+            roots,
         );
         updates.push(quote! {
             if let ::std::option::Option::Some(#field) = update.#field {
@@ -928,7 +939,7 @@ fn account_impl(ident: &Ident, columns: &[Column], roots: &Roots) -> syn::Result
     let account_id_column = column("account_id")?;
     let user_id_column = column("user_id")?;
     let created_at_column = column("created_at")?;
-    let updated_at = typed(&column_of(columns, "updated_at")?.ty, &quote! { now });
+    let updated_at = typed(column_of(columns, "updated_at")?, &quote! { now }, roots);
     let updated_at_column = column("updated_at")?;
     let additional = additional_fields(columns, roots);
     Ok(quote! {

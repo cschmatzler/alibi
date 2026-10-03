@@ -48,7 +48,10 @@ where
                 let column = <<S::Verification as SeaOrmVerificationModel>::Entity as EntityTrait>::Column::iter()
                     .find(|column| column.as_str() == updated.as_str())
                     .ok_or_else(|| AuthError::internal("the verification update timestamp binding has no column"))?;
-                active.set(column, data.updated_at.into());
+                active.set(
+                    column,
+                    crate::schema::timestamp_value(column, data.updated_at),
+                );
             } else if data.updated_at != data.created_at {
                 return Err(AuthError::internal(
                     "the verification schema cannot preserve a distinct update timestamp",
@@ -223,7 +226,12 @@ where
             )
             .filter(<S::Verification as SeaOrmVerificationModel>::value_column().eq(value))
             .filter(
-                <S::Verification as SeaOrmVerificationModel>::expires_at_column().gt(Utc::now()),
+                <S::Verification as SeaOrmVerificationModel>::expires_at_column().gt(
+                    crate::schema::timestamp_value(
+                        S::Verification::expires_at_column(),
+                        Utc::now(),
+                    ),
+                ),
             )
             .order_by_desc(S::Verification::created_at_column())
             .one(self.connection())
@@ -235,7 +243,12 @@ where
         <S::Verification as SeaOrmVerificationModel>::Entity::find()
             .filter(<S::Verification as SeaOrmVerificationModel>::value_column().eq(value))
             .filter(
-                <S::Verification as SeaOrmVerificationModel>::expires_at_column().gt(Utc::now()),
+                <S::Verification as SeaOrmVerificationModel>::expires_at_column().gt(
+                    crate::schema::timestamp_value(
+                        S::Verification::expires_at_column(),
+                        Utc::now(),
+                    ),
+                ),
             )
             .order_by_desc(S::Verification::created_at_column())
             .one(self.connection())
@@ -252,7 +265,12 @@ where
                 <S::Verification as SeaOrmVerificationModel>::identifier_column().eq(identifier),
             )
             .filter(
-                <S::Verification as SeaOrmVerificationModel>::expires_at_column().gt(Utc::now()),
+                <S::Verification as SeaOrmVerificationModel>::expires_at_column().gt(
+                    crate::schema::timestamp_value(
+                        S::Verification::expires_at_column(),
+                        Utc::now(),
+                    ),
+                ),
             )
             .order_by_desc(S::Verification::created_at_column())
             .one(self.connection())
@@ -365,7 +383,10 @@ where
             .filter(S::Verification::value_column().eq(expected_value))
             .col_expr(
                 updated_at_column,
-                sea_orm::sea_query::Expr::value(Utc::now()),
+                sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
+                    updated_at_column,
+                    Utc::now(),
+                )),
             );
         if let Some(value_2) = update.value {
             query = query.col_expr(
@@ -376,7 +397,10 @@ where
         if let Some(expires_at_2) = update.expires_at {
             query = query.col_expr(
                 S::Verification::expires_at_column(),
-                sea_orm::sea_query::Expr::value(expires_at_2),
+                sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
+                    S::Verification::expires_at_column(),
+                    expires_at_2,
+                )),
             );
         }
         let backend = self.connection().get_database_backend();
@@ -479,7 +503,10 @@ where
                 "Verification update snapshots require an updatedAt column".into(),
             )
         })?;
-        query = query.col_expr(updated_at, sea_orm::sea_query::Expr::value(Utc::now()));
+        query = query.col_expr(
+            updated_at,
+            sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(updated_at, Utc::now())),
+        );
         if let Some(value) = admitted.value {
             query = query.col_expr(
                 S::Verification::value_column(),
@@ -489,7 +516,10 @@ where
         if let Some(expires) = admitted.expires_at {
             query = query.col_expr(
                 S::Verification::expires_at_column(),
-                sea_orm::sea_query::Expr::value(expires),
+                sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
+                    S::Verification::expires_at_column(),
+                    expires,
+                )),
             );
         }
         let backend = self.connection().get_database_backend();
@@ -563,7 +593,12 @@ where
         // deadline equals the current millisecond, including zero-TTL OTPs.
         let deadline = Utc::now().trunc_subsecs(3);
         let snapshots = <S::Verification as SeaOrmVerificationModel>::Entity::find()
-            .filter(S::Verification::expires_at_column().lt(deadline))
+            .filter(
+                S::Verification::expires_at_column().lt(crate::schema::timestamp_value(
+                    S::Verification::expires_at_column(),
+                    deadline,
+                )),
+            )
             .limit(self.config().advanced.database.default_find_many_limit as u64)
             .all(self.connection())
             .await
@@ -584,7 +619,12 @@ where
             }
         }
         let deleted = <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
-            .filter(S::Verification::expires_at_column().lt(deadline))
+            .filter(
+                S::Verification::expires_at_column().lt(crate::schema::timestamp_value(
+                    S::Verification::expires_at_column(),
+                    deadline,
+                )),
+            )
             .exec(self.connection())
             .await
             .map_err(map_db_err)?;

@@ -328,7 +328,7 @@ pub fn auth_user_impl(
         quote! { fn ban_reason(&self) -> Option<&str> { None } }
     };
     let ban_expires_impl = if has("ban_expires") {
-        quote! { fn ban_expires(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { self.ban_expires } }
+        quote! { fn ban_expires(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { #core_root::entity::AuthTimestamp::into_utc(self.ban_expires) } }
     } else {
         quote! { fn ban_expires(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { None } }
     };
@@ -364,8 +364,8 @@ pub fn auth_user_impl(
             fn name(&self) -> Option<&str> { self.name.as_deref() }
             fn email_verified(&self) -> bool { self.email_verified }
             fn image(&self) -> Option<&str> { self.image.as_deref() }
-            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.created_at }
-            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.updated_at }
+            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.created_at) }
+            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.updated_at) }
             #username_impl
             #display_username_impl
             #two_factor_impl
@@ -415,10 +415,10 @@ pub fn auth_session_impl(
             #secondary_codec
             #additional_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
-            fn expires_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.expires_at }
+            fn expires_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.expires_at) }
             fn token(&self) -> &str { &self.token }
-            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.created_at }
-            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.updated_at }
+            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.created_at) }
+            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.updated_at) }
             fn ip_address(&self) -> Option<&str> { self.ip_address.as_deref() }
             fn user_agent(&self) -> Option<&str> { self.user_agent.as_deref() }
             fn user_id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.user_id) }
@@ -448,12 +448,12 @@ pub fn auth_account_impl(
             fn access_token(&self) -> Option<&str> { self.access_token.as_deref() }
             fn refresh_token(&self) -> Option<&str> { self.refresh_token.as_deref() }
             fn id_token(&self) -> Option<&str> { self.id_token.as_deref() }
-            fn access_token_expires_at(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { self.access_token_expires_at }
-            fn refresh_token_expires_at(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { self.refresh_token_expires_at }
+            fn access_token_expires_at(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { #core_root::entity::AuthTimestamp::into_utc(self.access_token_expires_at) }
+            fn refresh_token_expires_at(&self) -> Option<::chrono::DateTime<::chrono::Utc>> { #core_root::entity::AuthTimestamp::into_utc(self.refresh_token_expires_at) }
             fn scope(&self) -> Option<&str> { self.scope.as_deref() }
             fn password(&self) -> Option<&str> { self.password.as_deref() }
-            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.created_at }
-            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.updated_at }
+            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.created_at) }
+            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.updated_at) }
         }
     }
 }
@@ -466,9 +466,23 @@ pub fn auth_verification_impl(ident: &Ident, core_root: &TokenStream) -> TokenSt
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
             fn identifier(&self) -> &str { &self.identifier }
             fn value(&self) -> &str { &self.value }
-            fn expires_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.expires_at }
-            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.created_at }
-            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { self.updated_at }
+            fn expires_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.expires_at) }
+            fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.created_at) }
+            fn updated_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.updated_at) }
         }
     }
+}
+
+/// Auth date fields whose mutations arrive in the core UTC representation.
+#[must_use]
+pub fn is_auth_timestamp(name: &str) -> bool {
+    matches!(
+        name,
+        "created_at"
+            | "updated_at"
+            | "expires_at"
+            | "ban_expires"
+            | "access_token_expires_at"
+            | "refresh_token_expires_at"
+    )
 }

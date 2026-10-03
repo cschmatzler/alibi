@@ -3,7 +3,7 @@
 //! Every variant carries its own nullable type, so PostgreSQL receives a typed
 //! `NULL` for each column rather than an untyped text parameter.
 
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDateTime, Utc};
 
 /// A typed value bound to one SQL parameter.
 #[derive(Clone, Debug, PartialEq)]
@@ -16,7 +16,10 @@ pub enum SqlValue {
     Text(Option<String>),
     Bytes(Option<Vec<u8>>),
     Json(Option<Box<serde_json::Value>>),
+    /// Timezone-aware timestamp (PostgreSQL `TIMESTAMPTZ`).
     Timestamp(Option<DateTime<Utc>>),
+    /// UTC wall-clock timestamp (PostgreSQL `TIMESTAMP WITHOUT TIME ZONE`).
+    NaiveTimestamp(Option<NaiveDateTime>),
     Uuid(Option<uuid::Uuid>),
 }
 
@@ -35,6 +38,7 @@ impl SqlValue {
                 | Self::Bytes(None)
                 | Self::Json(None)
                 | Self::Timestamp(None)
+                | Self::NaiveTimestamp(None)
                 | Self::Uuid(None)
         )
     }
@@ -66,6 +70,7 @@ sql_value_from!(
     String => Text,
     Vec<u8> => Bytes,
     DateTime<Utc> => Timestamp,
+    NaiveDateTime => NaiveTimestamp,
     uuid::Uuid => Uuid,
 );
 
@@ -117,6 +122,8 @@ pub enum ColumnKind {
     Boolean,
     /// Integers, timestamps, bytes, UUIDs and custom values: bound unchanged.
     Other,
+    /// UTC wall-clock timestamps, bound as PostgreSQL `TIMESTAMP`.
+    NaiveTimestamp,
 }
 
 /// Failure to represent a bound value as a model field.
@@ -182,6 +189,7 @@ sqlx_value!(
     String => Text, Text,
     Vec<u8> => Bytes, Other,
     DateTime<Utc> => Timestamp, Other,
+    NaiveDateTime => NaiveTimestamp, NaiveTimestamp,
     uuid::Uuid => Uuid, Other,
 );
 

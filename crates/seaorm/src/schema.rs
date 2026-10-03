@@ -346,3 +346,12 @@ pub trait SeaOrmVerificationModel:
         now: DateTime<Utc>,
     ) -> Self::ActiveModel;
 }
+
+/// Bind the auth UTC clock using the declared model column's timestamp type.
+#[must_use]
+pub fn timestamp_value<C: ColumnTrait>(column: C, value: DateTime<Utc>) -> Value {
+    match column.def().get_column_type() {
+        sea_orm::ColumnType::DateTime | sea_orm::ColumnType::Timestamp => value.naive_utc().into(),
+        _ => value.into(),
+    }
+}
