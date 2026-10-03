@@ -133,6 +133,9 @@ export async function oneTap(
           const chunks = accountCookies
             .filter((cookie) => /\.\d+$/.test(cookie!.key))
             .sort((a, b) => Number(a!.key.split(".").at(-1)) - Number(b!.key.split(".").at(-1)));
+          for (const raw of rawCookies.filter((raw) => /account_data(?:\.\d+)?=/.test(raw))) {
+            expect(raw.length).toBeLessThanOrEqual(4050);
+          }
           accountChunkCount = chunks.length;
           if (account || chunks.length) {
             const token = decodeURIComponent(

@@ -244,6 +244,11 @@ pub struct AccountConfig {
     pub encrypt_oauth_tokens: bool,
     /// Store account data in an account cookie for OAuth-backed access token flows.
     pub store_account_cookie: bool,
+    /// Override the account cookie lifetime in seconds, including fractional
+    /// and nonfinite values. Equivalent to the published account_data cookie's
+    /// maxAge attribute; takes precedence over the integer advanced override.
+    /// None inherits the session cache lifetime (or 300 seconds).
+    pub cookie_max_age: Option<f64>,
     /// Where to persist OAuth state during the authorization flow.
     pub store_state_strategy: OAuthStateStrategy,
     /// Skip state-cookie verification during callback processing.
@@ -529,6 +534,7 @@ impl Default for AccountConfig {
             account_linking: AccountLinkingConfig::default(),
             encrypt_oauth_tokens: false,
             store_account_cookie: false,
+            cookie_max_age: None,
             store_state_strategy: OAuthStateStrategy::Database,
             skip_state_cookie_check: false,
         }

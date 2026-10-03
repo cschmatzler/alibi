@@ -228,6 +228,8 @@ compatScenario(
       alias(4, (value) => value + "=="),
       alias(4, (value) => "\v" + value),
       alias(2, (value) => "+" + value.slice(1)),
+      // The cookie parser decodes URI escapes once, before JOSE.
+      alias(2, (value) => "%20" + value),
       alias(1, () => "AA"),
       // Decoding this header yields the same JSON, but its ORIGINAL spelling
       // participates in authentication and must not be canonicalized as AAD.
@@ -289,6 +291,21 @@ compatScenario(
     );
     expect(revokedResponse.status).toBe(200);
     const revoked = await revokedResponse.json();
+    if (process.env.COMPAT_OBSERVATIONS_DIR)
+      await Bun.write(
+        `${process.env.COMPAT_OBSERVATIONS_DIR}/lifecycle-raw-${new URL(ctx.baseURL).port}.json`,
+        JSON.stringify(
+          {
+            original: cookie,
+            compressed,
+            reissued: shrunk.accountCookie,
+            clearHeaders: revokedResponse.headers.getSetCookie(),
+            reissuedState,
+          },
+          null,
+          2,
+        ),
+      );
     expect((await request(cookie.token, signedSession, true)).status).toBe(401);
     const revokedState = await state(ctx);
     expect(revokedState.sessions.some((row) => row.token === session)).toBe(false);
@@ -331,8 +348,12 @@ compatScenario(
   "Account cookie lifetimes retain fractional claims and account-specific attributes",
   async (ctx) => {
     const observations = [];
+    const baseline = await state(ctx);
     for (const [suffix, lifetime] of [
       ["fractional", 1.75],
+      ["account-fractional", 1.75],
+      ["account-zero", 0],
+      ["account-negative", -4.25],
       ["zero", 300],
       ["negative", -4.25],
       ["nan", 300],
@@ -389,26 +410,36 @@ compatScenario(
         response: await response.json(),
       });
     }
-    const profile = "one-tap-account-cookie-infinity" as const;
-    const actor = ctx.actor("infinity", profile);
-    const token = await credential({
-      sub: ctx.uniqueToken("infinity"),
-      email: ctx.uniqueEmail("infinity"),
-      email_verified: true,
-    });
-    const response = await actor.fetch(
-      `${ctx.baseURL}/__test/profiles/${profile}/api/auth/one-tap/callback`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ idToken: token }),
-      },
-    );
-    expect(response.status).toBe(401);
-    expect(
-      response.headers.getSetCookie().some((raw) => raw.startsWith("better-auth.account_data=")),
-    ).toBe(false);
-    return { observations, nonfinite: { status: response.status, body: await response.text() } };
+    const nonfinite = [];
+    for (const suffix of ["infinity", "account-nan"] as const) {
+      const profile = `one-tap-account-cookie-${suffix}` as FixtureProfile;
+      const actor = ctx.actor(suffix, profile);
+      const token = await credential({
+        sub: ctx.uniqueToken(suffix),
+        email: ctx.uniqueEmail(suffix),
+        email_verified: true,
+      });
+      const response = await actor.fetch(
+        `${ctx.baseURL}/__test/profiles/${profile}/api/auth/one-tap/callback`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ idToken: token }),
+        },
+      );
+      expect(response.status).toBe(401);
+      expect(
+        response.headers.getSetCookie().some((raw) => raw.startsWith("better-auth.account_data=")),
+      ).toBe(false);
+      nonfinite.push({ suffix, status: response.status, body: await response.text() });
+    }
+    const physical = await state(ctx);
+    expect(physical.sessions).toHaveLength(observations.length);
+    return {
+      observations,
+      nonfinite,
+      physical: { ...physical, jwksFetches: physical.jwksFetches - baseline.jwksFetches },
+    };
   },
   ["POST /one-tap/callback"],
 );

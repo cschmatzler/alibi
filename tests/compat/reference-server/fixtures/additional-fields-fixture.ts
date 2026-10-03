@@ -394,6 +394,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       session: {
         modelName: "app_session",
         additionalFields: fields("session"),
+        ...(mode === "provider" ? { cookieCache: { enabled: false, maxAge: 1.75 } } : {}),
         ...(mode === "cached"
           ? {
               cookieCache: {
@@ -418,6 +419,17 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
             }
           : {}),
       },
+      ...(mode === "provider"
+        ? {
+            advanced: {
+              ...base.advanced,
+              cookies: {
+                ...base.advanced?.cookies,
+                account_data: { attributes: { maxAge: 1.75, httpOnly: false, sameSite: "strict" } },
+              },
+            },
+          }
+        : {}),
       account: {
         ...base.account,
         modelName: "app_account",

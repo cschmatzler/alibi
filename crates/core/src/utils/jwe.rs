@@ -150,6 +150,14 @@ pub fn decode(secret: &str, salt: &str, token: &str) -> AuthResult<serde_json::V
     let token = percent_encoding::percent_decode_str(token)
         .decode_utf8()
         .map_err(|_error| invalid())?;
+    decode_parsed(secret, salt, &token)
+}
+
+/// Authenticate a compact JWE after the owning cookie parser decoded its value.
+///
+/// # Errors
+/// Returns an error for malformed, unauthenticated or expired data.
+pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_json::Value> {
     let parts: Vec<_> = token.split('.').collect();
     let [header, encrypted_key, iv, ciphertext, tag] = parts.as_slice() else {
         return Err(invalid());
@@ -212,7 +220,8 @@ pub fn decode(secret: &str, salt: &str, token: &str) -> AuthResult<serde_json::V
         // JOSE 6.2.12 authenticates and decrypts before bounded raw DEFLATE.
         let mut inflated = Vec::with_capacity(250_001);
         let mut inflater = flate2::Decompress::new(false);
-        let status = inflater.decompress_vec(&ciphertext, &mut inflated, flate2::FlushDecompress::Finish)
+        let status = inflater
+            .decompress_vec(&ciphertext, &mut inflated, flate2::FlushDecompress::Finish)
             .map_err(|_error| invalid())?;
         if status != flate2::Status::StreamEnd || inflated.len() > 250_000 {
             return Err(invalid());

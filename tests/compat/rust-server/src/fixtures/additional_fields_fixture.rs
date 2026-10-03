@@ -586,6 +586,26 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
     };
     let mut settings = config.clone().base_path(&path);
     settings.account.store_account_cookie = mode == "provider";
+    if mode == "provider" {
+        settings.account.cookie_max_age = Some(1.75);
+        settings.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+            enabled: false,
+            max_age: 1.75,
+            ..Default::default()
+        });
+        settings.advanced.cookies.insert(
+            "account_data".into(),
+            better_auth_core::config::CookieOverride {
+                name: None,
+                attributes: better_auth_core::config::CookieAttributes {
+                    max_age: None,
+                    http_only: Some(false),
+                    same_site: Some(better_auth_core::config::SameSite::Strict),
+                    ..Default::default()
+                },
+            },
+        );
+    }
     settings.user.additional_fields = fields(
         "user",
         mode,

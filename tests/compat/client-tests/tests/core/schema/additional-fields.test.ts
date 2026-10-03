@@ -1441,6 +1441,19 @@ compatScenario(
     expect(payload).not.toBeNull();
     expect(payload!.label).toEqual({ stored: "account-initial" });
     expect(payload!.hidden).toBe("ACCOUNT-SECRET");
+    expect(payload!.exp).toBe(Number(payload!.iat) + 1.75);
+    expect(rawAccountCookies[0]).toContain("Max-Age=1");
+    expect(rawAccountCookies[0]).not.toContain("HttpOnly");
+    expect(rawAccountCookies[0]).toContain("SameSite=Strict");
+    if (process.env.COMPAT_OBSERVATIONS_DIR)
+      await Bun.write(
+        `${process.env.COMPAT_OBSERVATIONS_DIR}/custom-raw-${new URL(ctx.baseURL).port}.json`,
+        JSON.stringify(
+          { rawAccountCookies, accountToken, payload, physical: created.body },
+          null,
+          2,
+        ),
+      );
     expect(Object.hasOwn(payload!, "omitted")).toBe(false);
     const accountCookie = {
       token: accountToken,
@@ -1559,6 +1572,27 @@ compatScenario(
       expect(updateSession.data?.user).not.toHaveProperty(name);
     }
 
+    const renewedRaw = updateCallback.headers
+      .getSetCookie()
+      .find((raw) => raw.startsWith("better-auth.account_data="))!;
+    const renewedToken = decodeURIComponent(
+      renewedRaw.split(";")[0]!.slice("better-auth.account_data=".length),
+    );
+    const renewedPayload = await symmetricDecodeJWT<Record<string, unknown>>(
+      renewedToken,
+      "compat-test-only-key-not-real-minimum-32chars",
+      "better-auth-account",
+    );
+    expect(renewedPayload!.label).toEqual(payload!.label);
+    expect(renewedPayload!.hidden).toBe(payload!.hidden);
+    expect(Object.hasOwn(renewedPayload!, "omitted")).toBe(false);
+    const renewed = {
+      accountCookie: {
+        token: renewedToken,
+        header: decodeProtectedHeader(renewedToken),
+        payload: renewedPayload,
+      },
+    };
     const updated = await ctx.rawRequest({
       path: "/__test/additional-fields/state?profile=provider",
     });
@@ -1614,6 +1648,7 @@ compatScenario(
 
     return {
       accountCookie,
+      renewed,
       foreignSignup: ctx.snapshot(foreignSignup),
       before: await observedState(before.body),
       start: ctx.snapshot(start),

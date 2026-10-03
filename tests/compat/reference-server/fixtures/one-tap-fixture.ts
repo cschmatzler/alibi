@@ -30,6 +30,10 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
     "one-tap-required-no-mail",
     "one-tap-no-override",
     "one-tap-account-cookie",
+    "one-tap-account-cookie-account-fractional",
+    "one-tap-account-cookie-account-zero",
+    "one-tap-account-cookie-account-negative",
+    "one-tap-account-cookie-account-nan",
     "one-tap-account-cookie-fractional",
     "one-tap-account-cookie-zero",
     "one-tap-account-cookie-negative",
@@ -74,6 +78,28 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
                       "one-tap-account-cookie-override": 1.75,
                     } as Record<string, number>
                   )[name],
+                },
+              },
+            }
+          : {}),
+        ...(name.startsWith("one-tap-account-cookie-account-")
+          ? {
+              advanced: {
+                ...options.advanced,
+                cookies: {
+                  ...options.advanced?.cookies,
+                  account_data: {
+                    attributes: {
+                      maxAge: (
+                        {
+                          "one-tap-account-cookie-account-fractional": 1.75,
+                          "one-tap-account-cookie-account-zero": 0,
+                          "one-tap-account-cookie-account-negative": -4.25,
+                          "one-tap-account-cookie-account-nan": NaN,
+                        } as Record<string, number>
+                      )[name],
+                    },
+                  },
                 },
               },
             }

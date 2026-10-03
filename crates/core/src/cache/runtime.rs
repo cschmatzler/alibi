@@ -428,7 +428,7 @@ pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
         value.len().div_ceil(capacity)
     };
     let mut output = IndexMap::new();
-    for old in existing_names(&cookie_values(headers, true), &name) {
+    for old in existing_names(&cookie_values(headers, true), name) {
         drop(output.insert(old.clone(), render(&old, "", Some(0.0))?));
     }
     if count <= 1 {

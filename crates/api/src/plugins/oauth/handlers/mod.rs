@@ -931,6 +931,9 @@ fn redirect_response(location: &str) -> AuthResponse {
 }
 
 fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> f64 {
+    if let Some(age) = config.account.cookie_max_age {
+        return age;
+    }
     config
         .advanced
         .cookies

@@ -73,6 +73,10 @@ pub(crate) async fn router(
         "one-tap-required-no-mail",
         "one-tap-no-override",
         "one-tap-account-cookie",
+        "one-tap-account-cookie-account-fractional",
+        "one-tap-account-cookie-account-zero",
+        "one-tap-account-cookie-account-negative",
+        "one-tap-account-cookie-account-nan",
         "one-tap-account-cookie-fractional",
         "one-tap-account-cookie-zero",
         "one-tap-account-cookie-negative",
@@ -96,6 +100,13 @@ pub(crate) async fn router(
         }
         profile_config.account.encrypt_oauth_tokens = name == "one-tap-encrypted";
         profile_config.account.update_account_on_sign_in = name != "one-tap-retain-account";
+        profile_config.account.cookie_max_age = match name {
+            "one-tap-account-cookie-account-fractional" => Some(1.75),
+            "one-tap-account-cookie-account-zero" => Some(0.0),
+            "one-tap-account-cookie-account-negative" => Some(-4.25),
+            "one-tap-account-cookie-account-nan" => Some(f64::NAN),
+            _ => None,
+        };
         let age = match name {
             "one-tap-account-cookie-fractional" => Some(1.75),
             "one-tap-account-cookie-zero" => Some(0.0),
