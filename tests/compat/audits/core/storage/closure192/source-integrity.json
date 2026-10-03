@@ -1,0 +1,29 @@
+[
+  {
+    "package": "better-auth",
+    "version": "1.7.6",
+    "npmIntegrity": "sha512-WTMqOpmTTj+oBoX7zzPOzL85342Upyf+/v0IkH1kvGRA85lV4JGRFIYMIRKqvjZ6ShsuL5VX/c9C13jtoZXcKA==",
+    "archiveSha512": "59332a3a99934e3fa80685fbcf33ceccbf39df8d94a727fefefd08907d64bc6440f39955e0919114860c2112aabe367a4a1b2e2f9557fdcf42d778eda195dc28",
+    "verifiedFiles": 465,
+    "privateInodes": true,
+    "unchangedAfterExecution": true
+  },
+  {
+    "package": "@better-auth/core",
+    "version": "1.7.6",
+    "npmIntegrity": "sha512-yBDDO0J4VCHT1qEZtzj6aMexX4etyLesitoxehcWHzPrzYqrFHwe/hgskye+imlGhQVOysuljMg8M8BA6GrtIg==",
+    "archiveSha512": "c810c33b42785421d3d6a119b738fa68c7b15f87adc8b7ac8ada317a17161f33ebcd8aab147c1efe182c9327be8a694685054ecacba58cc83c33c040e86aed22",
+    "verifiedFiles": 350,
+    "privateInodes": true,
+    "unchangedAfterExecution": true
+  },
+  {
+    "package": "@better-auth/kysely-adapter",
+    "version": "1.7.6",
+    "npmIntegrity": "sha512-BV+DX2/z/6ozNC9DYSge78wjLerq6Bxd/lSPjzzuq9eEutkQDAJTuiaETzgGYqNV5LlEWi8TZFAQTEq/wavOEQ==",
+    "archiveSha512": "055f835f6ff3ffaa33342f4361281eefcc232deaeae81c5dfe548f8f3ceeabd784bad9100c0253ba26844f380662a355e4b9445a2f136450104c4abfc1abce11",
+    "verifiedFiles": 10,
+    "privateInodes": true,
+    "unchangedAfterExecution": true
+  }
+]

@@ -586,11 +586,30 @@ where
                 // boolean field before the adapter binds it. Array operands
                 // retain their original strings. The actual model column type
                 // also supports custom boolean fields and physical renames.
-                let bindings: Vec<sea_orm::Value> = if matches!(value, UserFilterValue::Scalar(_))
+                let numeric_cast =
+                    if self.connection().get_database_backend() == sea_orm::DbBackend::Postgres {
+                        use sea_orm::sea_query::ColumnType;
+                        match column.def().get_column_type() {
+                            ColumnType::Integer => Some("int4"),
+                            ColumnType::BigInteger => Some("int8"),
+                            ColumnType::Float => Some("float4"),
+                            ColumnType::Double => Some("float8"),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    };
+                let bindings: Vec<sea_orm::Value> = if numeric_cast.is_some() {
+                    numeric_filter_text(operands)
+                        .into_iter()
+                        .map(Into::into)
+                        .collect()
+                } else if matches!(value, UserFilterValue::Scalar(_))
                     && matches!(
                         column.def().get_column_type(),
                         sea_orm::sea_query::ColumnType::Boolean
-                    ) {
+                    )
+                {
                     operands
                         .iter()
                         .map(|value_2| (value_2 == "true").into())
@@ -599,14 +618,37 @@ where
                     operands.iter().cloned().map(Into::into).collect()
                 };
                 let tuple = || {
-                    Expr::tuple(
-                        bindings
-                            .iter()
-                            .cloned()
-                            .map(|value| column.save_as(Expr::val(value))),
-                    )
+                    Expr::tuple(bindings.iter().map(|value| {
+                        numeric_cast.map_or_else(
+                            || column.save_as(Expr::val(value.clone())),
+                            |cast| Expr::cust_with_values(format!("$1::{cast}"), [value.clone()]),
+                        )
+                    }))
                 };
                 let condition = match operator {
+                    "in" | "not_in" if numeric_cast.is_some() && bindings.is_empty() => {
+                        Expr::cust_with_exprs(
+                            if operator == "in" {
+                                "$1 IN ()"
+                            } else {
+                                "$1 NOT IN ()"
+                            },
+                            [Expr::col(column)],
+                        )
+                    }
+                    "in" | "not_in" if numeric_cast.is_some() => {
+                        let values = bindings.iter().cloned().map(|value| {
+                            Expr::cust_with_values(
+                                format!("$1::{}", numeric_cast.unwrap_or_default()),
+                                [value],
+                            )
+                        });
+                        if operator == "in" {
+                            Expr::col(column).is_in(values)
+                        } else {
+                            Expr::col(column).is_not_in(values)
+                        }
+                    }
                     "in" => column.is_in(bindings.iter().cloned()),
                     "not_in" => column.is_not_in(bindings.iter().cloned()),
                     // The pinned adapter interpolates the complete array's
@@ -669,4 +711,27 @@ where
 
 fn normalize_user_email(email: &str) -> String {
     email.to_lowercase()
+}
+
+// Match Source's scalar/all-or-none array Number coercion before PostgreSQL
+// parses the text as the declared numeric column type.
+fn numeric_filter_text(values: &[String]) -> Vec<String> {
+    let numbers = values
+        .iter()
+        .map(|value| {
+            (!better_auth_core::utils::javascript::trim(value).is_empty())
+                .then(|| better_auth_core::utils::javascript::string_to_number(value))
+                .flatten()
+                .filter(|number| !number.is_nan())
+        })
+        .collect::<Option<Vec<_>>>();
+    numbers.map_or_else(
+        || values.to_vec(),
+        |numbers| {
+            numbers
+                .into_iter()
+                .map(|number| ryu_js::Buffer::new().format(number).to_owned())
+                .collect()
+        },
+    )
 }

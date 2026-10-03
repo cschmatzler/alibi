@@ -25,6 +25,7 @@ postgres_tests!(
     organization_list_pages_physical_members_before_joining_and_keeps_full_peer_rows,
     independent_connections_admit_distinct_member_ids_for_the_same_pair,
     query_organization_members_applies_filter_sort_and_pagination,
+    public_numeric_pages_bind_raw_limits_and_keep_insertion_order_filtered_count_and_full_state,
 );
 
 const TEAM_TABLES: [&str; 3] = ["member", "team", "team_member"];
@@ -736,6 +737,12 @@ async fn query_organization_members_applies_filter_sort_and_pagination<B: Backen
 }
 
 async fn numeric_page_snapshot(db: &Db) -> TestResult<Option<String>> {
+    if db.is_postgres() {
+        return db.text(
+            "SELECT json_build_object('members',(SELECT json_agg(r ORDER BY id) FROM member r),'users',(SELECT json_agg(r ORDER BY id) FROM users r),'organizations',(SELECT json_agg(r ORDER BY id) FROM organization r))::text",
+            &[],
+        ).await;
+    }
     db.text(
         "SELECT json_object('members',(SELECT json_group_array(json_object('rowid',rowid,'id',id,'org',organization_id,'user',user_id,'role',role,'created',created_at)) FROM (SELECT rowid,* FROM member ORDER BY rowid)),'users',(SELECT json_group_array(json_object('id',id,'email',email,'created',created_at,'updated',updated_at)) FROM (SELECT * FROM users ORDER BY rowid)),'organizations',(SELECT json_group_array(json_object('id',id,'name',name,'created',created_at)) FROM (SELECT * FROM organization ORDER BY rowid)))",
         &[],
@@ -803,6 +810,20 @@ async fn public_numeric_pages_bind_raw_limits_and_keep_insertion_order_filtered_
         (-1.0, 0.0, vec![first.clone(), second.clone()]),
         (-0.0, 0.0, vec![]),
     ] {
+        if db.is_postgres() && limit < 0.0 {
+            assert!(matches!(
+                store
+                    .query_organization_members_page(&MemberPageQuery {
+                        organization_id: own.id.clone(),
+                        limit: Some(limit),
+                        offset: Some(offset),
+                        ..Default::default()
+                    })
+                    .await,
+                Err(AuthError::Database(_))
+            ));
+            continue;
+        }
         let (rows, total) = store
             .query_organization_members_page(&MemberPageQuery {
                 organization_id: own.id.clone(),
@@ -848,11 +869,70 @@ async fn public_numeric_pages_bind_raw_limits_and_keep_insertion_order_filtered_
                     .await,
                 Err(AuthError::Database(_))
             ),
-            "SQLite must validate actual raw binding, not round/cap it"
+            "the database must validate actual raw binding, not round/cap it"
         );
     }
+    if db.is_postgres() {
+        for (number, expected_error) in [
+            (-1.0, "must not be negative"),
+            (f64::NAN, "\"NaN\""),
+            (f64::INFINITY, "\"Infinity\""),
+            (f64::NEG_INFINITY, "\"-Infinity\""),
+            (1e-7, "\"1e-7\""),
+            (1e21, "\"1e+21\""),
+            (1e20, "\"100000000000000000000\""),
+        ] {
+            for (limit, offset) in [(Some(number), None), (Some(1.0), Some(number))] {
+                let error = store
+                    .query_organization_members_page(&MemberPageQuery {
+                        organization_id: own.id.clone(),
+                        limit,
+                        offset,
+                        ..Default::default()
+                    })
+                    .await
+                    .err()
+                    .ok_or("invalid page unexpectedly succeeded")?;
+                assert!(matches!(error, AuthError::Database(_)));
+                assert!(
+                    error.to_string().contains(expected_error),
+                    "{number}: {error}"
+                );
+            }
+        }
+        // The public Number has already rounded 9007199254740993 to this value.
+        // PostgreSQL parses the resulting decimal integer without float8 rounding.
+        let (rows, total) = store
+            .query_organization_members_page(&MemberPageQuery {
+                organization_id: own.id.clone(),
+                limit: Some(9007199254740992.0),
+                offset: Some(0.0),
+                ..Default::default()
+            })
+            .await?;
+        assert_eq!(total, 2);
+        assert_eq!(rows.len(), 2);
+        let (rows, total) = store
+            .query_organization_members_page(&MemberPageQuery {
+                organization_id: own.id.clone(),
+                limit: Some(1.0),
+                offset: Some(9007199254740992.0),
+                ..Default::default()
+            })
+            .await?;
+        assert_eq!(total, 2);
+        assert!(rows.is_empty());
+    }
     let ids = vec![target.clone(), owner.clone()];
-    let returned = store.list_users_by_ids_page(&ids, -1.0).await?;
+    if db.is_postgres() {
+        assert!(matches!(
+            store.list_users_by_ids_page(&ids, -1.0).await,
+            Err(AuthError::Database(_))
+        ));
+    }
+    let returned = store
+        .list_users_by_ids_page(&ids, if db.is_postgres() { 2.0 } else { -1.0 })
+        .await?;
     assert_eq!(returned.len(), 2);
     assert!(
         returned

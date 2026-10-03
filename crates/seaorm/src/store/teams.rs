@@ -8,8 +8,9 @@ use better_auth_core::types::{AddTeamMemberResult, CreateTeam, Team, TeamMember,
 use chrono::Utc;
 use sea_orm::ExprTrait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set, SqliteTransactionMode, TransactionOptions, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait,
+    QueryFilter, QueryOrder, QuerySelect, Set, SqliteTransactionMode, TransactionOptions,
+    TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -84,8 +85,20 @@ where
         active.member_count = Set(reserved_count);
         let room = active.update(tx).await.map_err(map_db_err)?;
         if let Some(maximum) = maximum {
+            let predicate = if tx.get_database_backend() == sea_orm::DbBackend::Postgres {
+                // Source's text Number parameter is parsed as the physical
+                // bigint counter, rather than promoting that counter to float8.
+                sea_orm::sea_query::Expr::col(team::Column::MemberCount).lt(
+                    sea_orm::sea_query::Expr::cust_with_values(
+                        "$1::bigint",
+                        [ryu_js::Buffer::new().format(maximum).to_owned()],
+                    ),
+                )
+            } else {
+                team::Column::MemberCount.lt(maximum)
+            };
             let available = team::Entity::find_by_id(team_id.to_owned())
-                .filter(team::Column::MemberCount.lt(maximum))
+                .filter(predicate)
                 .one(tx)
                 .await
                 .map_err(map_db_err)?;

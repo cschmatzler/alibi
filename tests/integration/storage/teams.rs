@@ -694,6 +694,58 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
     for index in 0..8 {
         user_ids.push(user(primary, &format!("seat-{index}")).await?);
     }
+    let maximum = if db.is_postgres() { 2.0 } else { 1.5 };
+    if db.is_postgres() {
+        let physical_before = db
+            .text(
+                "SELECT row_to_json(t)::text FROM team t WHERE id = $1",
+                &[&team.id],
+            )
+            .await?;
+        for number in [1.5, f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e-7, 1e21] {
+            assert!(
+                matches!(
+                    primary
+                        .add_team_member(&team.id, &user_ids[0], Some(number))
+                        .await,
+                    Err(AuthError::Database(_))
+                ),
+                "PostgreSQL must reject the actual Number text: {number}"
+            );
+            assert_eq!(
+                db.text(
+                    "SELECT row_to_json(t)::text FROM team t WHERE id = $1",
+                    &[&team.id]
+                )
+                .await?,
+                physical_before
+            );
+            assert_eq!(
+                db.count_where(
+                    "SELECT COUNT(*) FROM team_member WHERE team_id = $1",
+                    &[&team.id]
+                )
+                .await?,
+                0
+            );
+        }
+        for number in [0.0, -1.0] {
+            assert!(matches!(
+                primary
+                    .add_team_member(&team.id, &user_ids[0], Some(number))
+                    .await?,
+                AddTeamMemberResult::LimitReached
+            ));
+            assert_eq!(
+                db.text(
+                    "SELECT row_to_json(t)::text FROM team t WHERE id = $1",
+                    &[&team.id]
+                )
+                .await?,
+                physical_before
+            );
+        }
+    }
     let barrier = Arc::new(Barrier::new(8));
     let mut tasks = JoinSet::new();
     for (store, user_id) in stores.iter().zip(&user_ids) {
@@ -703,7 +755,9 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
         let barrier = Arc::clone(&barrier);
         drop(tasks.spawn(async move {
             _ = barrier.wait().await;
-            store.add_team_member(&team_id, &user_id, Some(1.5)).await
+            store
+                .add_team_member(&team_id, &user_id, Some(maximum))
+                .await
         }));
     }
     let mut admitted = Vec::new();
@@ -729,7 +783,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
     );
     for membership in &admitted {
         let AddTeamMemberResult::Existing(existing) = primary
-            .add_team_member(&team.id, &membership.user_id, Some(1.5))
+            .add_team_member(&team.id, &membership.user_id, Some(maximum))
             .await?
         else {
             return Err("Repeated admission created a second membership".into());
@@ -750,7 +804,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
     assert_eq!(stored_count(primary, &team.id).await?, 1);
     assert!(matches!(
         primary
-            .add_team_member(&team.id, &first.user_id, Some(1.5))
+            .add_team_member(&team.id, &first.user_id, Some(maximum))
             .await?,
         AddTeamMemberResult::Added(_)
     ));

@@ -1254,3 +1254,326 @@ async fn no_database_strict_expiry() -> TestResult {
     }
     Ok(())
 }
+
+// PostgreSQL is a distinct driver boundary: text operands require parameter
+// casts to the declared physical numeric types, without casting indexed columns.
+#[cfg(all(feature = "sqlx", feature = "seaorm"))]
+mod postgres_numeric_columns {
+    use super::*;
+    use crate::storage::Db;
+    use better_auth_core::{ListUsersParams, UserFilterValue, store::UserStore};
+
+    macro_rules! model_fields {
+        (sqlx) => {
+            #[derive(
+                Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity,
+            )]
+            #[auth(role = "user", table = "app_people")]
+            pub struct Model {
+                pub id: String,
+                #[sqlx(rename = "mailbox")]
+                pub email: Option<String>,
+                pub name: Option<String>,
+                pub email_verified: bool,
+                pub image: Option<String>,
+                pub created_at: chrono::DateTime<Utc>,
+                pub updated_at: chrono::DateTime<Utc>,
+                #[sqlx(rename = "score32")]
+                pub small: i32,
+                #[sqlx(rename = "score64")]
+                pub large: i64,
+                pub real32: f32,
+                pub real64: f64,
+            }
+        };
+        (seaorm) => {
+            use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
+            #[derive(
+                Clone, Debug, serde::Serialize, DeriveEntityModel, better_auth::seaorm::AuthEntity,
+            )]
+            #[auth(role = "user")]
+            #[sea_orm(table_name = "app_people")]
+            pub struct Model {
+                #[sea_orm(primary_key, auto_increment = false)]
+                pub id: String,
+                #[sea_orm(column_name = "mailbox")]
+                pub email: Option<String>,
+                pub name: Option<String>,
+                pub email_verified: bool,
+                pub image: Option<String>,
+                pub created_at: chrono::DateTime<Utc>,
+                pub updated_at: chrono::DateTime<Utc>,
+                #[sea_orm(column_name = "score32")]
+                pub small: i32,
+                #[sea_orm(column_name = "score64")]
+                pub large: i64,
+                pub real32: f32,
+                pub real64: f64,
+            }
+            #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
+            pub enum Relation {}
+            impl ActiveModelBehavior for ActiveModel {}
+        };
+    }
+    macro_rules! schema {
+        ($backend:ident) => {
+            struct Schema;
+            impl AuthSchema for Schema {
+                type User = Model;
+                type Session = $backend::store::entities::session::Model;
+                type Account = $backend::store::entities::account::Model;
+                type Verification = $backend::store::entities::verification::Model;
+            }
+        };
+    }
+    mod sqlx_model {
+        use super::*;
+        model_fields!(sqlx);
+        schema!(better_auth_sqlx);
+        #[tokio::test]
+        #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+        async fn declared_numeric_filters_preserve_rows_types_and_index() -> TestResult {
+            let db = Db::postgres().await?;
+            let raw = match &db.raw {
+                crate::storage::Raw::Postgres(raw) => raw,
+                _ => unreachable!(),
+            };
+            install(raw).await?;
+            let connection = sqlx::postgres::PgPoolOptions::new()
+                .max_connections(1)
+                .connect(&db.url)
+                .await?;
+            let store = better_auth::sqlx::SqlxStore::<Schema>::new(config(), connection.clone());
+            exercise(&store, raw, &connection).await?;
+            connection.close().await;
+            Ok(())
+        }
+    }
+    mod seaorm_model {
+        use super::*;
+        model_fields!(seaorm);
+        schema!(better_auth_seaorm);
+        #[tokio::test]
+        #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+        async fn declared_numeric_filters_preserve_rows_types_and_index() -> TestResult {
+            let db = Db::postgres().await?;
+            let raw = match &db.raw {
+                crate::storage::Raw::Postgres(raw) => raw,
+                _ => unreachable!(),
+            };
+            install(raw).await?;
+            let mut options = better_auth::seaorm::sea_orm::ConnectOptions::new(db.url.clone());
+            _ = options.max_connections(1).min_connections(1);
+            let connection = better_auth::seaorm::Database::connect(options).await?;
+            let store =
+                better_auth::seaorm::SeaOrmStore::<Schema>::new(config(), connection.clone());
+            exercise(&store, raw, connection.get_postgres_connection_pool()).await?;
+            connection.close().await?;
+            Ok(())
+        }
+    }
+    async fn install(raw: &sqlx::PgPool) -> TestResult {
+        _ = sqlx::query("CREATE TABLE app_people (id text PRIMARY KEY, mailbox text UNIQUE, name text, email_verified boolean NOT NULL, image text, created_at timestamptz NOT NULL, updated_at timestamptz NOT NULL, score32 integer NOT NULL DEFAULT 0, score64 bigint NOT NULL DEFAULT 0, real32 real NOT NULL DEFAULT 0, real64 double precision NOT NULL DEFAULT 0)").execute(raw).await?;
+        _ = sqlx::query("INSERT INTO app_people SELECT n::text, n::text || '@numeric.fixture.test', n::text, false, NULL, '2020-01-01Z'::timestamptz, '2020-01-01Z'::timestamptz, n, n, n, n FROM generate_series(1,10000) n").execute(raw).await?;
+        _ = sqlx::query("CREATE INDEX app_people_score64_idx ON app_people(score64)")
+            .execute(raw)
+            .await?;
+        _ = sqlx::query("CREATE TABLE app_dependents (user_id text PRIMARY KEY REFERENCES app_people(id), payload text NOT NULL CHECK (payload <> ''))").execute(raw).await?;
+        _ = sqlx::query("INSERT INTO app_dependents VALUES ('1', 'retained application data')")
+            .execute(raw)
+            .await?;
+        // Application-owned populated-schema migration, with an idempotent retry.
+        for _ in 0..2 {
+            _ = sqlx::query("ALTER TABLE app_people ADD COLUMN IF NOT EXISTS retained text NOT NULL DEFAULT 'application-default' CHECK (retained <> '')").execute(raw).await?;
+        }
+        _ = sqlx::query("ANALYZE app_people").execute(raw).await?;
+        Ok(())
+    }
+    async fn snapshot(raw: &sqlx::PgPool) -> TestResult<String> {
+        Ok(
+            sqlx::query_scalar("SELECT json_build_object('users',(SELECT json_agg(r ORDER BY id) FROM app_people r),'dependents',(SELECT json_agg(r ORDER BY user_id) FROM app_dependents r),'constraints',(SELECT json_agg(pg_get_constraintdef(oid) ORDER BY conname) FROM pg_constraint WHERE conrelid IN ('app_people'::regclass,'app_dependents'::regclass)))::text")
+                .fetch_one(raw)
+                .await?,
+        )
+    }
+    async fn exercise<S: AuthSchema>(
+        store: &dyn UserStore<S>,
+        raw: &sqlx::PgPool,
+        native: &sqlx::PgPool,
+    ) -> TestResult {
+        // Native writes preserve the application's omitted upgraded column;
+        // database defaults and dependent constraints remain physical contracts.
+        let created = store
+            .create_user(CreateUser::new().with_email("new@numeric.fixture.test"))
+            .await?;
+        let retained: String = sqlx::query_scalar("SELECT retained FROM app_people WHERE id=$1")
+            .bind(created.id().as_ref())
+            .fetch_one(raw)
+            .await?;
+        assert_eq!(retained, "application-default");
+        let updated = store
+            .update_user(
+                "1",
+                UpdateUser {
+                    name: Some("Updated application owner".into()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+        assert_eq!(updated.name(), Some("Updated application owner"));
+        let dependent: (String, String) = sqlx::query_as("SELECT p.retained, d.payload FROM app_people p JOIN app_dependents d ON d.user_id=p.id WHERE p.id='1'").fetch_one(raw).await?;
+        assert_eq!(
+            dependent,
+            (
+                "application-default".into(),
+                "retained application data".into()
+            )
+        );
+        let before = snapshot(raw).await?;
+        // Distinct wire types, numeric aliases, physical fields and pagination.
+        for field in ["small", "large", "real32", "real64"] {
+            for value in ["9998", "0x270e", "9.998e3"] {
+                let (users, total) = store
+                    .list_users(ListUsersParams {
+                        filter_field: Some(field.into()),
+                        filter_value: Some(UserFilterValue::Scalar(value.into())),
+                        filter_operator: Some("gte".into()),
+                        sort_by: Some(field.into()),
+                        limit: Some(1),
+                        offset: Some(1),
+                        ..Default::default()
+                    })
+                    .await?;
+                assert_eq!(total, 3);
+                assert_eq!(
+                    users
+                        .iter()
+                        .map(|u| u.id().into_owned())
+                        .collect::<Vec<_>>(),
+                    ["9999"]
+                );
+            }
+            for (values, expected) in [(vec!["0x1", "2e0"], vec!["1", "2"])] {
+                let (users, total) = store
+                    .list_users(ListUsersParams {
+                        filter_field: Some(field.into()),
+                        filter_value: Some(UserFilterValue::Multiple(
+                            values.into_iter().map(str::to_owned).collect(),
+                        )),
+                        filter_operator: Some("in".into()),
+                        sort_by: Some(field.into()),
+                        ..Default::default()
+                    })
+                    .await?;
+                assert_eq!(total, expected.len());
+                assert_eq!(
+                    users
+                        .iter()
+                        .map(|u| u.id().into_owned())
+                        .collect::<Vec<_>>(),
+                    expected
+                );
+            }
+            assert!(
+                matches!(
+                    store
+                        .list_users(ListUsersParams {
+                            filter_field: Some(field.into()),
+                            filter_value: Some(UserFilterValue::Multiple(vec![])),
+                            filter_operator: Some("in".into()),
+                            ..Default::default()
+                        })
+                        .await,
+                    Err(better_auth_core::AuthError::Database(_))
+                ),
+                "Source PostgreSQL rejects IN ()"
+            );
+        }
+        for (field, value) in [
+            ("small", "1.5"),
+            ("large", "1.5"),
+            ("large", "Infinity"),
+            ("large", "NaN"),
+            ("large", ""),
+            ("large", "1e21"),
+            ("small", "2147483648"),
+        ] {
+            assert!(
+                matches!(
+                    store
+                        .list_users(ListUsersParams {
+                            filter_field: Some(field.into()),
+                            filter_value: Some(UserFilterValue::Scalar(value.into())),
+                            filter_operator: Some("eq".into()),
+                            ..Default::default()
+                        })
+                        .await,
+                    Err(better_auth_core::AuthError::Database(_))
+                ),
+                "{field}: {value}"
+            );
+        }
+        // Source keeps the entire array as strings when one element is invalid.
+        assert!(matches!(
+            store
+                .list_users(ListUsersParams {
+                    filter_field: Some("real64".into()),
+                    filter_value: Some(UserFilterValue::Multiple(vec![
+                        "0x1".into(),
+                        "invalid".into()
+                    ])),
+                    filter_operator: Some("in".into()),
+                    ..Default::default()
+                })
+                .await,
+            Err(better_auth_core::AuthError::Database(_))
+        ));
+        let array_error = store
+            .list_users(ListUsersParams {
+                filter_field: Some("large".into()),
+                filter_value: Some(UserFilterValue::Multiple(vec!["1e0".into(), "NaN".into()])),
+                filter_operator: Some("in".into()),
+                ..Default::default()
+            })
+            .await
+            .err()
+            .ok_or("invalid integer array succeeded")?;
+        assert!(array_error.to_string().contains("\"1e0\""), "{array_error}");
+        assert!(matches!(
+            store
+                .list_users(ListUsersParams {
+                    filter_field: Some("unmapped".into()),
+                    filter_value: Some(UserFilterValue::Scalar("1".into())),
+                    ..Default::default()
+                })
+                .await,
+            Err(better_auth_core::AuthError::BadRequest(_))
+        ));
+        // Explain the real prepared statement, with the actual bound value,
+        // on the same one-connection native pool that executed it.
+        let (name, statement): (String, String) = sqlx::query_as("SELECT name, statement FROM pg_prepared_statements WHERE statement LIKE '%score64% >= %::int8%' ORDER BY prepare_time LIMIT 1").fetch_one(native).await?;
+        assert!(!statement.contains("CAST(\"app_people\".\"score64\""));
+        let plan: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "EXPLAIN EXECUTE \"{}\"('9998')",
+            name.replace('"', "\"\"")
+        )))
+        .fetch_all(native)
+        .await?;
+        assert!(
+            plan.iter()
+                .any(|line| line.contains("Index") && line.contains("app_people_score64_idx")),
+            "{plan:?}"
+        );
+        assert!(
+            plan.iter()
+                .any(|line| line.contains("Index Cond") && line.contains("score64")),
+            "{plan:?}"
+        );
+        assert_eq!(
+            snapshot(raw).await?,
+            before,
+            "all rows and native date/number bytes survive successful and failed reads"
+        );
+        Ok(())
+    }
+}

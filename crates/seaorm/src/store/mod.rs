@@ -434,7 +434,16 @@ pub(crate) fn bind_page(
                 }
             };
             _ = write!(statement.sql, " {clause} {placeholder}");
-            values.0.push(Value::Double(Some(number)));
+            if statement.db_backend == DbBackend::Postgres {
+                // node-postgres sends Number parameters as text. Binding float8
+                // instead lets PostgreSQL round fractional pages to bigint.
+                statement.sql.push_str("::bigint");
+                values.0.push(Value::String(Some(
+                    ryu_js::Buffer::new().format(number).to_owned(),
+                )));
+            } else {
+                values.0.push(Value::Double(Some(number)));
+            }
         }
     }
     Ok(statement)
