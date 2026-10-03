@@ -5,8 +5,8 @@ account row with `symmetricEncodeJWT`, salt `better-auth-account`, and a default
 300-second lifetime. The former Rust shared account-cookie encoder instead
 issued an HS256 JWS, exposing provider tokens in readable base64 and failing the
 published decoder. The private `oauth/account_cookie.rs` port replaces that
-encoder and authenticated reader; it introduces no public crypto seam or
-additional public crypto seam. Existing OAuth state cookies retain their own protocol.
+encoder and authenticated reader. Existing OAuth state cookies retain their own
+protocol. The later #230 bounded DEFLATE reader adds the flate2 dependency.
 
 `dist/crypto/jwt.mjs:18-143` derives 64 bytes using HKDF-SHA256, the exact info
 `BetterAuth.js Generated Encryption Key`, and the account salt. The protected
@@ -147,9 +147,10 @@ requirement. Final focused proof is recorded in
 `/tmp/account-cookie-alias-native-oauth-final.log` (18 real OAuth siblings),
 `/tmp/account-cookie-alias-typecheck-final.log`, and
 `/tmp/account-cookie-alias-clippy-final.log`. Canonical gates and publication stay
-coordinator-owned. Malformed URI error transport, compression, chunking, rotating
-secrets, custom account columns and the previously listed TTL boundaries remain
-separate gaps; this capability does not claim their closure.
+coordinator-owned. Malformed URI error transport and rotating secrets remained separate gaps at
+that checkpoint. The #230 follow-up below implements compression, chunking,
+custom account columns and account TTL; general cookie overrides and rotation
+stay with their existing owners.
 
 
 ## #230 bounded production proof

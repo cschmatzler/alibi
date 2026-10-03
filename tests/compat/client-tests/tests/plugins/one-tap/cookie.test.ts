@@ -344,21 +344,20 @@ compatScenario(
   ["POST /one-tap/callback", "POST /get-access-token"],
 );
 
-compatScenario(
-  "Account cookie lifetimes retain fractional claims and account-specific attributes",
-  async (ctx) => {
-    const observations = [];
-    const baseline = await state(ctx);
-    for (const [suffix, lifetime] of [
-      ["fractional", 1.75],
-      ["account-fractional", 1.75],
-      ["account-zero", 0],
-      ["account-negative", -4.25],
-      ["zero", 300],
-      ["negative", -4.25],
-      ["nan", 300],
-      ["override", 7],
-    ] as const) {
+for (const [suffix, lifetime] of [
+  ["fractional", 1.75],
+  ["account-fractional", 1.75],
+  ["account-zero", 0],
+  ["account-negative", -4.25],
+  ["zero", 300],
+  ["negative", -4.25],
+  ["nan", 300],
+  ["override", 7],
+] as const) {
+  compatScenario(
+    `Account cookie lifetime ${suffix} retains exact claims and attributes`,
+    async (ctx) => {
+      const baseline = await state(ctx);
       const profile = `one-tap-account-cookie-${suffix}` as FixtureProfile;
       const token = await credential({
         sub: ctx.uniqueToken(suffix),
@@ -399,7 +398,7 @@ compatScenario(
           `${process.env.COMPAT_OBSERVATIONS_DIR}/ttl-raw-${new URL(ctx.baseURL).port}-${suffix}.json`,
           JSON.stringify({ raw, compact, payload }, null, 2),
         );
-      observations.push({
+      const observation = {
         suffix,
         lifetime,
         accountCookie: {
@@ -408,10 +407,22 @@ compatScenario(
           payload,
         },
         response: await response.json(),
-      });
-    }
-    const nonfinite = [];
-    for (const suffix of ["infinity", "account-nan"] as const) {
+      };
+      const physical = await state(ctx);
+      expect(physical.sessions).toHaveLength(1);
+      return {
+        ...observation,
+        physical: { ...physical, jwksFetches: physical.jwksFetches - baseline.jwksFetches },
+      };
+    },
+    ["POST /one-tap/callback"],
+  );
+}
+for (const suffix of ["infinity", "account-nan"] as const) {
+  compatScenario(
+    `Account cookie lifetime ${suffix} rejects before issuing a session`,
+    async (ctx) => {
+      const baseline = await state(ctx);
       const profile = `one-tap-account-cookie-${suffix}` as FixtureProfile;
       const actor = ctx.actor(suffix, profile);
       const token = await credential({
@@ -431,15 +442,16 @@ compatScenario(
       expect(
         response.headers.getSetCookie().some((raw) => raw.startsWith("better-auth.account_data=")),
       ).toBe(false);
-      nonfinite.push({ suffix, status: response.status, body: await response.text() });
-    }
-    const physical = await state(ctx);
-    expect(physical.sessions).toHaveLength(observations.length);
-    return {
-      observations,
-      nonfinite,
-      physical: { ...physical, jwksFetches: physical.jwksFetches - baseline.jwksFetches },
-    };
-  },
-  ["POST /one-tap/callback"],
-);
+      const physical = await state(ctx);
+      expect(physical.sessions).toHaveLength(0);
+      expect(physical.users).toHaveLength(1);
+      expect(physical.accounts).toHaveLength(1);
+      return {
+        status: response.status,
+        body: await response.text(),
+        physical: { ...physical, jwksFetches: physical.jwksFetches - baseline.jwksFetches },
+      };
+    },
+    ["POST /one-tap/callback"],
+  );
+}
