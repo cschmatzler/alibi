@@ -6,6 +6,35 @@ import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
 import { organization } from "better-auth/plugins";
 
+export function invitationSnapshot(database: Database) {
+  return {
+    invitations: database
+      .query(
+        "SELECT id,organizationId,email,role,teamId,status,expiresAt,createdAt,inviterId FROM invitation ORDER BY rowid",
+      )
+      .all(),
+    members: database
+      .query("SELECT id,organizationId,userId,role,createdAt FROM member ORDER BY rowid")
+      .all(),
+    teams: database
+      .query(
+        "SELECT id,name,organizationId,memberCount,createdAt,updatedAt FROM team ORDER BY rowid",
+      )
+      .all(),
+    teamMembers: database
+      .query("SELECT id,teamId,userId,membershipKey,createdAt FROM teamMember ORDER BY rowid")
+      .all(),
+    sessions: database
+      .query(
+        "SELECT id,userId,token,expiresAt,createdAt,updatedAt,ipAddress,userAgent,impersonatedBy,activeOrganizationId,activeTeamId FROM session ORDER BY rowid",
+      )
+      .all(),
+    organizations: database
+      .query("SELECT id,name,slug,logo,metadata,createdAt FROM organization ORDER BY rowid")
+      .all(),
+  };
+}
+
 export function organizationInvitationAcceptanceFixture(
   database: Database,
   shared: Parameters<typeof betterAuth>[0],
@@ -15,34 +44,7 @@ export function organizationInvitationAcceptanceFixture(
   const receipts: unknown[] = [];
   const gates: { release: () => void; promise: Promise<void> }[] = [];
 
-  function snapshot() {
-    return {
-      invitations: database
-        .query(
-          "SELECT id,organizationId,email,role,teamId,status,expiresAt,createdAt,inviterId FROM invitation ORDER BY rowid",
-        )
-        .all(),
-      members: database
-        .query("SELECT id,organizationId,userId,role,createdAt FROM member ORDER BY rowid")
-        .all(),
-      teams: database
-        .query(
-          "SELECT id,name,organizationId,memberCount,createdAt,updatedAt FROM team ORDER BY rowid",
-        )
-        .all(),
-      teamMembers: database
-        .query("SELECT id,teamId,userId,membershipKey,createdAt FROM teamMember ORDER BY rowid")
-        .all(),
-      sessions: database
-        .query(
-          "SELECT id,userId,token,expiresAt,createdAt,updatedAt,ipAddress,userAgent,impersonatedBy,activeOrganizationId,activeTeamId FROM session ORDER BY rowid",
-        )
-        .all(),
-      organizations: database
-        .query("SELECT id,name,slug,logo,metadata,createdAt FROM organization ORDER BY rowid")
-        .all(),
-    };
-  }
+  const snapshot = () => invitationSnapshot(database);
 
   type Hooks = NonNullable<NonNullable<Parameters<typeof organization>[0]>["organizationHooks"]>;
   type Before = Parameters<NonNullable<Hooks["beforeAcceptInvitation"]>>[0];

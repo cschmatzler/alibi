@@ -9,6 +9,13 @@ pub mod handlers;
 pub mod lifecycle;
 
 pub mod invitation_acceptance_lifecycle;
+pub mod invitation_lifecycle;
+pub use invitation_lifecycle::{
+    InvitationLimit, OrganizationInvitationContext, OrganizationInvitationCreatePatch,
+    OrganizationInvitationCreationContext, OrganizationInvitationDelivery,
+    OrganizationInvitationDraft, OrganizationInvitationEmailSender, OrganizationInvitationHooks,
+    OrganizationInvitationLimitContext, OrganizationInvitationLimitResolver,
+};
 
 pub mod membership_policy;
 
@@ -124,11 +131,18 @@ pub struct OrganizationConfig {
     #[config(default = "owner".to_owned())]
     pub creator_role: String,
     /// Invitation expiration in seconds (default: 48 hours)
-    #[config(default = 60 * 60 * 48)]
-    pub invitation_expires_in: u64,
-    /// Maximum pending invitations per organization (None = unlimited)
-    #[config(default = Some(100))]
-    pub invitation_limit: Option<usize>,
+    #[config(default = Some(172_800.0))]
+    pub invitation_expires_in: Option<f64>,
+    /// Pending admission limit: None uses 100; every numeric value is compared raw.
+    #[config(default = Some(InvitationLimit::Fixed(100.0)), skip)]
+    pub invitation_limit: Option<InvitationLimit>,
+    /// Cancel the first prior pending invitation before later admission checks.
+    #[config(default = false)]
+    pub cancel_pending_invitations_on_reinvite: bool,
+    #[config(default = None, skip)]
+    pub invitation_hooks: Option<std::sync::Arc<dyn OrganizationInvitationHooks>>,
+    #[config(default = None, skip)]
+    pub send_invitation_email: Option<std::sync::Arc<dyn OrganizationInvitationEmailSender>>,
     /// Disable organization deletion (default: false)
     #[config(default = false)]
     pub disable_organization_deletion: bool,

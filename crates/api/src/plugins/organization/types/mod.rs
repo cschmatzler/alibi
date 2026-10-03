@@ -147,6 +147,7 @@ pub struct GetFullOrganizationQuery {
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct InviteMemberRequest {
+    pub resend: Option<bool>,
     #[validate(email(message = "Invalid email address"))]
     pub email: String,
     pub role: RoleInput,

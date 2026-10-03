@@ -43,6 +43,7 @@ pub(crate) mod organization_creation_fixture;
 pub(crate) mod organization_creation_hooks_fixture;
 pub(crate) mod organization_deletion_hooks_fixture;
 pub(crate) mod organization_invitation_acceptance_fixture;
+pub(crate) mod organization_invitation_lifecycle_fixture;
 pub(crate) mod organization_member_addition_fixture;
 pub(crate) mod organization_member_removal_hooks_fixture;
 pub(crate) mod organization_member_role_hooks_fixture;

@@ -1161,6 +1161,29 @@ impl<S: AuthSchema> InvitationStore for PluginStore<S> {
     async fn get_invitation_by_id(&self, id: &str) -> AuthResult<Option<Invitation>> {
         self.inner.get_invitation_by_id(id).await
     }
+    async fn create_invitation_with_options(
+        &self,
+        invitation: CreateInvitation,
+        options: InvitationCreateOptions,
+    ) -> AuthResult<Invitation> {
+        self.inner
+            .create_invitation_with_options(invitation, options)
+            .await
+    }
+    async fn pending_invitation_page(
+        &self,
+        org_id: &str,
+        email: Option<&str>,
+    ) -> AuthResult<Vec<Invitation>> {
+        self.inner.pending_invitation_page(org_id, email).await
+    }
+    async fn update_invitation_expiry(
+        &self,
+        id: &str,
+        expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Invitation> {
+        self.inner.update_invitation_expiry(id, expires_at).await
+    }
     async fn get_pending_invitation(
         &self,
         org_id: &str,
@@ -2959,8 +2982,52 @@ pub trait MemberStore: Send + Sync {
     async fn count_organization_owners(&self, org_id: &str) -> AuthResult<i64>;
 }
 
+/// Trusted persisted-field overrides returned by an invitation creation hook.
+/// They are separate from the stable default CreateInvitation constructor.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct InvitationCreateOptions {
+    pub id: Option<String>,
+    pub status: Option<InvitationStatus>,
+    pub created_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
 #[async_trait]
 pub trait InvitationStore: Send + Sync {
+    async fn create_invitation_with_options(
+        &self,
+        invitation: CreateInvitation,
+        options: InvitationCreateOptions,
+    ) -> AuthResult<Invitation> {
+        if options == InvitationCreateOptions::default() {
+            self.create_invitation(invitation).await
+        } else {
+            Err(AuthError::NotImplemented(
+                "Invitation creation overrides are not supported by this store".into(),
+            ))
+        }
+    }
+
+    /// Actual adapter page of pending rows, before expiry filtering.
+    async fn pending_invitation_page(
+        &self,
+        _org_id: &str,
+        _email: Option<&str>,
+    ) -> AuthResult<Vec<Invitation>> {
+        Err(AuthError::NotImplemented(
+            "Pending invitation pages are not supported by this store".into(),
+        ))
+    }
+    /// Update expiry independently; reissue retains every other invitation field.
+    async fn update_invitation_expiry(
+        &self,
+        _id: &str,
+        _expires_at: chrono::DateTime<chrono::Utc>,
+    ) -> AuthResult<Invitation> {
+        Err(AuthError::NotImplemented(
+            "Invitation expiry updates are not supported by this store".into(),
+        ))
+    }
+
     async fn create_invitation(&self, invitation: CreateInvitation) -> AuthResult<Invitation>;
     async fn get_invitation_by_id(&self, id: &str) -> AuthResult<Option<Invitation>>;
     async fn get_pending_invitation(

@@ -9,7 +9,7 @@ use better_auth_core::{CreateInvitation, Invitation, InvitationStatus};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
-    QueryOrder, QuerySelect, Set, TransactionTrait,
+    QuerySelect, Set, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -21,16 +21,27 @@ where
     S::Session: SeaOrmSessionModel,
 {
     async fn create_invitation(&self, invitation: CreateInvitation) -> AuthResult<Invitation> {
+        self.create_invitation_with_options(
+            invitation,
+            better_auth_core::store::InvitationCreateOptions::default(),
+        )
+        .await
+    }
+    async fn create_invitation_with_options(
+        &self,
+        invitation: CreateInvitation,
+        options: better_auth_core::store::InvitationCreateOptions,
+    ) -> AuthResult<Invitation> {
         ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
+            id: Set(options.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
             organization_id: Set(invitation.organization_id),
             email: Set(invitation.email),
             role: Set(invitation.role),
             team_id: Set(invitation.team_id),
-            status: Set(InvitationStatus::Pending.to_string()),
+            status: Set(options.status.unwrap_or_default().to_string()),
             inviter_id: Set(invitation.inviter_id),
             expires_at: Set(invitation.expires_at),
-            created_at: Set(Utc::now()),
+            created_at: Set(options.created_at.unwrap_or_else(Utc::now)),
         }
         .insert(self.connection())
         .await
@@ -262,6 +273,42 @@ where
             .map_err(map_db_err)
     }
 
+    async fn pending_invitation_page(
+        &self,
+        org_id: &str,
+        email: Option<&str>,
+    ) -> AuthResult<Vec<Invitation>> {
+        let mut query = Entity::find()
+            .filter(Column::OrganizationId.eq(org_id))
+            .filter(Column::Status.eq(InvitationStatus::Pending.to_string()));
+        if let Some(email) = email {
+            query = query.filter(Column::Email.eq(email.to_lowercase()));
+        }
+        query
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
+            .all(self.connection())
+            .await
+            .map(|rows| rows.iter().map(Invitation::from).collect())
+            .map_err(map_db_err)
+    }
+    async fn update_invitation_expiry(
+        &self,
+        id: &str,
+        expires_at: chrono::DateTime<Utc>,
+    ) -> AuthResult<Invitation> {
+        let model = Entity::find_by_id(id.to_owned())
+            .one(self.connection())
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(|| AuthError::not_found("Invitation not found"))?;
+        let mut active = model.into_active_model();
+        active.expires_at = Set(expires_at);
+        active
+            .update(self.connection())
+            .await
+            .map(|model| Invitation::from(&model))
+            .map_err(map_db_err)
+    }
     async fn get_pending_invitation(
         &self,
         org_id: &str,
@@ -303,7 +350,7 @@ where
     async fn list_organization_invitations(&self, org_id: &str) -> AuthResult<Vec<Invitation>> {
         Entity::find()
             .filter(Column::OrganizationId.eq(org_id))
-            .order_by_desc(Column::CreatedAt)
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
             .all(self.connection())
             .await
             .map(|models| models.iter().map(Invitation::from).collect())

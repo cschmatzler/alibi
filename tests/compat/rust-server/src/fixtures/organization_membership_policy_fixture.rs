@@ -216,9 +216,13 @@ pub(crate) async fn router(
         let organization = OrganizationConfig {
             membership_limit: limit,
             invitation_limit: if name == "org-membership-pending-one" {
-                Some(1)
+                Some(better_auth::plugins::organization::InvitationLimit::Fixed(
+                    1.0,
+                ))
             } else {
-                Some(100)
+                Some(better_auth::plugins::organization::InvitationLimit::Fixed(
+                    100.0,
+                ))
             },
             require_email_verification_on_invitation: Some(true),
             teams: TeamsConfig {

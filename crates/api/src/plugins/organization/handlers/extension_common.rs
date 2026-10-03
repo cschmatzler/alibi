@@ -38,6 +38,11 @@ pub fn org_error(status: u16, code: &'static str) -> AuthError {
         }
         "TEAM_NOT_FOUND" => "Team not found",
         "MEMBER_NOT_FOUND" => "Member not found",
+        "INVITATION_LIMIT_REACHED" => "Invitation limit reached",
+        "INVITATION_NOT_FOUND" => "Invitation not found",
+        "USER_IS_ALREADY_INVITED_TO_THIS_ORGANIZATION" => {
+            "User is already invited to this organization"
+        }
         "YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION" => {
             "You are not allowed to invite users to this organization"
         }

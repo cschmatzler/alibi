@@ -29,7 +29,7 @@ use std::{
 };
 use tokio::sync::{Mutex, oneshot};
 
-async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
+pub(super) async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
     let mut snapshot = serde_json::Map::new();
     for (name, sql, columns) in [
         (

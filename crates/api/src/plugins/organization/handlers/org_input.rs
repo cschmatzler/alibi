@@ -449,3 +449,88 @@ pub(super) fn member_remove(req: &AuthRequest) -> Result<RemoveMemberRequest, Au
         organization_id,
     })
 }
+
+/// The invitation schema accepts email strings; the endpoint validates the
+/// address only after authentication, before organization authority and hooks.
+pub(super) fn invitation_create(
+    req: &AuthRequest,
+) -> Result<super::super::types::InviteMemberRequest, AuthResponse> {
+    use super::super::types::{InviteMemberRequest, TeamInput};
+    let decoded = decode(req)?;
+    object(decoded.as_ref(), "body")
+        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    let get = |key| decoded.as_ref().and_then(|value| value.get(key));
+    let mut issues = Vec::new();
+    let email = string(get("email"), "body.email", true, false, false, &mut issues);
+    let role = match get("role") {
+        Some(JsValue::String(value)) => Some(RoleInput::One(value.clone())),
+        Some(JsValue::Array(values)) => values
+            .iter()
+            .map(|value| value.as_str().map(str::to_owned))
+            .collect::<Option<Vec<_>>>()
+            .map(RoleInput::Many),
+        _ => None,
+    };
+    if role.is_none() {
+        issues.push("[body.role] Invalid input".into());
+    }
+    let organization_id = string(
+        get("organizationId"),
+        "body.organizationId",
+        false,
+        false,
+        false,
+        &mut issues,
+    );
+    let resend = match get("resend") {
+        None => None,
+        Some(JsValue::Bool(value)) => Some(*value),
+        value => {
+            issues.push(expected("body.resend", "boolean", value));
+            None
+        }
+    };
+    let team_id = match get("teamId") {
+        None => None,
+        Some(JsValue::String(value)) => Some(TeamInput::One(value.clone())),
+        Some(JsValue::Array(values)) => {
+            let ids = values
+                .iter()
+                .map(|value| value.as_str().map(str::to_owned))
+                .collect::<Option<Vec<_>>>();
+            if ids.is_none() {
+                issues.push("[body.teamId] Invalid input".into());
+            }
+            ids.map(TeamInput::Many)
+        }
+        _ => {
+            issues.push("[body.teamId] Invalid input".into());
+            None
+        }
+    };
+    validate(&issues)?;
+    Ok(InviteMemberRequest {
+        email: email.unwrap_or_default(),
+        role: role.unwrap_or_else(|| RoleInput::Many(Vec::new())),
+        organization_id,
+        resend,
+        team_id,
+    })
+}
+
+pub(super) fn invitation_id(req: &AuthRequest) -> Result<String, AuthResponse> {
+    let decoded = decode(req)?;
+    object(decoded.as_ref(), "body")
+        .map_err(|message| response(400, "VALIDATION_ERROR", message))?;
+    let mut issues = Vec::new();
+    let id = string(
+        decoded.as_ref().and_then(|value| value.get("invitationId")),
+        "body.invitationId",
+        true,
+        false,
+        false,
+        &mut issues,
+    );
+    validate(&issues)?;
+    Ok(id.unwrap_or_default())
+}
