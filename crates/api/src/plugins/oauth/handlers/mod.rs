@@ -306,11 +306,11 @@ fn build_authorization_url(
             set_authorization_param(&mut url, "permissions", &value);
         }
     }
-    if let Some(login_hint) = login_hint.filter(|_| {
+    if let Some(login_hint) = login_hint.filter(|hint| {
         provider
             .authorization
             .as_ref()
-            .is_none_or(|policy| policy.login_hint)
+            .is_none_or(|policy| policy.login_hint && !hint.is_empty())
     }) {
         set_authorization_param(&mut url, "login_hint", login_hint);
     }
@@ -319,6 +319,11 @@ fn build_authorization_url(
     }
     if let Some(params) = additional_params {
         for (key, value) in params {
+            set_authorization_param(&mut url, key, value);
+        }
+    }
+    if let Some(policy) = &provider.authorization {
+        for (key, value) in &policy.fixed_authorization_params {
             set_authorization_param(&mut url, key, value);
         }
     }
@@ -467,11 +472,15 @@ async fn provider_token_request(
         .map_err(|error| AuthError::internal(format!("Token HTTP client failed: {error}")))?
         .post(&provider.token_url)
         .header("Accept", "application/json");
-    let request = match provider
-        .authorization
-        .as_ref()
-        .and_then(|policy| policy.token_endpoint_auth)
-    {
+    let request = match provider.authorization.as_ref().and_then(|policy| {
+        if grant_type == OAuthTokenGrant::RefreshToken {
+            policy
+                .refresh_token_endpoint_auth
+                .or(policy.token_endpoint_auth)
+        } else {
+            policy.token_endpoint_auth
+        }
+    }) {
         None => {
             form.extend([
                 ("client_id".into(), provider.client_id.clone()),

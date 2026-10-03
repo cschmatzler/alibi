@@ -22,8 +22,8 @@ use fixtures::{
     huggingface_provider_fixture, invitation_fixture, jwt_fixture, jwt_keyring_fixture,
     jwt_remote_fixture, kakao_provider_fixture, kick_provider_fixture, last_login_method_fixture,
     lifecycle_fixture, line_provider_fixture, linear_provider_fixture, linkedin_provider_fixture,
-    multiple_session_fixture, naver_provider_fixture, oauth_proxy_fixture, one_tap_fixture,
-    one_time_token_fixture, open_api_fixture, organization_creation_fixture,
+    multiple_session_fixture, naver_provider_fixture, notion_provider_fixture, oauth_proxy_fixture,
+    one_tap_fixture, one_time_token_fixture, open_api_fixture, organization_creation_fixture,
     organization_creation_hooks_fixture, organization_deletion_hooks_fixture,
     organization_invitation_acceptance_fixture, organization_member_addition_fixture,
     organization_member_removal_hooks_fixture, organization_member_role_hooks_fixture,
@@ -884,6 +884,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (oauth_proxy_router, oauth_proxy_reset) = oauth_proxy_fixture::router(&config).await?;
     let (managed_proxy_router, managed_proxy_reset) =
         oauth_proxy_fixture::managed_router(&config).await?;
+    let (notion_router, notion_reset) =
+        notion_provider_fixture::router(&config, database.clone()).await?;
     let (cloudflare_router, cloudflare_reset) =
         cloudflare_provider_fixture::router(&config, database.clone()).await?;
     let (facebook_router, facebook_reset) =
@@ -1406,6 +1408,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let github_profile = github_profile_for_reset.clone();
                 let social_id_token_valid = social_id_token_valid_for_reset.clone();
                 let database = database_for_reset.clone();
+                let notion_reset=notion_reset.clone();
                 let cloudflare_reset=cloudflare_reset.clone();
                 let cognito_reset=cognito_reset.clone();
                 let additional_fields_reset=additional_fields_reset.clone();
@@ -1429,6 +1432,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
                     api_key_storage_reset.reset().await;
+                    notion_reset.reset().await;
                     cloudflare_reset.reset().await;
                     cognito_reset.reset().await;
                     if let Err(error) = additional_fields_reset.reset().await {
@@ -2062,6 +2066,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(error_page_router)
+        .merge(notion_router)
         .merge(cloudflare_router)
         .merge(cognito_router)
         .merge(additional_fields_router)

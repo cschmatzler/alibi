@@ -1,3 +1,6 @@
+mod notion;
+pub use notion::NotionOptions;
+
 mod cloudflare;
 pub use cloudflare::CloudflareOptions;
 
@@ -376,6 +379,10 @@ pub struct OAuthAuthorizationPolicy {
     pub require_client_id: bool,
     /// `None` preserves the existing generic provider credential transport.
     pub token_endpoint_auth: Option<OAuthTokenEndpointAuth>,
+    /// Grant-specific authentication when refresh differs from code exchange.
+    pub refresh_token_endpoint_auth: Option<OAuthTokenEndpointAuth>,
+    /// Provider parameters applied after caller additions.
+    pub fixed_authorization_params: Vec<(String, String)>,
     /// Optional application client key sent in authorization-code forms only.
     pub authorization_code_client_key: Option<String>,
     /// Required by private_key_jwt; invoked afresh for each real token grant.
@@ -406,6 +413,8 @@ impl Default for OAuthAuthorizationPolicy {
             deduplicate_scopes: false,
             require_client_id: false,
             token_endpoint_auth: None,
+            refresh_token_endpoint_auth: None,
+            fixed_authorization_params: Vec::new(),
             authorization_code_client_key: None,
             client_assertion: None,
             refresh_scope: None,
