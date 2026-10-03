@@ -30,5 +30,31 @@
   },
   "finalReviewedBase": "4564656881ff0bdac07d29b008b228a5696a4ac0",
   "finalReviewedHead": "65df512d80df41069ec2630bdb2629672c3f7301",
-  "finalPopupInvarianceBytes": 0
+  "finalPopupInvarianceBytes": 0,
+  "losslessRebaseRecords": {
+    "rebase-production-inspection.diff": {
+      "gzip": "rebase-production-inspection.diff.gz",
+      "rawSha256": "fe2b1587ad998883520aa8473d75df4c5f8061b640ffa3e15310b1ecea2a8772"
+    },
+    "registration-review.diff": {
+      "gzip": "registration-review.diff.gz",
+      "rawSha256": "259dad9044c09f70dd9ec3342ecdb0402d59b4bffb0ac9d4a8510345849b1606"
+    },
+    "second-rebase-production-inspection.diff": {
+      "gzip": "second-rebase-production-inspection.diff.gz",
+      "rawSha256": "c54289f19a44731526cf84e721f91d1d4047b24da66ccfcb92e8de5db27ca54b"
+    },
+    "final-registration-review.diff": {
+      "gzip": "final-registration-review.diff.gz",
+      "rawSha256": "839604d0160e6763ff28586741245edfff77d529031c2c630fef29180ed221d1"
+    },
+    "final-rebase-range-diff.log": {
+      "gzip": "final-rebase-range-diff.log.gz",
+      "rawSha256": "2c5f1dff880ad140376883dace436cb5a2fa7be10935a621f2bdd8a4fc2fd37a"
+    },
+    "rebase-range-diff.log": {
+      "gzip": "rebase-range-diff.log.gz",
+      "rawSha256": "3845106cd0e9dc9d3a813b7ef2ce8caafa9ff118c8504ea0ba9506cbf7e437c5"
+    }
+  }
 }

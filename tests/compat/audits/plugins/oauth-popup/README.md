@@ -104,3 +104,7 @@ but localhost/environment-port navigation returned browser-client failures. The
 automated owner still ran genuine Chromium, with the official client bundled
 from the restored pinned package. The failed preview is not claimed as browser
 proof.
+
+Nonempty unified/range diffs are stored as lossless `.gz` records because their
+blank context lines contain significant diff-format whitespace. Original raw
+SHA-256 digests are in the receipt; empty invariance diffs stay uncompressed.
