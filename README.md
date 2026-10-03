@@ -3,7 +3,7 @@
 **Better Auth for Rust.** Authentication built around your database, your models, and your stack.
 
 [![CI](https://github.com/cschmatzler/better-auth-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/cschmatzler/better-auth-rs/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](LICENSE-MIT)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Email and password, social login, passkeys, two-factor authentication, organizations, and API keys — composed with Rust plugins. Use SQLx or SeaORM for storage and Axum for routing and typed session extractors.
 
@@ -91,4 +91,6 @@ See [contributing](docs/src/content/docs/guides/development.md) for environment 
 
 ## License
 
-[MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+This project is a fork of [better-auth-rs/better-auth-rs](https://github.com/better-auth-rs/better-auth-rs) by AprilNEA, continuing under the [MIT license](LICENSE). Original copyright is retained in the license notice; contribution history is preserved in the fork's git history.
+
+[MIT](LICENSE)

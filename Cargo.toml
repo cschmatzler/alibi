@@ -35,8 +35,8 @@ keywords = ["auth", "authentication", "session", "oauth", "security"]
 categories = ["authentication", "web-programming"]
 version = "1.0.0-alpha.3"
 edition = "2024"
-license = "MIT OR Apache-2.0"
-repository = "https://github.com/better-auth-rs/better-auth-rs"
+license = "MIT"
+repository = "https://github.com/cschmatzler/better-auth-rs"
 
 [workspace.dependencies]
 regex = "1"
