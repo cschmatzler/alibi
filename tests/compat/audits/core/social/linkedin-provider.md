@@ -49,3 +49,11 @@ measured cells from all 45 owners (`/tmp/pr294-independent-recount.json`). All
 5,742 baseline requirement entries, 5,738 unique cells and four existing
 duplicates are preserved; 315 provider requirement cells are added, including
 45 newly measured getter cells. No requirement is inferred from declared flags.
+
+Composed the independently reviewed dispatch producer clock, Discord callback
+producer clock and null-default remote JWT publication guards. Their actual
+original signing/SQL/transport receipts remain required; no generic timestamp
+tolerance was added. Composed harness passes 92/92, 2,536 assertions, and
+LinkedIn plus remote JWT SDK passes 60/60, 2,538 assertions
+(`/tmp/pr294-shared-focused.log`). The genuine Discord owner separately passes
+(`/tmp/pr294-discord-focused.log`). Full canonical validation remains pending.
