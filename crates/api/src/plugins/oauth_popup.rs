@@ -96,10 +96,25 @@ impl OAuthPopupPlugin {
                 format!("Unknown provider: {provider}"),
             );
         };
-        let mut body = json!({"provider":provider, "callbackURL":req.query.get("callbackURL").filter(|v| !v.is_empty()).cloned().unwrap_or_else(|| format!("{}{}",ctx.config.base_url.trim_end_matches('/'),ctx.config.base_path))});
+        let mut body = serde_json::Map::new();
+        drop(body.insert("provider".into(), json!(provider)));
+        drop(body.insert(
+            "callbackURL".into(),
+            json!(
+                    req.query
+                        .get("callbackURL")
+                        .filter(|v| !v.is_empty())
+                        .cloned()
+                        .unwrap_or_else(|| format!(
+                            "{}{}",
+                            ctx.config.base_url.trim_end_matches('/'),
+                            ctx.config.base_path
+                        ))
+                ),
+        ));
         for key in ["errorCallbackURL", "newUserCallbackURL"] {
             if let Some(value) = req.query.get(key) {
-                body[key] = json!(value);
+                drop(body.insert(key.into(), json!(value)));
             }
         }
         if req
@@ -107,10 +122,13 @@ impl OAuthPopupPlugin {
             .get("requestSignUp")
             .is_some_and(|value| value == "true")
         {
-            body["requestSignUp"] = json!(true);
+            drop(body.insert("requestSignUp".into(), json!(true)));
         }
         if let Some(scopes) = req.query.get("scopes").filter(|value| !value.is_empty()) {
-            body["scopes"] = json!(scopes.split(',').collect::<Vec<_>>());
+            drop(body.insert(
+                "scopes".into(),
+                json!(scopes.split(',').collect::<Vec<_>>()),
+            ));
         }
         if let Some(data) = req
             .query
@@ -118,7 +136,33 @@ impl OAuthPopupPlugin {
             .and_then(|value| serde_json::from_str::<Value>(value).ok())
             .filter(Value::is_object)
         {
-            body["additionalData"] = data;
+            drop(
+                body.insert(
+                    "additionalData".into(),
+                    Value::Object(
+                        data.as_object()
+                            .into_iter()
+                            .flatten()
+                            .filter(|(key, _)| {
+                                !matches!(
+                                    key.as_str(),
+                                    "callbackURL"
+                                        | "codeVerifier"
+                                        | "errorURL"
+                                        | "newUserURL"
+                                        | "expiresAt"
+                                        | "oauthState"
+                                        | "link"
+                                        | "requestSignUp"
+                                        | "idTokenNonce"
+                                        | "serverContext"
+                                )
+                            })
+                            .map(|(key, value)| (key.clone(), value.clone()))
+                            .collect(),
+                    ),
+                ),
+            );
         }
         let mut start_req = req.clone();
         start_req.body = Some(serde_json::to_vec(&body)?);
@@ -231,20 +275,23 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
             else {
                 return Ok(response);
             };
-            let mut error = json!({"code":error});
+            let mut error_data = serde_json::Map::new();
+            drop(error_data.insert("code".into(), json!(error)));
             if let Some(description) = url
                 .query_pairs()
                 .find(|(key, _)| key == "error_description")
                 .map(|(_, value)| value.into_owned())
             {
-                error["description"] = json!(description);
+                drop(error_data.insert("description".into(), json!(description)));
             }
-            json!({"nonce":marker.popup_nonce,"error":error})
+            json!({"nonce":marker.popup_nonce,"error":error_data})
         };
-        let mut html = completion(&marker.popup_origin, message)?;
-        for cookie in response.headers.get_all("set-cookie") {
-            html.headers.append("set-cookie", cookie.clone());
+        let html = completion(&marker.popup_origin, message)?;
+        response.status = html.status;
+        response.body = html.body;
+        for (name, value) in html.headers.iter() {
+            drop(response.headers.insert(name.clone(), value.clone()));
         }
-        Ok(html)
+        Ok(response)
     }
 }

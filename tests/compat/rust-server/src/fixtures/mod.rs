@@ -94,3 +94,5 @@ pub(crate) mod railway_provider_fixture;
 pub(crate) mod reddit_provider_fixture;
 
 pub(crate) mod provider_batch_fixture;
+
+pub(crate) mod oauth_popup_fixture;
