@@ -241,10 +241,6 @@ pub async fn require_org_api_key_permission(
         .get_metadata(METADATA_CREATOR_ROLE)
         .and_then(|value| value.as_str().map(str::to_owned))
         .unwrap_or_else(|| "owner".to_owned());
-    if member.role.split(',').any(|role| role == creator_role) {
-        return Ok(());
-    }
-
     let config = OrganizationConfig {
         roles: ctx
             .get_metadata(METADATA_ROLES)
@@ -263,6 +259,19 @@ pub async fn require_org_api_key_permission(
         },
         ..Default::default()
     };
+    // Source resolves dynamic roles before the creator permission shortcut.
+    // Invalid legacy rows must deny owners too, without exposing loader errors.
+    if member.role.split(',').any(|role| role == creator_role) {
+        return crate::plugins::organization::handlers::extension_common::organization_roles(
+            &config,
+            ctx,
+            organization_id,
+        )
+        .await
+        .map(|_| ())
+        .map_err(|_error| api_key_error(ApiKeyErrorCode::InsufficientApiKeyPermissions));
+    }
+
     // The pinned API-key plugin turns failed dynamic role resolution into a
     // denied permission rather than allowing or exposing its internal error.
     let allowed = crate::plugins::organization::handlers::extension_common::has_action(

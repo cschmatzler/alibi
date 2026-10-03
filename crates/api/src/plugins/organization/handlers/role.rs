@@ -5,15 +5,33 @@ use super::extension_common::{
 use super::validation;
 use better_auth_core::entity::AuthUser;
 use better_auth_core::types::{
-    CreateOrganizationRole, OrganizationPermissions, OrganizationRoleSelector,
+    CreateOrganizationRole, OrganizationPermissions, OrganizationRole, OrganizationRoleSelector,
     UpdateOrganizationRole,
 };
 use better_auth_core::{
-    AuthContext, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
 };
 struct RoleUpdates {
     role_name: Option<String>,
     permission: Option<OrganizationPermissions>,
+}
+
+// Parsing belongs after the endpoint's authorization checks, not in adapters.
+fn role_object(role: &OrganizationRole) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+    match serde_json::to_value(role)? {
+        serde_json::Value::Object(value) => Ok(value),
+        _ => Err(AuthError::internal(
+            "Organization role must serialize as an object",
+        )),
+    }
+}
+
+fn parsed_role(role: &OrganizationRole) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+    let permission: serde_json::Value = serde_json::from_str(role.permission.as_str())
+        .map_err(|error| AuthError::CallbackFailure(Box::new(error.into())))?;
+    let mut value = role_object(role)?;
+    drop(value.insert("permission".to_owned(), permission));
+    Ok(value)
 }
 
 fn selector(
@@ -303,10 +321,15 @@ pub async fn handle_role_request<S: AuthSchema>(
             .await?;
         AuthResponse::json(
             200,
-            &serde_json::json!({"success":true,"roleData":role,"statements":permission}),
+            &serde_json::json!({"success":true,"roleData":parsed_role(&role)?,"statements":permission}),
         )?
     } else if req.path() == "/organization/list-roles" {
-        AuthResponse::json(200, &ctx.database.list_organization_roles(&org).await?)?
+        let roles = ctx.database.list_organization_roles(&org).await?;
+        let parsed = roles
+            .iter()
+            .map(parsed_role)
+            .collect::<AuthResult<Vec<_>>>()?;
+        AuthResponse::json(200, &parsed)?
     } else {
         let chosen = chosen.ok_or_else(|| org_error(400, "ROLE_NOT_FOUND"))?;
         if action == "delete"
@@ -314,11 +337,20 @@ pub async fn handle_role_request<S: AuthSchema>(
         {
             return Err(org_error(400, "CANNOT_DELETE_A_PRE_DEFINED_ROLE"));
         }
-        let mut role = ctx
+        let role = ctx
             .database
             .get_organization_role(&org, &chosen)
             .await?
             .ok_or_else(|| org_error(400, "ROLE_NOT_FOUND"))?;
+        // Source's update route skips parsing an empty stored string. Reads and
+        // deletes still parse it and fail before returning or deleting the row.
+        let mut role_data = if updates.is_some() && role.permission.as_str().is_empty() {
+            let mut value = role_object(&role)?;
+            drop(value.insert("permission".to_owned(), serde_json::Value::Null));
+            value
+        } else {
+            parsed_role(&role)?
+        };
         if action == "delete" {
             if ctx
                 .database
@@ -331,6 +363,14 @@ pub async fn handle_role_request<S: AuthSchema>(
                 ctx.database.delete_organization_role(&org, &chosen).await?;
             AuthResponse::json(200, &serde_json::json!({"success":true}))?
         } else if let Some(updates) = updates {
+            // Upstream returns `newPermission || oldPermission || null`.
+            let permission = role_data.get("permission");
+            if matches!(permission, Some(serde_json::Value::Bool(false)))
+                || permission.and_then(serde_json::Value::as_f64) == Some(0.0)
+                || permission.and_then(serde_json::Value::as_str) == Some("")
+            {
+                drop(role_data.insert("permission".to_owned(), serde_json::Value::Null));
+            }
             // Only requested fields belong in the batch update. Copying the
             // selected row's permissions would overwrite other legacy rows
             // with the same name and normalize their literal permission JSON.
@@ -343,14 +383,14 @@ pub async fn handle_role_request<S: AuthSchema>(
                         &serde_json::json!({"message":"You are not allowed to update a role","code":error_code,"missingPermissions":missing}),
                     )?));
                 }
-                role.permission = permission.clone();
+                drop(role_data.insert("permission".to_owned(), serde_json::to_value(permission)?));
                 update.permission = Some(permission.clone());
             }
             if let Some(name) = updates.role_name.filter(|name| !name.is_empty()) {
                 let name = name.to_lowercase();
                 check_name(&name, &org, config, ctx).await?;
                 update.role = Some(name.clone());
-                role.role = name;
+                drop(role_data.insert("role".to_owned(), serde_json::Value::String(name)));
             }
             drop(
                 ctx.database
@@ -358,9 +398,12 @@ pub async fn handle_role_request<S: AuthSchema>(
                     .await?,
             );
             // The upstream return value merges the pre-update row; the stored updatedAt still advances.
-            AuthResponse::json(200, &serde_json::json!({"success":true,"roleData":role}))?
+            AuthResponse::json(
+                200,
+                &serde_json::json!({"success":true,"roleData":role_data}),
+            )?
         } else {
-            AuthResponse::json(200, &role)?
+            AuthResponse::json(200, &role_data)?
         }
     };
     Ok(Some(response))

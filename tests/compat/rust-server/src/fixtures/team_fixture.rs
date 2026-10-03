@@ -545,11 +545,17 @@ enum TeamOperation {
         email: String,
         name: String,
     },
+    StoredRole {
+        #[serde(rename = "organizationId")]
+        organization_id: String,
+        #[serde(rename = "roleId")]
+        role_id: String,
+    },
     SeedRole {
         #[serde(rename = "organizationId")]
         organization_id: String,
         role: String,
-        permission: OrganizationPermissions,
+        permission: Option<OrganizationPermissions>,
         #[serde(rename = "permissionJson")]
         permission_json: Option<String>,
     },
@@ -735,20 +741,31 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                             Ok::<_, AuthError>(json!({"userId":user.id(),"memberId":member.id}))
                         }.await
                     },
+                    TeamOperation::StoredRole {organization_id,role_id} => {
+                        async {
+                            let row = organization_role::Entity::find_by_id(role_id)
+                                .filter(organization_role::Column::OrganizationId.eq(organization_id))
+                                .one(&database).await.map_err(|error| AuthError::internal(error.to_string()))?;
+                            Ok::<_, AuthError>(row.map_or(Value::Null, |row| json!({"role":row.role,"permission":row.permission,"updatedAt":row.updated_at})))
+                        }.await
+                    },
                     TeamOperation::SeedRole {organization_id,role,permission,permission_json} => {
                         async {
-                            // Retain a controlled record-shaped legacy row with its literal
-                            // bytes. Validate before creation, then write through actual SQL.
-                            if let Some(raw) = &permission_json {
+                            // Explicit raw-only seeds exercise legacy SQL, including malformed
+                            // JSON. Typed seeds still verify their literal representation.
+                            if let (Some(raw), Some(permission)) = (&permission_json, &permission) {
                                 let parsed: OrganizationPermissions = serde_json::from_str(raw)?;
-                                if parsed != permission {
+                                if &parsed != permission {
                                     return Err(AuthError::bad_request("Legacy permission mismatch"));
                                 }
                             }
                             if profile.auth.store().get_organization_by_id(&organization_id).await?.is_none() {
                                 return Err(AuthError::bad_request("Organization not found"));
                             }
-                            let role = profile.auth.store().create_organization_role(CreateOrganizationRole {organization_id,role,permission}).await?;
+                            if permission.is_none() && permission_json.is_none() {
+                                return Err(AuthError::bad_request("Missing legacy permission"));
+                            }
+                            let role = profile.auth.store().create_organization_role(CreateOrganizationRole {organization_id,role,permission:permission.unwrap_or_default()}).await?;
                             if let Some(raw) = permission_json {
                                 let mut row: organization_role::ActiveModel = organization_role::Entity::find_by_id(&role.id)
                                     .one(&database).await.map_err(|error| AuthError::internal(error.to_string()))?

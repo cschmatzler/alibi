@@ -1347,3 +1347,434 @@ compatScenario(
     };
   },
 );
+
+// The actual SQL fixture owns legacy representation regressions. These cases
+// distinguish storage decoding from endpoint parsing and grant validation.
+compatScenario(
+  "organization legacy nonrecord SQL permissions parse only after role authorization without AC",
+  async (ctx) => {
+    const selected = "org-roles-no-ac";
+    const owner = await teamSignUp(ctx, "raw-role-owner", selected);
+    const member = await teamSignUp(ctx, "raw-role-member", selected);
+    const foreign = await teamSignUp(ctx, "raw-role-foreign", selected);
+    const created = await owner.client.organization.create({
+      name: "Raw roles",
+      slug: ctx.uniqueToken("raw-roles"),
+    });
+    const organizationId = data(created).id;
+    const invitation = await owner.client.organization.inviteMember({
+      email: member.email,
+      role: "member",
+    });
+    const accepted = await member.client.organization.acceptInvitation({
+      invitationId: data(invitation).id,
+    });
+    const observations = [];
+    const literals = [
+      ' ["create"] ',
+      ' "grant" ',
+      " 0 ",
+      " true ",
+      " false ",
+      " null ",
+      '{"team":"create"}',
+      '{"invented":["grant"]}',
+    ];
+    const roles = [];
+    for (const permissionJson of literals) {
+      const seed = await serverOperation(
+        ctx,
+        { operation: "seed-role", organizationId, role: `legacy-${roles.length}`, permissionJson },
+        selected,
+      );
+      expect(seed.status).toBe(200);
+      const role = seededRole.parse(seed.body);
+      roles.push(role);
+      const read = await raw(
+        ctx,
+        "raw-role-owner",
+        selected,
+        `/organization/get-role?organizationId=${organizationId}&roleId=${role.roleId}`,
+        undefined,
+        "GET",
+      );
+      expect(read).toMatchObject({ status: 200, body: { permission: JSON.parse(permissionJson) } });
+      const update = await owner.client.organization.updateRole({
+        roleId: role.roleId,
+        data: { permission: {} },
+      });
+      expect(update.error).toMatchObject({ status: 501, code: "MISSING_AC_INSTANCE" });
+      const stored = await serverOperation(
+        ctx,
+        { operation: "stored-role", organizationId, roleId: role.roleId },
+        selected,
+      );
+      expect(stored.body).toEqual({ role: role.role, permission: permissionJson, updatedAt: null });
+      observations.push({ seed, read, update, stored });
+    }
+    const list = await raw(
+      ctx,
+      "raw-role-owner",
+      selected,
+      "/organization/list-roles",
+      undefined,
+      "GET",
+    );
+    expect(list.status).toBe(200);
+    expect(
+      z
+        .array(z.object({ permission: z.unknown() }))
+        .parse(list.body)
+        .map((role) => role.permission),
+    ).toEqual(literals.map((literal) => JSON.parse(literal)));
+    const assignment = await serverOperation(
+      ctx,
+      {
+        operation: "set-member-role",
+        organizationId,
+        memberId: data(accepted).member.id,
+        role: roles[0]!.role,
+      },
+      selected,
+    );
+    expect(assignment.status).toBe(200);
+    const memberPermission = await member.client.organization.hasPermission({
+      organizationId,
+      permissions: { team: ["create"] },
+    });
+    expect(data(memberPermission).success).toBe(false);
+    const memberRead = await member.client.organization.getRole({
+      query: { organizationId, roleId: roles[0]!.roleId },
+    });
+    expect(memberRead.error).toMatchObject({
+      status: 403,
+      code: "YOU_ARE_NOT_ALLOWED_TO_READ_A_ROLE",
+    });
+    const foreignRead = await foreign.client.organization.getRole({
+      query: { organizationId, roleId: roles[0]!.roleId },
+    });
+    expect(foreignRead.error).toMatchObject({
+      status: 403,
+      code: "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+    });
+    const restored = await serverOperation(
+      ctx,
+      {
+        operation: "set-member-role",
+        organizationId,
+        memberId: data(accepted).member.id,
+        role: "member",
+      },
+      selected,
+    );
+    expect(restored.status).toBe(200);
+    for (const role of roles) {
+      const removed = await owner.client.organization.deleteRole({ roleId: role.roleId });
+      data(removed);
+      observations.push({ removed });
+    }
+    const malformed = [];
+    for (const permissionJson of ["{bad", ""]) {
+      const seed = await serverOperation(
+        ctx,
+        { operation: "seed-role", organizationId, role: "malformed", permissionJson },
+        selected,
+      );
+      expect(seed.status).toBe(200);
+      const role = seededRole.parse(seed.body);
+      const read = await raw(
+        ctx,
+        "raw-role-owner",
+        selected,
+        `/organization/get-role?roleId=${role.roleId}`,
+        undefined,
+        "GET",
+      );
+      const list = await raw(
+        ctx,
+        "raw-role-owner",
+        selected,
+        "/organization/list-roles",
+        undefined,
+        "GET",
+      );
+      const removed = await raw(ctx, "raw-role-owner", selected, "/organization/delete-role", {
+        roleId: role.roleId,
+      });
+      for (const response of [read, list, removed]) {
+        expect(response).toEqual({ status: 500, body: null });
+      }
+      const denied = await foreign.client.organization.deleteRole({
+        organizationId,
+        roleId: role.roleId,
+      });
+      expect(denied.error).toMatchObject({
+        status: 403,
+        code: "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+      });
+      const stored = await serverOperation(
+        ctx,
+        { operation: "stored-role", organizationId, roleId: role.roleId },
+        selected,
+      );
+      expect(stored.body).toEqual({
+        role: "malformed",
+        permission: permissionJson,
+        updatedAt: null,
+      });
+      malformed.push({ seed, read, list, removed, denied, stored });
+    }
+    return {
+      created,
+      invitation,
+      accepted,
+      observations,
+      list,
+      assignment,
+      memberPermission,
+      memberRead,
+      foreignRead,
+      restored,
+      malformed,
+    };
+  },
+);
+
+compatScenario(
+  "organization legacy SQL loader errors reject grants and writes after a warm cache including API key consumers",
+  async (ctx) => {
+    const selected = "org-roles-delegated";
+    const owner = await teamSignUp(ctx, "invalid-role-owner", selected);
+    const member = await teamSignUp(ctx, "invalid-role-member", selected);
+    const foreign = await teamSignUp(ctx, "invalid-role-foreign", selected);
+    const keys = createAuthClient({
+      baseURL: ctx.baseURL,
+      plugins: [apiKeyClient()],
+      fetchOptions: { customFetchImpl: ctx.actor("invalid-role-owner", selected).fetch },
+    });
+    const rounds: unknown[] = [];
+    for (const permissionJson of ['["create"]', "null", '{"team":"create"}', "{bad"]) {
+      const created = await owner.client.organization.create({
+        name: "Invalid roles",
+        slug: ctx.uniqueToken(`invalid-roles-${rounds.length}`),
+      });
+      const organizationId = data(created).id;
+      const invitation = await owner.client.organization.inviteMember({
+        organizationId,
+        email: member.email,
+        role: "member",
+      });
+      const accepted = await member.client.organization.acceptInvitation({
+        invitationId: data(invitation).id,
+      });
+      const key = await keys.apiKey.create({
+        configId: "organization",
+        organizationId,
+        name: "legacy-loader-key",
+      });
+      const keyId = data(key).id;
+      const validKeyRead = await keys.apiKey.get({
+        query: { configId: "organization", id: keyId },
+      });
+      expect(data(validKeyRead).id).toBe(keyId);
+      const warm = await owner.client.organization.hasPermission({
+        organizationId,
+        permissions: { team: ["create"] },
+      });
+      expect(data(warm).success).toBe(true);
+      const seed = await serverOperation(
+        ctx,
+        { operation: "seed-role", organizationId, role: "legacy", permissionJson },
+        selected,
+      );
+      expect(seed.status).toBe(200);
+      const roleId = seededRole.parse(seed.body).roleId;
+      const assignment = await serverOperation(
+        ctx,
+        {
+          operation: "set-member-role",
+          organizationId,
+          memberId: data(accepted).member.id,
+          role: "legacy",
+        },
+        selected,
+      );
+      expect(assignment.status).toBe(200);
+      const responses = [];
+      for (const [path, json, method] of [
+        [
+          `/organization/get-role?organizationId=${organizationId}&roleId=${roleId}`,
+          undefined,
+          "GET",
+        ],
+        [`/organization/list-roles?organizationId=${organizationId}`, undefined, "GET"],
+        [
+          "/organization/has-permission",
+          { organizationId, permissions: { team: ["create"] } },
+          "POST",
+        ],
+        ["/organization/update-role", { organizationId, roleId, data: { permission: {} } }, "POST"],
+        ["/organization/delete-role", { organizationId, roleId }, "POST"],
+      ] as const) {
+        const response = await raw(ctx, "invalid-role-owner", selected, path, json, method);
+        expect(response).toEqual({
+          status: 500,
+          body:
+            permissionJson === "{bad" ? null : { message: "Invalid permissions for role legacy" },
+        });
+        responses.push(response);
+      }
+      const memberPermission = await raw(
+        ctx,
+        "invalid-role-member",
+        selected,
+        "/organization/has-permission",
+        { organizationId, permissions: { team: ["create"] } },
+      );
+      expect(memberPermission).toEqual(responses[2]!);
+      const foreignRead = await foreign.client.organization.getRole({
+        query: { organizationId, roleId },
+      });
+      expect(foreignRead.error).toMatchObject({
+        status: 403,
+        code: "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+      });
+      const keyRead = await keys.apiKey.get({ query: { configId: "organization", id: keyId } });
+      expect(keyRead.error).toMatchObject({
+        status: 403,
+        code: "INSUFFICIENT_API_KEY_PERMISSIONS",
+      });
+      const stored = await serverOperation(
+        ctx,
+        { operation: "stored-role", organizationId, roleId },
+        selected,
+      );
+      expect(stored.body).toEqual({ role: "legacy", permission: permissionJson, updatedAt: null });
+      rounds.push({
+        created,
+        invitation,
+        accepted,
+        key,
+        validKeyRead,
+        warm,
+        seed,
+        assignment,
+        responses,
+        memberPermission,
+        foreignRead,
+        keyRead,
+        stored,
+      });
+    }
+    return { rounds };
+  },
+);
+
+compatScenario(
+  "organization legacy SQL updates parse the selected row beyond the loaded permission page and preserve omitted bytes",
+  async (ctx) => {
+    const selected = "org-roles-callback";
+    const owner = await teamSignUp(ctx, "page-raw-owner", selected);
+    const foreign = await teamSignUp(ctx, "page-raw-foreign", selected);
+    const created = await owner.client.organization.create({
+      name: "Two role budget",
+      slug: ctx.uniqueToken("page-raw"),
+    });
+    const organizationId = data(created).id;
+    const prefix = await serverOperation(
+      ctx,
+      { operation: "seed-role", organizationId, role: "prefix", permission: {} },
+      selected,
+    );
+    expect(prefix.status).toBe(200);
+    const rounds = [];
+    for (const permissionJson of [' ["create"] ', " false ", " 0 ", ' "" ', " null ", "", "{bad"]) {
+      const roleName = `legacy-${rounds.length}`;
+      const seed = await serverOperation(
+        ctx,
+        { operation: "seed-role", organizationId, role: roleName, permissionJson },
+        selected,
+      );
+      expect(seed.status).toBe(200);
+      const roleId = seededRole.parse(seed.body).roleId;
+      const denied = await foreign.client.organization.updateRole({
+        organizationId,
+        roleId,
+        data: {},
+      });
+      expect(denied.error).toMatchObject({
+        status: 403,
+        code: "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
+      });
+      const read = await raw(
+        ctx,
+        "page-raw-owner",
+        selected,
+        `/organization/get-role?organizationId=${organizationId}&roleId=${roleId}`,
+        undefined,
+        "GET",
+      );
+      const noOp = await raw(ctx, "page-raw-owner", selected, "/organization/update-role", {
+        organizationId,
+        roleId,
+        data: {},
+      });
+      const rename = await raw(ctx, "page-raw-owner", selected, "/organization/update-role", {
+        organizationId,
+        roleId,
+        data: { roleName: `${roleName}-renamed` },
+      });
+      if (permissionJson === "{bad") {
+        for (const response of [read, noOp, rename]) {
+          expect(response).toEqual({ status: 500, body: null });
+        }
+      } else {
+        const parsed = permissionJson ? JSON.parse(permissionJson) : null;
+        expect(read).toMatchObject(
+          permissionJson === ""
+            ? { status: 500, body: null }
+            : { status: 200, body: { permission: parsed } },
+        );
+        expect(noOp).toMatchObject({
+          status: 200,
+          body: { roleData: { permission: parsed || null, role: roleName } },
+        });
+        expect(rename).toMatchObject({
+          status: 200,
+          body: { roleData: { permission: parsed || null, role: `${roleName}-renamed` } },
+        });
+      }
+      const stored = await serverOperation(
+        ctx,
+        { operation: "stored-role", organizationId, roleId },
+        selected,
+      );
+      expect(stored.body).toMatchObject({
+        permission: permissionJson,
+        role: permissionJson === "{bad" ? roleName : `${roleName}-renamed`,
+      });
+      if (permissionJson === "{bad") expect(stored.body).toMatchObject({ updatedAt: null });
+      else expect(z.object({ updatedAt: z.string() }).parse(stored.body).updatedAt).toBeTruthy();
+      const replacement = await raw(ctx, "page-raw-owner", selected, "/organization/update-role", {
+        organizationId,
+        roleId,
+        data: { permission: { team: ["create"] } },
+      });
+      expect(replacement).toMatchObject(
+        permissionJson === "{bad"
+          ? { status: 500, body: null }
+          : { status: 200, body: { roleData: { permission: { team: ["create"] } } } },
+      );
+      const after = await serverOperation(
+        ctx,
+        { operation: "stored-role", organizationId, roleId },
+        selected,
+      );
+      expect(after.body).toMatchObject({
+        permission: permissionJson === "{bad" ? permissionJson : '{"team":["create"]}',
+      });
+      rounds.push({ seed, denied, read, noOp, rename, stored, replacement, after });
+    }
+    return { created, prefix, rounds };
+  },
+);

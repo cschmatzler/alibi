@@ -1667,16 +1667,40 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
         return jsonResponse({ organizationId: body.organizationId, stage: body.stage });
       }
       if (
+        body?.operation === "stored-role" &&
+        typeof body.organizationId === "string" &&
+        typeof body.roleId === "string"
+      ) {
+        const { adapter } = await selected.$context;
+        const role = await adapter.findOne<Record<string, unknown>>({
+          model: "organizationRole",
+          where: [
+            { field: "organizationId", value: body.organizationId },
+            { field: "id", value: body.roleId },
+          ],
+        });
+        return jsonResponse(
+          role
+            ? {
+                role: role.role,
+                permission: role.permission,
+                updatedAt: role.updatedAt ?? null,
+              }
+            : null,
+        );
+      }
+      if (
         body?.operation === "seed-role" &&
         typeof body.organizationId === "string" &&
         typeof body.role === "string" &&
-        body.permission &&
-        typeof body.permission === "object"
+        (typeof body.permissionJson === "string" ||
+          (body.permission && typeof body.permission === "object"))
       ) {
         const permissionJson = body.permissionJson ?? JSON.stringify(body.permission);
         if (
           typeof permissionJson !== "string" ||
-          JSON.stringify(JSON.parse(permissionJson)) !== JSON.stringify(body.permission)
+          (body.permission !== undefined &&
+            JSON.stringify(JSON.parse(permissionJson)) !== JSON.stringify(body.permission))
         ) {
           return jsonResponse({ message: "Legacy permission mismatch" }, { status: 400 });
         }

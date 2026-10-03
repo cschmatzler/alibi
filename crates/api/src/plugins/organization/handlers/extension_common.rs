@@ -206,8 +206,16 @@ pub async fn organization_roles<S: AuthSchema>(
     let mut roles = configured_roles(config);
     if config.dynamic_access_control.enabled && config.access_control.is_some() {
         for role in ctx.database.list_organization_roles(org_id).await? {
+            let parsed: serde_json::Value = serde_json::from_str(role.permission.as_str())
+                .map_err(|error| AuthError::CallbackFailure(Box::new(error.into())))?;
+            let record: OrganizationPermissions =
+                serde_json::from_value(parsed).map_err(|_error| AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: format!("Invalid permissions for role {}", role.role),
+                })?;
             let permissions = roles.entry(role.role).or_default();
-            for (resource, actions) in role.permission {
+            for (resource, actions) in record {
                 let merged = permissions.entry(resource).or_default();
                 for action in actions {
                     if !merged.contains(&action) {
