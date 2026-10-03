@@ -194,7 +194,7 @@ fn gen_user(
     let plugin_new_active = plugin_set_fields_user(has, optional, seaorm_root, core_root);
 
     // apply_update — only update fields that exist
-    let plugin_apply_update = plugin_update_fields_user(has, seaorm_root);
+    let plugin_apply_update = plugin_update_fields_user(has, seaorm_root, core_root);
 
     let username_column_impl = if has("username") {
         quote! { fn username_column() -> Option<Self::Column> { Some(Column::Username) } }
@@ -245,8 +245,8 @@ fn gen_user(
                     name: #seaorm_root::sea_orm::ActiveValue::Set(create_user.name),
                     image: #seaorm_root::sea_orm::ActiveValue::Set(create_user.image),
                     email_verified: #seaorm_root::sea_orm::ActiveValue::Set(create_user.email_verified.unwrap_or(false)),
-                    created_at: #seaorm_root::sea_orm::ActiveValue::Set(create_user.created_at.unwrap_or(now)),
-                    updated_at: #seaorm_root::sea_orm::ActiveValue::Set(create_user.updated_at.unwrap_or(now)),
+                    created_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(create_user.created_at.unwrap_or(now))),
+                    updated_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(create_user.updated_at.unwrap_or(now))),
                     #(#plugin_new_active,)*
                     #(#extras,)*
                 }
@@ -270,7 +270,7 @@ fn gen_user(
                     active.email_verified = #seaorm_root::sea_orm::ActiveValue::Set(email_verified);
                 }
                 #(#plugin_apply_update)*
-                active.updated_at = #seaorm_root::sea_orm::ActiveValue::Set(now);
+                active.updated_at = #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(now));
             }
         }
     }
@@ -341,6 +341,7 @@ fn plugin_set_fields_user(
 fn plugin_update_fields_user(
     has: &dyn Fn(&str) -> bool,
     seaorm_root: &TokenStream,
+    core_root: &TokenStream,
 ) -> Vec<TokenStream> {
     let mut out = Vec::new();
     if has("username") {
@@ -392,7 +393,7 @@ fn plugin_update_fields_user(
                     active.ban_reason = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::Some(ban_reason));
                 }
                 if let ::std::option::Option::Some(ban_expires) = update.ban_expires {
-                    active.ban_expires = #seaorm_root::sea_orm::ActiveValue::Set(ban_expires);
+                    active.ban_expires = #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(ban_expires));
                 }
             }
         });
@@ -669,9 +670,9 @@ fn gen_session(
                     ),
                     user_id: #seaorm_root::sea_orm::ActiveValue::Set(create_session.user_id),
                     token: #seaorm_root::sea_orm::ActiveValue::Set(token),
-                    expires_at: #seaorm_root::sea_orm::ActiveValue::Set(create_session.expires_at),
-                    created_at: #seaorm_root::sea_orm::ActiveValue::Set(now),
-                    updated_at: #seaorm_root::sea_orm::ActiveValue::Set(now),
+                    expires_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(create_session.expires_at)),
+                    created_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(now)),
+                    updated_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(now)),
                     ip_address: #seaorm_root::sea_orm::ActiveValue::Set(create_session.ip_address),
                     user_agent: #seaorm_root::sea_orm::ActiveValue::Set(create_session.user_agent),
                     active: #seaorm_root::sea_orm::ActiveValue::Set(true),
@@ -684,14 +685,14 @@ fn gen_session(
                 active: &mut Self::ActiveModel,
                 expires_at: ::chrono::DateTime<::chrono::Utc>,
             ) {
-                active.expires_at = #seaorm_root::sea_orm::ActiveValue::Set(expires_at);
+                active.expires_at = #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(expires_at));
             }
 
             fn set_updated_at(
                 active: &mut Self::ActiveModel,
                 updated_at: ::chrono::DateTime<::chrono::Utc>,
             ) {
-                active.updated_at = #seaorm_root::sea_orm::ActiveValue::Set(updated_at);
+                active.updated_at = #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(updated_at));
             }
 
             #set_active_org
@@ -755,12 +756,12 @@ fn gen_account(
                     access_token: #seaorm_root::sea_orm::ActiveValue::Set(create_account.access_token),
                     refresh_token: #seaorm_root::sea_orm::ActiveValue::Set(create_account.refresh_token),
                     id_token: #seaorm_root::sea_orm::ActiveValue::Set(create_account.id_token),
-                    access_token_expires_at: #seaorm_root::sea_orm::ActiveValue::Set(create_account.access_token_expires_at),
-                    refresh_token_expires_at: #seaorm_root::sea_orm::ActiveValue::Set(create_account.refresh_token_expires_at),
+                    access_token_expires_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(create_account.access_token_expires_at)),
+                    refresh_token_expires_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(create_account.refresh_token_expires_at)),
                     scope: #seaorm_root::sea_orm::ActiveValue::Set(create_account.scope),
                     password: #seaorm_root::sea_orm::ActiveValue::Set(create_account.password),
-                    created_at: #seaorm_root::sea_orm::ActiveValue::Set(now),
-                    updated_at: #seaorm_root::sea_orm::ActiveValue::Set(now),
+                    created_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(now)),
+                    updated_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(now)),
                     #(#extras,)*
                 }
             }
@@ -780,10 +781,10 @@ fn gen_account(
                     active.id_token = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::Some(id_token));
                 }
                 if let ::std::option::Option::Some(access_token_expires_at) = update.access_token_expires_at {
-                    active.access_token_expires_at = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::Some(access_token_expires_at));
+                    active.access_token_expires_at = #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(::std::option::Option::Some(access_token_expires_at)));
                 }
                 if let ::std::option::Option::Some(refresh_token_expires_at) = update.refresh_token_expires_at {
-                    active.refresh_token_expires_at = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::Some(refresh_token_expires_at));
+                    active.refresh_token_expires_at = #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(::std::option::Option::Some(refresh_token_expires_at)));
                 }
                 if let ::std::option::Option::Some(scope) = update.scope {
                     active.scope = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::Some(scope));
@@ -791,7 +792,7 @@ fn gen_account(
                 if let ::std::option::Option::Some(password) = update.password {
                     active.password = #seaorm_root::sea_orm::ActiveValue::Set(::std::option::Option::Some(password));
                 }
-                active.updated_at = #seaorm_root::sea_orm::ActiveValue::Set(now);
+                active.updated_at = #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(now));
             }
         }
     }
@@ -835,9 +836,9 @@ fn gen_verification(
                     ),
                     identifier: #seaorm_root::sea_orm::ActiveValue::Set(verification.identifier),
                     value: #seaorm_root::sea_orm::ActiveValue::Set(verification.value),
-                    expires_at: #seaorm_root::sea_orm::ActiveValue::Set(verification.expires_at),
-                    created_at: #seaorm_root::sea_orm::ActiveValue::Set(now),
-                    updated_at: #seaorm_root::sea_orm::ActiveValue::Set(now),
+                    expires_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(verification.expires_at)),
+                    created_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(now)),
+                    updated_at: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(now)),
                     #(#extras,)*
                 }
             }

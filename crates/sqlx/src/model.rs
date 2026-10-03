@@ -156,6 +156,14 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     /// Returns an error if a required field is omitted or has another type.
     fn from_active(active: ActiveRow) -> AuthResult<Self>;
 
+    /// Bind the auth UTC clock using this model column's timestamp wire type.
+    fn timestamp_value(column: &str, value: chrono::DateTime<chrono::Utc>) -> SqlValue {
+        match Self::column_kind(column) {
+            ColumnKind::NaiveTimestamp => value.naive_utc().into(),
+            _ => value.into(),
+        }
+    }
+
     #[must_use]
     fn column_names() -> Vec<&'static str> {
         Self::COLUMNS.iter().map(|column| column.name).collect()

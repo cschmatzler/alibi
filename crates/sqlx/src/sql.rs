@@ -131,6 +131,7 @@ pub(crate) fn sqlite_arguments(
             SqlValue::Bytes(value) => args.add(value)?,
             SqlValue::Json(value) => args.add(value.map(|value| *value))?,
             SqlValue::Timestamp(value) => args.add(value)?,
+            SqlValue::NaiveTimestamp(value) => args.add(value)?,
             SqlValue::Uuid(value) => args.add(value)?,
         }
     }
@@ -152,8 +153,46 @@ pub(crate) fn postgres_arguments(
             SqlValue::Bytes(value) => args.add(value)?,
             SqlValue::Json(value) => args.add(value.as_deref())?,
             SqlValue::Timestamp(value) => args.add(value)?,
+            SqlValue::NaiveTimestamp(value) => args.add(value)?,
             SqlValue::Uuid(value) => args.add(value)?,
         }
     }
     Ok(args)
+}
+
+#[cfg(test)]
+mod tests {
+    #[expect(
+        clippy::panic_in_result_fn,
+        reason = "database setup returns errors; protocol assertions must fail the test"
+    )]
+    #[tokio::test]
+    #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+    async fn postgres_timestamp_arguments_retain_wire_types_including_nulls()
+    -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = std::env::var("BETTER_AUTH_TEST_POSTGRES_URL")?;
+        let pool = sqlx::PgPool::connect(&url).await?;
+        let instant: chrono::DateTime<chrono::Utc> = "2026-10-04T12:00:00Z".parse()?;
+        let args = super::postgres_arguments(vec![
+            instant.naive_utc().into(),
+            None::<chrono::NaiveDateTime>.into(),
+            instant.into(),
+            None::<chrono::DateTime<chrono::Utc>>.into(),
+        ])?;
+        let types: (String, String, String, String) = sqlx::query_as_with(
+            "SELECT pg_typeof($1)::text, pg_typeof($2)::text, pg_typeof($3)::text, pg_typeof($4)::text",
+            args,
+        ).fetch_one(&pool).await?;
+        eprintln!("PostgreSQL timestamp parameter types: {types:?}");
+        assert_eq!(
+            types,
+            (
+                "timestamp without time zone".into(),
+                "timestamp without time zone".into(),
+                "timestamp with time zone".into(),
+                "timestamp with time zone".into(),
+            )
+        );
+        Ok(())
+    }
 }

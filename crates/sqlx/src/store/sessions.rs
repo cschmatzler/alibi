@@ -429,7 +429,10 @@ where
             .push(" SET ")
             .ident(S::Session::expires_at_column())
             .push(" = ")
-            .bind(now)
+            .bind(S::Session::timestamp_value(
+                S::Session::expires_at_column(),
+                now,
+            ))
             .push(" WHERE ")
             .column(table, S::Session::token_column())
             .push(" = ")
@@ -437,7 +440,10 @@ where
             .push(" AND ")
             .column(table, S::Session::expires_at_column())
             .push(" > ")
-            .bind(now);
+            .bind(S::Session::timestamp_value(
+                S::Session::expires_at_column(),
+                now,
+            ));
         self.exec().execute(sql).await?;
         for hook in self.hooks() {
             hook.after_delete_session(&session, &context).await?;
@@ -456,7 +462,10 @@ where
             .push(" AND ")
             .column(table, S::Session::expires_at_column())
             .push(" > ")
-            .bind(now)
+            .bind(S::Session::timestamp_value(
+                S::Session::expires_at_column(),
+                now,
+            ))
             .push(" LIMIT ")
             .bind(self.find_many_limit());
         let sessions: Vec<S::Session> = self.exec().fetch_all(live).await?;
@@ -477,7 +486,10 @@ where
             .push(" SET ")
             .ident(S::Session::expires_at_column())
             .push(" = ")
-            .bind(now)
+            .bind(S::Session::timestamp_value(
+                S::Session::expires_at_column(),
+                now,
+            ))
             .push(" WHERE ")
             .column(table, S::Session::user_id_column())
             .push(" = ")
@@ -485,7 +497,10 @@ where
             .push(" AND ")
             .column(table, S::Session::expires_at_column())
             .push(" > ")
-            .bind(now);
+            .bind(S::Session::timestamp_value(
+                S::Session::expires_at_column(),
+                now,
+            ));
         self.exec().execute(sql).await?;
         for session in &sessions {
             for hook in self.hooks() {
@@ -631,7 +646,10 @@ where
             .push(" WHERE ")
             .column(table, S::Session::expires_at_column())
             .push(" < ")
-            .bind(Utc::now())
+            .bind(S::Session::timestamp_value(
+                S::Session::expires_at_column(),
+                Utc::now(),
+            ))
             .push(" OR ")
             .column(table, S::Session::active_column())
             .push(" = ")

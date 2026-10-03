@@ -14,6 +14,52 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::borrow::Cow;
 
+/// Conversion between an application timestamp field and the auth UTC clock.
+///
+/// `NaiveDateTime` fields represent UTC wall-clock values, never local time.
+/// The optional implementation preserves typed absence in model mutations.
+pub trait AuthTimestamp: Sized {
+    /// The core timestamp shape (`DateTime<Utc>` or its optional form).
+    type UtcValue;
+    /// Convert a core UTC timestamp into the model representation.
+    fn from_utc(value: Self::UtcValue) -> Self;
+    /// Interpret the model timestamp on the core UTC clock.
+    fn into_utc(self) -> Self::UtcValue;
+}
+
+impl AuthTimestamp for chrono::NaiveDateTime {
+    type UtcValue = DateTime<Utc>;
+    fn from_utc(value: Self::UtcValue) -> Self {
+        value.naive_utc()
+    }
+    fn into_utc(self) -> Self::UtcValue {
+        self.and_utc()
+    }
+}
+
+impl<Tz: chrono::TimeZone> AuthTimestamp for DateTime<Tz>
+where
+    DateTime<Tz>: From<DateTime<Utc>>,
+{
+    type UtcValue = DateTime<Utc>;
+    fn from_utc(value: Self::UtcValue) -> Self {
+        value.into()
+    }
+    fn into_utc(self) -> Self::UtcValue {
+        self.with_timezone(&Utc)
+    }
+}
+
+impl<T: AuthTimestamp> AuthTimestamp for Option<T> {
+    type UtcValue = Option<T::UtcValue>;
+    fn from_utc(value: Self::UtcValue) -> Self {
+        value.map(T::from_utc)
+    }
+    fn into_utc(self) -> Self::UtcValue {
+        self.map(T::into_utc)
+    }
+}
+
 /// Trait representing a user entity.
 ///
 /// The framework reads user fields through these getters. Custom types
