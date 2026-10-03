@@ -19,7 +19,8 @@
           "line delegated signed direct proof falsy-returned-nonce binds actual remote receipt and raw account",
           "line delegated signed direct proof nonce binds actual remote receipt and raw account",
           "line delegated signed direct proof public binds actual remote receipt and raw account",
-          "line existing account info uses real GET without readmitting a changed raw account subject"
+          "line existing account info uses real GET without readmitting a changed raw account subject",
+          "line delegated signed direct proof mapped binds actual remote receipt and raw account"
         ],
         "rejection": [
           "account info requires an explicit account selector",
@@ -34,7 +35,8 @@
           "line delegated signed direct proof falsy-returned-nonce binds actual remote receipt and raw account",
           "line delegated signed direct proof nonce binds actual remote receipt and raw account",
           "line delegated signed direct proof public binds actual remote receipt and raw account",
-          "line existing account info uses real GET without readmitting a changed raw account subject"
+          "line existing account info uses real GET without readmitting a changed raw account subject",
+          "line delegated signed direct proof mapped binds actual remote receipt and raw account"
         ],
         "authorization": "session-gated routes reject requests without a session",
         "state": [
@@ -50,7 +52,8 @@
           "line delegated signed direct proof falsy-returned-nonce binds actual remote receipt and raw account",
           "line delegated signed direct proof nonce binds actual remote receipt and raw account",
           "line delegated signed direct proof public binds actual remote receipt and raw account",
-          "line existing account info uses real GET without readmitting a changed raw account subject"
+          "line existing account info uses real GET without readmitting a changed raw account subject",
+          "line delegated signed direct proof mapped binds actual remote receipt and raw account"
         ]
       }
     },
@@ -5920,7 +5923,8 @@
           "line published default authorization retains ordered scopes and required PKCE",
           "line published disabled-configured authorization retains ordered scopes and required PKCE",
           "line published disabled-scope authorization retains ordered scopes and required PKCE",
-          "line zero access expiry follows actual token helper"
+          "line zero access expiry follows actual token helper",
+          "line delegated signed direct proof mapped binds actual remote receipt and raw account"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -6505,7 +6509,8 @@
           "line published default authorization retains ordered scopes and required PKCE",
           "line published disabled-configured authorization retains ordered scopes and required PKCE",
           "line published disabled-scope authorization retains ordered scopes and required PKCE",
-          "line zero access expiry follows actual token helper"
+          "line zero access expiry follows actual token helper",
+          "line delegated signed direct proof mapped binds actual remote receipt and raw account"
         ]
       }
     },

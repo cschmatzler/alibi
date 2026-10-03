@@ -134,3 +134,27 @@ scenarios and 2,450 assertions. Current harness passes all 86 negative-control
 tests and 2,314 assertions, including live Source publication/cookie controls.
 Log: /tmp/pr289-source-self-harness.log. Source-self creates no Rust capability
 evidence. Full Source/native and canonical gate proof are still pending.
+
+The recovered actual Source/native owner collection completes 70/70 with 2,450
+assertions at checkpoint 77b295b24ff69bd2b4cc68b543655671c273c486 over f48d546e
+(/tmp/pr289-focused70.log). Rebase onto current managed-secret main
+74309f369bc6d7b600af02332190dd4edb04eec6 retains both managed and LINE
+registration. Fresh actual Source/native capture again passes all 70/70 and
+2,450 assertions (/tmp/pr289-current70-evidence.log), including ordinary
+account-info omission and mapper-added ID without changing raw account identity.
+
+The unchanged current harness measures 370 raw LINE trace cells. Independently
+check every committed LINE cell against the fresh captures and preserve all
+5,742 current-main requirements. Retain the existing 257 LINE owner cells and
+append the five actual account-info/sign-in cells from the repaired mapped owner:
+262 LINE cells from 69 required owners, 6,004 total requirements. Setup signup
+and session-read traces do not receive new claims; existing owners cover those
+contracts. No fields, assertions, owner scenarios or full captures are dropped.
+
+Authorization/data-exfil review traces original-subject resolution before
+sign-in/link writes and the authenticated account resolver before reads/refresh.
+Trusted application configuration alone supplies HTTP endpoint overrides. The
+real delegated verifier checks signature, issuer, expiry and nonce; the LINE
+factory binds its returned audience/nonce and retains Source's separate trusted
+code-grant decode behavior. No review blocker found. The canonical current-main
+scripts/check.sh gate and its clean instrumented coverage remain pending.
