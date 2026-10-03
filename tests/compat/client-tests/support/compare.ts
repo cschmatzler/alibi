@@ -82,6 +82,7 @@ const entityKeys = new Set([
 ]);
 
 const opaqueKeys = new Set([
+  "nonce",
   "token",
   "sessionToken",
   "state",
@@ -94,6 +95,7 @@ const opaqueKeys = new Set([
 ]);
 
 const opaqueAliases: Readonly<Record<string, string>> = {
+  idTokenNonce: "nonce",
   deviceCode: "device_code",
   userCode: "user_code",
   "set-ott": "token",

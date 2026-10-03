@@ -897,6 +897,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         provider_batch_fixture::router(&config, database.clone()).await?;
     let (polar_router, polar_reset) =
         polar_provider_fixture::router(&config, database.clone()).await?;
+    let (generic_discovery_router, generic_discovery_reset) =
+        fixtures::generic_discovery_fixture::router(&config, database.clone()).await?;
     let (generic_token_router, generic_token_reset) =
         fixtures::generic_token_params_fixture::router(&config, database.clone()).await?;
     let (paypal_router, paypal_reset) =
@@ -1436,6 +1438,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let polar_reset=polar_reset.clone();
                 let notion_reset=notion_reset.clone();
                 let paypal_reset=paypal_reset.clone();
+                let generic_discovery_reset=generic_discovery_reset.clone();
                 let generic_token_reset=generic_token_reset.clone();
                 let paybin_reset=paybin_reset.clone();
                 let cloudflare_reset=cloudflare_reset.clone();
@@ -1469,6 +1472,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     polar_reset.reset().await;
                     notion_reset.reset().await;
                     paypal_reset.reset().await;
+                    generic_discovery_reset.reset().await;
                     generic_token_reset.reset().await;
                     paybin_reset.reset().await;
                     cloudflare_reset.reset().await;
@@ -2114,6 +2118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(polar_router)
         .merge(notion_router)
         .merge(paypal_router)
+        .merge(generic_discovery_router)
         .merge(generic_token_router)
         .merge(paybin_router)
         .merge(cloudflare_router)

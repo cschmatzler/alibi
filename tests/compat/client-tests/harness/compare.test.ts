@@ -1375,3 +1375,38 @@ test("revived year rollover accepts Source's six-digit ISO output while malforme
   const malformed = { session: { expiresAt: "+10000-01-01T00:00:00.000Z" } };
   expect(compareValues(malformed, malformed, context).length).toBeGreaterThan(0);
 });
+
+// The issued state is independent evidence for nonce aliases inside JWT claims.
+test("OIDC nonce aliases retain URL state and JWT equality and presence", () => {
+  const encode = (nonce?: string) =>
+    [
+      Buffer.from(JSON.stringify({ alg: "RS256" })).toString("base64url"),
+      Buffer.from(
+        JSON.stringify({
+          iss: "https://issuer.example.invalid",
+          aud: "client",
+          exp: 4102444800,
+          nonce,
+        }),
+      ).toString("base64url"),
+      Buffer.from("signature").toString("base64url"),
+    ].join(".");
+  const observation = (nonce: string) => ({
+    url: `https://issuer.example.invalid/authorize?nonce=${nonce}`,
+    stateBinding: { idTokenNonce: nonce },
+    idToken: encode(nonce),
+  });
+  const left = observation("left-issued");
+  const right = observation("right-issued");
+  expect(compareValues(left, right, context)).toEqual([]);
+  for (const changed of [
+    { ...right, url: "https://issuer.example.invalid/authorize" },
+    { ...right, url: "https://issuer.example.invalid/authorize?nonce=other-issued" },
+    { ...right, stateBinding: {} },
+    { ...right, stateBinding: { idTokenNonce: "other-issued" } },
+    { ...right, idToken: encode("other-issued") },
+    { ...right, idToken: encode() },
+  ]) {
+    expect(compareValues(left, changed, context).length).toBeGreaterThan(0);
+  }
+});

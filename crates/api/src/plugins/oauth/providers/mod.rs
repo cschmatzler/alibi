@@ -1,6 +1,8 @@
-pub(super) mod remaining_profile;
 mod generic;
-pub use generic::{GenericOAuthConfig, GenericOAuthMetadata, GenericOAuthResolved, GenericOAuthError};
+pub(super) mod remaining_profile;
+pub use generic::{
+    GenericOAuthConfig, GenericOAuthError, GenericOAuthMetadata, GenericOAuthResolved,
+};
 mod roblox;
 pub use roblox::RobloxOptions;
 mod salesforce;

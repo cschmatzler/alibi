@@ -249,8 +249,12 @@ fn build_authorization_url(
             effective
         },
     );
-    if provider.authorization.as_ref().is_some_and(|policy| policy.discovery_openid_scope)
-        && !effective_scopes.contains(&"openid") {
+    if provider
+        .authorization
+        .as_ref()
+        .is_some_and(|policy| policy.discovery_openid_scope)
+        && !effective_scopes.contains(&"openid")
+    {
         effective_scopes.insert(0, "openid");
     }
     let scope_str = effective_scopes.join(
@@ -2335,7 +2339,12 @@ async fn initiate_oauth_flow_core(
         request.request_sign_up,
         request.additional_data,
     );
-    if request.provider.authorization.as_ref().is_some_and(|policy| policy.id_token_nonce_binding) {
+    if request
+        .provider
+        .authorization
+        .as_ref()
+        .is_some_and(|policy| policy.id_token_nonce_binding)
+    {
         payload.id_token_nonce = Some(better_auth_core::utils::id::generate_id(32));
     }
     capture_server_context(&mut payload, &state, ctx.config.current_secret())?;
@@ -2387,7 +2396,8 @@ async fn initiate_oauth_flow_core(
         request.additional_params,
     )?;
     if let Some(nonce) = &payload.id_token_nonce {
-        let mut parsed = url::Url::parse(&url).map_err(|_| AuthError::config("Invalid authorization endpoint"))?;
+        let mut parsed = url::Url::parse(&url)
+            .map_err(|_| AuthError::config("Invalid authorization endpoint"))?;
         set_authorization_param(&mut parsed, "nonce", nonce);
         url = parsed.to_string();
     }
@@ -2737,9 +2747,18 @@ pub(super) async fn handle_callback(
         return Ok(redirect_on_error("invalid_code", None));
     };
 
-    if provider.authorization.as_ref().is_some_and(|policy| policy.verify_grant_id_token)
+    if provider
+        .authorization
+        .as_ref()
+        .is_some_and(|policy| policy.verify_grant_id_token)
         && let Some(token) = tokens.id_token.as_deref().filter(|token| !token.is_empty())
-        && !super::id_token::verify_provider_token(provider, token, payload.id_token_nonce.as_deref()).await {
+        && !super::id_token::verify_provider_token(
+            provider,
+            token,
+            payload.id_token_nonce.as_deref(),
+        )
+        .await
+    {
         return Ok(redirect_on_error("unable_to_get_user_info", None));
     }
 
