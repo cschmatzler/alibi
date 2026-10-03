@@ -7,3 +7,6 @@ mod oauth_proxy;
 mod open_api;
 mod organization;
 mod phone_number;
+
+#[cfg(any(feature = "sqlx", feature = "seaorm"))]
+mod admin_identity;
