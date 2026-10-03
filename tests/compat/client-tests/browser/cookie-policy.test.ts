@@ -1,19 +1,31 @@
-import { expect, test } from "bun:test";
+import { afterAll, expect, test } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { RUST_BASE_URL, TS_BASE_URL, requireHealthy } from "../support/config";
 import { chromium } from "playwright";
 import { CookieJar } from "tough-cookie";
 
+const directory = mkdtempSync(join(tmpdir(), "cookie-policy-tls-"));
+const key = join(directory, "key.pem");
+const cert = join(directory, "cert.pem");
+const generated = Bun.spawnSync(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", key, "-out", cert, "-days", "1", "-subj", "/CN=cookie177.test", "-addext", "subjectAltName=DNS:cookie177.test,DNS:auth.cookie177.test"], {stdout:"ignore",stderr:"pipe"});
+if (generated.exitCode !== 0) { rmSync(directory,{recursive:true,force:true}); throw new Error(`TLS fixture certificate generation failed: ${generated.stderr.toString()}`); }
+afterAll(()=>rmSync(directory,{recursive:true,force:true}));
+
 // Task-scoped TLS termination models an explicitly trusted application proxy.
 // No host, trust-store or ambient service configuration is changed.
-for (const [label, backend, port] of [
-  ["Source", process.env.AUTH_BASE_URL_TS ?? "http://localhost:4177", 4377],
-  ["Rust", process.env.AUTH_BASE_URL_RUST ?? "http://localhost:4277", 4378],
+for (const [label, backend] of [
+  ["Source", TS_BASE_URL],
+  ["Rust", RUST_BASE_URL],
 ] as const) {
   for (const mode of ["cross-inferred", "cross-proxy"] as const) {
     test.serial(`${label} ${mode}: real TLS persists inferred domain cookies across subdomains and retires them`, async () => {
+      await requireHealthy(backend,label);
       const raw: unknown[] = [];
       const proxy = Bun.serve({
-        hostname: "127.0.0.1", port,
-        tls: { key: Bun.file(process.env.COOKIE_TLS_KEY!), cert: Bun.file(process.env.COOKIE_TLS_CERT!) },
+        hostname: "127.0.0.1", port:0,
+        tls: { key: Bun.file(key), cert: Bun.file(cert) },
         async fetch(request) {
           const url = new URL(request.url);
           const headers = new Headers(request.headers);
@@ -29,6 +41,7 @@ for (const [label, backend, port] of [
           return new Response(await response.arrayBuffer(), { status: response.status, headers: response.headers });
         },
       });
+      const port = proxy.port;
       const browser = await chromium.launch({ executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH ?? "/home/cschmatzler/.nix-profile/bin/chromium", args: ["--no-proxy-server", "--host-resolver-rules=MAP cookie177.test 127.0.0.1,MAP auth.cookie177.test 127.0.0.1"] });
       try {
         const context = await browser.newContext({ ignoreHTTPSErrors: true });

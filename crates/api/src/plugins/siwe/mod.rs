@@ -229,7 +229,15 @@ impl SiwePlugin {
                 .map_err(|error| storage_error(error.into_auth_error()))?;
         let token = issued.session.token();
         let mut response = AuthResponse::json(200, &json!({"token":token,"success":true,"user":{"id":issued.user.id(),"walletAddress":address,"chainId":chain_id}})).map_err(|error| storage_error(error.into()))?;
-        Self::session_cookies(request, ctx, token, &mut response).map_err(storage_error)?;
+        Self::session_cookies(request, ctx, token, &mut response).map_err(|error| match error {
+            // The installed SIWE endpoint catches ordinary serializer errors and
+            // returns its own 401 body with the serializer message.
+            AuthError::CallbackFailure(cause) => match *cause {
+                AuthError::Internal(message) => SiweCallbackError::Failed(message),
+                other => storage_error(other),
+            },
+            other => storage_error(other),
+        })?;
         Ok(response)
     }
 

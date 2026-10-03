@@ -11,6 +11,8 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
     "serializer-age-boundary",
     "serializer-age-limit",
     "serializer-expiry-limit",
+    "cross-localhost",
+    "cross-ipv6",
     "cross-inferred",
     "cross-proxy",
     "default",
@@ -45,7 +47,7 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
         ...(mode.startsWith("cross-") ? {
           baseURL: mode === "cross-proxy" ? {
             allowedHosts: ["cookie177.test:*", "auth.cookie177.test:*"], protocol: "https" as const,
-          } : "https://cookie177.test",
+          } : mode === "cross-ipv6" ? "https://[::1]:4377" : mode === "cross-localhost" ? "https://localhost:4377" : "https://cookie177.test",
         } : {}),
         basePath: path,
         ...(mode.startsWith("https-") ? { baseURL: "https://localhost" } : {}),

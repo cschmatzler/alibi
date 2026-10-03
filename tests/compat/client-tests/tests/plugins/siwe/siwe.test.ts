@@ -1044,3 +1044,15 @@ compatScenario(
   },
   ["POST /siwe/nonce", "POST /siwe/verify"],
 );
+
+compatScenario("SIWE serializer limit preserves endpoint-specific 401 and committed authority without cookies", async (ctx) => {
+  const actor = siweActor(ctx, "cookie-limit", "siwe-cookie-limit");
+  const value = await nonce(actor);
+  const result = await verify(actor, message(value));
+  expect(result.error).toMatchObject({status:401,message:"Something went wrong. Please try again later.",error:"Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration."});
+  const rows=await state(ctx);
+  expect(rows.proofs).toEqual([]);
+  expect(rows.users).toHaveLength(1);expect(rows.accounts).toHaveLength(1);expect(rows.sessions).toHaveLength(1);
+  expect((await actor.client.getSession()).data).toBeNull();
+  return {result:ctx.snapshot(result),rows};
+}, ["POST /siwe/verify"]);

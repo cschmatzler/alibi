@@ -217,6 +217,8 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         "jwt",
         "jwe",
         "managed",
+        "override-fractional",
+        "override-nan",
         "override-positive",
         "override-zero",
         "override-negative",
@@ -323,6 +325,8 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                 CookieOverride {
                     attributes: CookieAttributes {
                         max_age: Some(match mode {
+                            "override-fractional" => 0.5,
+                            "override-nan" => f64::NAN,
                             "override-zero" => 0.0,
                             "override-negative" => -1.0,
                             _ => 17.0,

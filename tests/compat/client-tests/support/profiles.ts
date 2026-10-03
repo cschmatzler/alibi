@@ -613,6 +613,8 @@ export const FIXTURE_PROFILES = [
   "two-factor-pending-lookup-zero",
   "two-factor-pending-lookup-zero-disabled",
   ...variants("session-cache-", [
+    "override-fractional",
+    "override-nan",
     "override-positive",
     "override-zero",
     "override-negative",
@@ -906,6 +908,7 @@ export const FIXTURE_PROFILES = [
   "device-user-generator-throw",
   "device-validation-throw",
   "device-request-throw",
+  "siwe-cookie-limit",
   "siwe",
   "siwe-email",
   "siwe-contract",

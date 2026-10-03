@@ -179,7 +179,7 @@ pub fn create_clear_session_cookie(config: &AuthConfig) -> crate::AuthResult<Str
 /// using the session config's cookie attributes for consistency.
 ///
 /// Mirrors the TypeScript `expireCookie`, which clears a cookie with `Max-Age=0`
-/// while preserving its attributes, and emits no `Expires`.
+/// while preserving its attributes, including an explicitly configured `Expires`.
 #[must_use]
 pub fn create_clear_cookie(name: &str, config: &AuthConfig) -> crate::AuthResult<String> {
     create_session_like_cookie(name, "", Some(0), config)
@@ -359,7 +359,7 @@ fn apply_attributes(target: &mut CookieAttributes, overrides: &CookieAttributes)
 
 // Values arrive already encoded (including signatures); encoding them again
 // would change the credential. Keep Better Call's attribute order and omit
-// synthetic Expires. The current public helpers have infallible integer ages.
+// synthetic Expires. Limits fail here while the producer is emitting the cookie.
 fn render_encoded_cookie(
     name: &str,
     value: &str,
@@ -369,9 +369,9 @@ fn render_encoded_cookie(
     let mut header = format!("{name}={value}");
     if let Some(age) = attributes.max_age.filter(|age| *age >= 0.0) {
         if age > 34_560_000.0 {
-            return Err(crate::AuthError::internal(
+            return Err(crate::AuthError::CallbackFailure(Box::new(crate::AuthError::internal(
                 "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
-            ));
+            ))));
         }
         _ = write!(header, "; Max-Age={}", age.floor());
     }
@@ -397,9 +397,9 @@ fn render_encoded_cookie(
             .num_milliseconds()
             > 34_560_000_000
         {
-            return Err(crate::AuthError::internal(
+            return Err(crate::AuthError::CallbackFailure(Box::new(crate::AuthError::internal(
                 "Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.",
-            ));
+            ))));
         }
         _ = write!(
             header,

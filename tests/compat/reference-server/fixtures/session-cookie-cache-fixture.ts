@@ -39,6 +39,8 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
     "jwt",
     "jwe",
     "managed",
+    "override-fractional",
+    "override-nan",
     "override-positive",
     "override-zero",
     "override-negative",
@@ -123,7 +125,7 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
       basePath: `/__test/profiles/session-cache-${mode}/api/auth`,
       ...(mode.startsWith("override-") ? { advanced: { ...base.advanced, useSecureCookies: false,
         defaultCookieAttributes: { maxAge: 99 },
-        cookies: { session_data: { attributes: { maxAge: mode === "override-zero" ? 0 : mode === "override-negative" ? -1 : 17 } } },
+        cookies: { session_data: { attributes: { maxAge: mode === "override-zero" ? 0 : mode === "override-negative" ? -1 : mode === "override-fractional" ? 0.5 : mode === "override-nan" ? NaN : 17 } } },
       } } : {}),
       ...(mode === "defaults"
         ? {
