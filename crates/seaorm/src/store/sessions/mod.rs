@@ -52,19 +52,25 @@ where
             .take()
             .unwrap_or_else(better_auth_core::utils::sessions::generate_session_token);
         let mut fields = std::mem::take(&mut create_session.additional_fields);
-        for (name, value) in [
+        let mut typed_fields = [
             (
                 "activeOrganizationId",
-                create_session.active_organization_id.as_ref(),
+                &mut create_session.active_organization_id,
             ),
-            ("activeTeamId", create_session.active_team_id.as_ref()),
-            ("impersonatedBy", create_session.impersonated_by.as_ref()),
-        ] {
-            if let Some(value) = value {
+            ("activeTeamId", &mut create_session.active_team_id),
+            ("impersonatedBy", &mut create_session.impersonated_by),
+        ];
+        for (name, destination) in &mut typed_fields {
+            if let Some(value) = destination.as_ref() {
                 fields.preserve_creation_value(
                     name,
                     better_auth_core::utils::json::JsValue::String(value.clone()),
                 );
+            }
+            // Configured values now belong to the adapter input. A transform
+            // that omits one must also omit its original typed creation value.
+            if fields.contains_key(*name) {
+                **destination = None;
             }
         }
         if persist {
@@ -72,14 +78,7 @@ where
         }
         // These fields are persisted by new_active, including on handwritten
         // schemas with renamed columns and no generic additional-field bindings.
-        for (name, destination) in [
-            (
-                "activeOrganizationId",
-                &mut create_session.active_organization_id,
-            ),
-            ("activeTeamId", &mut create_session.active_team_id),
-            ("impersonatedBy", &mut create_session.impersonated_by),
-        ] {
+        for (name, destination) in typed_fields {
             if let Some(value) = fields.shift_remove(name) {
                 *destination = crate::session_fields::prepare_string_value(
                     db,

@@ -775,7 +775,7 @@ mod tests {
                     Some(Some(JsValue::String(transformed.clone()))),
                     Some(transformed.as_str()),
                 ),
-                (Some(None), Some(native)),
+                (Some(None), None),
                 (Some(Some(JsValue::Null)), None),
                 (Some(Some(JsValue::Number(42.0))), Some("42")),
             ] {
