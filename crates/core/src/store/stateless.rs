@@ -11,6 +11,9 @@ use chrono::{DateTime, Utc};
 /// Wire schema for deployments that do not configure a database.
 pub struct StatelessSchema;
 impl AuthSchema for StatelessSchema {
+    fn user_from_cookie_cache(user: UserView) -> Option<UserView> {
+        Some(user)
+    }
     type User = UserView;
     type Session = SessionView;
     type Account = AccountView;
@@ -159,7 +162,10 @@ impl SessionStore<StatelessSchema> for StatelessStore {
         Ok(())
     }
     async fn create_session(&self, mut input: CreateSession) -> AuthResult<SessionView> {
-        input.additional_fields.apply_adapter_transforms()?;
+        input
+            .additional_fields
+            .apply_adapter_transforms_async()
+            .await?;
         let now = Utc::now();
         Ok(SessionView {
             id: uuid::Uuid::new_v4().to_string(),
@@ -183,6 +189,49 @@ impl SessionStore<StatelessSchema> for StatelessStore {
             active: true,
             omitted_fields: Default::default(),
         })
+    }
+    async fn prepare_secondary_session_update(
+        &self,
+        mut session: SessionView,
+        expires_at: Option<DateTime<Utc>>,
+        mut fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<(SessionView, crate::field_policy::FieldValues)>> {
+        fields.apply_adapter_transforms_async().await?;
+        for (key, value) in &fields {
+            match key.as_str() {
+                "activeOrganizationId" => {
+                    session.active_organization_id = value.as_str().map(str::to_owned)
+                }
+                "activeTeamId" => session.active_team_id = value.as_str().map(str::to_owned),
+                "impersonatedBy" => session.impersonated_by = value.as_str().map(str::to_owned),
+                _ => {
+                    drop(
+                        session
+                            .extension_fields
+                            .insert(key.clone(), value.to_json_value()?),
+                    );
+                }
+            }
+        }
+        if let Some(expires_at) = expires_at {
+            session.expires_at = expires_at;
+        }
+        session.updated_at = Utc::now();
+        Ok(Some((session, fields)))
+    }
+    async fn complete_secondary_session_update(
+        &self,
+        session: SessionView,
+        _expires_at: Option<DateTime<Utc>>,
+        _fields: crate::field_policy::FieldValues,
+        persist: bool,
+    ) -> AuthResult<Option<SessionView>> {
+        if persist {
+            return Err(AuthError::config(
+                "No-database store cannot persist sessions",
+            ));
+        }
+        Ok(Some(session))
     }
     async fn get_session(&self, _token: &str) -> AuthResult<Option<SessionView>> {
         Ok(None)
@@ -232,7 +281,10 @@ impl UserStore<StatelessSchema> for StatelessStore {
     ) -> AuthResult<UserView> {
         let (create_user, defaults) = prepared.into_parts();
         let mut create_user = defaults.apply(create_user)?;
-        create_user.additional_fields.apply_adapter_transforms()?;
+        create_user
+            .additional_fields
+            .apply_adapter_transforms_async()
+            .await?;
         let now = Utc::now();
         let id = create_user
             .id
@@ -321,6 +373,10 @@ impl UserStore<StatelessSchema> for StatelessStore {
     }
 
     async fn update_user(&self, id: &str, mut update: UpdateUser) -> AuthResult<UserView> {
+        update
+            .additional_fields
+            .apply_adapter_transforms_async()
+            .await?;
         let mut state = self.lock()?;
         let user = state.users.get_mut(id).ok_or(AuthError::UserNotFound)?;
         if let Some(email) = update.email {
@@ -375,7 +431,6 @@ impl UserStore<StatelessSchema> for StatelessStore {
         if let Some(last_login_method) = update.last_login_method {
             user.last_login_method = last_login_method;
         }
-        update.additional_fields.apply_adapter_transforms()?;
         for (key, value) in update.additional_fields {
             drop(user.extension_fields.insert(key, value.to_json_value()?));
         }
@@ -386,7 +441,7 @@ impl UserStore<StatelessSchema> for StatelessStore {
     }
 
     async fn delete_user(&self, id: &str) -> AuthResult<()> {
-        self.lock()?.users.shift_remove(id);
+        drop(self.lock()?.users.shift_remove(id));
         Ok(())
     }
 
@@ -487,7 +542,7 @@ impl AccountStore<StatelessSchema> for StatelessStore {
     }
 
     async fn delete_account(&self, id: &str) -> AuthResult<()> {
-        self.lock()?.accounts.shift_remove(id);
+        drop(self.lock()?.accounts.shift_remove(id));
         Ok(())
     }
 }
@@ -512,7 +567,7 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             if state.verifications.contains_key(&model.id) {
                 return Err(AuthError::internal("duplicate verification primary ID"));
             }
-            state.verifications.insert(model.id.clone(), model.clone());
+            drop(state.verifications.insert(model.id.clone(), model.clone()));
             drop(state);
             crate::verification::VerificationSnapshot::from_model(&model)
         } else {
@@ -584,7 +639,7 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        entry.insert(model.clone());
+        _ = entry.insert(model.clone());
         drop(state);
         Ok(Some(model))
     }
@@ -602,9 +657,11 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
             created_at: now,
             updated_at: now,
         };
-        self.lock()?
-            .verifications
-            .insert(verification.id.clone(), verification.clone());
+        drop(
+            self.lock()?
+                .verifications
+                .insert(verification.id.clone(), verification.clone()),
+        );
         Ok(verification)
     }
 
@@ -760,7 +817,7 @@ impl VerificationStore<StatelessSchema> for StatelessStore {
     }
 
     async fn delete_verification(&self, id: &str) -> AuthResult<()> {
-        self.lock()?.verifications.shift_remove(id);
+        drop(self.lock()?.verifications.shift_remove(id));
         Ok(())
     }
 

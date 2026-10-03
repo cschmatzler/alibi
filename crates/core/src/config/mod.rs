@@ -289,8 +289,8 @@ pub enum OAuthStateStrategy {
     reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
 )]
 pub struct SessionConfig {
-    /// Cookie-only session authority. No session rows or secondary records are
-    /// read or written. Logout clears browser cookies; captured cookies remain
+    /// No durable server session authority. Session records are instance-local
+    /// in memory; no SQL session rows are read or written. Captured caches remain
     /// replayable until their embedded expiry or cache version/secret invalidation.
     pub stateless: bool,
     /// Stateless envelope renewal. Stateful deployments ignore this policy.

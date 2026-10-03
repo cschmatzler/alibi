@@ -1142,16 +1142,24 @@ impl<S: AuthSchema> AuthContext<S> {
         crate::cache::runtime::clear_established_session::<S>(req);
         let mut physical = req.clone();
         physical.virtual_session = None;
-        drop(
-            physical
-                .query
-                .insert("disableCookieCache".into(), "true".into()),
-        );
+        if self.config.session.has_server_session_store() {
+            drop(
+                physical
+                    .query
+                    .insert("disableCookieCache".into(), "true".into()),
+            );
+        }
         let read = crate::cache::runtime::authenticated(self, &physical, false)
             .await?
             .ok_or(AuthError::Unauthenticated)?;
         match read.user {
             crate::AuthenticatedUser::Stored(user) => Ok((user, read.session)),
+            crate::AuthenticatedUser::Cached(user) if self.config.session.stateless => {
+                let user = S::user_from_cookie_cache(*user).ok_or_else(|| {
+                    AuthError::config("This schema requires cache-aware session authority")
+                })?;
+                Ok((crate::AdapterRecord::physical(user)?, read.session))
+            }
             crate::AuthenticatedUser::Cached(_) => Err(AuthError::Unauthenticated),
         }
     }
@@ -1197,6 +1205,15 @@ impl<S: AuthSchema> AuthContext<S> {
                     .ok_or(AuthError::Unauthenticated)?
             };
             return Ok((user, session.clone(), None));
+        }
+        if self.config.session.stateless
+            && let Some(cache) = crate::cache::runtime::read(self, req).await?
+        {
+            crate::cache::runtime::renew_cache(self, req, &cache).await?;
+            let user = S::user_from_cookie_cache(cache.user).ok_or_else(|| {
+                AuthError::config("This schema requires cache-aware session authority")
+            })?;
+            return Ok((user, cache.session, None));
         }
         let session_manager = self.session_manager();
 
@@ -1277,6 +1294,14 @@ impl<S: AuthSchema> AuthContext<S> {
         &self,
         req: &impl crate::session::SessionRequest,
     ) -> AuthResult<Option<(S::User, crate::wire::SessionView)>> {
+        if self.config.session.stateless
+            && let Some(cache) = crate::cache::runtime::read(self, req).await?
+        {
+            let user = S::user_from_cookie_cache(cache.user).ok_or_else(|| {
+                AuthError::config("This schema requires cache-aware session authority")
+            })?;
+            return Ok(Some((user, cache.session)));
+        }
         let Some(token) = self.session_manager().extract_session_token(req) else {
             return Ok(None);
         };

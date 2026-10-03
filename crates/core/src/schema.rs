@@ -12,6 +12,13 @@ pub trait AuthSchema: Send + Sync + 'static {
         crate::openapi::annotations::core_models()
     }
 
+    /// Preserve an authenticated cache snapshot only when the application user
+    /// type is itself a wire snapshot. Never reconstruct a database model from
+    /// cookie data. Typed physical guards reject cached-only authority otherwise.
+    fn user_from_cookie_cache(_user: crate::UserView) -> Option<Self::User> {
+        None
+    }
+
     type User: AuthUser;
     type Session: AuthSession;
     type Account: AuthAccount;
