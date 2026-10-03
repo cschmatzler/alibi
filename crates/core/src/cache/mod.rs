@@ -562,14 +562,15 @@ pub fn cookie_header(
         .remove(b'(')
         .remove(b')');
 
-    let base = ["session_data", "account_data"]
-        .into_iter()
-        .map(|logical| crate::utils::cookie_utils::related_cookie_name(config, logical))
-        .find(|base| runtime::chunk_index(name, base).is_some());
+    let bases = ["session_data", "account_data"]
+        .map(|logical| crate::utils::cookie_utils::related_cookie_name(config, logical));
+    let base = (!bases.iter().any(|base| base == name))
+        .then(|| bases.iter().find(|base| runtime::chunk_index(name, base).is_some()))
+        .flatten();
     let encoded = percent_encoding::utf8_percent_encode(value, COMPONENT).to_string();
     crate::utils::cookie_utils::create_numeric_cookie_header(
         name,
-        base.as_deref().unwrap_or(name),
+        base.map_or(name, String::as_str),
         &encoded,
         max_age,
         config,
