@@ -7,7 +7,7 @@
 
 use crate::error::record_not_inserted;
 use crate::pool::{Exec, SqlxRow};
-use crate::sql::{Sql, select};
+use crate::sql::Sql;
 use crate::value::{ColumnKind, SqlValue};
 use better_auth_core::error::{AuthError, AuthResult};
 
@@ -146,6 +146,9 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     const COLUMN_NAMES: &'static [&'static str];
     /// Physical primary-key column.
     const PRIMARY_KEY: &'static str;
+    /// Provider verification column whose SQLite storage may retain raw scalars.
+    /// Other model roles and handwritten models retain their existing projection.
+    const PROVIDER_VERIFICATION_COLUMN: Option<&'static str> = None;
 
     /// Every column as an unchanged value.
     fn into_active(self) -> ActiveRow;
@@ -184,13 +187,52 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     }
 }
 
+fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
+    for (index, column) in M::COLUMN_NAMES.iter().enumerate() {
+        if index > 0 {
+            sql.push(", ");
+        }
+        let raw_verification = sql.engine() == crate::pool::Engine::Sqlite
+            && M::PROVIDER_VERIFICATION_COLUMN == Some(*column);
+        let emit_column = |sql: &mut Sql| {
+            if qualified {
+                sql.column(M::TABLE, column);
+            } else {
+                sql.ident(column);
+            }
+        };
+        if raw_verification {
+            // Match the published SQLite adapter's numeric boolean conversion:
+            // only 1 is true. Strings remain raw in adapter output; the typed
+            // Rust accessor uses their truthiness without changing the column.
+            sql.push("CASE WHEN typeof(");
+            emit_column(sql);
+            sql.push(") IN ('integer', 'real') THEN ");
+            emit_column(sql);
+            sql.push(" = 1 WHEN ");
+            emit_column(sql);
+            sql.push(" IS NULL THEN NULL ELSE ");
+            emit_column(sql);
+            sql.push(" <> '' END AS ");
+            sql.ident(column);
+        } else {
+            emit_column(sql);
+        }
+    }
+}
+
 pub(crate) fn select_model<M: SqlxModel>(exec: Exec<'_>) -> Sql {
-    select(exec.engine(), M::TABLE, M::COLUMN_NAMES)
+    let mut sql = Sql::new(exec.engine());
+    sql.push("SELECT ");
+    projection::<M>(&mut sql, true);
+    sql.push(" FROM ");
+    sql.ident(M::TABLE);
+    sql
 }
 
 pub(crate) fn returning<M: SqlxModel>(sql: &mut Sql) {
     sql.push(" RETURNING ");
-    sql.column_list(M::COLUMN_NAMES);
+    projection::<M>(sql, false);
 }
 
 /// `INSERT ... RETURNING` every present column.

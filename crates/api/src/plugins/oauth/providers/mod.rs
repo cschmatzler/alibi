@@ -1,3 +1,27 @@
+pub(super) mod remaining_profile;
+mod roblox;
+pub use roblox::RobloxOptions;
+mod salesforce;
+pub use salesforce::{SalesforceEnvironment, SalesforceOptions};
+mod slack;
+pub use slack::SlackOptions;
+mod spotify;
+pub use spotify::SpotifyOptions;
+mod tiktok;
+pub use tiktok::TikTokOptions;
+mod twitch;
+pub use twitch::TwitchOptions;
+mod twitter;
+pub use twitter::TwitterOptions;
+mod vercel;
+pub use vercel::VercelOptions;
+mod vk;
+pub use vk::VkOptions;
+mod wechat;
+pub use wechat::{WeChatLanguage, WeChatOptions};
+mod zoom;
+pub use zoom::ZoomOptions;
+
 mod reddit;
 pub use reddit::RedditOptions;
 mod railway;
@@ -136,6 +160,60 @@ pub trait OAuthUserInfoHandler: Send + Sync {
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String>;
+}
+
+/// Asynchronous partial application mapping of the original provider profile.
+/// Absent keys retain published defaults; raw output remains independent from
+/// typed persistence, and returned IDs never replace original account authority.
+#[async_trait]
+pub trait OAuthProfileMapper: Send + Sync {
+    async fn map_profile(
+        &self,
+        profile: Value,
+    ) -> Result<better_auth_core::field_policy::FieldOutput, String>;
+}
+
+struct MappedUserInfo {
+    handler: Arc<dyn OAuthUserInfoHandler>,
+    mapper: Arc<dyn OAuthProfileMapper>,
+}
+#[async_trait]
+impl OAuthUserInfoHandler for MappedUserInfo {
+    async fn get_user_info(
+        &self,
+        request: OAuthUserInfoRequest,
+    ) -> Result<OAuthUserInfoResponse, String> {
+        let mut response = self.handler.get_user_info(request).await?;
+        let mapped = self.mapper.map_profile(response.data.clone()).await?;
+        let output = response
+            .user_output
+            .get_or_insert_with(|| response.user.public_profile(true));
+        output.extend(mapped.clone());
+        for (key, value) in &mapped {
+            match key.as_str() {
+                "id" => {
+                    response.user.id = remaining_profile::scalar(Some(value))?.unwrap_or_default()
+                }
+                "email" => response.user.email = value.as_str().unwrap_or_default().into(),
+                "emailVerified" => response.user.email_verified = remaining_profile::truthy(value),
+                "name" => {
+                    response.user.name = remaining_profile::scalar(
+                        Some(value).filter(|value| remaining_profile::truthy(value)),
+                    )?
+                }
+                "image" => response.user.image = remaining_profile::scalar(Some(value))?,
+                _ => {
+                    drop(
+                        response
+                            .user
+                            .additional_fields
+                            .insert(key.clone(), value.clone()),
+                    );
+                }
+            }
+        }
+        Ok(response)
+    }
 }
 
 #[async_trait]
@@ -377,6 +455,32 @@ pub enum OAuthTokenEndpointAuth {
     ClientSecretPost,
     PrivateKeyJwt,
     None,
+    /// TikTok authenticates with client_key and client_secret, never client_id.
+    ClientKeyPost,
+}
+
+#[derive(Debug, Clone)]
+pub struct OAuthAuthorizationCodeContext {
+    pub code: String,
+    pub redirect_uri: String,
+    pub code_verifier: Option<String>,
+    pub device_id: Option<String>,
+}
+
+#[async_trait]
+pub trait OAuthAuthorizationCodeHandler: Send + Sync {
+    async fn validate_authorization_code(
+        &self,
+        context: OAuthAuthorizationCodeContext,
+    ) -> Result<OAuthTokenSet, String>;
+}
+
+#[derive(Clone)]
+pub struct OAuthAuthorizationCodeCallback(pub Arc<dyn OAuthAuthorizationCodeHandler>);
+impl std::fmt::Debug for OAuthAuthorizationCodeCallback {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("OAuthAuthorizationCodeCallback(..)")
+    }
 }
 
 /// Immutable authorization configuration used by the built-in social providers.
@@ -384,6 +488,21 @@ pub enum OAuthTokenEndpointAuth {
 /// opt into removing exact duplicates.
 #[derive(Debug, Clone)]
 pub struct OAuthAuthorizationPolicy {
+    /// Application-owned or provider-specific code grant implementation.
+    pub authorization_code: Option<OAuthAuthorizationCodeCallback>,
+    /// A code grant can retain PKCE even when authorization disables it (Zoom).
+    pub authorization_code_pkce: Option<bool>,
+    /// Name of the client identifier in custom authorization URLs.
+    pub client_id_parameter: String,
+    pub scope_separator: String,
+    pub emit_empty_scope: bool,
+    pub authorization_fragment: Option<String>,
+    /// Dedicated factories may lack a built-in refresh implementation (Vercel).
+    pub supports_refresh: bool,
+    /// TikTok's published factory ignores mapProfileToUser.
+    pub supports_profile_mapper: bool,
+    /// Published social factories pass through omitted access tokens to userinfo.
+    pub allow_missing_access_token: bool,
     pub configured_scopes: Vec<String>,
     /// Providers such as PayPal deliberately omit even configured/requested scopes.
     pub omit_scopes: bool,
@@ -430,6 +549,15 @@ pub struct OAuthAuthorizationPolicy {
 impl Default for OAuthAuthorizationPolicy {
     fn default() -> Self {
         Self {
+            authorization_code: None,
+            authorization_code_pkce: None,
+            client_id_parameter: "client_id".into(),
+            scope_separator: " ".into(),
+            emit_empty_scope: false,
+            authorization_fragment: None,
+            supports_refresh: true,
+            supports_profile_mapper: true,
+            allow_missing_access_token: false,
             configured_scopes: Vec::new(),
             omit_scopes: false,
             scope_encoding: OAuthScopeEncoding::Form,
@@ -460,6 +588,22 @@ impl Default for OAuthAuthorizationPolicy {
 }
 
 impl OAuthProvider {
+    /// Install asynchronous partial mapping on the dedicated factory's profile
+    /// handler. Installing a custom userinfo handler afterwards replaces both
+    /// the default transport and mapping, matching getUserInfo precedence.
+    #[must_use]
+    pub fn with_profile_mapper(mut self, mapper: Arc<dyn OAuthProfileMapper>) -> Self {
+        if self
+            .authorization
+            .as_ref()
+            .is_none_or(|policy| policy.supports_profile_mapper)
+            && let Some(handler) = self.get_user_info.take()
+        {
+            self.get_user_info = Some(Arc::new(MappedUserInfo { handler, mapper }));
+        }
+        self
+    }
+
     /// GitLab.com social login with the published `read_user` scope and PKCE.
     #[must_use]
     pub fn gitlab(client_id: &str, client_secret: &str) -> Self {

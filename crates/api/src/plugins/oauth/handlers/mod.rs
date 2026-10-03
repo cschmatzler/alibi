@@ -241,7 +241,12 @@ fn build_authorization_url(
             effective
         },
     );
-    let scope_str = effective_scopes.join(" ");
+    let scope_str = effective_scopes.join(
+        provider
+            .authorization
+            .as_ref()
+            .map_or(" ", |policy| policy.scope_separator.as_str()),
+    );
 
     let mut url = url::Url::parse(&provider.auth_url)
         .map_err(|error| AuthError::internal(format!("Invalid auth URL: {error}")))?;
@@ -253,9 +258,22 @@ fn build_authorization_url(
             .as_ref()
             .map_or("code", |policy| policy.response_type.as_str()),
     );
-    set_authorization_param(&mut url, "client_id", &provider.client_id);
+    set_authorization_param(
+        &mut url,
+        provider
+            .authorization
+            .as_ref()
+            .map_or("client_id", |policy| policy.client_id_parameter.as_str()),
+        &provider.client_id,
+    );
     set_authorization_param(&mut url, "state", state);
-    if provider.authorization.is_none() || !effective_scopes.is_empty() {
+    if provider.authorization.is_none()
+        || !effective_scopes.is_empty()
+        || provider
+            .authorization
+            .as_ref()
+            .is_some_and(|policy| policy.emit_empty_scope)
+    {
         set_authorization_param(&mut url, "scope", &scope_str);
     }
     set_authorization_param(
@@ -328,6 +346,9 @@ fn build_authorization_url(
     if let Some(policy) = &provider.authorization {
         for (key, value) in &policy.fixed_authorization_params {
             set_authorization_param(&mut url, key, value);
+        }
+        if let Some(fragment) = &policy.authorization_fragment {
+            url.set_fragment(Some(fragment));
         }
     }
     if provider.authorization.as_ref().is_some_and(|policy| {
@@ -457,7 +478,13 @@ pub(super) async fn refresh_tokens_via_provider(
         .await
         .map_err(|e| AuthError::internal(format!("Failed to parse refresh response: {e}")))?;
 
-    parse_token_response(token_data)
+    parse_token_response(
+        token_data,
+        provider
+            .authorization
+            .as_ref()
+            .is_some_and(|policy| policy.allow_missing_access_token),
+    )
 }
 
 async fn provider_token_request(
@@ -481,10 +508,13 @@ async fn provider_token_request(
     {
         let mut headers = reqwest::header::HeaderMap::new();
         for (name, value) in &policy.authorization_code_headers {
-            let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
-                .map_err(|error| AuthError::config(format!("Invalid code grant header: {error}")))?;
-            let value = reqwest::header::HeaderValue::from_str(value)
-                .map_err(|error| AuthError::config(format!("Invalid code grant header: {error}")))?;
+            let name =
+                reqwest::header::HeaderName::from_bytes(name.as_bytes()).map_err(|error| {
+                    AuthError::config(format!("Invalid code grant header: {error}"))
+                })?;
+            let value = reqwest::header::HeaderValue::from_str(value).map_err(|error| {
+                AuthError::config(format!("Invalid code grant header: {error}"))
+            })?;
             drop(headers.insert(name, value));
         }
         request = request.headers(headers);
@@ -543,6 +573,14 @@ async fn provider_token_request(
             ]);
             request
         }
+        Some(OAuthTokenEndpointAuth::ClientKeyPost) => {
+            form.retain(|(key, _)| key != "client_key");
+            form.extend([
+                ("client_key".into(), provider.client_id.clone()),
+                ("client_secret".into(), provider.client_secret.clone()),
+            ]);
+            request
+        }
         Some(method) => {
             if provider.client_id.is_empty() || provider.client_secret.is_empty() {
                 return Err(AuthError::config(
@@ -571,12 +609,22 @@ async fn provider_token_request(
     Ok(request.form(&form))
 }
 
-fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenSet> {
+fn parse_token_response(
+    token_data: serde_json::Value,
+    allow_missing_access_token: bool,
+) -> AuthResult<OAuthTokenSet> {
+    if token_data.is_null() {
+        return Err(AuthError::internal("Missing token response"));
+    }
     let access_token = token_data
         .get("access_token")
         .and_then(|v| v.as_str())
-        .ok_or_else(|| AuthError::internal("Missing access_token in token response"))?
-        .to_owned();
+        .map(str::to_owned);
+    if access_token.is_none() && !allow_missing_access_token {
+        return Err(AuthError::internal(
+            "Missing access_token in token response",
+        ));
+    }
     let refresh_token = token_data
         .get("refresh_token")
         .and_then(|v| v.as_str())
@@ -586,30 +634,20 @@ fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenS
         .and_then(|v| v.as_str())
         .map(String::from);
     let expiry = |field: &str| -> Option<chrono::DateTime<Utc>> {
-        let value = token_data.get(field)?;
-        let seconds = match value {
-            serde_json::Value::Number(number) => number.as_f64().filter(|value| *value != 0.0)?,
-            serde_json::Value::String(value) if !value.is_empty() => {
-                value.trim().parse::<f64>().ok()?
-            }
-            _ => return None,
-        };
-        let timestamp = Utc::now().timestamp_millis() as f64 + seconds * 1000.0;
-        if !timestamp.is_finite() || timestamp.abs() > 8_640_000_000_000_000.0 {
-            return None;
-        }
-        chrono::DateTime::from_timestamp_millis(timestamp.trunc() as i64)
+        super::providers::remaining_profile::grant_expiry(token_data.get(field)?, true)
     };
     let access_token_expires_at = expiry("expires_in");
     let refresh_token_expires_at = expiry("refresh_token_expires_in");
     let scopes = match token_data.get("scope") {
-        Some(serde_json::Value::String(scope)) => {
-            scope.split_whitespace().map(String::from).collect()
-        }
+        Some(serde_json::Value::String(scope)) => scope
+            .split(super::providers::remaining_profile::js_whitespace)
+            .filter(|value| !value.is_empty())
+            .map(String::from)
+            .collect(),
         Some(serde_json::Value::Array(scopes)) => scopes
             .iter()
             .filter_map(serde_json::Value::as_str)
-            .map(str::trim)
+            .map(|value| value.trim_matches(super::providers::remaining_profile::js_whitespace))
             .filter(|value| !value.is_empty())
             .map(String::from)
             .collect(),
@@ -621,7 +659,7 @@ fn parse_token_response(token_data: serde_json::Value) -> AuthResult<OAuthTokenS
             .get("token_type")
             .and_then(|v| v.as_str())
             .map(String::from),
-        access_token: Some(access_token),
+        access_token,
         refresh_token,
         access_token_expires_at,
         refresh_token_expires_at,
@@ -647,6 +685,22 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
         .and_then(|policy| policy.redirect_uri.as_deref())
         .filter(|uri| !uri.is_empty())
         .unwrap_or(redirect_uri);
+    if let Some(handler) = provider
+        .authorization
+        .as_ref()
+        .and_then(|policy| policy.authorization_code.as_ref())
+    {
+        return handler
+            .0
+            .validate_authorization_code(super::providers::OAuthAuthorizationCodeContext {
+                code: code.into(),
+                redirect_uri: redirect_uri.into(),
+                code_verifier: code_verifier.map(str::to_owned),
+                device_id: device_id.map(str::to_owned),
+            })
+            .await
+            .map_err(AuthError::internal);
+    }
     let mut form: Vec<(&str, &str)> = vec![
         ("grant_type", "authorization_code"),
         ("code", code),
@@ -688,7 +742,13 @@ pub(in crate::plugins) async fn validate_authorization_code_via_provider(
         .json()
         .await
         .map_err(|e| AuthError::internal(format!("Failed to parse token response: {e}")))?;
-    parse_token_response(token_data)
+    parse_token_response(
+        token_data,
+        provider
+            .authorization
+            .as_ref()
+            .is_some_and(|policy| policy.allow_missing_access_token),
+    )
 }
 
 ///
@@ -2439,7 +2499,7 @@ pub(super) async fn handle_callback(
         provider
             .authorization
             .as_ref()
-            .is_none_or(|policy| policy.pkce)
+            .is_none_or(|policy| policy.authorization_code_pkce.unwrap_or(policy.pkce))
             .then_some(payload.code_verifier.as_str()),
         merged_2.get("device_id").map(String::as_str),
     )

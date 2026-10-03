@@ -147,6 +147,15 @@ impl OAuthUserInfoHandler for PayPalUserInfo {
         if !profile.is_object() {
             return Err("Missing PayPal profile".into());
         }
+        if request.id_token.is_none()
+            && request
+                .raw
+                .as_ref()
+                .and_then(|raw| raw.get("id_token"))
+                .is_some_and(truthy)
+        {
+            return Err("Invalid PayPal ID token type".into());
+        }
         if let Some(token) = request.id_token.filter(|value| !value.is_empty()) {
             // The published factory decodes, it does not verify JWT signatures.
             // This token comes from the trusted code exchange; direct ID-token

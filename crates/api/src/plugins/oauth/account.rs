@@ -190,6 +190,11 @@ async fn valid_access_token(
         expires_at.timestamp_millis() - Utc::now().timestamp_millis() < 5_000
     });
     let refreshed = if expired
+        && (provider.refresh_access_token.is_some()
+            || provider
+                .authorization
+                .as_ref()
+                .is_none_or(|policy| policy.supports_refresh))
         && let Some(stored_refresh) = account
             .refresh_token
             .as_deref()
@@ -303,6 +308,17 @@ pub(super) async fn handle_refresh_token(
             account.provider_id
         ))
     })?;
+    if provider.refresh_access_token.is_none()
+        && provider
+            .authorization
+            .as_ref()
+            .is_some_and(|policy| !policy.supports_refresh)
+    {
+        return Ok(AuthResponse::json(
+            400,
+            &serde_json::json!({"code":"TOKEN_REFRESH_NOT_SUPPORTED","message":format!("Provider {} does not support token refreshing.",account.provider_id)}),
+        )?);
+    }
     let stored_refresh = account
         .refresh_token
         .as_deref()
