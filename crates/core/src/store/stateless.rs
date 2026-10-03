@@ -3,8 +3,11 @@
 //! This store has no database connection. The initialized store wrapper keeps
 //! ephemeral session records for cookie bypass and instance-local logout.
 //! User/account/verification provisioning is instance-local, as in the pinned
-//! no-database memory adapter. Durable plugins require an application store.
+//! no-database memory adapter. Native two-factor/passkey records share that
+//! instance-local lifetime; other optional records require an application store.
 //! Applications can also use cookie-only sessions with durable SQL user storage.
+mod optional_records;
+
 use super::*;
 use crate::{AccountView, SessionView, UserView, VerificationView};
 use chrono::{DateTime, Utc};
@@ -33,6 +36,8 @@ struct IdentityState {
     users: indexmap::IndexMap<String, UserView>,
     accounts: indexmap::IndexMap<String, AccountView>,
     verifications: indexmap::IndexMap<String, VerificationView>,
+    two_factors: indexmap::IndexMap<String, TwoFactor>,
+    passkeys: indexmap::IndexMap<String, Passkey>,
 }
 
 impl StatelessStore {
@@ -90,16 +95,6 @@ unsupported_store!(InvitationStore, {
     async fn list_user_invitations(email: &str) -> AuthResult<Vec<Invitation>>;
 });
 
-unsupported_store!(TwoFactorStore, {
-    async fn create_two_factor(two_factor: CreateTwoFactor) -> AuthResult<TwoFactor>;
-    async fn get_two_factor_by_user_id(user_id: &str) -> AuthResult<Option<TwoFactor>>;
-    async fn update_two_factor_backup_codes(
-        user_id: &str,
-        backup_codes: &str,
-    ) -> AuthResult<TwoFactor>;
-    async fn delete_two_factor(user_id: &str) -> AuthResult<()>;
-});
-
 unsupported_store!(ApiKeyStore, {
     async fn create_api_key(input: CreateApiKey) -> AuthResult<ApiKey>;
     async fn get_api_key_by_id(id: &str) -> AuthResult<Option<ApiKey>>;
@@ -112,19 +107,6 @@ unsupported_store!(ApiKeyStore, {
         id: &str,
         global_rate_limit_enabled: bool,
     ) -> AuthResult<ConsumeApiKeyResult>;
-});
-
-unsupported_store!(PasskeyStore, {
-    async fn create_passkey(input: CreatePasskey) -> AuthResult<Passkey>;
-    async fn get_passkey_by_id(id: &str) -> AuthResult<Option<Passkey>>;
-    async fn get_passkey_by_credential_id(credential_id: &str) -> AuthResult<Option<Passkey>>;
-    async fn list_passkeys_by_user(user_id: &str) -> AuthResult<Vec<Passkey>>;
-    async fn update_passkey_authentication(
-        id: &str,
-        update: UpdatePasskeyAuthentication,
-    ) -> AuthResult<Option<Passkey>>;
-    async fn update_passkey_name(id: &str, name: &str) -> AuthResult<Passkey>;
-    async fn delete_passkey(id: &str) -> AuthResult<()>;
 });
 
 unsupported_store!(DeviceCodeStore, {

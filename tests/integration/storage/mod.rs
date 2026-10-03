@@ -29,6 +29,7 @@ mod jwks;
 mod members;
 mod migrations;
 mod organizations;
+mod optional_records;
 mod rate_limit;
 mod sessions;
 mod stateless;
