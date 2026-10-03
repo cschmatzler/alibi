@@ -138,6 +138,14 @@ mod sqlx_numeric {
         type Verification = better_auth_sqlx::store::entities::verification::Model;
     }
     #[tokio::test]
+    async fn date_sort_default_pages_ascending() -> TestResult {
+        let pool = SqlxPool::connect("sqlite::memory:").await?;
+        better_auth_sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
+        let raw = pool.as_sqlite().ok_or("not SQLite")?.clone();
+        install(&raw).await?;
+        exercise_query(Arc::new(SqlxStore::<Schema>::new(config(), pool)), &raw).await
+    }
+    #[tokio::test]
     async fn canonical_admin_identity() -> TestResult {
         let pool = SqlxPool::connect("sqlite::memory:").await?;
         better_auth_sqlx::store::__private_test_support::migrator::run_migrations(&pool).await?;
@@ -221,6 +229,19 @@ mod seaorm_numeric {
         type Session = better_auth_seaorm::store::entities::session::Model;
         type Account = better_auth_seaorm::store::entities::account::Model;
         type Verification = better_auth_seaorm::store::entities::verification::Model;
+    }
+    #[tokio::test]
+    async fn date_sort_default_pages_ascending() -> TestResult {
+        let database = better_auth::seaorm::Database::connect("sqlite::memory:").await?;
+        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+            .await?;
+        let raw = database.get_sqlite_connection_pool().clone();
+        install(&raw).await?;
+        exercise_query(
+            Arc::new(SeaOrmStore::<Schema>::new(config(), database)),
+            &raw,
+        )
+        .await
     }
     #[tokio::test]
     async fn canonical_admin_identity() -> TestResult {
@@ -439,5 +460,108 @@ async fn exercise<S: AuthSchema>(
             serde_json::json!({"actor":actor,"selector":target,"status":response.status,"response":serde_json::from_slice::<serde_json::Value>(&response.body)?,"before":{"users":before_users,"accounts":before_accounts,"sessions":before_sessions},"after":{"users":after_users,"accounts":after_accounts,"sessions":after_sessions}})
         );
     }
+    Ok(())
+}
+
+// Shared public-route contract, with independent physical SQLite fixtures for
+// each adapter. Existing identity checks do not inspect query order or paging.
+async fn exercise_query<S: AuthSchema>(
+    store: Arc<dyn AuthStore<S>>,
+    raw: &sqlx::SqlitePool,
+) -> TestResult {
+    for (id, day) in [(1, 1), (2, 5), (3, 4), (42, 3), (43, 2)] {
+        let date = chrono::DateTime::parse_from_rfc3339(&format!("2020-01-{day:02}T00:00:00Z"))?
+            .with_timezone(&Utc);
+        _ = sqlx::query(sqlx::AssertSqlSafe(
+            "UPDATE users SET created_at = ?, updated_at = ? WHERE id = ?",
+        ))
+        .bind(date)
+        .bind(date)
+        .bind(id)
+        .execute(raw)
+        .await?;
+    }
+    let auth = AuthBuilder::<S>::new(config())
+        .store_arc(Arc::clone(&store))
+        .plugin(AdminPlugin::with_config(AdminConfig {
+            admin_user_ids: Some(vec!["1".into()]),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let session = store
+        .create_session(CreateSession {
+            user_id: "1".into(),
+            expires_at: Utc::now() + chrono::Duration::hours(24),
+            ..Default::default()
+        })
+        .await?;
+    let before = [
+        rows(raw, "users").await?,
+        rows(raw, "accounts").await?,
+        rows(raw, "sessions").await?,
+    ];
+    for (direction, expected) in [
+        (None, vec!["42", "3"]),
+        (Some("asc"), vec!["42", "3"]),
+        (Some("desc"), vec!["3", "42"]),
+    ] {
+        let mut request = AuthRequest::new(better_auth_core::HttpMethod::Get, "/admin/list-users");
+        _ = request.headers.insert(
+            "cookie".into(),
+            format!(
+                "better-auth.session_token={}",
+                better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    session.token(),
+                    config().current_secret()
+                )
+            ),
+        );
+        for (key, value) in [
+            ("sortBy", "createdAt"),
+            ("filterField", "createdAt"),
+            ("filterOperator", "gt"),
+            ("filterValue", "2020-01-01T00:00:00Z"),
+            ("offset", "1"),
+            ("limit", "2"),
+        ] {
+            _ = request.query.insert(key.into(), value.into());
+        }
+        if let Some(direction) = direction {
+            _ = request
+                .query
+                .insert("sortDirection".into(), direction.into());
+        }
+        let response = auth.handle_request(request).await?;
+        let body: serde_json::Value = serde_json::from_slice(&response.body)?;
+        println!(
+            "{}",
+            serde_json::json!({"direction": direction, "status": response.status, "body": body})
+        );
+        assert_eq!(response.status, 200);
+        let ids = body
+            .get("users")
+            .and_then(serde_json::Value::as_array)
+            .ok_or("no users")?
+            .iter()
+            .map(|user| {
+                user.get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or("no ID")
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        assert_eq!(ids, expected, "direction={direction:?}");
+        assert_eq!(body.get("total"), Some(&serde_json::json!(4)));
+        assert_eq!(body.get("offset"), Some(&serde_json::json!(1)));
+        assert_eq!(body.get("limit"), Some(&serde_json::json!(2)));
+    }
+    assert_eq!(
+        [
+            rows(raw, "users").await?,
+            rows(raw, "accounts").await?,
+            rows(raw, "sessions").await?
+        ],
+        before
+    );
     Ok(())
 }
