@@ -56,3 +56,5 @@ pub use better_auth_api::plugins::{
 };
 pub use better_auth_api::plugins::{SiweConfig, SiwePlugin, siwe};
 pub use better_auth_api::{OAuthProxyConfig, OAuthProxyPlugin};
+
+pub use better_auth_api::plugins::oauth_token_conversion;

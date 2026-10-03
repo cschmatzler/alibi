@@ -79,6 +79,14 @@ combined gate remains pending for this capability.
 
 ## Explicit installation and integration boundaries
 
+The historical fresh-row evidence below is retained. The subsequent explicit
+operator conversion API for #190 is documented in
+[legacy OAuth token conversion](../../../../../docs/legacy-oauth-token-conversion.md).
+It authenticates explicitly classified legacy fields under the original secret
+and uses a trusted ownership manifest plus transactional snapshot CAS in both
+physical adapters. This does not add a live legacy fallback or an automatic
+upgrade and does not expand the historical differential observations below.
+
 The previous native OAuth writer used HKDF-SHA256 / AES-256-GCM and standard
 base64, and also encrypted ID tokens. Its installed rows are incompatible with
 this pinned format. They require explicit conversion under the original secret
