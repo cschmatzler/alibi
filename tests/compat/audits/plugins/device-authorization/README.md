@@ -28,14 +28,12 @@ generator/collision/concurrency checks. The final canonical `scripts/check.sh` g
 with 227 SDK scenarios / 5,064 assertions, 37 harness tests / 210 assertions,
 two Chromium tests / 22 assertions, and 79.23% source lines (21,526 / 27,170).
 
-An inherited custom-adapter boundary remains explicit: Rust uses conditional
-pending-status decision writes; upstream's delayed asynchronous adapter can let
-two already-validated decisions return success. Eight actual simultaneous trials
-on pinned Bun SQLite produced one winner, matching Rust. That scheduler result
-is not a claim of universal upstream atomicity. Custom-adapter semantics and OAuth-provider grant extensions still need their own
-configuration evidence before the complete target is closed. Issue #213 remains open
-for the delayed/custom-adapter consistency boundary; this workpiece does not
-claim a universal upstream single-winner decision guarantee.
+The delayed/custom-adapter decision boundary is measured and repaired in the
+[closure receipt](decision213/README.md). Pinned Source validates a pending
+snapshot and writes by ID; two overlapping validated owner decisions may both
+succeed, with the last completed write determining redemption. Rust now uses
+that same handler ordering. This does not promise universal adapter atomicity.
+OAuth-provider grant extensions are outside this standalone plugin issue.
 
 
 ## Configuration workpiece (#213)
@@ -97,4 +95,4 @@ TypeScript checking, changed-file Oxlint, formatting and `git diff --check` pass
 The complete suite and coverage-floor run remain coordinator-owned under the
 current task instruction. Existing coverage requirements are preserved and the
 new scenarios are registered in `capabilities.json`; targeted passes do not claim
-that the delayed/custom-adapter residual or issue #213 is complete.
+completion of issue #213 by that earlier configuration workpiece alone.

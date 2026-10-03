@@ -37,6 +37,8 @@ async fn build_auth(
 
 The device starts at `POST /device/code`, shows the verification URL and user code, then polls `POST /device/token` using the issued interval. An authenticated user approves or denies the request through `/device/approve` or `/device/deny`.
 
+Approval and denial validate the pending grant and its claimed owner before updating it. As in Better Auth 1.7.6, overlapping decisions that both read a pending grant can both succeed; the last completed store write determines its state. A later decision that reads an already processed grant is rejected. Redemption still consumes the grant only once.
+
 Validate client identifiers with the plugin's `validate_client` callback. The configured verification URI identifies the application's approval page. Respect pending, expiry, and slowdown responses when implementing the device client.
 
 ## Frontend

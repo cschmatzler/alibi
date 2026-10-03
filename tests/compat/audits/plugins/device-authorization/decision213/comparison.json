@@ -1,0 +1,34 @@
+[
+  {
+    "backend": "Sqlx",
+    "reverseInitialPolling": false,
+    "persistedDecision": "approved",
+    "literalDecisionResponses": 3,
+    "tokenResponses": 2,
+    "ownerSessionVerified": true
+  },
+  {
+    "backend": "Sqlx",
+    "reverseInitialPolling": true,
+    "persistedDecision": "approved",
+    "literalDecisionResponses": 3,
+    "tokenResponses": 2,
+    "ownerSessionVerified": true
+  },
+  {
+    "backend": "SeaOrm",
+    "reverseInitialPolling": false,
+    "persistedDecision": "denied",
+    "literalDecisionResponses": 3,
+    "tokenResponses": 2,
+    "ownerSessionVerified": false
+  },
+  {
+    "backend": "SeaOrm",
+    "reverseInitialPolling": true,
+    "persistedDecision": "approved",
+    "literalDecisionResponses": 3,
+    "tokenResponses": 2,
+    "ownerSessionVerified": true
+  }
+]

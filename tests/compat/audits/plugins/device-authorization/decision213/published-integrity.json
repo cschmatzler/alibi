@@ -1,0 +1,26 @@
+{
+  "better-auth": {
+    "version": "1.7.6",
+    "tarball": "https://registry.npmjs.org/better-auth/-/better-auth-1.7.6.tgz",
+    "tarballSha256": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+    "executableModules": 252,
+    "identicalToPublishedTarball": true,
+    "moduleDigest": "0a27b4d6ef29ceb91b791d6111825e497b073775f69c9f3eda663116a8c7e212"
+  },
+  "@better-auth/core": {
+    "version": "1.7.6",
+    "tarball": "https://registry.npmjs.org/@better-auth/core/-/core-1.7.6.tgz",
+    "tarballSha256": "e77e869a604083abf292ba9045f5182bd25cc2e57697e8fc1e3965651613f908",
+    "executableModules": 108,
+    "identicalToPublishedTarball": true,
+    "moduleDigest": "60a8ca044f818cddb0f963dcc0889641eb6e36222f47395aaade01af3742dafe"
+  },
+  "@better-auth/memory-adapter": {
+    "version": "1.7.6",
+    "tarball": "https://registry.npmjs.org/@better-auth/memory-adapter/-/memory-adapter-1.7.6.tgz",
+    "tarballSha256": "96520ab210c9cdd84f9724a2f9304493ac169554731a36a91b807db00299e3a7",
+    "executableModules": 1,
+    "identicalToPublishedTarball": true,
+    "moduleDigest": "0ab9a5d6222d31dc79d6e8574dec9ea1d1d3e76cbfe62203e9da12ff9813c576"
+  }
+}

@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 const SECRET: &str = "native-device-172-secret-at-least-32-characters";
 const ORIGIN: &str = "http://localhost:43176";
-backend_tests!(native_device_workflow);
+backend_tests!(native_device_workflow, delayed_device_decisions);
 
 fn plugins<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthBuilder<S> {
     builder
@@ -422,4 +422,214 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestRes
         )?;
     }
     Ok(cookies.remove(0))
+}
+
+// A real SQLite writer lock holds both handler writes after their pending reads.
+// Source's custom-adapter barrier independently establishes the same contract.
+async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth =
+        plugins(AuthBuilder::new(config.clone()).store(B::store(Arc::new(config), &connection)))
+            .build()
+            .await?;
+    let mut trace = Vec::new();
+    let signup = call(
+        &auth,
+        &mut trace,
+        "/sign-up/email",
+        Some(json!({
+            "email":"decision-owner@example.com", "name":"Owner", "password":"Password123!"
+        })),
+        "",
+        None,
+    )
+    .await?;
+    assert_eq!(signup.status, 200);
+    let owner = body(&signup)["user"]["id"].as_str().unwrap().to_owned();
+    let cookie = signup
+        .headers
+        .get("set-cookie")
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let original_users = db.raw.table("users").await?;
+    let original_accounts = db.raw.table("accounts").await?;
+    let mut effects = Vec::new();
+    for reverse in [false, true] {
+        let issued = call(
+            &auth,
+            &mut trace,
+            "/device/code",
+            Some(json!({"client_id":"console", "scope":"profile raw"})),
+            "",
+            None,
+        )
+        .await?;
+        let issued = body(&issued);
+        let device = issued["device_code"].as_str().unwrap();
+        let user = issued["user_code"].as_str().unwrap();
+        assert_eq!(
+            call(&auth, &mut trace, "/device", None, &cookie, Some(user))
+                .await?
+                .status,
+            200
+        );
+        let before = db
+            .raw
+            .tables(&["device_code", "users", "accounts", "sessions"])
+            .await?;
+        let session_count = db.count("sessions").await?;
+        let super::Raw::Sqlite(pool) = &db.raw else {
+            return Err("delayed writer probe requires SQLite".into());
+        };
+        let mut writer = pool.acquire().await?;
+        _ = sqlx::query(sqlx::AssertSqlSafe("BEGIN IMMEDIATE"))
+            .execute(&mut *writer)
+            .await?;
+        let mut approve_trace = Vec::new();
+        let mut deny_trace = Vec::new();
+        let (approve, deny) = {
+            let approve = call(
+                &auth,
+                &mut approve_trace,
+                "/device/approve",
+                Some(json!({"userCode":user})),
+                &cookie,
+                None,
+            );
+            let deny = call(
+                &auth,
+                &mut deny_trace,
+                "/device/deny",
+                Some(json!({"userCode":user})),
+                &cookie,
+                None,
+            );
+            let decisions = async {
+                if reverse {
+                    let (deny, approve) = tokio::join!(deny, approve);
+                    (approve, deny)
+                } else {
+                    tokio::join!(approve, deny)
+                }
+            };
+            tokio::pin!(decisions);
+            // A validation rejection would finish during this window. Neither write can
+            // complete while the independent physical writer lock remains held.
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(250), &mut decisions)
+                    .await
+                    .is_err()
+            );
+            _ = sqlx::query(sqlx::AssertSqlSafe("COMMIT"))
+                .execute(&mut *writer)
+                .await?;
+            drop(writer);
+            tokio::time::timeout(std::time::Duration::from_secs(5), decisions).await?
+        };
+        let approve = approve?;
+        let deny = deny?;
+        trace.extend(approve_trace);
+        trace.extend(deny_trace);
+        let decided = db
+            .raw
+            .tables(&["device_code", "users", "accounts", "sessions"])
+            .await?;
+        effects.push(json!({"reverse":reverse,"heldMillis":250,"before":before,"decided":decided,"approve":approve.status,"deny":deny.status}));
+        if let Ok(directory) = std::env::var("DEVICE_213_EVIDENCE") {
+            std::fs::write(
+                format!(
+                    "{directory}/{}-decisions.json",
+                    std::any::type_name::<B>().rsplit("::").next().unwrap()
+                ),
+                serde_json::to_vec_pretty(&json!({"trace":trace,"effects":effects}))?,
+            )?;
+        }
+        assert_eq!((approve.status, deny.status), (200, 200));
+        assert_eq!(body(&approve), json!({"success":true}));
+        assert_eq!(body(&deny), json!({"success":true}));
+        let row = auth
+            .store()
+            .get_device_code_by_device_code(device)
+            .await?
+            .unwrap();
+        assert_eq!(row.user_id.as_deref(), Some(owner.as_str()));
+        assert!(matches!(row.status.as_str(), "approved" | "denied"));
+        assert_eq!(
+            call(
+                &auth,
+                &mut trace,
+                "/device/approve",
+                Some(json!({"userCode":user})),
+                &cookie,
+                None
+            )
+            .await?
+            .status,
+            400
+        );
+        let redeemed = call(
+            &auth,
+            &mut trace,
+            "/device/token",
+            Some(token(device, "console")),
+            "",
+            None,
+        )
+        .await?;
+        if row.status == "approved" {
+            assert_eq!(redeemed.status, 200);
+            assert_eq!(body(&redeemed)["scope"], "profile raw");
+            let token = body(&redeemed)["access_token"].as_str().unwrap().to_owned();
+            use better_auth_core::AuthSession;
+            assert_eq!(
+                auth.store()
+                    .get_session(&token)
+                    .await?
+                    .unwrap()
+                    .user_id()
+                    .as_ref(),
+                owner
+            );
+        } else {
+            assert_eq!(body(&redeemed)["error"], "access_denied");
+        }
+        assert_eq!(
+            db.count("sessions").await?,
+            session_count + i64::from(row.status == "approved")
+        );
+        assert_eq!(db.count("device_code").await?, 0);
+        assert_eq!(db.raw.table("users").await?, original_users);
+        assert_eq!(db.raw.table("accounts").await?, original_accounts);
+        assert_eq!(
+            body(
+                &call(
+                    &auth,
+                    &mut trace,
+                    "/device/token",
+                    Some(token(device, "console")),
+                    "",
+                    None
+                )
+                .await?
+            )["error"],
+            "invalid_grant"
+        );
+        effects.push(
+            json!({"after":db.raw.tables(&["device_code","users","accounts","sessions"]).await?}),
+        );
+    }
+    if let Ok(directory) = std::env::var("DEVICE_213_EVIDENCE") {
+        std::fs::write(
+            format!(
+                "{directory}/{}-decisions.json",
+                std::any::type_name::<B>().rsplit("::").next().unwrap()
+            ),
+            serde_json::to_vec_pretty(&json!({"trace":trace,"effects":effects}))?,
+        )?;
+    }
+    B::close(connection).await
 }
