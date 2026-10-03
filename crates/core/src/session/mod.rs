@@ -9,6 +9,12 @@ use chrono::Utc;
 pub use request::SessionRequest;
 use std::sync::Arc;
 
+/// Insert into request extensions to suppress automatic renewal for a server
+/// render or an application-controlled request, like Source request-local
+/// `setShouldSkipSessionRefresh`. It is never accepted from client input.
+#[derive(Clone, Copy, Debug)]
+pub struct SessionRefreshSuppressed;
+
 /// Controls whether a persistent session read may write to its store.
 #[derive(Debug, Clone, Copy)]
 pub struct SessionReadOptions {

@@ -1,6 +1,7 @@
 //! Ephemeral no-database identity provisioning and cookie-only sessions.
 //!
-//! This store has no database connection, session map, or revocation list.
+//! This store has no database connection. The initialized store wrapper keeps
+//! ephemeral session records for cookie bypass and instance-local logout.
 //! User/account/verification provisioning is instance-local, as in the pinned
 //! no-database memory adapter. Durable plugins require an application store.
 //! Applications can also use cookie-only sessions with durable SQL user storage.
@@ -20,8 +21,8 @@ impl AuthSchema for StatelessSchema {
     type Verification = VerificationView;
 }
 
-/// No-persistence store. Session ownership comes from the trusted issuance input,
-/// and subsequent authority comes only from authenticated cookies.
+/// Instance-local provisioning without durable persistence. Session ownership
+/// comes from trusted issuance; the initialized wrapper retains ephemeral sessions.
 #[derive(Default)]
 pub struct StatelessStore {
     state: std::sync::Mutex<IdentityState>,
@@ -289,9 +290,21 @@ impl UserStore<StatelessSchema> for StatelessStore {
         let id = create_user
             .id
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let mut omitted_fields = std::collections::BTreeSet::new();
+        for (name, absent) in [
+            ("name", create_user.name.is_none()),
+            ("email", create_user.email.is_none()),
+            ("image", create_user.image.is_none()),
+            ("username", create_user.username.is_none()),
+            ("displayUsername", create_user.display_username.is_none()),
+        ] {
+            if absent && !create_user.additional_fields.contains_key(name) {
+                let _ = omitted_fields.insert(name.to_owned());
+            }
+        }
         let username = create_user.username.map(|username| username.to_lowercase());
         let user = UserView {
-            omitted_fields: std::collections::BTreeSet::default(),
+            omitted_fields,
             id: id.clone(),
             name: create_user.name,
             email: create_user.email,
@@ -433,6 +446,18 @@ impl UserStore<StatelessSchema> for StatelessStore {
         }
         for (key, value) in update.additional_fields {
             drop(user.extension_fields.insert(key, value.to_json_value()?));
+        }
+        for name in ["name", "email", "image", "username", "displayUsername"] {
+            let present = match name {
+                "name" => user.name.is_some(),
+                "email" => user.email.is_some(),
+                "image" => user.image.is_some(),
+                "username" => user.username.is_some(),
+                _ => user.display_username.is_some(),
+            };
+            if present {
+                let _ = user.omitted_fields.remove(name);
+            }
         }
         user.updated_at = Utc::now();
         let locked_result = Ok(user.clone());

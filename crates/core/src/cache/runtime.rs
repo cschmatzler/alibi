@@ -695,7 +695,12 @@ pub(crate) async fn renew_cache<S: AuthSchema>(
     request: &impl SessionRequest,
     cache: &super::CompactCache,
 ) -> AuthResult<()> {
-    if ctx.config.session.stateless {
+    if ctx.config.session.stateless
+        && request
+            .extensions()
+            .get::<crate::session::SessionRefreshSuppressed>()
+            .is_none()
+    {
         let config = ctx
             .config
             .session
@@ -854,13 +859,17 @@ async fn authenticated_inner<S: AuthSchema>(
     };
     request.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(&original));
     let suppressed = manager.request_disables_refresh(request);
+    let skip = request
+        .extensions()
+        .get::<crate::session::SessionRefreshSuppressed>()
+        .is_some();
     let deferred = ctx.config.session.defer_session_refresh
         && !(direct && request.session_method() == &crate::HttpMethod::Post);
     let read = manager
         .read_loaded_session_record(
             original,
             crate::session::SessionReadOptions {
-                allow_refresh: !suppressed && !deferred,
+                allow_refresh: !suppressed && !deferred && !skip,
                 cleanup_expired: !deferred,
             },
         )
@@ -905,7 +914,7 @@ async fn authenticated_inner<S: AuthSchema>(
         AuthenticatedRead {
             user: crate::AuthenticatedUser::Stored(user),
             session: ctx.session_view(&session),
-            needs_refresh: (deferred && !suppressed).then_some(read.needs_refresh),
+            needs_refresh: (deferred && !suppressed).then_some(read.needs_refresh && !skip),
         },
     )))
 }
