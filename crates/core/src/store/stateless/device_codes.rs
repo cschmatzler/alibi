@@ -29,7 +29,7 @@ impl DeviceCodeStore for StatelessStore {
         device_code: &str,
     ) -> AuthResult<Option<DeviceCode>> {
         Ok(self
-            .lock()
+            .lock()?
             .device_codes
             .values()
             .find(|value| value.device_code == device_code)
@@ -41,7 +41,7 @@ impl DeviceCodeStore for StatelessStore {
         user_code: &str,
     ) -> AuthResult<Option<DeviceCode>> {
         Ok(self
-            .lock()
+            .lock()?
             .device_codes
             .values()
             .find(|value| value.user_code == user_code)
@@ -132,7 +132,7 @@ impl DeviceCodeStore for StatelessStore {
             .is_some_and(|device_code| device_code.status == status);
 
         if should_delete {
-            state.device_codes.shift_remove(id);
+            drop(state.device_codes.shift_remove(id));
         }
 
         let locked_result = Ok(should_delete);
