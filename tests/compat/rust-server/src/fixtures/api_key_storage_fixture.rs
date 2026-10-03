@@ -9,8 +9,8 @@ use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::api_key::{
     ApiKeyConfig, ApiKeyErrorCode, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyReferences,
-    ApiKeyStorage, ApiKeyStorageMode, ApiKeyVerificationError, KeyExpirationConfig,
-    RateLimitDefaults, VerifyApiKey,
+    ApiKeyStorage, ApiKeyStorageMode, ApiKeyVerificationError, CreateKeyRequest,
+    KeyExpirationConfig, RateLimitDefaults, VerifyApiKey,
 };
 use better_auth::plugins::{
     ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin,
@@ -573,6 +573,8 @@ pub(crate) async fn router(
                         ] {
                             value[wire] = json!(row.try_get::<bool>("", column).unwrap());
                         }
+                        value["metadataText"] =
+                            json!(row.try_get::<Option<String>>("", "metadata").unwrap());
                         value["metadata"] = row
                             .try_get::<Option<String>>("", "metadata")
                             .unwrap()
@@ -585,7 +587,22 @@ pub(crate) async fn router(
             }
         }),
     );
-    let verify_profiles = Arc::new(profiles);
+    let create_profiles = Arc::new(profiles);
+    let verify_profiles = create_profiles.clone();
+    router = router.route(
+        "/__test/api-key-storage/create",
+        post(
+            move |Query(query): Query<HashMap<String, String>>, Json(input): Json<Value>| {
+                let profiles = create_profiles.clone();
+                async move {
+                    let (auth, plugin) = profiles.get(&query["profile"]).unwrap();
+                    let input: CreateKeyRequest =
+                        better_auth_core::utils::json::from_value(input.into()).unwrap();
+                    Json(plugin.create_key(auth.context(), &input).await.unwrap())
+                }
+            },
+        ),
+    );
     router=router.route("/__test/api-key-storage/verify",post(move |Query(query):Query<HashMap<String,String>>,Json(input):Json<Value>| {let profiles=verify_profiles.clone();async move {
         let (auth,plugin)=profiles.get(&query["profile"]).unwrap();
         let result=plugin.verify_api_key(&VerifyApiKey{key:input["key"].as_str().unwrap(),config_id:input["configId"].as_str(),permissions:input.get("permissions")},auth.context()).await;

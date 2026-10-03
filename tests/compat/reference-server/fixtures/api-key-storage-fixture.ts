@@ -284,11 +284,16 @@ export async function apiKeyStorageFixture(
               ...row,
               enabled: !!row.enabled,
               rateLimitEnabled: !!row.rateLimitEnabled,
+              metadataText: row.metadata,
               metadata: row.metadata === null ? null : JSON.parse(row.metadata),
             })),
         );
       }
       if (url.pathname === "/__test/api-key-storage/state") return Response.json(snapshot());
+      if (url.pathname === "/__test/api-key-storage/create") {
+        const auth = profiles.get(`/__test/profiles/${url.searchParams.get("profile")}/api/auth`)!;
+        return Response.json(await auth.api.createApiKey({ body: await request.json() }));
+      }
       if (url.pathname === "/__test/api-key-storage/verify") {
         const auth = profiles.get(`/__test/profiles/${url.searchParams.get("profile")}/api/auth`)!;
         return Response.json(await auth.api.verifyApiKey({ body: await request.json() }));

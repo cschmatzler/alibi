@@ -197,9 +197,20 @@ impl ApiKeyConfig {
         &self,
         ctx: &AuthContext<impl AuthSchema>,
         reference: &str,
+        sort_by: Option<&str>,
+        sort_direction: Option<&str>,
     ) -> AuthResult<Vec<ApiKey>> {
+        let sorted = |mut keys: Vec<ApiKey>, from_database| {
+            if let Some(sort_by) = sort_by {
+                super::handlers::sort_keys(&mut keys, sort_by, sort_direction, from_database)?;
+            }
+            Ok(keys)
+        };
         if self.storage == ApiKeyStorageMode::Database {
-            return ctx.database.list_api_keys_by_reference(reference).await;
+            return sorted(
+                ctx.database.list_api_keys_by_reference(reference).await?,
+                true,
+            );
         }
         let storage = self.secondary();
         if let Some(storage) = &storage {
@@ -211,13 +222,16 @@ impl ApiKeyConfig {
                     async move { read_storage(storage.as_ref(), &id, false).await }
                 })
                 .await?;
-                return Ok(keys.into_iter().flatten().collect());
+                return sorted(keys.into_iter().flatten().collect(), false);
             }
         }
         if !self.fallback_to_database {
             return Ok(Vec::new());
         }
-        let keys = ctx.database.list_api_keys_by_reference(reference).await?;
+        let keys = sorted(
+            ctx.database.list_api_keys_by_reference(reference).await?,
+            true,
+        )?;
         if let Some(storage) = storage
             && !keys.is_empty()
         {
@@ -243,6 +257,8 @@ impl ApiKeyPlugin {
         &self,
         ctx: &AuthContext<impl AuthSchema>,
         reference: &str,
+        sort_by: Option<&str>,
+        sort_direction: Option<&str>,
     ) -> AuthResult<Vec<ApiKey>> {
         let mut operations = Vec::new();
         let mut stores = std::collections::HashSet::new();
@@ -272,8 +288,17 @@ impl ApiKeyPlugin {
                     metadata: ctx.metadata.clone(),
                     extensions: ctx.extensions.clone(),
                 };
+                let sort_by = sort_by.map(str::to_owned);
+                let sort_direction = sort_direction.map(str::to_owned);
                 operations.push(start_storage_task(async move {
-                    config.list_stored_keys(&context, &reference).await
+                    config
+                        .list_stored_keys(
+                            &context,
+                            &reference,
+                            sort_by.as_deref(),
+                            sort_direction.as_deref(),
+                        )
+                        .await
                 }));
             }
         }

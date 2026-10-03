@@ -3760,6 +3760,101 @@ mod crud_tests {
     }
 
     #[tokio::test]
+    async fn source_boxed_metadata_rows_list_successfully_without_mutating_storage() {
+        use better_auth_core::store::{CacheAdapter, MemoryCacheAdapter};
+        let (ctx, owner, token) = context().await;
+        let cache = Arc::new(MemoryCacheAdapter::new());
+        let plugin = ApiKeyPlugin::with_config(ApiKeyConfig {
+            storage: ApiKeyStorageMode::SecondaryStorage,
+            secondary_storage: Some(cache.clone()),
+            ..Default::default()
+        });
+        let mut rows = Vec::new();
+        let mut expected = std::collections::BTreeMap::new();
+        // Actual pinned Source trusted creation admits boxed String("10"),
+        // String("2"), Number(3), then serializes these primitive metadata
+        // values. Their relational comparator is cyclic. Listing still
+        // succeeds; no cross-engine total ordering is specified.
+        for index in 0..64 {
+            let created = server_key(&plugin, &ctx, &owner, "default").await;
+            let id = format!("api-key:by-id:{}", created.api_key.id);
+            let hash = format!("api-key:{}", ApiKeyPlugin::hash_key(&created.key));
+            let mut row: serde_json::Value =
+                serde_json::from_str(&cache.get(&id).await.unwrap().unwrap()).unwrap();
+            *row.get_mut("metadata").unwrap() = match index % 6 {
+                0 => json!("10"),
+                1 => json!("2"),
+                2 => json!(3),
+                3 => json!(null),
+                4 => json!("0"),
+                _ => json!({"literal":"object"}),
+            };
+            let value = serde_json::to_string(&row).unwrap();
+            cache.set_without_expiry(&id, &value).await.unwrap();
+            cache.set_without_expiry(&hash, &value).await.unwrap();
+            rows.push((id, value.clone()));
+            rows.push((hash, value));
+            expected.insert(
+                created.api_key.id,
+                [
+                    json!(10),
+                    json!(2),
+                    json!(3),
+                    json!(null),
+                    json!(0),
+                    json!({"literal":"object"}),
+                ]
+                .get(index % 6)
+                .unwrap()
+                .clone(),
+            );
+        }
+        let reference = format!("api-key:by-ref:{owner}");
+        let reference_before = cache.get(&reference).await.unwrap();
+        for direction in ["asc", "desc"] {
+            let mut req = request(&token, "/api-key/list", &json!(null));
+            req.method = HttpMethod::Get;
+            req.body = None;
+            req.query = HashMap::from([
+                ("sortBy".to_owned(), "metadata".to_owned()),
+                ("sortDirection".to_owned(), direction.to_owned()),
+            ]);
+            let response = plugin.handle_list(&req, &ctx).await.unwrap();
+            assert_eq!(response.status, 200);
+            let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            assert_eq!(body.get("total").unwrap(), 64);
+            let actual: std::collections::BTreeMap<_, _> = body
+                .get("apiKeys")
+                .unwrap()
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    (
+                        row.get("id").unwrap().as_str().unwrap().to_owned(),
+                        row.get("metadata").unwrap().clone(),
+                    )
+                })
+                .collect();
+            assert_eq!(actual, expected);
+            for (index, value) in &rows {
+                assert_eq!(
+                    cache.get(index).await.unwrap().as_deref(),
+                    Some(value.as_str())
+                );
+            }
+            assert_eq!(cache.get(&reference).await.unwrap(), reference_before);
+            assert!(
+                ctx.database
+                    .list_api_keys_by_reference(&owner)
+                    .await
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn application_storage_preserves_authority_indexes_and_usage() {
         use better_auth_core::store::{CacheAdapter, MemoryCacheAdapter};
         // HTTP creation and trusted verification use the real plugin and stores;

@@ -679,18 +679,47 @@ for (const profile of profiles.filter((profile) => profile.includes("fallback"))
     `api-key ${profile} a failed first list group preserves independently started fallback cache writes`,
     async (ctx) => {
       const s = await setup(ctx, profile);
-      const created = await s.owner.apiKey.create({ name: "group-default" });
+      const created = await s.owner.apiKey.create({
+        name: "group-default",
+        metadata: { literal: "object" },
+      });
       const isolated = await s.owner.apiKey.create({
         name: "group-isolated",
         configId: "isolated",
+        metadata: ["2"],
       });
       expect(created.error).toBeNull();
       expect(isolated.error).toBeNull();
+      const first = await s.owner.apiKey.create({ name: "aaa-first", metadata: null });
+      expect(first.error).toBeNull();
       await control(ctx, { action: "clear" });
       const before = await snapshot(ctx);
-      await control(ctx, { action: "configure", failure: "get", store: s.store });
+      await control(ctx, {
+        action: "configure",
+        failure: "get",
+        store: s.store,
+        holdStore: "isolated",
+        holdOperation: "set-reference",
+      });
       const failed = await s.owner.apiKey.list();
       expect(failed.error).not.toBeNull();
+      let barrier;
+      let paused;
+      try {
+        barrier = await control(ctx, { action: "wait", count: 1 });
+        expect(barrier.pending).toBe(1);
+        paused = await snapshot(ctx);
+        expect(cached(paused, "isolated", created.data!.id)).toBeDefined();
+        expect(cached(paused, "isolated", isolated.data!.id)).toBeDefined();
+        expect(cached(paused, "isolated", first.data!.id)).toBeDefined();
+        expect(entries(paused, "isolated").some((entry) => entry.namespace === "reference")).toBe(
+          false,
+        );
+        expect(entries(paused, s.store)).toEqual([]);
+        expect(paused.database).toEqual(before.database);
+      } finally {
+        await control(ctx, { action: "release" });
+      }
       await control(ctx, { action: "drain" });
       const partial = await snapshot(ctx);
       expect(cached(partial, "isolated", created.data!.id)).toBeDefined();
@@ -701,20 +730,105 @@ for (const profile of profiles.filter((profile) => profile.includes("fallback"))
       const retry = await s.owner.apiKey.list({ query: { sortBy: "name" } });
       expect(retry.error).toBeNull();
       expect(retry.data!.apiKeys.map((row) => row.name)).toEqual([
+        "aaa-first",
         "group-default",
         "group-isolated",
       ]);
       const repaired = await snapshot(ctx);
+      await control(ctx, { action: "clear" });
+      const descending = await s.owner.apiKey.list({
+        query: { configId: "default", sortBy: "name", sortDirection: "desc" },
+      });
+      expect(descending.error).toBeNull();
+      expect(descending.data!.apiKeys.map((row) => row.name)).toEqual([
+        "group-default",
+        "aaa-first",
+      ]);
+      const sortedCache = await snapshot(ctx);
+      expect(
+        entries(sortedCache, s.store).find((entry) => entry.namespace === "reference")!.value,
+      ).toEqual([{ id: isolated.data!.id }, { id: created.data!.id }, { id: first.data!.id }]);
+      await control(ctx, { action: "clear" });
+      const insertion = await s.owner.apiKey.list({ query: { configId: "default" } });
+      expect(insertion.error).toBeNull();
+      expect(insertion.data!.apiKeys.map((row) => row.name)).toEqual([
+        "group-default",
+        "aaa-first",
+      ]);
+      const insertionCache = await snapshot(ctx);
+      expect(
+        entries(insertionCache, s.store).find((entry) => entry.namespace === "reference")!.value,
+      ).toEqual([{ id: created.data!.id }, { id: isolated.data!.id }, { id: first.data!.id }]);
+      expect(insertionCache.database).toEqual(before.database);
+      await control(ctx, { action: "clear" });
+      const databaseMetadata = await s.owner.apiKey.list({ query: { sortBy: "metadata" } });
+      expect(databaseMetadata.error).toBeNull();
+      expect(databaseMetadata.data!.apiKeys.map((row) => row.name)).toEqual([
+        "group-isolated",
+        "aaa-first",
+        "group-default",
+      ]);
+      const metadataRefill = await snapshot(ctx);
+      expect(
+        entries(metadataRefill, s.store).find((entry) => entry.namespace === "reference")!.value,
+      ).toEqual([{ id: isolated.data!.id }, { id: first.data!.id }, { id: created.data!.id }]);
+      const cacheMetadata = await s.owner.apiKey.list({ query: { sortBy: "metadata" } });
+      expect(cacheMetadata.error).toBeNull();
+      expect(cacheMetadata.data!.apiKeys.map((row) => row.name)).toEqual([
+        "aaa-first",
+        "group-isolated",
+        "group-default",
+      ]);
+      expect(await snapshot(ctx)).toEqual(metadataRefill);
+      await control(ctx, { action: "clear" });
+      const databaseMetadataDescending = await s.owner.apiKey.list({
+        query: { sortBy: "metadata", sortDirection: "desc" },
+      });
+      expect(databaseMetadataDescending.error).toBeNull();
+      expect(databaseMetadataDescending.data!.apiKeys.map((row) => row.name)).toEqual([
+        "group-default",
+        "aaa-first",
+        "group-isolated",
+      ]);
+      const descendingMetadataRefill = await snapshot(ctx);
+      expect(
+        entries(descendingMetadataRefill, s.store).find((entry) => entry.namespace === "reference")!
+          .value,
+      ).toEqual([{ id: created.data!.id }, { id: first.data!.id }, { id: isolated.data!.id }]);
+      const cacheMetadataDescending = await s.owner.apiKey.list({
+        query: { sortBy: "metadata", sortDirection: "desc" },
+      });
+      expect(cacheMetadataDescending.error).toBeNull();
+      expect(cacheMetadataDescending.data!.apiKeys.map((row) => row.name)).toEqual([
+        "group-default",
+        "group-isolated",
+        "aaa-first",
+      ]);
+      expect(await snapshot(ctx)).toEqual(descendingMetadataRefill);
+      expect(descendingMetadataRefill.database).toEqual(before.database);
       return {
         signup: s.signup,
         other: s.other,
         created: ctx.snapshot(created),
         isolated: ctx.snapshot(isolated),
+        first: ctx.snapshot(first),
         before,
         failed: ctx.snapshot(failed),
+        barrier,
+        paused,
         partial,
         retry: ctx.snapshot(retry),
         repaired,
+        descending: ctx.snapshot(descending),
+        sortedCache,
+        insertion: ctx.snapshot(insertion),
+        insertionCache,
+        databaseMetadata: ctx.snapshot(databaseMetadata),
+        metadataRefill,
+        cacheMetadata: ctx.snapshot(cacheMetadata),
+        databaseMetadataDescending: ctx.snapshot(databaseMetadataDescending),
+        descendingMetadataRefill,
+        cacheMetadataDescending: ctx.snapshot(cacheMetadataDescending),
       };
     },
   );
@@ -915,6 +1029,221 @@ compatScenario(
       barrier,
       paused,
       listed: ctx.snapshot(listed),
+      after,
+    };
+  },
+);
+
+compatScenario(
+  "api-key api-key-storage-many-groups sorts each backend before group concatenation filtering and pagination",
+  async (ctx) => {
+    const profile = "api-key-storage-many-groups";
+    const s = await setup(ctx, profile);
+    const issued = [];
+    for (const [name, configId, metadata, permissions] of [
+      ["zulu-b", "group-0", { literal: "object" }, { zeta: ["read"] }],
+      ["alpha-b", "group-31", ["2"], { zeta: ["read"] }],
+      ["zulu-a", "group-0", null, { alpha: ["read"] }],
+      ["alpha-a", "group-31", ["10"], undefined],
+    ] as const) {
+      const created = await ctx.rawRequest({
+        path: `/__test/api-key-storage/create?profile=${profile}`,
+        method: "POST",
+        json: { userId: s.ownerId, name, configId, metadata, permissions },
+      });
+      expect(created.status).toBe(200);
+      issued.push(created);
+    }
+    const before = await snapshot(ctx);
+    const insertion = await s.owner.apiKey.list();
+    expect(insertion.error).toBeNull();
+    expect(insertion.data!.apiKeys.map((row) => row.name)).toEqual([
+      "zulu-b",
+      "zulu-a",
+      "alpha-b",
+      "alpha-a",
+    ]);
+    const ascending = await s.owner.apiKey.list({ query: { sortBy: "name" } });
+    expect(ascending.error).toBeNull();
+    expect(ascending.data!.apiKeys.map((row) => row.name)).toEqual([
+      "zulu-a",
+      "zulu-b",
+      "alpha-a",
+      "alpha-b",
+    ]);
+    const descending = await s.owner.apiKey.list({
+      query: { sortBy: "name", sortDirection: "desc" },
+    });
+    expect(descending.error).toBeNull();
+    expect(descending.data!.apiKeys.map((row) => row.name)).toEqual([
+      "zulu-b",
+      "zulu-a",
+      "alpha-b",
+      "alpha-a",
+    ]);
+    const paged = await s.owner.apiKey.list({ query: { sortBy: "name", offset: 1, limit: 2 } });
+    expect(paged.error).toBeNull();
+    expect(paged.data!.apiKeys.map((row) => row.name)).toEqual(["zulu-b", "alpha-a"]);
+    const selected = await s.owner.apiKey.list({
+      query: { configId: "group-31", sortBy: "name", offset: 1, limit: 1 },
+    });
+    expect(selected.error).toBeNull();
+    expect(selected.data!.apiKeys.map((row) => row.name)).toEqual(["alpha-b"]);
+    const byKey = await s.owner.apiKey.list({ query: { sortBy: "key" } });
+    expect(byKey.error).toBeNull();
+    const hashOrder = ["group-0", "group-31"].flatMap((store) =>
+      entries(before, store)
+        .filter((entry) => entry.namespace === "hash")
+        .sort((a, b) => (a.value.key < b.value.key ? -1 : a.value.key > b.value.key ? 1 : 0))
+        .map((entry) => entry.value.name),
+    );
+    expect(byKey.data!.apiKeys.map((row) => row.name)).toEqual(hashOrder);
+    const metadataAscending = await s.owner.apiKey.list({ query: { sortBy: "metadata" } });
+    expect(metadataAscending.error).toBeNull();
+    expect(metadataAscending.data!.apiKeys.map((row) => row.name)).toEqual([
+      "zulu-a",
+      "zulu-b",
+      "alpha-a",
+      "alpha-b",
+    ]);
+    const metadataDescending = await s.owner.apiKey.list({
+      query: { sortBy: "metadata", sortDirection: "desc" },
+    });
+    expect(metadataDescending.error).toBeNull();
+    expect(metadataDescending.data!.apiKeys.map((row) => row.name)).toEqual([
+      "zulu-b",
+      "zulu-a",
+      "alpha-b",
+      "alpha-a",
+    ]);
+    const permissionsAscending = await s.owner.apiKey.list({ query: { sortBy: "permissions" } });
+    expect(permissionsAscending.error).toBeNull();
+    expect(permissionsAscending.data!.apiKeys.map((row) => row.name)).toEqual([
+      "zulu-a",
+      "zulu-b",
+      "alpha-a",
+      "alpha-b",
+    ]);
+    const permissionsDescending = await s.owner.apiKey.list({
+      query: { sortBy: "permissions", sortDirection: "desc" },
+    });
+    expect(permissionsDescending.error).toBeNull();
+    expect(permissionsDescending.data!.apiKeys.map((row) => row.name)).toEqual([
+      "zulu-b",
+      "zulu-a",
+      "alpha-b",
+      "alpha-a",
+    ]);
+    const after = await snapshot(ctx);
+    expect(after).toEqual(before);
+    const legacyMetadata = {
+      literal: "legacy application metadata",
+      timestamp: "2024-01-02T03:04:05.000Z",
+      nested: { key: "literal-cache-data", id: "literal-row", referenceId: "literal-owner" },
+    };
+    const legacyRawMetadata = JSON.stringify({
+      ...legacyMetadata,
+      timestamp: "2024-01-02T03:04:05Z",
+    });
+    const legacyMutation = await control(ctx, {
+      action: "patch",
+      keyId: (issued[0]!.body as Data).id,
+      patch: { metadata: legacyRawMetadata },
+    });
+    const beforeLegacyRead = await snapshot(ctx);
+    const legacyGet = await s.owner.apiKey.get({
+      query: { id: (issued[0]!.body as Data).id, configId: "group-0" },
+    });
+    expect(legacyGet.error).toBeNull();
+    expect((ctx.snapshot(legacyGet) as Data).data.metadata).toEqual(legacyMetadata);
+    const legacyList = await s.owner.apiKey.list({
+      query: { configId: "group-0", sortBy: "metadata" },
+    });
+    expect(legacyList.error).toBeNull();
+    expect(
+      (ctx.snapshot(legacyList) as Data).data.apiKeys.find((row: Data) => row.name === "zulu-b")!
+        .metadata,
+    ).toEqual(legacyMetadata);
+    const afterLegacyRead = await snapshot(ctx);
+    expect(afterLegacyRead).toEqual(beforeLegacyRead);
+    const uncoercible = await s.owner.apiKey.create({
+      name: "uncoercible-metadata",
+      configId: "group-0",
+      metadata: { toString: 0 },
+    });
+    expect(uncoercible.error).toBeNull();
+    const beforeFailure = await snapshot(ctx);
+    const coercionFailure = await s.owner.apiKey.list({
+      query: { configId: "group-0", sortBy: "metadata" },
+    });
+    expect(coercionFailure.error?.status).toBe(500);
+    const afterFailure = await snapshot(ctx);
+    expect(afterFailure).toEqual(beforeFailure);
+    return {
+      signup: s.signup,
+      other: s.other,
+      issued,
+      before,
+      insertion: ctx.snapshot(insertion),
+      ascending: ctx.snapshot(ascending),
+      descending: ctx.snapshot(descending),
+      paged: ctx.snapshot(paged),
+      selected: ctx.snapshot(selected),
+      byKey: ctx.snapshot(byKey),
+      metadataAscending: ctx.snapshot(metadataAscending),
+      metadataDescending: ctx.snapshot(metadataDescending),
+      permissionsAscending: ctx.snapshot(permissionsAscending),
+      permissionsDescending: ctx.snapshot(permissionsDescending),
+      after,
+      legacyRawMetadata,
+      legacyMutation,
+      beforeLegacyRead,
+      legacyGet: ctx.snapshot(legacyGet),
+      legacyList: ctx.snapshot(legacyList),
+      afterLegacyRead,
+      uncoercible: ctx.snapshot(uncoercible),
+      beforeFailure,
+      coercionFailure: ctx.snapshot(coercionFailure),
+      afterFailure,
+    };
+  },
+);
+
+compatScenario(
+  "api-key api-key-storage-many-groups large issued metadata lists retain null-first stable JavaScript string coercion",
+  async (ctx) => {
+    const profile = "api-key-storage-many-groups";
+    const s = await setup(ctx, profile);
+    const issued = [];
+    for (let index = 0; index < 64; index++) {
+      const created = await s.owner.apiKey.create({
+        name: `mixed-${String(index).padStart(2, "0")}`,
+        configId: "group-0",
+        metadata: [["10"], ["2"], null, [], { literal: "object" }, [[false, 3]]][index % 6],
+      });
+      expect(created.error).toBeNull();
+      issued.push(ctx.snapshot(created));
+    }
+    const before = await snapshot(ctx);
+    const ascending = await s.owner.apiKey.list({
+      query: { configId: "group-0", sortBy: "metadata" },
+    });
+    expect(ascending.error).toBeNull();
+    expect(ascending.data!.apiKeys).toHaveLength(64);
+    const descending = await s.owner.apiKey.list({
+      query: { configId: "group-0", sortBy: "metadata", sortDirection: "desc" },
+    });
+    expect(descending.error).toBeNull();
+    expect(descending.data!.apiKeys).toHaveLength(64);
+    const after = await snapshot(ctx);
+    expect(after).toEqual(before);
+    return {
+      signup: s.signup,
+      other: s.other,
+      issued,
+      before,
+      ascending: ctx.snapshot(ascending),
+      descending: ctx.snapshot(descending),
       after,
     };
   },

@@ -33,6 +33,12 @@ groups. List ID reads and fallback cache loading use Source's concurrency bound
 of ten. A selected config reads only its own backend; all-config listing starts
 each distinct backend, deduplicates in group order and filters the actual
 reference owner and configured user/organization type before pagination.
+Sorting runs inside each backend before group concatenation. Database fallback
+orders rows before publishing cache indexes and the reference list; an absent
+sort preserves the backend's original order. The SQLite database branch compares
+stored JSON text for metadata, while cached metadata follows Source's null-first
+JavaScript primitive coercion. Permissions compare their actual serialized JSON
+strings. Cache string comparisons preserve UTF-16 ordering.
 
 Cache rows retain full Source JSON metadata values, including null, and the
 secondary-only absent permissions field. Native database models store metadata
@@ -40,11 +46,13 @@ as JSON text. The existing native storage journey explicitly projects that
 text to the actual JSON value before comparing complete rows; it does not omit
 metadata. Get/list ordinary application failures expose the observed empty HTTP
 500 response while typed API errors retain their own status and body.
+Documented legacy double-encoded metadata is parsed once more for API views,
+including Source's date revival; the actual stored string remains in receipts.
 
 ## Independent primary evidence
 
-`client-tests/tests/plugins/api-key/application-storage.test.ts` owns 47 official
-client/trusted-verification scenarios. Six profiles independently cover shared
+`client-tests/tests/plugins/api-key/application-storage.test.ts` owns 49 official
+client/trusted-application scenarios. Six profiles independently cover shared
 secondary, custom, fallback, custom fallback, deferred and deferred fallback
 storage. A seventh installs thirty-two distinct application stores to exercise
 large-group failure propagation. Fixtures are separate Map implementations and
@@ -63,11 +71,26 @@ Held-ID and held-first-group barriers demonstrate errors returning before
 remaining initiated IO finishes, then retain the actual partial and settled
 state. A twelve-key list holds the first ten actual ID reads, checks the ten
 pending application calls and preserves original result order after release.
+The group-failure owner also holds the isolated backend's actual reference write
+after its hash/ID writes finish, observes the caller's error and pending IO,
+then releases it and checks completed publication. It does not infer completion
+from a momentarily idle IO counter.
 
-The actual Source-only control passes **47 / 4,742 assertions** in
-`/tmp/issue203-47-self.log`. The existing complete native API-key family passes
-**53 tests**, including its application-storage authority/usage journey, in
-`/tmp/issue203-final-focused-native.log`.
+The sorting owners retain actual group order, pagination, stored-key sorting,
+null/object/array metadata, raw permission strings, cache versus database order,
+both sorted reference-list receipts and unspecified-sort insertion order. A
+sixty-four-key owner issues supported heterogeneous metadata through the actual
+API, crossing the small-list sort path while retaining stable order and every
+row. Actual legacy metadata is installed through the owned storage boundary;
+get/list return the Source-parsed object while full raw receipts stay unchanged.
+An admitted object with an own non-callable toString produces Source's observed
+ordinary 500 and preserves storage.
+
+The actual Source-only control passes **49 / 5,280 assertions** in
+`/tmp/issue203-final-49-source.log`. Strict fixture Clippy and the native API-key
+selection pass **55 tests**, including its application-storage authority/usage
+journey and an organization integration owner, in
+`/tmp/issue203-final-safe-sort-build-native.log`.
 
 Before-fix fixture binaries are preserved independently. Restoring the
 checkpoint's actual storage owner/callers yields **8 intended failures and one
@@ -80,6 +103,37 @@ earlier try_join_all fails the thirty-two-store held-first/later-error owner in
 `/tmp/issue203-ordered-mutation.log`; the later error waits behind the held
 earlier result. The corresponding locked build logs and actual binaries remain
 under `/tmp/issue203-{pre-concurrency,ordered-results}-server`.
+
+Before sorting correction, the actual Source/native group receipts differ in
+`/tmp/issue203-group-sort-complete-{source,rust}.json` and four intended group
+order/reference refill failures remain in `/tmp/issue203-before-group-and-ref.log`.
+The metadata and permissions omissions separately fail at their intended order
+assertions in `/tmp/issue203-before-raw-sort.log` and
+`/tmp/issue203-permissions-before.log`; complete legitimate issued rows and every
+sort response remain in `/tmp/issue203-raw-sort-complete-{source,rust}.json`.
+Before the legacy projection fix, native get returns the encoded string at
+metadata while Source returns its object in `/tmp/issue203-legacy-before.log`.
+
+Trusted Source creation also admits boxed String and Number objects, which its
+serializer turns into primitive stored metadata. The coordinator's independent
+actual Source/official SDK artifact is `/tmp/better-auth-source-boxed-metadata.json`;
+a mixed sixty-four-key actual Source issuance/SDK artifact is
+`/tmp/issue203-source-boxed-mixed-metadata.json`. No fixture mutation produces
+these Source rows. Their relational comparator can be cyclic, so cached
+metadata uses a fallible stable merge rather than slice sorting's total-order
+assumption. Cyclic ordering is implementation-defined, but successful listing,
+membership, parsed metadata and unchanged indexes are required.
+
+The native public HTTP owner
+`source_boxed_metadata_rows_list_successfully_without_mutating_storage` loads
+the actual Source storage shapes through the owned application boundary and
+checks both sort directions, all IDs/metadata, full hash/ID/reference values
+and empty SQL authority. It fails with the prior sort panic and HTTP 500 in
+`/tmp/issue203-boxed-native-before-final.log`. The original exploratory cyclic
+probe remains separately in `/tmp/issue203-mixed-numeric-owner.test.ts` and
+`/tmp/issue203-mixed-raw-sort.log`. Supported large API-issued arrays/objects/null
+also pass the Source control and differential in
+`/tmp/issue203-49-supported-{source,sort}.log`.
 
 ## Comparator provenance
 
@@ -103,24 +157,29 @@ omission or broad comparison exception is introduced. The sibling SQLite
 receipt controls pass alongside these controls in
 `/tmp/issue203-provenance-harness.log`.
 
-The full API-key SDK family passes **114 / 11,214 assertions** in
+The earlier checkpoint's full API-key SDK family passes **114 / 11,214 assertions** in
 `/tmp/issue203-final-family.log`, retaining the existing automatic-cleanup,
 organization, callback, SQLite-byte, phased-usage and session owners.
 
 ## Integration status
 
-The complete focused storage differential passes **47 / 4,742 assertions** in
-`/tmp/issue203-final-47-diff.log`. All **87 harness tests / 2,342 assertions**
-pass in `/tmp/issue203-final-harness.log`. Strict production and fixture Clippy,
-locked fixture compilation and all 53 native owners pass in
-`/tmp/issue203-final-strict-focused.log`; client typing and the new Source
+The complete focused storage differential passes **49 / 5,280 assertions** in
+`/tmp/issue203-final-49-safe-diff.log` after the safe cyclic-metadata merge
+correction. All **87 harness
+tests / 2,342 assertions** pass in `/tmp/issue203-replacement-harness.log`.
+Strict production Clippy and locked fixture compilation pass in
+`/tmp/issue203-final-safe-sort-build-native.log`; client typing and the new Source
 fixture's isolated strict typing pass. A supplemental full-reference strict
 check exposes inherited errors across other fixtures and is not claimed as a
 passing repository check. Format/lint and diff checks retain their ordinary
 requirements.
 
-The draft is publishing this focused checkpoint before rebasing onto the
-coordinator's main. Independent review and the canonical complete gate are
+The draft publishes focused checkpoints before the complete gate. The original
+17af7fe2 gate was explicitly stopped after independent review reproduced group
+sorting drift; its log is `/tmp/issue203-complete-gate-17af7fe2.log`. No complete
+success is claimed for that head. The corrected checkpoint rebases onto main
+f48d546e before freezing the replacement canonical gate. Independent review and
+the canonical complete gate are
 required before readiness. Existing
 capability obligations, the pinned oracle, all harness negative controls and
 the 75% source line coverage floor remain unchanged. Counts above identify
