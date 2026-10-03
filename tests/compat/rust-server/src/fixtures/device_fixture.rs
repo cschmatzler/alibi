@@ -11,7 +11,7 @@ use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::{
     DeviceAuthorizationPlugin, EmailPasswordPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use better_auth_seaorm::{
     DatabaseConnection,
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr},
@@ -62,6 +62,18 @@ pub(crate) async fn profiles(
         "device-configured",
         "device-unicode",
         "device-too-long",
+        "device-empty",
+        "device-fractional",
+        "device-negative",
+        "device-negative-interval",
+        "device-generator-error",
+        "device-user-generator-error",
+        "device-validation-error",
+        "device-request-error",
+        "device-generator-throw",
+        "device-user-generator-throw",
+        "device-validation-throw",
+        "device-request-throw",
     ] {
         let mut plugin = DeviceAuthorizationPlugin::new();
         match name {
@@ -79,6 +91,51 @@ pub(crate) async fn profiles(
                 plugin = plugin
                     .generate_device_code_async_with(|| async { Ok("😀".repeat(191)) })
                     .generate_user_code_with(|| "boundary-user".to_owned());
+            }
+            name if name.ends_with("-error") || name.ends_with("-throw") => {
+                plugin = plugin
+                    .generate_device_code_with(move || format!("{name}-code"))
+                    .generate_user_code_with(move || format!("{name}-user"));
+                plugin =
+                    match name {
+                        name if name.starts_with("device-generator-") => plugin
+                            .generate_device_code_async_with(move || async move {
+                                Err(callback_error(name))
+                            }),
+                        name if name.starts_with("device-user-generator-") => plugin
+                            .generate_user_code_async_with(move || async move {
+                                Err(callback_error(name))
+                            }),
+                        name if name.starts_with("device-validation-") => plugin
+                            .validate_client(move |_| async move { Err(callback_error(name)) }),
+                        name if name.starts_with("device-request-") => plugin
+                            .on_device_auth_request(move |_, _| async move {
+                                Err(callback_error(name))
+                            }),
+                        _ => plugin,
+                    };
+            }
+            "device-empty" => {
+                plugin = plugin
+                    .generate_device_code_with(String::new)
+                    .generate_user_code_async_with(|| async { Ok(String::new()) });
+            }
+            "device-fractional" => {
+                plugin = plugin
+                    .expires_in(Duration::milliseconds(1750))
+                    .interval(Duration::milliseconds(250))
+                    .verification_uri("/verify-relative");
+            }
+            "device-negative-interval" => {
+                plugin = plugin
+                    .expires_in(Duration::seconds(120))
+                    .interval(Duration::milliseconds(-250));
+            }
+            "device-negative" => {
+                plugin = plugin
+                    .expires_in(Duration::milliseconds(-1250))
+                    .interval(Duration::milliseconds(-250))
+                    .verification_uri("");
             }
             "device-too-long" => {
                 plugin =
@@ -110,4 +167,15 @@ pub(crate) async fn profiles(
         router = router.nest(&path, routes);
     }
     Ok(router)
+}
+
+fn callback_error(name: &str) -> AuthError {
+    if name.ends_with("-throw") {
+        return AuthError::internal("Private device callback failure");
+    }
+    AuthError::Api {
+        status: 400,
+        code: Some("DEVICE_CALLBACK_FAILED".into()),
+        message: "Configured device callback failed".into(),
+    }
 }

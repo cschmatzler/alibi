@@ -1637,7 +1637,8 @@
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
           "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
-          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption"
         ],
         "rejection": "device approve flow returns a bearer token",
         "authorization": {
@@ -1649,7 +1650,8 @@
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
           "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
-          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption"
         ]
       }
     },
@@ -3803,7 +3805,8 @@
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
-          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption"
         ],
         "rejection": [
           "device approve blocks already-processed codes",
@@ -3824,7 +3827,8 @@
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
-          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption"
         ]
       }
     },
@@ -3838,11 +3842,14 @@
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "device empty generators persist usable codes and preserve client binding through consumption",
+          "device signed fractional durations floor responses and preserve millisecond state"
         ],
         "rejection": [
           "device endpoint schemas preserve OAuth validation and media type errors",
-          "device configuration controls client validation lifetime polling and verification URL parameters"
+          "device configuration controls client validation lifetime polling and verification URL parameters",
+          "device generator validation and request callback errors preserve bodies without persistence"
         ],
         "authorization": {
           "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
@@ -3850,7 +3857,10 @@
         "state": [
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "device empty generators persist usable codes and preserve client binding through consumption",
+          "device signed fractional durations floor responses and preserve millisecond state",
+          "device generator validation and request callback errors preserve bodies without persistence"
         ]
       }
     },
@@ -3889,14 +3899,18 @@
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
-          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption"
         ],
         "rejection": [
           "device approve flow returns a bearer token",
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
-          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption",
+          "device signed fractional durations floor responses and preserve millisecond state",
+          "device generator validation and request callback errors preserve bodies without persistence"
         ],
         "authorization": {
           "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
@@ -3906,7 +3920,10 @@
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "device empty generators persist usable codes and preserve client binding through consumption",
+          "device signed fractional durations floor responses and preserve millisecond state",
+          "device generator validation and request callback errors preserve bodies without persistence"
         ]
       }
     },

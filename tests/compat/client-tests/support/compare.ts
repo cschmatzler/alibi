@@ -4162,6 +4162,15 @@ export function compareValues(
           : (opaqueAliases[key] ?? key);
 
       if (opaqueKeys.has(opaqueKey)) {
+        // Pinned custom device generators accept empty/whitespace strings.
+        // These are literal codes, never aliases for nonempty credentials.
+        if (
+          (opaqueKey === "device_code" || opaqueKey === "user_code") &&
+          (!a.trim() || !b.trim())
+        ) {
+          if (a !== b) fail(path, "literal empty device code differs");
+          return;
+        }
         identity(a, b, path, opaqueKey);
         return;
       }

@@ -296,11 +296,18 @@ impl DeviceAuthorizationPlugin {
             Err(response) => return Ok(response),
         };
 
-        self.issue_device_code(body, ctx).await.map(|response| {
-            response
-                .with_header("Cache-Control", "no-store")
-                .with_header("Pragma", "no-cache")
-        })
+        self.issue_device_code(body, ctx)
+            .await
+            .inspect_err(|error| {
+                if better_auth_core::endpoint::is_endpoint_api_error(error) {
+                    set_device_no_store_headers(req);
+                }
+            })
+            .map(|response| {
+                response
+                    .with_header("Cache-Control", "no-store")
+                    .with_header("Pragma", "no-cache")
+            })
     }
 
     async fn issue_device_code(
@@ -319,7 +326,9 @@ impl DeviceAuthorizationPlugin {
         }
 
         if let Some(callback) = &self.config.on_device_auth_request {
-            callback(body.client_id.clone(), body.scope.clone()).await?;
+            callback(body.client_id.clone(), body.scope.clone())
+                .await
+                .map_err(device_callback_error)?;
         }
 
         let expires_at = Utc::now() + self.config.expires_in;
@@ -374,8 +383,8 @@ impl DeviceAuthorizationPlugin {
                     user_code,
                     verification_uri,
                     verification_uri_complete,
-                    expires_in: self.config.expires_in.num_seconds(),
-                    interval: self.config.interval.num_seconds(),
+                    expires_in: duration_seconds_floor(self.config.expires_in),
+                    interval: duration_seconds_floor(self.config.interval),
                 },
             )?
             .with_header("Cache-Control", "no-store")
@@ -402,6 +411,11 @@ impl DeviceAuthorizationPlugin {
 
         self.redeem_device_token(body, req, ctx)
             .await
+            .inspect_err(|error| {
+                if better_auth_core::endpoint::is_endpoint_api_error(error) {
+                    set_device_no_store_headers(req);
+                }
+            })
             .map(|response| {
                 response
                     .with_header("Cache-Control", "no-store")
@@ -666,14 +680,16 @@ impl DeviceAuthorizationPlugin {
 
     async fn validate_client_id(&self, client_id: &str) -> AuthResult<bool> {
         match &self.config.validate_client {
-            Some(callback) => callback(client_id.to_owned()).await,
+            Some(callback) => callback(client_id.to_owned())
+                .await
+                .map_err(device_callback_error),
             None => Ok(true),
         }
     }
 
     async fn generate_device_code(&self) -> AuthResult<String> {
         match &self.config.generate_device_code {
-            Some(generator) => generator().await,
+            Some(generator) => generator().await.map_err(device_callback_error),
             None => {
                 Ok(Alphanumeric
                     .sample_string(&mut rand::rngs::OsRng, self.config.device_code_length))
@@ -683,7 +699,7 @@ impl DeviceAuthorizationPlugin {
 
     async fn generate_user_code(&self) -> AuthResult<String> {
         match &self.config.generate_user_code {
-            Some(generator) => generator().await,
+            Some(generator) => generator().await.map_err(device_callback_error),
             None => Ok(default_generate_user_code(self.config.user_code_length)),
         }
     }
@@ -717,6 +733,30 @@ better_auth_core::impl_auth_plugin! {
             }
         }
     }
+}
+
+fn device_callback_error(error: AuthError) -> AuthError {
+    match error {
+        AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
+        error => AuthError::CallbackFailure(Box::new(error)),
+    }
+}
+
+// Pinned createAuthEndpoint applies metadata.noStore when the handler starts,
+// including application API errors, but excludes schema/media rejections.
+fn set_device_no_store_headers(req: &AuthRequest) {
+    req.queue_response_header("Cache-Control", "no-store");
+    req.queue_response_header("Pragma", "no-cache");
+    if let Some(call) = better_auth_core::endpoint::current_endpoint_call_context() {
+        call.set_response_header("Cache-Control", "no-store");
+        call.set_response_header("Pragma", "no-cache");
+    }
+}
+
+fn duration_seconds_floor(duration: Duration) -> i64 {
+    let seconds = duration.num_seconds();
+    // Chrono truncates toward zero; upstream Math.floor rounds negative fractions down.
+    seconds - i64::from(duration < Duration::seconds(seconds))
 }
 
 fn is_unique_constraint_error(error: &AuthError) -> bool {
