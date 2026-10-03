@@ -194,8 +194,8 @@ async fn cookie_nonce_rejection_restores_saved_error_seaorm() {
             .await
             .unwrap();
         rejection_restores_flow(
-            AuthBuilder::new(config.clone()).store(better_auth_seaorm::SeaOrmStore::<Schema>::new(
-                config, database,
+            AuthBuilder::new(config.clone()).store_arc(std::sync::Arc::new(
+                better_auth_seaorm::SeaOrmStore::<Schema>::new(config, database),
             )),
             expected,
             "seaorm",

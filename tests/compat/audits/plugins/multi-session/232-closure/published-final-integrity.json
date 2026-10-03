@@ -1,0 +1,26 @@
+[
+  {
+    "project": "client-tests",
+    "package": "better-auth",
+    "publishedFilesMatch": 465,
+    "allPrivate": true
+  },
+  {
+    "project": "client-tests",
+    "package": "@better-auth/core",
+    "publishedFilesMatch": 350,
+    "allPrivate": true
+  },
+  {
+    "project": "reference-server",
+    "package": "better-auth",
+    "publishedFilesMatch": 465,
+    "allPrivate": true
+  },
+  {
+    "project": "reference-server",
+    "package": "@better-auth/core",
+    "publishedFilesMatch": 350,
+    "allPrivate": true
+  }
+]

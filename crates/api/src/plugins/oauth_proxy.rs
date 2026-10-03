@@ -468,8 +468,10 @@ impl OAuthProxyPlugin {
             &ctx.config,
         );
         req.queue_response_header("Set-Cookie", clear);
-        if ctx.config.account.store_state_strategy == OAuthStateStrategy::Database
-            && ctx.verifications().delete(&payload.state).await.is_err()
+        if matches!(
+            ctx.config.account.store_state_strategy,
+            OAuthStateStrategy::Automatic | OAuthStateStrategy::Database
+        ) && ctx.verifications().delete(&payload.state).await.is_err()
         {
             return error_redirect(error_url, "state_mismatch", None);
         }

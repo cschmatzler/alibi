@@ -38,11 +38,13 @@ for (const strategy of [undefined, "cookie", "database"] as const) {
   const cookie = issued.cookies[0]!.split(";")[0]!;
   const context = await auth.$context;
   const before = await context.internalAdapter.findVerificationValue(state);
-  if (Boolean(before) !== (strategy === "database"))
+  if (Boolean(before) !== (strategy === "database")) {
     throw new Error("wrong physical OAuth state mode");
+  }
   const callback = await call(`/callback/google?state=${state}`, cookie);
-  if (callback.location !== "/saved-error?flow=original&error=no_code")
+  if (callback.location !== "/saved-error?flow=original&error=no_code") {
     throw new Error(JSON.stringify(callback));
+  }
   const after = await context.internalAdapter.findVerificationValue(state);
   if (after !== null) throw new Error("state not consumed");
   const signup = await call("/sign-up/email", "", {
