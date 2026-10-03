@@ -29,6 +29,20 @@ pub trait TrustedOriginsResolver: Send + Sync {
     async fn resolve(&self, request: &AuthRequest) -> AuthResult<Vec<String>>;
 }
 
+/// Request-dependent account-linking trust policy. Initialization passes `None`;
+/// HTTP dispatch passes the original request before hooks and authority checks.
+/// This selects trusted provider IDs, not provider factories or credentials.
+#[async_trait]
+pub trait TrustedProvidersResolver: Send + Sync {
+    async fn resolve(&self, request: Option<&AuthRequest>) -> AuthResult<Vec<String>>;
+}
+
+impl std::fmt::Debug for dyn TrustedProvidersResolver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("TrustedProvidersResolver")
+    }
+}
+
 impl AuthConfig {
     #[must_use]
     pub fn dynamic_base_url(mut self, config: DynamicBaseUrl) -> Self {
@@ -45,11 +59,22 @@ impl AuthConfig {
         self
     }
 
+    /// Replace static account-linking trust with an async application policy.
+    #[must_use]
+    pub fn trusted_providers_resolver(
+        mut self,
+        resolver: impl TrustedProvidersResolver + 'static,
+    ) -> Self {
+        self.account.account_linking.trusted_providers_resolver =
+            Some(std::sync::Arc::new(resolver));
+        self
+    }
+
     /// Resolve the URL and origin policy without mutating the shared instance.
     ///
     /// # Errors
     /// Fails when no permitted host or fallback exists, the fallback is invalid,
-    /// or the application origin resolver fails.
+    /// or an application trust resolver fails.
     pub async fn resolve_request(&self, request: &AuthRequest) -> AuthResult<Self> {
         let mut config = self.clone();
         if let Some(dynamic) = &self.dynamic_base_url {
@@ -141,6 +166,14 @@ impl AuthConfig {
                     .into_iter()
                     .filter(|origin| !origin.is_empty()),
             );
+        }
+        if let Some(resolver) = &self.account.account_linking.trusted_providers_resolver {
+            config.account.account_linking.trusted_providers = resolver
+                .resolve(Some(request))
+                .await?
+                .into_iter()
+                .filter(|provider| !provider.is_empty())
+                .collect();
         }
         Ok(config)
     }
