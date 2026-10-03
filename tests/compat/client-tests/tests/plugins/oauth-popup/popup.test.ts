@@ -46,7 +46,11 @@ compatScenario(
     const raw: unknown[] = [];
     const observations: unknown[] = [];
     const base = ctx.baseURL;
-    const readState = async (request: any) => (await request.get(`${base}${CONTROL}/state`)).json();
+    const readState = async (request: any) => {
+      const state = await (await request.get(`${base}${CONTROL}/state`)).json();
+      raw.push({ state });
+      return state;
+    };
     try {
       const context = await browser.newContext();
       const request = context.request;
