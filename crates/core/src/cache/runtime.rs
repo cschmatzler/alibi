@@ -689,6 +689,62 @@ pub async fn read<S: AuthSchema>(
     Ok(None)
 }
 
+/// Renew an authenticated envelope without changing embedded session state.
+pub(crate) async fn renew_cache<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    request: &impl SessionRequest,
+    cache: &super::CompactCache,
+) -> AuthResult<()> {
+    if ctx.config.session.stateless
+        && request
+            .extensions()
+            .get::<crate::session::SessionRefreshSuppressed>()
+            .is_none()
+    {
+        let config = ctx
+            .config
+            .session
+            .cookie_cache
+            .as_ref()
+            .ok_or_else(|| AuthError::internal("Missing stateless cache configuration"))?;
+        let update_age = match ctx.config.session.cookie_refresh_cache {
+            crate::CookieRefreshCache::Disabled => None,
+            crate::CookieRefreshCache::Automatic => {
+                Some((super::effective_max_age(config.max_age) * 0.2).floor())
+            }
+            crate::CookieRefreshCache::UpdateAge(age) => Some(age),
+        };
+        // Source's cache-hit branch precedes disableRefresh, dontRemember,
+        // disableSessionRefresh, and deferSessionRefresh. None of these
+        // suppress envelope renewal or extend the embedded session expiry.
+        if update_age.is_some_and(|age| {
+            cache.expires_at - (chrono::Utc::now().timestamp_millis() as f64) < age * 1000.0
+        }) {
+            let context = CacheVersionContext::cached(cache.user.clone(), cache.session.clone());
+            for header in
+                build_headers(ctx, context, request.session_headers(), false, None).await?
+            {
+                request.queue_response_header("Set-Cookie", header);
+            }
+            let remember = ctx.session_manager().has_dont_remember_cookie(request);
+            request.queue_response_header(
+                "Set-Cookie",
+                super::cookie_header(
+                    &ctx.config.session.cookie_name,
+                    &percent_encoding::percent_decode_str(&sign_cookie_value(
+                        &cache.session.token,
+                        ctx.config.current_secret(),
+                    ))
+                    .decode_utf8_lossy(),
+                    (!remember).then_some(ctx.config.session.expires_in.num_seconds() as f64),
+                    &ctx.config,
+                )?,
+            );
+        }
+    }
+    Ok(())
+}
+
 /// Shared direct/nested get-session lifecycle for the explicitly migrated
 /// guards. Nested reads behave as GET even when their parent endpoint is POST.
 ///
@@ -757,6 +813,7 @@ async fn authenticated_inner<S: AuthSchema>(
         )));
     }
     if let Some(cache) = read(ctx, request).await? {
+        renew_cache(ctx, request, &cache).await?;
         request
             .extensions()
             .insert(SessionHookCache(Some(SessionHookCacheMetadata {
@@ -802,13 +859,17 @@ async fn authenticated_inner<S: AuthSchema>(
     };
     request.set_session_hook_snapshot(ctx.user_view(&user), ctx.session_view(&original));
     let suppressed = manager.request_disables_refresh(request);
+    let skip = request
+        .extensions()
+        .get::<crate::session::SessionRefreshSuppressed>()
+        .is_some();
     let deferred = ctx.config.session.defer_session_refresh
         && !(direct && request.session_method() == &crate::HttpMethod::Post);
     let read = manager
         .read_loaded_session_record(
             original,
             crate::session::SessionReadOptions {
-                allow_refresh: !suppressed && !deferred,
+                allow_refresh: !suppressed && !deferred && !skip,
                 cleanup_expired: !deferred,
             },
         )
@@ -853,7 +914,7 @@ async fn authenticated_inner<S: AuthSchema>(
         AuthenticatedRead {
             user: crate::AuthenticatedUser::Stored(user),
             session: ctx.session_view(&session),
-            needs_refresh: (deferred && !suppressed).then_some(read.needs_refresh),
+            needs_refresh: (deferred && !suppressed).then_some(read.needs_refresh && !skip),
         },
     )))
 }

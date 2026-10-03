@@ -23,7 +23,58 @@ impl<S: AuthSchema> PluginStore<S> {
     }
 
     pub(super) fn session_uses_database(&self) -> bool {
-        self.secondary().is_none() || self.config.session.store_in_database
+        !self.config.session.stateless
+            && (self.secondary().is_none() || self.config.session.store_in_database)
+    }
+
+    pub(super) fn remember_ephemeral_session(&self, session: &S::Session) -> AuthResult<()> {
+        if self.config.session.stateless {
+            drop(
+                self.ephemeral_sessions
+                    .lock()
+                    .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                    .insert(session.token().to_owned(), session.clone()),
+            );
+        }
+        Ok(())
+    }
+
+    pub(super) async fn update_ephemeral_session(
+        &self,
+        token: &str,
+        expires_at: Option<DateTime<Utc>>,
+        fields: crate::field_policy::FieldValues,
+    ) -> AuthResult<Option<S::Session>> {
+        let original = self
+            .ephemeral_sessions
+            .lock()
+            .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+            .get(token)
+            .cloned();
+        let Some(original) = original else {
+            return Ok(None);
+        };
+        let Some((session, fields)) = self
+            .inner
+            .prepare_secondary_session_update(original, expires_at, fields)
+            .await?
+        else {
+            return Ok(None);
+        };
+        // Never resurrect a session concurrently removed while hooks awaited.
+        {
+            let mut sessions = self
+                .ephemeral_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?;
+            let Some(destination) = sessions.get_mut(token) else {
+                return Ok(None);
+            };
+            *destination = session.clone();
+        }
+        self.inner
+            .complete_secondary_session_update(session, expires_at, fields, false)
+            .await
     }
 
     async fn references(&self, user_id: &str) -> AuthResult<Vec<Reference>> {

@@ -825,6 +825,34 @@ impl<S: AuthSchema> AuthContext<S> {
                 drop(view.extension_fields.insert(name.clone(), value.clone()));
             }
         }
+        if let Some(snapshot) = user.adapter_snapshot() {
+            // An ephemeral adapter can omit a property rather than persist SQL
+            // NULL. Output snapshots retain that distinction through caching.
+            for name in [
+                "id",
+                "name",
+                "email",
+                "emailVerified",
+                "image",
+                "createdAt",
+                "updatedAt",
+                "username",
+                "displayUsername",
+                "twoFactorEnabled",
+                "role",
+                "banned",
+                "banReason",
+                "banExpires",
+                "isAnonymous",
+                "phoneNumber",
+                "phoneNumberVerified",
+                "lastLoginMethod",
+            ] {
+                if !snapshot.contains_field(name) || snapshot.field_is_undefined(name) {
+                    let _ = view.omitted_fields.insert(name.into());
+                }
+            }
+        }
         view
     }
 
@@ -847,7 +875,11 @@ impl<S: AuthSchema> AuthContext<S> {
         );
         let output = fields
             .record_output(
-                serde_json::to_value(crate::UserView::from(&user))?,
+                serde_json::to_value(
+                    user.retained_user_view()
+                        .cloned()
+                        .unwrap_or_else(|| crate::UserView::from(&user)),
+                )?,
                 user.additional_fields(),
                 serde_json::to_value(self.trusted_user_view(&user))?,
             )
@@ -1094,6 +1126,26 @@ impl<S: AuthSchema> AuthContext<S> {
         self.authenticated_session(req, true).await
     }
 
+    /// Authoritative session authority without reconstructing an application
+    /// model from a cookie. Stateless deployments authorize the authenticated
+    /// cache snapshot; stateful deployments always bypass it.
+    pub async fn require_authoritative_cached_session(
+        &self,
+        req: &AuthRequest,
+    ) -> AuthResult<(crate::AuthenticatedUser<S>, crate::wire::SessionView)> {
+        crate::cache::runtime::clear_established_session::<S>(req);
+        let mut authoritative = req.clone();
+        authoritative.virtual_session = None;
+        if self.config.session.has_server_session_store() {
+            drop(
+                authoritative
+                    .query
+                    .insert("disableCookieCache".into(), "true".into()),
+            );
+        }
+        self.require_cached_session(&authoritative).await
+    }
+
     /// Authorize against the persisted signed-cookie session.
     /// This bypasses hook-provided virtual sessions while preserving normal
     /// refresh, browser preferences and deferred-read behavior.
@@ -1122,16 +1174,24 @@ impl<S: AuthSchema> AuthContext<S> {
         crate::cache::runtime::clear_established_session::<S>(req);
         let mut physical = req.clone();
         physical.virtual_session = None;
-        drop(
-            physical
-                .query
-                .insert("disableCookieCache".into(), "true".into()),
-        );
+        if self.config.session.has_server_session_store() {
+            drop(
+                physical
+                    .query
+                    .insert("disableCookieCache".into(), "true".into()),
+            );
+        }
         let read = crate::cache::runtime::authenticated(self, &physical, false)
             .await?
             .ok_or(AuthError::Unauthenticated)?;
         match read.user {
             crate::AuthenticatedUser::Stored(user) => Ok((user, read.session)),
+            crate::AuthenticatedUser::Cached(user) if self.config.session.stateless => {
+                let user = S::user_from_cookie_cache(*user).ok_or_else(|| {
+                    AuthError::config("This schema requires cache-aware session authority")
+                })?;
+                Ok((crate::AdapterRecord::physical(user)?, read.session))
+            }
             crate::AuthenticatedUser::Cached(_) => Err(AuthError::Unauthenticated),
         }
     }
@@ -1178,11 +1238,24 @@ impl<S: AuthSchema> AuthContext<S> {
             };
             return Ok((user, session.clone(), None));
         }
+        if self.config.session.stateless
+            && let Some(cache) = crate::cache::runtime::read(self, req).await?
+        {
+            crate::cache::runtime::renew_cache(self, req, &cache).await?;
+            let user = S::user_from_cookie_cache(cache.user).ok_or_else(|| {
+                AuthError::config("This schema requires cache-aware session authority")
+            })?;
+            return Ok((user, cache.session, None));
+        }
         let session_manager = self.session_manager();
 
         let suppressed = session_manager.request_disables_refresh(req);
+        let skip = req
+            .extensions()
+            .get::<crate::session::SessionRefreshSuppressed>()
+            .is_some();
         let options = crate::session::SessionReadOptions {
-            allow_refresh: !suppressed && !self.config.session.defer_session_refresh,
+            allow_refresh: !suppressed && !self.config.session.defer_session_refresh && !skip,
             cleanup_expired: !self.config.session.defer_session_refresh,
         };
         let Some(token) = session_manager.extract_session_token(req) else {
@@ -1214,7 +1287,7 @@ impl<S: AuthSchema> AuthContext<S> {
             user,
             self.session_view(&session),
             (self.config.session.defer_session_refresh && !suppressed)
-                .then_some(read.needs_refresh),
+                .then_some(read.needs_refresh && !skip),
         ))
     }
 
@@ -1257,6 +1330,14 @@ impl<S: AuthSchema> AuthContext<S> {
         &self,
         req: &impl crate::session::SessionRequest,
     ) -> AuthResult<Option<(S::User, crate::wire::SessionView)>> {
+        if self.config.session.stateless
+            && let Some(cache) = crate::cache::runtime::read(self, req).await?
+        {
+            let user = S::user_from_cookie_cache(cache.user).ok_or_else(|| {
+                AuthError::config("This schema requires cache-aware session authority")
+            })?;
+            return Ok(Some((user, cache.session)));
+        }
         let Some(token) = self.session_manager().extract_session_token(req) else {
             return Ok(None);
         };

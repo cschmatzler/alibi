@@ -1,0 +1,18 @@
+{
+  "signup": {
+    "status": 200,
+    "body": "{\"token\":\"Lw2CgdDwcov3iJX1Or8JhVy43JsmbNcS\",\"user\":{\"id\":\"15d762df-4939-4fde-a964-c8ad0b14d944\",\"name\":\"Stateless\",\"email\":\"native172@fixture.test\",\"emailVerified\":false,\"image\":null,\"createdAt\":\"2026-10-03T15:00:13.549Z\",\"updatedAt\":\"2026-10-03T15:00:13.549Z\",\"displayUsername\":null,\"username\":null}}",
+    "cookies": [
+      "better-auth.session_token=Lw2CgdDwcov3iJX1Or8JhVy43JsmbNcS.XAcKRqtBE701bZXzmzbiV2uE0DBYNKXeR8qZDehL9QY%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+      "better-auth.session_data=eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIiwia2lkIjoiTE9MWFFweExzSzNpenIxTlBoOHdHSXFZdUdzUGZjX0dHZTdZNmRXY1pFVSJ9..qOZLTJlY3oaSACSWVGCUjg.MTxhD-k_7nulkO0JywZ2JIftvpdImb6FjnNlELf-XL9CoAsRfntZvvINsld2uw08UETNikSnQ2jI_R4dwXHpz0ngpR6ESjyIyBLrD8NvflRjprA459wn3Up-N-7j9Nb_4iVX-o_a0s70W338lyFlIQkMy2GyyODUSvGaa-zUfq2m9pz9-6L_p5_OGU0-bv_4wbjagAxl3vpLGY0ecwicjkwfMV5nOWxe6RSkC3kDmaPBjBTKRWYTdHw5bSts7-0HXOnLQfT9Lai5AZw39amhGNGVoSuBK9xbArv8gR3p9F1SYc3h4e5MP42W5DxP4shBKYtsAI6zF1LGcS_qWTVPyLjNVJm5tsO95WeDKv6a02_49-D008EDe_DCqeG-cOy6csbjGFavTgs6-PV2s5yOxjftO7ebSe5QXwE_EFZO8ASvPPhGaeY5gPdqD76p9l66oFOY7HHifhWozqLnDAGrnfGVPDHIddqvOLWcHlfLXqk1WGQrmWz22WvGu1LQhJxDhnqQEZaCktbxOmujiiysPc8zqDnO-BMRtjturVbUcVlvf-vl8EWV0r4j83EFfmWSXIctdD9D7x2IdUg5vBGrbig6lRFSPfWBuxGA0YIp-vvNZIg1_h-qSxE9TrWVD8EPdv2zIyNhNKv9-sCosBkeQYJ2NFRYc8blDCpmgN55-tdC_ZAYh2TeXiIybmGmKggLKu4bVmQpUDDN1fWeculc0EVXjyWKCDYpdm5huD-7OrNjYmrVangT7cJt3EsloHzs_01tDZgua8Wt2pacba6PZEeEL1OFuywW4_PzbaZI21LLeF59yAhIOeqnUvAV4mkVh0sbozHJjBqzZugSuEP2LjCV7x4_j9pU_76E7QEZprlMcHVJkmVQMvcwH97wMsgN.3KqYCPqivxlro1ypJaG0xiTeodVtY7VxZ-FpVbg1Pr4; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+    ]
+  },
+  "renewed": {
+    "status": 200,
+    "body": "{\"session\":{\"id\":\"56a9f2db-ca32-466e-af69-3fbc272f0625\",\"expiresAt\":\"2026-10-10T15:00:13.551Z\",\"token\":\"Lw2CgdDwcov3iJX1Or8JhVy43JsmbNcS\",\"createdAt\":\"2026-10-03T15:00:13.551Z\",\"updatedAt\":\"2026-10-03T15:00:13.551Z\",\"ipAddress\":\"\",\"userAgent\":\"\",\"userId\":\"15d762df-4939-4fde-a964-c8ad0b14d944\"},\"user\":{\"id\":\"15d762df-4939-4fde-a964-c8ad0b14d944\",\"name\":\"Stateless\",\"email\":\"native172@fixture.test\",\"emailVerified\":false,\"image\":null,\"createdAt\":\"2026-10-03T15:00:13.549Z\",\"updatedAt\":\"2026-10-03T15:00:13.549Z\",\"displayUsername\":null,\"username\":null}}",
+    "cookies": [
+      "better-auth.session_data=eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIiwia2lkIjoiTE9MWFFweExzSzNpenIxTlBoOHdHSXFZdUdzUGZjX0dHZTdZNmRXY1pFVSJ9..d9wzdPlm3ao8q-x-AEpWNQ.BNy76IEi4uIX1ZjNd7nzYLQB8-qXAwnYHjmmXIbfKIF88cVrvBJAiSrlNbhQ7dkrWTn_e-Y11UN3_xNk480-aNmcMD9y0H_Z_O2vVGz_7n5kkHlfcT2GXa2VFlOZyKZ47G5QKLBA8cLvek9kSQC_nd8KzPzVs_L3an52CrfOdUFlG9okVsDO05dAgb50dch3GYxh_1YtREP4vINkWji5CvGgQD5nukYujARjaw1NFy4aLjAXOyPRxKgC6rkYeqd-aSWJ9MHVXTgjYXjAQLUKdrYLH-ZGwUkkr3nO4uR9AlGDZkdCDZ3LOeGuzdniuPnpg2_mHof4QVKjT73q-_Jz8_pqdcuL4sKbGE4CIRxmEPAeNbMyREmqpNFrHnpKJ6OTz_tBCLDEwypTb03mVfbqrUesLAn3nJPkdnD6VU4tz3pajpCbjItspcSIx01CwG0FfqViIAyX58aMumCEGEA5oTndnua9PwxZdlhkcxx_RzFMb_0XMdtCnDISZYH2vP1YTHVZja-oGpenaWY8LbOVQc_1dnpa1aenlpu5HS1d4PmVSBJm37Z-ikixCLIUQiOjBg_6q9an0ji3fL-3FNBWgrK_MMtO0vXogCSrzoTy2oiVLW0OWNDheWQdDF-7SiMb1RRpzyer1YJv-0mfaxZfG_IWVRJ3XMQr3UZ4kkgIY_yZRYdVjQd7oLXCi4OO4XiV_0Q37efZ1jvISynd2uBikVwaGRTOO9an7Uf7o0dSfI-a-Q3RvgTTKVbiX8_tpwJwbsywoBS53Xef7bBwmCQezQPPyG8j9UBobwe8ZN4xqx-DNg5zS-ge6n1Az5aW939Erm63RZtxLUWPLrcp81eOX172QeRgh1mtZDJzIKMtqHUOD1WLDYu8hI4r3YWNhRWk.rR_anbqayENc3E8jFh6uUGMoO5gdBP0UN_koXTuKbXY; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+      "better-auth.session_token=Lw2CgdDwcov3iJX1Or8JhVy43JsmbNcS.XAcKRqtBE701bZXzmzbiV2uE0DBYNKXeR8qZDehL9QY%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+    ]
+  }
+}

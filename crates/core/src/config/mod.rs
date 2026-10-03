@@ -289,7 +289,13 @@ pub enum OAuthStateStrategy {
     reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
 )]
 pub struct SessionConfig {
-    /// Shared secondary session backend. Without one, sessions always use the database.
+    /// No durable server session authority. Session records are instance-local
+    /// in memory; no SQL session rows are read or written. Captured caches remain
+    /// replayable until their embedded expiry or cache version/secret invalidation.
+    pub stateless: bool,
+    /// Stateless envelope renewal. Stateful deployments ignore this policy.
+    pub cookie_refresh_cache: CookieRefreshCache,
+    /// Shared secondary session backend for stateful deployments.
     pub secondary_storage: Option<Arc<dyn crate::store::CacheAdapter>>,
     /// Also persist session rows when a secondary backend is configured.
     pub store_in_database: bool,
@@ -442,6 +448,46 @@ pub struct CookieCacheConfig {
 
     /// Literal or asynchronous application-owned version policy.
     pub version: Option<crate::cache::CookieCacheVersion>,
+}
+
+/// Stateless cache renewal policy, corresponding to `cookieCache.refreshCache`.
+#[derive(Debug, Clone, Copy, Default)]
+pub enum CookieRefreshCache {
+    /// No cache renewal.
+    #[default]
+    Disabled,
+    /// Renew when remaining envelope lifetime is below floor(maxAge * 0.2).
+    Automatic,
+    /// Renew below this remaining lifetime in seconds (JavaScript Number).
+    UpdateAge(f64),
+}
+
+impl SessionConfig {
+    /// Select cookie-only sessions, installing the pinned no-store defaults.
+    /// Configure `cookie_cache` afterwards to override strategy, lifetime,
+    /// version, or renewal. Existing database defaults are unchanged.
+    #[must_use]
+    pub fn stateless(mut self) -> Self {
+        if !self.stateless {
+            self.cookie_refresh_cache = CookieRefreshCache::Automatic;
+        }
+        self.stateless = true;
+        if self.cookie_cache.is_none() {
+            self.cookie_cache = Some(CookieCacheConfig {
+                enabled: true,
+                strategy: CookieCacheStrategy::Jwe,
+                max_age: self.expires_in.num_seconds() as f64,
+                ..CookieCacheConfig::default()
+            });
+        }
+        self
+    }
+
+    /// Whether deployment has durable server session storage.
+    #[must_use]
+    pub fn has_server_session_store(&self) -> bool {
+        !self.stateless
+    }
 }
 
 /// Strategy for signing / encrypting the cookie cache.
@@ -657,6 +703,8 @@ impl Default for AuthConfig {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
+            stateless: false,
+            cookie_refresh_cache: CookieRefreshCache::Disabled,
             secondary_storage: None,
             store_in_database: false,
             preserve_in_database: false,
@@ -1000,6 +1048,15 @@ impl AuthConfig {
     ///
     /// Returns a configuration error if the signing secret is empty or shorter than 32 bytes.
     pub fn validate(&self) -> Result<(), AuthError> {
+        if self.session.stateless
+            && (self.session.secondary_storage.is_some()
+                || self.session.store_in_database
+                || self.session.preserve_in_database)
+        {
+            return Err(AuthError::config(
+                "Stateless sessions cannot use server session storage",
+            ));
+        }
         if let Some(secrets) = &self.managed_secrets {
             return secrets.validate();
         }

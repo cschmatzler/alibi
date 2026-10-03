@@ -1,5 +1,6 @@
 pub mod adapter;
 pub mod cache;
+pub mod stateless;
 
 mod database_hooks;
 mod migrations;
@@ -132,6 +133,7 @@ impl<S: AuthSchema> Clone for AdapterCallbacks<S> {
 }
 
 pub(crate) struct PluginStore<S: AuthSchema> {
+    ephemeral_sessions: Arc<std::sync::Mutex<indexmap::IndexMap<String, S::Session>>>,
     inner: Arc<dyn AuthStore<S>>,
     config: Arc<crate::AuthConfig>,
     transforms: UserTransforms,
@@ -144,6 +146,7 @@ pub(crate) struct PluginStore<S: AuthSchema> {
 impl<S: AuthSchema> Clone for PluginStore<S> {
     fn clone(&self) -> Self {
         Self {
+            ephemeral_sessions: Arc::clone(&self.ephemeral_sessions),
             inner: Arc::clone(&self.inner),
             config: Arc::clone(&self.config),
             transforms: self.transforms.clone(),
@@ -167,6 +170,7 @@ impl<S: AuthSchema> PluginStore<S> {
         projection_context: crate::AuthContext<S>,
     ) -> Self {
         Self {
+            ephemeral_sessions: Arc::new(std::sync::Mutex::new(indexmap::IndexMap::new())),
             inner,
             config,
             transforms,
@@ -659,6 +663,9 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         mut fields: crate::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.adapter_fields.attach(&mut fields, false);
+        if self.config.session.stateless {
+            return self.update_ephemeral_session(token, None, fields).await;
+        }
         if self.secondary().is_some() {
             return self.update_secondary_session(token, None, fields).await;
         }
@@ -669,15 +676,20 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
             .attach(&mut create_session.additional_fields, true);
-        let session = if self.secondary().is_some() {
+        let session = if self.config.session.stateless {
+            self.inner
+                .prepare_secondary_session_creation(create_session, false)
+                .await?
+        } else if self.secondary().is_some() {
             self.inner
                 .prepare_secondary_session_creation(create_session, self.session_uses_database())
                 .await?
         } else {
             self.inner.create_session(create_session).await?
         };
+        self.remember_ephemeral_session(&session)?;
         self.mirror_created_session(&session).await?;
-        if self.secondary().is_some() {
+        if self.secondary().is_some() || self.config.session.stateless {
             self.inner
                 .complete_secondary_session_creation(&session)
                 .await?;
@@ -688,6 +700,14 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         Ok(session)
     }
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>> {
+        if self.config.session.stateless {
+            return Ok(self
+                .ephemeral_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                .get(token)
+                .cloned());
+        }
         if self.secondary().is_some() {
             if let Some((session, _)) = self.cached_session(token).await? {
                 return Ok(Some(session));
@@ -709,6 +729,21 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         Ok(self.cached_session(token).await?.map(|(_, user)| user))
     }
     async fn get_sessions_by_tokens(&self, tokens: &[String]) -> AuthResult<Vec<S::Session>> {
+        if self.config.session.stateless {
+            let sessions = self
+                .ephemeral_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?;
+            return Ok(sessions
+                .values()
+                .filter(|session| {
+                    tokens
+                        .iter()
+                        .any(|token| token == crate::AuthSession::token(*session))
+                })
+                .cloned()
+                .collect());
+        }
         if self.secondary().is_some() {
             let mut sessions = Vec::new();
             for token in tokens {
@@ -721,6 +756,16 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         self.inner.get_sessions_by_tokens(tokens).await
     }
     async fn get_user_sessions(&self, user_id: &str) -> AuthResult<Vec<S::Session>> {
+        if self.config.session.stateless {
+            return Ok(self
+                .ephemeral_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                .values()
+                .filter(|session| crate::AuthSession::user_id(*session).as_ref() == user_id)
+                .cloned()
+                .collect());
+        }
         if self.secondary().is_some() {
             return self.cached_user_sessions(user_id).await;
         }
@@ -745,6 +790,11 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         mut fields: crate::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.adapter_fields.attach(&mut fields, false);
+        if self.config.session.stateless {
+            return self
+                .update_ephemeral_session(token, Some(expires_at), fields)
+                .await;
+        }
         if self.secondary().is_some() {
             return self
                 .update_secondary_session(token, Some(expires_at), fields)
@@ -765,6 +815,15 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
             .ok_or(AuthError::SessionNotFound)
     }
     async fn delete_session(&self, token: &str) -> AuthResult<()> {
+        if self.config.session.stateless {
+            drop(
+                self.ephemeral_sessions
+                    .lock()
+                    .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                    .shift_remove(token),
+            );
+            return Ok(());
+        }
         self.remove_cached_session(token).await?;
         if !self.session_uses_database() {
             return Ok(());
@@ -775,6 +834,13 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         self.inner.delete_session(token).await
     }
     async fn delete_user_sessions(&self, user_id: &str) -> AuthResult<()> {
+        if self.config.session.stateless {
+            self.ephemeral_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?
+                .retain(|_, session| crate::AuthSession::user_id(session).as_ref() != user_id);
+            return Ok(());
+        }
         drop(self.get_user_sessions_record(user_id).await);
         let tokens = self.cached_user_tokens(user_id).await?;
         if self.session_uses_database() {
@@ -787,6 +853,16 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         self.remove_cached_user_sessions(user_id, tokens).await
     }
     async fn delete_expired_sessions(&self) -> AuthResult<usize> {
+        if self.config.session.stateless {
+            let mut sessions = self
+                .ephemeral_sessions
+                .lock()
+                .map_err(|_| AuthError::internal("Ephemeral session state poisoned"))?;
+            let before = sessions.len();
+            sessions
+                .retain(|_, session| crate::AuthSession::expires_at(session) >= chrono::Utc::now());
+            return Ok(before - sessions.len());
+        }
         if self.secondary().is_some()
             && (!self.config.session.store_in_database || self.config.session.preserve_in_database)
         {
@@ -800,7 +876,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         organization_id: Option<&str>,
     ) -> AuthResult<S::Session> {
-        if self.secondary().is_some() {
+        if self.config.session.stateless || self.secondary().is_some() {
             let mut fields = crate::field_policy::FieldValues::new();
             drop(fields.insert(
                 "activeOrganizationId".into(),
@@ -808,10 +884,12 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                     crate::utils::json::JsValue::String(value.to_owned())
                 }),
             ));
-            return self
-                .update_secondary_session(token, None, fields)
-                .await?
-                .ok_or(AuthError::SessionNotFound);
+            let updated = if self.config.session.stateless {
+                self.update_ephemeral_session(token, None, fields).await?
+            } else {
+                self.update_secondary_session(token, None, fields).await?
+            };
+            return updated.ok_or(AuthError::SessionNotFound);
         }
         self.inner
             .update_session_active_organization(token, organization_id)
@@ -822,7 +900,7 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
         token: &str,
         team_id: Option<&str>,
     ) -> AuthResult<S::Session> {
-        if self.secondary().is_some() {
+        if self.config.session.stateless || self.secondary().is_some() {
             let mut fields = crate::field_policy::FieldValues::new();
             drop(fields.insert(
                 "activeTeamId".into(),
@@ -830,10 +908,12 @@ impl<S: AuthSchema> SessionStore<S> for PluginStore<S> {
                     crate::utils::json::JsValue::String(value.to_owned())
                 }),
             ));
-            return self
-                .update_secondary_session(token, None, fields)
-                .await?
-                .ok_or(AuthError::SessionNotFound);
+            let updated = if self.config.session.stateless {
+                self.update_ephemeral_session(token, None, fields).await?
+            } else {
+                self.update_secondary_session(token, None, fields).await?
+            };
+            return updated.ok_or(AuthError::SessionNotFound);
         }
         self.inner.update_session_active_team(token, team_id).await
     }
@@ -1808,7 +1888,11 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
             .defaults(&mut create_session.additional_fields);
         self.adapter_fields
             .attach(&mut create_session.additional_fields, true);
-        let session = if self.record_store.secondary().is_some() {
+        let session = if self.config.session.stateless {
+            self.inner
+                .prepare_secondary_session_creation(create_session, false)
+                .await?
+        } else if self.record_store.secondary().is_some() {
             let model = self
                 .inner
                 .prepare_secondary_session_creation(
@@ -1891,6 +1975,7 @@ impl<S: AuthSchema> TransactionStore<S> for PluginStore<S> {
                 .map_err(|_| AuthError::internal("Session callback queue poisoned"))?,
         );
         for session in sessions {
+            self.remember_ephemeral_session(&session)?;
             for callback in &self.session_callbacks.callbacks {
                 callback.after_create(&session, self).await?;
             }

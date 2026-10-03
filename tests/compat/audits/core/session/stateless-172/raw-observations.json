@@ -1,0 +1,77 @@
+{
+  "comparison": "Direct raw output key/value observations; no compatibility comparator changes. Independently generated ids/tokens/timestamps differ, retained verbatim in raw files.",
+  "userKeys": {
+    "source": [
+      "createdAt",
+      "email",
+      "emailVerified",
+      "id",
+      "name",
+      "tier",
+      "updatedAt"
+    ],
+    "native": [
+      "createdAt",
+      "email",
+      "emailVerified",
+      "id",
+      "name",
+      "tier",
+      "updatedAt"
+    ]
+  },
+  "sessionKeys": {
+    "source": [
+      "createdAt",
+      "expiresAt",
+      "id",
+      "ipAddress",
+      "label",
+      "token",
+      "updatedAt",
+      "userAgent",
+      "userId"
+    ],
+    "native": [
+      "createdAt",
+      "expiresAt",
+      "id",
+      "ipAddress",
+      "label",
+      "token",
+      "updatedAt",
+      "userAgent",
+      "userId"
+    ]
+  },
+  "commonConfiguredValues": {
+    "source": {
+      "name": "No database",
+      "email": "no-db172@fixture.test",
+      "emailVerified": false,
+      "tier": "starter"
+    },
+    "native": {
+      "name": "No database",
+      "email": "no-db172@fixture.test",
+      "emailVerified": false,
+      "tier": "starter"
+    }
+  },
+  "label": {
+    "source": "browser",
+    "native": "browser"
+  },
+  "automaticRenewalPreservedPayload": {
+    "source": true,
+    "native": true
+  },
+  "defaultReadCookieCount": {
+    "source": 0,
+    "native": 0
+  },
+  "automaticRenewalCookieCount": {
+    "source": 2,
+    "native": 2
+  }
+}
