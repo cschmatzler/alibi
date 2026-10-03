@@ -761,14 +761,20 @@ compatScenario(
 
     const seeds = [];
 
-    for (const orgId of [organizationId, organizationId, otherId]) {
+    const permissionJsons = [
+      '{ "team" : ["create", "create"], "member" : ["update"] }',
+      '{ "member" : ["update"], "team" : ["delete"] }',
+      '{ "team" : ["create"] }',
+    ];
+    for (const [index, orgId] of [organizationId, organizationId, otherId].entries()) {
       const seed = await serverOperation(
         ctx,
         {
           operation: "seed-role",
           organizationId: orgId,
           role: "legacy-editor",
-          permission: { team: ["create"] },
+          permission: JSON.parse(permissionJsons[index]!),
+          permissionJson: permissionJsons[index],
         },
         profile,
       );
@@ -789,20 +795,51 @@ compatScenario(
       code: "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
     });
 
+    const beforeUpdates = await state(ctx, organizationId);
+    expect(beforeUpdates.parsed.roles.map((role) => role.permission)).toEqual(
+      permissionJsons.slice(0, 2),
+    );
+
+    const noOp = await owner.client.organization.updateRole({
+      roleName: "legacy-editor",
+      data: {},
+    });
+    expect(data(noOp).roleData.permission).toEqual(JSON.parse(permissionJsons[0]!));
+    const afterNoOp = await state(ctx, organizationId);
+    expect(afterNoOp.parsed.roles.map((role) => role.permission)).toEqual(
+      permissionJsons.slice(0, 2),
+    );
+
+    const renamed = await owner.client.organization.updateRole({
+      roleName: "legacy-editor",
+      data: { roleName: "Renamed-Editor" },
+    });
+    expect(data(renamed).roleData.role).toBe("renamed-editor");
+    const afterRename = await state(ctx, organizationId);
+    expect(afterRename.parsed.roles.map((role) => role.role)).toEqual([
+      "renamed-editor",
+      "renamed-editor",
+    ]);
+    expect(afterRename.parsed.roles.map((role) => role.permission)).toEqual(
+      permissionJsons.slice(0, 2),
+    );
+
     const byId = await owner.client.organization.updateRole({
       roleId: first.roleId,
       data: { permission: { team: ["update"] } },
     });
-    expect(data(byId).roleData.updatedAt).toBeNull();
+    expect(new Date(data(byId).roleData.updatedAt!).toISOString()).toBe(
+      afterRename.parsed.roles[0]!.updatedAt!,
+    );
 
     const afterId = await state(ctx, organizationId);
     expect(afterId.parsed.roles.map((role) => role.permission)).toEqual([
       '{"team":["update"]}',
-      '{"team":["create"]}',
+      permissionJsons[1]!,
     ]);
 
     const byName = await owner.client.organization.updateRole({
-      roleName: "legacy-editor",
+      roleName: "renamed-editor",
       data: { permission: { member: ["update"] } },
     });
     expect(data(byName).roleData.id).toBe(first.roleId);
@@ -816,10 +853,10 @@ compatScenario(
     expect(afterName.parsed.roles[0]?.updatedAt).toBe(afterName.parsed.roles[1]?.updatedAt);
 
     const foreignState = await state(ctx, otherId);
-    expect(foreignState.parsed.roles[0]?.permission).toBe('{"team":["create"]}');
+    expect(foreignState.parsed.roles[0]?.permission).toBe(permissionJsons[2]);
     expect(foreignState.parsed.roles[0]?.updatedAt).toBeNull();
 
-    const removed = await owner.client.organization.deleteRole({ roleName: "legacy-editor" });
+    const removed = await owner.client.organization.deleteRole({ roleName: "renamed-editor" });
     data(removed);
     const removedState = await state(ctx, organizationId);
     expect(removedState.parsed.roles).toEqual([]);
@@ -835,6 +872,11 @@ compatScenario(
       other,
       seeds,
       wrongScope,
+      beforeUpdates: beforeUpdates.raw,
+      noOp,
+      afterNoOp: afterNoOp.raw,
+      renamed,
+      afterRename: afterRename.raw,
       byId,
       afterId: afterId.raw,
       byName,

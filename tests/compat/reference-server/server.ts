@@ -1665,13 +1665,28 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
         body.permission &&
         typeof body.permission === "object"
       ) {
+        const permissionJson = body.permissionJson ?? JSON.stringify(body.permission);
+        if (
+          typeof permissionJson !== "string" ||
+          JSON.stringify(JSON.parse(permissionJson)) !== JSON.stringify(body.permission)
+        ) {
+          return jsonResponse({ message: "Legacy permission mismatch" }, { status: 400 });
+        }
         const { adapter } = await selected.$context;
+        if (
+          !(await adapter.findOne({
+            model: "organization",
+            where: [{ field: "id", value: body.organizationId }],
+          }))
+        ) {
+          return jsonResponse({ message: "Organization not found" }, { status: 400 });
+        }
         const role = await adapter.create<Record<string, unknown>>({
           model: "organizationRole",
           data: {
             organizationId: body.organizationId,
             role: body.role,
-            permission: JSON.stringify(body.permission),
+            permission: permissionJson,
             createdAt: new Date(),
           },
         });

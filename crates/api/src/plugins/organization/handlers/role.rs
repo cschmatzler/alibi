@@ -331,6 +331,10 @@ pub async fn handle_role_request<S: AuthSchema>(
                 ctx.database.delete_organization_role(&org, &chosen).await?;
             AuthResponse::json(200, &serde_json::json!({"success":true}))?
         } else if let Some(updates) = updates {
+            // Only requested fields belong in the batch update. Copying the
+            // selected row's permissions would overwrite other legacy rows
+            // with the same name and normalize their literal permission JSON.
+            let mut update = UpdateOrganizationRole::default();
             if let Some(permission) = &updates.permission {
                 let missing = missing_permissions(&member.role, permission, config, &org)?;
                 if !missing.is_empty() {
@@ -340,22 +344,17 @@ pub async fn handle_role_request<S: AuthSchema>(
                     )?));
                 }
                 role.permission = permission.clone();
+                update.permission = Some(permission.clone());
             }
             if let Some(name) = updates.role_name.filter(|name| !name.is_empty()) {
                 let name = name.to_lowercase();
                 check_name(&name, &org, config, ctx).await?;
+                update.role = Some(name.clone());
                 role.role = name;
             }
             drop(
                 ctx.database
-                    .update_organization_role(
-                        &org,
-                        &chosen,
-                        UpdateOrganizationRole {
-                            role: Some(role.role.clone()),
-                            permission: Some(role.permission.clone()),
-                        },
-                    )
+                    .update_organization_role(&org, &chosen, update)
                     .await?,
             );
             // The upstream return value merges the pre-update row; the stored updatedAt still advances.

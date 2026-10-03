@@ -550,6 +550,8 @@ enum TeamOperation {
         organization_id: String,
         role: String,
         permission: OrganizationPermissions,
+        #[serde(rename = "permissionJson")]
+        permission_json: Option<String>,
     },
     SetMemberRole {
         #[serde(rename = "organizationId")]
@@ -733,9 +735,29 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                             Ok::<_, AuthError>(json!({"userId":user.id(),"memberId":member.id}))
                         }.await
                     },
-                    TeamOperation::SeedRole {organization_id,role,permission} => {
-                        profile.auth.store().create_organization_role(CreateOrganizationRole {organization_id,role,permission}).await
-                            .map(|role|json!({"roleId":role.id,"organizationId":role.organization_id,"role":role.role}))
+                    TeamOperation::SeedRole {organization_id,role,permission,permission_json} => {
+                        async {
+                            // Retain a controlled record-shaped legacy row with its literal
+                            // bytes. Validate before creation, then write through actual SQL.
+                            if let Some(raw) = &permission_json {
+                                let parsed: OrganizationPermissions = serde_json::from_str(raw)?;
+                                if parsed != permission {
+                                    return Err(AuthError::bad_request("Legacy permission mismatch"));
+                                }
+                            }
+                            if profile.auth.store().get_organization_by_id(&organization_id).await?.is_none() {
+                                return Err(AuthError::bad_request("Organization not found"));
+                            }
+                            let role = profile.auth.store().create_organization_role(CreateOrganizationRole {organization_id,role,permission}).await?;
+                            if let Some(raw) = permission_json {
+                                let mut row: organization_role::ActiveModel = organization_role::Entity::find_by_id(&role.id)
+                                    .one(&database).await.map_err(|error| AuthError::internal(error.to_string()))?
+                                    .ok_or_else(|| AuthError::internal("Seeded role missing"))?.into();
+                                row.permission = Set(raw);
+                                row.update(&database).await.map_err(|error| AuthError::internal(error.to_string()))?;
+                            }
+                            Ok(json!({"roleId":role.id,"organizationId":role.organization_id,"role":role.role}))
+                        }.await
                     },
                     TeamOperation::SetMemberRole {organization_id,member_id,role} => {
                         async {
