@@ -1,4 +1,8 @@
 //! State rejection restores the authenticated flow's redirect without consuming it.
+#![allow(
+    clippy::unwrap_used,
+    reason = "public lifecycle regression setup and raw receipt capture must fail fast"
+)]
 
 use better_auth::plugins::OAuthPlugin;
 use better_auth::plugins::oauth::OAuthProvider;
@@ -50,7 +54,7 @@ async fn rejection_restores_flow<S: AuthSchema>(
     let issued = auth.handle_request(request).await.unwrap();
     assert_eq!(issued.status, 200);
     let body: Value = serde_json::from_slice(&issued.body).unwrap();
-    let url = url::Url::parse(body["url"].as_str().unwrap()).unwrap();
+    let url = url::Url::parse(body.get("url").unwrap().as_str().unwrap()).unwrap();
     let state = url
         .query_pairs()
         .find(|(key, _)| key == "state")
@@ -113,6 +117,22 @@ async fn rejection_restores_flow<S: AuthSchema>(
         row_before.is_some(),
         "nonce rejection must not consume database state"
     );
+
+    // The saved redirect is usable only after successful authentication.
+    if strategy == OAuthStateStrategy::Cookie {
+        let mut tampered_cookie = cookie_pair.clone();
+        let last = tampered_cookie.pop().unwrap();
+        tampered_cookie.push(if last == '0' { '1' } else { '0' });
+        let mut callback = AuthRequest::new(HttpMethod::Get, "/api/auth/callback/google");
+        drop(callback.query.insert("state".into(), state.clone()));
+        drop(callback.headers.insert("cookie".into(), tampered_cookie));
+        let tampered = auth.handle_request(callback).await.unwrap();
+        assert_eq!(tampered.status, 302);
+        let location = tampered.headers.get("location").unwrap();
+        assert!(location.starts_with("http://localhost:42619/api/auth/error?error="));
+        assert!(!location.contains("saved-error"));
+        assert!(tampered.headers.get_all("set-cookie").next().is_none());
+    }
 
     let mut callback = AuthRequest::new(HttpMethod::Get, "/api/auth/callback/google");
     drop(callback.query.insert("state".into(), state.clone()));
