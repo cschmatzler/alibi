@@ -28,7 +28,7 @@
 //! Fallible JavaScriptCore array ordering for cached metadata. Its relational
 //! comparator can be cyclic, so comparison order is observable. Binary
 //! insertion, natural runs, Powersort and galloping follow JSC's StableSort.h:
-//! https://github.com/WebKit/WebKit/blob/main/Source/JavaScriptCore/runtime/StableSort.h
+//! <https://github.com/WebKit/WebKit/blob/main/Source/JavaScriptCore/runtime/StableSort.h>
 //! The behavior is verified against the installed, pinned Bun runtime.
 
 use better_auth_core::{ApiKey, AuthError, AuthResult};
