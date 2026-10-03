@@ -16,11 +16,12 @@ async function receipts(ctx: ScenarioContext): Promise<any[]> {
   return (await fetch(ctx.baseURL + "/__test/generic-token/receipts")).json();
 }
 async function save(ctx: ScenarioContext, name: string, value: unknown) {
-  if (process.env.CLOSE188_EVIDENCE_DIR)
+  if (process.env.CLOSE188_EVIDENCE_DIR) {
     await Bun.write(
       `${process.env.CLOSE188_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
       JSON.stringify({ name, baseURL: ctx.baseURL, value, receipts: await receipts(ctx) }, null, 2),
     );
+  }
 }
 const modes = [
   ...Object.keys(keys),
@@ -32,6 +33,8 @@ const modes = [
   "both",
   "empty-kid",
   "fractional",
+  "nan",
+  "infinity",
   "embedded",
   "expired",
   "bad-key",
@@ -55,6 +58,8 @@ for (const mode of modes) {
         "missing-crt",
         "duplicate-ops",
         "invalid-ext",
+        "nan",
+        "infinity",
         "secret",
         "manual",
         "getter-error",

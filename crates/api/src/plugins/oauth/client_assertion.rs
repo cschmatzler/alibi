@@ -212,6 +212,9 @@ impl OAuthClientAssertionGetter for OAuthPrivateKeyJwtOptions {
         }
         let now = chrono::Utc::now().timestamp();
         let exp = now as f64 + self.expires_in.unwrap_or(120.0);
+        if !exp.is_finite() {
+            return Err("Invalid client assertion expiration time".into());
+        }
         let claims = json!({"iss":context.client_id,"sub":context.client_id,"aud":context.token_endpoint,"iat":now,"exp":exp,"jti":uuid::Uuid::new_v4().to_string()});
         let message = format!(
             "{}.{}",

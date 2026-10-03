@@ -77,6 +77,8 @@ export const FIXTURE_PROFILES = [
     "jwt-both",
     "jwt-empty-kid",
     "jwt-fractional",
+    "jwt-nan",
+    "jwt-infinity",
     "subject-key",
     "subject-error",
     "subject-invalid",

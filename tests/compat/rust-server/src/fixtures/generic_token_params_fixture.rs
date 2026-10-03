@@ -160,7 +160,7 @@ struct SubjectMapper;
 #[async_trait::async_trait]
 impl better_auth::plugins::oauth::OAuthProfileMapper for SubjectMapper {
     async fn map_profile(&self, _: Value) -> Result<serde_json::Map<String, Value>, String> {
-        Ok(json!({"id":"mapped-id-must-not-own-account"})
+        Ok(json!({"name":"Mapped Subject"})
             .as_object()
             .unwrap()
             .clone())
@@ -276,6 +276,8 @@ pub(crate) async fn router(
         "jwt-both",
         "jwt-empty-kid",
         "jwt-fractional",
+        "jwt-nan",
+        "jwt-infinity",
         "subject-key",
         "subject-error",
         "subject-invalid",
@@ -357,6 +359,10 @@ pub(crate) async fn router(
                     Some(-1.0)
                 } else if mode == "jwt-fractional" {
                     Some(17.5)
+                } else if mode == "jwt-nan" {
+                    Some(f64::NAN)
+                } else if mode == "jwt-infinity" {
+                    Some(f64::INFINITY)
                 } else {
                     None
                 },

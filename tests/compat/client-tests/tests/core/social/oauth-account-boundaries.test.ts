@@ -6,13 +6,14 @@ async function state(ctx: ScenarioContext): Promise<any> {
   return (await ctx.rawRequest({ path: "/__test/social-provider/state" })).body;
 }
 async function save(ctx: ScenarioContext, name: string, value: unknown) {
-  if (process.env.CLOSE188_EVIDENCE_DIR)
+  if (process.env.CLOSE188_EVIDENCE_DIR) {
     await Bun.write(
       `${process.env.CLOSE188_EVIDENCE_DIR}/${Bun.hash(ctx.baseURL + name)}.json`,
       JSON.stringify({ name, baseURL: ctx.baseURL, value }, null, 2),
     );
+  }
 }
-for (const endpoint of ["/get-access-token", "/account-info"])
+for (const endpoint of ["/get-access-token", "/account-info"]) {
   for (const token of [null, ""]) {
     const name = `oauth automatic ${endpoint} ${token === null ? "null" : "empty"} refresh keeps response distinct from stored grant`;
     compatScenario(
@@ -91,6 +92,7 @@ for (const endpoint of ["/get-access-token", "/account-info"])
       ["POST /get-access-token", "GET /account-info"],
     );
   }
+}
 compatScenario(
   "oauth changed verified email override retains original account authority",
   async (ctx) => {
@@ -414,7 +416,7 @@ for (const mode of [
         const account = after.accounts.find((a: any) => a.providerId === "generic");
         expect(account.accessToken).toBe(mode === "custom-token" ? "custom-access" : "access");
         if (mode === "expiry-zero") expect(account.accessTokenExpiresAt).toBeNull();
-        else
+        else {
           expect(
             Math.abs(
               Date.parse(account.accessTokenExpiresAt) -
@@ -422,6 +424,7 @@ for (const mode of [
                 (mode === "expiry-negative" ? -60000 : 17000),
             ),
           ).toBeLessThan(2000);
+        }
         if (mode === "custom-token") {
           expect(seen).toHaveLength(1);
           expect(seen[0]).toMatchObject({ kind: "custom-token", code: "real-code" });
@@ -462,7 +465,7 @@ for (const mode of [
 }
 
 // Account-key callbacks need the original claims and grant, even after the public
-// user mapping changes id. The callback is application code and can reject.
+// user mapping changes name. The callback is application code and can reject.
 for (const mode of ["key", "error", "invalid", "default"] as const) {
   const name = `oauth generic subject ${mode} resolves original token and profile before account writes`;
   compatScenario(
@@ -516,6 +519,9 @@ for (const mode of ["key", "error", "invalid", "default"] as const) {
           );
           expect(account.providerId).toBe("generic");
           expect(after.users.find((u: any) => u.id === account.userId).email).toBe(email);
+          expect(after.users.find((u: any) => u.id === account.userId).name).toBe(
+            mode === "default" ? "Subject" : "Mapped Subject",
+          );
           expect(after.sessions.some((s: any) => s.userId === account.userId)).toBe(true);
         }
         const receipts: any[] = await (

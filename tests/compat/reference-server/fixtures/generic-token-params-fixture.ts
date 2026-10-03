@@ -114,6 +114,8 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "jwt-both",
     "jwt-empty-kid",
     "jwt-fractional",
+    "jwt-nan",
+    "jwt-infinity",
     "subject-key",
     "subject-error",
     "subject-invalid",
@@ -146,13 +148,13 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                 overrideUserInfo: mode === "override",
                 ...(mode.startsWith("subject-") && mode !== "subject-default"
                   ? {
-                      mapProfileToUser: async () => ({ id: "mapped-id-must-not-own-account" }),
+                      mapProfileToUser: async () => ({ name: "Mapped Subject" }),
                       accountSubject: async ({ tokens, profile }: any) => {
                         await Promise.resolve();
                         receipts.push({ kind: "subject", tokens, profile });
                         if (mode === "subject-error") throw new Error("subject resolver denied");
                         return mode === "subject-invalid"
-                          ? control.subject
+                          ? (control.subject as string | number)
                           : `${tokens.accessToken}:${profile.id}:${profile.raw_claim}`;
                       },
                     }
@@ -177,8 +179,9 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                           redirectURI: data.redirectURI,
                           codeVerifier: data.codeVerifier,
                         });
-                        if (mode === "custom-token-error")
+                        if (mode === "custom-token-error") {
                           throw new Error("custom token callback denied");
+                        }
                         return {
                           accessToken: "custom-access",
                           refreshToken: "custom-refresh",
@@ -251,7 +254,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                                         ...(mode === "jwt-invalid-ext"
                                           ? { ext: "true" as any }
                                           : {}),
-                                      },
+                                      } as JsonWebKey & { kid: string },
                                     }),
                                 ...(mode === "jwt-both"
                                   ? { privateKeyPem: "invalid PEM ignored" }
@@ -274,7 +277,11 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
                                   ? { expiresIn: -1 }
                                   : mode === "jwt-fractional"
                                     ? { expiresIn: 17.5 }
-                                    : {}),
+                                    : mode === "jwt-nan"
+                                      ? { expiresIn: NaN }
+                                      : mode === "jwt-infinity"
+                                        ? { expiresIn: Infinity }
+                                        : {}),
                               }),
                       } as const,
                     }
@@ -410,10 +417,12 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
           accountId: body.accountId,
           ...(body.userId ? { userId: body.userId } : {}),
         };
-        if (body.operation === "get-access-token")
+        if (body.operation === "get-access-token") {
           return instance.api.getAccessToken({ body: selection, asResponse: true });
-        if (body.operation === "refresh-token")
+        }
+        if (body.operation === "refresh-token") {
           return instance.api.refreshToken({ body: selection, asResponse: true });
+        }
         return instance.api.accountInfo({ query: selection, asResponse: true });
       }
       if (p === "/__test/generic-token/orphan" && request.method === "POST") {
