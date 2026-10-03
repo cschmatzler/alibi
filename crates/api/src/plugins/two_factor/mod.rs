@@ -2625,7 +2625,7 @@ mod tests {
                         ctx.database
                             .create_two_factor(CreateTwoFactor {
                                 user_id: user.id.clone(),
-                                secret: encrypt_value(&ctx.config.secret, "historical-secret")
+                                secret: encrypt_value(&ctx.config, "historical-secret")
                                     .unwrap(),
                                 backup_codes: encrypt_value(
                                     &ctx.config,
@@ -3406,7 +3406,7 @@ mod tests {
 
         let expected_codes = vec!["ABCDE-12345".to_owned(), "FGHIJ-67890".to_owned()];
         let encrypted = encrypt_value(
-            &ctx.config.secret,
+            &ctx.config,
             &serde_json::to_string(&expected_codes).unwrap(),
         )
         .unwrap();

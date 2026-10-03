@@ -1510,7 +1510,6 @@ const fn unauthorized() -> AuthError {
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
-    use crate::plugins::token_crypto::{decrypt, encrypt};
     #![allow(
         clippy::unwrap_used,
         clippy::indexing_slicing,
@@ -1519,6 +1518,7 @@ mod tests {
 
     use super::*;
     use crate::plugins::test_helpers;
+    use crate::plugins::token_crypto::{decrypt, encrypt};
     use better_auth_core::CreateUser;
 
     type TestSchema =

@@ -226,7 +226,7 @@ pub(super) fn browser_preference(
 ) -> bool {
     cookies(headers)
         .get(&related_cookie_name(config, "dont_remember"))
-        .and_then(|value| verify_cookie_value(value, &config.secret))
+        .and_then(|value| verify_cookie_value(value, config.current_secret()))
         .is_some_and(|value| !value.is_empty())
 }
 
@@ -305,7 +305,7 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
         chrono::Utc::now().timestamp_millis(),
         config.max_age,
         dont_remember,
-        &ctx.config.secret,
+        ctx.config.current_secret(),
     )?;
     let name = related_cookie_name(&ctx.config, "session_data");
     let max_age = (!dont_remember).then(|| super::effective_max_age(config.max_age));
@@ -433,7 +433,7 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
             &ctx.config.session.cookie_name,
             &percent_encoding::percent_decode_str(&sign_cookie_value(
                 &context.session().token,
-                &ctx.config.secret,
+                ctx.config.current_secret(),
             ))
             .decode_utf8_lossy(),
             (!dont_remember).then(|| ctx.config.session.expires_in.num_seconds() as f64),
@@ -449,7 +449,7 @@ pub async fn emit_issuance_snapshot<S: AuthSchema>(
                 &related_cookie_name(&ctx.config, "dont_remember"),
                 &percent_encoding::percent_decode_str(&sign_cookie_value(
                     "true",
-                    &ctx.config.secret,
+                    ctx.config.current_secret(),
                 ))
                 .decode_utf8_lossy(),
                 None,
@@ -546,7 +546,7 @@ pub async fn read<S: AuthSchema>(
     let config =
         enabled.ok_or_else(|| AuthError::internal("Missing enabled cache configuration"))?;
     super::validate_config(config)?;
-    if let Some(cache) = super::decode_compact(&value, &ctx.config.secret)
+    if let Some(cache) = super::decode_compact(&value, ctx.config.current_secret())
         && let CacheValidation::Hit(cache) = super::validate_compact(
             cache,
             &token,
@@ -706,7 +706,7 @@ async fn authenticated_inner<S: AuthSchema>(
                 &ctx.config.session.cookie_name,
                 &percent_encoding::percent_decode_str(&sign_cookie_value(
                     session.token(),
-                    &ctx.config.secret,
+                    ctx.config.current_secret(),
                 ))
                 .decode_utf8_lossy(),
                 Some(ctx.config.session.expires_in.num_seconds() as f64),
