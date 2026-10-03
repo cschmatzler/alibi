@@ -1098,8 +1098,17 @@ const ottProfiles = new Map(
         ? {
             databaseHooks: {
               ...authOptions.databaseHooks,
-              session: { create: { before: async (session) => ({data:{...session,token:String(++ottCallbackState.serial).padStart(32,"0")}}) } },
-            verification: {
+              session: {
+                create: {
+                  before: async (session) => ({
+                    data: {
+                      ...session,
+                      token: String(++ottCallbackState.serial).padStart(32, "0"),
+                    },
+                  }),
+                },
+              },
+              verification: {
                 create: {
                   before: async (verification) => {
                     if (
