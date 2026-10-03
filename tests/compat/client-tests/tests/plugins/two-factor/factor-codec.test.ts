@@ -260,7 +260,7 @@ compatScenario(
     const published = await publishedFactor(email);
     const code = published.enrollment.backupCodes[0]!;
     const remaining = published.enrollment.backupCodes[1]!;
-    const read = async (json?: string) => {
+    const read = async (json?: string, targetUserId = userId) => {
       const imported =
         json === undefined
           ? {}
@@ -273,12 +273,13 @@ compatScenario(
       const response = await ctx.rawRequest({
         path: "/__test/two-factor-policy",
         method: "POST",
-        json: { userId, ...imported },
+        json: { userId: targetUserId, ...imported },
       });
       expect(response.status).toBe(200);
       return factorSchema.passthrough().parse(response.body);
     };
     const original = await read();
+    const foreignFactor = await read(undefined, other.data!.user.id);
     await owner.signOut();
     expect((await owner.signIn.email({ email, password })).data).toMatchObject({
       twoFactorRedirect: true,
@@ -334,13 +335,22 @@ compatScenario(
     const wrongOwner = await foreign.twoFactor.verifyBackupCode({ code });
     expect(wrongOwner.error?.code).toBe("INVALID_BACKUP_CODE");
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+    expect(await read(undefined, other.data!.user.id)).toEqual(foreignFactor);
+    const numericProof = await owner.twoFactor.verifyBackupCode({ code: "7" });
+    expect(numericProof.error?.code).toBe("INVALID_BACKUP_CODE");
+    expect((await pending()).attempts).toBe("2");
+    expect(await read()).toEqual({ ...installed, failedVerificationCount: 2 });
     const completed = await owner.twoFactor.verifyBackupCode({ code });
     expect(completed.error).toBeNull();
     expect(completed.data?.user.id).toBe(userId);
     const consumed = await read();
     expect(consumed.id).toBe(original.id);
     expect(consumed.secret).toBe(published.row.secret);
-    expect(consumed.failedVerificationCount).toBe(0);
+    expect(consumed).toEqual({
+      ...installed,
+      backupCodes: consumed.backupCodes,
+      failedVerificationCount: 0,
+    });
     const decoded = JSON.parse(await symmetricDecrypt({ key: secret, data: consumed.backupCodes }));
     expect(decoded).toEqual([7, null, false, { keep: ["雪", true] }, remaining]);
     const retired = await pending(start.key);
@@ -351,8 +361,10 @@ compatScenario(
     expect(await read()).toEqual(consumed);
     expect((await owner.getSession()).data?.session.token).toBe(completed.data?.token);
     expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+    expect(await read(undefined, other.data!.user.id)).toEqual(foreignFactor);
     return ctx.snapshot({
       errors,
+      numericProof,
       invalid,
       wrongOwner,
       completed,
