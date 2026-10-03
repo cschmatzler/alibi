@@ -1,0 +1,24 @@
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-rs-190)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.57s
+     Running tests/integration/main.rs (/tmp/190-target/debug/deps/integration-4db402770590265d)
+
+running 2 tests
+
+thread 'core::schema::legacy_token_conversion::seaorm_schema::legacy_conversion_seaorm' (2639403) panicked at tests/integration/core/schema/legacy_token_conversion.rs:188:9:
+assertion `left == right` failed: FAIL must roll back token and trigger writes
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'core::schema::legacy_token_conversion::sqlx_schema::legacy_conversion_sqlx' (2639404) panicked at tests/integration/core/schema/legacy_token_conversion.rs:188:9:
+assertion `left == right` failed: FAIL must roll back token and trigger writes
+test core::schema::legacy_token_conversion::seaorm_schema::legacy_conversion_seaorm ... FAILED
+test core::schema::legacy_token_conversion::sqlx_schema::legacy_conversion_sqlx ... FAILED
+
+failures:
+
+failures:
+    core::schema::legacy_token_conversion::seaorm_schema::legacy_conversion_seaorm
+    core::schema::legacy_token_conversion::sqlx_schema::legacy_conversion_sqlx
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.16s
+
+error: test failed, to rerun pass `--test integration`

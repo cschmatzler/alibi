@@ -1,0 +1,8 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running tests/integration/main.rs (/tmp/190-target/debug/deps/integration-4db402770590265d)
+
+running 1 test
+test core::account_oauth::tests::test_encrypt_oauth_tokens_stored_encrypted_in_db ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 353 filtered out; finished in 0.02s
+

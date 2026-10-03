@@ -1167,9 +1167,9 @@ mod tests {
         let counter = std::sync::Arc::clone(&call_count);
 
         let plugin = EmailVerificationPlugin::new()
-            .send_on_sign_in(true)
-            .send_email_notifications(false) // disable default path
-            .custom_send_verification_email(Arc::new(CountingSender(counter)));
+        .send_on_sign_in(true)
+        .send_email_notifications(false) // disable default path
+        .custom_send_verification_email(Arc::new(CountingSender(counter)));
 
         let ctx = test_helpers::create_test_context().await;
         let user = ctx

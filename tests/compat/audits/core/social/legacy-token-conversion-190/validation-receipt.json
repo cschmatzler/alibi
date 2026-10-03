@@ -1,0 +1,17 @@
+{
+  "issue": 190,
+  "pullRequest": "https://github.com/cschmatzler/better-auth-rs/pull/399",
+  "base": "27424d9f0b7c350f840bbc793dc51c7e9fa80c68",
+  "testedProductionHead": "fb9d0edd18b076fef043b42c166a38f05d83e7ab",
+  "databaseScope": "Owned disposable populated SQLite databases, generated application-owned SQLx and SeaORM account models; no real user migration",
+  "conversionTests": {"beforeTransactionFix": "0 passed / 2 failed for intended RAISE(FAIL) rollback invariant", "afterTransactionFix": "2 passed / 0 failed"},
+  "preservationTests": {"generatedApplicationSchemas": "2 passed", "freshEncryptedTokens": "1 passed", "plaintextImportWithoutRuntimeUpgrade": "1 passed"},
+  "lint": "Affected production packages pass -D warnings with pre-existing core endpoint.rs:553 double_must_use exempted; final transaction change checked on both adapter packages",
+  "actions": "Repository Actions disabled (/actions/permissions enabled=false); PR statusCheckRollup empty",
+  "review": "Self-review authz/data-exfil/test-audit; independent coordinator review identified SQLite FAIL partial-write gap, reproduced and fixed inline with explicit transactions",
+  "testAuthoringGate": "Public operator API and real persistence own authentication, CAS and rollback contracts. Credible regressions: accepting unauthenticated field, default collations matching changed rows, unconditional token overwrite, pool UPDATE leaking trigger writes. Existing live token tests do not call a conversion API. No test-only production seams added; schema token-column mapping serves operator callers.",
+  "rebase": "origin/main unchanged at 27424d9f; rebase up to date and range-diff inspected. Final evidence/docs and removal of unrelated rustfmt indentation do not change tested behavior.",
+  "preserved": "Pinned published Better Auth 1.7.6 reference, exclusions, raw comparisons, rawUserView omissions and raw token TEXT affinity paths untouched; no comparator changes or Bun source mutation",
+  "excludedByCurrentTask": ["full compatibility sweep", "devenv test", "full coverage"],
+  "bounds": ["Atomic per account, not whole-manifest batch", "SQLite both adapters exercised; PostgreSQL compiled, not executed", "Historical ownership cannot be inferred from ciphertext", "Value CAS cannot detect ABA restored values", "Lost connection at commit requires operator reconciliation"]
+}

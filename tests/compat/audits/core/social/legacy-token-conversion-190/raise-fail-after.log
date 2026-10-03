@@ -1,0 +1,12 @@
+   Compiling better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-rs-190/crates/sqlx)
+   Compiling better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-rs-190/crates/seaorm)
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-rs-190)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.60s
+     Running tests/integration/main.rs (/tmp/190-target/debug/deps/integration-4db402770590265d)
+
+running 2 tests
+test core::schema::legacy_token_conversion::sqlx_schema::legacy_conversion_sqlx ... ok
+test core::schema::legacy_token_conversion::seaorm_schema::legacy_conversion_seaorm ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 352 filtered out; finished in 0.15s
+
