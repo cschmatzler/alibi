@@ -658,11 +658,13 @@ impl DeviceAuthorizationPlugin {
 
         let updated_user_id = claimed_user_id.to_owned();
 
-        let updated = ctx
+        // Pinned Source validates the fetched pending snapshot, then updates by ID.
+        // An overlapping owner decision may also pass validation; the last
+        // completed adapter write determines the state used by redemption.
+        let _updated = ctx
             .database
-            .update_device_code_if_status(
+            .update_device_code(
                 &device_code.id,
-                DEVICE_STATUS_PENDING,
                 UpdateDeviceCode {
                     status: Some(decision.status().to_owned()),
                     user_id: Some(Some(updated_user_id)),
@@ -670,10 +672,6 @@ impl DeviceAuthorizationPlugin {
                 },
             )
             .await?;
-
-        if !updated {
-            return device_error_response(400, "invalid_request", DEVICE_CODE_ALREADY_PROCESSED);
-        }
 
         AuthResponse::json(200, &DeviceActionResponse { success: true }).map_err(AuthError::from)
     }
@@ -1988,71 +1986,6 @@ mod tests {
                 .unwrap_or(&Value::Null)),
             DEVICE_CODE_ALREADY_PROCESSED
         );
-    }
-
-    // Deliberate hardening divergence from the current TS runtime: exactly one
-    // approval request may process a pending device code.
-    #[tokio::test]
-    async fn test_device_approve_allows_only_one_concurrent_decision() {
-        let plugin = DeviceAuthorizationPlugin::new();
-        let (ctx, _user, session) = create_context_with_user("decision-race@example.com").await;
-
-        let create_request = test_helpers::create_auth_json_request_no_query(
-            HttpMethod::Post,
-            "/device/code",
-            None,
-            Some(serde_json::json!({ "client_id": "test-client" })),
-        );
-        let create_response = plugin
-            .handle_device_code(&create_request, &ctx)
-            .await
-            .unwrap();
-        let create_body = json_body(&create_response);
-        let user_code = (*(create_body).get("user_code").unwrap_or(&Value::Null))
-            .as_str()
-            .unwrap()
-            .to_owned();
-
-        plugin
-            .handle_device_verify(&device_claim_request(&user_code, &session.token), &ctx)
-            .await
-            .unwrap();
-
-        let first_request = test_helpers::create_auth_json_request_no_query(
-            HttpMethod::Post,
-            "/device/approve",
-            Some(&session.token),
-            Some(serde_json::json!({ "userCode": user_code.clone() })),
-        );
-        let second_request = test_helpers::create_auth_json_request_no_query(
-            HttpMethod::Post,
-            "/device/approve",
-            Some(&session.token),
-            Some(serde_json::json!({ "userCode": user_code })),
-        );
-
-        let (first_response, second_response) = tokio::join!(
-            plugin.handle_device_approve(&first_request, &ctx),
-            plugin.handle_device_approve(&second_request, &ctx),
-        );
-
-        let first_response = first_response.unwrap();
-        let second_response = second_response.unwrap();
-
-        let success_count = [first_response.status, second_response.status]
-            .into_iter()
-            .filter(|status| *status == 200)
-            .count();
-        assert_eq!(success_count, 1);
-
-        let already_processed_count = [json_body(&first_response), json_body(&second_response)]
-            .into_iter()
-            .filter(|body| {
-                body["error"] == "invalid_request"
-                    && body["error_description"] == DEVICE_CODE_ALREADY_PROCESSED
-            })
-            .count();
-        assert_eq!(already_processed_count, 1);
     }
 
     // Upstream source: packages/better-auth/src/plugins/device-authorization/device-authorization.test.ts :: client mismatch scenario.
