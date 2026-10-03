@@ -19,5 +19,9 @@
   ],
   "concurrencyClaim": false,
   "sqlAdaptersChanged": false,
-  "coordinatorWorkspaceChanged": false
+  "coordinatorWorkspaceChanged": false,
+  "rebasedOnto": "8015b45d",
+  "productionAddedLines": 145,
+  "productionRemovedLines": 16,
+  "review": "self-review using test-audit and wrdn-authz; no nested delegation"
 }

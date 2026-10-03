@@ -1,0 +1,3 @@
+1:  143719cb = 1:  9b324841 Support native no-database device-code storage
+2:  2a1a21d6 = 2:  fadd7141 Propagate device-state lock failures
+3:  ce2086c7 = 3:  f1ecfa2a Verify native device lifecycle against published 1.7.6
