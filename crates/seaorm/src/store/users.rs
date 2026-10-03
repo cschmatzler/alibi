@@ -362,7 +362,14 @@ where
                 } else {
                     operands.iter().cloned().map(Into::into).collect()
                 };
-                let tuple = || Expr::tuple(bindings.iter().cloned().map(Expr::val));
+                let tuple = || {
+                    Expr::tuple(
+                        bindings
+                            .iter()
+                            .cloned()
+                            .map(|value| column.save_as(Expr::val(value))),
+                    )
+                };
                 let condition = match operator {
                     "in" => column.is_in(bindings.iter().cloned()),
                     "not_in" => column.is_not_in(bindings.iter().cloned()),

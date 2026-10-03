@@ -22,6 +22,8 @@
 
 mod accounts;
 mod api_keys;
+#[cfg(all(feature = "sqlx", feature = "seaorm"))]
+mod character_ids;
 mod invitations;
 mod jwks;
 mod members;

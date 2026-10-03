@@ -190,6 +190,61 @@ time or repair previously shifted data. Core inputs and auth accessors remain
 `ColumnKind::NaiveTimestamp` so store predicates and direct writes use the same
 wire type. Plugin tables still use their bundled models.
 
+For existing PostgreSQL `CHAR(n)` IDs, keep the columns and `String` fields.
+Opt in on each SQLx field with `#[auth(column_type = "bpchar")]`:
+
+```rust,ignore
+#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[auth(role = "session", table = "sessions", id_generator = "crate::new_auth_id")]
+pub struct SessionModel {
+    #[auth(column_type = "bpchar")]
+    pub id: String,
+    #[auth(column_type = "bpchar")]
+    pub user_id: String,
+    // ... existing session fields ...
+}
+```
+
+Apply this to the user, session, account, and verification primary IDs and every
+related `CHAR(n)` foreign key or other fixed-character field, including optional
+`Option<String>` fields. SQLx sends the actual PostgreSQL `bpchar` wire type for
+values and nulls; equality leaves the indexed column unchanged. Handwritten
+SQLx models can declare `ColumnKind::BpChar` and stage `SqlValue::BpChar`.
+Ordinary `TEXT`/`VARCHAR` fields retain text bindings, and SQLite binds the exact
+string as text. The SQLx store does not support MySQL.
+
+Both `AuthEntity` derives accept the optional `id_generator = "path::to::function"`
+container attribute. The function returns a `String` in your application's
+existing ID format and is called only when no explicit ID is supplied. Select
+the factory on each of the four auth models if their columns cannot hold the
+default 36-character UUID. It must produce unique IDs that fit your columns;
+the adapter does not shorten IDs. Your application migrations remain the schema
+owner; do not run the bundled migrator against an existing custom schema.
+
+PostgreSQL owns `CHAR(n)` semantics: stored values are space-padded, equality
+ignores trailing spaces, lengths count characters, and overlength writes with
+non-space excess fail. The adapter neither trims nor pads returned `String`s.
+An unbounded `bpchar` parameter does not truncate inputs to a column width.
+See [PostgreSQL character semantics](https://www.postgresql.org/docs/18/datatype-character.html).
+
+For SeaORM PostgreSQL models, use its supported
+[per-field cast configuration](https://www.sea-ql.org/SeaORM/docs/1.1.x/generate-entity/entity-format/#cast-column-type-on-select-and-save):
+
+```rust,ignore
+#[sea_orm(primary_key, auto_increment = false, column_type = "Char(Some(30))", save_as = "bpchar")]
+pub id: String,
+#[sea_orm(column_type = "Char(Some(30))", save_as = "bpchar")]
+pub user_id: String,
+```
+
+Use `AuthEntity` and the same optional ID factory on each custom SeaORM model.
+SeaORM 2.0's string binder sends `TEXT`; `save_as` casts the **parameter** to
+unbounded `bpchar` for predicates and writes, preserving the index and native
+character semantics. This SeaORM configuration is PostgreSQL-specific; omit
+`save_as = "bpchar"` in SQLite/MySQL models and leave ordinary text models as
+before. No indexed-column cast, planner setting, or consumer query replacement
+is needed.
+
 ### SeaORM
 
 Enable `seaorm` (optionally with `default-features = false` and `native-tls`

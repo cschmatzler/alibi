@@ -68,7 +68,7 @@ where
         let account_id = <S::Account as SqlxAccountModel>::parse_id(id)?;
         let mut sql = model::select_model::<S::Account>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(
+        sql.compare_model::<S::Account>(
             <S::Account as SqlxModel>::TABLE,
             S::Account::id_column(),
             " = ",
@@ -98,9 +98,9 @@ where
         let table = <S::Account as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::Account>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(table, S::Account::provider_id_column(), " = ", provider);
+        sql.compare_model::<S::Account>(table, S::Account::provider_id_column(), " = ", provider);
         sql.push(" AND ");
-        sql.compare(
+        sql.compare_model::<S::Account>(
             table,
             S::Account::account_id_column(),
             " = ",
@@ -123,7 +123,7 @@ where
         let user_id = <S::Account as SqlxAccountModel>::parse_user_id(user_id)?;
         let mut sql = model::select_model::<S::Account>(self.exec());
         sql.push(" WHERE ");
-        sql.compare(
+        sql.compare_model::<S::Account>(
             <S::Account as SqlxModel>::TABLE,
             S::Account::user_id_column(),
             " = ",
@@ -195,7 +195,7 @@ where
         let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(table);
         sql.push(" WHERE ");
-        sql.compare(table, S::Account::id_column(), " = ", account_id);
+        sql.compare_model::<S::Account>(table, S::Account::id_column(), " = ", account_id);
         _ = self.exec().execute(sql).await?;
         for hook in self.hooks() {
             hook.after_delete_account(&account_model, &hook_context)

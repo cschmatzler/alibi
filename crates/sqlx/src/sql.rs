@@ -64,6 +64,22 @@ impl Sql {
         self.bind(value);
     }
 
+    /// Compare using the physical column's application-selected binding type.
+    pub(crate) fn compare_model<M: crate::model::SqlxModel>(
+        &mut self,
+        table: &str,
+        column: &str,
+        operator: &str,
+        value: impl Into<SqlValue>,
+    ) {
+        self.compare(
+            table,
+            column,
+            operator,
+            M::column_value(column, value.into()),
+        );
+    }
+
     /// Append `"column" = ?`, one `SET` assignment.
     pub(crate) fn assign(&mut self, column: &str, value: impl Into<SqlValue>) {
         self.ident(column);
@@ -145,7 +161,7 @@ pub(crate) fn sqlite_arguments(
             SqlValue::BigInt(value) => args.add(value)?,
             SqlValue::Float(value) => args.add(value)?,
             SqlValue::Double(value) => args.add(value)?,
-            SqlValue::Text(value) => args.add(value)?,
+            SqlValue::Text(value) | SqlValue::BpChar(value) => args.add(value)?,
             SqlValue::Bytes(value) => args.add(value)?,
             SqlValue::Json(value) => args.add(value.map(|value| *value))?,
             SqlValue::Timestamp(value) => args.add(value)?,
@@ -169,6 +185,7 @@ pub(crate) fn postgres_arguments(
             SqlValue::Float(value) => args.add(value)?,
             SqlValue::Double(value) => args.add(value)?,
             SqlValue::Text(value) => args.add(value)?,
+            SqlValue::BpChar(value) => args.add(value.map(PgChar))?,
             SqlValue::Bytes(value) => args.add(value)?,
             SqlValue::Json(value) => args.add(value.as_deref())?,
             SqlValue::Timestamp(value) => args.add(value)?,
@@ -177,6 +194,28 @@ pub(crate) fn postgres_arguments(
         }
     }
     Ok(args)
+}
+
+// bpchar uses the string binary representation, but a distinct PostgreSQL OID.
+// No typmod cast: PostgreSQL owns CHAR(n) padding and rejects overlength writes.
+#[cfg(feature = "postgres")]
+struct PgChar(String);
+
+#[cfg(feature = "postgres")]
+impl sqlx::Type<sqlx::Postgres> for PgChar {
+    fn type_info() -> sqlx::postgres::PgTypeInfo {
+        sqlx::postgres::PgTypeInfo::with_name("pg_catalog.bpchar")
+    }
+}
+
+#[cfg(feature = "postgres")]
+impl sqlx::Encode<'_, sqlx::Postgres> for PgChar {
+    fn encode_by_ref(
+        &self,
+        buffer: &mut sqlx::postgres::PgArgumentBuffer,
+    ) -> Result<sqlx::encode::IsNull, BoxDynError> {
+        <String as sqlx::Encode<sqlx::Postgres>>::encode_by_ref(&self.0, buffer)
+    }
 }
 
 #[cfg(test)]

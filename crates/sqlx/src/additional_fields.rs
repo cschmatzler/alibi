@@ -26,7 +26,7 @@ pub(crate) async fn prepare_string_value(
     exec: Exec<'_>,
     value: SqlValue,
 ) -> AuthResult<Option<String>> {
-    if let SqlValue::Text(value) = value {
+    if let SqlValue::Text(value) | SqlValue::BpChar(value) = value {
         return Ok(value);
     }
     if matches!(&value, SqlValue::Json(_)) {
@@ -55,7 +55,9 @@ pub(crate) async fn prepare_value(
 ) -> AuthResult<SqlValue> {
     let backend = exec.engine();
     match kind {
-        ColumnKind::Text => Ok(SqlValue::Text(prepare_string_value(exec, value).await?)),
+        ColumnKind::Text | ColumnKind::BpChar => {
+            Ok(SqlValue::Text(prepare_string_value(exec, value).await?))
+        }
         ColumnKind::Json => {
             let json = match value {
                 SqlValue::Bool(Some(value)) => serde_json::json!(value),
@@ -69,6 +71,7 @@ pub(crate) async fn prepare_value(
                 | SqlValue::Float(_)
                 | SqlValue::Double(None)
                 | SqlValue::Text(None)
+                | SqlValue::BpChar(_)
                 | SqlValue::Bytes(_)
                 | SqlValue::Json(None)
                 | SqlValue::Timestamp(_)

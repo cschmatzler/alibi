@@ -158,6 +158,15 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     /// Returns an error if a required field is omitted or has another type.
     fn from_active(active: ActiveRow) -> AuthResult<Self>;
 
+    /// Apply this physical column's binding override without changing its Rust
+    /// String representation. Ordinary TEXT/VARCHAR columns remain unchanged.
+    fn column_value(column: &str, value: SqlValue) -> SqlValue {
+        match (Self::column_kind(column), value) {
+            (ColumnKind::BpChar, SqlValue::Text(value)) => SqlValue::BpChar(value),
+            (_, value) => value,
+        }
+    }
+
     /// Bind the auth UTC clock using this model column's timestamp wire type.
     fn timestamp_value(column: &str, value: chrono::DateTime<chrono::Utc>) -> SqlValue {
         match Self::column_kind(column) {
@@ -193,7 +202,11 @@ pub(crate) async fn insert<M: SqlxModel>(exec: Exec<'_>, active: &ActiveRow) -> 
     let present = active.present().collect::<Vec<_>>();
     sql.column_list(&present.iter().map(|(name, _)| *name).collect::<Vec<_>>());
     sql.push(") VALUES ");
-    sql.bind_list(present.into_iter().map(|(_, value)| value.clone()));
+    sql.bind_list(
+        present
+            .into_iter()
+            .map(|(column, value)| M::column_value(column, value.clone())),
+    );
     returning::<M>(&mut sql);
     exec.fetch_optional::<M>(sql)
         .await?
@@ -215,7 +228,7 @@ pub(crate) async fn update<M: SqlxModel>(
         // Nothing to write: return the stored row, as an unchanged model update does.
         let mut sql = select_model::<M>(exec);
         sql.push(" WHERE ");
-        sql.compare(M::TABLE, M::PRIMARY_KEY, " = ", key);
+        sql.compare_model::<M>(M::TABLE, M::PRIMARY_KEY, " = ", key);
         sql.push(" LIMIT 1");
         return exec.fetch_optional::<M>(sql).await;
     }
@@ -227,10 +240,10 @@ pub(crate) async fn update<M: SqlxModel>(
         if index > 0 {
             sql.push(", ");
         }
-        sql.assign(column, value.clone());
+        sql.assign(column, M::column_value(column, value.clone()));
     }
     sql.push(" WHERE ");
-    sql.compare(M::TABLE, M::PRIMARY_KEY, " = ", key);
+    sql.compare_model::<M>(M::TABLE, M::PRIMARY_KEY, " = ", key);
     returning::<M>(&mut sql);
     exec.fetch_optional::<M>(sql).await
 }
@@ -239,7 +252,7 @@ pub(crate) async fn update<M: SqlxModel>(
 pub(crate) fn by_id<M: SqlxModel>(exec: Exec<'_>, id: impl Into<SqlValue>) -> Sql {
     let mut sql = select_model::<M>(exec);
     sql.push(" WHERE ");
-    sql.compare(M::TABLE, M::PRIMARY_KEY, " = ", id);
+    sql.compare_model::<M>(M::TABLE, M::PRIMARY_KEY, " = ", id);
     sql
 }
 
@@ -254,6 +267,6 @@ pub(crate) fn delete_by_id<M: SqlxModel>(exec: Exec<'_>, id: impl Into<SqlValue>
     sql.push("DELETE FROM ");
     sql.ident(M::TABLE);
     sql.push(" WHERE ");
-    sql.compare(M::TABLE, M::PRIMARY_KEY, " = ", id);
+    sql.compare_model::<M>(M::TABLE, M::PRIMARY_KEY, " = ", id);
     sql
 }

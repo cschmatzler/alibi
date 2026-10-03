@@ -25,28 +25,33 @@ fn found_crate_tokens(name: &str) -> Option<TokenStream> {
 struct Roots {
     sqlx: TokenStream,
     core: TokenStream,
+    id_generator: TokenStream,
 }
 
 fn resolve_roots() -> Roots {
     if let Some(better_auth_root) = found_crate_tokens("better-auth") {
         return Roots {
+            id_generator: quote! {},
             sqlx: quote!(#better_auth_root::sqlx),
             core: quote!(#better_auth_root::__private_core),
         };
     }
     match crate_name("better-auth-sqlx") {
         Ok(FoundCrate::Itself) => Roots {
+            id_generator: quote! {},
             sqlx: quote!(crate),
             core: quote!(crate::__private_core),
         },
         Ok(FoundCrate::Name(name)) => {
             let ident = Ident::new(&name, Span::call_site());
             Roots {
+                id_generator: quote! {},
                 sqlx: quote!(::#ident),
                 core: quote!(::#ident::__private_core),
             }
         }
         Err(_) => Roots {
+            id_generator: quote! {},
             sqlx: syn::Error::new(
                 Span::call_site(),
                 "AuthEntity must be used through better_auth::sqlx with the `sqlx` feature enabled",
@@ -173,6 +178,7 @@ fn columns(input: &DeriveInput, fields: &FieldsNamed) -> syn::Result<Vec<Column>
                     let value = meta.value()?.parse::<LitStr>()?;
                     let variant = match value.value().as_str() {
                         "text" => "Text",
+                        "bpchar" => "BpChar",
                         "json" => "Json",
                         "double" => "Double",
                         "float" => "Float",
@@ -181,7 +187,7 @@ fn columns(input: &DeriveInput, fields: &FieldsNamed) -> syn::Result<Vec<Column>
                         _ => {
                             return Err(syn::Error::new_spanned(
                                 value,
-                                "expected text, json, double, float, boolean or other",
+                                "expected text, bpchar, json, double, float, boolean or other",
                             ));
                         }
                     };
@@ -243,8 +249,9 @@ fn try_generate_model(input: &DeriveInput) -> syn::Result<TokenStream> {
 }
 
 fn try_generate_entity(input: &DeriveInput) -> syn::Result<TokenStream> {
-    let roots = resolve_roots();
+    let mut roots = resolve_roots();
     let attributes = codegen::parse_auth_attributes(input, true)?;
+    roots.id_generator = codegen::generated_id(&attributes, &roots.core);
     let fields = codegen::named_fields(input)?;
     codegen::validate_core_fields(input, attributes.role, fields)?;
     let columns = columns(input, fields)?;
@@ -458,8 +465,8 @@ fn new_active(
     roots: &Roots,
 ) -> syn::Result<TokenStream> {
     let sqlx_root = &roots.sqlx;
-    let core_root = &roots.core;
     let id_column = physical(columns, "id")?;
+    let generated_id = &roots.id_generator;
     let set = set_field(columns, roots);
     let staged = codegen::insert_values(role, fields)
         .into_iter()
@@ -474,7 +481,7 @@ fn new_active(
     Ok(quote! {
         let mut active = #sqlx_root::model::ActiveRow::new();
         active.set(#id_column, id.unwrap_or_else(|| {
-            #sqlx_root::value::SqlValue::Text(Some(#core_root::uuid::Uuid::new_v4().to_string()))
+            #sqlx_root::value::SqlValue::Text(Some(#generated_id))
         }));
         #(#staged)*
         active
@@ -548,7 +555,9 @@ fn user_impl(
                 match field { #(#list_columns)* _ => None }
             }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(#sqlx_root::value::SqlValue::Text(Some(id.to_string())))
+                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
+                    <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,
+                    #sqlx_root::value::SqlValue::Text(Some(id.to_string()))))
             }
 
             fn new_active(
@@ -650,10 +659,14 @@ fn session_impl(
             fn expires_at_column() -> &'static str { #expires_at_column }
             fn created_at_column() -> &'static str { #created_at_column }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(#sqlx_root::value::SqlValue::Text(Some(id.to_string())))
+                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
+                    <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,
+                    #sqlx_root::value::SqlValue::Text(Some(id.to_string()))))
             }
             fn parse_user_id(user_id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(#sqlx_root::value::SqlValue::Text(Some(user_id.to_string())))
+                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
+                    Self::user_id_column(),
+                    #sqlx_root::value::SqlValue::Text(Some(user_id.to_string()))))
             }
 
             fn new_active(
@@ -712,10 +725,14 @@ fn account_impl(
             fn user_id_column() -> &'static str { #user_id_column }
             fn created_at_column() -> &'static str { #created_at_column }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(#sqlx_root::value::SqlValue::Text(Some(id.to_string())))
+                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
+                    <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,
+                    #sqlx_root::value::SqlValue::Text(Some(id.to_string()))))
             }
             fn parse_user_id(user_id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(#sqlx_root::value::SqlValue::Text(Some(user_id.to_string())))
+                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
+                    Self::user_id_column(),
+                    #sqlx_root::value::SqlValue::Text(Some(user_id.to_string()))))
             }
 
             fn new_active(
@@ -762,7 +779,9 @@ fn verification_impl(
             fn created_at_column() -> &'static str { #created_at_column }
             fn updated_at_column() -> Option<&'static str> { Some(#updated_at_column) }
             fn parse_id(id: &str) -> #core_root::AuthResult<#sqlx_root::value::SqlValue> {
-                Ok(#sqlx_root::value::SqlValue::Text(Some(id.to_string())))
+                Ok(<Self as #sqlx_root::model::SqlxModel>::column_value(
+                    <Self as #sqlx_root::model::SqlxModel>::PRIMARY_KEY,
+                    #sqlx_root::value::SqlValue::Text(Some(id.to_string()))))
             }
 
             fn new_active(
@@ -786,6 +805,9 @@ fn verification_impl(
 /// or `verification`. `table = "..."` names the physical table and defaults to
 /// the bundled table for the role. Physical column names follow
 /// `#[sqlx(rename = "...")]` and `#[sqlx(rename_all = "...")]`.
+/// `id_generator = "path::to::function"` selects a String ID factory; the default
+/// remains a UUID. Use `#[auth(column_type = "bpchar")]` on String fields mapped
+/// to PostgreSQL `CHAR(n)` to retain typed parameters and indexed equality.
 ///
 /// ```ignore
 /// #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, AuthEntity)]

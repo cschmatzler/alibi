@@ -17,9 +17,12 @@ pub struct AuthAttributes {
     pub role: EntityRole,
     pub secondary_storage: bool,
     pub table: Option<String>,
+    /// Application ID factory; returns a String compatible with existing columns.
+    pub id_generator: Option<syn::Path>,
 }
 
-/// Parse `#[auth(role = "...", secondary_storage)]`, optionally also `table = "..."`.
+/// Parse the role, optional ID factory and secondary-storage configuration.
+/// SQLx also permits an explicit table name.
 ///
 /// # Errors
 ///
@@ -31,6 +34,7 @@ pub fn parse_auth_attributes(
     let mut parsed = None;
     let mut secondary = false;
     let mut table = None;
+    let mut id_generator = None;
     for attr in &input.attrs {
         if !attr.path().is_ident("auth") {
             continue;
@@ -52,6 +56,10 @@ pub fn parse_auth_attributes(
                     }
                 });
                 Ok(())
+            } else if meta.path.is_ident("id_generator") {
+                let path = meta.value()?.parse::<LitStr>()?;
+                id_generator = Some(path.parse()?);
+                Ok(())
             } else if meta.path.is_ident("secondary_storage") {
                 secondary = true;
                 Ok(())
@@ -60,7 +68,7 @@ pub fn parse_auth_attributes(
                 Ok(())
             } else if allow_table {
                 Err(meta.error(
-                    "expected `role = \"...\"`, `table = \"...\"` or `secondary_storage`",
+                    "expected `role = \"...\"`, `table = \"...\"`, `id_generator = \"...\"` or `secondary_storage`",
                 ))
             } else {
                 Err(meta.error("expected `role = \"...\"` or `secondary_storage`"))
@@ -73,6 +81,7 @@ pub fn parse_auth_attributes(
             role,
             secondary_storage: secondary,
             table,
+            id_generator,
         })
         .ok_or_else(|| {
             syn::Error::new_spanned(
@@ -707,5 +716,14 @@ pub fn is_auth_timestamp(name: &str) -> bool {
             | "ban_expires"
             | "access_token_expires_at"
             | "refresh_token_expires_at"
+    )
+}
+
+/// Generate an application-selected auth identifier, retaining UUID defaults.
+#[must_use]
+pub fn generated_id(attributes: &AuthAttributes, core_root: &TokenStream) -> TokenStream {
+    attributes.id_generator.as_ref().map_or_else(
+        || quote! { #core_root::uuid::Uuid::new_v4().to_string() },
+        |generator| quote! { #generator() },
     )
 }

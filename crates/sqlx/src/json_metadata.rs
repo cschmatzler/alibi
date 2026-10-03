@@ -112,6 +112,7 @@ impl SqlxValue for JsonMetadata {
             | SqlValue::Float(_)
             | SqlValue::Double(_)
             | SqlValue::Text(None)
+            | SqlValue::BpChar(_)
             | SqlValue::Bytes(_)
             | SqlValue::Json(None)
             | SqlValue::Timestamp(_)

@@ -16,6 +16,9 @@ pub enum SqlValue {
     Float(Option<f32>),
     Double(Option<f64>),
     Text(Option<String>),
+    /// PostgreSQL fixed-width character value (`bpchar`), including typed NULL.
+    /// Other engines bind the exact string as ordinary text.
+    BpChar(Option<String>),
     Bytes(Option<Vec<u8>>),
     Json(Option<Box<serde_json::Value>>),
     /// Timezone-aware timestamp (PostgreSQL `TIMESTAMPTZ`).
@@ -37,6 +40,7 @@ impl SqlValue {
                 | Self::Float(None)
                 | Self::Double(None)
                 | Self::Text(None)
+                | Self::BpChar(None)
                 | Self::Bytes(None)
                 | Self::Json(None)
                 | Self::Timestamp(None)
@@ -116,6 +120,8 @@ pub enum ColumnKind {
     Text,
     /// JSON documents.
     Json,
+    /// String-backed PostgreSQL `CHAR(n)`; opt in per model column.
+    BpChar,
     /// `f64` columns.
     Double,
     /// `f32` columns.
@@ -142,8 +148,8 @@ impl std::error::Error for ValueTypeError {}
 
 /// A model field type which converts to and from a bound [`SqlValue`].
 ///
-/// Conversions are exact: a field accepts only its own value variant, and an
-/// optional field accepts its own typed `NULL`. `AuthEntity` uses this to stage
+/// Conversions preserve the field representation: strings accept TEXT and
+/// explicitly selected bpchar values; optional fields accept their typed `NULL`. `AuthEntity` uses this to stage
 /// additional fields and to materialize models without a database round trip.
 pub trait SqlxValue: Sized {
     /// The column category used to coerce configured raw values.
@@ -200,7 +206,6 @@ sqlx_value!(
     i64 => BigInt, Other,
     f32 => Float, Float,
     f64 => Double, Double,
-    String => Text, Text,
     Vec<u8> => Bytes, Other,
     DateTime<Utc> => Timestamp, Other,
     NaiveDateTime => NaiveTimestamp, NaiveTimestamp,
@@ -232,7 +237,12 @@ impl<T: SqlxValue> SqlxValue for Option<T> {
         self.map_or_else(T::null, T::into_sql_value)
     }
     fn from_sql_value(value: SqlValue) -> Result<Self, ValueTypeError> {
-        if value == T::null() {
+        if value == T::null()
+            || matches!(
+                (&value, T::null()),
+                (SqlValue::BpChar(None), SqlValue::Text(None))
+            )
+        {
             Ok(None)
         } else {
             T::from_sql_value(value).map(Some)
@@ -240,5 +250,21 @@ impl<T: SqlxValue> SqlxValue for Option<T> {
     }
     fn prepare(self, engine: Engine) -> AuthResult<Self> {
         self.map(|value| value.prepare(engine)).transpose()
+    }
+}
+
+impl SqlxValue for String {
+    const KIND: ColumnKind = ColumnKind::Text;
+    fn null() -> SqlValue {
+        SqlValue::Text(None)
+    }
+    fn into_sql_value(self) -> SqlValue {
+        SqlValue::Text(Some(self))
+    }
+    fn from_sql_value(value: SqlValue) -> Result<Self, ValueTypeError> {
+        match value {
+            SqlValue::Text(Some(value)) | SqlValue::BpChar(Some(value)) => Ok(value),
+            _ => Err(ValueTypeError),
+        }
     }
 }
