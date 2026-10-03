@@ -11,7 +11,7 @@ pub(super) fn encode(
     jwe::encode(
         secret,
         "better-auth-account",
-        &serde_json::to_value(payload)?,
+        &payload.wire_value()?,
         max_age,
     )
 }

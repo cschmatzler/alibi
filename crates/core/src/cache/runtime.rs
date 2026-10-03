@@ -382,7 +382,45 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     };
     let name = related_cookie_name(&ctx.config, "session_data");
     let max_age = (!dont_remember).then(|| super::effective_max_age(config.max_age));
-    let empty_header = super::cookie_header(&format!("{name}.99"), "", max_age, &ctx.config)?;
+    chunked_cookie_headers(&name, &value, max_age, &ctx.config, headers, false)
+}
+
+/// Read a base cookie or numerically ordered canonical chunks.
+#[must_use]
+pub fn chunked_cookie_value(
+    headers: &std::collections::HashMap<String, String>,
+    name: &str,
+) -> Option<String> {
+    cache_value(&cookies(headers), &cookie_values(headers, true), name)
+}
+
+/// Emit bounded chunks, replacing incoming names and expiring stale chunks.
+/// Account chunks resolve attributes against their base cookie.
+///
+/// # Errors
+/// Propagates invalid attributes or encoding.
+pub fn chunked_cookie_headers<H: std::hash::BuildHasher + Sync>(
+    name: &str,
+    value: &str,
+    max_age: Option<f64>,
+    config: &crate::AuthConfig,
+    headers: &std::collections::HashMap<String, String, H>,
+    account: bool,
+) -> AuthResult<Vec<String>> {
+    let render = |part: &str, value: &str, age: Option<f64>| {
+        if account {
+            crate::utils::cookie_utils::create_account_cookie_header(
+                part,
+                name,
+                value,
+                age.unwrap_or(300.0),
+                config,
+            )
+        } else {
+            super::cookie_header(part, value, age, config)
+        }
+    };
+    let empty_header = render(&format!("{name}.99"), "", max_age)?;
     let capacity = 4050_usize.saturating_sub(empty_header.len());
     let count = if capacity == 0 {
         usize::MAX
@@ -391,26 +429,17 @@ async fn build_headers<S: AuthSchema, H: std::hash::BuildHasher + Sync>(
     };
     let mut output = IndexMap::new();
     for old in existing_names(&cookie_values(headers, true), &name) {
-        drop(output.insert(
-            old.clone(),
-            super::cookie_header(&old, "", Some(0.0), &ctx.config)?,
-        ));
+        drop(output.insert(old.clone(), render(&old, "", Some(0.0))?));
     }
     if count <= 1 {
-        drop(output.insert(
-            name.clone(),
-            super::cookie_header(&name, &value, max_age, &ctx.config)?,
-        ));
+        drop(output.insert(name.to_owned(), render(name, value, max_age)?));
     } else if count <= 100 {
         // Encoded compact values are ASCII, so byte chunking matches JS strings.
         for (index, chunk) in value.as_bytes().chunks(capacity).enumerate() {
             let chunk = std::str::from_utf8(chunk)
                 .map_err(|_error| AuthError::internal("Invalid compact cache encoding"))?;
             let part = format!("{name}.{index}");
-            drop(output.insert(
-                part.clone(),
-                super::cookie_header(&part, chunk, max_age, &ctx.config)?,
-            ));
+            drop(output.insert(part.clone(), render(&part, chunk, max_age)?));
         }
     }
     Ok(output.into_values().collect())
@@ -967,7 +996,9 @@ pub fn session_cleanup_headers(
     let cache_name = related_cookie_name(config, "session_data");
     let mut names = vec![config.session.cookie_name.clone(), cache_name.clone()];
     if config.account.store_account_cookie {
-        names.push(related_cookie_name(config, "account_data"));
+        let account_name = related_cookie_name(config, "account_data");
+        names.push(account_name.clone());
+        names.extend(existing_names(&cookie_values(headers, true), &account_name));
     }
     if matches!(
         config.account.store_state_strategy,

@@ -216,6 +216,39 @@ fn cookie_attributes(name: &str, config: &AuthConfig) -> CookieAttributes {
     attributes
 }
 
+/// Render an account cookie with resolved account attributes and numeric TTL.
+/// Chunk names inherit the base cookie attributes.
+///
+/// # Errors
+/// Returns an error when Max-Age exceeds the published serializer limit.
+pub fn create_account_cookie_header(
+    name: &str,
+    base: &str,
+    value: &str,
+    max_age: f64,
+    config: &AuthConfig,
+) -> crate::AuthResult<String> {
+    if max_age > 34_560_000.0 {
+        return Err(crate::AuthError::internal(
+            "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
+        ));
+    }
+    let mut attributes = cookie_attributes(base, config);
+    attributes.max_age = None;
+    let header = render_encoded_cookie(name, value, &attributes);
+    if max_age >= 0.0 {
+        let (prefix, suffix) = header.split_once(';').unwrap_or((&header, ""));
+        Ok(format!(
+            "{prefix}; Max-Age={}{}{}",
+            max_age.floor(),
+            if suffix.is_empty() { "" } else { ";" },
+            suffix
+        ))
+    } else {
+        Ok(header)
+    }
+}
+
 fn apply_attributes(target: &mut CookieAttributes, overrides: &CookieAttributes) {
     if overrides.secure.is_some() {
         target.secure = overrides.secure;
