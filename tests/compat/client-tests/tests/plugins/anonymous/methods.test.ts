@@ -15,9 +15,11 @@ import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 import { oneTap } from "../one-tap/helpers";
 
-const profile = "anonymous-methods" as const;
-
-function client(ctx: ScenarioContext, name: string) {
+function client(
+  ctx: ScenarioContext,
+  name: string,
+  profile: "anonymous-methods" | "anonymous-custom-methods",
+) {
   return createAuthClient({
     baseURL: ctx.baseURL + authProfilePath(profile),
     plugins: [
@@ -80,15 +82,21 @@ function observedAssertion(value: ReturnType<Authenticator["authenticate"]>) {
   };
 }
 
-for (const method of [
-  "magic",
-  "email-otp",
-  "email-otp-verification",
-  "email-verification",
-  "phone",
-  "one-tap",
-  "passkey",
-] as const) {
+for (const [profile, method] of (
+  ["anonymous-methods", "anonymous-custom-methods"] as const
+).flatMap((profile) =>
+  (
+    [
+      "magic",
+      "email-otp",
+      "email-otp-verification",
+      "email-verification",
+      "phone",
+      "one-tap",
+      "passkey",
+    ] as const
+  ).map((method) => [profile, method] as const),
+)) {
   const route =
     method === "magic"
       ? "GET /magic-link/verify"
@@ -104,11 +112,11 @@ for (const method of [
                 ? "POST /one-tap/callback"
                 : "POST /passkey/verify-authentication";
   compatScenario(
-    `anonymous ${method} verified login transfers only the actual anonymous owner and preserves rejected proof state`,
+    `anonymous ${profile === "anonymous-methods" ? "" : "custom "}${method} verified login transfers only the actual anonymous owner and preserves rejected proof state`,
     async (ctx) => {
-      const primary = client(ctx, "primary");
-      const foreign = client(ctx, "foreign");
-      const enrolled = client(ctx, "enrolled");
+      const primary = client(ctx, "primary", profile);
+      const foreign = client(ctx, "foreign", profile);
+      const enrolled = client(ctx, "enrolled", profile);
       const foreignSignup = await foreign.signUp.email({
         email: ctx.uniqueEmail("methods-foreign"),
         password: "password123",
@@ -120,6 +128,7 @@ for (const method of [
       const email = ctx.uniqueEmail(`methods-${method}`);
       const preparation: unknown[] = [];
       let ownerId: string | undefined;
+      let enrolledBefore: any;
       let device: Authenticator | undefined;
       let registrationOptions: any;
 
@@ -136,6 +145,7 @@ for (const method of [
         expect(signup.error).toBeNull();
 
         ownerId = signup.data!.user.id;
+        if (profile === "anonymous-custom-methods") enrolledBefore = await enrolled.getSession();
         preparation.push(signup);
 
         if (method === "passkey") {
@@ -357,7 +367,7 @@ for (const method of [
 
       const event = after.events[0]!;
       expect(event).toMatchObject({
-        mode: "methods",
+        mode: profile === "anonymous-methods" ? "methods" : "custom-methods",
         anonymousUser: {
           user: { id: anonymous.data!.user.id },
           session: { token: original.data!.session.token, userId: anonymous.data!.user.id },
@@ -373,9 +383,30 @@ for (const method of [
       // only emailVerified changed; the authoritative current row is newer.
       const expectedNewUser =
         method === "email-verification"
-          ? { ...(preparation[0] as any).data.user, emailVerified: true }
+          ? {
+              ...(enrolledBefore?.data?.user ?? (preparation[0] as any).data.user),
+              emailVerified: true,
+            }
           : current.data!.user;
-      expect(event.newUser.user).toEqual(ctx.snapshot(expectedNewUser));
+      expect(event.newUser.user).toEqual(
+        ctx.snapshot(
+          profile === "anonymous-methods"
+            ? expectedNewUser
+            : {
+                ...expectedNewUser,
+                cargoHidden:
+                  method === "email-otp-verification" ||
+                  method === "email-verification" ||
+                  method === "passkey"
+                    ? "Stored Secret"
+                    : "Application Secret",
+              },
+        ),
+      );
+      if (profile === "anonymous-custom-methods") {
+        expect(event.newUser.user).toHaveProperty("cargoHidden");
+        expect(current.data!.user).not.toHaveProperty("cargoHidden");
+      }
       expect(event.newUser.session.token).not.toBe(original.data!.session.token);
       expect(event.path).toBe(route.slice(route.indexOf(" ") + 1));
       expect(after.users.some((row) => row.id === anonymous.data!.user.id)).toBe(false);
@@ -407,6 +438,7 @@ for (const method of [
         foreignSignup,
         foreignBefore,
         preparation,
+        ...(enrolledBefore ? { enrolledBefore } : {}),
         anonymous,
         original,
         before,

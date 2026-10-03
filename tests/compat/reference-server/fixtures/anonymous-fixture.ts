@@ -24,6 +24,13 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
     "invalid-email",
     "empty-name",
     "methods",
+    "custom",
+    "custom-methods",
+    "custom-cache",
+    "link-ordinary",
+    "link-uncoded",
+    "recovery",
+    "recovery-disabled",
   ];
 
   for (const mode of modes) {
@@ -31,6 +38,36 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
     const options: BetterAuthOptions = {
       ...base,
       basePath: path,
+      ...(mode.startsWith("custom") || mode.startsWith("recovery")
+        ? {
+            user: {
+              ...base.user,
+              additionalFields: {
+                cargoLabel: {
+                  required: false,
+                  type: "string" as const,
+                  fieldName: "cargo_label",
+                  defaultValue: () => "Application Original",
+                },
+                cargoHidden: {
+                  required: false,
+                  type: "string" as const,
+                  fieldName: "cargo_hidden",
+                  defaultValue: () => "Application Secret",
+                  returned: false,
+                },
+              },
+            },
+          }
+        : {}),
+      ...(mode === "custom-cache"
+        ? {
+            session: {
+              ...base.session,
+              cookieCache: { enabled: true, strategy: "compact" as const },
+            },
+          }
+        : {}),
       socialProviders: {
         gitlab: {
           clientId: "fixture-social-client",
@@ -38,7 +75,7 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
           issuer: `${base.baseURL}/__test/social-provider/gitlab`,
         },
       },
-      ...(mode === "methods"
+      ...(mode.endsWith("methods")
         ? {
             emailVerification: {
               ...base.emailVerification,
@@ -92,17 +129,25 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
               }
             },
             after: async (session, context) => {
-              if (mode === "snapshot" && context?.path === "/sign-up/email") {
+              if (
+                (mode === "snapshot" || mode.startsWith("custom")) &&
+                context?.path === "/sign-up/email"
+              ) {
                 database
                   .query("UPDATE user SET name=? WHERE id=?")
                   .run("Stored Hook Name", session.userId);
+                if (mode.startsWith("custom")) {
+                  database
+                    .query("UPDATE user SET cargo_label=?, cargo_hidden=? WHERE id=?")
+                    .run("Application Stored", "Stored Secret", session.userId);
+                }
               }
             },
           },
         },
       },
       plugins: [
-        ...(mode === "methods"
+        ...(mode.endsWith("methods")
           ? [
               magicLink({
                 async sendMagicLink({ email, url, token, metadata }) {
@@ -133,7 +178,7 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
             ]
           : []),
         anonymous({
-          disableDeleteAnonymousUser: mode === "disabled",
+          disableDeleteAnonymousUser: mode === "disabled" || mode === "recovery-disabled",
           generateRandomEmail: () =>
             mode === "invalid-email" ? "not an email" : `anonymous-${++sequence}@fixture.test`,
           generateName: async () => {
@@ -148,6 +193,15 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
               anonymousUser,
               newUser,
             });
+            if (["custom", "custom-cache", "recovery", "recovery-disabled"].includes(mode)) {
+              database
+                .query("UPDATE user SET cargo_label=? WHERE id=?")
+                .run(`Transferred ${(anonymousUser.user as any).cargoLabel}`, newUser.user.id);
+            }
+            if (mode === "link-ordinary") throw new Error("Configured anonymous transfer denied");
+            if (mode === "link-uncoded") {
+              throw new APIError("FORBIDDEN", { message: "Configured anonymous transfer denied" });
+            }
             if (mode === "link-error") {
               throw new APIError("FORBIDDEN", {
                 code: "APPLICATION_LINK_DENIED",
@@ -159,7 +213,7 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
       ],
     };
 
-    if (mode === "standard" || mode === "methods") {
+    if (mode === "standard" || mode.endsWith("methods") || mode === "custom") {
       const { runMigrations } = await getMigrations(options);
       await runMigrations();
     }
@@ -177,6 +231,56 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
     async handle(request: Request) {
       const url = new URL(request.url);
 
+      if (url.pathname === "/__test/anonymous/prepare" && request.method === "POST") {
+        const { userId, expireOriginal, expireAll } = (await request.json()) as {
+          userId: string;
+          expireOriginal: boolean;
+          expireAll?: boolean;
+        };
+        const { internalAdapter, adapter } = await profiles.get(
+          "/__test/profiles/anonymous-recovery/api/auth",
+        )!.$context;
+        if (expireOriginal || expireAll) {
+          await adapter.updateMany({
+            model: "session",
+            where: [{ field: "userId", value: userId }],
+            update: { expiresAt: new Date(Date.now() - 60_000) },
+          });
+        }
+        if (expireAll) return Response.json({ success: true });
+        await internalAdapter.createSession(
+          userId,
+          false,
+          { expiresAt: new Date(Date.now() - 60_000), ipAddress: "", userAgent: "historical" },
+          true,
+        );
+        await internalAdapter.createSession(
+          userId,
+          false,
+          {
+            expiresAt: new Date(Date.now() + 86_400_000),
+            ipAddress: "",
+            userAgent: "recovery-first",
+          },
+          true,
+        );
+        await internalAdapter.createSession(
+          userId,
+          false,
+          {
+            expiresAt: new Date(Date.now() + 172_800_000),
+            ipAddress: "",
+            userAgent: "recovery-second",
+          },
+          true,
+        );
+        await internalAdapter.createAccount({
+          userId,
+          accountId: "anonymous-application-account",
+          providerId: "fixture-application",
+        });
+        return Response.json({ success: true });
+      }
       if (url.pathname === "/__test/anonymous/delivery") {
         return Response.json(deliveries.get(url.searchParams.get("key") ?? "") ?? null);
       }
@@ -206,6 +310,18 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
           emailVerified: row.emailVerified,
           image: row.image ?? null,
           isAnonymous: row.isAnonymous ?? false,
+          cargoLabel:
+            database
+              .query<{ cargo_label: string | null }, [string]>(
+                "SELECT cargo_label FROM user WHERE id=?",
+              )
+              .get(row.id)?.cargo_label ?? null,
+          cargoHidden:
+            database
+              .query<{ cargo_hidden: string | null }, [string]>(
+                "SELECT cargo_hidden FROM user WHERE id=?",
+              )
+              .get(row.id)?.cargo_hidden ?? null,
           createdAt: row.createdAt,
           updatedAt: row.updatedAt,
         })),

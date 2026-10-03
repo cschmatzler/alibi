@@ -462,6 +462,13 @@ export const FIXTURE_PROFILES = [
     "date-version",
   ] as const),
   ...variants("anonymous-", [
+    "custom",
+    "custom-methods",
+    "custom-cache",
+    "link-ordinary",
+    "link-uncoded",
+    "recovery",
+    "recovery-disabled",
     "standard",
     "disabled",
     "link-error",

@@ -86,7 +86,7 @@ impl AnonymousPlugin {
             ));
         }
         let custom = match &self.config.identity {
-            Some(identity) => identity.email().await?,
+            Some(identity) => identity.email().await.map_err(callback_error)?,
             None => None,
         };
         let email = if let Some(email) = custom.filter(|value| !value.is_empty()) {
@@ -110,7 +110,7 @@ impl AnonymousPlugin {
                 )
         };
         let name = match &self.config.identity {
-            Some(identity) => identity.name(req).await?,
+            Some(identity) => identity.name(req).await.map_err(callback_error)?,
             None => None,
         }
         .filter(|name| !name.is_empty())
@@ -410,46 +410,38 @@ impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
         let Some((old_user, old_session)) = resolve_anonymous_session(req, ctx).await? else {
             return Ok(response);
         };
-        if old_user.is_anonymous() != Some(true) {
+        if old_user.is_anonymous != Some(true) {
             return Ok(response);
         }
         let Some(issued) = completed_response_session(req, ctx, &response) else {
             return Ok(response);
         };
-        let old_user_view = match &old_user {
-            better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
-            better_auth_core::AuthenticatedUser::Cached(user) => user.as_ref().clone(),
-        };
         if let Some(linker) = &self.config.on_link_account {
             // The new-user callback receives the real newly issued session,
             // including adapter fields hidden from public session responses.
-            let mut new_session = ctx.session_view(&issued.session);
+            let mut new_session = issued.callback_session(ctx);
             new_session.omitted_fields.clear();
             linker
                 .link(
                     &AnonymousLink {
-                        anonymous_user: old_user_view,
+                        anonymous_user: old_user.clone(),
                         anonymous_session: ctx.session_view(&old_session),
-                        new_user: issued
-                            .user_view
-                            .as_ref()
-                            .filter(|view| view.id == issued.user.id().as_ref())
-                            .cloned()
-                            .unwrap_or_else(|| ctx.user_view(&issued.user)),
+                        new_user: issued.callback_user(ctx),
                         new_session,
                     },
                     req,
                 )
-                .await?;
+                .await
+                .map_err(callback_error)?;
         }
         if self.config.disable_delete_anonymous_user
-            || old_user.id() == issued.user.id()
+            || old_user.id == issued.user.id().as_ref()
             || issued.user.is_anonymous() == Some(true)
         {
             return Ok(response);
         }
-        if let Err(error) = ctx.database.delete_user(old_user.id().as_ref()).await {
-            tracing::error!(user_id=%old_user.id(),error=%error,"Failed to clean up anonymous account");
+        if let Err(error) = ctx.database.delete_user(&old_user.id).await {
+            tracing::error!(user_id=%old_user.id,error=%error,"Failed to clean up anonymous account");
         }
         Ok(response)
     }
@@ -487,10 +479,14 @@ async fn anonymous_session<S: AuthSchema>(
 async fn resolve_anonymous_session<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> AuthResult<Option<(better_auth_core::AuthenticatedUser<S>, SessionView)>> {
+) -> AuthResult<Option<(UserView, SessionView)>> {
     if let Some((user, session)) = anonymous_session(req, ctx).await
         && user.is_anonymous() == Some(true)
     {
+        let user = match user {
+            better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
+            better_auth_core::AuthenticatedUser::Cached(user) => *user,
+        };
         return Ok(Some((user, session)));
     }
     let Some(context) = req
@@ -515,12 +511,18 @@ async fn resolve_anonymous_session<S: AuthSchema>(
         .await?
         .into_iter()
         .find(|session| session.expires_at() > chrono::Utc::now());
-    Ok(session.map(|session| {
-        (
-            better_auth_core::AuthenticatedUser::Stored(user),
-            ctx.session_view(&session),
-        )
-    }))
+    Ok(session.map(|session| (ctx.trusted_user_view(&user), ctx.session_view(&session))))
+}
+
+// An ordinary application exception has an empty 500 wire. Explicit typed
+// HTTP errors retain their status/body, including coded and uncoded API errors.
+fn callback_error(error: better_auth_core::AuthError) -> better_auth_core::AuthError {
+    match error {
+        better_auth_core::AuthError::Internal(_) => {
+            better_auth_core::AuthError::CallbackFailure(Box::new(error))
+        }
+        other => other,
+    }
 }
 
 fn error(status: u16, code: &'static str, message: &'static str) -> AuthResponse {

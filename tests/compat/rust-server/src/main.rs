@@ -1,6 +1,7 @@
 mod additional_field_models;
 mod fixtures;
 use fixtures::managed_secrets_fixture;
+mod anonymous_user_model;
 mod backend;
 mod magic_profiles;
 mod otp_profiles;
