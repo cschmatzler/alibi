@@ -158,10 +158,11 @@ Rust requires a current key of at least 32 bytes and nonempty readers. These
 configuration bounds are deliberately stricter than the TypeScript runtime,
 which warns for short keys and accepts integer Numbers outside the safe range;
 use a strong key and a safe integer version when migrating configuration. Keys are
-redacted from `Debug`. The public OAuth encryption helpers now take
-`&AuthConfig` instead of `&str`, so callers pass their actual managed or
-single-secret configuration to `encrypt_token`, `decrypt_token`,
-`maybe_encrypt` and `maybe_decrypt`.
+redacted from `Debug`. The public OAuth encryption helpers retain their
+single-secret `&str` APIs. Use `encrypt_token_with_config`,
+`decrypt_token_with_config`, `maybe_encrypt_with_config` and
+`maybe_decrypt_with_config` with the actual `&AuthConfig` to write and read
+managed key versions.
 
 Your app owns the auth entities and migrations — Better Auth adapts to whatever schema you define.
 

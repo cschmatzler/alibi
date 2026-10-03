@@ -73,6 +73,11 @@ parity. Arbitrary two-factor/multi-session ordering remains issue #232, and the
 full account-cookie compression/chunk matrix remains issue #230. Session JWE
 cache configuration is owned by #171/#349; this change has no dependency on it.
 
+The existing public OAuth token helpers retain their secret-string signatures.
+Explicit `*_with_config` helpers support managed versions, and the production
+account paths use the actual configuration. Existing integration callers and
+their assertions continue exercising the single-secret contract unchanged.
+
 Focused validation: eight managed and existing dedicated-secret proxy owners
 pass with 1,498 assertions. The full canonical `scripts/check.sh` gate and
 independent review remain required before landing and closing #176.

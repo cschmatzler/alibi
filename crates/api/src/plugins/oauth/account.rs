@@ -1,4 +1,4 @@
-use super::encryption::{encrypt_token_set, maybe_decrypt};
+use super::encryption::{encrypt_token_set, maybe_decrypt_with_config};
 use super::handlers::{
     create_account_cookie_header, decode_account_cookie, fetch_user_info_from_provider,
     refresh_tokens_via_provider,
@@ -195,7 +195,7 @@ async fn valid_access_token(
             .as_deref()
             .filter(|token| !token.is_empty())
     {
-        let refresh_token = maybe_decrypt(Some(stored_refresh), encrypted, &ctx.config)
+        let refresh_token = maybe_decrypt_with_config(Some(stored_refresh), encrypted, &ctx.config)
             .map_err(|_error| access_token_failure())?
             .unwrap_or_default();
         let tokens = refresh_tokens_via_provider(provider, &refresh_token)
@@ -211,7 +211,7 @@ async fn valid_access_token(
     Ok((
         AccessTokenResponse {
             access_token: Some(
-                maybe_decrypt(account.access_token.as_deref(), encrypted, &ctx.config)
+                maybe_decrypt_with_config(account.access_token.as_deref(), encrypted, &ctx.config)
                     .map_err(|_error| access_token_failure())?
                     .unwrap_or_default(),
             ),
@@ -308,7 +308,7 @@ pub(super) async fn handle_refresh_token(
         .as_deref()
         .filter(|value| !value.is_empty())
         .ok_or_else(|| AuthError::bad_request("Refresh token not found"))?;
-    let refresh_token = maybe_decrypt(
+    let refresh_token = maybe_decrypt_with_config(
         Some(stored_refresh),
         ctx.config.account.encrypt_oauth_tokens,
         &ctx.config,
