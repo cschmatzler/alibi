@@ -15,6 +15,21 @@ export function createTwoFactorPolicyFixture(
     rows.push({ phase, input });
     backupReceipts.set(profile, rows);
   };
+  const rejectBackup = (input: string, phase: string) => {
+    const mode =
+      phase === "decrypt"
+        ? input.split("throw-decrypt-")[1]
+        : JSON.parse(input).find(
+            (value: unknown) => value && typeof value === "object" && "reject" in value,
+          )?.reject;
+    if (mode === "ordinary") throw new Error("session creation cancelled by database hook");
+    if (mode === "explicit") {
+      throw new APIError("FORBIDDEN", {
+        code: "BACKUP_CALLBACK_DENIED",
+        message: "session creation cancelled by database hook",
+      });
+    }
+  };
   const numericBackup: Record<
     string,
     { amount: number; length: number; storeBackupCodes: "plain" }
@@ -54,10 +69,12 @@ export function createTwoFactorPolicyFixture(
                     storeBackupCodes: {
                       encrypt: async (input: string) => {
                         recordBackup(name, "encrypt", input);
+                        rejectBackup(input, "encrypt");
                         return "backup-" + input;
                       },
                       decrypt: async (input: string) => {
                         recordBackup(name, "decrypt", input);
+                        rejectBackup(input, "decrypt");
                         return input.slice(7);
                       },
                     },

@@ -7,7 +7,7 @@ mod otp;
 
 use super::StatusResponse;
 use crate::plugins::helpers::{
-    SessionIssueError, get_cookie, get_credential_password_hash, issue_user_session_record,
+    SessionIssueError, get_credential_password_hash, issue_user_session_record,
     issue_user_session_with_overrides_record,
 };
 use aes_gcm::aead::{Aead, KeyInit};
@@ -792,7 +792,7 @@ pub(in crate::plugins) async fn inspect_trusted_device(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<TrustedDeviceCheck> {
     let cookie_name = related_cookie_name(&ctx.config, TRUST_DEVICE_COOKIE_SUFFIX);
-    let Some(raw_cookie) = get_cookie(req, &cookie_name) else {
+    let Some(raw_cookie) = get_factor_cookie(req, &cookie_name) else {
         return Ok(TrustedDeviceCheck {
             trusted: false,
             set_cookie_headers: Vec::new(),
@@ -2499,13 +2499,23 @@ fn create_signed_cookie_header(
     Ok(header)
 }
 
+// Match Better Call's separately trimmed key, retaining the first duplicate
+// even when its value is empty or invalid. Value decoding belongs to the
+// signed proof reader so failed URI decoding retains the original value.
+fn get_factor_cookie(req: &AuthRequest, name: &str) -> Option<String> {
+    req.headers.get("cookie")?.split(';').find_map(|cookie| {
+        let (key, value) = cookie.split_once('=')?;
+        (key.trim() == name).then(|| value.to_owned())
+    })
+}
+
 fn read_signed_cookie<S: better_auth_core::AuthSchema>(
     req: &AuthRequest,
     suffix: &str,
     ctx: &AuthContext<S>,
 ) -> Option<String> {
     let cookie_name = related_cookie_name(&ctx.config, suffix);
-    let raw_cookie = get_cookie(req, &cookie_name)?;
+    let raw_cookie = get_factor_cookie(req, &cookie_name)?;
     verify_factor_cookie_value(ctx.config.current_secret(), &raw_cookie)
 }
 

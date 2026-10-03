@@ -117,14 +117,44 @@ struct BackupCipher {
     profile: String,
     receipts: BackupReceipts,
 }
+impl BackupCipher {
+    fn reject(input: &str, phase: &str) -> AuthResult<()> {
+        let parsed = serde_json::from_str::<serde_json::Value>(input).ok();
+        let mode = if phase == "decrypt" {
+            input.split_once("throw-decrypt-").map(|(_, mode)| mode)
+        } else {
+            parsed
+                .as_ref()
+                .and_then(serde_json::Value::as_array)
+                .and_then(|values| {
+                    values
+                        .iter()
+                        .find_map(|value| value.get("reject").and_then(serde_json::Value::as_str))
+                })
+        };
+        match mode {
+            Some("ordinary") => Err(better_auth_core::AuthError::internal(
+                "session creation cancelled by database hook",
+            )),
+            Some("explicit") => Err(better_auth_core::AuthError::Upstream {
+                status: 403,
+                code: "BACKUP_CALLBACK_DENIED",
+                message: "session creation cancelled by database hook",
+            }),
+            _ => Ok(()),
+        }
+    }
+}
 #[async_trait::async_trait]
 impl TwoFactorBackupCipher for BackupCipher {
     async fn encrypt(&self, input: &str) -> AuthResult<String> {
         self.receipts.record(&self.profile, "encrypt", input);
+        Self::reject(input, "encrypt")?;
         Ok(format!("backup-{input}"))
     }
     async fn decrypt(&self, input: &str) -> AuthResult<String> {
         self.receipts.record(&self.profile, "decrypt", input);
+        Self::reject(input, "decrypt")?;
         Ok(input.strip_prefix("backup-").unwrap_or("").into())
     }
 }

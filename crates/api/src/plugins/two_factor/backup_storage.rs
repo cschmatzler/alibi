@@ -1,8 +1,12 @@
 use async_trait::async_trait;
-use better_auth_core::AuthResult;
+use better_auth_core::{AuthError, AuthResult};
 use std::sync::Arc;
 
 /// Async persistence callbacks for the complete backup-code JSON string.
+///
+/// Returning [`AuthError::Internal`] represents an ordinary application throw:
+/// HTTP callers receive an empty 500. Explicit API errors retain their public
+/// status and body, even when their message matches an ordinary failure.
 #[async_trait]
 pub trait TwoFactorBackupCipher: Send + Sync {
     async fn encrypt(&self, json: &str) -> AuthResult<String>;
@@ -48,7 +52,7 @@ impl TwoFactorBackupStorage {
         match self {
             Self::Encrypted => super::encrypt_value(secret, &json),
             Self::Plain => Ok(json),
-            Self::CustomCipher(cipher) => cipher.encrypt(&json).await,
+            Self::CustomCipher(cipher) => cipher.encrypt(&json).await.map_err(callback_error),
         }
     }
 
@@ -63,7 +67,7 @@ impl TwoFactorBackupStorage {
         let json = match self {
             Self::Encrypted => super::decrypt_value(secret, stored)?,
             Self::Plain => stored.to_owned(),
-            Self::CustomCipher(cipher) => cipher.decrypt(stored).await?,
+            Self::CustomCipher(cipher) => cipher.decrypt(stored).await.map_err(callback_error)?,
         };
         Ok(better_auth_core::utils::json::parse_value(&json).ok())
     }
@@ -94,5 +98,12 @@ pub(super) fn truthy(value: &better_auth_core::utils::json::JsValue) -> bool {
         JsValue::Number(number) => *number != 0.0 && !number.is_nan(),
         JsValue::String(text) => !text.is_empty(),
         _ => true,
+    }
+}
+
+fn callback_error(error: AuthError) -> AuthError {
+    match error {
+        AuthError::Internal(_) => AuthError::CallbackFailure(Box::new(error)),
+        error => error,
     }
 }

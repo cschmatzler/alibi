@@ -77,7 +77,6 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::__private_core::AuthContext as InternalAuthContext;
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::api_key::{
@@ -1159,7 +1158,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let auth_for_promote_admin = auth.clone();
     let auth_for_view_backup_codes = auth.clone();
     let auth_for_password = auth.clone();
-    let two_factor_plugin_for_view_backup_codes = two_factor_plugin.clone();
 
     let auth_for_api_key_create = auth.clone();
     let auth_for_api_key_update = auth.clone();
@@ -1361,21 +1359,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/__test/view-backup-codes",
             get(move |Query(query): Query<UserIdQuery>| {
                 let auth = auth_for_view_backup_codes.clone();
-                let two_factor_plugin = two_factor_plugin_for_view_backup_codes.clone();
                 async move {
-                    let ctx = InternalAuthContext::new(
-                        Arc::new(auth.config().clone()),
-                        auth.store().clone(),
-                    );
-                    match two_factor_plugin
-                        .view_backup_codes(&query.user_id, &ctx)
+                    match auth
+                        .dispatch_endpoint(TwoFactorPlugin::view_backup_codes_endpoint(query.user_id), Default::default())
                         .await
+                        .map_err(|error| error.error)
+                        .and_then(|output| output.decode())
                     {
-                        Ok(backup_codes) => (
+                        Ok(output) => (
                             axum::http::StatusCode::OK,
                             Json(serde_json::json!({
-                                "status": true,
-                                "backupCodes": backup_codes,
+                                "status": output.status,
+                                "backupCodes": output.backup_codes,
                             })),
                         ),
                         Err(error) => (
