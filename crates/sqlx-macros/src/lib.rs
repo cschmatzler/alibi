@@ -425,6 +425,7 @@ fn additional_fields(columns: &[Column], roots: &Roots) -> TokenStream {
 /// type, so the staged `SqlValue` variant always matches the column.
 fn set_field(columns: &[Column], roots: &Roots) -> impl Fn(&Ident, &Insert) -> TokenStream {
     let sqlx_root = roots.sqlx.clone();
+    let core_root = roots.core.clone();
     move |field, insert| {
         let Ok(column) = column_of(columns, &field.to_string()) else {
             // `update_statements` only names fields the role validated.
@@ -433,6 +434,10 @@ fn set_field(columns: &[Column], roots: &Roots) -> impl Fn(&Ident, &Insert) -> T
         let name = &column.physical;
         let ty = &column.ty;
         let value = match insert {
+            // Auth clocks arrive as UTC; the model column decides the wire type.
+            Insert::Value(expr) if codegen::is_auth_timestamp(&field.to_string()) => {
+                quote! { <#ty as #core_root::entity::AuthTimestamp>::from_utc(#expr) }
+            }
             Insert::Value(expr) => {
                 quote! { { let value: #ty = ::std::convert::Into::into(#expr); value } }
             }

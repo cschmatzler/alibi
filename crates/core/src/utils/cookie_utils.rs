@@ -115,6 +115,29 @@ pub fn create_session_like_cookie(
     render_encoded_cookie(name, value, &attributes)
 }
 
+/// Build a derived cookie with the resolved session-token attributes.
+/// Multiple-session proofs inherit the token's overrides as well as defaults.
+#[must_use]
+pub fn create_derived_session_cookie(
+    name: &str,
+    value: &str,
+    clear: bool,
+    config: &AuthConfig,
+) -> String {
+    let mut attributes = cookie_attributes(&related_cookie_name(config, "session_token"), config);
+    attributes.max_age = Some(if clear {
+        0
+    } else {
+        config
+            .advanced
+            .cookies
+            .get("session_token")
+            .and_then(|entry| entry.attributes.max_age)
+            .unwrap_or(config.session.expires_in.num_seconds())
+    });
+    render_encoded_cookie(name, value, &attributes)
+}
+
 /// Build a `Set-Cookie` header value that clears the session cookie.
 #[must_use]
 pub fn create_clear_session_cookie(config: &AuthConfig) -> String {

@@ -403,10 +403,18 @@ where
         let _ended = <S::Session as SeaOrmSessionModel>::Entity::update_many()
             .col_expr(
                 S::Session::expires_at_column(),
-                sea_orm::sea_query::Expr::value(now),
+                sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
+                    S::Session::expires_at_column(),
+                    now,
+                )),
             )
             .filter(S::Session::token_column().eq(token))
-            .filter(S::Session::expires_at_column().gt(now))
+            .filter(
+                S::Session::expires_at_column().gt(crate::schema::timestamp_value(
+                    S::Session::expires_at_column(),
+                    now,
+                )),
+            )
             .exec(self.connection())
             .await
             .map_err(map_db_err)?;
@@ -421,7 +429,12 @@ where
         let live = || {
             <S::Session as SeaOrmSessionModel>::Entity::find()
                 .filter(S::Session::user_id_column().eq(user_id.clone()))
-                .filter(S::Session::expires_at_column().gt(now))
+                .filter(
+                    S::Session::expires_at_column().gt(crate::schema::timestamp_value(
+                        S::Session::expires_at_column(),
+                        now,
+                    )),
+                )
         };
         let sessions = live()
             .limit(self.config().advanced.database.default_find_many_limit as u64)
@@ -443,10 +456,18 @@ where
         let _ended = <S::Session as SeaOrmSessionModel>::Entity::update_many()
             .col_expr(
                 S::Session::expires_at_column(),
-                sea_orm::sea_query::Expr::value(now),
+                sea_orm::sea_query::Expr::value(crate::schema::timestamp_value(
+                    S::Session::expires_at_column(),
+                    now,
+                )),
             )
             .filter(S::Session::user_id_column().eq(user_id))
-            .filter(S::Session::expires_at_column().gt(now))
+            .filter(
+                S::Session::expires_at_column().gt(crate::schema::timestamp_value(
+                    S::Session::expires_at_column(),
+                    now,
+                )),
+            )
             .exec(self.connection())
             .await
             .map_err(map_db_err)?;
@@ -574,7 +595,10 @@ where
         <S::Session as SeaOrmSessionModel>::Entity::delete_many()
             .filter(
                 <S::Session as SeaOrmSessionModel>::expires_at_column()
-                    .lt(Utc::now())
+                    .lt(crate::schema::timestamp_value(
+                        S::Session::expires_at_column(),
+                        Utc::now(),
+                    ))
                     .or(<S::Session as SeaOrmSessionModel>::active_column().eq(false)),
             )
             .exec(self.connection())

@@ -56,7 +56,10 @@ where
                             "the verification update timestamp binding has no column",
                         )
                     })?;
-                active.set(column.name, data.updated_at);
+                active.set(
+                    column.name,
+                    S::Verification::timestamp_value(column.name, data.updated_at),
+                );
             } else if data.updated_at != data.created_at {
                 return Err(AuthError::internal(
                     "the verification schema cannot preserve a distinct update timestamp",
@@ -228,14 +231,20 @@ where
         let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
         sql.ident(table);
         sql.push(" SET ");
-        sql.assign(updated_at_column, Utc::now());
+        sql.assign(
+            updated_at_column,
+            S::Verification::timestamp_value(updated_at_column, Utc::now()),
+        );
         if let Some(value) = value {
             sql.push(", ");
             sql.assign(S::Verification::value_column(), value);
         }
         if let Some(expires_at) = expires_at {
             sql.push(", ");
-            sql.assign(S::Verification::expires_at_column(), expires_at);
+            sql.assign(
+                S::Verification::expires_at_column(),
+                S::Verification::timestamp_value(S::Verification::expires_at_column(), expires_at),
+            );
         }
         for (index, (column, value)) in filters.iter().enumerate() {
             sql.push(if index == 0 { " WHERE " } else { " AND " });
@@ -287,7 +296,10 @@ where
                 (
                     S::Verification::expires_at_column(),
                     " > ",
-                    Utc::now().into(),
+                    S::Verification::timestamp_value(
+                        S::Verification::expires_at_column(),
+                        Utc::now(),
+                    ),
                 ),
             ],
         );
@@ -302,7 +314,10 @@ where
                 (
                     S::Verification::expires_at_column(),
                     " > ",
-                    Utc::now().into(),
+                    S::Verification::timestamp_value(
+                        S::Verification::expires_at_column(),
+                        Utc::now(),
+                    ),
                 ),
             ],
         );
@@ -324,7 +339,10 @@ where
                 (
                     S::Verification::expires_at_column(),
                     " > ",
-                    Utc::now().into(),
+                    S::Verification::timestamp_value(
+                        S::Verification::expires_at_column(),
+                        Utc::now(),
+                    ),
                 ),
             ],
         );
@@ -604,7 +622,12 @@ where
         let table = Self::verification_table();
         let mut select = model::select_model::<S::Verification>(self.exec());
         select.push(" WHERE ");
-        select.compare(table, S::Verification::expires_at_column(), " < ", deadline);
+        select.compare(
+            table,
+            S::Verification::expires_at_column(),
+            " < ",
+            S::Verification::timestamp_value(S::Verification::expires_at_column(), deadline),
+        );
         select.push(" LIMIT ");
         select.bind(self.find_many_limit());
         let snapshots: Vec<S::Verification> = self.exec().fetch_all(select).await?;
@@ -626,7 +649,12 @@ where
         let mut delete = Sql::with(self.exec().engine(), "DELETE FROM ");
         delete.ident(table);
         delete.push(" WHERE ");
-        delete.compare(table, S::Verification::expires_at_column(), " < ", deadline);
+        delete.compare(
+            table,
+            S::Verification::expires_at_column(),
+            " < ",
+            S::Verification::timestamp_value(S::Verification::expires_at_column(), deadline),
+        );
         let deleted = self.exec().execute(delete).await?;
         for model in &snapshots {
             for hook in self.hooks() {

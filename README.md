@@ -146,6 +146,50 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Existing PostgreSQL timestamp columns
+
+For an application-owned schema, match each Rust field to its existing column:
+`DateTime<Utc>` for `TIMESTAMPTZ`, `chrono::NaiveDateTime` for `TIMESTAMP WITHOUT
+TIME ZONE`, and `Option<...>` for nullable columns. This applies to all four auth
+models: user creation/update times and optional ban expiry; session
+creation/update/expiry times; account creation/update times and optional OAuth
+token expirations; verification creation/update/expiry times. Mixed schemas may
+use both representations, including renamed SQLx columns.
+
+When migrating from SeaORM to SQLx, keep your application migrations and column
+types. Define application-owned rows with `sqlx::FromRow`, `Serialize`, `Clone`,
+`Debug`, and `better_auth::sqlx::AuthEntity`, then select those rows in your
+`AuthSchema`. For example, an existing verification table can use:
+
+```rust,ignore
+#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[auth(role = "verification", table = "verifications")]
+pub struct VerificationModel {
+    pub id: String,
+    pub identifier: String,
+    pub value: String,
+    pub expires_at: chrono::NaiveDateTime,
+    pub created_at: chrono::NaiveDateTime,
+    pub updated_at: chrono::NaiveDateTime,
+}
+```
+
+These naive values must already represent **UTC wall-clock time**. Generated
+accessors interpret them as UTC, and auth mutations remove the UTC offset before
+binding PostgreSQL `TIMESTAMP`, independently of the connection's `TimeZone`.
+Optional timestamps bind typed nulls. SeaORM `AuthEntity` supports the same
+naive UTC convention and its usual aware timestamp fields. SQLx also supports
+naive timestamps on SQLite.
+
+The bundled models and bundled migrations retain `DateTime<Utc>`/`TIMESTAMPTZ`.
+They cannot decode an existing PostgreSQL `TIMESTAMP` column; use custom rows and
+your own migrations for that schema. This support does not reinterpret local
+time or repair previously shifted data. Core inputs and auth accessors remain
+`DateTime<Utc>`. Handwritten SQLx models must stage `SqlValue::NaiveTimestamp`
+(or use `SqlxValue` for `NaiveDateTime`) and declare
+`ColumnKind::NaiveTimestamp` so store predicates and direct writes use the same
+wire type. Plugin tables still use their bundled models.
+
 ### SeaORM
 
 Enable `seaorm` (optionally with `default-features = false` and `native-tls`

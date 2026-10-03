@@ -166,7 +166,12 @@ fn try_generate(input: &DeriveInput) -> syn::Result<TokenStream> {
 /// declared field type.
 fn set_field(roots: &Roots) -> impl Fn(&Ident, &Insert) -> TokenStream {
     let seaorm_root = roots.seaorm.clone();
+    let core_root = roots.core.clone();
     move |field, insert| match insert {
+        // Auth clocks arrive as UTC; the model column decides the wire type.
+        Insert::Value(expr) if codegen::is_auth_timestamp(&field.to_string()) => quote! {
+            active.#field = #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(#expr));
+        },
         Insert::Value(expr) => quote! {
             active.#field = #seaorm_root::sea_orm::ActiveValue::Set(::std::convert::Into::into(#expr));
         },
@@ -183,6 +188,9 @@ fn new_active(role: EntityRole, fields: &FieldsNamed, roots: &Roots) -> TokenStr
     let assignments = codegen::insert_values(role, fields)
         .into_iter()
         .map(|(field, insert)| match insert {
+            Insert::Value(expr) if codegen::is_auth_timestamp(&field.to_string()) => quote! {
+                #field: #seaorm_root::sea_orm::ActiveValue::Set(#core_root::entity::AuthTimestamp::from_utc(#expr))
+            },
             Insert::Value(expr) => quote! {
                 #field: #seaorm_root::sea_orm::ActiveValue::Set(::std::convert::Into::into(#expr))
             },

@@ -174,3 +174,50 @@ claim that addMember is an organization-creation handler or expose a fabricated
 public route. Each owner's actual helper result, private transport, callbacks
 and persistence assertions remain the direct evidence. The complete following
 530-scenario canonical gate remains pending.
+
+## Callback session clock regression (#363)
+
+The pinned `crud-members.mjs` passes the complete session returned by
+`getSessionFromCtx` to `maximumMembersPerTeam`. The existing foreign-header
+retry selected the correct foreign session, but retained no public full-session
+reference. In `crud-org.mjs`, `createOrganization` calls
+`adapter.setActiveOrganization` on that authenticated token after creation;
+`adapter.mjs` delegates to `internalAdapter.updateSession`. The session's
+`updatedAt` therefore belongs to that creation write, not the later callback
+or public read. Issuance and active-organization updates are separate events.
+
+The owner now retains actual public `getSession` output and asserts exact equality
+of the entire callback session/user context, in addition to the foreign user and
+organization assertions. All callback receipts, physical observations, foreign
+rows, session arrays and timestamps remain intact. The comparator adds only the
+`org-member-addition` profile's source-backed update relationship: verified
+signed issuance and read cookies, exact token/user, authenticated preceding
+organization-create cookie, returned creator membership, exact selected active
+organization, creation/expiry in the default seven-day issuer windows, and
+`updatedAt` in the organization-create write windows. It admits that observed
+value pair only. Existing clock tolerances and all other comparison rules remain
+unchanged; an invalid matched lifecycle/write clock explicitly fails.
+
+Authoring gate: the existing SDK owner protects actual callback identity, ordering,
+cleanup and foreign state. The new harness owner independently protects comparator
+admission; it uses two real pinned Source fixtures with delayed requests, actual
+SQL/session observations and real callbacks. No synthetic receipt, production
+seam or test-only production behavior is introduced. Twelve coherent mutations
+must fail specifically at the callback session's `updatedAt`: unissued token/user,
+wrong actual organization, actual sibling/foreign session, creation/update/expiry
+outside their producer windows, invalid create/read signatures, wrong creator
+membership and missing successful create. This risk is distinct from the existing
+physical-session expiry and transport canaries.
+
+Before evidence: `/tmp/better-auth-363-sqlx-before.log` reproduces all three dates;
+public capture alone still fails `updatedAt` on SQLx and SeaORM in
+`/tmp/better-auth-363-sqlx-capture-before.log` and
+`/tmp/better-auth-363-seaorm-capture-before.log`. The new actual Source clock owner
+fails on the original comparator at the same callback `updatedAt` path in
+`/tmp/better-auth-363-clock-before.log`. The repaired Source owner and sibling
+physical-clock/canary controls pass 10 tests / 305 assertions in
+`/tmp/better-auth-363-harness-final.log`, with strict TypeScript, focused lint
+and formatting checks. Backend final logs are
+`/tmp/better-auth-363-sqlx-final.log` and
+`/tmp/better-auth-363-seaorm-final.log`; each runs only the nine existing member
+addition owners. Full dual-backend compatibility remains coordinator-owned.

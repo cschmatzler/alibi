@@ -418,11 +418,19 @@ where
         let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
         sql.ident(table);
         sql.push(" SET ");
-        sql.assign(S::Session::expires_at_column(), now);
+        sql.assign(
+            S::Session::expires_at_column(),
+            S::Session::timestamp_value(S::Session::expires_at_column(), now),
+        );
         sql.push(" WHERE ");
         sql.compare(table, S::Session::token_column(), " = ", token);
         sql.push(" AND ");
-        sql.compare(table, S::Session::expires_at_column(), " > ", now);
+        sql.compare(
+            table,
+            S::Session::expires_at_column(),
+            " > ",
+            S::Session::timestamp_value(S::Session::expires_at_column(), now),
+        );
         _ = self.exec().execute(sql).await?;
         for hook in self.hooks() {
             hook.after_delete_session(&session, &context).await?;
@@ -437,7 +445,12 @@ where
         live.push(" WHERE ");
         live.compare(table, S::Session::user_id_column(), " = ", user_id.clone());
         live.push(" AND ");
-        live.compare(table, S::Session::expires_at_column(), " > ", now);
+        live.compare(
+            table,
+            S::Session::expires_at_column(),
+            " > ",
+            S::Session::timestamp_value(S::Session::expires_at_column(), now),
+        );
         live.push(" LIMIT ");
         live.bind(self.find_many_limit());
         let sessions: Vec<S::Session> = self.exec().fetch_all(live).await?;
@@ -456,11 +469,19 @@ where
         let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
         sql.ident(table);
         sql.push(" SET ");
-        sql.assign(S::Session::expires_at_column(), now);
+        sql.assign(
+            S::Session::expires_at_column(),
+            S::Session::timestamp_value(S::Session::expires_at_column(), now),
+        );
         sql.push(" WHERE ");
         sql.compare(table, S::Session::user_id_column(), " = ", user_id);
         sql.push(" AND ");
-        sql.compare(table, S::Session::expires_at_column(), " > ", now);
+        sql.compare(
+            table,
+            S::Session::expires_at_column(),
+            " > ",
+            S::Session::timestamp_value(S::Session::expires_at_column(), now),
+        );
         _ = self.exec().execute(sql).await?;
         for session in &sessions {
             for hook in self.hooks() {
@@ -594,7 +615,12 @@ where
         let mut sql = Sql::with(self.exec().engine(), "DELETE FROM ");
         sql.ident(table);
         sql.push(" WHERE ");
-        sql.compare(table, S::Session::expires_at_column(), " < ", Utc::now());
+        sql.compare(
+            table,
+            S::Session::expires_at_column(),
+            " < ",
+            S::Session::timestamp_value(S::Session::expires_at_column(), Utc::now()),
+        );
         sql.push(" OR ");
         sql.compare(table, S::Session::active_column(), " = ", false);
         let deleted = self.exec().execute(sql).await?;

@@ -1637,7 +1637,8 @@
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
           "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
-          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption"
         ],
         "rejection": "device approve flow returns a bearer token",
         "authorization": {
@@ -1649,7 +1650,8 @@
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
           "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
-          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption"
         ]
       }
     },
@@ -2410,7 +2412,17 @@
           "multiple sessions rotate same-user login and honor configured browser account limit",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-zero raw limit controls proofs without evicting stored sessions",
+          "multi-session-fractional raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative raw limit controls proofs without evicting stored sessions",
+          "multi-session-nan raw limit controls proofs without evicting stored sessions",
+          "multi-session-infinite raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative-infinite raw limit controls proofs without evicting stored sessions"
         ],
         "rejection": {
           "notApplicable": "Takes no input and returns [] without session cookies; there is nothing to reject."
@@ -2422,7 +2434,17 @@
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-zero raw limit controls proofs without evicting stored sessions",
+          "multi-session-fractional raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative raw limit controls proofs without evicting stored sessions",
+          "multi-session-nan raw limit controls proofs without evicting stored sessions",
+          "multi-session-infinite raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative-infinite raw limit controls proofs without evicting stored sessions"
         ]
       }
     },
@@ -3783,7 +3805,8 @@
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
-          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption"
         ],
         "rejection": [
           "device approve blocks already-processed codes",
@@ -3804,7 +3827,8 @@
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
-          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption"
         ]
       }
     },
@@ -3818,11 +3842,14 @@
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "device empty generators persist usable codes and preserve client binding through consumption",
+          "device signed fractional durations floor responses and preserve millisecond state"
         ],
         "rejection": [
           "device endpoint schemas preserve OAuth validation and media type errors",
-          "device configuration controls client validation lifetime polling and verification URL parameters"
+          "device configuration controls client validation lifetime polling and verification URL parameters",
+          "device generator validation and request callback errors preserve bodies without persistence"
         ],
         "authorization": {
           "notApplicable": "Public route: no session or principal is required, so there is no authorization decision."
@@ -3830,7 +3857,10 @@
         "state": [
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "device empty generators persist usable codes and preserve client binding through consumption",
+          "device signed fractional durations floor responses and preserve millisecond state",
+          "device generator validation and request callback errors preserve bodies without persistence"
         ]
       }
     },
@@ -3869,14 +3899,18 @@
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
-          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device approve claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption"
         ],
         "rejection": [
           "device approve flow returns a bearer token",
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
           "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
-          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision"
+          "compact ordinary device deny claims actual grant through revoked cache and refuses a foreign decision",
+          "device empty generators persist usable codes and preserve client binding through consumption",
+          "device signed fractional durations floor responses and preserve millisecond state",
+          "device generator validation and request callback errors preserve bodies without persistence"
         ],
         "authorization": {
           "notApplicable": "Authorized by the one-time code or token it consumes, not by a session; rejection covers invalid proofs."
@@ -3886,7 +3920,10 @@
           "device custom asynchronous generators preserve exact codes and reject normalized aliases",
           "device configuration controls client validation lifetime polling and verification URL parameters",
           "client IP client-ip-disabled device redemption stores polling context and preserves foreign authority",
-          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority"
+          "client IP client-ip-trusted device redemption stores polling context and preserves foreign authority",
+          "device empty generators persist usable codes and preserve client binding through consumption",
+          "device signed fractional durations floor responses and preserve millisecond state",
+          "device generator validation and request callback errors preserve bodies without persistence"
         ]
       }
     },
@@ -4191,17 +4228,33 @@
         "success": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner"
         ],
         "rejection": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
-          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner"
+          "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner"
         ],
-        "authorization": "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+        "authorization": [
+          "multiple browser sessions retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback"
+        ],
         "state": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner"
         ]
       }
     },
@@ -4214,22 +4267,51 @@
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-fractional raw limit controls proofs without evicting stored sessions",
+          "multi-session-nan raw limit controls proofs without evicting stored sessions",
+          "multi-session-infinite raw limit controls proofs without evicting stored sessions",
+          "multiple sessions retire repeated genuine proofs before applying fractional capacity"
         ],
         "rejection": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-zero raw limit controls proofs without evicting stored sessions",
+          "multi-session-fractional raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative-infinite raw limit controls proofs without evicting stored sessions"
         ],
         "authorization": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback"
         ],
         "state": [
           "multiple browser sessions retain accounts switch active identity and revoke with fallback",
           "multiple sessions reject invalid selection bodies and expire browser proofs without retiring another owner",
           "last login composition preserves real cookie consent database updates and failed authentication ownership",
-          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner"
+          "compact interaction multi-session selection and revoked-current fallback replace genuine cache with the physically selected owner",
+          "multi-session-cookie-alias retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-prefix retain accounts switch active identity and revoke with fallback",
+          "multi-session-cookie-alias reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-cookie-prefix reject invalid selection bodies and expire proofs without retiring another owner",
+          "multi-session-zero raw limit controls proofs without evicting stored sessions",
+          "multi-session-fractional raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative raw limit controls proofs without evicting stored sessions",
+          "multi-session-nan raw limit controls proofs without evicting stored sessions",
+          "multi-session-infinite raw limit controls proofs without evicting stored sessions",
+          "multi-session-negative-infinite raw limit controls proofs without evicting stored sessions",
+          "multiple sessions retire repeated genuine proofs before applying fractional capacity"
         ]
       }
     },
@@ -5820,7 +5902,8 @@
           "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots"
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots",
+          "multiple sessions retire repeated genuine proofs before applying fractional capacity"
         ],
         "rejection": [
           "admin create-user, set-role, set-user-password, and remove-user match TS",
@@ -6076,7 +6159,8 @@
           "physical session short preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
           "physical session legacy-alias preserves full signed token preference bytes through signup signin restore corruption rotation and logout",
-          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots"
+          "additional cached output keeps raw creation and completed callbacks distinct from authenticated filtered cache and physical read snapshots",
+          "multiple sessions retire repeated genuine proofs before applying fractional capacity"
         ]
       }
     },
@@ -9155,7 +9239,18 @@
           "microsoft signed null-primary retains measured profile and verification fallback",
           "microsoft signed numeric-image retains measured profile and verification fallback",
           "microsoft signed numeric-name retains measured profile and verification fallback",
-          "microsoft signed string-primary retains measured profile and verification fallback"
+          "microsoft signed string-primary retains measured profile and verification fallback",
+          "notion empty-image profile preserves raw owner and account info",
+          "notion empty-name profile preserves raw owner and account info",
+          "notion mapped profile preserves raw owner and account info",
+          "notion missing-image profile preserves raw owner and account info",
+          "notion missing-name profile preserves raw owner and account info",
+          "notion null-image profile preserves raw owner and account info",
+          "notion null-name profile preserves raw owner and account info",
+          "notion numeric-image profile preserves raw owner and account info",
+          "notion numeric-name profile preserves raw owner and account info",
+          "notion numeric-subject profile preserves raw owner and account info",
+          "notion zero-name profile preserves raw owner and account info"
         ],
         "rejection": [
           "account info requires an explicit account selector",
@@ -9198,7 +9293,18 @@
           "microsoft signed null-primary retains measured profile and verification fallback",
           "microsoft signed numeric-image retains measured profile and verification fallback",
           "microsoft signed numeric-name retains measured profile and verification fallback",
-          "microsoft signed string-primary retains measured profile and verification fallback"
+          "microsoft signed string-primary retains measured profile and verification fallback",
+          "notion empty-image profile preserves raw owner and account info",
+          "notion empty-name profile preserves raw owner and account info",
+          "notion mapped profile preserves raw owner and account info",
+          "notion missing-image profile preserves raw owner and account info",
+          "notion missing-name profile preserves raw owner and account info",
+          "notion null-image profile preserves raw owner and account info",
+          "notion null-name profile preserves raw owner and account info",
+          "notion numeric-image profile preserves raw owner and account info",
+          "notion numeric-name profile preserves raw owner and account info",
+          "notion numeric-subject profile preserves raw owner and account info",
+          "notion zero-name profile preserves raw owner and account info"
         ]
       }
     },
@@ -9467,7 +9573,35 @@
           "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
-          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "notion absent token expiry has no fabricated default",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion empty-image profile preserves raw owner and account info",
+          "notion empty-name profile preserves raw owner and account info",
+          "notion encoded credentials reach real token exchange refresh and owned persistence",
+          "notion explicit signup admits disabled implicit signup",
+          "notion fractional token expiry has no fabricated default",
+          "notion mapped profile preserves raw owner and account info",
+          "notion missing-image profile preserves raw owner and account info",
+          "notion missing-name profile preserves raw owner and account info",
+          "notion null-image profile preserves raw owner and account info",
+          "notion null-name profile preserves raw owner and account info",
+          "notion numeric-image profile preserves raw owner and account info",
+          "notion numeric-name profile preserves raw owner and account info",
+          "notion numeric-subject profile preserves raw owner and account info",
+          "notion rejects empty-email without foreign writes",
+          "notion rejects implicit-disabled without foreign writes",
+          "notion rejects missing-email without foreign writes",
+          "notion rejects null-email without foreign writes",
+          "notion rejects public without foreign writes",
+          "notion rejects signup-disabled without foreign writes",
+          "notion rejects token-redirect without foreign writes",
+          "notion rejects token-status without foreign writes",
+          "notion unverified email gate stores account without issuing session",
+          "notion zero token expiry has no fabricated default",
+          "notion zero-name profile preserves raw owner and account info"
         ],
         "rejection": [
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
@@ -9631,7 +9765,19 @@
           "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
-          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion encoded credentials reach real token exchange refresh and owned persistence",
+          "notion mapped invalid subjects reach application mapper before denial",
+          "notion rejects api-no-owner without foreign writes",
+          "notion rejects api-null-owner without foreign writes",
+          "notion rejects empty-subject without foreign writes",
+          "notion rejects missing-subject without foreign writes",
+          "notion rejects null-subject without foreign writes",
+          "notion rejects userinfo-status without foreign writes",
+          "notion unsupported ID token and invalid provider state produce no requests"
         ],
         "authorization": [
           "GitLab profile admission rejects inactive and truthy locked rows and preserves nullish defaults",
@@ -9793,7 +9939,19 @@
           "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
-          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion encoded credentials reach real token exchange refresh and owned persistence",
+          "notion mapped invalid subjects reach application mapper before denial",
+          "notion rejects api-no-owner without foreign writes",
+          "notion rejects api-null-owner without foreign writes",
+          "notion rejects empty-subject without foreign writes",
+          "notion rejects missing-subject without foreign writes",
+          "notion rejects null-subject without foreign writes",
+          "notion rejects userinfo-status without foreign writes",
+          "notion unsupported ID token and invalid provider state produce no requests"
         ],
         "state": [
           "Discord callback exchanges without PKCE and preserves current foreign and replay state",
@@ -10152,7 +10310,43 @@
           "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
-          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "notion absent token expiry has no fabricated default",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion empty-image profile preserves raw owner and account info",
+          "notion empty-name profile preserves raw owner and account info",
+          "notion encoded credentials reach real token exchange refresh and owned persistence",
+          "notion explicit signup admits disabled implicit signup",
+          "notion fractional token expiry has no fabricated default",
+          "notion mapped invalid subjects reach application mapper before denial",
+          "notion mapped profile preserves raw owner and account info",
+          "notion missing-image profile preserves raw owner and account info",
+          "notion missing-name profile preserves raw owner and account info",
+          "notion null-image profile preserves raw owner and account info",
+          "notion null-name profile preserves raw owner and account info",
+          "notion numeric-image profile preserves raw owner and account info",
+          "notion numeric-name profile preserves raw owner and account info",
+          "notion numeric-subject profile preserves raw owner and account info",
+          "notion rejects api-no-owner without foreign writes",
+          "notion rejects api-null-owner without foreign writes",
+          "notion rejects empty-email without foreign writes",
+          "notion rejects empty-subject without foreign writes",
+          "notion rejects implicit-disabled without foreign writes",
+          "notion rejects missing-email without foreign writes",
+          "notion rejects missing-subject without foreign writes",
+          "notion rejects null-email without foreign writes",
+          "notion rejects null-subject without foreign writes",
+          "notion rejects public without foreign writes",
+          "notion rejects signup-disabled without foreign writes",
+          "notion rejects token-redirect without foreign writes",
+          "notion rejects token-status without foreign writes",
+          "notion rejects userinfo-status without foreign writes",
+          "notion unsupported ID token and invalid provider state produce no requests",
+          "notion unverified email gate stores account without issuing session",
+          "notion zero token expiry has no fabricated default",
+          "notion zero-name profile preserves raw owner and account info"
         ]
       }
     },
@@ -10819,7 +11013,11 @@
           "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
-          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion encoded credentials reach real token exchange refresh and owned persistence"
         ],
         "rejection": [
           "account token routes reject conflicting and foreign account selectors",
@@ -10882,7 +11080,11 @@
           "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
-          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion encoded credentials reach real token exchange refresh and owned persistence"
         ],
         "authorization": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -10902,7 +11104,11 @@
           "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
-          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion encoded credentials reach real token exchange refresh and owned persistence"
         ],
         "state": [
           "GitLab self hosted callback login link refresh and replay preserve actual account and foreign owners",
@@ -10964,7 +11170,11 @@
           "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
-          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion encoded credentials reach real token exchange refresh and owned persistence"
         ]
       }
     },
@@ -11468,7 +11678,48 @@
           "microsoft signed signup-option admission persists raw oid using configured authority",
           "microsoft signed string-primary retains measured profile and verification fallback",
           "microsoft signed verified-primary admission persists raw oid using configured authority",
-          "microsoft signed verified-secondary admission persists raw oid using configured authority"
+          "microsoft signed verified-secondary admission persists raw oid using configured authority",
+          "notion absent token expiry has no fabricated default",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion disabled defaults with no requested scopes omits scope",
+          "notion empty-image profile preserves raw owner and account info",
+          "notion empty-name profile preserves raw owner and account info",
+          "notion encoded credentials reach real token exchange refresh and owned persistence",
+          "notion explicit signup admits disabled implicit signup",
+          "notion fractional token expiry has no fabricated default",
+          "notion mapped invalid subjects reach application mapper before denial",
+          "notion mapped profile preserves raw owner and account info",
+          "notion missing-image profile preserves raw owner and account info",
+          "notion missing-name profile preserves raw owner and account info",
+          "notion null-image profile preserves raw owner and account info",
+          "notion null-name profile preserves raw owner and account info",
+          "notion numeric-image profile preserves raw owner and account info",
+          "notion numeric-name profile preserves raw owner and account info",
+          "notion numeric-subject profile preserves raw owner and account info",
+          "notion published configured authorization preserves scope order and fixes owner without PKCE",
+          "notion published configured-endpoint authorization preserves scope order and fixes owner without PKCE",
+          "notion published default authorization preserves scope order and fixes owner without PKCE",
+          "notion published disabled-configured authorization preserves scope order and fixes owner without PKCE",
+          "notion published disabled-scope authorization preserves scope order and fixes owner without PKCE",
+          "notion rejects api-no-owner without foreign writes",
+          "notion rejects api-null-owner without foreign writes",
+          "notion rejects empty-email without foreign writes",
+          "notion rejects empty-subject without foreign writes",
+          "notion rejects implicit-disabled without foreign writes",
+          "notion rejects missing-email without foreign writes",
+          "notion rejects missing-subject without foreign writes",
+          "notion rejects null-email without foreign writes",
+          "notion rejects null-subject without foreign writes",
+          "notion rejects public without foreign writes",
+          "notion rejects signup-disabled without foreign writes",
+          "notion rejects token-redirect without foreign writes",
+          "notion rejects token-status without foreign writes",
+          "notion rejects userinfo-status without foreign writes",
+          "notion unverified email gate stores account without issuing session",
+          "notion zero token expiry has no fabricated default",
+          "notion zero-name profile preserves raw owner and account info"
         ],
         "rejection": [
           "social sign-in rejects invalid callbackURL",
@@ -11589,7 +11840,8 @@
           "microsoft selected JWK first-duplicate-import rejects genuine signed admission at configured trusted tenant",
           "microsoft selected JWK mismatched-algorithm rejects genuine signed admission at configured trusted tenant",
           "microsoft selected JWK missing-algorithm rejects genuine signed admission at configured trusted tenant",
-          "microsoft selected JWK missing-key rejects genuine signed admission at configured trusted tenant"
+          "microsoft selected JWK missing-key rejects genuine signed admission at configured trusted tenant",
+          "notion unsupported ID token and invalid provider state produce no requests"
         ],
         "authorization": [
           "social sign-in rejects invalid callbackURL",
@@ -12110,7 +12362,28 @@
           "microsoft signed signup-option admission persists raw oid using configured authority",
           "microsoft signed string-primary retains measured profile and verification fallback",
           "microsoft signed verified-primary admission persists raw oid using configured authority",
-          "microsoft signed verified-secondary admission persists raw oid using configured authority"
+          "microsoft signed verified-secondary admission persists raw oid using configured authority",
+          "notion absent token expiry has no fabricated default",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion empty-image profile preserves raw owner and account info",
+          "notion empty-name profile preserves raw owner and account info",
+          "notion encoded credentials reach real token exchange refresh and owned persistence",
+          "notion explicit signup admits disabled implicit signup",
+          "notion fractional token expiry has no fabricated default",
+          "notion mapped profile preserves raw owner and account info",
+          "notion missing-image profile preserves raw owner and account info",
+          "notion missing-name profile preserves raw owner and account info",
+          "notion null-image profile preserves raw owner and account info",
+          "notion null-name profile preserves raw owner and account info",
+          "notion numeric-image profile preserves raw owner and account info",
+          "notion numeric-name profile preserves raw owner and account info",
+          "notion numeric-subject profile preserves raw owner and account info",
+          "notion unsupported ID token and invalid provider state produce no requests",
+          "notion unverified email gate stores account without issuing session",
+          "notion zero token expiry has no fabricated default",
+          "notion zero-name profile preserves raw owner and account info"
         ]
       }
     },
@@ -12222,7 +12495,11 @@
           "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
-          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion encoded credentials reach real token exchange refresh and owned persistence"
         ],
         "rejection": {
           "notApplicable": "Succeeds without a session and takes no input; there is nothing to reject."
@@ -12328,7 +12605,11 @@
           "microsoft mapped exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft no-photo exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
           "microsoft photo64 exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
-          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts"
+          "microsoft public exchange refresh replay logout preserves raw oid and real grant photo assertion receipts",
+          "notion client-key credentials reach real token exchange refresh and owned persistence",
+          "notion configured-endpoint credentials reach real token exchange refresh and owned persistence",
+          "notion default credentials reach real token exchange refresh and owned persistence",
+          "notion encoded credentials reach real token exchange refresh and owned persistence"
         ]
       }
     },

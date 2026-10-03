@@ -931,3 +931,196 @@ compatScenario(
     return { boundary: ctx.snapshot(boundary), persisted, rejected: ctx.snapshot(rejected) };
   },
 );
+
+compatScenario(
+  "device empty generators persist usable codes and preserve client binding through consumption",
+  async (ctx) => {
+    const client = deviceActor(ctx, "empty", "device-empty");
+    const issued = await client.device.code({ client_id: "empty-client" });
+    expect(issued.error).toBeNull();
+    expect(issued.data?.device_code).toBe("");
+    expect(issued.data?.user_code).toBe("");
+    const persisted = deviceState.parse(await ctx.readDeviceState({ deviceCode: "" }));
+    expect(persisted).toMatchObject({
+      deviceCode: "",
+      userCode: "",
+      status: "pending",
+      userId: null,
+      clientId: "empty-client",
+      scope: null,
+      lastPolledAt: null,
+      pollingInterval: 5000,
+    });
+    const wrongClient = await client.device.token(tokenRequest("", "foreign-client"));
+    expect(wrongClient.error).toMatchObject({
+      status: 400,
+      error: "invalid_grant",
+      error_description: "Client ID mismatch",
+    });
+    expect(await ctx.readDeviceState({ deviceCode: "" })).toEqual(persisted);
+    const signup = await client.signUp.email({
+      email: ctx.uniqueEmail("empty-code-owner"),
+      password: "password123",
+      name: "Empty Code Owner",
+    });
+    expect(signup.error).toBeNull();
+    const verify = await client.device({ query: { user_code: "" } });
+    expect(verify.error).toBeNull();
+    expect(verify.data?.status).toBe("pending");
+    const approve = await client.device.approve({ userCode: "" });
+    expect(approve.data).toEqual({ success: true });
+    const approved = deviceState.parse(await ctx.readDeviceState({ deviceCode: "" }));
+    expect(approved.status).toBe("approved");
+    expect(approved.userId).toBe(signup.data?.user.id ?? "missing-owner");
+    const token = await client.device.token(tokenRequest("", "empty-client"));
+    expect(token.error).toBeNull();
+    const sessions = await client.listSessions();
+    expect(sessions.data).toHaveLength(2);
+    expect(
+      sessions.data?.find((session) => session.token === token.data?.access_token)?.userId,
+    ).toBe(signup.data?.user.id ?? "missing-owner");
+    const consumed = await ctx.readDeviceState({ deviceCode: "" });
+    expect(consumed).toBeNull();
+    const replay = await client.device.token(tokenRequest("", "empty-client"));
+    expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
+    return {
+      issued: ctx.snapshot(issued),
+      persisted,
+      wrongClient: ctx.snapshot(wrongClient),
+      signup: ctx.snapshot(signup),
+      verify: ctx.snapshot(verify),
+      approve: ctx.snapshot(approve),
+      approved,
+      token: ctx.snapshot(token),
+      sessions: ctx.snapshot(sessions),
+      consumed,
+      replay: ctx.snapshot(replay),
+    };
+  },
+  ["POST /device/code", "GET /device", "POST /device/approve", "POST /device/token"],
+);
+
+compatScenario(
+  "device signed fractional durations floor responses and preserve millisecond state",
+  async (ctx) => {
+    const observations = [];
+    for (const [profile, lifetime, interval, seconds, pollSeconds, path] of [
+      ["device-fractional", 1750, 250, 1, 0, "/verify-relative"],
+      ["device-negative", -1250, -250, -2, -1, "/device"],
+      ["device-negative-interval", 120000, -250, 120, -1, "/device"],
+    ] as const) {
+      const client = deviceActor(ctx, profile, profile);
+      const started = Date.now();
+      const issued = await client.device.code({ client_id: profile });
+      const finished = Date.now();
+      expect(issued.error).toBeNull();
+      if (!issued.data) throw new Error("duration profile must issue");
+      expect(issued.data.expires_in).toBe(seconds);
+      expect(issued.data.interval).toBe(pollSeconds);
+      expect(new URL(issued.data.verification_uri).pathname).toBe(path);
+      expect(new URL(issued.data.verification_uri_complete).searchParams.get("user_code")).toBe(
+        issued.data.user_code,
+      );
+      const persisted = deviceState.parse(
+        await ctx.readDeviceState({ deviceCode: issued.data.device_code }),
+      );
+      expect(persisted).toMatchObject({
+        pollingInterval: interval,
+        status: "pending",
+        userId: null,
+        clientId: profile,
+        scope: null,
+        lastPolledAt: null,
+      });
+      expect(new Date(persisted.expiresAt).getTime()).toBeGreaterThanOrEqual(started + lifetime);
+      expect(new Date(persisted.expiresAt).getTime()).toBeLessThanOrEqual(finished + lifetime);
+      const token = await client.device.token(tokenRequest(issued.data.device_code, profile));
+      expect(token.error).toMatchObject({
+        status: 400,
+        error: lifetime < 0 ? "expired_token" : "authorization_pending",
+      });
+      const after = await ctx.readDeviceState({ deviceCode: issued.data.device_code });
+      if (lifetime < 0) expect(after).toBeNull();
+      else expect(deviceState.parse(after).lastPolledAt).not.toBeNull();
+      const repeat = await client.device.token(tokenRequest(issued.data.device_code, profile));
+      expect(repeat.error).toMatchObject({
+        status: 400,
+        error:
+          lifetime < 0 ? "invalid_grant" : interval < 0 ? "authorization_pending" : "slow_down",
+      });
+      observations.push({
+        repeat: ctx.snapshot(repeat),
+        issued: ctx.snapshot(issued),
+        persisted,
+        token: ctx.snapshot(token),
+        after,
+      });
+    }
+    return { observations };
+  },
+  ["POST /device/code", "POST /device/token"],
+);
+
+compatScenario(
+  "device generator validation and request callback errors preserve bodies without persistence",
+  async (ctx) => {
+    const observations = [];
+    for (const profile of [
+      "device-generator-error",
+      "device-user-generator-error",
+      "device-validation-error",
+      "device-request-error",
+    ] as const) {
+      const client = deviceActor(ctx, profile, profile);
+      const rejected = await client.device.code({ client_id: profile, scope: "callback scope" });
+      expect(rejected.error).toMatchObject({
+        status: 400,
+        code: "DEVICE_CALLBACK_FAILED",
+        message: "Configured device callback failed",
+      });
+      const persisted = await ctx.readDeviceState({ deviceCode: `${profile}-code` });
+      expect(persisted).toBeNull();
+      const token = await client.device.token(tokenRequest(`${profile}-code`, profile));
+      expect(token.error).toMatchObject(
+        profile === "device-validation-error"
+          ? { status: 400, code: "DEVICE_CALLBACK_FAILED" }
+          : { status: 400, error: "invalid_grant" },
+      );
+      observations.push({
+        rejected: ctx.snapshot(rejected),
+        persisted,
+        token: ctx.snapshot(token),
+      });
+    }
+    for (const profile of [
+      "device-generator-throw",
+      "device-user-generator-throw",
+      "device-validation-throw",
+      "device-request-throw",
+    ] as const) {
+      const rejected = await ctx.rawRequest({
+        actor: profile,
+        path: `/__test/profiles/${profile}/api/auth/device/code`,
+        method: "POST",
+        json: { client_id: profile, scope: "callback scope" },
+      });
+      expect(rejected).toMatchObject({ status: 500, body: null });
+      const persisted = await ctx.readDeviceState({ deviceCode: `${profile}-code` });
+      expect(persisted).toBeNull();
+      const token = await ctx.rawRequest({
+        actor: profile,
+        path: `/__test/profiles/${profile}/api/auth/device/token`,
+        method: "POST",
+        json: tokenRequest(`${profile}-code`, profile),
+      });
+      expect(token).toMatchObject(
+        profile === "device-validation-throw"
+          ? { status: 500, body: null }
+          : { status: 400, body: { error: "invalid_grant" } },
+      );
+      observations.push({ rejected, persisted, token });
+    }
+    return { observations };
+  },
+  ["POST /device/code", "POST /device/token"],
+);

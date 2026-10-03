@@ -30,6 +30,8 @@ mod organizations;
 mod rate_limit;
 mod sessions;
 mod teams;
+#[cfg(all(feature = "sqlx", feature = "seaorm"))]
+mod timestamps;
 mod two_factor;
 mod users;
 mod verifications;

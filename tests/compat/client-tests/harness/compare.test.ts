@@ -800,6 +800,36 @@ test("persisted device-code aliases preserve issued-code relationships and rotat
   ).toBeGreaterThan(0);
 });
 
+test("empty custom device codes compare literally while other empty identities remain invalid", () => {
+  for (const field of ["device_code", "user_code", "deviceCode", "userCode"]) {
+    for (const value of ["", " "]) {
+      expect(compareValues({ [field]: value }, { [field]: value }, context)).toEqual([]);
+      for (const replacement of ["different-code", value === "" ? " " : ""]) {
+        for (const [left, right] of [
+          [value, replacement],
+          [replacement, value],
+        ]) {
+          expect(
+            compareValues({ [field]: left }, { [field]: right }, context).some(
+              (difference) =>
+                difference.path === field &&
+                difference.reason === "literal empty device code differs",
+            ),
+          ).toBe(true);
+        }
+      }
+    }
+  }
+  for (const field of ["id", "userId", "token", "access_token", "state"]) {
+    expect(
+      compareValues({ [field]: "" }, { [field]: "" }, context).some(
+        (difference) =>
+          difference.path === field && difference.reason === "empty identity or token",
+      ),
+    ).toBe(true);
+  }
+});
+
 test("computed device session TTL permits only the proved floor boundary", () => {
   const start = Date.parse("2026-09-30T00:00:00.000Z");
   const clocks = {

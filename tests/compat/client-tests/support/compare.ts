@@ -265,7 +265,8 @@ export function compareValues(
     string,
     ClockReceipt & { lifetime: number; trust?: boolean }
   >();
-  const sessionCookieName = /^(?:__Secure-)?better-auth\.session_token$/;
+  const sessionCookieName =
+    /^(?:__Secure-)?(?:better-auth\.session_token|device-proof\.session_token|configured-device-token)$/;
 
   const issuedSignatureKeys = new Map<string, string>();
 
@@ -760,6 +761,118 @@ export function compareValues(
           return [{ a, b, left, right, path: a.path.split("?")[0]! }];
         })
       : [];
+
+  // Pinned org-member-addition uses default persisted seven-day sessions.
+  // createOrganization updates only the authenticated token's active organization
+  // (crud-org.mjs / adapter.mjs). A later public get-session supplies the complete
+  // row; its old updatedAt belongs to that write, never to the read's clock.
+  const additionAuthPath = "/__test/profiles/org-member-addition/api/auth";
+  for (const observer of tracePairs) {
+    if (
+      observer.path !== `${additionAuthPath}/get-session` ||
+      observer.a.method !== "GET" ||
+      observer.a.responseStatus !== 200 ||
+      observer.b.responseStatus !== 200
+    ) {
+      continue;
+    }
+    const a = observer.a.responseBody;
+    const b = observer.b.responseBody;
+    if (
+      !record(a) ||
+      !record(b) ||
+      !record(a.session) ||
+      !record(b.session) ||
+      !record(a.user) ||
+      !record(b.user)
+    ) {
+      continue;
+    }
+    const am = a.session;
+    const bm = b.session;
+    const pair = JSON.stringify([am.token, bm.token]);
+    const issuer = issuances.get(pair);
+    if (
+      !issuer ||
+      !signedCookieIssuances.has(pair) ||
+      issuer.authPath !== additionAuthPath ||
+      am.userId !== issuer.leftUser ||
+      bm.userId !== issuer.rightUser ||
+      a.user.id !== am.userId ||
+      b.user.id !== bm.userId ||
+      typeof am.token !== "string" ||
+      typeof bm.token !== "string" ||
+      !issuedCookie(observer.left.sessionCookie, am.token, additionAuthPath) ||
+      !issuedCookie(observer.right.sessionCookie, bm.token, additionAuthPath)
+    ) {
+      continue;
+    }
+
+    const producer = tracePairs.findLast((candidate) => {
+      const ac = candidate.a.responseBody;
+      const bc = candidate.b.responseBody;
+      return (
+        candidate.path === `${additionAuthPath}/organization/create` &&
+        candidate.a.method === "POST" &&
+        candidate.a.responseStatus === 200 &&
+        candidate.b.responseStatus === 200 &&
+        candidate.left.startedAt >= issuer.left.finishedAt &&
+        candidate.right.startedAt >= issuer.right.finishedAt &&
+        candidate.left.finishedAt <= observer.left.startedAt &&
+        candidate.right.finishedAt <= observer.right.startedAt &&
+        issuedCookie(candidate.left.sessionCookie, am.token as string, additionAuthPath) &&
+        issuedCookie(candidate.right.sessionCookie, bm.token as string, additionAuthPath) &&
+        record(ac) &&
+        record(bc) &&
+        typeof ac.id === "string" &&
+        typeof bc.id === "string" &&
+        am.activeOrganizationId === ac.id &&
+        bm.activeOrganizationId === bc.id &&
+        Array.isArray(ac.members) &&
+        Array.isArray(bc.members) &&
+        ac.members.some(
+          (member) =>
+            record(member) && member.userId === am.userId && member.organizationId === ac.id,
+        ) &&
+        bc.members.some(
+          (member) =>
+            record(member) && member.userId === bm.userId && member.organizationId === bc.id,
+        )
+      );
+    });
+    if (!producer) continue;
+    const owners = dateOwners(am, bm);
+    const lifecycle =
+      isDate(am.createdAt) &&
+      isDate(bm.createdAt) &&
+      isDate(am.expiresAt) &&
+      isDate(bm.expiresAt) &&
+      inWindows(Date.parse(am.createdAt), Date.parse(bm.createdAt), issuer.left, issuer.right) &&
+      inWindows(
+        Date.parse(am.expiresAt) - 604800000,
+        Date.parse(bm.expiresAt) - 604800000,
+        issuer.left,
+        issuer.right,
+      );
+    if (
+      lifecycle &&
+      isDate(am.updatedAt) &&
+      isDate(bm.updatedAt) &&
+      inWindows(Date.parse(am.updatedAt), Date.parse(bm.updatedAt), producer.left, producer.right)
+    ) {
+      approveDate(owners, "updatedAt", am.updatedAt, bm.updatedAt);
+    } else {
+      // A matching signed owner is insufficient when its row's lifecycle or
+      // mutation clock is invalid, even if the generic scenario clock is close.
+      for (const field of ["createdAt", "expiresAt", "updatedAt"]) {
+        if (isDate(am[field]) && isDate(bm[field])) {
+          for (const owner of owners) {
+            invalidPhysicalDates.add(dateKey(owner, field, am[field], bm[field]));
+          }
+        }
+      }
+    }
+  }
 
   function controlBody(
     window: RequestWindow,
@@ -3298,8 +3411,8 @@ export function compareValues(
     // Preserve the complete raw header around its credential: name, spacing,
     // order, every other cookie and all Set-Cookie attributes remain literal.
     const pattern = setCookie
-      ? /(?:^|,\s*)((?:__Secure-)?better-auth\.session_token)=([^;,\s]*)/g
-      : /(?:^|;\s*)((?:__Secure-)?better-auth\.session_token)=([^;\s]*)/g;
+      ? /(?:^|,\s*)((?:__Secure-)?(?:better-auth\.session_token|device-proof\.session_token|configured-device-token))=([^;,\s]*)/g
+      : /(?:^|;\s*)((?:__Secure-)?(?:better-auth\.session_token|device-proof\.session_token|configured-device-token))=([^;\s]*)/g;
     const left = [...a.matchAll(pattern)];
     const right = [...b.matchAll(pattern)];
 
@@ -4161,6 +4274,15 @@ export function compareValues(
           : (opaqueAliases[key] ?? key);
 
       if (opaqueKeys.has(opaqueKey)) {
+        // Pinned custom device generators accept empty/whitespace strings.
+        // These are literal codes, never aliases for nonempty credentials.
+        if (
+          (opaqueKey === "device_code" || opaqueKey === "user_code") &&
+          (!a.trim() || !b.trim())
+        ) {
+          if (a !== b) fail(path, "literal empty device code differs");
+          return;
+        }
         identity(a, b, path, opaqueKey);
         return;
       }

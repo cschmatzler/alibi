@@ -840,6 +840,12 @@ compatScenario(
       expect(after.snapshot.organizations).toEqual(before.snapshot.organizations);
       expect(await s.users()).toEqual(usersBefore);
 
+      // The published callback receives the entire session resolved from these
+      // real headers, including the issuer's dates and the active-org update.
+      const foreignSession = await s.foreign.client.getSession();
+      expect(foreignSession.error).toBeNull();
+      expect(foreignSession.data).not.toBeNull();
+
       await configure(ctx, "record");
       const retry = await server(
         ctx,
@@ -869,6 +875,11 @@ compatScenario(
           session: { userId: s.foreign.user.id, activeOrganizationId: s.other.id },
         },
       });
+      expect(repaired.receipts[1]!.context).toEqual({
+        organizationId: s.organization.id,
+        teamId: s.first.id,
+        session: ctx.snapshot(foreignSession.data),
+      });
       expect(await s.users()).toEqual(usersBefore);
 
       observations.push({
@@ -877,6 +888,7 @@ compatScenario(
         usersBefore,
         result,
         after,
+        foreignSession,
         retry,
         repaired,
         usersAfter: await s.users(),

@@ -8,6 +8,10 @@ import { compatScenario } from "../../../support/scenario";
 // unnoticed until a scenario happened to use it, and a scenario that compared
 // two 404s would still pass.
 compatScenario("every declared fixture profile is served by both runtimes", async (ctx) => {
+  // A repeated profile probe consumes its genuine rate policy twice. Reject
+  // duplicate declarations before traffic can obscure this registry invariant.
+  expect(new Set(FIXTURE_PROFILES).size).toBe(FIXTURE_PROFILES.length);
+
   const statuses: Record<string, number> = {};
   const missing: string[] = [];
 
@@ -30,7 +34,6 @@ compatScenario("every declared fixture profile is served by both runtimes", asyn
   }
 
   expect(missing, `${ctx.baseURL} does not serve every declared profile`).toEqual([]);
-  expect(new Set(FIXTURE_PROFILES).size).toBe(FIXTURE_PROFILES.length);
 
   return { profiles: FIXTURE_PROFILES.length, statuses };
 });

@@ -72,6 +72,7 @@ pub(crate) async fn prepare_value(
                 | SqlValue::Bytes(_)
                 | SqlValue::Json(None)
                 | SqlValue::Timestamp(_)
+                | SqlValue::NaiveTimestamp(_)
                 | SqlValue::Uuid(_) => serde_json::Value::Null,
             };
             Ok(crate::value::SqlxValue::into_sql_value(
@@ -93,6 +94,6 @@ pub(crate) async fn prepare_value(
             SqlValue::Text(None) => SqlValue::Bool(None),
             other => other,
         }),
-        ColumnKind::Other => Ok(value),
+        ColumnKind::Other | ColumnKind::NaiveTimestamp => Ok(value),
     }
 }

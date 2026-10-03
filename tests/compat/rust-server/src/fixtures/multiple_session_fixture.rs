@@ -7,6 +7,7 @@ use better_auth::plugins::{
     EmailPasswordPlugin, MultiSessionConfig, MultiSessionPlugin, SessionManagementPlugin,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
+use better_auth_core::{CookieAttributes, CookieOverride, SameSite};
 use better_auth_seaorm::sea_orm::DatabaseConnection;
 use std::sync::{
     Arc,
@@ -37,9 +38,44 @@ pub(crate) async fn router(
     counter: Arc<AtomicUsize>,
 ) -> AuthResult<Router> {
     let mut router = Router::new();
-    for name in ["multi-session", "multi-session-limited"] {
+    for (name, maximum_sessions) in [
+        ("multi-session", 5.0),
+        ("multi-session-limited", 2.0),
+        ("multi-session-zero", 0.0),
+        ("multi-session-fractional", 1.5),
+        ("multi-session-negative", -1.0),
+        ("multi-session-nan", f64::NAN),
+        ("multi-session-infinite", f64::INFINITY),
+        ("multi-session-negative-infinite", f64::NEG_INFINITY),
+        ("multi-session-cookie-alias", 5.0),
+        ("multi-session-cookie-prefix", 5.0),
+    ] {
         let path = format!("/__test/profiles/{name}/api/auth");
-        let config = config.clone().base_path(&path);
+        let mut config = config.clone().base_path(&path);
+        if name.starts_with("multi-session-cookie-") {
+            config.advanced.cookie_prefix = Some("device-proof".into());
+            config.advanced.default_cookie_attributes = CookieAttributes {
+                path: Some(path.clone()),
+                http_only: Some(false),
+                same_site: Some(SameSite::Strict),
+                max_age: Some(71),
+                ..Default::default()
+            };
+            if name.ends_with("alias") {
+                config.advanced.cookies.insert(
+                    "session_token".into(),
+                    CookieOverride {
+                        name: Some("configured-device-token".into()),
+                        attributes: CookieAttributes {
+                            http_only: Some(true),
+                            same_site: Some(SameSite::Lax),
+                            max_age: Some(123),
+                            ..Default::default()
+                        },
+                    },
+                );
+            }
+        }
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(config.clone())
                 .store(
@@ -50,11 +86,7 @@ pub(crate) async fn router(
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(SessionManagementPlugin::new())
                 .plugin(MultiSessionPlugin::with_config(MultiSessionConfig {
-                    maximum_sessions: if name == "multi-session-limited" {
-                        2
-                    } else {
-                        5
-                    },
+                    maximum_sessions,
                 }))
                 .build()
                 .await?,
