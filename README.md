@@ -58,6 +58,27 @@ until expiry. User snapshot refresh after a committed update is best effort.
 Use the same backend in `config.verification.secondary_storage` when verification
 credentials should also use secondary storage and atomic consumption.
 
+## API-key storage
+
+API keys use the database by default. Set `ApiKeyConfig::storage` to
+`ApiKeyStorageMode::SecondaryStorage` and supply `secondary_storage` with an
+`Arc<dyn CacheAdapter>`, or provide an application `custom_storage` implementing
+`ApiKeyStorage`. Custom storage takes precedence. This setting is independent
+of secondary session and verification storage.
+
+The plugin maintains serialized key/hash indexes with expiry and permanent
+reference lists. Custom storage receives an optional TTL; `None` means no
+expiration. Cache adapters need `set_without_expiry` support for permanent
+keys and lists; the bundled memory and Redis adapters provide it.
+
+Secondary-only quota and rate admission use a read/merge/write operation and
+can admit concurrent requests from the same snapshot. Reference-list mutations
+are serialized within one process. Set `fallback_to_database = true` for durable
+database rows and guarded database admission; successful writes refresh the
+cache from the current database row. Cache failures can leave successful
+prior writes in place. `defer_updates` starts secondary-only usage writes in
+background work observed through the application's background-task handler.
+
 ## Quick Start
 
 ```toml
@@ -361,6 +382,25 @@ secret to fetch the locked revision. `devenv.lock` pins the environment.
 See [Tests](tests/README.md) for the unit, integration and compat tiers, and
 [Compatibility testing](tests/compat/README.md) for focused checks and the
 compatibility contract.
+
+### Session cookie cache formats
+
+Enable `CookieCacheConfig` with `CookieCacheStrategy::Compact`, `Jwt`, or `Jwe`.
+The JWT default signs with the current authentication secret. To use the local
+JWT plugin keyring instead, combine `CookieCacheStrategy::Jwt` with
+`JwtPluginConfig { session_cookie_cache: true, ..Default::default() }`.
+Remote JWT signers cannot protect session cookies in this mode.
+
+JWE cookies use direct-key AES-256-CBC/HMAC-SHA512, with the session-specific
+HKDF salt and a protected key thumbprint. Managed secrets write with the current
+key and read retained keys; retiring a key rejects its encrypted cookies.
+The separately signed session token still uses only the current secret.
+
+Every format retains the configured public user/session projection, cache
+version, expiry, cookie chunk lifecycle and existing authoritative-read guards.
+A cache snapshot does not reconstruct a database model or bypass a sensitive
+operation's physical-session or credential checks.
+
 
 ## License
 

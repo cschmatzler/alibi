@@ -52,6 +52,8 @@ base64 = { workspace = true }
 sha2 = { workspace = true }
 hmac = { workspace = true }
 jsonwebtoken = { workspace = true }
+aes-gcm = { workspace = true }
+hkdf = { workspace = true }
 
 # Cache (optional)
 redis = { workspace = true, optional = true }

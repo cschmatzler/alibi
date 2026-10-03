@@ -178,9 +178,8 @@ pub async fn get_owned_api_key(
 ) -> AuthResult<better_auth_core::ApiKey> {
     use crate::plugins::api_key::{ApiKeyReferences, config_id_matches};
 
-    let api_key = ctx
-        .database
-        .get_api_key_by_id(key_id)
+    let api_key = config
+        .read_key(ctx, key_id, false)
         .await?
         .ok_or_else(|| AuthError::not_found("API Key not found"))?;
 

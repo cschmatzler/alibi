@@ -12,14 +12,14 @@ mod verification_profiles;
 use fixtures::{
     additional_fields_fixture, admin_banned_message_fixture, admin_permission_fixture,
     anonymous_fixture, api_key_background_fixture, api_key_generation_fixture,
-    api_key_hook_fixture, api_key_options_fixture, apple_provider_fixture,
+    api_key_hook_fixture, api_key_options_fixture, api_key_storage_fixture, apple_provider_fixture,
     atlassian_provider_fixture, bearer_fixture, captcha_fixture, client_ip_fixture,
     cloudflare_provider_fixture, cognito_provider_fixture, compromised_password_fixture,
     custom_session_fixture, device_fixture, dispatch_fixture, dropbox_provider_fixture,
     facebook_provider_fixture, figma_provider_fixture, google_id_token_fixture,
     huggingface_provider_fixture, invitation_fixture, jwt_fixture, jwt_keyring_fixture,
     jwt_remote_fixture, kakao_provider_fixture, kick_provider_fixture, last_login_method_fixture,
-    lifecycle_fixture, line_provider_fixture, multiple_session_fixture, oauth_proxy_fixture,
+    lifecycle_fixture, line_provider_fixture, linear_provider_fixture, multiple_session_fixture, oauth_proxy_fixture,
     one_tap_fixture, one_time_token_fixture, open_api_fixture, organization_creation_fixture,
     organization_creation_hooks_fixture, organization_deletion_hooks_fixture,
     organization_invitation_acceptance_fixture, organization_member_addition_fixture,
@@ -833,6 +833,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }),
     )
     .await?;
+    let (api_key_storage_router, api_key_storage_reset) =
+        api_key_storage_fixture::router(&config, database.clone()).await?;
     let api_key_background_router =
         api_key_background_fixture::router(&config, database.clone()).await?;
     let api_key_hook_router = api_key_hook_fixture::router(&config, database.clone()).await?;
@@ -893,6 +895,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         kakao_provider_fixture::router(&config, database.clone()).await?;
     let (line_router, line_reset) =
         line_provider_fixture::router(&config, database.clone()).await?;
+    let (linear_router, linear_reset) =
+        linear_provider_fixture::router(&config, database.clone()).await?;
     let (kick_router, kick_reset) =
         kick_provider_fixture::router(&config, database.clone()).await?;
     let (cognito_router, cognito_reset) =
@@ -1371,6 +1375,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/__test/reset-state",
             post(move || {
+                let api_key_storage_reset = api_key_storage_reset.clone();
                 let verification_storage_reset = verification_storage_reset.clone();
                 let user_validation_app = user_validation_app.clone();
                 let registration_receipts = registration_receipts.clone();
@@ -1401,6 +1406,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let huggingface_reset=huggingface_reset.clone();
                 let kakao_reset=kakao_reset.clone();
                 let line_reset = line_reset.clone();
+                let linear_reset=linear_reset.clone();
                 let kick_reset=kick_reset.clone();
                 let atlassian_reset=atlassian_reset.clone();
                 let apple_reset = apple_reset.clone();
@@ -1410,6 +1416,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let invitation_acceptance_reset = invitation_acceptance_reset.clone();
                 let anonymous_reset = anonymous_reset.clone();
                 async move {
+                    api_key_storage_reset.reset().await;
                     cloudflare_reset.reset().await;
                     cognito_reset.reset().await;
                     if let Err(error) = additional_fields_reset.reset().await {
@@ -1421,6 +1428,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     huggingface_reset.reset().await;
                     kakao_reset.reset().await;
                     line_reset.reset().await;
+                    linear_reset.reset().await;
                     kick_reset.reset().await;
                     atlassian_reset.reset().await;
                     apple_reset.reset().await;
@@ -2048,6 +2056,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(huggingface_router)
         .merge(kakao_router)
         .merge(line_router)
+        .merge(linear_router)
         .merge(kick_router)
         .merge(atlassian_router)
         .merge(apple_router)
@@ -2073,6 +2082,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(admin_banned_message_router)
         .merge(api_key_generation_router)
         .merge(api_key_options_router)
+        .merge(api_key_storage_router)
         .merge(api_key_background_router)
         .merge(api_key_hook_router)
         .merge(session_fields_router)

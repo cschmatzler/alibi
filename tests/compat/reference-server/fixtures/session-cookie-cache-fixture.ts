@@ -1,10 +1,9 @@
-/** Immutable real compact-cache configurations and actual callback/state controls. */
-
 import { Database } from "bun:sqlite";
 
 import { apiKey } from "@better-auth/api-key";
 import { passkey } from "@better-auth/passkey";
-import { type BetterAuthOptions, betterAuth } from "better-auth";
+/** Immutable real compact-cache configurations and actual callback/state controls. */
+import { betterAuth, type BetterAuthOptions } from "better-auth";
 import { APIError } from "better-auth/api";
 import { getMigrations } from "better-auth/db/migration";
 import {
@@ -15,10 +14,10 @@ import {
   multiSession,
   oneTimeToken,
   organization,
-  phoneNumber,
   twoFactor,
+  phoneNumber,
 } from "better-auth/plugins";
-
+import { createJwk } from "better-auth/plugins/jwt";
 export async function sessionCookieCacheFixture(base: BetterAuthOptions, database: Database) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   const states = new Map<
@@ -32,6 +31,14 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
     }
   >();
   const modes = [
+    "jwt-interactions",
+    "jwe-interactions",
+    "jwe-old",
+    "jwe-retained",
+    "jwe-retired",
+    "jwt",
+    "jwe",
+    "managed",
     "standard",
     "disabled",
     "version",
@@ -47,7 +54,6 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
     "guards",
     "interactions",
   ] as const;
-
   for (const mode of modes) {
     const state = {
       version: "1",
@@ -60,7 +66,6 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
     const callback = async (session: Record<string, unknown>, user: Record<string, unknown>) => {
       await Promise.resolve();
       state.events.push({ mode, session: structuredClone(session), user: structuredClone(user) });
-
       if (state.failure && !user.isAnonymous) {
         if (mode === "version-api") {
           throw new APIError("INTERNAL_SERVER_ERROR", {
@@ -70,7 +75,6 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
         }
         throw new Error("Configured cache version rejected issuance");
       }
-
       return state.version;
     };
     const maxAge =
@@ -89,8 +93,29 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
                   : 300;
     const options: BetterAuthOptions = {
       ...base,
+      ...(["jwe-old", "jwe-retained", "jwe-retired"].includes(mode)
+        ? {
+            secret: undefined,
+            secrets:
+              mode === "jwe-old"
+                ? [{ version: 1, value: base.secret as string }]
+                : [
+                    { version: 2, value: "cache-managed-new-secret-at-least-32-characters" },
+                    ...(mode === "jwe-retained"
+                      ? [{ version: 1, value: base.secret as string }]
+                      : []),
+                  ],
+          }
+        : {}),
+      ...(mode === "managed"
+        ? {
+            baseURL: "https://session-cache.fixture.test",
+            advanced: { ...base.advanced, useSecureCookies: false },
+            trustedOrigins: [base.baseURL as string],
+          }
+        : {}),
       basePath: `/__test/profiles/session-cache-${mode}/api/auth`,
-      ...(mode === "interactions"
+      ...(mode.endsWith("interactions")
         ? {
             databaseHooks: {
               session: {
@@ -106,7 +131,7 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
             },
           }
         : {}),
-      ...(mode === "interactions"
+      ...(mode.endsWith("interactions")
         ? {
             emailVerification: {
               ...base.emailVerification,
@@ -159,6 +184,7 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
           }
         : {}),
       plugins: [
+        ...(mode === "managed" ? [jwt({ sessionCookieCache: true })] : []),
         organization(),
         anonymous({
           generateRandomEmail: () => `cache-anonymous-${mode}-${++state.sequence}@fixture.test`,
@@ -190,7 +216,7 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
               }),
             ]
           : []),
-        ...(mode === "interactions"
+        ...(mode.endsWith("interactions")
           ? [
               twoFactor({
                 otpOptions: {
@@ -211,10 +237,14 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
         },
         cookieCache: {
           enabled: mode !== "disabled",
-          strategy: "compact",
+          strategy: mode.startsWith("jwe")
+            ? "jwe"
+            : mode.startsWith("jwt") || mode === "managed"
+              ? "jwt"
+              : "compact",
           maxAge,
           version:
-            mode.startsWith("version") || mode === "interactions"
+            mode.startsWith("version") || mode.endsWith("interactions")
               ? callback
               : mode === "date-version"
                 ? "2026-10-01T00:00:00.000Z"
@@ -226,14 +256,10 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
     const path = options.basePath!;
     profiles.set(path, betterAuth(options));
   }
-
   return {
     profiles,
     async handle(request: Request) {
-      if (new URL(request.url).pathname !== "/__test/session-cookie-cache/control") {
-        return null;
-      }
-
+      if (new URL(request.url).pathname !== "/__test/session-cookie-cache/control") return null;
       const body = (await request.json()) as {
         mode: string;
         action: string;
@@ -243,16 +269,45 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
         token?: string;
         name?: string;
         email?: string;
+        key?: Record<string, unknown>;
       };
       const state = states.get(body.mode);
       const auth = profiles.get(`/__test/profiles/session-cache-${body.mode}/api/auth`);
-
       if (!state || !auth) {
         return Response.json({ error: "Unknown cache profile" }, { status: 400 });
       }
-
       const context = await auth.$context;
-
+      if (body.action === "rotate-cache-key") {
+        await createJwk({ context } as any);
+        return Response.json({ keys: await context.adapter.findMany({ model: "jwks" }) });
+      }
+      if (body.action === "cache-keys") {
+        return Response.json({ keys: await context.adapter.findMany({ model: "jwks" }) });
+      }
+      if (body.action === "import-cache-key") {
+        if (!body.key) return Response.json({ error: "Key missing" }, { status: 400 });
+        const key = {
+          ...body.key,
+          createdAt: new Date(body.key.createdAt as string),
+          expiresAt: body.key.expiresAt ? new Date(body.key.expiresAt as string) : null,
+        };
+        if (
+          !(await context.adapter.findOne({
+            model: "jwks",
+            where: [{ field: "id", value: key.id as string }],
+          }))
+        ) {
+          await context.adapter.create({ model: "jwks", data: key, forceAllowId: true });
+        }
+        return Response.json({ keys: await context.adapter.findMany({ model: "jwks" }) });
+      }
+      if (body.action === "retire-cache-key") {
+        await context.adapter.delete({
+          model: "jwks",
+          where: [{ field: "id", value: body.token! }],
+        });
+        return Response.json({ keys: await context.adapter.findMany({ model: "jwks" }) });
+      }
       if (body.action === "reset") {
         state.version = "1";
         state.failure = false;
@@ -262,26 +317,18 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
       } else if (body.action === "clear-events") {
         state.events.length = 0;
       } else if (body.action === "policy") {
-        if (body.version !== undefined) {
-          state.version = body.version;
-        }
-        if (body.failure !== undefined) {
-          state.failure = body.failure;
-        }
+        if (body.version !== undefined) state.version = body.version;
+        if (body.failure !== undefined) state.failure = body.failure;
       } else if (body.action === "rename") {
         if (!body.userId || typeof body.name !== "string") {
           return Response.json({ error: "Invalid rename" }, { status: 400 });
         }
         await context.internalAdapter.updateUser(body.userId, { name: body.name });
       } else if (body.action === "revoke") {
-        if (!body.token) {
-          return Response.json({ error: "Invalid token" }, { status: 400 });
-        }
+        if (!body.token) return Response.json({ error: "Invalid token" }, { status: 400 });
         await context.internalAdapter.deleteSession(body.token);
       } else if (body.action === "api-key-rows") {
-        if (!body.userId) {
-          return Response.json({ error: "Invalid owner" }, { status: 400 });
-        }
+        if (!body.userId) return Response.json({ error: "Invalid owner" }, { status: 400 });
         const keys = await context.adapter.findMany({
           model: "apikey",
           where: [{ field: "referenceId", value: body.userId }],
@@ -291,16 +338,12 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
             const stored = database
               .query("SELECT metadata FROM apikey WHERE id = ?")
               .get(key.id as string) as { metadata: string | null } | null;
-            if (!stored) {
-              throw new Error("Actual API-key row missing");
-            }
+            if (!stored) throw new Error("Actual API-key row missing");
             return { ...key, storedMetadata: stored.metadata };
           }),
         });
       } else if (body.action === "rows") {
-        if (!body.userId) {
-          return Response.json({ error: "Invalid owner" }, { status: 400 });
-        }
+        if (!body.userId) return Response.json({ error: "Invalid owner" }, { status: 400 });
         const where = [{ field: "userId", value: body.userId }];
         return Response.json({
           users: await context.adapter.findMany({
@@ -331,7 +374,6 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
       } else if (body.action !== "state") {
         return Response.json({ error: "Unknown action" }, { status: 400 });
       }
-
       return Response.json({ events: state.events });
     },
   };

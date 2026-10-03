@@ -5,6 +5,7 @@
 
 pub(crate) mod date;
 
+pub mod jwt;
 pub mod runtime;
 
 use crate::{AuthResult, AuthSession, AuthUser, SessionView, UserView};
@@ -275,10 +276,6 @@ fn signature(secret: &str, data: &[u8]) -> String {
 
 /// Authenticate a compact envelope. Malformed data is a cache miss, allowing
 /// the caller's genuine storage fallback; it never supplies an identity.
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep compact authentication, shape validation, and date reviving in wire order"
-)]
 pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
     let bytes = URL_SAFE_NO_PAD
         .decode(value)
@@ -309,6 +306,17 @@ pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(message.as_bytes());
     mac.verify_slice(&signature).ok()?;
+    parse_payload(
+        &crate::utils::json::JsValue::Object(original_payload.clone()),
+        expires_at,
+    )
+}
+
+/// Validate and revive an authenticated session snapshot without granting storage authority.
+pub(crate) fn parse_payload(
+    original_payload: &crate::utils::json::JsValue,
+    expires_at: f64,
+) -> Option<CompactCache> {
     // Revived dates are runtime Date objects in the source. Required string
     // fields reject them even when their canonical JSON text did not change.
     for (object, required, optional) in [
@@ -357,6 +365,9 @@ pub fn decode_compact(value: &str, secret: &str) -> Option<CompactCache> {
     {
         return None;
     }
+    let mut normalized = original_payload.clone();
+    date::revive(&mut normalized);
+    let payload_2 = normalized.as_object()?;
     let updated_at = payload_2
         .get("updatedAt")?
         .as_f64()
@@ -468,20 +479,6 @@ pub async fn validate_compact(
     }
     cache.session.active = true;
     Ok(CacheValidation::Hit(Box::new(cache)))
-}
-
-/// Reject selected formats that do not have a runtime implementation yet.
-/// Disabling caching does not reject an otherwise-unused strategy setting.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub fn validate_config(config: &crate::CookieCacheConfig) -> AuthResult<()> {
-    if config.enabled && config.strategy != crate::CookieCacheStrategy::Compact {
-        return Err(crate::AuthError::config(
-            "Only compact stateful session cookie caching is currently supported",
-        ));
-    }
-    Ok(())
 }
 
 /// Render a cache-related cookie using the source numeric Max-Age policy.
