@@ -43,3 +43,5 @@ The separate docs site's TypeScript check currently reports five existing collec
 Additional fields/model renaming, organization/member/invitation lifecycle callbacks, functional organization and membership limits, invitation delivery, resend/cancel-pending reissue, arbitrary configured ID generators, and broader server-only organization/member methods still need implementation or evidence. Team callback/factory/static-role and invitation-policy overrides have native evidence; equivalent differential fixture profiles remain outstanding for those branches. Custom factory access to other application stores can be captured in the Rust factory; the provided store interface here is limited to teams.
 
 Dynamic-role route/configuration behavior and role-name concurrency are handled separately. Older core list methods outside the new storage queries still require a configured query-limit audit. These boundaries remain on the implementation ledger and are not excluded from the complete parity target.
+
+Raw fractional and nonfinite quota policies, their explicit public migration, Source semantics and focused evidence are documented in [raw-limits.md](raw-limits.md).

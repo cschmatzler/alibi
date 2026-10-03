@@ -40,7 +40,7 @@ where
         tx: &sea_orm::DatabaseTransaction,
         team_id: &str,
         user_id: &str,
-        maximum: Option<usize>,
+        maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         let id = S::User::parse_id(user_id)?;
         if <S::User as SeaOrmUserModel>::Entity::find()
@@ -73,13 +73,25 @@ where
             .count(tx)
             .await
             .map_err(map_db_err)?;
-        if maximum
-            .map(u64::try_from)
-            .transpose()
-            .map_err(|_error| AuthError::internal("Team capacity exceeds u64"))?
-            .is_some_and(|max| count >= max)
-        {
-            return Ok(AddTeamMemberResult::LimitReached);
+        // Sync upward exactly as Source does, then let the database compare
+        // its durable counter to the raw policy. Do not round/cap query values.
+        let reserved_count = std::cmp::max(
+            i64::try_from(count)
+                .map_err(|_error| AuthError::internal("Team membership count overflow"))?,
+            room.member_count,
+        );
+        let mut active = room.into_active_model();
+        active.member_count = Set(reserved_count);
+        let room = active.update(tx).await.map_err(map_db_err)?;
+        if let Some(maximum) = maximum {
+            let available = team::Entity::find_by_id(team_id.to_owned())
+                .filter(team::Column::MemberCount.lt(maximum))
+                .one(tx)
+                .await
+                .map_err(map_db_err)?;
+            if available.is_none() {
+                return Ok(AddTeamMemberResult::LimitReached);
+            }
         }
         let key = team_membership_key(team_id, user_id)?;
         let member = team_member::ActiveModel {
@@ -93,8 +105,9 @@ where
         .await
         .map_err(map_db_err)?;
         let mut active = room.into_active_model();
-        active.member_count = Set(i64::try_from(count + 1)
-            .map_err(|_error| AuthError::internal("Team membership count overflow"))?);
+        active.member_count = Set(reserved_count
+            .checked_add(1)
+            .ok_or_else(|| AuthError::internal("Team membership count overflow"))?);
         drop(active.update(tx).await.map_err(map_db_err)?);
         Ok(AddTeamMemberResult::Added(member.into()))
     }
@@ -228,7 +241,7 @@ where
         &self,
         team_id: &str,
         user_id: &str,
-        maximum: Option<usize>,
+        maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         let tx = self
             .connection()

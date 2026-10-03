@@ -892,6 +892,19 @@ export const FIXTURE_PROFILES = [
   "org-teams-no-default",
   "org-teams-limited",
   "org-teams-removable",
+  "org-numeric-fixed-zero",
+  "org-numeric-fixed-fraction",
+  "org-numeric-fixed-negative",
+  "org-numeric-fixed-nan",
+  "org-numeric-fixed-infinity",
+  "org-numeric-fixed-negative-infinity",
+  "org-numeric-fixed-unset",
+  "org-numeric-async-zero",
+  "org-numeric-async-fraction",
+  "org-numeric-async-negative",
+  "org-numeric-async-nan",
+  "org-numeric-async-infinity",
+  "org-numeric-async-negative-infinity",
 ] as const;
 
 export type FixtureProfile = (typeof FIXTURE_PROFILES)[number];

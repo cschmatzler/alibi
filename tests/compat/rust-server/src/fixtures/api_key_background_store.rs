@@ -185,7 +185,7 @@ delegate_store!(InvitationStore, {
         _invitation_id: &str,
         _user_id: &str,
         _session_token: &str,
-        _team_limits: &[(String, Option<usize>)],
+        _team_limits: &[(String, Option<f64>)],
         _membership_limit: Option<usize>,
     ) -> AuthResult<Option<(Invitation, Member)>>;
     async fn update_invitation_team_ids(
@@ -297,7 +297,7 @@ delegate_store!(TeamStore, {
         &self,
         _team_id: &str,
         _user_id: &str,
-        _maximum: Option<usize>,
+        _maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult>;
     async fn remove_team_member(&self, _team_id: &str, _user_id: &str) -> AuthResult<usize>;
     async fn list_team_members(&self, _team_id: &str) -> AuthResult<Vec<TeamMember>>;

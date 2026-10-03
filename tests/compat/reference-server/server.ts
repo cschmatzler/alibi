@@ -1260,7 +1260,106 @@ async function waitForRolePolicy(promise: Promise<void>, message: string) {
   }
 }
 
+const numericPolicyEvents = new Map<string, unknown[]>();
+function numericEvent(organizationId: string, event: Record<string, unknown>) {
+  const events = numericPolicyEvents.get(organizationId) ?? [];
+  events.push({ organizationId, ...event });
+  numericPolicyEvents.set(organizationId, events);
+}
+function numericCallbacks(name: string) {
+  const raw = teamNumericValue(name);
+  return {
+    maximumTeams: async ({ organizationId, session }: any, ctx: any) => {
+      const row = database
+        .query("SELECT name FROM organization WHERE id=?")
+        .get(organizationId) as { name: string };
+      numericEvent(organizationId, {
+        event: "maximumTeams",
+        userId: session?.user.id ?? null,
+        session: { userId: session?.session.userId ?? null },
+        activeOrganizationId: session?.session.activeOrganizationId ?? null,
+        organizationName: row.name,
+        header: ctx?.headers?.get("x-numeric-policy") ?? null,
+        requestMethod: ctx?.request?.method ?? null,
+      });
+      if (ctx?.headers?.get("x-numeric-policy") === "insert") {
+        for (let i = 0; i < 2; i++) {
+          await ctx.context.adapter.create({
+            model: "team",
+            data: {
+              organizationId,
+              name: `Callback team ${i}`,
+              memberCount: 0,
+              createdAt: new Date(),
+              updatedAt: new Date(),
+            },
+          });
+        }
+      }
+      return raw;
+    },
+    maximumMembersPerTeam: async ({ organizationId, teamId, session }: any) => {
+      numericEvent(organizationId, {
+        event: "maximumMembersPerTeam",
+        teamId,
+        userId: session.user.id,
+        session: { userId: session.session.userId },
+        activeOrganizationId: session.session.activeOrganizationId ?? null,
+      });
+      return raw;
+    },
+    maximumRolesPerOrganization: async (organizationId: string) => {
+      const row = database
+        .query("SELECT name FROM organization WHERE id=?")
+        .get(organizationId) as { name: string };
+      numericEvent(organizationId, {
+        event: "maximumRolesPerOrganization",
+        organizationName: row.name,
+      });
+      if (row.name === "Callback writes roles") {
+        const { adapter } = await teamProfiles.get(name)!.auth.$context;
+        for (let i = 0; i < 2; i++) {
+          await adapter.create({
+            model: "organizationRole",
+            data: {
+              organizationId,
+              role: `callback${i}`,
+              permission: "{}",
+              createdAt: new Date(),
+              updatedAt: null,
+            },
+          });
+        }
+      }
+      return raw!;
+    },
+  };
+}
+const NUMERIC_TEAM_PROFILES = [
+  "zero",
+  "fraction",
+  "negative",
+  "nan",
+  "infinity",
+  "negative-infinity",
+]
+  .flatMap((mode) => [`org-numeric-fixed-${mode}`, `org-numeric-async-${mode}`])
+  .concat("org-numeric-fixed-unset");
+function teamNumericValue(name: string): number | undefined {
+  const mode = name.replace(/^org-numeric-(fixed|async)-/, "");
+  return (
+    {
+      zero: 0,
+      fraction: 1.5,
+      negative: -1.5,
+      nan: NaN,
+      infinity: Infinity,
+      "negative-infinity": -Infinity,
+    } as Record<string, number>
+  )[mode];
+}
 const TEAM_PROFILES = [
+  ...NUMERIC_TEAM_PROFILES,
   "org-deletion-disabled",
   "org-teams",
   "org-teams-no-default",
@@ -1274,7 +1373,10 @@ const TEAM_PROFILES = [
 ] as const;
 const teamProfiles = new Map(
   TEAM_PROFILES.map((name) => {
-    const dynamic = name === "org-teams-dynamic" || name.startsWith("org-roles-");
+    const numeric = name.startsWith("org-numeric-");
+    const raw = teamNumericValue(name);
+
+    const dynamic = numeric || name === "org-teams-dynamic" || name.startsWith("org-roles-");
     const statements =
       name === "org-roles-delegated"
         ? ({ ...defaultStatements, apiKey: ["create", "read", "update", "delete"] } as const)
@@ -1290,10 +1392,43 @@ const teamProfiles = new Map(
         ...authOptions.plugins.filter((plugin) => plugin.id !== "organization"),
         organization({
           disableOrganizationDeletion: name === "org-deletion-disabled",
+          ...(numeric
+            ? {
+                organizationHooks: {
+                  beforeCreateTeam: async ({ organization }) => {
+                    numericEvent(organization.id, { event: "beforeCreateTeam" });
+                  },
+                  beforeAddTeamMember: async ({ team, user, organization }) => {
+                    if (organization.name === "Legacy seats") {
+                      database.query("UPDATE team SET memberCount=5 WHERE id=?").run(team.id);
+                    }
+                    numericEvent(organization.id, {
+                      event: "beforeAddTeamMember",
+                      teamId: team.id,
+                      target: { userId: user.id },
+                    });
+                  },
+                  afterAddTeamMember: async ({ team, user, organization }) => {
+                    numericEvent(organization.id, {
+                      event: "afterAddTeamMember",
+                      teamId: team.id,
+                      target: { userId: user.id },
+                    });
+                  },
+                },
+              }
+            : {}),
           ...(dynamic
             ? {
                 dynamicAccessControl: {
                   enabled: true,
+                  ...(numeric
+                    ? {
+                        maximumRolesPerOrganization: name.includes("-async-")
+                          ? numericCallbacks(name).maximumRolesPerOrganization
+                          : raw,
+                      }
+                    : {}),
                   ...(name === "org-roles-limited" ? { maximumRolesPerOrganization: 1 } : {}),
                   ...(name === "org-roles-callback"
                     ? {
@@ -1332,7 +1467,15 @@ const teamProfiles = new Map(
             : {}),
           teams: {
             enabled: true,
-            defaultTeam: { enabled: name !== "org-teams-no-default" },
+            defaultTeam: { enabled: !numeric && name !== "org-teams-no-default" },
+            ...(numeric
+              ? name.includes("-async-")
+                ? {
+                    maximumTeams: numericCallbacks(name).maximumTeams,
+                    maximumMembersPerTeam: numericCallbacks(name).maximumMembersPerTeam,
+                  }
+                : { maximumTeams: raw, maximumMembersPerTeam: raw }
+              : {}),
             allowRemovingAllTeams: name === "org-teams-removable",
             ...(name === "org-teams-limited"
               ? {
@@ -1384,7 +1527,9 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       throw new Error("Organization state query failed");
     }
     const roles =
-      profileName === "org-teams-dynamic" || profileName.startsWith("org-roles-")
+      profileName === "org-teams-dynamic" ||
+      profileName.startsWith("org-roles-") ||
+      profileName.startsWith("org-numeric-")
         ? await adapter.findMany<Record<string, unknown>>({
             model: "organizationRole",
             where,
@@ -1432,6 +1577,9 @@ async function teamFixture(request: Request, url: URL): Promise<Response | undef
       return jsonResponse({ message: "Unknown fixture profile" }, { status: 400 });
     }
     try {
+      if (body?.operation === "numeric-events" && typeof body.organizationId === "string") {
+        return jsonResponse(numericPolicyEvents.get(body.organizationId) ?? []);
+      }
       if (body?.operation === "orphan-organization" && typeof body.organizationId === "string") {
         const row = database
           .query("SELECT id FROM organization WHERE id=?")

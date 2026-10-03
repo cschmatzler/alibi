@@ -86,7 +86,7 @@ where
         invitation_id: &str,
         user_id: &str,
         session_token: &str,
-        team_limits: &[(String, Option<usize>)],
+        team_limits: &[(String, Option<f64>)],
         membership_limit: Option<usize>,
     ) -> AuthResult<Option<(Invitation, better_auth_core::types::Member)>> {
         let transaction = self.pool().begin(true).await?;

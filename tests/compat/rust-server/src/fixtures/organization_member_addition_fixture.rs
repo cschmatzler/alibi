@@ -346,7 +346,7 @@ impl OrganizationMemberAdditionHooks for Application {
 }
 #[async_trait]
 impl OrganizationLimitResolver for Application {
-    async fn maximum_team_members(&self, context: &TeamLimitContext) -> AuthResult<Option<usize>> {
+    async fn maximum_team_members(&self, context: &TeamLimitContext) -> AuthResult<Option<f64>> {
         self.receipts.lock().await.push(json!({"phase":"team-limit","context":{"teamId":context.team_id,"organizationId":context.organization_id,"session":{"user":context.user,"session":context.session}},"snapshot":snapshot(&self.database).await?}));
         if matches!(
             self.mode.lock().await.as_str(),
@@ -358,7 +358,7 @@ impl OrganizationLimitResolver for Application {
                 message: "Actual team-limit rejection".into(),
             });
         }
-        Ok(Some(1))
+        Ok(Some(1.0))
     }
 }
 fn failure(error: AuthError) -> Response {
@@ -436,7 +436,7 @@ pub(crate) async fn router(
             teams: TeamsConfig {
                 enabled: name != "org-member-addition-no-team",
                 create_default_team: false,
-                maximum_members_per_team: (name == "org-member-addition-team-limit").then_some(0),
+                maximum_members_per_team: (name == "org-member-addition-team-limit").then_some(0.0),
                 limit_resolver: (name.contains("team-callback") || name.contains("team-page"))
                     .then(|| application.clone() as Arc<dyn OrganizationLimitResolver>),
                 ..Default::default()

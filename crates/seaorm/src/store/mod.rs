@@ -159,7 +159,7 @@ where
         &self,
         team_id: &str,
         user_id: &str,
-        maximum: Option<usize>,
+        maximum: Option<f64>,
     ) -> AuthResult<better_auth_core::types::AddTeamMemberResult> {
         self.store
             .add_team_member_in_tx(self.tx, team_id, user_id, maximum)

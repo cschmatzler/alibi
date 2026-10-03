@@ -23,7 +23,7 @@ use better_auth_core::types::{
     CreateMember, CreateOrganizationRole, CreateTeam, CreateUser, OrganizationPermissions,
 };
 use better_auth_seaorm::sea_orm::{
-    ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder,
+    ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
 use better_auth_seaorm::store::entities::{
     invitation, member, organization, organization_role, team, team_member,
@@ -41,6 +41,168 @@ pub(crate) struct TeamProfile {
     name: &'static str,
     auth: Auth,
     config: OrganizationConfig,
+}
+
+fn numeric_value(name: &str) -> Option<f64> {
+    if name.ends_with("negative-infinity") {
+        Some(f64::NEG_INFINITY)
+    } else if name.ends_with("infinity") {
+        Some(f64::INFINITY)
+    } else if name.ends_with("negative") {
+        Some(-1.5)
+    } else if name.ends_with("zero") {
+        Some(0.0)
+    } else if name.ends_with("nan") {
+        Some(f64::NAN)
+    } else if name.ends_with("fraction") {
+        Some(1.5)
+    } else {
+        None
+    }
+}
+fn numeric_events() -> &'static Mutex<HashMap<String, Vec<Value>>> {
+    static EVENTS: OnceLock<Mutex<HashMap<String, Vec<Value>>>> = OnceLock::new();
+    EVENTS.get_or_init(Mutex::default)
+}
+fn numeric_event(organization_id: &str, mut event: Value) -> AuthResult<()> {
+    event["organizationId"] = json!(organization_id);
+    numeric_events()
+        .lock()
+        .map_err(|_| AuthError::internal("Numeric observations unavailable"))?
+        .entry(organization_id.to_owned())
+        .or_default()
+        .push(event);
+    Ok(())
+}
+#[derive(Debug)]
+struct NumericLimits {
+    value: Option<f64>,
+    database: DatabaseConnection,
+}
+#[async_trait::async_trait]
+impl OrganizationLimitResolver for NumericLimits {
+    async fn maximum_teams(
+        &self,
+        context: &better_auth::plugins::organization::extensions::TeamLimitContext,
+    ) -> AuthResult<Option<f64>> {
+        let organization = organization::Entity::find_by_id(&context.organization_id)
+            .one(&self.database)
+            .await
+            .map_err(|e| AuthError::internal(e.to_string()))?
+            .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
+        numeric_event(
+            &context.organization_id,
+            json!({"event":"maximumTeams", "userId":context.user.as_ref().map(|u| &u.id), "session":{"userId":context.session.as_ref().map(|s| &s.user_id)}, "activeOrganizationId":context.session.as_ref().and_then(|s| s.active_organization_id.as_ref()), "organizationName":organization.name, "header":context.request.as_ref().and_then(|r| r.header("x-numeric-policy")), "requestMethod":context.request.as_ref().map(|r| format!("{:?}",r.method()).to_uppercase())}),
+        )?;
+        if context
+            .request
+            .as_ref()
+            .and_then(|r| r.header("x-numeric-policy"))
+            .map(String::as_str)
+            == Some("insert")
+        {
+            for i in 0..2 {
+                team::ActiveModel {
+                    id: Set(better_auth_core::utils::id::generate_id(32)),
+                    organization_id: Set(context.organization_id.clone()),
+                    name: Set(format!("Callback team {i}")),
+                    member_count: Set(0),
+                    created_at: Set(Utc::now()),
+                    updated_at: Set(Some(Utc::now())),
+                }
+                .insert(&self.database)
+                .await
+                .map_err(|e| AuthError::internal(e.to_string()))?;
+            }
+        }
+        Ok(self.value)
+    }
+    async fn maximum_team_members(
+        &self,
+        context: &better_auth::plugins::organization::extensions::TeamLimitContext,
+    ) -> AuthResult<Option<f64>> {
+        numeric_event(
+            &context.organization_id,
+            json!({"event":"maximumMembersPerTeam", "teamId":context.team_id,"userId":context.user.as_ref().map(|u| &u.id),"session":{"userId":context.session.as_ref().map(|s| &s.user_id)},"activeOrganizationId":context.session.as_ref().and_then(|s| s.active_organization_id.as_ref())}),
+        )?;
+        Ok(self.value)
+    }
+    async fn maximum_roles(&self, organization_id: &str) -> AuthResult<Option<f64>> {
+        let organization = organization::Entity::find_by_id(organization_id)
+            .one(&self.database)
+            .await
+            .map_err(|e| AuthError::internal(e.to_string()))?
+            .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
+        numeric_event(
+            organization_id,
+            json!({"event":"maximumRolesPerOrganization","organizationName":organization.name}),
+        )?;
+        if organization.name == "Callback writes roles" {
+            for i in 0..2 {
+                organization_role::ActiveModel {
+                    id: Set(better_auth_core::utils::id::generate_id(32)),
+                    organization_id: Set(organization_id.to_owned()),
+                    role: Set(format!("callback{i}")),
+                    permission: Set("{}".into()),
+                    created_at: Set(Utc::now()),
+                    updated_at: Set(None),
+                }
+                .insert(&self.database)
+                .await
+                .map_err(|e| AuthError::internal(e.to_string()))?;
+            }
+        }
+        Ok(self.value)
+    }
+}
+#[derive(Debug)]
+struct NumericHooks(DatabaseConnection);
+#[async_trait::async_trait]
+impl better_auth::plugins::organization::OrganizationTeamHooks for NumericHooks {
+    async fn before_create(
+        &self,
+        _: &mut CreateTeam,
+        context: &better_auth::plugins::organization::extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        numeric_event(
+            &context.organization.id,
+            json!({"event":"beforeCreateTeam"}),
+        )
+    }
+    async fn before_add_member(
+        &self,
+        team: &better_auth_core::types::Team,
+        user: &better_auth_core::wire::UserView,
+        context: &better_auth::plugins::organization::extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        if context.organization.name == "Legacy seats" {
+            use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+            self.0
+                .execute_raw(Statement::from_sql_and_values(
+                    DbBackend::Sqlite,
+                    "UPDATE team SET member_count=5 WHERE id=?",
+                    [team.id.clone().into()],
+                ))
+                .await
+                .map_err(|e| AuthError::internal(e.to_string()))?;
+        }
+        numeric_event(
+            &context.organization.id,
+            json!({"event":"beforeAddTeamMember","teamId":team.id,"target":{"userId":user.id}}),
+        )
+    }
+    async fn after_add_member(
+        &self,
+        _: &better_auth_core::types::TeamMember,
+        team: &better_auth_core::types::Team,
+        user: &better_auth_core::wire::UserView,
+        context: &better_auth::plugins::organization::extensions::TeamHookContext,
+    ) -> AuthResult<()> {
+        numeric_event(
+            &context.organization.id,
+            json!({"event":"afterAddTeamMember","teamId":team.id,"target":{"userId":user.id}}),
+        )
+    }
 }
 
 #[derive(Debug)]
@@ -70,7 +232,7 @@ fn role_policy_barrier(organization_id: &str) -> AuthResult<Option<Arc<RolePolic
 
 #[async_trait::async_trait]
 impl OrganizationLimitResolver for DatabaseRoleLimits {
-    async fn maximum_roles(&self, organization_id: &str) -> AuthResult<Option<usize>> {
+    async fn maximum_roles(&self, organization_id: &str) -> AuthResult<Option<f64>> {
         if let Some(barrier) = role_policy_barrier(organization_id)? {
             barrier.entered.notify_one();
             tokio::time::timeout(
@@ -86,9 +248,9 @@ impl OrganizationLimitResolver for DatabaseRoleLimits {
             .map_err(|error| AuthError::internal(error.to_string()))?
             .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
         Ok(Some(if organization.name == "Two role budget" {
-            2
+            2.0
         } else {
-            1
+            1.0
         }))
     }
 }
@@ -184,7 +346,7 @@ impl OrganizationLimitResolver for RequestTeamLimits {
     async fn maximum_teams(
         &self,
         context: &better_auth::plugins::organization::extensions::TeamLimitContext,
-    ) -> AuthResult<Option<usize>> {
+    ) -> AuthResult<Option<f64>> {
         let owner = context
             .user
             .as_ref()
@@ -194,16 +356,16 @@ impl OrganizationLimitResolver for RequestTeamLimits {
             .as_ref()
             .and_then(|request| request.header("x-team-policy").map(String::as_str))
             == Some("expanded");
-        Ok(Some(if owner && expanded { 3 } else { 1 }))
+        Ok(Some(if owner && expanded { 3.0 } else { 1.0 }))
     }
 
     async fn maximum_team_members(
         &self,
         context: &better_auth::plugins::organization::extensions::TeamLimitContext,
-    ) -> AuthResult<Option<usize>> {
-        Ok(Some(usize::from(context.user.as_ref().is_some_and(
-            |user| user.name.as_deref() == Some("limit-owner"),
-        ))))
+    ) -> AuthResult<Option<f64>> {
+        Ok(Some(f64::from(context.user.as_ref().is_some_and(|user| {
+            user.name.as_deref() == Some("limit-owner")
+        }))))
     }
 }
 
@@ -214,6 +376,19 @@ pub(crate) async fn profiles(
 ) -> AuthResult<Vec<TeamProfile>> {
     let mut profiles = Vec::new();
     for name in [
+        "org-numeric-fixed-unset",
+        "org-numeric-fixed-zero",
+        "org-numeric-fixed-fraction",
+        "org-numeric-fixed-negative",
+        "org-numeric-fixed-nan",
+        "org-numeric-fixed-infinity",
+        "org-numeric-fixed-negative-infinity",
+        "org-numeric-async-zero",
+        "org-numeric-async-fraction",
+        "org-numeric-async-negative",
+        "org-numeric-async-nan",
+        "org-numeric-async-infinity",
+        "org-numeric-async-negative-infinity",
         "org-deletion-disabled",
         "org-teams",
         "org-teams-no-default",
@@ -231,23 +406,44 @@ pub(crate) async fn profiles(
         if name == "org-roles-callback" {
             config.advanced.database.default_find_many_limit = 1;
         }
-        let dynamic = name == "org-teams-dynamic" || name.starts_with("org-roles-");
+        let numeric = name.starts_with("org-numeric-");
+        let numeric_resolver = (numeric && name.contains("-async-")).then(|| {
+            Arc::new(NumericLimits {
+                value: numeric_value(name),
+                database: database.clone(),
+            }) as Arc<dyn OrganizationLimitResolver>
+        });
+        let dynamic = numeric || name == "org-teams-dynamic" || name.starts_with("org-roles-");
         let mut organization = OrganizationConfig {
             disable_organization_deletion: name == "org-deletion-disabled",
             teams: TeamsConfig {
                 enabled: true,
-                create_default_team: name != "org-teams-no-default",
+                create_default_team: !numeric && name != "org-teams-no-default",
+                maximum_teams: if numeric { numeric_value(name) } else { None },
+                maximum_members_per_team: if numeric { numeric_value(name) } else { None },
+                hooks: numeric.then(|| {
+                    Arc::new(NumericHooks(database.clone()))
+                        as Arc<dyn better_auth::plugins::organization::OrganizationTeamHooks>
+                }),
                 allow_removing_all_teams: name == "org-teams-removable",
-                limit_resolver: (name == "org-teams-limited")
-                    .then(|| Arc::new(RequestTeamLimits) as Arc<dyn OrganizationLimitResolver>),
+                limit_resolver: numeric_resolver.clone().or_else(|| {
+                    (name == "org-teams-limited")
+                        .then(|| Arc::new(RequestTeamLimits) as Arc<dyn OrganizationLimitResolver>)
+                }),
                 ..Default::default()
             },
             dynamic_access_control: DynamicAccessControlConfig {
                 enabled: dynamic,
-                maximum_roles_per_organization: (name == "org-roles-limited").then_some(1),
-                limit_resolver: (name == "org-roles-callback").then(|| {
-                    Arc::new(DatabaseRoleLimits(database.clone()))
-                        as Arc<dyn OrganizationLimitResolver>
+                maximum_roles_per_organization: if numeric {
+                    numeric_value(name)
+                } else {
+                    (name == "org-roles-limited").then_some(1.0)
+                },
+                limit_resolver: numeric_resolver.or_else(|| {
+                    (name == "org-roles-callback").then(|| {
+                        Arc::new(DatabaseRoleLimits(database.clone()))
+                            as Arc<dyn OrganizationLimitResolver>
+                    })
                 }),
             },
             access_control: (dynamic && name != "org-roles-no-ac")
@@ -308,6 +504,10 @@ struct OrganizationQuery {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum TeamOperation {
+    NumericEvents {
+        #[serde(rename = "organizationId")]
+        organization_id: String,
+    },
     OrphanOrganization {
         #[serde(rename = "organizationId")]
         organization_id: String,
@@ -462,6 +662,7 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                 };
                 let plugin = OrganizationPlugin::with_config(profile.config.clone());
                 let result = match body.operation {
+                    TeamOperation::NumericEvents {organization_id} => numeric_events().lock().map_err(|_| AuthError::internal("Numeric observations unavailable")).map(|events| json!(events.get(&organization_id).cloned().unwrap_or_default())),
                     TeamOperation::OrphanOrganization { organization_id } => {
                         async {
                             if profile.auth.store().get_organization_by_id(&organization_id)

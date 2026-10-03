@@ -70,6 +70,10 @@ pub(super) fn require_verified_invitation_email<S: better_auth_core::AuthSchema>
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Source compares stored counts as ECMAScript Numbers"
+)]
 pub(in crate::plugins) async fn invite_member_core(
     body: &InviteMemberRequest,
     user: &impl AuthUser,
@@ -224,7 +228,7 @@ pub(in crate::plugins) async fn invite_member_core(
             None => config.teams.maximum_members_per_team,
         };
         if let Some(limit) = maximum
-            && ctx.database.list_team_members(team_id).await?.len() >= limit
+            && ctx.database.list_team_members(team_id).await?.len() as f64 >= limit
         {
             return Err(super::extension_common::org_error(
                 403,

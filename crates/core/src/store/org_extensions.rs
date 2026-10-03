@@ -43,11 +43,14 @@ pub trait TeamStore: Send + Sync {
         Err(unsupported())
     }
     /// Existing membership is idempotent, including when the capacity has since been reached.
+    /// `maximum` is a raw Source Number bound to the durable seat predicate;
+    /// custom stores must not round or cap it. Integer callers migrate to
+    /// `Some(3.0)`; `None` retains unlimited admission.
     async fn add_team_member(
         &self,
         _team_id: &str,
         _user_id: &str,
-        _maximum: Option<usize>,
+        _maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         Err(unsupported())
     }

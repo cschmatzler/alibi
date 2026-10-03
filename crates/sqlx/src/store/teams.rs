@@ -50,7 +50,7 @@ where
         tx: &SqlxTransaction,
         team_id: &str,
         user_id: &str,
-        maximum: Option<usize>,
+        maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         let exec = Exec::Tx(tx);
         if super::users::find_user_by_id::<S::User>(exec, user_id, super::users::Lock::Shared)
@@ -78,13 +78,29 @@ where
         count.compare(team_member::Model::TABLE, "team_id", " = ", team_id);
         let count = u64::try_from(exec.fetch_scalar::<i64>(count).await?.unwrap_or_default())
             .unwrap_or_default();
-        if maximum
-            .map(u64::try_from)
-            .transpose()
-            .map_err(|_error| AuthError::internal("Team capacity exceeds u64"))?
-            .is_some_and(|max| count >= max)
-        {
-            return Ok(AddTeamMemberResult::LimitReached);
+        // Source only repairs a stale low durable counter before reserving a seat.
+        // Preserve high counters, and bind the raw policy to the database's `<`
+        // predicate: notably SQLite binds NaN as NULL, which cannot reserve a seat.
+        let reserved_count = i64::try_from(count)
+            .map_err(|_error| AuthError::internal("Team membership count overflow"))?
+            .max(room.member_count);
+        let mut active = room.into_active();
+        active.set("member_count", reserved_count);
+        drop(
+            model::update::<team::Model>(exec, &active)
+                .await?
+                .ok_or_else(record_not_updated)?,
+        );
+        if let Some(maximum) = maximum {
+            let mut seat = Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
+            seat.ident(team::Model::TABLE);
+            seat.push(" WHERE ");
+            seat.compare(team::Model::TABLE, "id", " = ", team_id);
+            seat.push(" AND ");
+            seat.compare(team::Model::TABLE, "member_count", " < ", maximum);
+            if exec.fetch_scalar::<i64>(seat).await?.unwrap_or_default() == 0 {
+                return Ok(AddTeamMemberResult::LimitReached);
+            }
         }
         let key = team_membership_key(team_id, user_id)?;
         let mut member = ActiveRow::new();
@@ -94,11 +110,11 @@ where
         member.set("membership_key", Some(key));
         member.set("created_at", Utc::now());
         let member = model::insert::<team_member::Model>(exec, &member).await?;
-        let mut active = room.into_active();
         active.set(
             "member_count",
-            i64::try_from(count + 1)
-                .map_err(|_error| AuthError::internal("Team membership count overflow"))?,
+            reserved_count
+                .checked_add(1)
+                .ok_or_else(|| AuthError::internal("Team membership count overflow"))?,
         );
         drop(
             model::update::<team::Model>(exec, &active)
@@ -264,7 +280,7 @@ where
         &self,
         team_id: &str,
         user_id: &str,
-        maximum: Option<usize>,
+        maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         let tx = self.pool().begin(true).await?;
         let result = self

@@ -207,8 +207,15 @@ async fn invitation_acceptance_is_atomic_for_capacity_identity_and_tenant_failur
         &[&first.id, &second.id],
     )
     .await?;
-    drop(store.add_team_member(&second.id, &blocker, Some(1)).await?);
-    let limits = vec![(first.id.clone(), Some(1)), (second.id.clone(), Some(1))];
+    drop(
+        store
+            .add_team_member(&second.id, &blocker, Some(1.0))
+            .await?,
+    );
+    let limits = vec![
+        (first.id.clone(), Some(1.0)),
+        (second.id.clone(), Some(1.0)),
+    ];
 
     assert!(
         store
@@ -535,12 +542,12 @@ async fn member_and_user_deletion_clean_team_links_and_release_capacity<B: Backe
     let second = room(&store, &second_org, "Second").await?;
     drop(
         store
-            .add_team_member(&second.id, &principal, Some(1))
+            .add_team_member(&second.id, &principal, Some(1.0))
             .await?,
     );
     drop(
         store
-            .add_team_member(&first.id, &principal, Some(1))
+            .add_team_member(&first.id, &principal, Some(1.0))
             .await?,
     );
     // Joined user-team lists follow membership insertion, even when team
@@ -571,7 +578,7 @@ async fn member_and_user_deletion_clean_team_links_and_release_capacity<B: Backe
     assert_eq!(stored_count(&store, &second.id).await?, 1);
     assert!(matches!(
         store
-            .add_team_member(&first.id, &replacement, Some(1))
+            .add_team_member(&first.id, &replacement, Some(1.0))
             .await?,
         AddTeamMemberResult::Added(_)
     ));
@@ -696,7 +703,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
         let barrier = Arc::clone(&barrier);
         drop(tasks.spawn(async move {
             _ = barrier.wait().await;
-            store.add_team_member(&team_id, &user_id, Some(2)).await
+            store.add_team_member(&team_id, &user_id, Some(1.5)).await
         }));
     }
     let mut admitted = Vec::new();
@@ -722,7 +729,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
     );
     for membership in &admitted {
         let AddTeamMemberResult::Existing(existing) = primary
-            .add_team_member(&team.id, &membership.user_id, Some(2))
+            .add_team_member(&team.id, &membership.user_id, Some(1.5))
             .await?
         else {
             return Err("Repeated admission created a second membership".into());
@@ -743,7 +750,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
     assert_eq!(stored_count(primary, &team.id).await?, 1);
     assert!(matches!(
         primary
-            .add_team_member(&team.id, &first.user_id, Some(2))
+            .add_team_member(&team.id, &first.user_id, Some(1.5))
             .await?,
         AddTeamMemberResult::Added(_)
     ));
@@ -774,7 +781,7 @@ async fn independent_stores_enforce_team_capacity_and_one_invitation_acceptance_
                     &invite_id,
                     &user_id,
                     &token,
-                    &[(team_id, Some(1))],
+                    &[(team_id, Some(1.0))],
                     None,
                 )
                 .await
