@@ -219,6 +219,9 @@ for (const mode of [
   "packed-uv-absent-backed",
   "eddsa-none-uv-absent",
   "eddsa-packed-uv-absent",
+  "packed-binding-present",
+  "packed-binding-supported",
+  "packed-binding-not-supported",
 ] as const) {
   compatScenario(
     `passkey ${mode} registration verifies genuine credential before callback session and signed authentication`,
@@ -231,6 +234,9 @@ for (const mode of [
       const response = {
         ...device.register(options.data, ctx.baseURL, {
           userVerified: false,
+          ...(mode.startsWith("packed-binding-")
+            ? { tokenBinding: { status: mode.slice("packed-binding-".length) } }
+            : {}),
           attestation: mode.includes("packed") ? "packed" : "none",
           backupEligible: backed,
           backedUp: backed,
@@ -458,6 +464,8 @@ compatScenario(
       "origin-case",
       "challenge",
       "malformed-key",
+      "token-binding-status",
+      "token-binding-auth-spelling",
       "foreign-owner",
       "eddsa-signature",
       "eddsa-signature-length",
@@ -466,6 +474,11 @@ compatScenario(
       const options = await fixture.options();
       const flags = {
         attestation: "packed" as const,
+        ...(mode === "token-binding-status"
+          ? { tokenBinding: { status: "invalid" } }
+          : mode === "token-binding-auth-spelling"
+            ? { tokenBinding: { status: "notSupported" } }
+            : {}),
         ...(mode === "signature" || mode === "eddsa-signature"
           ? { badSignature: true }
           : mode === "signature-der" || mode === "eddsa-signature-length"

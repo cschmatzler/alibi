@@ -183,6 +183,37 @@ pub(super) fn build_verification_core(
     ))
 }
 
+// The pinned verifier uses different legacy spellings in the two ceremonies.
+// Validate the original client data without altering the bytes covered by the signature.
+fn validate_token_binding(
+    client_data: &better_auth_core::utils::json::JsValue,
+    unsupported_status: &str,
+) -> Result<(), WebauthnError> {
+    use better_auth_core::utils::json::JsValue;
+
+    let Some(binding) = client_data.get("tokenBinding") else {
+        return Ok(());
+    };
+    let truthy = match binding {
+        JsValue::Null => false,
+        JsValue::Bool(value) => *value,
+        JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
+        JsValue::String(value) => !value.is_empty(),
+        JsValue::Array(_) | JsValue::Object(_) => true,
+    };
+    if truthy
+        && !binding
+            .get("status")
+            .and_then(JsValue::as_str)
+            .is_some_and(|status| {
+                matches!(status, "present" | "supported") || status == unsupported_status
+            })
+    {
+        return Err(WebauthnError::ParseNOMFailure);
+    }
+    Ok(())
+}
+
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
@@ -202,6 +233,7 @@ pub(super) fn finish_core_registration(
     {
         return Err(WebauthnError::InvalidRPOrigin);
     }
+    validate_token_binding(&client_data, "not-supported")?;
     // Source's packed self-attestation verifier accepts only Ed25519 OKP.
     // None attestation still permits a genuine Ed448 credential to enroll.
     let attestation: serde_cbor_2::Value =
@@ -251,6 +283,7 @@ pub(super) fn finish_core_authentication(
     {
         return Err(WebauthnError::InvalidRPOrigin);
     }
+    validate_token_binding(&client_data, "notSupported")?;
     let data = AuthenticatorData::<Authentication>::try_from(
         authentication.response.authenticator_data.as_ref(),
     )?;

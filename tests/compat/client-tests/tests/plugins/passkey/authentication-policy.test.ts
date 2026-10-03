@@ -125,7 +125,14 @@ function submitted(fixture: Awaited<ReturnType<typeof setup>>) {
   }));
 }
 
-for (const mode of ["uv-absent", "backup-upgrade-backed", "backup-downgrade"] as const) {
+for (const mode of [
+  "uv-absent",
+  "backup-upgrade-backed",
+  "backup-downgrade",
+  "binding-present",
+  "binding-supported",
+  "binding-notSupported",
+] as const) {
   compatScenario(
     `passkey signed ${mode} authenticates original owner without historical verifier restrictions`,
     async (ctx) => {
@@ -149,7 +156,12 @@ for (const mode of ["uv-absent", "backup-upgrade-backed", "backup-downgrade"] as
             : mode === "backup-upgrade-backed"
               ? { backupEligible: true, backedUp: true }
               : {};
-        const proof = fixture.device.authenticate(challenge.data, ctx.baseURL, flags);
+        const proof = fixture.device.authenticate(challenge.data, ctx.baseURL, {
+          ...flags,
+          ...(mode.startsWith("binding-")
+            ? { tokenBinding: { status: mode.slice("binding-".length) } }
+            : {}),
+        });
         const result = await fixture.foreign.$fetch("/passkey/verify-authentication", {
           method: "POST",
           body: { response: proof },
@@ -239,6 +251,8 @@ compatScenario(
       "origin-case",
       "challenge",
       "signature",
+      "token-binding-status",
+      "token-binding-registration-spelling",
     ] as const) {
       const challenge = await fixture.owner.$fetch("/passkey/generate-authenticate-options", {
         method: "GET",
@@ -266,7 +280,14 @@ compatScenario(
           ? { ...(challenge.data as object), challenge: "wrong-signed-challenge" }
           : challenge.data,
         origin,
-        flags,
+        {
+          ...flags,
+          ...(mode === "token-binding-status"
+            ? { tokenBinding: { status: "invalid" } }
+            : mode === "token-binding-registration-spelling"
+              ? { tokenBinding: { status: "not-supported" } }
+              : {}),
+        },
       );
 
       if (mode === "signature") {
