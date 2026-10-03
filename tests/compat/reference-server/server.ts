@@ -1038,7 +1038,31 @@ const ottProfiles = new Map(
   }),
 );
 const deviceProfiles = new Map(
-  ["device-custom", "device-configured", "device-unicode", "device-too-long"].map((name) => {
+  [
+    "device-custom",
+    "device-configured",
+    "device-unicode",
+    "device-too-long",
+    "device-empty",
+    "device-fractional",
+    "device-negative",
+    "device-negative-interval",
+    "device-generator-error",
+    "device-user-generator-error",
+    "device-validation-error",
+    "device-request-error",
+    "device-generator-throw",
+    "device-user-generator-throw",
+    "device-validation-throw",
+    "device-request-throw",
+  ].map((name) => {
+    const failCallback = () => {
+      if (name.endsWith("-throw")) throw new Error("Private device callback failure");
+      throw new APIError("BAD_REQUEST", {
+        code: "DEVICE_CALLBACK_FAILED",
+        message: "Configured device callback failed",
+      });
+    };
     const options = {
       ...authOptions,
       basePath: `/__test/profiles/${name}/api/auth`,
@@ -1064,6 +1088,34 @@ const deviceProfiles = new Map(
                 generateDeviceCode: async () => "😀".repeat(191),
                 generateUserCode: () => "boundary-user",
               }
+            : {}),
+          ...(name.endsWith("-error") || name.endsWith("-throw")
+            ? {
+                generateDeviceCode: () => `${name}-code`,
+                generateUserCode: () => `${name}-user`,
+                ...(name.startsWith("device-generator-")
+                  ? { generateDeviceCode: async () => failCallback() }
+                  : {}),
+                ...(name.startsWith("device-user-generator-")
+                  ? { generateUserCode: async () => failCallback() }
+                  : {}),
+                ...(name.startsWith("device-validation-")
+                  ? { validateClient: async () => failCallback() }
+                  : {}),
+                ...(name.startsWith("device-request-")
+                  ? { onDeviceAuthRequest: async () => failCallback() }
+                  : {}),
+              }
+            : {}),
+          ...(name === "device-empty"
+            ? { generateDeviceCode: () => "", generateUserCode: async () => "" }
+            : {}),
+          ...(name === "device-fractional"
+            ? { expiresIn: "1.75s", interval: "0.25s", verificationUri: "/verify-relative" }
+            : {}),
+          ...(name === "device-negative-interval" ? { expiresIn: "120s", interval: "-0.25s" } : {}),
+          ...(name === "device-negative"
+            ? { expiresIn: "-1.25s", interval: "-0.25s", verificationUri: "" }
             : {}),
           ...(name === "device-too-long"
             ? { generateDeviceCode: async () => "😀".repeat(192) }
@@ -1961,7 +2013,7 @@ const server = Bun.serve({
 
       if (url.pathname === "/__test/device-state" && request.method === "GET") {
         const deviceCode = url.searchParams.get("deviceCode");
-        if (!deviceCode) {
+        if (deviceCode === null) {
           return jsonResponse({ message: "deviceCode is required" }, { status: 400 });
         }
         return jsonResponse(

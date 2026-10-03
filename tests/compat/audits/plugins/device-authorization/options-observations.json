@@ -1,0 +1,62 @@
+{
+  "reference": "better-auth@1.7.6",
+  "entryPoint": "better-auth/plugins/device-authorization.deviceAuthorization",
+  "observations": [
+    {
+      "key": "expiresIn",
+      "value": 0,
+      "accepted": false,
+      "message": "[\n  {\n    \"code\": \"custom\",\n    \"path\": [\n      \"expiresIn\"\n    ],\n    \"message\": \"Invalid time string format. Use formats like '30m', '5s', '1h', etc.\"\n  }\n]"
+    },
+    {
+      "key": "expiresIn",
+      "value": -1,
+      "accepted": false,
+      "message": "[\n  {\n    \"code\": \"custom\",\n    \"path\": [\n      \"expiresIn\"\n    ],\n    \"message\": \"Invalid time string format. Use formats like '30m', '5s', '1h', etc.\"\n  }\n]"
+    },
+    {
+      "key": "expiresIn",
+      "value": 1.75,
+      "accepted": false,
+      "message": "[\n  {\n    \"code\": \"custom\",\n    \"path\": [\n      \"expiresIn\"\n    ],\n    \"message\": \"Invalid time string format. Use formats like '30m', '5s', '1h', etc.\"\n  }\n]"
+    },
+    {
+      "key": "expiresIn",
+      "value": "1.75s",
+      "accepted": true
+    },
+    {
+      "key": "expiresIn",
+      "value": "-0.25s",
+      "accepted": true
+    },
+    {
+      "key": "interval",
+      "value": 0,
+      "accepted": false,
+      "message": "[\n  {\n    \"code\": \"custom\",\n    \"path\": [\n      \"interval\"\n    ],\n    \"message\": \"Invalid time string format. Use formats like '30m', '5s', '1h', etc.\"\n  }\n]"
+    },
+    {
+      "key": "interval",
+      "value": -1,
+      "accepted": false,
+      "message": "[\n  {\n    \"code\": \"custom\",\n    \"path\": [\n      \"interval\"\n    ],\n    \"message\": \"Invalid time string format. Use formats like '30m', '5s', '1h', etc.\"\n  }\n]"
+    },
+    {
+      "key": "interval",
+      "value": 1.75,
+      "accepted": false,
+      "message": "[\n  {\n    \"code\": \"custom\",\n    \"path\": [\n      \"interval\"\n    ],\n    \"message\": \"Invalid time string format. Use formats like '30m', '5s', '1h', etc.\"\n  }\n]"
+    },
+    {
+      "key": "interval",
+      "value": "1.75s",
+      "accepted": true
+    },
+    {
+      "key": "interval",
+      "value": "-0.25s",
+      "accepted": true
+    }
+  ]
+}
