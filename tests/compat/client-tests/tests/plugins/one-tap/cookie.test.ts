@@ -1,8 +1,11 @@
 import { expect } from "bun:test";
+import { hkdfSync } from "node:crypto";
 
 import { makeSignature, symmetricDecodeJWT, symmetricEncodeJWT } from "better-auth/crypto";
+import { EncryptJWT } from "jose";
 
 import { credential } from "../../../support/id-token";
+import { type FixtureProfile } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
 import { state, successful } from "./helpers";
 
@@ -11,6 +14,7 @@ const secret = "compat-test-only-key-not-real-minimum-32chars";
 compatScenario(
   "One Tap encrypted provider account cookies authenticate token reads and reject altered credentials",
   async (ctx) => {
+    const accessToken = "private-provider-access".repeat(350);
     const baseline = await state(ctx);
     const email = ctx.uniqueEmail("encrypted-account-cookie");
     const sub = ctx.uniqueToken("encrypted-account-cookie");
@@ -41,7 +45,7 @@ compatScenario(
       email,
       providerId: "google",
       accountId: sub,
-      accessToken: "private-provider-access",
+      accessToken,
       refreshToken: "private-provider-refresh",
       accessTokenExpiresAt: "2099-01-01T00:00:00Z",
       refreshTokenExpiresAt: "2099-01-01T00:00:00Z",
@@ -59,7 +63,7 @@ compatScenario(
       userId: created.response.data!.user.id,
       providerId: "google",
       accountId: sub,
-      accessToken: "private-provider-access",
+      accessToken,
       refreshToken: "private-provider-refresh",
       idToken: token,
       scope: "calendar,drive",
@@ -72,7 +76,7 @@ compatScenario(
       useAccountCookie: true,
     });
     expect(accessed.error).toBeNull();
-    expect(accessed.data?.accessToken).toBe("private-provider-access");
+    expect(accessed.data?.accessToken).toBe(accessToken);
 
     const foreign = await ctx.actor("foreign-cookie", profile).client.signUp.email({
       email: ctx.uniqueEmail("foreign-cookie-owner"),
@@ -87,21 +91,64 @@ compatScenario(
     const signedSession = encodeURIComponent(
       session + "." + (await makeSignature(session, secret)),
     );
-    const request = async (account: string, sessionCookie = signedSession) =>
+    const request = async (account: string, sessionCookie = signedSession, chunked = false) =>
       actor.fetch(`${ctx.baseURL}/__test/profiles/${profile}/api/auth/get-access-token`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          cookie: `better-auth.session_token=${sessionCookie}; better-auth.account_data=${encodeURIComponent(account)}`,
+          cookie:
+            `better-auth.session_token=${sessionCookie}; ` +
+            (chunked
+              ? account
+                  .split(/(.{0,1700})/)
+                  .filter(Boolean)
+                  .map(
+                    (part, index) =>
+                      `better-auth.account_data.${index}=${encodeURIComponent(part)}`,
+                  )
+                  .reverse()
+                  .join("; ")
+              : `better-auth.account_data=${encodeURIComponent(account)}`),
         },
         body: JSON.stringify({ useAccountCookie: true }),
       });
+    const key = new Uint8Array(
+      hkdfSync(
+        "sha256",
+        secret,
+        "better-auth-account",
+        "BetterAuth.js Generated Encryption Key",
+        64,
+      ),
+    );
+    const compressed = await new EncryptJWT(cookie.payload)
+      .setProtectedHeader({ ...cookie.header, zip: "DEF" } as {
+        alg: string;
+        enc: string;
+        zip: string;
+      })
+      .encrypt(key);
+    expect(
+      await symmetricDecodeJWT<Record<string, unknown>>(compressed, secret, "better-auth-account"),
+    ).toEqual(cookie.payload);
+    const compressedRead = await request(compressed);
+    expect(compressedRead.status).toBe(200);
+    expect((await compressedRead.json()).accessToken).toBe(accessToken);
+    expect(signedIn.accountChunkCount).toBeGreaterThan(1);
+    const chunkedRead = await request(cookie.token, signedSession, true);
+    expect(chunkedRead.status).toBe(200);
+    expect((await chunkedRead.json()).accessToken).toBe(accessToken);
+    const tooLarge = await new EncryptJWT({ ...cookie.payload, oversized: "x".repeat(250_000) })
+      .setProtectedHeader({ alg: "dir", enc: "A256CBC-HS512", zip: "DEF" })
+      .encrypt(key);
+    expect(await symmetricDecodeJWT(tooLarge, secret, "better-auth-account")).toBeNull();
+    expect((await request(tooLarge)).status).toBe(400);
     const leeway = await symmetricEncodeJWT(cookie.payload, secret, "better-auth-account", -10);
     const accepted = await request(leeway);
     expect(accepted.status).toBe(200);
 
     const leewayBody = await accepted.json();
-    expect(leewayBody.accessToken).toBe("private-provider-access");
+    expect(leewayBody.accessToken).toBe(accessToken);
 
     const parts = cookie.token.split(".");
     const ciphertext = Buffer.from(parts[3]!, "base64url");
@@ -197,6 +244,8 @@ compatScenario(
       malformedReads.push({ status: response.status, body });
     }
 
+    expect((await request(compressed, foreignCookie, true)).status).toBe(400);
+    expect((await request(cookie.token, foreignCookie, true)).status).toBe(400);
     const foreignRead = await request(cookie.token, foreignCookie);
     expect(foreignRead.status).toBe(400);
 
@@ -206,13 +255,64 @@ compatScenario(
     const persisted = await state(ctx);
     expect(persisted).toEqual(initial);
 
+    await ctx.seedOAuthAccount({
+      email,
+      providerId: "google",
+      accountId: sub,
+      accessToken: "small-reissued-grant",
+      refreshToken: "private-provider-refresh",
+      accessTokenExpiresAt: "2099-01-01T00:00:00Z",
+      refreshTokenExpiresAt: "2099-01-01T00:00:00Z",
+      scope: "calendar,drive",
+      idToken: token,
+    });
+    const shrunk = await successful(ctx, token, profile, "cookie-owner");
+    expect(shrunk.accountChunkCount).toBe(0);
+    expect(shrunk.accountCookie!.payload.accessToken).toBe("small-reissued-grant");
+    // Published cookies retain the original grant until their expiry even after
+    // the physical account is reissued. A live owner's session is still required.
+    expect((await request(cookie.token)).status).toBe(200);
+    const reissuedState = await state(ctx);
+    const revokedResponse = await actor.fetch(
+      `${ctx.baseURL}/__test/profiles/${profile}/api/auth/sign-out`,
+      {
+        method: "POST",
+        headers: {
+          cookie:
+            `better-auth.session_token=${signedSession}; ` +
+            cookie.token
+              .match(/.{1,1700}/g)!
+              .map((part, index) => `better-auth.account_data.${index}=${part}`)
+              .join("; "),
+        },
+      },
+    );
+    expect(revokedResponse.status).toBe(200);
+    const revoked = await revokedResponse.json();
+    expect((await request(cookie.token, signedSession, true)).status).toBe(401);
+    const revokedState = await state(ctx);
+    expect(revokedState.sessions.some((row) => row.token === session)).toBe(false);
+    expect(revokedState.accounts).toEqual(reissuedState.accounts);
     return {
+      shrunk,
+      revoked,
+      revokedState: {
+        ...revokedState,
+        jwksFetches: revokedState.jwksFetches - baseline.jwksFetches,
+      },
       local,
       verified,
       created,
       signedIn,
       accessed,
       leewayBody,
+      compressed: {
+        accountCookie: {
+          token: compressed,
+          header: { ...cookie.header, zip: "DEF" },
+          payload: cookie.payload,
+        },
+      },
       rejected,
       foreignBody,
       aliasReads,
@@ -225,4 +325,90 @@ compatScenario(
     };
   },
   ["POST /one-tap/callback", "POST /get-access-token"],
+);
+
+compatScenario(
+  "Account cookie lifetimes retain fractional claims and account-specific attributes",
+  async (ctx) => {
+    const observations = [];
+    for (const [suffix, lifetime] of [
+      ["fractional", 1.75],
+      ["zero", 300],
+      ["negative", -4.25],
+      ["nan", 300],
+      ["override", 7],
+    ] as const) {
+      const profile = `one-tap-account-cookie-${suffix}` as FixtureProfile;
+      const token = await credential({
+        sub: ctx.uniqueToken(suffix),
+        email: ctx.uniqueEmail(suffix),
+        email_verified: true,
+      });
+      const actor = ctx.actor(suffix, profile);
+      const response = await actor.fetch(
+        `${ctx.baseURL}/__test/profiles/${profile}/api/auth/one-tap/callback`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ idToken: token }),
+        },
+      );
+      expect(response.status).toBe(200);
+      const raw = response.headers.getSetCookie();
+      const account = raw.find((value) => value.startsWith("better-auth.account_data="))!;
+      expect(account).toBeString();
+      const compact = decodeURIComponent(
+        account.split(";")[0]!.slice("better-auth.account_data=".length),
+      );
+      const payload = await symmetricDecodeJWT<Record<string, unknown>>(
+        compact,
+        secret,
+        "better-auth-account",
+      );
+      expect(payload).not.toBeNull();
+      expect(payload!.exp).toBe(Number(payload!.iat) + lifetime);
+      expect(account.includes("Max-Age=")).toBe(lifetime >= 0);
+      if (lifetime >= 0) expect(account).toContain(`; Max-Age=${Math.floor(lifetime)};`);
+      if (suffix === "override") {
+        expect(account).not.toContain("HttpOnly");
+        expect(account).toContain("SameSite=Strict");
+      }
+      if (process.env.COMPAT_OBSERVATIONS_DIR)
+        await Bun.write(
+          `${process.env.COMPAT_OBSERVATIONS_DIR}/ttl-raw-${new URL(ctx.baseURL).port}-${suffix}.json`,
+          JSON.stringify({ raw, compact, payload }, null, 2),
+        );
+      observations.push({
+        suffix,
+        lifetime,
+        accountCookie: {
+          token: compact,
+          header: JSON.parse(Buffer.from(compact.split(".")[0]!, "base64url").toString()),
+          payload,
+        },
+        response: await response.json(),
+      });
+    }
+    const profile = "one-tap-account-cookie-infinity" as const;
+    const actor = ctx.actor("infinity", profile);
+    const token = await credential({
+      sub: ctx.uniqueToken("infinity"),
+      email: ctx.uniqueEmail("infinity"),
+      email_verified: true,
+    });
+    const response = await actor.fetch(
+      `${ctx.baseURL}/__test/profiles/${profile}/api/auth/one-tap/callback`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ idToken: token }),
+      },
+    );
+    expect(response.status).toBe(401);
+    expect(
+      response.headers.getSetCookie().some((raw) => raw.startsWith("better-auth.account_data=")),
+    ).toBe(false);
+    return { observations, nonfinite: { status: response.status, body: await response.text() } };
+  },
+  ["POST /one-tap/callback"],
 );

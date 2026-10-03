@@ -1654,6 +1654,23 @@ async fn process_oauth_sign_in_with_output(
                 }
             })?;
 
+        if ctx.config.account.store_account_cookie {
+            let age = account_cookie_max_age(&ctx.config);
+            // Published registration commits the identity first, then catches
+            // account-cookie configuration failures before issuing a session.
+            if !age.is_finite()
+                || better_auth_core::utils::cookie_utils::create_account_cookie_header(
+                    &account_cookie_name(&ctx.config),
+                    &account_cookie_name(&ctx.config),
+                    "",
+                    age,
+                    &ctx.config,
+                )
+                .is_err()
+            {
+                return Err(OAuthSignInError::Generic("unable to create user".into()));
+            }
+        }
         let issued = finish_oauth_session(&persisted_user, true, policy, meta, ctx).await?;
         let account_cookie = ctx
             .config

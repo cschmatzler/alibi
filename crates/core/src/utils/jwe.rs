@@ -20,7 +20,6 @@ use hmac::{Hmac, Mac};
 use rand::{RngCore, rngs::OsRng};
 use serde_json::json;
 use sha2::{Digest, Sha256, Sha512};
-use std::io::Read;
 
 const INFO: &[u8] = b"BetterAuth.js Generated Encryption Key";
 
@@ -211,12 +210,11 @@ pub fn decode(secret: &str, salt: &str, token: &str) -> AuthResult<serde_json::V
     ciphertext.truncate(ciphertext.len() - padding);
     if header_data.get("zip").is_some() {
         // JOSE 6.2.12 authenticates and decrypts before bounded raw DEFLATE.
-        let mut inflated = Vec::new();
-        let _read = flate2::read::DeflateDecoder::new(ciphertext.as_slice())
-            .take(250_001)
-            .read_to_end(&mut inflated)
+        let mut inflated = Vec::with_capacity(250_001);
+        let mut inflater = flate2::Decompress::new(false);
+        let status = inflater.decompress_vec(&ciphertext, &mut inflated, flate2::FlushDecompress::Finish)
             .map_err(|_error| invalid())?;
-        if inflated.len() > 250_000 {
+        if status != flate2::Status::StreamEnd || inflated.len() > 250_000 {
             return Err(invalid());
         }
         ciphertext = inflated;

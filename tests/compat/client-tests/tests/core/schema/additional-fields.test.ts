@@ -2,7 +2,9 @@ import { expect } from "bun:test";
 import { createHmac } from "node:crypto";
 
 import { getCookieCache } from "better-auth/cookies";
+import { symmetricDecodeJWT } from "better-auth/crypto";
 import { verifyPassword } from "better-auth/crypto";
+import { decodeProtectedHeader } from "jose";
 import { z } from "zod";
 
 import { authProfilePath } from "../../../support/profiles";
@@ -1424,6 +1426,27 @@ compatScenario(
     expect(account).toMatchObject({ accountId: original.account_id, providerId: "atlassian" });
     expect(account.userId).not.toBe("mapped-public-id-184");
 
+    const rawAccountCookies = response.headers
+      .getSetCookie()
+      .filter((raw) => raw.startsWith("better-auth.account_data="));
+    expect(rawAccountCookies).toHaveLength(1);
+    const accountToken = decodeURIComponent(
+      rawAccountCookies[0]!.split(";")[0]!.slice("better-auth.account_data=".length),
+    );
+    const payload = await symmetricDecodeJWT<Record<string, unknown>>(
+      accountToken,
+      "compat-test-only-key-not-real-minimum-32chars",
+      "better-auth-account",
+    );
+    expect(payload).not.toBeNull();
+    expect(payload!.label).toEqual({ stored: "account-initial" });
+    expect(payload!.hidden).toBe("ACCOUNT-SECRET");
+    expect(Object.hasOwn(payload!, "omitted")).toBe(false);
+    const accountCookie = {
+      token: accountToken,
+      header: decodeProtectedHeader(accountToken),
+      payload,
+    };
     const info = await owner.client.$fetch("/account-info", {
       method: "GET",
       query: { accountId: account.id },
@@ -1590,6 +1613,7 @@ compatScenario(
     expect(exchanges.map((row) => row.path)).toEqual(["/token", "/me", "/me", "/token", "/me"]);
 
     return {
+      accountCookie,
       foreignSignup: ctx.snapshot(foreignSignup),
       before: await observedState(before.body),
       start: ctx.snapshot(start),

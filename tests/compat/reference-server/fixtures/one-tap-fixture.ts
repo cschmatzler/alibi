@@ -30,6 +30,12 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
     "one-tap-required-no-mail",
     "one-tap-no-override",
     "one-tap-account-cookie",
+    "one-tap-account-cookie-fractional",
+    "one-tap-account-cookie-zero",
+    "one-tap-account-cookie-negative",
+    "one-tap-account-cookie-nan",
+    "one-tap-account-cookie-infinity",
+    "one-tap-account-cookie-override",
     "one-tap-update-link",
     "one-tap-encrypted",
     "one-tap-retain-account",
@@ -52,12 +58,43 @@ export function createOneTapProfiles(options: BetterAuthOptions) {
       betterAuth({
         ...options,
         basePath: `/__test/profiles/${name}/api/auth`,
+        ...(name.startsWith("one-tap-account-cookie-")
+          ? {
+              session: {
+                ...options.session,
+                cookieCache: {
+                  enabled: false,
+                  maxAge: (
+                    {
+                      "one-tap-account-cookie-fractional": 1.75,
+                      "one-tap-account-cookie-zero": 0,
+                      "one-tap-account-cookie-negative": -4.25,
+                      "one-tap-account-cookie-nan": NaN,
+                      "one-tap-account-cookie-infinity": Infinity,
+                      "one-tap-account-cookie-override": 1.75,
+                    } as Record<string, number>
+                  )[name],
+                },
+              },
+            }
+          : {}),
+        ...(name === "one-tap-account-cookie-override"
+          ? {
+              advanced: {
+                ...options.advanced,
+                cookies: {
+                  ...options.advanced?.cookies,
+                  account_data: { attributes: { maxAge: 7, httpOnly: false, sameSite: "strict" } },
+                },
+              },
+            }
+          : {}),
         socialProviders:
           name === "one-tap-plugin-only" || name === "one-tap-missing" ? {} : { google },
         account: {
           ...options.account,
           storeAccountCookie:
-            name === "one-tap-account-cookie" || name === "one-tap-retain-account",
+            name.startsWith("one-tap-account-cookie") || name === "one-tap-retain-account",
           encryptOAuthTokens: name === "one-tap-encrypted",
           updateAccountOnSignIn: name !== "one-tap-retain-account",
           accountLinking: {

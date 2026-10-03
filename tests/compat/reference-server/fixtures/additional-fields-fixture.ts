@@ -421,6 +421,7 @@ export async function additionalFieldsFixture(base: BetterAuthOptions) {
       account: {
         ...base.account,
         modelName: "app_account",
+        storeAccountCookie: mode === "provider",
         additionalFields: {
           ...fields("account"),
           password: { type: "string", required: false, returned: true },

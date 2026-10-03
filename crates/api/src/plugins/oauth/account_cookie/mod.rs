@@ -19,7 +19,12 @@ pub(super) fn encode(
 pub(super) fn decode(secret: &str, token: &str) -> AuthResult<AccountCookiePayload> {
     let payload = jwe::decode(secret, "better-auth-account", token)
         .map_err(|_error| AuthError::bad_request("Account not found"))?;
-    serde_json::from_value(payload).map_err(|_error| AuthError::bad_request("Account not found"))
+    let snapshot = payload.as_object().cloned();
+    let mut account: AccountCookiePayload = serde_json::from_value(payload)
+        .map_err(|_error| AuthError::bad_request("Account not found"))?;
+    account.original = serde_json::to_value(&account)?.as_object().cloned();
+    account.snapshot = snapshot;
+    Ok(account)
 }
 
 // LCOV_EXCL_START
