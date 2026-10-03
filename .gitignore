@@ -24,3 +24,15 @@ AGENTS.md
 /coverage/
 /tests/compat/client-tests/artifacts/
 /tests/compat/.cache/
+
+# Documentation build output
+/docs/.astro/
+/docs/dist/
+
+# Deployment state and plaintext environment overrides
+/.alchemy/
+/.env
+/.env.local
+/.env.*.local
+/secrets.*.json
+!/secrets.*.sops.json

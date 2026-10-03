@@ -9,6 +9,7 @@
 
   packages = [
     pkgs.bun
+    pkgs.sops
     pkgs.pkg-config
     pkgs.openssl
     pkgs.cargo-llvm-cov
