@@ -35,7 +35,9 @@ pub mod multi_session;
 
 pub mod oauth;
 
+pub mod oauth_popup;
 pub mod oauth_proxy;
+pub use oauth_popup::OAuthPopupPlugin;
 
 pub mod one_tap;
 

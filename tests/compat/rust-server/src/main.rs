@@ -883,6 +883,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         admin_banned_message_fixture::router(&config, database.clone()).await?;
     let admin_permission_router =
         admin_permission_fixture::router(&config, database.clone()).await?;
+    let oauth_popup_router = fixtures::oauth_popup_fixture::router(&config).await?;
     let (oauth_proxy_router, oauth_proxy_reset) = oauth_proxy_fixture::router(&config).await?;
     let (cookie_proxy_router, cookie_proxy_reset) =
         oauth_proxy_fixture::cookie_router(&config).await?;
@@ -2129,6 +2130,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(social_provider_router)
         .merge(oauth_proxy_router)
         .merge(cookie_proxy_router)
+        .merge(oauth_popup_router)
         .merge(managed_proxy_router)
         .merge(anonymous_router)
         .merge(membership_router)

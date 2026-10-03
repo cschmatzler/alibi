@@ -60,6 +60,7 @@ import { microsoftProviderFixture } from "./fixtures/microsoft-provider-fixture"
 import { createMultipleSessionFixture } from "./fixtures/multiple-session-fixture";
 import { naverProviderFixture } from "./fixtures/naver-provider-fixture";
 import { notionProviderFixture } from "./fixtures/notion-provider-fixture";
+import { oauthPopupFixture } from "./fixtures/oauth-popup-fixture";
 import { oauthProxyFixture } from "./fixtures/oauth-proxy-fixture";
 import { createOneTapProfiles, googleOneTapJwks, oneTapState } from "./fixtures/one-tap-fixture";
 import { openApiProfiles } from "./fixtures/open-api-fixture";
@@ -655,6 +656,7 @@ const kickFixture = kickProviderFixture(authOptions);
 const atlassianFixture = atlassianProviderFixture(authOptions);
 const appleFixture = appleProviderFixture(authOptions);
 const socialProvidersFixture = socialProviderFixture(authOptions);
+const oauthPopupProfiles = await oauthPopupFixture(authOptions);
 const oauthProxyProfiles = await oauthProxyFixture(authOptions);
 const cookieProxyProfiles = await oauthProxyFixture(authOptions, false, true);
 const managedProxyProfiles = await oauthProxyFixture(authOptions, true);
@@ -1896,6 +1898,8 @@ const server = Bun.serve({
       if (anonymousControl) {
         return anonymousControl;
       }
+      const popupControl = await oauthPopupProfiles.handle(request);
+      if (popupControl) return popupControl;
       const proxyControl = await oauthProxyProfiles.handle(request);
       if (proxyControl) {
         return proxyControl;

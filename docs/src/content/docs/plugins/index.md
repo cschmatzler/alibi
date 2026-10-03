@@ -23,6 +23,7 @@ Choose a plugin below for its schema requirements, complete builder example, and
 | [Last login method](/plugins/last-login-method/) | Remember which authentication method a visitor last used. |
 | [Magic link](/plugins/magic-link/) | Sign in through a single-use link delivered to an email address. |
 | [Multi-session](/plugins/multi-session/) | Keep multiple signed-in identities on one browser or device. |
+| [OAuth popup](/plugins/oauth-popup/) | Complete popup OAuth sign-in for trusted app origins. |
 | [OAuth proxy](/plugins/oauth-proxy/) | Proxy OAuth callbacks for environments with a separate production auth origin. |
 | [One Tap](/plugins/one-tap/) | Verify Google One Tap credentials on the Rust server. |
 | [One-time token](/plugins/one-time-token/) | Exchange an existing session through a short-lived, single-use credential. |

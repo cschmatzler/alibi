@@ -1,0 +1,1489 @@
+[
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/oauth-popup/start?provider=gitlab&popupOrigin=https%3A%2F%2Fforeign.invalid&popupNonce=nonce-132&callbackURL=%2Ffinished",
+    "status": 403,
+    "headers": {
+      "content-type": "application/json",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "52"
+    },
+    "body": "{\"message\":\"Invalid origin\",\"code\":\"INVALID_ORIGIN\"}"
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [],
+      "receipts": []
+    }
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/oauth-popup/start?provider=gitlab&popupOrigin=http%3A%2F%2Fapp.fixture.test&popupNonce=%3C%2Fscript%3E%3Cscript%3Ewindow.pwned%3Dtrue%3C%2Fscript%3E%E2%80%A8%E2%80%A9&callbackURL=https%3A%2F%2Fforeign.invalid%2F%3C%2Fscript%3E%3Cscript%3Ewindow.pwned%3Dtrue%3C%2Fscript%3E%E2%80%A8%E2%80%A9",
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; script-src 'sha256-tIo2K8VBC9SnhvdZ+9GsGkQoZm+jm/JcxL+d+i8b8KQ='; base-uri 'none'",
+      "cache-control": "no-store",
+      "pragma": "no-cache",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "1059"
+    },
+    "body": "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Completing sign-in</title></head>\n<body>\n<script type=\"application/json\" id=\"better-auth-oauth-popup\">{\"type\":\"better-auth:oauth-popup\",\"targetOrigin\":\"http://app.fixture.test\",\"nonce\":\"\\u003c/script>\\u003cscript>window.pwned=true\\u003c/script>\\u2028\\u2029\",\"error\":{\"code\":\"invalid_callback_url\",\"description\":\"Untrusted URL: https://foreign.invalid/\\u003c/script>\\u003cscript>window.pwned=true\\u003c/script>\\u2028\\u2029\"}}</script>\n<script>(function () {\n\tvar el = document.getElementById(\"better-auth-oauth-popup\");\n\tif (!el) return;\n\tvar payload;\n\ttry {\n\t\tpayload = JSON.parse(el.textContent || \"\");\n\t} catch (e) {\n\t\treturn;\n\t}\n\tvar target = window.opener || window.parent;\n\tif (target && target !== window) {\n\t\ttry {\n\t\t\ttarget.postMessage(\n\t\t\t\t{\n\t\t\t\t\ttype: payload.type,\n\t\t\t\t\tnonce: payload.nonce,\n\t\t\t\t\ttoken: payload.token,\n\t\t\t\t\tredirectTo: payload.redirectTo,\n\t\t\t\t\terror: payload.error,\n\t\t\t\t},\n\t\t\t\tpayload.targetOrigin,\n\t\t\t);\n\t\t} catch (e) {}\n\t}\n\twindow.close();\n})();\n</script>\n</body>\n</html>"
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/oauth-popup/start?provider=gitlab&popupOrigin=http%3A%2F%2Fapp.fixture.test&popupNonce=%3C%2Fscript%3E%3Cscript%3Ewindow.pwned%3Dtrue%3C%2Fscript%3E%E2%80%A8%E2%80%A9&callbackURL=%2Ffinished&errorCallbackURL=https%3A%2F%2Fforeign.invalid%2F%3C%2Fscript%3E%3Cscript%3Ewindow.pwned%3Dtrue%3C%2Fscript%3E%E2%80%A8%E2%80%A9",
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; script-src 'sha256-tIo2K8VBC9SnhvdZ+9GsGkQoZm+jm/JcxL+d+i8b8KQ='; base-uri 'none'",
+      "cache-control": "no-store",
+      "pragma": "no-cache",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "1065"
+    },
+    "body": "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Completing sign-in</title></head>\n<body>\n<script type=\"application/json\" id=\"better-auth-oauth-popup\">{\"type\":\"better-auth:oauth-popup\",\"targetOrigin\":\"http://app.fixture.test\",\"nonce\":\"\\u003c/script>\\u003cscript>window.pwned=true\\u003c/script>\\u2028\\u2029\",\"error\":{\"code\":\"invalid_error_callback_url\",\"description\":\"Untrusted URL: https://foreign.invalid/\\u003c/script>\\u003cscript>window.pwned=true\\u003c/script>\\u2028\\u2029\"}}</script>\n<script>(function () {\n\tvar el = document.getElementById(\"better-auth-oauth-popup\");\n\tif (!el) return;\n\tvar payload;\n\ttry {\n\t\tpayload = JSON.parse(el.textContent || \"\");\n\t} catch (e) {\n\t\treturn;\n\t}\n\tvar target = window.opener || window.parent;\n\tif (target && target !== window) {\n\t\ttry {\n\t\t\ttarget.postMessage(\n\t\t\t\t{\n\t\t\t\t\ttype: payload.type,\n\t\t\t\t\tnonce: payload.nonce,\n\t\t\t\t\ttoken: payload.token,\n\t\t\t\t\tredirectTo: payload.redirectTo,\n\t\t\t\t\terror: payload.error,\n\t\t\t\t},\n\t\t\t\tpayload.targetOrigin,\n\t\t\t);\n\t\t} catch (e) {}\n\t}\n\twindow.close();\n})();\n</script>\n</body>\n</html>"
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/oauth-popup/start?provider=gitlab&popupOrigin=http%3A%2F%2Fapp.fixture.test&popupNonce=%3C%2Fscript%3E%3Cscript%3Ewindow.pwned%3Dtrue%3C%2Fscript%3E%E2%80%A8%E2%80%A9&callbackURL=%2Ffinished&newUserCallbackURL=https%3A%2F%2Fforeign.invalid%2F%3C%2Fscript%3E%3Cscript%3Ewindow.pwned%3Dtrue%3C%2Fscript%3E%E2%80%A8%E2%80%A9",
+    "status": 200,
+    "headers": {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; script-src 'sha256-tIo2K8VBC9SnhvdZ+9GsGkQoZm+jm/JcxL+d+i8b8KQ='; base-uri 'none'",
+      "cache-control": "no-store",
+      "pragma": "no-cache",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "1068"
+    },
+    "body": "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Completing sign-in</title></head>\n<body>\n<script type=\"application/json\" id=\"better-auth-oauth-popup\">{\"type\":\"better-auth:oauth-popup\",\"targetOrigin\":\"http://app.fixture.test\",\"nonce\":\"\\u003c/script>\\u003cscript>window.pwned=true\\u003c/script>\\u2028\\u2029\",\"error\":{\"code\":\"invalid_new_user_callback_url\",\"description\":\"Untrusted URL: https://foreign.invalid/\\u003c/script>\\u003cscript>window.pwned=true\\u003c/script>\\u2028\\u2029\"}}</script>\n<script>(function () {\n\tvar el = document.getElementById(\"better-auth-oauth-popup\");\n\tif (!el) return;\n\tvar payload;\n\ttry {\n\t\tpayload = JSON.parse(el.textContent || \"\");\n\t} catch (e) {\n\t\treturn;\n\t}\n\tvar target = window.opener || window.parent;\n\tif (target && target !== window) {\n\t\ttry {\n\t\t\ttarget.postMessage(\n\t\t\t\t{\n\t\t\t\t\ttype: payload.type,\n\t\t\t\t\tnonce: payload.nonce,\n\t\t\t\t\ttoken: payload.token,\n\t\t\t\t\tredirectTo: payload.redirectTo,\n\t\t\t\t\terror: payload.error,\n\t\t\t\t},\n\t\t\t\tpayload.targetOrigin,\n\t\t\t);\n\t\t} catch (e) {}\n\t}\n\twindow.close();\n})();\n</script>\n</body>\n</html>"
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [],
+      "receipts": []
+    }
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/oauth-popup/start?provider=missing&popupOrigin=http%3A%2F%2Fapp.fixture.test&popupNonce=%3C%2Fscript%3E%3Cscript%3Ewindow.pwned%3Dtrue%3C%2Fscript%3E%E2%80%A8%E2%80%A9",
+    "status": 200,
+    "headers": {
+      "access-control-allow-credentials": "true",
+      "access-control-allow-headers": "Content-Type, Authorization, X-Requested-With",
+      "access-control-allow-methods": "GET, POST, PUT, DELETE, PATCH, OPTIONS",
+      "access-control-allow-origin": "http://app.fixture.test",
+      "access-control-max-age": "86400",
+      "cache-control": "no-store",
+      "content-length": "973",
+      "content-security-policy": "default-src 'none'; script-src 'sha256-tIo2K8VBC9SnhvdZ+9GsGkQoZm+jm/JcxL+d+i8b8KQ='; base-uri 'none'",
+      "content-type": "text/html; charset=utf-8",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "pragma": "no-cache"
+    },
+    "body": "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Completing sign-in</title></head>\n<body>\n<script type=\"application/json\" id=\"better-auth-oauth-popup\">{\"type\":\"better-auth:oauth-popup\",\"targetOrigin\":\"http://app.fixture.test\",\"nonce\":\"\\u003c/script>\\u003cscript>window.pwned=true\\u003c/script>\\u2028\\u2029\",\"error\":{\"code\":\"provider_not_found\",\"description\":\"Unknown provider: missing\"}}</script>\n<script>(function () {\n\tvar el = document.getElementById(\"better-auth-oauth-popup\");\n\tif (!el) return;\n\tvar payload;\n\ttry {\n\t\tpayload = JSON.parse(el.textContent || \"\");\n\t} catch (e) {\n\t\treturn;\n\t}\n\tvar target = window.opener || window.parent;\n\tif (target && target !== window) {\n\t\ttry {\n\t\t\ttarget.postMessage(\n\t\t\t\t{\n\t\t\t\t\ttype: payload.type,\n\t\t\t\t\tnonce: payload.nonce,\n\t\t\t\t\ttoken: payload.token,\n\t\t\t\t\tredirectTo: payload.redirectTo,\n\t\t\t\t\terror: payload.error,\n\t\t\t\t},\n\t\t\t\tpayload.targetOrigin,\n\t\t\t);\n\t\t} catch (e) {}\n\t}\n\twindow.close();\n})();\n</script>\n</body>\n</html>"
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/oauth-popup/start?provider=gitlab&popupOrigin=http%3A%2F%2Fapp.fixture.test&popupNonce=nonce-132&callbackURL=%2Ffinished&scopes=read_user%2Ccustom&requestSignUp=true&additionalData=%7B%22callbackURL%22%3A%22https%3A%2F%2Fforeign.invalid%22%2C%22expiresAt%22%3A0%2C%22idTokenNonce%22%3A%22attacker-nonce%22%2C%22serverContext%22%3A%7B%22anonymousUserId%22%3A%22foreign-user%22%7D%2C%22custom%22%3A%22kept%22%7D",
+    "status": 302,
+    "headers": {
+      "set-cookie": "better-auth.state=HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP.5FP6zOf4DsU%2BJTlVhfdWtkmPb9EWZiIoMVbUqqP3xL4%3D; Max-Age=300; Path=/; HttpOnly; SameSite=Lax\nbetter-auth.oauth_popup=%7B%22popupOrigin%22%3A%22http%3A%2F%2Fapp.fixture.test%22%2C%22popupNonce%22%3A%22nonce-132%22%7D.Q%2FRIa5aK4tC8YyRjNLvZHERhXTKwp0VYpXVG%2BFXibs4%3D; Max-Age=600; Path=/; HttpOnly; SameSite=Lax",
+      "location": "http://localhost:41310/__test/oauth-popup/provider/oauth/authorize?response_type=code&client_id=popup-client&state=HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP&scope=read_user+read_user+custom&redirect_uri=http%3A%2F%2Flocalhost%3A41310%2F__test%2Fprofiles%2Foauth-popup%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=Vx_riux5bgX4uWKdN_bfKiCGtRKgLWqoqlN8rh6QTrY",
+      "content-type": "application/json",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "0"
+    },
+    "body": ""
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP",
+          "value": "{\"custom\":\"kept\",\"callbackURL\":\"/finished\",\"codeVerifier\":\"K15ir4Q5Nq-Vi4usdgC8YUp9NnN6bfEaS1LzbwL3-aA76o6KSn66baNZ5KOr2fopfMfPRzfs9SXkMTbnyeVQsfaOaTawJTiRh0iBE-V9D6-xY59tppJzvFfGRRjbEadc\",\"requestSignUp\":true,\"expiresAt\":1791045439170,\"oauthState\":\"HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP\"}",
+          "expiresAt": "2026-10-03T16:37:19.171Z",
+          "createdAt": "2026-10-03T16:27:19.171Z",
+          "updatedAt": "2026-10-03T16:27:19.171Z",
+          "id": "qVZswVinWy8n4c5HefBhnxhMsvML0snV"
+        }
+      ],
+      "receipts": []
+    }
+  },
+  {
+    "issuedState": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP",
+          "value": "{\"custom\":\"kept\",\"callbackURL\":\"/finished\",\"codeVerifier\":\"K15ir4Q5Nq-Vi4usdgC8YUp9NnN6bfEaS1LzbwL3-aA76o6KSn66baNZ5KOr2fopfMfPRzfs9SXkMTbnyeVQsfaOaTawJTiRh0iBE-V9D6-xY59tppJzvFfGRRjbEadc\",\"requestSignUp\":true,\"expiresAt\":1791045439170,\"oauthState\":\"HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP\"}",
+          "expiresAt": "2026-10-03T16:37:19.171Z",
+          "createdAt": "2026-10-03T16:27:19.171Z",
+          "updatedAt": "2026-10-03T16:27:19.171Z",
+          "id": "qVZswVinWy8n4c5HefBhnxhMsvML0snV"
+        }
+      ],
+      "receipts": []
+    }
+  },
+  {
+    "url": "http://localhost:41310/__test/oauth-popup/provider/oauth/authorize?response_type=code&client_id=popup-client&state=HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP&scope=read_user+read_user+custom&redirect_uri=http%3A%2F%2Flocalhost%3A41310%2F__test%2Fprofiles%2Foauth-popup%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=Vx_riux5bgX4uWKdN_bfKiCGtRKgLWqoqlN8rh6QTrY",
+    "status": 302,
+    "headers": {
+      "location": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab?state=HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP&code=popup-code-1",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "0"
+    },
+    "body": ""
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab?state=HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP&code=popup-code-1",
+    "status": 200,
+    "headers": {
+      "set-cookie": "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax\nbetter-auth.session_token=xx619t3Ufz7jpJwHYeigN9K5ttE8meAH.SfZAKDKoQeaXkNwOfZHi%2FKUYHt18NzzF3Ar0qwXO7hI%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax\nbetter-auth.oauth_popup=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; script-src 'sha256-tIo2K8VBC9SnhvdZ+9GsGkQoZm+jm/JcxL+d+i8b8KQ='; base-uri 'none'",
+      "cache-control": "no-store",
+      "pragma": "no-cache",
+      "access-control-expose-headers": "set-auth-token",
+      "location": "/finished",
+      "set-auth-token": "xx619t3Ufz7jpJwHYeigN9K5ttE8meAH.SfZAKDKoQeaXkNwOfZHi/KUYHt18NzzF3Ar0qwXO7hI=",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "945"
+    },
+    "body": "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Completing sign-in</title></head>\n<body>\n<script type=\"application/json\" id=\"better-auth-oauth-popup\">{\"type\":\"better-auth:oauth-popup\",\"targetOrigin\":\"http://app.fixture.test\",\"nonce\":\"nonce-132\",\"token\":\"xx619t3Ufz7jpJwHYeigN9K5ttE8meAH.SfZAKDKoQeaXkNwOfZHi/KUYHt18NzzF3Ar0qwXO7hI=\",\"redirectTo\":\"/finished\"}</script>\n<script>(function () {\n\tvar el = document.getElementById(\"better-auth-oauth-popup\");\n\tif (!el) return;\n\tvar payload;\n\ttry {\n\t\tpayload = JSON.parse(el.textContent || \"\");\n\t} catch (e) {\n\t\treturn;\n\t}\n\tvar target = window.opener || window.parent;\n\tif (target && target !== window) {\n\t\ttry {\n\t\t\ttarget.postMessage(\n\t\t\t\t{\n\t\t\t\t\ttype: payload.type,\n\t\t\t\t\tnonce: payload.nonce,\n\t\t\t\t\ttoken: payload.token,\n\t\t\t\t\tredirectTo: payload.redirectTo,\n\t\t\t\t\terror: payload.error,\n\t\t\t\t},\n\t\t\t\tpayload.targetOrigin,\n\t\t\t);\n\t\t} catch (e) {}\n\t}\n\twindow.close();\n})();\n</script>\n</body>\n</html>"
+  },
+  {
+    "state": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:19.184Z",
+          "updatedAt": "2026-10-03T16:27:19.184Z",
+          "id": "pwo36H49I99ExoMc89DJb7IdguDIBE8i"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "gitlab",
+          "userId": "pwo36H49I99ExoMc89DJb7IdguDIBE8i",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:19.182Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:19.185Z",
+          "updatedAt": "2026-10-03T16:27:19.185Z",
+          "id": "plrBE4CBhmnfGPeF6pVw6St0xJjFH5ae"
+        }
+      ],
+      "session": [
+        {
+          "expiresAt": "2026-10-10T16:27:19.185Z",
+          "token": "xx619t3Ufz7jpJwHYeigN9K5ttE8meAH",
+          "createdAt": "2026-10-03T16:27:19.185Z",
+          "updatedAt": "2026-10-03T16:27:19.185Z",
+          "ipAddress": "127.0.0.1",
+          "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "userId": "pwo36H49I99ExoMc89DJb7IdguDIBE8i",
+          "id": "LEvHBR8XkvWdUJtAbnFBjTrqGsDzkmm4"
+        }
+      ],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP",
+            "scope": "read_user read_user custom",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "Vx_riux5bgX4uWKdN_bfKiCGtRKgLWqoqlN8rh6QTrY"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "K15ir4Q5Nq-Vi4usdgC8YUp9NnN6bfEaS1LzbwL3-aA76o6KSn66baNZ5KOr2fopfMfPRzfs9SXkMTbnyeVQsfaOaTawJTiRh0iBE-V9D6-xY59tppJzvFfGRRjbEadc",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  },
+  {
+    "after": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:19.184Z",
+          "updatedAt": "2026-10-03T16:27:19.184Z",
+          "id": "pwo36H49I99ExoMc89DJb7IdguDIBE8i"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "gitlab",
+          "userId": "pwo36H49I99ExoMc89DJb7IdguDIBE8i",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:19.182Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:19.185Z",
+          "updatedAt": "2026-10-03T16:27:19.185Z",
+          "id": "plrBE4CBhmnfGPeF6pVw6St0xJjFH5ae"
+        }
+      ],
+      "session": [
+        {
+          "expiresAt": "2026-10-10T16:27:19.185Z",
+          "token": "xx619t3Ufz7jpJwHYeigN9K5ttE8meAH",
+          "createdAt": "2026-10-03T16:27:19.185Z",
+          "updatedAt": "2026-10-03T16:27:19.185Z",
+          "ipAddress": "127.0.0.1",
+          "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "userId": "pwo36H49I99ExoMc89DJb7IdguDIBE8i",
+          "id": "LEvHBR8XkvWdUJtAbnFBjTrqGsDzkmm4"
+        }
+      ],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP",
+            "scope": "read_user read_user custom",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "Vx_riux5bgX4uWKdN_bfKiCGtRKgLWqoqlN8rh6QTrY"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "K15ir4Q5Nq-Vi4usdgC8YUp9NnN6bfEaS1LzbwL3-aA76o6KSn66baNZ5KOr2fopfMfPRzfs9SXkMTbnyeVQsfaOaTawJTiRh0iBE-V9D6-xY59tppJzvFfGRRjbEadc",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab?state=HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP&code=popup-code-1",
+    "status": 302,
+    "headers": {
+      "location": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/error?error=state_mismatch",
+      "content-type": "application/json",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "0"
+    },
+    "body": ""
+  },
+  {
+    "state": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:19.184Z",
+          "updatedAt": "2026-10-03T16:27:19.184Z",
+          "id": "pwo36H49I99ExoMc89DJb7IdguDIBE8i"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "gitlab",
+          "userId": "pwo36H49I99ExoMc89DJb7IdguDIBE8i",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:19.182Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:19.185Z",
+          "updatedAt": "2026-10-03T16:27:19.185Z",
+          "id": "plrBE4CBhmnfGPeF6pVw6St0xJjFH5ae"
+        }
+      ],
+      "session": [
+        {
+          "expiresAt": "2026-10-10T16:27:19.185Z",
+          "token": "xx619t3Ufz7jpJwHYeigN9K5ttE8meAH",
+          "createdAt": "2026-10-03T16:27:19.185Z",
+          "updatedAt": "2026-10-03T16:27:19.185Z",
+          "ipAddress": "127.0.0.1",
+          "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "userId": "pwo36H49I99ExoMc89DJb7IdguDIBE8i",
+          "id": "LEvHBR8XkvWdUJtAbnFBjTrqGsDzkmm4"
+        }
+      ],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP",
+            "scope": "read_user read_user custom",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "Vx_riux5bgX4uWKdN_bfKiCGtRKgLWqoqlN8rh6QTrY"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "K15ir4Q5Nq-Vi4usdgC8YUp9NnN6bfEaS1LzbwL3-aA76o6KSn66baNZ5KOr2fopfMfPRzfs9SXkMTbnyeVQsfaOaTawJTiRh0iBE-V9D6-xY59tppJzvFfGRRjbEadc",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab?state=HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP&code=popup-code-1",
+    "status": 200,
+    "headers": {
+      "set-cookie": "better-auth.oauth_popup=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; script-src 'sha256-tIo2K8VBC9SnhvdZ+9GsGkQoZm+jm/JcxL+d+i8b8KQ='; base-uri 'none'",
+      "cache-control": "no-store",
+      "pragma": "no-cache",
+      "location": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/error?error=state_mismatch",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "866"
+    },
+    "body": "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Completing sign-in</title></head>\n<body>\n<script type=\"application/json\" id=\"better-auth-oauth-popup\">{\"type\":\"better-auth:oauth-popup\",\"targetOrigin\":\"http://app.fixture.test\",\"nonce\":\"nonce-132\",\"error\":{\"code\":\"state_mismatch\"}}</script>\n<script>(function () {\n\tvar el = document.getElementById(\"better-auth-oauth-popup\");\n\tif (!el) return;\n\tvar payload;\n\ttry {\n\t\tpayload = JSON.parse(el.textContent || \"\");\n\t} catch (e) {\n\t\treturn;\n\t}\n\tvar target = window.opener || window.parent;\n\tif (target && target !== window) {\n\t\ttry {\n\t\t\ttarget.postMessage(\n\t\t\t\t{\n\t\t\t\t\ttype: payload.type,\n\t\t\t\t\tnonce: payload.nonce,\n\t\t\t\t\ttoken: payload.token,\n\t\t\t\t\tredirectTo: payload.redirectTo,\n\t\t\t\t\terror: payload.error,\n\t\t\t\t},\n\t\t\t\tpayload.targetOrigin,\n\t\t\t);\n\t\t} catch (e) {}\n\t}\n\twindow.close();\n})();\n</script>\n</body>\n</html>"
+  },
+  {
+    "state": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:19.184Z",
+          "updatedAt": "2026-10-03T16:27:19.184Z",
+          "id": "pwo36H49I99ExoMc89DJb7IdguDIBE8i"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "gitlab",
+          "userId": "pwo36H49I99ExoMc89DJb7IdguDIBE8i",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:19.182Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:19.185Z",
+          "updatedAt": "2026-10-03T16:27:19.185Z",
+          "id": "plrBE4CBhmnfGPeF6pVw6St0xJjFH5ae"
+        }
+      ],
+      "session": [
+        {
+          "expiresAt": "2026-10-10T16:27:19.185Z",
+          "token": "xx619t3Ufz7jpJwHYeigN9K5ttE8meAH",
+          "createdAt": "2026-10-03T16:27:19.185Z",
+          "updatedAt": "2026-10-03T16:27:19.185Z",
+          "ipAddress": "127.0.0.1",
+          "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "userId": "pwo36H49I99ExoMc89DJb7IdguDIBE8i",
+          "id": "LEvHBR8XkvWdUJtAbnFBjTrqGsDzkmm4"
+        }
+      ],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "HbZYYh08y2v9aaTvEpaHmY4wXdNZCbYP",
+            "scope": "read_user read_user custom",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "Vx_riux5bgX4uWKdN_bfKiCGtRKgLWqoqlN8rh6QTrY"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "K15ir4Q5Nq-Vi4usdgC8YUp9NnN6bfEaS1LzbwL3-aA76o6KSn66baNZ5KOr2fopfMfPRzfs9SXkMTbnyeVQsfaOaTawJTiRh0iBE-V9D6-xY59tppJzvFfGRRjbEadc",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "-GHk6qjkNEQ1SZJhXNxiTUzukPmrQV99",
+          "value": "{\"callbackURL\":\"/finished\",\"codeVerifier\":\"vZZrU3AoecoSb6n280fwOHva98tuSJKFOOkRTYQdfos8DynIP20AAlveb8rJuSJ8y28921lomHeOlhDpHXFY5VWAlBBFObqwTwyT2JUXA9Bw4sFX4xRix_Krdre9VSiN\",\"errorURL\":\"/error-page\",\"expiresAt\":0,\"oauthState\":\"-GHk6qjkNEQ1SZJhXNxiTUzukPmrQV99\"}",
+          "expiresAt": "1970-01-01T00:00:00.000Z",
+          "createdAt": "2026-10-03T16:27:19.215Z",
+          "updatedAt": "2026-10-03T16:27:19.219Z",
+          "id": "NKynsWepkqQ3UUB7c9yhO965hqErdY0I"
+        }
+      ],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "-GHk6qjkNEQ1SZJhXNxiTUzukPmrQV99",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "JX06dfOhAP_hWLDZI74Fj_j6W7b5n512_-OEtEfu53c"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab?state=-GHk6qjkNEQ1SZJhXNxiTUzukPmrQV99&code=popup-code-1",
+    "status": 200,
+    "headers": {
+      "set-cookie": "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax\nbetter-auth.oauth_popup=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; script-src 'sha256-tIo2K8VBC9SnhvdZ+9GsGkQoZm+jm/JcxL+d+i8b8KQ='; base-uri 'none'",
+      "cache-control": "no-store",
+      "pragma": "no-cache",
+      "location": "/error-page?error=state_mismatch",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "866"
+    },
+    "body": "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Completing sign-in</title></head>\n<body>\n<script type=\"application/json\" id=\"better-auth-oauth-popup\">{\"type\":\"better-auth:oauth-popup\",\"targetOrigin\":\"http://app.fixture.test\",\"nonce\":\"nonce-132\",\"error\":{\"code\":\"state_mismatch\"}}</script>\n<script>(function () {\n\tvar el = document.getElementById(\"better-auth-oauth-popup\");\n\tif (!el) return;\n\tvar payload;\n\ttry {\n\t\tpayload = JSON.parse(el.textContent || \"\");\n\t} catch (e) {\n\t\treturn;\n\t}\n\tvar target = window.opener || window.parent;\n\tif (target && target !== window) {\n\t\ttry {\n\t\t\ttarget.postMessage(\n\t\t\t\t{\n\t\t\t\t\ttype: payload.type,\n\t\t\t\t\tnonce: payload.nonce,\n\t\t\t\t\ttoken: payload.token,\n\t\t\t\t\tredirectTo: payload.redirectTo,\n\t\t\t\t\terror: payload.error,\n\t\t\t\t},\n\t\t\t\tpayload.targetOrigin,\n\t\t\t);\n\t\t} catch (e) {}\n\t}\n\twindow.close();\n})();\n</script>\n</body>\n</html>"
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "-GHk6qjkNEQ1SZJhXNxiTUzukPmrQV99",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "JX06dfOhAP_hWLDZI74Fj_j6W7b5n512_-OEtEfu53c"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "mode": "expired",
+    "before": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "-GHk6qjkNEQ1SZJhXNxiTUzukPmrQV99",
+          "value": "{\"callbackURL\":\"/finished\",\"codeVerifier\":\"vZZrU3AoecoSb6n280fwOHva98tuSJKFOOkRTYQdfos8DynIP20AAlveb8rJuSJ8y28921lomHeOlhDpHXFY5VWAlBBFObqwTwyT2JUXA9Bw4sFX4xRix_Krdre9VSiN\",\"errorURL\":\"/error-page\",\"expiresAt\":0,\"oauthState\":\"-GHk6qjkNEQ1SZJhXNxiTUzukPmrQV99\"}",
+          "expiresAt": "1970-01-01T00:00:00.000Z",
+          "createdAt": "2026-10-03T16:27:19.215Z",
+          "updatedAt": "2026-10-03T16:27:19.219Z",
+          "id": "NKynsWepkqQ3UUB7c9yhO965hqErdY0I"
+        }
+      ],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "-GHk6qjkNEQ1SZJhXNxiTUzukPmrQV99",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "JX06dfOhAP_hWLDZI74Fj_j6W7b5n512_-OEtEfu53c"
+          }
+        }
+      ]
+    },
+    "after": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "-GHk6qjkNEQ1SZJhXNxiTUzukPmrQV99",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "JX06dfOhAP_hWLDZI74Fj_j6W7b5n512_-OEtEfu53c"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y",
+          "value": "{\"callbackURL\":\"/finished\",\"codeVerifier\":\"ZRCv1lvSENPgZcNemgxB-Fh5CnzFsxbHPUcRMJaGyNLya-Gp1UI1ggh1MXymq2cAkcwN176GWaQfN6eThjG0DVo4NJDcA-Pebb_yfRy-xeldCLCxPbcAT9fYFCg8kVI_\",\"errorURL\":\"/error-page\",\"expiresAt\":1791045439227,\"oauthState\":\"kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y\"}",
+          "expiresAt": "2026-10-03T16:37:19.228Z",
+          "createdAt": "2026-10-03T16:27:19.228Z",
+          "updatedAt": "2026-10-03T16:27:19.228Z",
+          "id": "IygIpowDFoEGr6acoCGSkwfSMpiHSPEu"
+        }
+      ],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "iQcC17Gxuo8t_vImiID4MEzD6yHWYS9YHPYxhPUTXd8"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab?state=tampered-state&code=popup-code-1",
+    "status": 200,
+    "headers": {
+      "set-cookie": "better-auth.oauth_popup=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; script-src 'sha256-tIo2K8VBC9SnhvdZ+9GsGkQoZm+jm/JcxL+d+i8b8KQ='; base-uri 'none'",
+      "cache-control": "no-store",
+      "pragma": "no-cache",
+      "location": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/error?error=state_mismatch",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "866"
+    },
+    "body": "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Completing sign-in</title></head>\n<body>\n<script type=\"application/json\" id=\"better-auth-oauth-popup\">{\"type\":\"better-auth:oauth-popup\",\"targetOrigin\":\"http://app.fixture.test\",\"nonce\":\"nonce-132\",\"error\":{\"code\":\"state_mismatch\"}}</script>\n<script>(function () {\n\tvar el = document.getElementById(\"better-auth-oauth-popup\");\n\tif (!el) return;\n\tvar payload;\n\ttry {\n\t\tpayload = JSON.parse(el.textContent || \"\");\n\t} catch (e) {\n\t\treturn;\n\t}\n\tvar target = window.opener || window.parent;\n\tif (target && target !== window) {\n\t\ttry {\n\t\t\ttarget.postMessage(\n\t\t\t\t{\n\t\t\t\t\ttype: payload.type,\n\t\t\t\t\tnonce: payload.nonce,\n\t\t\t\t\ttoken: payload.token,\n\t\t\t\t\tredirectTo: payload.redirectTo,\n\t\t\t\t\terror: payload.error,\n\t\t\t\t},\n\t\t\t\tpayload.targetOrigin,\n\t\t\t);\n\t\t} catch (e) {}\n\t}\n\twindow.close();\n})();\n</script>\n</body>\n</html>"
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y",
+          "value": "{\"callbackURL\":\"/finished\",\"codeVerifier\":\"ZRCv1lvSENPgZcNemgxB-Fh5CnzFsxbHPUcRMJaGyNLya-Gp1UI1ggh1MXymq2cAkcwN176GWaQfN6eThjG0DVo4NJDcA-Pebb_yfRy-xeldCLCxPbcAT9fYFCg8kVI_\",\"errorURL\":\"/error-page\",\"expiresAt\":1791045439227,\"oauthState\":\"kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y\"}",
+          "expiresAt": "2026-10-03T16:37:19.228Z",
+          "createdAt": "2026-10-03T16:27:19.228Z",
+          "updatedAt": "2026-10-03T16:27:19.228Z",
+          "id": "IygIpowDFoEGr6acoCGSkwfSMpiHSPEu"
+        }
+      ],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "iQcC17Gxuo8t_vImiID4MEzD6yHWYS9YHPYxhPUTXd8"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "mode": "state-tampered",
+    "before": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y",
+          "value": "{\"callbackURL\":\"/finished\",\"codeVerifier\":\"ZRCv1lvSENPgZcNemgxB-Fh5CnzFsxbHPUcRMJaGyNLya-Gp1UI1ggh1MXymq2cAkcwN176GWaQfN6eThjG0DVo4NJDcA-Pebb_yfRy-xeldCLCxPbcAT9fYFCg8kVI_\",\"errorURL\":\"/error-page\",\"expiresAt\":1791045439227,\"oauthState\":\"kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y\"}",
+          "expiresAt": "2026-10-03T16:37:19.228Z",
+          "createdAt": "2026-10-03T16:27:19.228Z",
+          "updatedAt": "2026-10-03T16:27:19.228Z",
+          "id": "IygIpowDFoEGr6acoCGSkwfSMpiHSPEu"
+        }
+      ],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "iQcC17Gxuo8t_vImiID4MEzD6yHWYS9YHPYxhPUTXd8"
+          }
+        }
+      ]
+    },
+    "after": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y",
+          "value": "{\"callbackURL\":\"/finished\",\"codeVerifier\":\"ZRCv1lvSENPgZcNemgxB-Fh5CnzFsxbHPUcRMJaGyNLya-Gp1UI1ggh1MXymq2cAkcwN176GWaQfN6eThjG0DVo4NJDcA-Pebb_yfRy-xeldCLCxPbcAT9fYFCg8kVI_\",\"errorURL\":\"/error-page\",\"expiresAt\":1791045439227,\"oauthState\":\"kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y\"}",
+          "expiresAt": "2026-10-03T16:37:19.228Z",
+          "createdAt": "2026-10-03T16:27:19.228Z",
+          "updatedAt": "2026-10-03T16:27:19.228Z",
+          "id": "IygIpowDFoEGr6acoCGSkwfSMpiHSPEu"
+        }
+      ],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "kkrjHdDP6E8NaJ3BI3k0pn-MInhFzg1Y",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "iQcC17Gxuo8t_vImiID4MEzD6yHWYS9YHPYxhPUTXd8"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "-xg_VyIu3k1NJAvpdN1C3auHa2RK79Sq",
+          "value": "{\"callbackURL\":\"/finished\",\"codeVerifier\":\"tp8KIfbRYd3k0D9ArLXEEKR9t3knxd4j792JhgMKwBuYSNCRZ2KxWYyBQJHM7pjiddllkakuZHd0N3iVL4cCV3crCwNhD1rcuf2VCToCa3DopUJDA94DypxfGrpCueeW\",\"errorURL\":\"/error-page\",\"expiresAt\":1791045439238,\"oauthState\":\"-xg_VyIu3k1NJAvpdN1C3auHa2RK79Sq\"}",
+          "expiresAt": "2026-10-03T16:37:19.239Z",
+          "createdAt": "2026-10-03T16:27:19.239Z",
+          "updatedAt": "2026-10-03T16:27:19.239Z",
+          "id": "5BVQ9Ax0vsrl73ycS4b1tTHF97yPoh4B"
+        }
+      ],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "-xg_VyIu3k1NJAvpdN1C3auHa2RK79Sq",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "ysw-0vJmQq1pEzOchdupnzQqA5iUPPblnOg8WIzR87Q"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab?state=-xg_VyIu3k1NJAvpdN1C3auHa2RK79Sq&code=popup-code-1",
+    "status": 302,
+    "headers": {
+      "set-cookie": "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax\nbetter-auth.session_token=AFcfy6boa3ZUwK11PoLg4EKWa7Mkyolj.6GZqZzYnlVlnhxd0sh6qKezphpUDrMx0L7qpfCNE2MI%3D; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax",
+      "location": "/finished",
+      "access-control-expose-headers": "set-auth-token",
+      "content-type": "application/json",
+      "set-auth-token": "AFcfy6boa3ZUwK11PoLg4EKWa7Mkyolj.6GZqZzYnlVlnhxd0sh6qKezphpUDrMx0L7qpfCNE2MI=",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "0"
+    },
+    "body": ""
+  },
+  {
+    "state": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:19.247Z",
+          "updatedAt": "2026-10-03T16:27:19.247Z",
+          "id": "G6lJUaGRMllRIREmyDr4KolzrqqCh8Le"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "gitlab",
+          "userId": "G6lJUaGRMllRIREmyDr4KolzrqqCh8Le",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:19.245Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:19.248Z",
+          "updatedAt": "2026-10-03T16:27:19.248Z",
+          "id": "uFNif8HKTnPpibpEsBieE5b351Cg1qEl"
+        }
+      ],
+      "session": [
+        {
+          "expiresAt": "2026-10-10T16:27:19.248Z",
+          "token": "AFcfy6boa3ZUwK11PoLg4EKWa7Mkyolj",
+          "createdAt": "2026-10-03T16:27:19.248Z",
+          "updatedAt": "2026-10-03T16:27:19.248Z",
+          "ipAddress": "127.0.0.1",
+          "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "userId": "G6lJUaGRMllRIREmyDr4KolzrqqCh8Le",
+          "id": "HGbNx0VZJvLjWLTVMg6FT4ZRMYFaT5hA"
+        }
+      ],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "-xg_VyIu3k1NJAvpdN1C3auHa2RK79Sq",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "ysw-0vJmQq1pEzOchdupnzQqA5iUPPblnOg8WIzR87Q"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "tp8KIfbRYd3k0D9ArLXEEKR9t3knxd4j792JhgMKwBuYSNCRZ2KxWYyBQJHM7pjiddllkakuZHd0N3iVL4cCV3crCwNhD1rcuf2VCToCa3DopUJDA94DypxfGrpCueeW",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  },
+  {
+    "mode": "marker-tampered",
+    "before": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "-xg_VyIu3k1NJAvpdN1C3auHa2RK79Sq",
+          "value": "{\"callbackURL\":\"/finished\",\"codeVerifier\":\"tp8KIfbRYd3k0D9ArLXEEKR9t3knxd4j792JhgMKwBuYSNCRZ2KxWYyBQJHM7pjiddllkakuZHd0N3iVL4cCV3crCwNhD1rcuf2VCToCa3DopUJDA94DypxfGrpCueeW\",\"errorURL\":\"/error-page\",\"expiresAt\":1791045439238,\"oauthState\":\"-xg_VyIu3k1NJAvpdN1C3auHa2RK79Sq\"}",
+          "expiresAt": "2026-10-03T16:37:19.239Z",
+          "createdAt": "2026-10-03T16:27:19.239Z",
+          "updatedAt": "2026-10-03T16:27:19.239Z",
+          "id": "5BVQ9Ax0vsrl73ycS4b1tTHF97yPoh4B"
+        }
+      ],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "-xg_VyIu3k1NJAvpdN1C3auHa2RK79Sq",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "ysw-0vJmQq1pEzOchdupnzQqA5iUPPblnOg8WIzR87Q"
+          }
+        }
+      ]
+    },
+    "after": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:19.247Z",
+          "updatedAt": "2026-10-03T16:27:19.247Z",
+          "id": "G6lJUaGRMllRIREmyDr4KolzrqqCh8Le"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "gitlab",
+          "userId": "G6lJUaGRMllRIREmyDr4KolzrqqCh8Le",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:19.245Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:19.248Z",
+          "updatedAt": "2026-10-03T16:27:19.248Z",
+          "id": "uFNif8HKTnPpibpEsBieE5b351Cg1qEl"
+        }
+      ],
+      "session": [
+        {
+          "expiresAt": "2026-10-10T16:27:19.248Z",
+          "token": "AFcfy6boa3ZUwK11PoLg4EKWa7Mkyolj",
+          "createdAt": "2026-10-03T16:27:19.248Z",
+          "updatedAt": "2026-10-03T16:27:19.248Z",
+          "ipAddress": "127.0.0.1",
+          "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "userId": "G6lJUaGRMllRIREmyDr4KolzrqqCh8Le",
+          "id": "HGbNx0VZJvLjWLTVMg6FT4ZRMYFaT5hA"
+        }
+      ],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "-xg_VyIu3k1NJAvpdN1C3auHa2RK79Sq",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "ysw-0vJmQq1pEzOchdupnzQqA5iUPPblnOg8WIzR87Q"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "tp8KIfbRYd3k0D9ArLXEEKR9t3knxd4j792JhgMKwBuYSNCRZ2KxWYyBQJHM7pjiddllkakuZHd0N3iVL4cCV3crCwNhD1rcuf2VCToCa3DopUJDA94DypxfGrpCueeW",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "C8RXBRI_DmjieCpIMzJpd-CeS6VmqbpW",
+          "value": "{\"callbackURL\":\"/finished\",\"codeVerifier\":\"3KVQIA5MH-7PN5cJo27p0lGsWqk3kbpwqIc2L8E-gMa7I5jHepnKUcc0PDtzquhb6lcNhrEeo2wgi_QQCeeYAmf8ermn1jnr8Ty_uRmk9mBziP6NI28XCA-tlmyZu7_q\",\"errorURL\":\"/error-page\",\"expiresAt\":1791045439256,\"oauthState\":\"C8RXBRI_DmjieCpIMzJpd-CeS6VmqbpW\"}",
+          "expiresAt": "2026-10-03T16:37:19.257Z",
+          "createdAt": "2026-10-03T16:27:19.257Z",
+          "updatedAt": "2026-10-03T16:27:19.257Z",
+          "id": "sl2NyEdeEqhO7ecRoM1FdQ0LsnRXCt94"
+        }
+      ],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "C8RXBRI_DmjieCpIMzJpd-CeS6VmqbpW",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "V4YiKBF1918P8oNko0EHnWHqJW0zv1r3ZGzhVkDOpkE"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "url": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab?state=C8RXBRI_DmjieCpIMzJpd-CeS6VmqbpW&code=popup-code-1&error=access_denied&error_description=%3C%2Fscript%3E%3Cscript%3Ewindow.pwned%3Dtrue%3C%2Fscript%3E%E2%80%A8%E2%80%A9",
+    "status": 200,
+    "headers": {
+      "set-cookie": "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax\nbetter-auth.oauth_popup=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": "default-src 'none'; script-src 'sha256-tIo2K8VBC9SnhvdZ+9GsGkQoZm+jm/JcxL+d+i8b8KQ='; base-uri 'none'",
+      "cache-control": "no-store",
+      "pragma": "no-cache",
+      "location": "/error-page?error=access_denied&error_description=%3C%2Fscript%3E%3Cscript%3Ewindow.pwned%3Dtrue%3C%2Fscript%3E%E2%80%A8%E2%80%A9",
+      "date": "Sat, 03 Oct 2026 16:27:19 GMT",
+      "content-length": "952"
+    },
+    "body": "<!doctype html>\n<html>\n<head><meta charset=\"utf-8\"><title>Completing sign-in</title></head>\n<body>\n<script type=\"application/json\" id=\"better-auth-oauth-popup\">{\"type\":\"better-auth:oauth-popup\",\"targetOrigin\":\"http://app.fixture.test\",\"nonce\":\"nonce-132\",\"error\":{\"code\":\"access_denied\",\"description\":\"\\u003c/script>\\u003cscript>window.pwned=true\\u003c/script>\\u2028\\u2029\"}}</script>\n<script>(function () {\n\tvar el = document.getElementById(\"better-auth-oauth-popup\");\n\tif (!el) return;\n\tvar payload;\n\ttry {\n\t\tpayload = JSON.parse(el.textContent || \"\");\n\t} catch (e) {\n\t\treturn;\n\t}\n\tvar target = window.opener || window.parent;\n\tif (target && target !== window) {\n\t\ttry {\n\t\t\ttarget.postMessage(\n\t\t\t\t{\n\t\t\t\t\ttype: payload.type,\n\t\t\t\t\tnonce: payload.nonce,\n\t\t\t\t\ttoken: payload.token,\n\t\t\t\t\tredirectTo: payload.redirectTo,\n\t\t\t\t\terror: payload.error,\n\t\t\t\t},\n\t\t\t\tpayload.targetOrigin,\n\t\t\t);\n\t\t} catch (e) {}\n\t}\n\twindow.close();\n})();\n</script>\n</body>\n</html>"
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "C8RXBRI_DmjieCpIMzJpd-CeS6VmqbpW",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "V4YiKBF1918P8oNko0EHnWHqJW0zv1r3ZGzhVkDOpkE"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "mode": "provider-error",
+    "before": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "C8RXBRI_DmjieCpIMzJpd-CeS6VmqbpW",
+          "value": "{\"callbackURL\":\"/finished\",\"codeVerifier\":\"3KVQIA5MH-7PN5cJo27p0lGsWqk3kbpwqIc2L8E-gMa7I5jHepnKUcc0PDtzquhb6lcNhrEeo2wgi_QQCeeYAmf8ermn1jnr8Ty_uRmk9mBziP6NI28XCA-tlmyZu7_q\",\"errorURL\":\"/error-page\",\"expiresAt\":1791045439256,\"oauthState\":\"C8RXBRI_DmjieCpIMzJpd-CeS6VmqbpW\"}",
+          "expiresAt": "2026-10-03T16:37:19.257Z",
+          "createdAt": "2026-10-03T16:27:19.257Z",
+          "updatedAt": "2026-10-03T16:27:19.257Z",
+          "id": "sl2NyEdeEqhO7ecRoM1FdQ0LsnRXCt94"
+        }
+      ],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "C8RXBRI_DmjieCpIMzJpd-CeS6VmqbpW",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "V4YiKBF1918P8oNko0EHnWHqJW0zv1r3ZGzhVkDOpkE"
+          }
+        }
+      ]
+    },
+    "after": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "C8RXBRI_DmjieCpIMzJpd-CeS6VmqbpW",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "V4YiKBF1918P8oNko0EHnWHqJW0zv1r3ZGzhVkDOpkE"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "state": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:19.386Z",
+          "updatedAt": "2026-10-03T16:27:19.386Z",
+          "id": "H6m5gFGYhvLifafmbCJqDQUV54qfrvMo"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "gitlab",
+          "userId": "H6m5gFGYhvLifafmbCJqDQUV54qfrvMo",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:19.385Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:19.386Z",
+          "updatedAt": "2026-10-03T16:27:19.386Z",
+          "id": "pleUx849YQsE2tlXzc7QZJ65ide6pDYD"
+        }
+      ],
+      "session": [
+        {
+          "expiresAt": "2026-10-10T16:27:19.387Z",
+          "token": "RkPfr22R9CekDgdOKysApHhIpdygHJCy",
+          "createdAt": "2026-10-03T16:27:19.387Z",
+          "updatedAt": "2026-10-03T16:27:19.387Z",
+          "ipAddress": "127.0.0.1",
+          "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "userId": "H6m5gFGYhvLifafmbCJqDQUV54qfrvMo",
+          "id": "Inw6HoMObMzOhOOmxNUzlcMXR3Bqb0fV"
+        }
+      ],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "9ZDNRwlWOga2OvIcxwN1_4QMmr165ejz",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "3Y5d0C0FlL-IHwmHwwZXozIYP9q6rPO5rK0BhFXrwVY"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "PJafGEE_n6wyGy2v0L961j-Hy8no2qfGdkOGW1PHZygozvfaWsEtrkm8lUodWVh3CtjHCb4BMBdWQZdr-k9PQVAK9LS7M_dt1kAcBmAO_92phxLscCMoLmaXGNx4RCZ_",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  },
+  {
+    "browserState": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:19.386Z",
+          "updatedAt": "2026-10-03T16:27:19.386Z",
+          "id": "H6m5gFGYhvLifafmbCJqDQUV54qfrvMo"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "gitlab",
+          "userId": "H6m5gFGYhvLifafmbCJqDQUV54qfrvMo",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:19.385Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:19.386Z",
+          "updatedAt": "2026-10-03T16:27:19.386Z",
+          "id": "pleUx849YQsE2tlXzc7QZJ65ide6pDYD"
+        }
+      ],
+      "session": [
+        {
+          "expiresAt": "2026-10-10T16:27:19.387Z",
+          "token": "RkPfr22R9CekDgdOKysApHhIpdygHJCy",
+          "createdAt": "2026-10-03T16:27:19.387Z",
+          "updatedAt": "2026-10-03T16:27:19.387Z",
+          "ipAddress": "127.0.0.1",
+          "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "userId": "H6m5gFGYhvLifafmbCJqDQUV54qfrvMo",
+          "id": "Inw6HoMObMzOhOOmxNUzlcMXR3Bqb0fV"
+        }
+      ],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "9ZDNRwlWOga2OvIcxwN1_4QMmr165ejz",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "code_challenge_method": "S256",
+            "code_challenge": "3Y5d0C0FlL-IHwmHwwZXozIYP9q6rPO5rK0BhFXrwVY"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "PJafGEE_n6wyGy2v0L961j-Hy8no2qfGdkOGW1PHZygozvfaWsEtrkm8lUodWVh3CtjHCb4BMBdWQZdr-k9PQVAK9LS7M_dt1kAcBmAO_92phxLscCMoLmaXGNx4RCZ_",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/gitlab",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [],
+      "receipts": []
+    }
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "zYZJi4F3D5Pt07gmvxryaedqba1sLwVh",
+          "value": "{\"callbackURL\":\"http://localhost:41310/__test/profiles/oauth-popup/api/auth\",\"codeVerifier\":\"lfbcNdBTKZlcVKEUqSSaz2hQX8w7Z1VBH159wey-LQyPhAFimZFLm775qPzK9iJBJNpaK_cRVHRfZeMbF4CXu3dvV7ENPRrn7HVq5C5Zcviohoq8-ko8uGkWr3AQbv4T\",\"expiresAt\":1791045439494,\"oauthState\":\"zYZJi4F3D5Pt07gmvxryaedqba1sLwVh\"}",
+          "expiresAt": "2026-10-03T16:37:19.494Z",
+          "createdAt": "2026-10-03T16:27:19.494Z",
+          "updatedAt": "2026-10-03T16:27:19.494Z",
+          "id": "FUio9hKiSPDjbnAlMqwRjELNhHBxrIXh"
+        }
+      ],
+      "receipts": []
+    }
+  },
+  {
+    "state": {
+      "user": [],
+      "account": [],
+      "session": [],
+      "verification": [
+        {
+          "identifier": "0K5aBhGrKMWkYsbO5v1SLxskomx3ObM-",
+          "value": "{\"callbackURL\":\"http://localhost:41310/__test/profiles/oauth-popup/api/auth\",\"codeVerifier\":\"ktvDHv825h77eBppKh7RTU6s52Vy_QJmNgEG_JQ5XAfJ44dge-Pi37HsR-yeiSp673XtPghxG1ty3isOLfdPa7xHFD7fbpfbLcxRQnhyF55BViwyvSya7BUcp0nkan4B\",\"expiresAt\":1791045440049,\"oauthState\":\"0K5aBhGrKMWkYsbO5v1SLxskomx3ObM-\"}",
+          "expiresAt": "2026-10-03T16:37:20.049Z",
+          "createdAt": "2026-10-03T16:27:20.049Z",
+          "updatedAt": "2026-10-03T16:27:20.049Z",
+          "id": "IPFJnqMiJe9dFrJdXBGDphNaGHnLMZ4i"
+        }
+      ],
+      "receipts": []
+    }
+  },
+  {
+    "state": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:25.144Z",
+          "updatedAt": "2026-10-03T16:27:25.144Z",
+          "id": "Ev1aEsBVjAxBswVPMaeyWjnOH2cKdFjM"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "local",
+          "userId": "Ev1aEsBVjAxBswVPMaeyWjnOH2cKdFjM",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:25.142Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:25.144Z",
+          "updatedAt": "2026-10-03T16:27:25.144Z",
+          "id": "JklPUZi2ZAg5tYGAwTbPoqPyqVLdPaFc"
+        }
+      ],
+      "session": [
+        {
+          "expiresAt": "2026-10-10T16:27:25.144Z",
+          "token": "GEilGQhpzefMHzmL7k2sYSsXfKrUwxgU",
+          "createdAt": "2026-10-03T16:27:25.144Z",
+          "updatedAt": "2026-10-03T16:27:25.144Z",
+          "ipAddress": "127.0.0.1",
+          "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "userId": "Ev1aEsBVjAxBswVPMaeyWjnOH2cKdFjM",
+          "id": "BdutrQwrZnt9dJsMgWShzIHsLG3bu06S"
+        }
+      ],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "KVMGSXlC8PUjR11ZE7M19Fm93jjRYjR3",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/local",
+            "code_challenge_method": "S256",
+            "code_challenge": "U5qdVtsOMbFNHTYCO2h_CzSfz0bItUzY8hGGJABm_oM"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "J61KzqAhMVqx9-nZ_1B4Qob4K2Z7q3pi0krXIrxVrqCFM15WdgFQ1-C8CMocCobKsi0MpHuD3yDvmLHXt48dat9OVp3VgN7olo9-fgpz_feGbm1FpvpNmRuaxzqtPk_W",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/local",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  },
+  {
+    "embeddedState": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:25.144Z",
+          "updatedAt": "2026-10-03T16:27:25.144Z",
+          "id": "Ev1aEsBVjAxBswVPMaeyWjnOH2cKdFjM"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "local",
+          "userId": "Ev1aEsBVjAxBswVPMaeyWjnOH2cKdFjM",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:25.142Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:25.144Z",
+          "updatedAt": "2026-10-03T16:27:25.144Z",
+          "id": "JklPUZi2ZAg5tYGAwTbPoqPyqVLdPaFc"
+        }
+      ],
+      "session": [
+        {
+          "expiresAt": "2026-10-10T16:27:25.144Z",
+          "token": "GEilGQhpzefMHzmL7k2sYSsXfKrUwxgU",
+          "createdAt": "2026-10-03T16:27:25.144Z",
+          "updatedAt": "2026-10-03T16:27:25.144Z",
+          "ipAddress": "127.0.0.1",
+          "userAgent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/153.0.0.0 Safari/537.36",
+          "userId": "Ev1aEsBVjAxBswVPMaeyWjnOH2cKdFjM",
+          "id": "BdutrQwrZnt9dJsMgWShzIHsLG3bu06S"
+        }
+      ],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "KVMGSXlC8PUjR11ZE7M19Fm93jjRYjR3",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/local",
+            "code_challenge_method": "S256",
+            "code_challenge": "U5qdVtsOMbFNHTYCO2h_CzSfz0bItUzY8hGGJABm_oM"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "J61KzqAhMVqx9-nZ_1B4Qob4K2Z7q3pi0krXIrxVrqCFM15WdgFQ1-C8CMocCobKsi0MpHuD3yDvmLHXt48dat9OVp3VgN7olo9-fgpz_feGbm1FpvpNmRuaxzqtPk_W",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/local",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  },
+  {
+    "state": {
+      "user": [
+        {
+          "name": "Popup Owner",
+          "email": "popup-owner@fixture.test",
+          "emailVerified": true,
+          "image": "https://assets.fixture.test/popup.png",
+          "createdAt": "2026-10-03T16:27:25.144Z",
+          "updatedAt": "2026-10-03T16:27:25.144Z",
+          "id": "Ev1aEsBVjAxBswVPMaeyWjnOH2cKdFjM"
+        }
+      ],
+      "account": [
+        {
+          "accountId": "132",
+          "providerId": "local",
+          "userId": "Ev1aEsBVjAxBswVPMaeyWjnOH2cKdFjM",
+          "accessToken": "popup-access",
+          "refreshToken": "popup-refresh",
+          "idToken": null,
+          "accessTokenExpiresAt": "2026-10-03T17:27:25.142Z",
+          "refreshTokenExpiresAt": null,
+          "scope": "read_user",
+          "password": null,
+          "createdAt": "2026-10-03T16:27:25.144Z",
+          "updatedAt": "2026-10-03T16:27:25.144Z",
+          "id": "JklPUZi2ZAg5tYGAwTbPoqPyqVLdPaFc"
+        }
+      ],
+      "session": [],
+      "verification": [],
+      "receipts": [
+        {
+          "stage": "authorize",
+          "query": {
+            "response_type": "code",
+            "client_id": "popup-client",
+            "state": "KVMGSXlC8PUjR11ZE7M19Fm93jjRYjR3",
+            "scope": "read_user",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/local",
+            "code_challenge_method": "S256",
+            "code_challenge": "U5qdVtsOMbFNHTYCO2h_CzSfz0bItUzY8hGGJABm_oM"
+          }
+        },
+        {
+          "stage": "token",
+          "body": {
+            "grant_type": "authorization_code",
+            "code": "popup-code-1",
+            "code_verifier": "J61KzqAhMVqx9-nZ_1B4Qob4K2Z7q3pi0krXIrxVrqCFM15WdgFQ1-C8CMocCobKsi0MpHuD3yDvmLHXt48dat9OVp3VgN7olo9-fgpz_feGbm1FpvpNmRuaxzqtPk_W",
+            "redirect_uri": "http://localhost:41310/__test/profiles/oauth-popup/api/auth/callback/local",
+            "client_id": "popup-client",
+            "client_secret": "popup-secret"
+          }
+        },
+        {
+          "stage": "userinfo",
+          "authorization": "Bearer popup-access"
+        }
+      ]
+    }
+  }
+]

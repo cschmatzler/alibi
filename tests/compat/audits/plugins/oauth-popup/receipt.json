@@ -1,0 +1,60 @@
+{
+  "issue": 132,
+  "referenceVersion": "1.7.6",
+  "testedBase": "9220de08",
+  "testedHead": "e84ee2f8c42bfc77306df4a2b88f658c577210e5",
+  "rebasedBase": "27424d9f0b7c350f840bbc793dc51c7e9fa80c68",
+  "rebasedProductionHead": "fb5b9a2f8e5934d00708f3319e711391b326b564",
+  "publishedTarballSha256": "df94b955c3e6f64dfc095d52ba0f6f344814d55385de0f50669111586a603e99",
+  "actionsEnabled": false,
+  "selectedOwner": "tests/plugins/oauth-popup/popup.test.ts",
+  "assertionsPerAdapter": 232,
+  "fullSweepsRun": false,
+  "sourceModules": {
+    "index": {
+      "sha256": "ebd2004fe7f62b5d35d8c32798d356d2a2ea5e2f731654aa005488f31ba1c14e",
+      "privateLinkCount": 1
+    },
+    "client": {
+      "sha256": "6190ffd8b6eda0a771d7004f4603fe0db994e563a6792f0e0a4dd9a772c5f7e9",
+      "privateLinkCount": 1
+    },
+    "constants": {
+      "sha256": "a62a6d8c748bd4ff71c1ee4d4b596a748a66db06600e3c7e90580cac3ec4cbe9",
+      "privateLinkCount": 1
+    }
+  },
+  "artifacts": {
+    "sqlx": "fe645b34bfe29b3604995240592d36fb718b79fc476c06a03a611b5937b0c4b7",
+    "seaorm": "0012d6122d828d4690b84ce7fbdcbeb4dfc3af5a12b74c66ed06075a76eeb8d2"
+  },
+  "finalReviewedBase": "4564656881ff0bdac07d29b008b228a5696a4ac0",
+  "finalReviewedHead": "65df512d80df41069ec2630bdb2629672c3f7301",
+  "finalPopupInvarianceBytes": 0,
+  "losslessRebaseRecords": {
+    "rebase-production-inspection.diff": {
+      "gzip": "rebase-production-inspection.diff.gz",
+      "rawSha256": "fe2b1587ad998883520aa8473d75df4c5f8061b640ffa3e15310b1ecea2a8772"
+    },
+    "registration-review.diff": {
+      "gzip": "registration-review.diff.gz",
+      "rawSha256": "259dad9044c09f70dd9ec3342ecdb0402d59b4bffb0ac9d4a8510345849b1606"
+    },
+    "second-rebase-production-inspection.diff": {
+      "gzip": "second-rebase-production-inspection.diff.gz",
+      "rawSha256": "c54289f19a44731526cf84e721f91d1d4047b24da66ccfcb92e8de5db27ca54b"
+    },
+    "final-registration-review.diff": {
+      "gzip": "final-registration-review.diff.gz",
+      "rawSha256": "839604d0160e6763ff28586741245edfff77d529031c2c630fef29180ed221d1"
+    },
+    "final-rebase-range-diff.log": {
+      "gzip": "final-rebase-range-diff.log.gz",
+      "rawSha256": "2c5f1dff880ad140376883dace436cb5a2fa7be10935a621f2bdd8a4fc2fd37a"
+    },
+    "rebase-range-diff.log": {
+      "gzip": "rebase-range-diff.log.gz",
+      "rawSha256": "3845106cd0e9dc9d3a813b7ef2ce8caafa9ff118c8504ea0ba9506cbf7e437c5"
+    }
+  }
+}

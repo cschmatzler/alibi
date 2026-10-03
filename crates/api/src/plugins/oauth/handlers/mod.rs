@@ -2324,7 +2324,7 @@ async fn initiate_oauth_flow_core(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(super) async fn handle_social_sign_in(
+pub(in crate::plugins) async fn handle_social_sign_in(
     config: &OAuthConfig,
     req: &AuthRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
