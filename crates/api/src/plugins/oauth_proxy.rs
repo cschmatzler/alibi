@@ -2,7 +2,7 @@
 //! the originating preview host with database or authenticated cookie state.
 use super::oauth::handlers::{
     OAuthSignInError, complete_link_social, create_account_cookie_headers,
-    fetch_user_info_from_provider, parse_callback_user_payload, process_oauth_sign_in,
+    fetch_user_info_from_provider, parse_callback_user_payload,
     validate_authorization_code_via_provider,
 };
 use super::oauth::state::{
@@ -11,6 +11,7 @@ use super::oauth::state::{
 };
 use super::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest,
+    oauth_callback_path, oauth_disable_sign_up_option, resolve_oauth_account_key,
 };
 use async_trait::async_trait;
 use better_auth_core::{
@@ -93,6 +94,8 @@ struct ProxyUser {
     name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     image: Option<String>,
+    #[serde(flatten)]
+    additional_fields: better_auth_core::field_policy::FieldOutput,
     #[serde(default)]
     email_verified: bool,
 }
@@ -140,6 +143,7 @@ struct ProxyPayload {
     new_user_url: Option<String>,
     #[serde(rename = "errorURL", skip_serializing_if = "Option::is_none")]
     error_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     disable_sign_up: Option<bool>,
     timestamp: f64,
 }
@@ -174,15 +178,16 @@ impl OAuthProxyPlugin {
         {
             return value.clone();
         }
-        if let Some(url) = req.url() {
-            if ctx
+        if let Some(url) = req.url()
+            && ctx
                 .config
                 .is_redirect_target_trusted(&url.origin().ascii_serialization())
-            {
-                return url.to_string();
-            }
+        {
+            return url.to_string();
         }
-        if let Some(url) = vendor_base_url().filter(|value| url::Url::parse(value).is_ok()) {
+        if let Some(url) = vendor_base_url().filter(|value| {
+            url::Url::parse(value).is_ok_and(|url| !matches!(url.origin(), url::Origin::Opaque(_)))
+        }) {
             return url;
         }
         ctx.config.base_url.clone()
@@ -256,12 +261,8 @@ impl OAuthProxyPlugin {
         {
             return Ok(Some(error_redirect(&error_url, "state_mismatch", None)?));
         }
-        if let Some(error) = params.get("error") {
-            return Ok(Some(error_redirect(
-                &error_url,
-                error,
-                params.get("error_description").map(String::as_str),
-            )?));
+        if let Some(error) = params.get("error").filter(|value| !value.is_empty()) {
+            return Ok(Some(error_redirect(&error_url, error, None)?));
         }
         let Some(code) = params.get("code") else {
             return Ok(Some(error_redirect(&error_url, "no_code", None)?));
@@ -280,7 +281,11 @@ impl OAuthProxyPlugin {
         let Ok(tokens) = validate_authorization_code_via_provider(
             provider,
             code,
-            &format!("{}/callback/{provider_id}", auth_base(ctx)),
+            &format!(
+                "{}{}",
+                auth_base(ctx),
+                oauth_callback_path(provider_id, provider)
+            ),
             provider
                 .authorization
                 .as_ref()
@@ -294,7 +299,7 @@ impl OAuthProxyPlugin {
         };
         // Like the source proxy middleware, application/profile lookup errors
         // propagate; only an absent profile is a redirect-level failure.
-        let info = fetch_user_info_from_provider(
+        let mut info = fetch_user_info_from_provider(
             provider,
             OAuthUserInfoRequest {
                 token_type: tokens.token_type.clone(),
@@ -312,6 +317,16 @@ impl OAuthProxyPlugin {
         if info.user.email.is_empty() {
             return Ok(Some(error_redirect(&error_url, "email_not_found", None)?));
         }
+        if resolve_oauth_account_key(provider, &tokens, &mut info)
+            .await
+            .is_err()
+        {
+            return Ok(Some(error_redirect(
+                &error_url,
+                "unable_to_get_user_info",
+                None,
+            )?));
+        }
         let mut callback = url::Url::parse(&state.callback_url)
             .map_err(|_error| AuthError::internal("Invalid proxy callback URL"))?;
         let callback_url = callback
@@ -327,6 +342,7 @@ impl OAuthProxyPlugin {
                 email: info.user.email,
                 name: info.user.name.unwrap_or_default(),
                 image: info.user.image,
+                additional_fields: Default::default(),
                 email_verified: info.user.email_verified,
             },
             profile: Some(info.data),
@@ -345,10 +361,13 @@ impl OAuthProxyPlugin {
             callback_url,
             new_user_url: state.new_user_url,
             error_url: state.error_url,
-            disable_sign_up: Some(
-                provider.disable_implicit_sign_up && !state.request_sign_up.unwrap_or(false)
-                    || provider.disable_sign_up,
-            ),
+            disable_sign_up: if provider.disable_implicit_sign_up
+                && !state.request_sign_up.unwrap_or(false)
+            {
+                Some(true)
+            } else {
+                oauth_disable_sign_up_option(provider)
+            },
             timestamp: Utc::now().timestamp_millis() as f64,
         };
         _ = callback.query_pairs_mut().append_pair(
@@ -521,8 +540,10 @@ impl OAuthProxyPlugin {
                 .insert(RecoveredOAuthServerContext(context));
         }
         let user = OAuthUserInfo {
-            additional_fields: Default::default(),
-            id: payload.user_info.id,
+            additional_fields: payload.user_info.additional_fields,
+            // Account authority comes from the account key, never the loose
+            // display profile's id. Forwarding resolves both to the same key.
+            id: payload.account.account_id,
             email: payload.user_info.email.to_lowercase(),
             name: Some(payload.user_info.name),
             image: payload.user_info.image,
@@ -568,7 +589,16 @@ impl OAuthProxyPlugin {
                 }
             };
         }
-        let outcome = match process_oauth_sign_in(
+        let user_output = raw
+            .get("userInfo")
+            .and_then(Value::as_object)
+            .map(|values| {
+                values
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.clone()))
+                    .collect::<better_auth_core::field_policy::FieldOutput>()
+            });
+        let outcome = match super::oauth::handlers::process_oauth_sign_in_with_output(
             super::oauth::handlers::OAuthIdentity {
                 provider_name: &payload.account.provider_id,
                 user: &user,
@@ -582,6 +612,7 @@ impl OAuthProxyPlugin {
             payload.disable_sign_up.unwrap_or(false),
             &better_auth_core::RequestMeta::from_request(req),
             ctx,
+            (user_output.as_ref(), None),
         )
         .await
         {
@@ -954,10 +985,10 @@ fn completion_provider(path: &str) -> Option<&str> {
 }
 
 fn vendor_base_url() -> Option<String> {
-    if let Ok(value) = std::env::var("VERCEL_URL") {
-        if !value.is_empty() {
-            return Some(format!("https://{value}"));
-        }
+    if let Ok(value) = std::env::var("VERCEL_URL")
+        && !value.is_empty()
+    {
+        return Some(format!("https://{value}"));
     }
     [
         "NETLIFY_URL",

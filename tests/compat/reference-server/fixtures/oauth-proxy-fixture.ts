@@ -34,8 +34,11 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
     "infinity",
     "negative-infinity",
     "cache",
+    "cache-error",
     "signup-absent",
     "signup-disabled",
+    "custom",
+    "bad-key",
   ];
   const preview = String(base.baseURL);
   const production = preview.replace("localhost", "127.0.0.1");
@@ -93,8 +96,23 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
           : mode === "empty-error"
             ? { onAPIError: { errorURL: "" } }
             : {}),
-        ...(mode === "cache"
-          ? { session: { cookieCache: { enabled: true, strategy: "compact", maxAge: 120 } } }
+        ...(["cache", "cache-error"].includes(mode)
+          ? {
+              session: {
+                cookieCache: {
+                  enabled: true,
+                  strategy: "compact",
+                  maxAge: 120,
+                  ...(mode === "cache-error"
+                    ? {
+                        version: async () => {
+                          throw new Error("private cache publication failure");
+                        },
+                      }
+                    : {}),
+                },
+              },
+            }
           : {}),
         basePath: path,
         trustedOrigins: [preview, production],
@@ -114,6 +132,23 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
                       : 60,
             ...(managed ? {} : { secret: OAUTH_PROXY_SECRET }),
           }),
+          {
+            id: "proxy-provider-policy",
+            init(context) {
+              if (["custom", "bad-key"].includes(mode)) {
+                const provider = context.socialProviders.find(
+                  (provider) => provider.id === "gitlab",
+                )!;
+                provider.callbackPath = "provider-return";
+                provider.accountSubject = async ({ tokens, profile }) => {
+                  if (!tokens.accessToken) throw new Error("actual provider token required");
+                  return mode === "bad-key"
+                    ? ""
+                    : ((profile as Record<string, unknown>).account_key as string);
+                };
+              }
+            },
+          },
           {
             id: "proxy-application-observer",
             hooks: {
@@ -273,7 +308,12 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
 
       if (url.pathname.startsWith(`${path}/`)) {
         const origin = databases.has(url.origin) ? url.origin : preview;
-        return instances.get(`${origin}:${modes.get(origin)}`)!.handler(request);
+        const forwardedURL = new URL(url);
+        if (forwardedURL.pathname === `${path}/provider-return`)
+          forwardedURL.pathname = `${path}/callback/gitlab`;
+        return instances
+          .get(`${origin}:${modes.get(origin)}`)!
+          .handler(forwardedURL.href === url.href ? request : new Request(forwardedURL, request));
       }
 
       if (url.pathname === `${control}/keys` && managed && request.method === "POST") {
