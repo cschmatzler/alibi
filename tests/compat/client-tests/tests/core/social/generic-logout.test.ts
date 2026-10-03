@@ -138,7 +138,6 @@ for (const [index, item] of cases.entries()) {
       ).toBe(true);
       if (item.endpoint) {
         expect(body.url).toBeString();
-        expect(body.url).toBeString();
         const url = new URL(body.url);
         expect(url.origin).toBe(`https://${item.endpoint}.example.invalid`);
         expect(url.pathname).toBe("/logout");
