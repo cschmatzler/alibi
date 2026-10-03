@@ -5,12 +5,11 @@ import { hkdfSync } from "node:crypto";
 import { getCurrentAdapter } from "@better-auth/core/context";
 import { betterAuth } from "better-auth";
 import { getCookieCache } from "better-auth/cookies";
-import { symmetricDecrypt, symmetricDecodeJWT } from "better-auth/crypto";
+import { symmetricDecrypt } from "better-auth/crypto";
 import { getMigrations } from "better-auth/db/migration";
 import { jwt } from "better-auth/plugins";
 import {
   decodeProtectedHeader,
-  decodeJwt,
   importJWK,
   SignJWT,
   EncryptJWT,
@@ -132,11 +131,11 @@ function context(
 }
 for (const strategy of ["jwt", "jwe", "managed"] as const) {
   test(`${strategy} cache comparator authenticates actual pinned issuance and rejects envelope, claims, key and chunk corruption`, async () => {
-    const left = await observed(strategy, false),
-      right = await observed(strategy, true),
-      a = value(left),
-      b = value(right),
-      ctx = context(left, right);
+    const left = await observed(strategy, false);
+    const right = await observed(strategy, true);
+    const a = value(left);
+    const b = value(right);
+    const ctx = context(left, right);
     expect(left.signup.user.id.length).toBe(32);
     expect(right.signup.user.id.length).toBe(36);
     expect(right.sessionCache.rawCookies.length).toBeGreaterThan(1);
@@ -172,8 +171,9 @@ for (const strategy of ["jwt", "jwe", "managed"] as const) {
       (c: any) => delete c.decoded,
       (c: any) => delete c.payload.user.email,
       (c: any) => (c.payload.custom = { token: "literal-application-token" }),
-    ])
+    ]) {
       rejects(altered(change));
+    }
     for (const mutate of [
       (raw: string[]) => raw.slice(1),
       (raw: string[]) => [...raw, raw[0]!],
@@ -182,8 +182,9 @@ for (const strategy of ["jwt", "jwe", "managed"] as const) {
       (raw: string[]) => raw.map((r) => r.replace("Path=/", "Path=/foreign")),
       (raw: string[]) => raw.map((r) => r + "; Priority=High"),
       (raw: string[]) => raw.map((r) => r.replace("session_data.0=", "session_data.00=")),
-    ])
+    ]) {
       rejects(altered((c) => (c.rawCookies = mutate(c.rawCookies))));
+    }
     const key =
       strategy === "jwe"
         ? Buffer.from(
@@ -260,8 +261,8 @@ for (const strategy of ["jwt", "jwe", "managed"] as const) {
       rejects(copy);
     }
     const rewritten = async (change: (claims: any) => void) => {
-      const copy = structuredClone(b),
-        claims = structuredClone(copy.sessionCache.payload);
+      const copy = structuredClone(b);
+      const claims = structuredClone(copy.sessionCache.payload);
       change(claims);
       // The public Source writers reset iat/exp and JWE jti. JOSE directly
       // authenticates the full retained claims to isolate each changed field.
@@ -300,25 +301,29 @@ for (const strategy of ["jwt", "jwe", "managed"] as const) {
       (c: any) => (c.user.id = "authentic-foreign-id"),
       (c: any) => (c.version = "2"),
       (c: any) => (c.updatedAt += 60000),
-    ])
+    ]) {
       rejects(await rewritten(change));
+    }
     const foreignToken = await rewritten(
       (c) =>
         (c.session.token = (c.session.token[0] === "X" ? "Y" : "X") + c.session.token.slice(1)),
     );
     if (strategy === "managed") rejects(foreignToken);
-    else
+    else {
       expect(compareValues(a, foreignToken, ctx)).toEqual([
         { path: "signup.token", reason: "identity relationship or token rotation differs" },
       ]);
-    if (strategy === "managed")
+    }
+    if (strategy === "managed") {
       for (const change of [
         (c: any) => (c.iss = "https://foreign.test"),
         (c: any) => (c.aud = "foreign"),
         (c: any) => (c.sub = "foreign"),
         (c: any) => (c.sid = "foreign"),
-      ])
+      ]) {
         rejects(await rewritten(change));
+      }
+    }
     if (strategy === "managed") rejects(altered((c) => (c.jwks[0].x = "invalid-public-key")));
   });
 }

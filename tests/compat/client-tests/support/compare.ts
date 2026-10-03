@@ -3954,8 +3954,9 @@ export function compareValues(
           return;
         }
         if (a.strategy !== b.strategy) fail(path, "session-cache strategy differs");
-        if (a.authPath !== b.authPath)
+        if (a.authPath !== b.authPath) {
           fail(`${path}.authPath`, "session-cache issuer path differs");
+        }
         identity(String(a.token), String(b.token), `${path}.token`, "token");
         visit(compactCookieHeaders(a), compactCookieHeaders(b), `${path}.rawCookies`, "");
         visit(a.header, b.header, `${path}.header`, "", false, false, true);
@@ -3973,18 +3974,18 @@ export function compareValues(
               child === "updatedAt" &&
               typeof left[child] === "number" &&
               typeof right[child] === "number"
-            )
+            ) {
               cacheClock(left[child] as number, right[child] as number, `${target}.${child}`);
-            else if (["iat", "exp"].includes(child))
+            } else if (["iat", "exp"].includes(child)) {
               clock(Number(left[child]), Number(right[child]), `${target}.${child}`);
-            else if (child === "jti")
+            } else if (child === "jti") {
               identity(
                 String(left[child]),
                 String(right[child]),
                 `${target}.${child}`,
                 "encrypted-jwt-id",
               );
-            else
+            } else {
               visit(
                 left[child],
                 right[child],
@@ -3997,6 +3998,7 @@ export function compareValues(
                       ? "userId"
                       : child,
               );
+            }
           }
         };
         compareClaims(

@@ -178,8 +178,8 @@ for (const mode of ["jwt", "jwe", "managed"] as const) {
   compatScenario(
     `${mode} session cache authenticates real issuance and preserves revoked snapshots while sensitive guards reject`,
     async (ctx) => {
-      const owner = client(ctx, mode),
-        foreign = client(ctx, mode, "foreign");
+      const owner = client(ctx, mode);
+      const foreign = client(ctx, mode, "foreign");
       const originalName = "Cached JWT Owner".repeat(500);
       const signup = await owner.sdk.signUp.email({
         email: ctx.uniqueEmail(`cache-${mode}`),
@@ -193,16 +193,19 @@ for (const mode of ["jwt", "jwe", "managed"] as const) {
       });
       expect(signup.error).toBeNull();
       expect(other.error).toBeNull();
-      const issued = owner.headers.at(-1)!,
-        pairs = cookies(issued),
-        checked = await observation(ctx, owner, mode, issued);
+      const issued = owner.headers.at(-1)!;
+      const pairs = cookies(issued);
+      const checked = await observation(ctx, owner, mode, issued);
       const otherChecked = await observation(ctx, foreign, mode, foreign.headers.at(-1)!);
       expect(checked.sessionCache.decoded!.session.token).toBe(signup.data!.token!);
       expect(checked.sessionCache.payload.user).toEqual(
         JSON.parse(JSON.stringify(signup.data!.user)),
       );
-      const before = await control(ctx, mode, { action: "rows", userId: signup.data!.user.id! }),
-        foreignBefore = await control(ctx, mode, { action: "rows", userId: other.data!.user.id! });
+      const before = await control(ctx, mode, { action: "rows", userId: signup.data!.user.id! });
+      const foreignBefore = await control(ctx, mode, {
+        action: "rows",
+        userId: other.data!.user.id!,
+      });
       await control(ctx, mode, {
         action: "rename",
         userId: signup.data!.user.id!,
@@ -273,8 +276,11 @@ for (const mode of ["jwt", "jwe", "managed"] as const) {
         expect(expiredRead.body).toBeNull();
         exported = { imported, denied, expiredRead };
       }
-      const after = await control(ctx, mode, { action: "rows", userId: signup.data!.user.id! }),
-        foreignAfter = await control(ctx, mode, { action: "rows", userId: other.data!.user.id! });
+      const after = await control(ctx, mode, { action: "rows", userId: signup.data!.user.id! });
+      const foreignAfter = await control(ctx, mode, {
+        action: "rows",
+        userId: other.data!.user.id!,
+      });
       expect(foreignAfter).toEqual(foreignBefore);
       return {
         signup,

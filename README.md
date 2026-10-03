@@ -362,15 +362,6 @@ See [Tests](tests/README.md) for the unit, integration and compat tiers, and
 [Compatibility testing](tests/compat/README.md) for focused checks and the
 compatibility contract.
 
-## License
-
-Licensed under either of:
-
-- [MIT License](LICENSE-MIT)
-- [Apache License, Version 2.0](LICENSE-APACHE)
-
-at your option.
-
 ### Session cookie cache formats
 
 Enable `CookieCacheConfig` with `CookieCacheStrategy::Compact`, `Jwt`, or `Jwe`.
@@ -388,3 +379,13 @@ Every format retains the configured public user/session projection, cache
 version, expiry, cookie chunk lifecycle and existing authoritative-read guards.
 A cache snapshot does not reconstruct a database model or bypass a sensitive
 operation's physical-session or credential checks.
+
+
+## License
+
+Licensed under either of:
+
+- [MIT License](LICENSE-MIT)
+- [Apache License, Version 2.0](LICENSE-APACHE)
+
+at your option.
