@@ -79,6 +79,10 @@ impl OAuthProvider {
             user_info_url: Some(endpoint.clone()),
             scopes: vec!["identity".into()],
             authorization: Some(OAuthAuthorizationPolicy {
+                preserve_raw_profile_scalars: true,
+                source_profile_exceptions: true,
+                allow_missing_access_token: true,
+                preserve_raw_email_errors: true,
                 configured_scopes: options.scope,
                 disable_default_scopes: options.disable_default_scope,
                 require_client_id: true,
@@ -100,6 +104,7 @@ impl OAuthProvider {
             account_subject: Some(subject),
             map_user_info: None,
             get_user_info: Some(std::sync::Arc::new(RedditUserInfo {
+                application_mapper: None,
                 endpoint,
                 mapper: options.map_profile_to_user,
             })),
@@ -113,17 +118,33 @@ impl OAuthProvider {
         }
     }
 }
+#[derive(Clone)]
 struct RedditUserInfo {
+    application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
     endpoint: String,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for RedditUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
+    fn mapped_handler(
+        &self,
+        mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<std::sync::Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.mapper = None;
+        handler.application_mapper = Some(mapper);
+        Some(std::sync::Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
-        let access_token = request.access_token.ok_or("Missing Reddit access token")?;
+        let access_token = super::remaining_profile::bearer_access_token(&request)?;
         let profile: Value = reqwest::Client::new()
             .get(&self.endpoint)
             .bearer_auth(access_token)
@@ -136,58 +157,107 @@ impl OAuthUserInfoHandler for RedditUserInfo {
             .json()
             .await
             .map_err(|e| e.to_string())?;
-        let mapped = self
-            .mapper
-            .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
-        let mut user = mapped.unwrap_or(OAuthUserInfo {
-            additional_fields: Default::default(),
-            id: scalar(profile.get("id"))?.unwrap_or_default(),
-            // Typed signup applies Source's falsy-name fallback; public output retains raw JSON.
-            name: scalar(
-                profile
-                    .get("name")
-                    .filter(|v| !matches!(v, Value::Bool(false)) && v.as_f64() != Some(0.0)),
-            )?,
-            email: String::new(),
-            image: None,
-            email_verified: false,
-        });
-        if user.email.is_empty() {
-            let identifier = scalar(profile.get("id"))?.unwrap_or_else(|| {
-                if profile.get("id").is_some() {
-                    "null".into()
-                } else {
-                    "undefined".into()
-                }
-            });
-            let email = format!("{identifier}@reddit.placeholder.invalid");
-            if !crate::plugins::authentication_helpers::is_valid_email(&email) {
-                return Err("Invalid placeholder email".into());
-            }
-            user.email = email;
+        let mapped = if let Some(mapper) = &self.application_mapper {
+            mapper
+                .map_profile(profile.clone())
+                .await
+                .map_err(super::remaining_profile::profile_exception)?
+        } else {
+            self.mapper
+                .map(|mapper| mapper(profile.clone()))
+                .transpose()
+                .map_err(super::remaining_profile::profile_exception)?
+                .map(|user| user.public_profile(true))
+                .unwrap_or_default()
+        };
+        if profile.is_null() {
+            return Err(super::remaining_profile::profile_exception(
+                "Null Reddit profile",
+            ));
         }
+        let email = match mapped
+            .get("email")
+            .filter(|value| super::remaining_profile::truthy(value))
+        {
+            Some(value) => value.clone(),
+            None => {
+                let identifier = profile
+                    .get("id")
+                    .map(super::remaining_profile::js_string)
+                    .transpose()
+                    .map_err(super::remaining_profile::profile_exception)?
+                    .unwrap_or_else(|| "undefined".into());
+                let email = format!("{identifier}@reddit.placeholder.invalid");
+                if !crate::plugins::authentication_helpers::is_valid_email(&email) {
+                    return Err(super::remaining_profile::profile_exception(
+                        "Invalid placeholder email",
+                    ));
+                }
+                Value::String(email)
+            }
+        };
         let image = match profile.get("icon_img") {
             None | Some(Value::Null) => None,
-            Some(Value::String(image)) => {
-                Some(image.split('?').next().unwrap_or_default().to_owned())
+            Some(Value::String(image)) => Some(Value::String(
+                image.split('?').next().unwrap_or_default().into(),
+            )),
+            _ => {
+                return Err(super::remaining_profile::profile_exception(
+                    "Invalid Reddit icon_img",
+                ));
             }
-            _ => return Err("Invalid Reddit icon_img".into()),
         };
         let mut output = serde_json::Map::new();
         if let Some(name) = profile.get("name") {
             drop(output.insert("name".into(), name.clone()));
         }
-        if let Some(image) = &image {
-            drop(output.insert("image".into(), Value::String(image.clone())));
+        if let Some(image) = image {
+            drop(output.insert("image".into(), image));
         }
-        if self.mapper.is_some() {
-            output.extend(user.public_profile(true));
-        } else {
-            user.image = image;
-        }
-        drop(output.insert("email".into(), Value::String(user.email.clone())));
-        drop(output.insert("emailVerified".into(), Value::Bool(user.email_verified)));
+        output.extend(mapped.clone());
+        drop(output.insert("email".into(), email));
+        drop(
+            output.insert(
+                "emailVerified".into(),
+                mapped
+                    .get("emailVerified")
+                    .filter(|value| !value.is_null())
+                    .cloned()
+                    .unwrap_or(Value::Bool(false)),
+            ),
+        );
+        let user = OAuthUserInfo {
+            additional_fields: output
+                .iter()
+                .filter(|(key, _)| {
+                    !matches!(
+                        key.as_str(),
+                        "id" | "name" | "email" | "image" | "emailVerified"
+                    )
+                })
+                .map(|(key, value)| (key.clone(), value.clone()))
+                .collect(),
+            id: profile
+                .get("id")
+                .map(super::remaining_profile::js_string)
+                .transpose()
+                .map_err(super::remaining_profile::profile_exception)?
+                .unwrap_or_default(),
+            name: super::remaining_profile::scalar(
+                output
+                    .get("name")
+                    .filter(|value| super::remaining_profile::truthy(value)),
+            )?,
+            email: output
+                .get("email")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .into(),
+            image: super::remaining_profile::scalar(output.get("image"))?,
+            email_verified: output
+                .get("emailVerified")
+                .is_some_and(super::remaining_profile::truthy),
+        };
         Ok(OAuthUserInfoResponse {
             user_output: Some(output),
             user,
@@ -195,26 +265,6 @@ impl OAuthUserInfoHandler for RedditUserInfo {
         })
     }
 }
-fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
-    match value {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => better_auth_core::utils::json::number_to_string(value)
-            .map(Some)
-            .map_err(|e| e.to_string()),
-        Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        Some(Value::Array(_) | Value::Object(_)) => Err("Invalid Reddit profile field".into()),
-    }
-}
 fn subject(profile: &Value) -> Result<String, String> {
-    let id = scalar(profile.get("id"))?.ok_or("Missing Reddit id")?;
-    if id
-        .trim_matches(|c: char| (c.is_whitespace() && c != '\u{85}') || c == '\u{feff}')
-        .is_empty()
-        || id == "null"
-        || id == "undefined"
-    {
-        return Err("Invalid Reddit id".into());
-    }
-    Ok(id)
+    super::remaining_profile::raw_subject(profile.get("id"))
 }

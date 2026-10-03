@@ -7,7 +7,7 @@
 
 use crate::error::record_not_inserted;
 use crate::pool::{Exec, SqlxRow};
-use crate::sql::Sql;
+use crate::sql::{Sql, select};
 use crate::value::{ColumnKind, SqlValue};
 use better_auth_core::error::{AuthError, AuthResult};
 
@@ -222,6 +222,9 @@ fn projection<M: SqlxModel>(sql: &mut Sql, qualified: bool) {
 }
 
 pub(crate) fn select_model<M: SqlxModel>(exec: Exec<'_>) -> Sql {
+    if exec.engine() != crate::pool::Engine::Sqlite || M::PROVIDER_VERIFICATION_COLUMN.is_none() {
+        return select(exec.engine(), M::TABLE, M::COLUMN_NAMES);
+    }
     let mut sql = Sql::new(exec.engine());
     sql.push("SELECT ");
     projection::<M>(&mut sql, true);
@@ -235,6 +238,19 @@ pub(crate) fn returning<M: SqlxModel>(sql: &mut Sql) {
     projection::<M>(sql, false);
 }
 
+fn bind_model_value<M: SqlxModel>(sql: &mut Sql, column: &str, value: SqlValue) {
+    let cast = sql.engine() == crate::pool::Engine::Postgres
+        && M::PROVIDER_VERIFICATION_COLUMN == Some(column)
+        && matches!(&value, SqlValue::Text(_));
+    if cast {
+        sql.push("CAST(");
+    }
+    sql.bind(M::column_value(column, value));
+    if cast {
+        sql.push(" AS BOOLEAN)");
+    }
+}
+
 /// `INSERT ... RETURNING` every present column.
 pub(crate) async fn insert<M: SqlxModel>(exec: Exec<'_>, active: &ActiveRow) -> AuthResult<M> {
     let mut sql = Sql::new(exec.engine());
@@ -244,11 +260,14 @@ pub(crate) async fn insert<M: SqlxModel>(exec: Exec<'_>, active: &ActiveRow) -> 
     let present = active.present().collect::<Vec<_>>();
     sql.column_list(&present.iter().map(|(name, _)| *name).collect::<Vec<_>>());
     sql.push(") VALUES ");
-    sql.bind_list(
-        present
-            .into_iter()
-            .map(|(column, value)| M::column_value(column, value.clone())),
-    );
+    sql.push("(");
+    for (index, (column, value)) in present.into_iter().enumerate() {
+        if index > 0 {
+            sql.push(", ");
+        }
+        bind_model_value::<M>(&mut sql, column, value.clone());
+    }
+    sql.push(")");
     returning::<M>(&mut sql);
     exec.fetch_optional::<M>(sql)
         .await?
@@ -282,7 +301,9 @@ pub(crate) async fn update<M: SqlxModel>(
         if index > 0 {
             sql.push(", ");
         }
-        sql.assign(column, M::column_value(column, value.clone()));
+        sql.ident(column);
+        sql.push(" = ");
+        bind_model_value::<M>(&mut sql, column, value.clone());
     }
     sql.push(" WHERE ");
     sql.compare_model::<M>(M::TABLE, M::PRIMARY_KEY, " = ", key);

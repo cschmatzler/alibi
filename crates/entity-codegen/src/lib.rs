@@ -687,6 +687,13 @@ pub fn update_statements(role: EntityRole, fields: &FieldsNamed, set: SetField<'
             }
         }
         EntityRole::Account => {
+            for (index, name) in ["access_token", "refresh_token", "id_token"]
+                .into_iter()
+                .enumerate()
+            {
+                let clear = set(&ident(name), &Insert::Null);
+                statements.push(quote! { if update.provider_token_nulls[#index] { #clear } });
+            }
             for name in [
                 "access_token",
                 "refresh_token",

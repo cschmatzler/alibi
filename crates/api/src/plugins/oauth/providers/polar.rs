@@ -86,6 +86,10 @@ impl OAuthProvider {
             user_info_url: Some(endpoint.clone()),
             scopes: vec!["openid".into(), "profile".into(), "email".into()],
             authorization: Some(OAuthAuthorizationPolicy {
+                preserve_raw_profile_scalars: true,
+                source_profile_exceptions: true,
+                allow_missing_access_token: true,
+                preserve_raw_email_errors: true,
                 configured_scopes: options.scope,
                 disable_default_scopes: options.disable_default_scope,
                 require_client_id: true,
@@ -100,6 +104,7 @@ impl OAuthProvider {
             account_subject: Some(subject),
             map_user_info: None,
             get_user_info: Some(std::sync::Arc::new(PolarUserInfo {
+                application_mapper: None,
                 endpoint,
                 mapper: options.map_profile_to_user,
             })),
@@ -113,17 +118,33 @@ impl OAuthProvider {
         }
     }
 }
+#[derive(Clone)]
 struct PolarUserInfo {
+    application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
     endpoint: String,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
 }
 #[async_trait]
 impl OAuthUserInfoHandler for PolarUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
+    fn mapped_handler(
+        &self,
+        mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<std::sync::Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.mapper = None;
+        handler.application_mapper = Some(mapper);
+        Some(std::sync::Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
-        let access_token = request.access_token.ok_or("Missing Polar access token")?;
+        let access_token = super::remaining_profile::bearer_access_token(&request)?;
         let profile: Value = reqwest::Client::new()
             .get(&self.endpoint)
             .bearer_auth(access_token)
@@ -135,10 +156,26 @@ impl OAuthUserInfoHandler for PolarUserInfo {
             .json()
             .await
             .map_err(|error| error.to_string())?;
+        let application_output = if let Some(mapper) = &self.application_mapper {
+            Some(
+                mapper
+                    .map_profile(profile.clone())
+                    .await
+                    .map_err(super::remaining_profile::profile_exception)?,
+            )
+        } else {
+            None
+        };
         let mapped = self
             .mapper
             .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
+            .transpose()
+            .map_err(super::remaining_profile::profile_exception)?;
+        if profile.is_null() {
+            return Err(super::remaining_profile::profile_exception(
+                "Null Polar profile",
+            ));
+        }
         // Keep the published raw JSON independently from typed persistence.
         let mut output = serde_json::Map::new();
         drop(
@@ -177,7 +214,11 @@ impl OAuthUserInfoHandler for PolarUserInfo {
             Some(user) => user,
             None => OAuthUserInfo {
                 additional_fields: Default::default(),
-                id: scalar(profile.get("id"))?.unwrap_or_default(),
+                id: profile
+                    .get("id")
+                    .map(super::remaining_profile::js_string)
+                    .transpose()?
+                    .unwrap_or_default(),
                 name: scalar(
                     profile
                         .get("public_name")
@@ -187,17 +228,18 @@ impl OAuthUserInfoHandler for PolarUserInfo {
                 .or_else(|| Some(String::new())),
                 email: email.and_then(Value::as_str).unwrap_or_default().into(),
                 image: scalar(profile.get("avatar_url"))?,
-                email_verified: profile
-                    .get("email_verified")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
+                email_verified: profile.get("email_verified").is_some_and(truthy),
             },
         };
-        Ok(OAuthUserInfoResponse {
+        let mut response = OAuthUserInfoResponse {
             user_output,
             user,
             data: profile,
-        })
+        };
+        if let Some(mapped) = application_output {
+            super::apply_application_mapping(&mut response, mapped)?;
+        }
+        Ok(response)
     }
 }
 fn truthy(value: &Value) -> bool {
@@ -216,20 +258,9 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        Some(Value::Array(_) | Value::Object(_)) => Err("Invalid Polar profile field".into()),
+        Some(Value::Array(_) | Value::Object(_)) => Ok(None),
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {
-    let id = scalar(profile.get("id"))?.ok_or("Missing Polar id")?;
-    if id
-        .trim_matches(|character: char| {
-            (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
-        })
-        .is_empty()
-        || id == "null"
-        || id == "undefined"
-    {
-        return Err("Invalid Polar id".into());
-    }
-    Ok(id)
+    super::remaining_profile::raw_subject(profile.get("id"))
 }

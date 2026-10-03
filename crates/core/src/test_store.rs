@@ -644,6 +644,15 @@ impl AccountStore<BundledSchema> for MemoryStore {
             .accounts
             .get_mut(id)
             .ok_or_else(|| AuthError::not_found("Account not found"))?;
+        if update.provider_token_nulls[0] {
+            account.access_token = None;
+        }
+        if update.provider_token_nulls[1] {
+            account.refresh_token = None;
+        }
+        if update.provider_token_nulls[2] {
+            account.id_token = None;
+        }
         if let Some(access_token) = update.access_token {
             account.access_token = Some(access_token);
         }

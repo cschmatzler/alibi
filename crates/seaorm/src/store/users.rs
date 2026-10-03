@@ -13,6 +13,204 @@ use sea_orm::{
     IntoActiveModel, QueryFilter, QuerySelect, QueryTrait, TransactionTrait,
 };
 
+pub(super) fn user_query<M: SeaOrmUserModel>(
+    backend: sea_orm::DbBackend,
+) -> sea_orm::Select<M::Entity> {
+    use sea_orm::{Iden, Iterable};
+    let query = M::Entity::find();
+    if backend != sea_orm::DbBackend::Sqlite {
+        return query;
+    }
+    let Some(verification) = M::list_users_column("emailVerified") else {
+        return query;
+    };
+    let verification_name = verification.to_string();
+    let mut query = query.select_only();
+    for column in <M::Entity as EntityTrait>::Column::iter() {
+        if column.to_string() == verification_name {
+            query = query.column_as(Expr::cust_with_exprs(
+                "CASE WHEN typeof($1) IN ('integer', 'real') THEN $1 = 1 WHEN $1 IS NULL THEN NULL ELSE $1 <> '' END",
+                [Expr::col(column)],
+            ),column);
+        } else {
+            query = query.column(column);
+        }
+    }
+    query
+}
+
+pub(super) async fn provider_verification_output<M: SeaOrmUserModel, C: ConnectionTrait>(
+    db: &C,
+    id: &str,
+) -> AuthResult<Option<serde_json::Value>> {
+    use sea_orm::EntityName;
+    use sea_orm::sea_query::Query;
+    if db.get_database_backend() != sea_orm::DbBackend::Sqlite {
+        return Ok(None);
+    }
+    let Some(column) = M::list_users_column("emailVerified") else {
+        return Ok(None);
+    };
+    let query = Query::select().expr_as(Expr::cust_with_exprs(
+        "CASE typeof($1) WHEN 'text' THEN json_quote($1) WHEN 'null' THEN 'null' ELSE CASE WHEN $1 = 1 THEN 'true' ELSE 'false' END END",
+        [Expr::col(column)],
+    ), sea_orm::sea_query::Alias::new("provider_verification"))
+        .from(M::Entity::default().table_ref())
+        .and_where(M::id_column().eq(M::parse_id(id)?)).to_owned();
+    let row = db
+        .query_one_raw(db.get_database_backend().build(&query))
+        .await
+        .map_err(map_db_err)?;
+    row.map(|row| {
+        let value: String = row
+            .try_get("", "provider_verification")
+            .map_err(map_db_err)?;
+        better_auth_core::utils::json::from_slice(value.as_bytes())
+            .map_err(|error| AuthError::internal(error.to_string()))
+    })
+    .transpose()
+}
+
+async fn save_provider_user<M: SeaOrmUserModel, C: ConnectionTrait>(
+    mut model: M::ActiveModel,
+    db: &C,
+    verification: Option<serde_json::Value>,
+    id: Option<&str>,
+) -> AuthResult<M> {
+    use sea_orm::sea_query::Query;
+    use sea_orm::{ActiveModelBehavior, ActiveValue, EntityName, Iden, Iterable};
+    let insert = id.is_none();
+    let Some(verification) =
+        verification.filter(|value| !value.is_boolean() && (!insert || !value.is_null()))
+    else {
+        return if insert {
+            model.insert(db).await.map_err(map_db_err)
+        } else {
+            model.update(db).await.map_err(map_db_err)
+        };
+    };
+    let column = M::list_users_column("emailVerified").ok_or_else(|| {
+        AuthError::internal("The user model does not expose its provider verification column")
+    })?;
+    let value: sea_orm::Value = match verification {
+        serde_json::Value::Null => sea_orm::Value::Bool(None),
+        serde_json::Value::String(value) => value.into(),
+        serde_json::Value::Number(value) => {
+            if db.get_database_backend() == sea_orm::DbBackend::Postgres {
+                better_auth_core::utils::json::number_to_string(&value)
+                    .map_err(|error| AuthError::internal(error.to_string()))?
+                    .into()
+            } else if let Some(value) = value.as_i64() {
+                value.into()
+            } else {
+                value
+                    .as_f64()
+                    .ok_or_else(|| AuthError::internal("Invalid provider verification number"))?
+                    .into()
+            }
+        }
+        _ => {
+            return Err(AuthError::internal(
+                "Unsupported provider verification SQL parameter",
+            ));
+        }
+    };
+    model = ActiveModelBehavior::before_save(model, db, insert)
+        .await
+        .map_err(map_db_err)?;
+    let mut columns = Vec::new();
+    let mut values = Vec::new();
+    let mut returning = Vec::new();
+    for physical in <M::Entity as EntityTrait>::Column::iter() {
+        let verification_column = physical.to_string() == column.to_string();
+        let staged = match model.take(physical) {
+            ActiveValue::Set(original) => Some(original),
+            ActiveValue::Unchanged(original) if insert => Some(original),
+            _ => None,
+        };
+        if let Some(original) = staged {
+            columns.push(physical);
+            let expression = Expr::val(if verification_column {
+                value.clone()
+            } else {
+                original
+            });
+            let expression = if verification_column
+                && db.get_database_backend() == sea_orm::DbBackend::Postgres
+            {
+                expression.cast_as(sea_orm::sea_query::Alias::new("boolean"))
+            } else {
+                expression
+            };
+            values.push(physical.save_as(expression));
+        }
+        returning.push(if verification_column && db.get_database_backend() == sea_orm::DbBackend::Sqlite {
+            Expr::cust_with_exprs("CASE WHEN typeof($1) IN ('integer', 'real') THEN $1 = 1 WHEN $1 IS NULL THEN NULL ELSE $1 <> '' END AS $2",[Expr::col(physical),Expr::col(physical)])
+        } else { Expr::col(physical) });
+    }
+    let statement = if let Some(id) = id {
+        let query = Query::update()
+            .table(M::Entity::default().table_ref())
+            .values(columns.into_iter().zip(values))
+            .and_where(M::id_column().eq(M::parse_id(id)?))
+            .returning(Query::returning().exprs(returning))
+            .to_owned();
+        db.get_database_backend().build(&query)
+    } else {
+        let query = Query::insert()
+            .into_table(M::Entity::default().table_ref())
+            .columns(columns)
+            .values(values)
+            .map_err(|error| AuthError::internal(error.to_string()))?
+            .returning(Query::returning().exprs(returning))
+            .to_owned();
+        db.get_database_backend().build(&query)
+    };
+    let row = db
+        .query_one_raw(statement)
+        .await
+        .map_err(map_db_err)?
+        .ok_or_else(|| AuthError::internal("Provider user write returned no row"))?;
+    let user = M::from_query_result(&row, "").map_err(map_db_err)?;
+    <M::ActiveModel as ActiveModelBehavior>::after_save(user, db, insert)
+        .await
+        .map_err(map_db_err)
+}
+
+async fn stage_provider_text<M: SeaOrmUserModel, C: ConnectionTrait>(
+    db: &C,
+    active: &mut M::ActiveModel,
+    name: Option<serde_json::Value>,
+    image: Option<serde_json::Value>,
+) -> AuthResult<()> {
+    for (field, raw) in [("name", name), ("image", image)] {
+        let Some(raw) = raw else {
+            continue;
+        };
+        if raw.is_array() || raw.is_object() {
+            return Err(AuthError::internal(
+                "Unsupported provider text SQL parameter",
+            ));
+        }
+        let column = if field == "name" {
+            Some(M::name_column())
+        } else {
+            M::list_users_column("image")
+        }
+        .ok_or_else(|| {
+            AuthError::internal("The user model does not expose its provider text column")
+        })?;
+        let value = crate::additional_fields::raw_value(
+            &better_auth_core::utils::json::JsValue::from(raw),
+        )?;
+        let value = crate::additional_fields::prepare_value(db, &column, value).await?;
+        // Use the model's physical binding after the configured database has
+        // converted the scalar. This keeps ordinary active-model hooks intact.
+        M::set_additional_field(active, column, value, db.get_database_backend())?;
+    }
+    Ok(())
+}
+
 impl<S> SeaOrmStore<S>
 where
     S: AuthSchema,
@@ -50,7 +248,11 @@ where
             .transpose()?;
         let mut fields = std::mem::take(&mut create_user.additional_fields);
         fields.apply_adapter_transforms_async().await?;
+        let provider_name = create_user.provider_name.take();
+        let provider_image = create_user.provider_image.take();
+        let verification = create_user.provider_email_verified.take();
         let mut model = S::User::new_active(user_id, create_user, now);
+        stage_provider_text::<S::User, _>(db, &mut model, provider_name, provider_image).await?;
         let backend = db.get_database_backend();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value = crate::additional_fields::prepare_value(db, &column, value).await?;
@@ -58,7 +260,7 @@ where
         }
         S::User::prepare_json_metadata(&mut model, db.get_database_backend())?;
 
-        let user = model.insert(db).await.map_err(map_db_err)?;
+        let user = save_provider_user::<S::User, _>(model, db, verification, None).await?;
         if tx.is_none() {
             for hook in self.hooks() {
                 hook.after_create_user(&user, &hook_context).await?;
@@ -99,6 +301,13 @@ where
     S: AuthSchema + Send + Sync,
     S::User: SeaOrmUserModel,
 {
+    async fn provider_verification_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<serde_json::Value>> {
+        provider_verification_output::<S::User, _>(self.connection(), id).await
+    }
+
     async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<S::User> {
         create_user.email = create_user.email.map(|email| normalize_user_email(&email));
         self.create_user_with_connection(
@@ -151,7 +360,7 @@ where
 
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
         let user_id = S::User::parse_id(id)?;
-        <S::User as SeaOrmUserModel>::Entity::find()
+        user_query::<S::User>(self.connection().get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
             .one(self.connection())
             .await
@@ -168,7 +377,7 @@ where
             .map(|id| S::User::parse_id(id))
             .collect::<AuthResult<Vec<_>>>()?;
 
-        <S::User as SeaOrmUserModel>::Entity::find()
+        user_query::<S::User>(self.connection().get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::id_column().is_in(user_ids))
             .all(self.connection())
             .await
@@ -183,11 +392,11 @@ where
             .iter()
             .map(|id| S::User::parse_id(id))
             .collect::<AuthResult<Vec<_>>>()?;
-        let query = <S::User as SeaOrmUserModel>::Entity::find()
+        let query = user_query::<S::User>(self.connection().get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::id_column().is_in(user_ids));
         let backend = self.connection().get_database_backend();
         let statement = super::bind_page(query.build(backend), Some(limit), None)?;
-        <S::User as SeaOrmUserModel>::Entity::find()
+        user_query::<S::User>(self.connection().get_database_backend())
             .from_raw_sql(statement)
             .all(self.connection())
             .await
@@ -196,7 +405,7 @@ where
 
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
         let email = normalize_user_email(email);
-        <S::User as SeaOrmUserModel>::Entity::find()
+        user_query::<S::User>(self.connection().get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::email_column().eq(email))
             .one(self.connection())
             .await
@@ -207,7 +416,7 @@ where
         let Some(col) = <S::User as SeaOrmUserModel>::username_column() else {
             return Ok(None);
         };
-        <S::User as SeaOrmUserModel>::Entity::find()
+        user_query::<S::User>(self.connection().get_database_backend())
             .filter(col.eq(username))
             .one(self.connection())
             .await
@@ -217,7 +426,7 @@ where
     async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>> {
         let column = S::User::phone_number_column()
             .ok_or_else(|| AuthError::internal("the user schema has no phone-number field"))?;
-        <S::User as SeaOrmUserModel>::Entity::find()
+        user_query::<S::User>(self.connection().get_database_backend())
             .filter(column.eq(phone_number))
             .one(self.connection())
             .await
@@ -240,7 +449,7 @@ where
         if let Some(username) = update.username.as_mut() {
             *username = username.to_lowercase();
         }
-        let Some(model) = <S::User as SeaOrmUserModel>::Entity::find()
+        let Some(model) = user_query::<S::User>(self.connection().get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
             .one(self.connection())
             .await
@@ -252,7 +461,17 @@ where
         let mut active = model.into_active_model();
         let mut fields = std::mem::take(&mut update.additional_fields);
         fields.apply_adapter_transforms_async().await?;
+        let provider_name = update.provider_name.take();
+        let provider_image = update.provider_image.take();
+        let verification = update.provider_email_verified.take();
         S::User::apply_update(&mut active, update, Utc::now());
+        stage_provider_text::<S::User, _>(
+            self.connection(),
+            &mut active,
+            provider_name,
+            provider_image,
+        )
+        .await?;
         let backend = self.connection().get_database_backend();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value =
@@ -261,7 +480,9 @@ where
         }
         S::User::prepare_json_metadata(&mut active, self.connection().get_database_backend())?;
 
-        let user = active.update(self.connection()).await.map_err(map_db_err)?;
+        let user =
+            save_provider_user::<S::User, _>(active, self.connection(), verification, Some(id))
+                .await?;
         for hook in self.hooks() {
             hook.after_update_user(&user, &hook_context).await?;
         }
@@ -295,7 +516,7 @@ where
             .await
             .map_err(map_db_err)?;
         drop(
-            <S::User as SeaOrmUserModel>::Entity::find()
+            user_query::<S::User>(self.connection().get_database_backend())
                 .filter(S::User::id_column().eq(user_id.clone()))
                 .lock_exclusive()
                 .one(&transaction)
@@ -324,7 +545,7 @@ where
 
     async fn list_users(&self, mut params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
         use better_auth_core::UserFilterValue;
-        let mut query = <S::User as SeaOrmUserModel>::Entity::find();
+        let mut query = user_query::<S::User>(self.connection().get_database_backend());
         if let Some(value) = &params.filter_value {
             let operator = params.filter_operator.as_deref().unwrap_or("eq");
             if matches!(value, UserFilterValue::Multiple(_)) || matches!(operator, "in" | "not_in")

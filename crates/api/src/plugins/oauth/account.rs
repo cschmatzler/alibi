@@ -1,4 +1,6 @@
-use super::encryption::{encrypt_token_set, maybe_decrypt_with_config};
+use super::encryption::{
+    encrypt_provider_token_set, maybe_decrypt_with_config, provider_token_nulls,
+};
 use super::handlers::{
     create_account_cookie_header, decode_account_cookie, fetch_user_info_from_provider,
     refresh_tokens_via_provider,
@@ -137,21 +139,57 @@ async fn persist_tokens(
     account: &mut AccountCookiePayload,
     tokens: &OAuthTokenSet,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    provider: &super::providers::OAuthProvider,
 ) -> AuthResult<()> {
-    let encrypted = encrypt_token_set(
+    let encrypted = encrypt_provider_token_set(
         ctx,
-        tokens.access_token.clone(),
-        tokens.refresh_token.clone(),
-        tokens.id_token.clone(),
-    )?;
+        tokens,
+        provider
+            .authorization
+            .as_ref()
+            .is_some_and(|policy| policy.preserve_raw_profile_scalars),
+    )
+    .await?;
+    let preserve_raw = provider
+        .authorization
+        .as_ref()
+        .is_some_and(|policy| policy.preserve_raw_profile_scalars);
+    let refresh_incoming = tokens.raw.as_ref().filter(|_| preserve_raw).map_or(
+        tokens
+            .refresh_token
+            .as_ref()
+            .is_some_and(|token| !token.is_empty()),
+        |raw| {
+            raw.get("refresh_token")
+                .is_some_and(super::providers::remaining_profile::truthy)
+        },
+    );
+    let id_incoming = tokens.raw.as_ref().filter(|_| preserve_raw).map_or(
+        tokens
+            .id_token
+            .as_ref()
+            .is_some_and(|token| !token.is_empty()),
+        |raw| {
+            raw.get("id_token")
+                .is_some_and(super::providers::remaining_profile::truthy)
+        },
+    );
+    let nulls = provider_token_nulls(tokens, preserve_raw);
     let update = UpdateAccount {
+        provider_token_nulls: [nulls[0], false, false],
         access_token: encrypted
             .access_token
-            .or_else(|| account.access_token.clone()),
-        refresh_token: encrypted
-            .refresh_token
-            .or_else(|| account.refresh_token.clone()),
-        id_token: encrypted.id_token.or_else(|| account.id_token.clone()),
+            .or_else(|| (!nulls[0]).then(|| account.access_token.clone()).flatten()),
+        refresh_token: if refresh_incoming {
+            encrypted.refresh_token
+        } else {
+            account.refresh_token.clone()
+        },
+        id_token: if id_incoming {
+            encrypted.id_token
+        } else {
+            account.id_token.clone()
+        },
         access_token_expires_at: tokens
             .access_token_expires_at
             .or(account.access_token_expires_at),
@@ -206,7 +244,7 @@ async fn valid_access_token(
         let tokens = refresh_tokens_via_provider(provider, &refresh_token)
             .await
             .map_err(|_error| access_token_failure())?;
-        persist_tokens(account, &tokens, ctx)
+        persist_tokens(account, &tokens, ctx, provider)
             .await
             .map_err(|_error| access_token_failure())?;
         true
@@ -334,9 +372,15 @@ pub(super) async fn handle_refresh_token(
     let tokens = refresh_tokens_via_provider(provider, &refresh_token)
         .await
         .map_err(|_error| refresh_token_failure())?;
-    persist_tokens(&mut account, &tokens, ctx)
+    persist_tokens(&mut account, &tokens, ctx, provider)
         .await
         .map_err(|_error| refresh_token_failure())?;
+    let raw_grant = tokens.raw.clone().filter(|_| {
+        provider
+            .authorization
+            .as_ref()
+            .is_some_and(|policy| policy.preserve_raw_profile_scalars)
+    });
     let response = RefreshTokenResponse {
         access_token: tokens.access_token,
         access_token_expires_at: tokens
@@ -351,6 +395,30 @@ pub(super) async fn handle_refresh_token(
         provider_id: account.provider_id.clone(),
         account_id: account.id.clone(),
     };
+    let mut response =
+        serde_json::to_value(response).map_err(|error| AuthError::internal(error.to_string()))?;
+    if let Some(raw) = raw_grant {
+        let object = response
+            .as_object_mut()
+            .ok_or_else(|| AuthError::internal("Invalid refresh output"))?;
+        match raw.get("access_token") {
+            Some(value) => {
+                drop(object.insert("accessToken".into(), value.clone()));
+            }
+            None => {
+                drop(object.remove("accessToken"));
+            }
+        }
+        if let Some(value) = raw.get("refresh_token").filter(|value| !value.is_null()) {
+            drop(object.insert("refreshToken".into(), value.clone()));
+        }
+        if let Some(value) = raw
+            .get("id_token")
+            .filter(|value| super::providers::remaining_profile::truthy(value))
+        {
+            drop(object.insert("idToken".into(), value.clone()));
+        }
+    }
     token_response(
         &response,
         &account,
@@ -400,7 +468,7 @@ pub(super) async fn handle_account_info(
         .access_token
         .filter(|token| !token.is_empty())
         .ok_or_else(|| AuthError::bad_request("Access token not found"))?;
-    let info = fetch_user_info_from_provider(
+    let info = match fetch_user_info_from_provider(
         provider,
         OAuthUserInfoRequest {
             access_token: Some(access_token),
@@ -410,7 +478,14 @@ pub(super) async fn handle_account_info(
             ..Default::default()
         },
     )
-    .await?;
+    .await
+    {
+        Ok(info) => info,
+        Err(AuthError::Api {
+            code: Some(code), ..
+        }) if code == "OAUTH_PROFILE_EXCEPTION" => return Ok(AuthResponse::new(500)),
+        Err(error) => return Err(error),
+    };
     let response = AccountInfoResponse {
         user: info
             .user_output

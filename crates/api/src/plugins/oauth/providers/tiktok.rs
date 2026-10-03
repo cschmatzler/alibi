@@ -57,6 +57,8 @@ impl OAuthProvider {
             user_info_url: Some(endpoint.clone()),
             scopes: vec!["user.info.profile".into()],
             authorization: Some(OAuthAuthorizationPolicy {
+                preserve_raw_profile_scalars: true,
+                source_profile_exceptions: true,
                 client_id_parameter: "client_key".into(),
                 scope_separator: ",".into(),
                 emit_empty_scope: true,
@@ -87,18 +89,17 @@ impl OAuthProvider {
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {
-    let id = super::remaining_profile::scalar(profile.pointer("/data/user/open_id"))?
-        .ok_or("Missing TikTok open_id")?;
-    if id.trim().is_empty() || matches!(id.as_str(), "null" | "undefined") {
-        return Err("Invalid TikTok subject".into());
-    }
-    Ok(id)
+    super::remaining_profile::raw_subject(profile.pointer("/data/user/open_id"))
 }
 struct TikTokProfile {
     endpoint: String,
 }
 #[async_trait::async_trait]
 impl OAuthUserInfoHandler for TikTokProfile {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
@@ -106,7 +107,7 @@ impl OAuthUserInfoHandler for TikTokProfile {
         let profile: Value = reqwest::Client::new()
             .get(&self.endpoint)
             .query(&[("fields", "open_id,avatar_large_url,display_name,username")])
-            .bearer_auth(request.access_token.as_deref().unwrap_or("undefined"))
+            .bearer_auth(super::remaining_profile::bearer_access_token(&request)?)
             .send()
             .await
             .map_err(|e| e.to_string())?
@@ -115,14 +116,16 @@ impl OAuthUserInfoHandler for TikTokProfile {
             .json()
             .await
             .map_err(|e| e.to_string())?;
-        let data = profile.pointer("/data/user").ok_or("Missing TikTok user")?;
-        let raw_id = super::remaining_profile::scalar(data.get("open_id"))?.unwrap_or_else(|| {
-            if data.get("open_id").is_some() {
-                "null".into()
-            } else {
-                "undefined".into()
-            }
-        });
+        let data = profile
+            .pointer("/data/user")
+            .filter(|value| !value.is_null())
+            .ok_or_else(|| super::remaining_profile::profile_exception("Missing TikTok user"))?;
+        let raw_id = data
+            .get("open_id")
+            .map(super::remaining_profile::js_string)
+            .transpose()
+            .map_err(super::remaining_profile::profile_exception)?
+            .unwrap_or_else(|| "undefined".into());
         let email = match data
             .get("email")
             .filter(|value| super::remaining_profile::truthy(value))
@@ -131,7 +134,9 @@ impl OAuthUserInfoHandler for TikTokProfile {
             None => {
                 let email = format!("{raw_id}@tiktok.placeholder.invalid");
                 if !crate::plugins::authentication_helpers::is_valid_email(&email) {
-                    return Err("Invalid TikTok placeholder email".into());
+                    return Err(super::remaining_profile::profile_exception(
+                        "Invalid TikTok placeholder email",
+                    ));
                 }
                 Value::String(email)
             }

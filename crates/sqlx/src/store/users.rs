@@ -39,6 +39,110 @@ pub(super) async fn find_user_by_id<M: SqlxUserModel>(
     exec.fetch_optional(sql).await
 }
 
+pub(super) async fn provider_verification_output<M: SqlxUserModel>(
+    exec: Exec<'_>,
+    id: &str,
+) -> AuthResult<Option<serde_json::Value>> {
+    if exec.engine() != crate::pool::Engine::Sqlite {
+        return Ok(None);
+    }
+    let Some(column) = M::PROVIDER_VERIFICATION_COLUMN else {
+        return Ok(None);
+    };
+    let mut sql = Sql::new(exec.engine());
+    sql.push("SELECT CASE typeof(");
+    sql.ident(column);
+    sql.push(") WHEN 'text' THEN json_quote(");
+    sql.ident(column);
+    sql.push(") WHEN 'null' THEN 'null' ELSE CASE WHEN ");
+    sql.ident(column);
+    sql.push(" = 1 THEN 'true' ELSE 'false' END END FROM ");
+    sql.ident(M::TABLE);
+    sql.push(" WHERE ");
+    sql.compare(M::TABLE, M::id_column(), " = ", M::parse_id(id)?);
+    sql.push(" LIMIT 1");
+    exec.fetch_scalar::<String>(sql)
+        .await?
+        .map(|value| {
+            better_auth_core::utils::json::from_slice(value.as_bytes())
+                .map_err(|error| AuthError::internal(error.to_string()))
+        })
+        .transpose()
+}
+
+fn stage_provider_verification<M: SqlxUserModel>(
+    active: &mut crate::model::ActiveRow,
+    value: Option<serde_json::Value>,
+    engine: crate::pool::Engine,
+) -> AuthResult<()> {
+    let Some(value) = value else {
+        return Ok(());
+    };
+    // Boolean inputs retain the ordinary typed-model path on every engine.
+    if value.is_boolean() {
+        return Ok(());
+    }
+    let column = M::PROVIDER_VERIFICATION_COLUMN.ok_or_else(|| {
+        AuthError::internal("The user model does not expose its provider verification column")
+    })?;
+    let value = match value {
+        serde_json::Value::Null => SqlValue::Bool(None),
+        serde_json::Value::String(value) => SqlValue::Text(Some(value)),
+        serde_json::Value::Number(value) => {
+            if engine == crate::pool::Engine::Postgres {
+                SqlValue::Text(Some(
+                    better_auth_core::utils::json::number_to_string(&value)
+                        .map_err(|error| AuthError::internal(error.to_string()))?,
+                ))
+            } else if let Some(value) = value.as_i64() {
+                SqlValue::BigInt(Some(value))
+            } else {
+                SqlValue::Double(value.as_f64())
+            }
+        }
+        _ => {
+            return Err(AuthError::internal(
+                "Unsupported provider verification SQL parameter",
+            ));
+        }
+    };
+    active.set(column, value);
+    Ok(())
+}
+
+async fn stage_provider_text<M: SqlxUserModel>(
+    exec: Exec<'_>,
+    active: &mut crate::model::ActiveRow,
+    name: Option<serde_json::Value>,
+    image: Option<serde_json::Value>,
+) -> AuthResult<()> {
+    for (field, raw) in [("name", name), ("image", image)] {
+        let Some(raw) = raw else {
+            continue;
+        };
+        if raw.is_array() || raw.is_object() {
+            return Err(AuthError::internal(
+                "Unsupported provider text SQL parameter",
+            ));
+        }
+        let column = if field == "name" {
+            Some(M::name_column())
+        } else {
+            M::list_users_column("image")
+        }
+        .ok_or_else(|| {
+            AuthError::internal("The user model does not expose its provider text column")
+        })?;
+        let value = crate::additional_fields::raw_value(
+            &better_auth_core::utils::json::JsValue::from(raw),
+        )?;
+        let value =
+            crate::additional_fields::prepare_value(exec, M::column_kind(column), value).await?;
+        active.set(column, value);
+    }
+    Ok(())
+}
+
 impl<S> SqlxStore<S>
 where
     S: AuthSchema,
@@ -73,7 +177,12 @@ where
             .transpose()?;
         let mut fields = std::mem::take(&mut create_user.additional_fields);
         fields.apply_adapter_transforms_async().await?;
+        let provider_name = create_user.provider_name.take();
+        let provider_image = create_user.provider_image.take();
+        let provider_verification = create_user.provider_email_verified.take();
         let mut active = S::User::new_active(user_id, create_user, now);
+        stage_provider_verification::<S::User>(&mut active, provider_verification, exec.engine())?;
+        stage_provider_text::<S::User>(exec, &mut active, provider_name, provider_image).await?;
         let backend = exec.engine();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value = crate::additional_fields::prepare_value(
@@ -135,6 +244,13 @@ where
     S: AuthSchema + Send + Sync,
     S::User: SqlxUserModel,
 {
+    async fn provider_verification_output(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<serde_json::Value>> {
+        provider_verification_output::<S::User>(self.exec(), id).await
+    }
+
     async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<S::User> {
         create_user.email = create_user.email.map(|email| normalize_user_email(&email));
         self.create_user_with_connection(
@@ -256,7 +372,17 @@ where
         let mut active = model.into_active();
         let mut fields = std::mem::take(&mut update.additional_fields);
         fields.apply_adapter_transforms_async().await?;
+        let provider_name = update.provider_name.take();
+        let provider_image = update.provider_image.take();
+        let provider_verification = update.provider_email_verified.take();
         S::User::apply_update(&mut active, update, Utc::now());
+        stage_provider_verification::<S::User>(
+            &mut active,
+            provider_verification,
+            self.exec().engine(),
+        )?;
+        stage_provider_text::<S::User>(self.exec(), &mut active, provider_name, provider_image)
+            .await?;
         let backend = self.exec().engine();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value = crate::additional_fields::prepare_value(

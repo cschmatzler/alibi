@@ -49,6 +49,9 @@ impl OAuthProvider {
     #[must_use]
     pub fn zoom_with_options(options: ZoomOptions) -> Self {
         let mut policy = OAuthAuthorizationPolicy {
+            preserve_raw_profile_scalars: true,
+            source_profile_exceptions: true,
+            honor_factory_options: false,
             require_client_id: true,
             login_hint: false,
             pkce: true,
@@ -109,6 +112,7 @@ impl OAuthProvider {
             email_endpoint: None,
             client_id: provider.client_id.clone(),
             mapper: options.map_profile_to_user,
+            application_mapper: None,
         }));
         provider
     }

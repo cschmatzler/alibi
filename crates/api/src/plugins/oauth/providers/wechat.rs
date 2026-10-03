@@ -85,6 +85,8 @@ impl OAuthProvider {
             user_info_url: Some(endpoint.clone()),
             scopes: vec!["snsapi_login".into()],
             authorization: Some(OAuthAuthorizationPolicy {
+                preserve_raw_profile_scalars: true,
+                source_profile_exceptions: true,
                 authorization_code: Some(OAuthAuthorizationCodeCallback(grants.clone())),
                 client_id_parameter: "appid".into(),
                 scope_separator: ",".into(),
@@ -109,6 +111,7 @@ impl OAuthProvider {
             account_subject: Some(subject),
             map_user_info: None,
             get_user_info: Some(Arc::new(WeChatProfile {
+                application_mapper: None,
                 endpoint,
                 mapper: options.map_profile_to_user,
             })),
@@ -203,12 +206,28 @@ impl OAuthRefreshTokenHandler for WeChatGrants {
         .await
     }
 }
+#[derive(Clone)]
 struct WeChatProfile {
+    application_mapper: Option<Arc<dyn super::OAuthProfileMapper>>,
     endpoint: String,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
 }
 #[async_trait::async_trait]
 impl OAuthUserInfoHandler for WeChatProfile {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
+    fn mapped_handler(
+        &self,
+        mapper: Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.mapper = None;
+        handler.application_mapper = Some(mapper);
+        Some(Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
@@ -219,15 +238,18 @@ impl OAuthUserInfoHandler for WeChatProfile {
             .and_then(|raw| raw.get("openid"))
             .filter(|value| super::remaining_profile::truthy(value))
             .ok_or("Missing WeChat token openid")?;
-        let openid =
-            super::remaining_profile::scalar(Some(openid))?.ok_or("Invalid WeChat token openid")?;
+        let openid = super::remaining_profile::js_string(openid)
+            .map_err(super::remaining_profile::profile_exception)?;
+        let access_token = if super::remaining_profile::has_access_token(&request) {
+            super::remaining_profile::bearer_access_token(&request)
+                .map_err(super::remaining_profile::profile_exception)?
+        } else {
+            String::new()
+        };
         let profile: Value = reqwest::Client::new()
             .get(&self.endpoint)
             .query(&[
-                (
-                    "access_token",
-                    request.access_token.as_deref().unwrap_or_default(),
-                ),
+                ("access_token", access_token.as_str()),
                 ("openid", openid.as_str()),
                 ("lang", "zh_CN"),
             ])
@@ -246,10 +268,21 @@ impl OAuthUserInfoHandler for WeChatProfile {
         {
             return Err("Missing WeChat profile".into());
         }
+        let application_output = if let Some(mapper) = &self.application_mapper {
+            Some(
+                mapper
+                    .map_profile(profile.clone())
+                    .await
+                    .map_err(super::remaining_profile::profile_exception)?,
+            )
+        } else {
+            None
+        };
         let mapped = self
             .mapper
             .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
+            .transpose()
+            .map_err(super::remaining_profile::profile_exception)?;
         let raw_id = profile
             .get("unionid")
             .filter(|v| super::remaining_profile::truthy(v))
@@ -258,7 +291,11 @@ impl OAuthUserInfoHandler for WeChatProfile {
                     .get("openid")
                     .filter(|v| super::remaining_profile::truthy(v))
             });
-        let id = super::remaining_profile::scalar(raw_id)?.unwrap_or(openid);
+        let id = raw_id
+            .map(super::remaining_profile::js_string)
+            .transpose()
+            .map_err(super::remaining_profile::profile_exception)?
+            .unwrap_or(openid);
         let email = match profile
             .get("email")
             .filter(|value| super::remaining_profile::truthy(value))
@@ -267,7 +304,9 @@ impl OAuthUserInfoHandler for WeChatProfile {
             None => {
                 let email = format!("{id}@wechat.placeholder.invalid");
                 if !crate::plugins::authentication_helpers::is_valid_email(&email) {
-                    return Err("Invalid WeChat placeholder email".into());
+                    return Err(super::remaining_profile::profile_exception(
+                        "Invalid WeChat placeholder email",
+                    ));
                 }
                 Value::String(email)
             }
@@ -298,11 +337,15 @@ impl OAuthUserInfoHandler for WeChatProfile {
                 email_verified: false,
             },
         };
-        Ok(OAuthUserInfoResponse {
+        let mut response = OAuthUserInfoResponse {
             user_output: Some(output),
             user,
             data: profile,
-        })
+        };
+        if let Some(mapped) = application_output {
+            super::apply_application_mapping(&mut response, mapped)?;
+        }
+        Ok(response)
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {

@@ -3,7 +3,6 @@ use super::{
     OAuthAuthorizationPolicy, OAuthProvider, OAuthTokenEndpointAuth, OAuthUserInfo,
     OAuthUserInfoHandler, OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use base64::Engine;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -91,6 +90,10 @@ impl OAuthProvider {
             user_info_url: Some(endpoint.clone()),
             scopes: Vec::new(),
             authorization: Some(OAuthAuthorizationPolicy {
+                preserve_raw_profile_scalars: true,
+                source_profile_exceptions: true,
+                allow_missing_access_token: true,
+                preserve_raw_email_errors: true,
                 omit_scopes: true,
                 require_client_id: true,
                 require_client_secret: true,
@@ -104,6 +107,7 @@ impl OAuthProvider {
             account_subject: Some(subject),
             map_user_info: None,
             get_user_info: Some(std::sync::Arc::new(PayPalUserInfo {
+                application_mapper: None,
                 endpoint,
                 mapper: options.map_profile_to_user,
             })),
@@ -117,20 +121,36 @@ impl OAuthProvider {
         }
     }
 }
+#[derive(Clone)]
 struct PayPalUserInfo {
+    application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
     endpoint: String,
     mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
 }
 #[async_trait::async_trait]
 impl OAuthUserInfoHandler for PayPalUserInfo {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
+    fn mapped_handler(
+        &self,
+        mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<std::sync::Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.mapper = None;
+        handler.application_mapper = Some(mapper);
+        Some(std::sync::Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
-        let access_token = request
-            .access_token
-            .filter(|value| !value.is_empty())
-            .ok_or("Missing PayPal access token")?;
+        if !super::remaining_profile::has_access_token(&request) {
+            return Err("Missing PayPal access token".into());
+        }
+        let access_token = super::remaining_profile::bearer_access_token(&request)?;
         let profile: Value = reqwest::Client::new()
             .get(&self.endpoint)
             .query(&[("schema", "paypalv1.1")])
@@ -156,19 +176,11 @@ impl OAuthUserInfoHandler for PayPalUserInfo {
         {
             return Err("Invalid PayPal ID token type".into());
         }
-        if let Some(token) = request.id_token.filter(|value| !value.is_empty()) {
+        if let Some(token) = super::remaining_profile::grant_id_token(&request)? {
             // The published factory decodes, it does not verify JWT signatures.
             // This token comes from the trusted code exchange; direct ID-token
             // sign-in remains unsupported because no verifier is configured.
-            let parts: Vec<_> = token.split('.').collect();
-            let [_, payload, _] = parts.as_slice() else {
-                return Err("Invalid PayPal ID token".into());
-            };
-            let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .decode(payload)
-                .map_err(|error| error.to_string())?;
-            let claims: Value = better_auth_core::utils::json::from_slice(&bytes)
-                .map_err(|error| error.to_string())?;
+            let claims = super::remaining_profile::decode_grant_jwt(&token)?;
             let token_subject = claims
                 .get("sub")
                 .filter(|value| truthy(value))
@@ -177,10 +189,17 @@ impl OAuthUserInfoHandler for PayPalUserInfo {
                 .get("sub")
                 .filter(|value| !value.is_null())
                 .or_else(|| profile.get("user_id"));
-            if profile_subject != Some(token_subject) {
+            if !profile_subject.is_some_and(|subject| {
+                super::remaining_profile::strict_primitive_equal(subject, token_subject)
+            }) {
                 return Err("PayPal ID-token subject mismatch".into());
             }
         }
+        let application_output = if let Some(mapper) = &self.application_mapper {
+            Some(mapper.map_profile(profile.clone()).await?)
+        } else {
+            None
+        };
         let mapped = self
             .mapper
             .map(|mapper| mapper(profile.clone()))
@@ -203,7 +222,11 @@ impl OAuthUserInfoHandler for PayPalUserInfo {
             Some(user) => user,
             None => OAuthUserInfo {
                 additional_fields: Default::default(),
-                id: scalar(profile.get("user_id"))?.unwrap_or_default(),
+                id: profile
+                    .get("user_id")
+                    .map(super::remaining_profile::js_string)
+                    .transpose()?
+                    .unwrap_or_default(),
                 name: scalar(profile.get("name").filter(|value| truthy(value)))?,
                 email: profile
                     .get("email")
@@ -214,11 +237,15 @@ impl OAuthUserInfoHandler for PayPalUserInfo {
                 email_verified: profile.get("email_verified").is_some_and(truthy),
             },
         };
-        Ok(OAuthUserInfoResponse {
+        let mut response = OAuthUserInfoResponse {
             user_output: Some(output),
             user,
             data: profile,
-        })
+        };
+        if let Some(mapped) = application_output {
+            super::apply_application_mapping(&mut response, mapped)?;
+        }
+        Ok(response)
     }
 }
 fn truthy(value: &Value) -> bool {
@@ -241,16 +268,5 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     }
 }
 fn subject(profile: &Value) -> Result<String, String> {
-    let id = scalar(profile.get("user_id"))?.ok_or("Missing PayPal user_id")?;
-    if id
-        .trim_matches(|character: char| {
-            (character.is_whitespace() && character != '\u{85}') || character == '\u{feff}'
-        })
-        .is_empty()
-        || id == "null"
-        || id == "undefined"
-    {
-        return Err("Invalid PayPal user_id".into());
-    }
-    Ok(id)
+    super::remaining_profile::raw_subject(profile.get("user_id"))
 }

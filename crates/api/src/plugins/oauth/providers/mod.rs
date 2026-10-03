@@ -156,6 +156,21 @@ pub type OAuthAccountSubject = fn(&Value) -> Result<String, String>;
 
 #[async_trait]
 pub trait OAuthUserInfoHandler: Send + Sync {
+    /// Custom application callbacks throw on failure; factory transports can
+    /// return a missing profile and tag only their uncaught projection failures.
+    fn errors_are_exceptions(&self) -> bool {
+        true
+    }
+
+    /// Factory handlers can install application mapping before projecting raw
+    /// profile fields. Custom getUserInfo callbacks retain their precedence.
+    fn mapped_handler(
+        &self,
+        _mapper: Arc<dyn OAuthProfileMapper>,
+    ) -> Option<Arc<dyn OAuthUserInfoHandler>> {
+        None
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
@@ -173,47 +188,31 @@ pub trait OAuthProfileMapper: Send + Sync {
     ) -> Result<better_auth_core::field_policy::FieldOutput, String>;
 }
 
-struct MappedUserInfo {
-    handler: Arc<dyn OAuthUserInfoHandler>,
-    mapper: Arc<dyn OAuthProfileMapper>,
-}
-#[async_trait]
-impl OAuthUserInfoHandler for MappedUserInfo {
-    async fn get_user_info(
-        &self,
-        request: OAuthUserInfoRequest,
-    ) -> Result<OAuthUserInfoResponse, String> {
-        let mut response = self.handler.get_user_info(request).await?;
-        let mapped = self.mapper.map_profile(response.data.clone()).await?;
-        let output = response
-            .user_output
-            .get_or_insert_with(|| response.user.public_profile(true));
-        output.extend(mapped.clone());
-        for (key, value) in &mapped {
-            match key.as_str() {
-                "id" => {
-                    response.user.id = remaining_profile::scalar(Some(value))?.unwrap_or_default()
-                }
-                "email" => response.user.email = value.as_str().unwrap_or_default().into(),
-                "emailVerified" => response.user.email_verified = remaining_profile::truthy(value),
-                "name" => {
-                    response.user.name = remaining_profile::scalar(
-                        Some(value).filter(|value| remaining_profile::truthy(value)),
-                    )?
-                }
-                "image" => response.user.image = remaining_profile::scalar(Some(value))?,
-                _ => {
-                    drop(
-                        response
-                            .user
-                            .additional_fields
-                            .insert(key.clone(), value.clone()),
-                    );
-                }
+pub(super) fn apply_application_mapping(
+    response: &mut OAuthUserInfoResponse,
+    mapped: better_auth_core::field_policy::FieldOutput,
+) -> Result<(), String> {
+    let output = response
+        .user_output
+        .get_or_insert_with(|| response.user.public_profile(true));
+    output.extend(mapped.clone());
+    for (key, value) in mapped {
+        match key.as_str() {
+            "id" => response.user.id = remaining_profile::js_string(&value)?,
+            "email" => response.user.email = value.as_str().unwrap_or_default().into(),
+            "emailVerified" => response.user.email_verified = remaining_profile::truthy(&value),
+            "name" => {
+                response.user.name = remaining_profile::scalar(
+                    Some(&value).filter(|value| remaining_profile::truthy(value)),
+                )?
+            }
+            "image" => response.user.image = remaining_profile::scalar(Some(&value))?,
+            _ => {
+                drop(response.user.additional_fields.insert(key, value));
             }
         }
-        Ok(response)
     }
+    Ok(())
 }
 
 #[async_trait]
@@ -544,6 +543,12 @@ pub struct OAuthAuthorizationPolicy {
     /// Preserve effective raw email type errors at their callback stage.
     /// Typed native profile fields remain unchanged.
     pub preserve_raw_email_errors: bool,
+    /// Retain the published adapter scalar rather than discarding it in bool projection.
+    pub preserve_raw_profile_scalars: bool,
+    /// Some published factories omit their returned options object entirely.
+    pub honor_factory_options: bool,
+    /// Preserve uncaught published profile/application callback exceptions.
+    pub source_profile_exceptions: bool,
 }
 
 impl Default for OAuthAuthorizationPolicy {
@@ -583,6 +588,9 @@ impl Default for OAuthAuthorizationPolicy {
             discord_permissions: None,
             propagate_grant_profile_errors: false,
             preserve_raw_email_errors: false,
+            preserve_raw_profile_scalars: false,
+            honor_factory_options: true,
+            source_profile_exceptions: false,
         }
     }
 }
@@ -599,7 +607,7 @@ impl OAuthProvider {
             .is_none_or(|policy| policy.supports_profile_mapper)
             && let Some(handler) = self.get_user_info.take()
         {
-            self.get_user_info = Some(Arc::new(MappedUserInfo { handler, mapper }));
+            self.get_user_info = Some(handler.mapped_handler(mapper).unwrap_or(handler));
         }
         self
     }

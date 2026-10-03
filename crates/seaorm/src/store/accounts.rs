@@ -69,6 +69,18 @@ where
     S: AuthSchema + Send + Sync,
     S::Account: SeaOrmAccountModel,
 {
+    async fn provider_token_text(&self, value: &serde_json::Value) -> AuthResult<Option<String>> {
+        if value.is_object() || value.is_array() {
+            return Err(better_auth_core::AuthError::internal(
+                "Unsupported provider token SQL parameter",
+            ));
+        }
+        let value = crate::additional_fields::raw_value(
+            &better_auth_core::utils::json::JsValue::from(value.clone()),
+        )?;
+        crate::additional_fields::prepare_string_value(self.connection(), value).await
+    }
+
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account> {
         self.create_account_with_connection(self.connection(), None, create_account)
             .await

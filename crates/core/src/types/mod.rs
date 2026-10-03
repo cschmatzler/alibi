@@ -266,6 +266,11 @@ pub struct CreateUser {
     /// cannot populate this; native accessors retain their boolean interface.
     #[serde(skip)]
     pub provider_email_verified: Option<serde_json::Value>,
+    /// Trusted raw provider text scalars, never accepted from HTTP user input.
+    #[serde(skip)]
+    pub provider_name: Option<serde_json::Value>,
+    #[serde(skip)]
+    pub provider_image: Option<serde_json::Value>,
     #[serde(flatten, default)]
     pub additional_fields: crate::field_policy::FieldValues,
     pub id: Option<String>,
@@ -300,6 +305,11 @@ pub struct UpdateUser {
     /// Trusted provider value, independent from the typed boolean authority.
     #[serde(skip)]
     pub provider_email_verified: Option<serde_json::Value>,
+    /// Trusted raw provider text scalars, never accepted from HTTP user input.
+    #[serde(skip)]
+    pub provider_name: Option<serde_json::Value>,
+    #[serde(skip)]
+    pub provider_image: Option<serde_json::Value>,
     #[serde(flatten, default)]
     pub additional_fields: crate::field_policy::FieldValues,
     pub email: Option<String>,
@@ -367,6 +377,9 @@ pub struct CreateAccount {
 /// Account update data (for refreshing OAuth tokens)
 #[derive(Debug, Clone, Default)]
 pub struct UpdateAccount {
+    /// Trusted OAuth writes distinguish an explicit token null from omission.
+    /// Order: access token, refresh token, ID token. Defaults retain omission.
+    pub provider_token_nulls: [bool; 3],
     pub additional_fields: crate::field_policy::FieldValues,
     pub access_token: Option<String>,
     pub refresh_token: Option<String>,
@@ -404,6 +417,8 @@ impl CreateUser {
             image: None,
             email_verified: None,
             provider_email_verified: None,
+            provider_name: None,
+            provider_image: None,
             username: None,
             display_username: None,
             two_factor_enabled: None,

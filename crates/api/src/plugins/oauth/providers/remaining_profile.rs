@@ -18,15 +18,22 @@ pub(super) enum ProfileKind {
     Zoom,
 }
 
+#[derive(Clone)]
 pub(super) struct PublishedProfile {
     pub kind: ProfileKind,
     pub endpoint: Option<String>,
     pub email_endpoint: Option<String>,
     pub client_id: String,
     pub mapper: Option<fn(Value) -> Result<OAuthUserInfo, String>>,
+    pub application_mapper: Option<std::sync::Arc<dyn super::OAuthProfileMapper>>,
 }
 
-pub(super) fn truthy(value: &Value) -> bool {
+pub(in crate::plugins::oauth) const PROFILE_EXCEPTION_PREFIX: &str = "oauth-profile-exception:";
+pub(super) fn profile_exception(error: impl std::fmt::Display) -> String {
+    format!("{PROFILE_EXCEPTION_PREFIX}{error}")
+}
+
+pub(in crate::plugins::oauth) fn truthy(value: &Value) -> bool {
     match value {
         Value::Null | Value::Bool(false) => false,
         Value::Number(value) => value.as_f64() != Some(0.0),
@@ -43,30 +50,14 @@ pub(super) fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
-        _ => Err("Non-scalar provider profile value".into()),
+        _ => Ok(None),
     }
 }
 
 pub(super) fn js_string(value: &Value) -> Result<String, String> {
-    match value {
-        Value::Null => Ok("null".into()),
-        Value::String(value) => Ok(value.clone()),
-        Value::Bool(value) => Ok(value.to_string()),
-        Value::Number(value) => better_auth_core::utils::json::number_to_string(value)
-            .map_err(|error| error.to_string()),
-        Value::Object(_) => Ok("[object Object]".into()),
-        Value::Array(values) => values
-            .iter()
-            .map(|value| {
-                if value.is_null() {
-                    Ok(String::new())
-                } else {
-                    js_string(value)
-                }
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map(|values| values.join(",")),
-    }
+    better_auth_core::utils::json::JsValue::from(value.clone())
+        .coerce_string()
+        .map_err(str::to_owned)
 }
 
 pub(in crate::plugins::oauth) fn js_whitespace(value: char) -> bool {
@@ -147,6 +138,75 @@ pub(in crate::plugins::oauth) fn grant_expiry(
     chrono::DateTime::from_timestamp_millis(timestamp.trunc() as i64)
 }
 
+pub(super) fn has_access_token(request: &OAuthUserInfoRequest) -> bool {
+    match &request.raw {
+        Some(raw) => raw.get("access_token").is_some_and(truthy),
+        None => request
+            .access_token
+            .as_ref()
+            .is_some_and(|value| !value.is_empty()),
+    }
+}
+
+pub(super) fn bearer_access_token(request: &OAuthUserInfoRequest) -> Result<String, String> {
+    match &request.raw {
+        Some(raw) => raw
+            .get("access_token")
+            .map(js_string)
+            .transpose()
+            .map(|value| value.unwrap_or_else(|| "undefined".into())),
+        None => Ok(request
+            .access_token
+            .clone()
+            .unwrap_or_else(|| "undefined".into())),
+    }
+}
+
+pub(super) fn decode_grant_jwt(token: &str) -> Result<Value, String> {
+    let parts: Vec<_> = token.split('.').collect();
+    let [_, payload, _] = parts.as_slice() else {
+        return Err("Invalid grant ID token".into());
+    };
+    if payload.is_empty() {
+        return Err("Invalid grant ID-token payload".into());
+    }
+    let decoder = base64::engine::GeneralPurpose::new(
+        &base64::alphabet::STANDARD,
+        base64::engine::GeneralPurposeConfig::new()
+            .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
+    );
+    let bytes = decoder
+        .decode(payload.replace('-', "+").replace('_', "/"))
+        .map_err(|error| error.to_string())?;
+    let profile: Value =
+        better_auth_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
+    if !profile.is_object() {
+        return Err("Invalid grant ID-token claims".into());
+    }
+    Ok(profile)
+}
+
+pub(super) fn strict_primitive_equal(left: &Value, right: &Value) -> bool {
+    match (left, right) {
+        (Value::Null, Value::Null) => true,
+        (Value::String(left), Value::String(right)) => left == right,
+        (Value::Bool(left), Value::Bool(right)) => left == right,
+        (Value::Number(left), Value::Number(right)) => left.as_f64() == right.as_f64(),
+        _ => false,
+    }
+}
+
+pub(super) fn grant_id_token(request: &OAuthUserInfoRequest) -> Result<Option<String>, String> {
+    match &request.raw {
+        Some(raw) => match raw.get("id_token").filter(|value| truthy(value)) {
+            None => Ok(None),
+            Some(Value::String(value)) => Ok(Some(value.clone())),
+            _ => Err("Non-string grant ID token".into()),
+        },
+        None => Ok(request.id_token.clone().filter(|value| !value.is_empty())),
+    }
+}
+
 pub(super) fn raw_subject(value: Option<&Value>) -> Result<String, String> {
     let subject = js_string(value.ok_or("Missing provider subject")?)?;
     if subject.trim_matches(js_whitespace).is_empty()
@@ -193,58 +253,58 @@ fn nullish_empty<'a>(values: impl IntoIterator<Item = Option<&'a Value>>) -> Val
 fn placeholder(identifier: Option<&Value>, namespace: &str) -> Result<Value, String> {
     let identifier = identifier
         .map(js_string)
-        .transpose()?
+        .transpose()
+        .map_err(profile_exception)?
         .unwrap_or_else(|| "undefined".into());
     let email = format!("{identifier}@{namespace}.placeholder.invalid");
     // The published helper validates the generated address rather than accepting
     // routing characters supplied by a malformed profile identifier.
     if !crate::plugins::authentication_helpers::is_valid_email(&email) {
-        return Err("Invalid placeholder email".into());
+        return Err(profile_exception("Invalid placeholder email"));
     }
     Ok(Value::String(email))
 }
 
 #[async_trait::async_trait]
 impl OAuthUserInfoHandler for PublishedProfile {
+    fn errors_are_exceptions(&self) -> bool {
+        false
+    }
+
+    fn mapped_handler(
+        &self,
+        mapper: std::sync::Arc<dyn super::OAuthProfileMapper>,
+    ) -> Option<std::sync::Arc<dyn OAuthUserInfoHandler>> {
+        let mut handler = self.clone();
+        handler.mapper = None;
+        handler.application_mapper = Some(mapper);
+        Some(std::sync::Arc::new(handler))
+    }
+
     async fn get_user_info(
         &self,
         request: OAuthUserInfoRequest,
     ) -> Result<OAuthUserInfoResponse, String> {
         let client = reqwest::Client::new();
         let mut profile: Value = if matches!(self.kind, ProfileKind::Twitch) {
-            let token = request
-                .id_token
-                .filter(|value| !value.is_empty())
-                .ok_or("Missing Twitch ID token")?;
-            let parts: Vec<_> = token.split('.').collect();
-            let [_, payload, _] = parts.as_slice() else {
-                return Err("Invalid Twitch ID token".into());
-            };
-            let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .decode(payload)
-                .map_err(|error| error.to_string())?;
-            let profile: Value = better_auth_core::utils::json::from_slice(&bytes)
-                .map_err(|error| error.to_string())?;
-            if !profile.is_object() {
-                return Err("Invalid Twitch ID-token claims".into());
-            }
-            profile
+            let token = grant_id_token(&request)?.ok_or("Missing Twitch ID token")?;
+            decode_grant_jwt(&token)?
         } else {
             let endpoint = self
                 .endpoint
                 .as_ref()
                 .ok_or("Missing provider userinfo endpoint")?;
-            let access = request.access_token.as_deref().unwrap_or_default();
+            let access = bearer_access_token(&request)?;
             let transport = if matches!(self.kind, ProfileKind::Vk) {
-                if access.is_empty() {
+                if !has_access_token(&request) {
                     return Err("Missing VK access token".into());
                 }
                 client.post(endpoint).form(&[
-                    ("access_token", access),
+                    ("access_token", access.as_str()),
                     ("client_id", self.client_id.as_str()),
                 ])
             } else {
-                client.get(endpoint).bearer_auth(access)
+                client.get(endpoint).bearer_auth(&access)
             };
             transport
                 .send()
@@ -267,7 +327,7 @@ impl OAuthUserInfoHandler for PublishedProfile {
                 .unwrap_or("https://api.x.com/2/users/me?user.fields=confirmed_email");
             if let Ok(response) = client
                 .get(endpoint)
-                .bearer_auth(request.access_token.as_deref().unwrap_or_default())
+                .bearer_auth(bearer_access_token(&request)?)
                 .send()
                 .await
                 && response.status().is_success()
@@ -275,16 +335,43 @@ impl OAuthUserInfoHandler for PublishedProfile {
                 && let Some(email) = email_profile
                     .pointer("/data/confirmed_email")
                     .filter(|value| truthy(value))
-                && let Some(data) = profile.get_mut("data").and_then(Value::as_object_mut)
             {
-                drop(data.insert("email".into(), email.clone()));
+                let email = email.clone();
+                let data = profile
+                    .get_mut("data")
+                    .and_then(Value::as_object_mut)
+                    .ok_or_else(|| profile_exception("Invalid Twitter email receiver"))?;
+                drop(data.insert("email".into(), email));
                 twitter_verified = true;
             }
         }
+        let application_output = if let Some(mapper) = &self.application_mapper {
+            Some(mapper.map_profile(profile.clone()).await.map_err(|error| {
+                if matches!(self.kind, ProfileKind::Salesforce) {
+                    error
+                } else {
+                    profile_exception(error)
+                }
+            })?)
+        } else {
+            None
+        };
         let mapped = self
             .mapper
             .map(|mapper| mapper(profile.clone()))
-            .transpose()?;
+            .transpose()
+            .map_err(|error| {
+                if matches!(self.kind, ProfileKind::Salesforce) {
+                    error
+                } else {
+                    profile_exception(error)
+                }
+            })?;
+        // Unlike the caught Salesforce transport, these factory projections
+        // access fields directly after invoking the application mapper.
+        if profile.is_null() {
+            return Err(profile_exception("Null provider profile"));
+        }
         let mut output = Map::new();
         match self.kind {
             ProfileKind::Roblox => {
@@ -334,9 +421,11 @@ impl OAuthUserInfoHandler for PublishedProfile {
             ProfileKind::Spotify => {
                 copy(&mut output, "name", profile.get("display_name"));
                 copy(&mut output, "email", profile.get("email"));
-                let images = profile.get("images").ok_or("Missing Spotify images")?;
+                let images = profile
+                    .get("images")
+                    .ok_or_else(|| profile_exception("Missing Spotify images"))?;
                 if images.is_null() {
-                    return Err("Null Spotify images".into());
+                    return Err(profile_exception("Null Spotify images"));
                 }
                 copy(
                     &mut output,
@@ -356,7 +445,10 @@ impl OAuthUserInfoHandler for PublishedProfile {
                 }
             }
             ProfileKind::Twitter => {
-                let data = profile.get("data").ok_or("Missing Twitter data")?;
+                let data = profile
+                    .get("data")
+                    .filter(|value| !value.is_null())
+                    .ok_or_else(|| profile_exception("Missing Twitter data"))?;
                 copy(&mut output, "name", data.get("name"));
                 copy(&mut output, "image", data.get("profile_image_url"));
                 drop(output.insert(
@@ -387,9 +479,16 @@ impl OAuthUserInfoHandler for PublishedProfile {
                 );
             }
             ProfileKind::Vk => {
-                let user = profile.get("user").ok_or("Missing VK user")?;
+                let user = profile
+                    .get("user")
+                    .filter(|value| !value.is_null())
+                    .ok_or_else(|| profile_exception("Missing VK user"))?;
                 if !user.get("email").is_some_and(truthy)
                     && !mapped.as_ref().is_some_and(|user| !user.email.is_empty())
+                    && !application_output
+                        .as_ref()
+                        .and_then(|output| output.get("email"))
+                        .is_some_and(truthy)
                 {
                     return Err("Missing VK email".into());
                 }
@@ -400,7 +499,7 @@ impl OAuthUserInfoHandler for PublishedProfile {
                     match value {
                         None => Ok("undefined".into()),
                         Some(Value::Null) => Ok("null".into()),
-                        other => scalar(other).map(|value| value.unwrap_or_default()),
+                        Some(value) => js_string(value),
                     }
                 };
                 drop(output.insert(
@@ -428,15 +527,18 @@ impl OAuthUserInfoHandler for PublishedProfile {
         if let Some(mapped) = &mapped {
             output.extend(mapped.public_profile(true));
         }
+        if let Some(mapped) = application_output {
+            output.extend(mapped);
+        }
         let user = match mapped {
             Some(user) => user,
             None => OAuthUserInfo {
                 additional_fields: output
                     .iter()
                     .filter(|(key, _)| {
-                        matches!(
+                        !matches!(
                             key.as_str(),
-                            "first_name" | "last_name" | "birthday" | "sex"
+                            "id" | "name" | "email" | "image" | "emailVerified"
                         )
                     })
                     .map(|(key, value)| (key.clone(), value.clone()))

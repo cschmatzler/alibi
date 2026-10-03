@@ -1,4 +1,4 @@
-use super::encryption::encrypt_token_set;
+use super::encryption::{encrypt_provider_token_set, encrypt_token_set, provider_token_nulls};
 use super::providers::{
     OAuthCallbackUserName, OAuthCallbackUserPayload, OAuthClientAssertionContext, OAuthConfig,
     OAuthProvider, OAuthScopeOrder, OAuthTokenEndpointAuth, OAuthTokenGrant, OAuthTokenSet,
@@ -141,8 +141,16 @@ pub(in crate::plugins) struct OAuthProcessPolicy {
 impl OAuthProcessPolicy {
     const fn for_provider(provider: &OAuthProvider, callback_url: Option<String>) -> Self {
         Self {
-            override_user_info: provider.override_user_info_on_sign_in,
-            require_email_verification: provider.require_email_verification,
+            override_user_info: provider.override_user_info_on_sign_in
+                && match &provider.authorization {
+                    Some(policy) => policy.honor_factory_options,
+                    None => true,
+                },
+            require_email_verification: provider.require_email_verification
+                && match &provider.authorization {
+                    Some(policy) => policy.honor_factory_options,
+                    None => true,
+                },
             callback_url,
             use_updated_user: true,
         }
@@ -340,6 +348,11 @@ fn build_authorization_url(
     }
     if let Some(params) = additional_params {
         for (key, value) in params {
+            if provider.authorization.as_ref().is_some_and(|policy| {
+                policy.client_id_parameter != "client_id" && key == &policy.client_id_parameter
+            }) {
+                continue;
+            }
             set_authorization_param(&mut url, key, value);
         }
     }
@@ -759,10 +772,24 @@ pub(in crate::plugins) async fn fetch_user_info_from_provider(
     request: OAuthUserInfoRequest,
 ) -> AuthResult<OAuthUserInfoResponse> {
     if let Some(handler) = &provider.get_user_info {
-        let response = handler
-            .get_user_info(request)
-            .await
-            .map_err(AuthError::internal)?;
+        let response = handler.get_user_info(request).await.map_err(|error| {
+            if provider
+                .authorization
+                .as_ref()
+                .is_some_and(|policy| policy.source_profile_exceptions)
+                && (handler.errors_are_exceptions()
+                    || error
+                        .starts_with(super::providers::remaining_profile::PROFILE_EXCEPTION_PREFIX))
+            {
+                AuthError::Api {
+                    status: 500,
+                    code: Some("OAUTH_PROFILE_EXCEPTION".into()),
+                    message: "Provider profile callback failed".into(),
+                }
+            } else {
+                AuthError::internal(error)
+            }
+        })?;
         return Ok(response);
     }
 
@@ -1193,10 +1220,27 @@ pub(in crate::plugins) struct OAuthIdentity<'a> {
     pub profile: &'a serde_json::Value,
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep OAuth account matching, linking policy, and signup branches together for review"
-)]
+fn verification_override(
+    user: &impl AuthUser,
+    email: &str,
+    incoming: Option<&serde_json::Value>,
+) -> Option<serde_json::Value> {
+    incoming.map(|incoming| {
+        if user
+            .email()
+            .is_some_and(|stored| stored.eq_ignore_ascii_case(email))
+            && user.email_verified()
+        {
+            user.adapter_snapshot()
+                .and_then(|output| output.values().get("emailVerified"))
+                .cloned()
+                .unwrap_or(serde_json::Value::Bool(true))
+        } else {
+            incoming.clone()
+        }
+    })
+}
+
 pub(in crate::plugins) async fn process_oauth_sign_in(
     identity: OAuthIdentity<'_>,
     policy: &OAuthProcessPolicy,
@@ -1205,6 +1249,24 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
     meta: &better_auth_core::RequestMeta,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
+    process_oauth_sign_in_with_output(identity, policy, tokens, disable_sign_up, meta, ctx, None)
+        .await
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep OAuth account matching, linking policy, and signup branches together for review"
+)]
+async fn process_oauth_sign_in_with_output(
+    identity: OAuthIdentity<'_>,
+    policy: &OAuthProcessPolicy,
+    tokens: &OAuthTokenSet,
+    disable_sign_up: bool,
+    meta: &better_auth_core::RequestMeta,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    raw_output: Option<&better_auth_core::field_policy::FieldOutput>,
+) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
+    let raw_verification = raw_output.and_then(|output| output.get("emailVerified"));
     let OAuthIdentity {
         provider_name,
         user: user_info,
@@ -1220,13 +1282,9 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
         .await
         .map_err(OAuthSignInError::from_account_lookup)?;
 
-    let token_bundle = encrypt_token_set(
-        ctx,
-        tokens.access_token.clone(),
-        tokens.refresh_token.clone(),
-        tokens.id_token.clone(),
-    )
-    .map_err(|error| error.to_string())?;
+    let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_output.is_some())
+        .await
+        .map_err(|error| error.to_string())?;
 
     if let Some(existing_account) = linked_account {
         let existing_user = ctx
@@ -1250,6 +1308,10 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                     .update_account_record(
                         &existing_account.id(),
                         UpdateAccount {
+                            provider_token_nulls: provider_token_nulls(
+                                tokens,
+                                raw_output.is_some(),
+                            ),
                             access_token: token_bundle.access_token.clone(),
                             refresh_token: token_bundle.refresh_token.clone(),
                             id_token: token_bundle.id_token.clone(),
@@ -1289,6 +1351,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
 
         if policy.override_user_info {
             let additional_fields = provider_fields(user_info, false, ctx)?;
+            let verification = verification_override(&user, &user_info.email, raw_verification);
             user = ctx
                 .database
                 .update_user_record(
@@ -1298,11 +1361,17 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                         image: user_info.image.clone(),
                         email: Some(user_info.email.to_lowercase()),
                         additional_fields,
-                        email_verified: Some(
-                            user.email()
-                                .is_some_and(|email| email.eq_ignore_ascii_case(&user_info.email))
-                                && (user.email_verified() || user_info.email_verified),
-                        ),
+                        email_verified: Some(verification.as_ref().map_or_else(
+                            || {
+                                user.email().is_some_and(|email| {
+                                    email.eq_ignore_ascii_case(&user_info.email)
+                                }) && (user.email_verified() || user_info.email_verified)
+                            },
+                            raw_truthy,
+                        )),
+                        provider_email_verified: verification,
+                        provider_name: raw_output.and_then(|output| output.get("name")).cloned(),
+                        provider_image: raw_output.and_then(|output| output.get("image")).cloned(),
                         ..Default::default()
                     },
                 )
@@ -1320,15 +1389,21 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
                 user_id: existing_account.user_id().to_string(),
                 provider_id: provider_name.to_owned(),
                 account_id: existing_account.account_id().to_owned(),
-                access_token: token_bundle
-                    .access_token
-                    .or_else(|| existing_account.access_token().map(str::to_owned)),
-                refresh_token: token_bundle
-                    .refresh_token
-                    .or_else(|| existing_account.refresh_token().map(str::to_owned)),
-                id_token: token_bundle
-                    .id_token
-                    .or_else(|| existing_account.id_token().map(str::to_owned)),
+                access_token: token_bundle.access_token.or_else(|| {
+                    (!provider_token_nulls(tokens, raw_output.is_some())[0])
+                        .then(|| existing_account.access_token().map(str::to_owned))
+                        .flatten()
+                }),
+                refresh_token: token_bundle.refresh_token.or_else(|| {
+                    (!provider_token_nulls(tokens, raw_output.is_some())[1])
+                        .then(|| existing_account.refresh_token().map(str::to_owned))
+                        .flatten()
+                }),
+                id_token: token_bundle.id_token.or_else(|| {
+                    (!provider_token_nulls(tokens, raw_output.is_some())[2])
+                        .then(|| existing_account.id_token().map(str::to_owned))
+                        .flatten()
+                }),
                 access_token_expires_at: tokens
                     .access_token_expires_at
                     .or_else(|| existing_account.access_token_expires_at()),
@@ -1448,25 +1523,31 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
 
         if policy.override_user_info {
             let additional_fields = provider_fields(user_info, false, ctx)?;
-            linked_user =
-                ctx.database
-                    .update_user_record(
-                        &linked_user.id(),
-                        UpdateUser {
-                            name: user_info.name.clone(),
-                            image: user_info.image.clone(),
-                            email: Some(user_info.email.to_lowercase()),
-                            additional_fields,
-                            email_verified: Some(
+            let verification =
+                verification_override(&linked_user, &user_info.email, raw_verification);
+            linked_user = ctx
+                .database
+                .update_user_record(
+                    &linked_user.id(),
+                    UpdateUser {
+                        name: user_info.name.clone(),
+                        image: user_info.image.clone(),
+                        email: Some(user_info.email.to_lowercase()),
+                        additional_fields,
+                        email_verified: Some(verification.as_ref().map_or_else(
+                            || {
                                 linked_user.email().is_some_and(|email| {
                                     email.eq_ignore_ascii_case(&user_info.email)
-                                }) && (linked_user.email_verified() || user_info.email_verified),
-                            ),
-                            ..Default::default()
-                        },
-                    )
-                    .await
-                    .map_err(|error| error.to_string())?;
+                                }) && (linked_user.email_verified() || user_info.email_verified)
+                            },
+                            raw_truthy,
+                        )),
+                        provider_email_verified: verification,
+                        ..Default::default()
+                    },
+                )
+                .await
+                .map_err(|error| error.to_string())?;
         }
 
         let issued = finish_oauth_session(&linked_user, false, policy, meta, ctx).await?;
@@ -1500,6 +1581,8 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
             &mut create_user,
         );
         apply_default_role(ctx, &mut create_user);
+        create_user.provider_email_verified =
+            raw_verification.filter(|value| !value.is_null()).cloned();
         create_user.image = user_info.image.clone();
         create_user.additional_fields = provider_fields(user_info, true, ctx)?;
 
@@ -1636,19 +1719,16 @@ async fn complete_link_social_with_raw_email(
             return Err("account_already_linked_to_different_user".to_owned().into());
         }
 
-        let token_bundle = encrypt_token_set(
-            ctx,
-            tokens.access_token.clone(),
-            tokens.refresh_token.clone(),
-            tokens.id_token.clone(),
-        )
-        .map_err(|error| error.to_string())?;
+        let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_email.is_some())
+            .await
+            .map_err(|error| error.to_string())?;
 
         drop(
             ctx.database
                 .update_account_record(
                     &existing_account.id(),
                     UpdateAccount {
+                        provider_token_nulls: provider_token_nulls(tokens, raw_email.is_some()),
                         access_token: token_bundle.access_token,
                         refresh_token: token_bundle.refresh_token,
                         id_token: token_bundle.id_token,
@@ -1666,13 +1746,9 @@ async fn complete_link_social_with_raw_email(
         return Ok(LinkSocialOutcome::Linked);
     }
 
-    let token_bundle = encrypt_token_set(
-        ctx,
-        tokens.access_token.clone(),
-        tokens.refresh_token.clone(),
-        tokens.id_token.clone(),
-    )
-    .map_err(|error| error.to_string())?;
+    let token_bundle = encrypt_provider_token_set(ctx, tokens, raw_email.is_some())
+        .await
+        .map_err(|error| error.to_string())?;
 
     drop(
         ctx.database
@@ -1771,7 +1847,11 @@ async fn sign_in_with_id_token_core(
             ..Default::default()
         },
         provider.disable_implicit_sign_up && !body.request_sign_up.unwrap_or(false)
-            || provider.disable_sign_up,
+            || (provider.disable_sign_up
+                && provider
+                    .authorization
+                    .as_ref()
+                    .is_none_or(|policy| policy.honor_factory_options)),
         meta,
         ctx,
     )
@@ -2525,7 +2605,11 @@ pub(super) async fn handle_callback(
     .await;
     let mut user_info = match user_info_result {
         Ok(user_info) => user_info,
-        Err(_) => {
+        Err(error) => {
+            if matches!(&error,AuthError::Api {code:Some(code),..} if code == "OAUTH_PROFILE_EXCEPTION")
+            {
+                return Ok(AuthResponse::new(500));
+            }
             if provider
                 .authorization
                 .as_ref()
@@ -2602,8 +2686,12 @@ pub(super) async fn handle_callback(
 
     let disable_sign_up = provider.disable_implicit_sign_up
         && !payload.request_sign_up.unwrap_or(false)
-        || provider.disable_sign_up;
-    let outcome = match process_oauth_sign_in(
+        || (provider.disable_sign_up
+            && provider
+                .authorization
+                .as_ref()
+                .is_none_or(|policy| policy.honor_factory_options));
+    let outcome = match process_oauth_sign_in_with_output(
         OAuthIdentity {
             provider_name,
             user: &user_info.user,
@@ -2614,6 +2702,11 @@ pub(super) async fn handle_callback(
         disable_sign_up,
         &meta,
         ctx,
+        provider
+            .authorization
+            .as_ref()
+            .filter(|policy| policy.preserve_raw_profile_scalars)
+            .and(user_info.user_output.as_ref()),
     )
     .await
     {

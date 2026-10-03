@@ -48,6 +48,8 @@ impl OAuthProvider {
     #[must_use]
     pub fn vk_with_options(options: VkOptions) -> Self {
         let policy = OAuthAuthorizationPolicy {
+            preserve_raw_profile_scalars: true,
+            source_profile_exceptions: true,
             require_client_id: true,
             login_hint: false,
             pkce: true,
@@ -105,6 +107,7 @@ impl OAuthProvider {
             email_endpoint: None,
             client_id: provider.client_id.clone(),
             mapper: options.map_profile_to_user,
+            application_mapper: None,
         }));
         provider
     }
