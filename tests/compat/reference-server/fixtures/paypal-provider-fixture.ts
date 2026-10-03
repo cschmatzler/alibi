@@ -8,13 +8,19 @@ export function paypalProviderFixture(base: BetterAuthOptions) {
   const transport = Bun.serve({
     port: 0,
     async fetch(request) {
-      const path = new URL(request.url).pathname;
+      const incoming = new URL(request.url).pathname;
+      const path = "/" + incoming.split("/").at(-1);
+      const apiHost = incoming.startsWith("/live/")
+        ? "api-m.paypal.com"
+        : "api-m.sandbox.paypal.com";
+      const destination = `https://${apiHost}${path === "/user" ? "/v1/identity/oauth2/userinfo" : "/v1/oauth2/token"}`;
       const body =
         request.method === "POST"
           ? Object.fromEntries(new URLSearchParams(await request.text()))
           : null;
       receipts.push({
         path,
+        destination,
         method: request.method,
         authorization: request.headers.get("authorization"),
         contentType: request.headers.get("content-type"),
@@ -69,7 +75,7 @@ export function paypalProviderFixture(base: BetterAuthOptions) {
     ) {
       return previousFetch(
         new Request(
-          `${transport.url}${url.pathname.endsWith("token") ? "token" : "user"}${url.search}`,
+          `${transport.url}${url.hostname.includes("sandbox") ? "sandbox" : "live"}/${url.pathname.endsWith("token") ? "token" : "user"}${url.search}`,
           request,
         ),
       );

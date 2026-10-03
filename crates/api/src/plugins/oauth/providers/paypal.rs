@@ -14,7 +14,7 @@ pub enum PayPalEnvironment {
 }
 
 /// Application-owned PayPal configuration. The published factory ignores scopes,
-/// requestShippingAddress, clientKey, responseMode and tokenEndpointAuthMethod.
+/// requestShippingAddress, clientKey and responseMode.
 /// Generic signup and asynchronous callbacks remain available on the provider.
 #[derive(Clone)]
 pub struct PayPalOptions {

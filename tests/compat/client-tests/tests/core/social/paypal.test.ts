@@ -759,7 +759,7 @@ function idToken(claims: Record<string, unknown>) {
 }
 for (const variant of [
   "matching-user-id",
-  "matching-sub",
+  "matching-numeric-sub",
   "null-sub-fallback",
   "different-account-subject",
   "wrong-issuer-audience-nonce",
@@ -789,9 +789,9 @@ for (const variant of [
       const data: Record<string, unknown> = profile(ctx);
       const subject = data.user_id;
       let claims: Record<string, unknown> = { sub: subject };
-      if (variant === "matching-sub" || variant === "different-account-subject") {
-        data.sub = "oidc-subject";
-        claims.sub = "oidc-subject";
+      if (variant === "matching-numeric-sub" || variant === "different-account-subject") {
+        data.sub = variant === "matching-numeric-sub" ? 42 : "oidc-subject";
+        claims.sub = data.sub;
       }
       if (variant === "null-sub-fallback") data.sub = null;
       if (variant === "wrong-issuer-audience-nonce") {
@@ -836,7 +836,7 @@ for (const variant of [
       );
       const admitted = [
         "matching-user-id",
-        "matching-sub",
+        "matching-numeric-sub",
         "null-sub-fallback",
         "different-account-subject",
         "wrong-issuer-audience-nonce",

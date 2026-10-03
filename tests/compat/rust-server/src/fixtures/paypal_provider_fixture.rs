@@ -77,7 +77,7 @@ pub(crate) async fn router(
         if mode == "prompt" || mode == "empty-prompt" {
             options.prompt = Some(if mode == "prompt" { "consent" } else { "" }.into());
         }
-        options.user_info_endpoint = Some(format!("{}/__test/paypal/user", config.base_url));
+
         if mode == "configured-endpoint" {
             options.authorization_endpoint =
                 Some("https://configured.example.invalid/authorize".into());
@@ -105,8 +105,16 @@ pub(crate) async fn router(
                 })
             });
         }
+        // Rewrite the endpoints produced by the real factory, retaining their
+        // destination in actual HTTP receipts. A wrong environment or endpoint
+        // must not silently become the fixture's expected destination.
+        let original = OAuthProvider::paypal_with_options(options.clone());
+        options.user_info_endpoint = Some(local_endpoint(
+            original.user_info_url.as_deref().unwrap(),
+            &config.base_url,
+        ));
         let mut provider = OAuthProvider::paypal_with_options(options);
-        provider.token_url = format!("{}/__test/paypal/token", config.base_url);
+        provider.token_url = local_endpoint(&original.token_url, &config.base_url);
         provider.disable_sign_up = mode == "signup-disabled";
         provider.disable_implicit_sign_up = mode == "implicit-disabled";
         provider.require_email_verification = mode == "required";
@@ -141,7 +149,8 @@ pub(crate) async fn router(
                 Json(fixture.receipts.lock().await.clone())
             }),
         )
-        .route("/__test/paypal/user", get(profile))
+        .route("/__test/paypal/sandbox/user", get(profile))
+        .route("/__test/paypal/live/user", get(profile))
         .route(
             "/__test/paypal/mapper-receipts",
             get(|| async {
@@ -153,7 +162,8 @@ pub(crate) async fn router(
                 )
             }),
         )
-        .route("/__test/paypal/token", post(token))
+        .route("/__test/paypal/sandbox/token", post(token))
+        .route("/__test/paypal/live/token", post(token))
         .route("/__test/paypal/leak", post(leak))
         .with_state(fixture.clone());
     Ok((router.merge(controls), fixture))
@@ -161,9 +171,10 @@ pub(crate) async fn router(
 async fn profile(
     State(fixture): State<Fixture>,
     headers: HeaderMap,
+    uri: axum::http::Uri,
     axum::extract::Query(query): axum::extract::Query<std::collections::BTreeMap<String, String>>,
 ) -> (axum::http::StatusCode, Json<Value>) {
-    fixture.receipts.lock().await.push(json!({"path":"/user","method":"GET","authorization":headers.get("authorization").and_then(|value|value.to_str().ok()),"contentType":headers.get("content-type").and_then(|value|value.to_str().ok()),"body":null,"accept":headers.get("accept").and_then(|value|value.to_str().ok()),"query":query}));
+    fixture.receipts.lock().await.push(json!({"path":"/user","destination":destination(&uri, "user"),"method":"GET","authorization":headers.get("authorization").and_then(|value|value.to_str().ok()),"contentType":headers.get("content-type").and_then(|value|value.to_str().ok()),"body":null,"accept":headers.get("accept").and_then(|value|value.to_str().ok()),"query":query}));
     let control = fixture.control.lock().await;
     (axum::http::StatusCode::from_u16(control.get("profileStatus").and_then(Value::as_u64).unwrap_or(200).try_into().unwrap_or(500)).unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR),Json(control.get("profile").cloned().unwrap_or_else(||json!({"user_id":"fixture-paypal-subject","name":"PayPal Name","email":"paypal@example.invalid","email_verified":true}))))
 }
@@ -174,13 +185,14 @@ async fn leak(State(fixture): State<Fixture>, headers: HeaderMap, body: String) 
 async fn token(
     State(fixture): State<Fixture>,
     headers: HeaderMap,
+    uri: axum::http::Uri,
     body: String,
 ) -> (axum::http::StatusCode, HeaderMap, Json<Value>) {
     let fields: std::collections::BTreeMap<String, String> =
         url::form_urlencoded::parse(body.as_bytes())
             .into_owned()
             .collect();
-    fixture.receipts.lock().await.push(json!({"path":"/token", "method":"POST", "authorization":headers.get("authorization").and_then(|value| value.to_str().ok()), "contentType":headers.get("content-type").and_then(|value| value.to_str().ok()),"body":fields,"accept":headers.get("accept").and_then(|value|value.to_str().ok()),"query":{}}));
+    fixture.receipts.lock().await.push(json!({"path":"/token", "destination":destination(&uri, "token"), "method":"POST", "authorization":headers.get("authorization").and_then(|value| value.to_str().ok()), "contentType":headers.get("content-type").and_then(|value| value.to_str().ok()),"body":fields,"accept":headers.get("accept").and_then(|value|value.to_str().ok()),"query":{}}));
     let control = fixture.control.lock().await;
     let mut response_headers = HeaderMap::new();
     if control
@@ -194,4 +206,28 @@ async fn token(
         );
     }
     (axum::http::StatusCode::from_u16(control.get("tokenStatus").and_then(Value::as_u64).unwrap_or(200).try_into().unwrap_or(500)).unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR),response_headers,Json(control.get("tokenResponse").cloned().unwrap_or_else(|| json!({"access_token":"fixture-paypal-access","refresh_token":"fixture-paypal-refresh","token_type":"Bearer","expires_in":3600,"scope":"user-details.read"}))))
+}
+
+fn local_endpoint(endpoint: &str, base: &str) -> String {
+    let suffix = match endpoint {
+        "https://api-m.sandbox.paypal.com/v1/oauth2/token" => "sandbox/token",
+        "https://api-m.paypal.com/v1/oauth2/token" => "live/token",
+        "https://api-m.sandbox.paypal.com/v1/identity/oauth2/userinfo" => "sandbox/user",
+        "https://api-m.paypal.com/v1/identity/oauth2/userinfo" => "live/user",
+        other => panic!("Unexpected real PayPal endpoint: {other}"),
+    };
+    format!("{base}/__test/paypal/{suffix}")
+}
+fn destination(uri: &axum::http::Uri, operation: &str) -> String {
+    let host = if uri.path().contains("/live/") {
+        "api-m.paypal.com"
+    } else {
+        "api-m.sandbox.paypal.com"
+    };
+    let path = if operation == "token" {
+        "/v1/oauth2/token"
+    } else {
+        "/v1/identity/oauth2/userinfo"
+    };
+    format!("https://{host}{path}")
 }
