@@ -31,6 +31,7 @@ import { apiKeyBackgroundFixture } from "./fixtures/api-key-background-fixture";
 import { createApiKeyGenerationFixture } from "./fixtures/api-key-generation-fixture";
 import { createApiKeyHookFixture } from "./fixtures/api-key-hook-fixture";
 import { createApiKeyOptionsFixture } from "./fixtures/api-key-options-fixture";
+import { apiKeyStorageFixture } from "./fixtures/api-key-storage-fixture";
 import { appleProviderFixture } from "./fixtures/apple-provider-fixture";
 import { atlassianProviderFixture } from "./fixtures/atlassian-provider-fixture";
 import { createBearerFixture } from "./fixtures/bearer-fixture";
@@ -675,6 +676,9 @@ for (const [path, instance] of anonymousProfiles.profiles) {
 for (const [path, instance] of sessionCookieCacheProfiles.profiles) {
   verificationProfiles.set(path, instance);
 }
+const apiKeyStorage = await apiKeyStorageFixture(database, authOptions);
+for (const [path, instance] of apiKeyStorage.profiles) verificationProfiles.set(path, instance);
+
 const apiKeyBackground = await apiKeyBackgroundFixture(database, authOptions);
 for (const [path, instance] of apiKeyBackground.profiles) {
   verificationProfiles.set(path, instance);
@@ -2290,6 +2294,8 @@ const server = Bun.serve({
       if (url.pathname === "/__test/api-key/update" && request.method === "POST") {
         return jsonResponse(await auth.api.updateApiKey({ body: await readJson(request) }));
       }
+      const apiKeyStorageControl = await apiKeyStorage.control(request);
+      if (apiKeyStorageControl) return apiKeyStorageControl;
       const apiKeyBackgroundControl = await apiKeyBackground.control(request);
       if (apiKeyBackgroundControl) {
         return apiKeyBackgroundControl;
@@ -2460,6 +2466,7 @@ const server = Bun.serve({
         return jsonResponse(databaseResidue());
       }
       if (url.pathname === "/__test/reset-state" && request.method === "POST") {
+        await apiKeyStorage.reset();
         cloudflareFixture.reset();
         cognitoFixture.reset();
         dropboxFixture.reset();

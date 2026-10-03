@@ -339,12 +339,8 @@ impl ApiKeyPlugin {
                 if config.storage == super::ApiKeyStorageMode::SecondaryStorage {
                     let storage = storage
                         .ok_or_else(|| AuthError::internal("Secondary storage is required"))?;
-                    super::storage::remove_storage(
-                        storage.as_ref(),
-                        &key,
-                        config.fallback_to_database,
-                    )
-                    .await?;
+                    super::storage::remove_storage(storage, &key, config.fallback_to_database)
+                        .await?;
                 }
                 if config.uses_database() {
                     database.delete_api_key(&key.id).await?;

@@ -1703,6 +1703,42 @@ export function compareValues(
     );
   }
 
+  const applicationApiKeyRows = new WeakSet<Record<string, unknown>>();
+  const applicationApiKeyLookups = new WeakSet<Record<string, unknown>>();
+  const applicationApiKeyIndexes: {
+    row: Record<string, unknown>;
+    entry: Record<string, unknown>;
+    path: string;
+  }[] = [];
+  function collectApplicationApiKeys(value: unknown, path = "") {
+    if (Array.isArray(value)) {
+      value.forEach((child, index) =>
+        collectApplicationApiKeys(child, path ? `${path}.${index}` : `${index}`),
+      );
+    } else if (
+      record(value) &&
+      !traceShape(path) &&
+      !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path)
+    ) {
+      if (
+        (value.namespace === "hash" || value.namespace === "id") &&
+        record(value.lookup) &&
+        record(value.value) &&
+        apiKeyRow(value.value) &&
+        Object.hasOwn(value, "expiresAt")
+      ) {
+        applicationApiKeyRows.add(value.value);
+        if (value.namespace === "hash") applicationApiKeyLookups.add(value.lookup);
+        applicationApiKeyIndexes.push({ row: value.value, entry: value, path });
+      }
+      for (const [key, child] of Object.entries(value)) {
+        collectApplicationApiKeys(child, path ? `${path}.${key}` : key);
+      }
+    }
+  }
+  collectApplicationApiKeys(normalizedLeft);
+  collectApplicationApiKeys(normalizedRight);
+
   // These are observations from the actual SQLite expressions, not another
   // plaintext issuance. Every such candidate is independently validated below;
   // adding these fields never grants an unchecked identity exception.
@@ -1711,15 +1747,19 @@ export function compareValues(
       apiKeyRow(value) && (Object.hasOwn(value, "startHex") || Object.hasOwn(value, "startType"))
     );
   }
+  function storedApiKeyReceipt(value: Record<string, unknown>): boolean {
+    return sqliteApiKeyReceipt(value) || applicationApiKeyRows.has(value);
+  }
 
   function issuedApiKeys(
     value: unknown,
     path = "",
     result = new Map<string, string>(),
+    identities = new Map<string, Record<string, unknown>>(),
   ): Map<string, string> {
     if (Array.isArray(value)) {
       value.forEach((child, index) =>
-        issuedApiKeys(child, path ? `${path}.${index}` : `${index}`, result),
+        issuedApiKeys(child, path ? `${path}.${index}` : `${index}`, result, identities),
       );
     } else if (
       record(value) &&
@@ -1729,7 +1769,7 @@ export function compareValues(
     ) {
       if (
         apiKeyRow(value) &&
-        !sqliteApiKeyReceipt(value) &&
+        !storedApiKeyReceipt(value) &&
         typeof value.id === "string" &&
         typeof value.key === "string"
       ) {
@@ -1738,16 +1778,19 @@ export function compareValues(
           fail(path, "API key changed for a persisted row");
         }
         result.set(value.id, value.key);
+        identities.set(value.id, value);
       }
       for (const [key, child] of Object.entries(value)) {
-        issuedApiKeys(child, path ? `${path}.${key}` : key, result);
+        issuedApiKeys(child, path ? `${path}.${key}` : key, result, identities);
       }
     }
     return result;
   }
 
-  const leftApiKeys = issuedApiKeys(normalizedLeft);
-  const rightApiKeys = issuedApiKeys(normalizedRight);
+  const leftApiKeyIdentities = new Map<string, Record<string, unknown>>();
+  const rightApiKeyIdentities = new Map<string, Record<string, unknown>>();
+  const leftApiKeys = issuedApiKeys(normalizedLeft, "", new Map(), leftApiKeyIdentities);
+  const rightApiKeys = issuedApiKeys(normalizedRight, "", new Map(), rightApiKeyIdentities);
 
   function codeUnitBytes(unit: number): number[] {
     if (unit <= 0x7f) {
@@ -1805,20 +1848,33 @@ export function compareValues(
   function sqliteApiKeys(
     value: unknown,
     issued: ReadonlyMap<string, string>,
+    identities: ReadonlyMap<string, Record<string, unknown>>,
     path = "",
     result = new Map<string, SqliteApiKey[]>(),
   ): Map<string, SqliteApiKey[]> {
     if (Array.isArray(value)) {
       value.forEach((child, index) =>
-        sqliteApiKeys(child, issued, path ? `${path}.${index}` : `${index}`, result),
+        sqliteApiKeys(child, issued, identities, path ? `${path}.${index}` : `${index}`, result),
       );
     } else if (
       record(value) &&
       !/(?:^|\.)(?:metadata|additionalFields|custom|applicationData)(?:\.|$)/.test(path) &&
       !traceShape(path)
     ) {
-      if (sqliteApiKeyReceipt(value)) {
+      if (storedApiKeyReceipt(value)) {
+        const application = applicationApiKeyRows.has(value);
         const plaintext = typeof value.id === "string" ? issued.get(value.id) : undefined;
+        const identity = typeof value.id === "string" ? identities.get(value.id) : undefined;
+        if (application && identity) {
+          for (const field of ["referenceId", "configId", "prefix"] as const) {
+            if (value[field] !== identity[field]) {
+              fail(
+                `${path}.${field}`,
+                "Application API-key authority differs from its observed issuance",
+              );
+            }
+          }
+        }
         const mode =
           plaintext !== undefined && value.key === plaintext
             ? "plain"
@@ -1828,18 +1884,35 @@ export function compareValues(
               : undefined;
 
         if (mode === undefined) {
-          fail(`${path}.key`, "SQLite API-key storage is not derived from its observed issuance");
+          fail(
+            `${path}.key`,
+            `${application ? "Application" : "SQLite"} API-key storage is not derived from its observed issuance`,
+          );
         }
 
         let units: number | null | undefined;
 
-        if (value.startType !== "text" && value.startType !== "null") {
+        if (application) {
+          if (identity && value.start !== identity.start) {
+            fail(`${path}.start`, "Application API-key start differs from its observed issuance");
+          }
+          if (value.start === null) units = null;
+          else if (typeof value.start === "string" && plaintext?.startsWith(value.start)) {
+            units = value.start.length;
+          }
+        } else if (value.startType !== "text" && value.startType !== "null") {
           fail(`${path}.startType`, "SQLite API-key storage type is neither text nor null");
         }
 
-        if (value.startType === "null" && value.start === null && value.startHex === "") {
+        if (
+          !application &&
+          value.startType === "null" &&
+          value.start === null &&
+          value.startHex === ""
+        ) {
           units = null;
         } else if (
+          !application &&
           value.startType === "text" &&
           typeof value.start === "string" &&
           typeof value.startHex === "string" &&
@@ -1855,8 +1928,10 @@ export function compareValues(
 
         if (units === undefined) {
           fail(
-            `${path}.startHex`,
-            "SQLite API-key bytes are not an actual UTF-16 credential prefix",
+            `${path}.${application ? "start" : "startHex"}`,
+            application
+              ? "Application API-key start is not an observed credential prefix"
+              : "SQLite API-key bytes are not an actual UTF-16 credential prefix",
           );
         }
 
@@ -1873,14 +1948,27 @@ export function compareValues(
         }
       }
       for (const [key, child] of Object.entries(value)) {
-        sqliteApiKeys(child, issued, path ? `${path}.${key}` : key, result);
+        sqliteApiKeys(child, issued, identities, path ? `${path}.${key}` : key, result);
       }
     }
     return result;
   }
 
-  const leftSqliteApiKeys = sqliteApiKeys(normalizedLeft, leftApiKeys);
-  const rightSqliteApiKeys = sqliteApiKeys(normalizedRight, rightApiKeys);
+  const leftSqliteApiKeys = sqliteApiKeys(normalizedLeft, leftApiKeys, leftApiKeyIdentities);
+  const rightSqliteApiKeys = sqliteApiKeys(normalizedRight, rightApiKeys, rightApiKeyIdentities);
+
+  for (const { row, entry, path } of applicationApiKeyIndexes) {
+    const lookup = entry.lookup as Record<string, unknown>;
+    if (entry.namespace === "hash" ? lookup.key !== row.key : lookup.id !== row.id) {
+      fail(`${path}.lookup`, "Application API-key index does not address its stored row");
+    }
+    if (
+      entry.expiresAt !== null &&
+      (typeof entry.expiresAt !== "string" || !Number.isFinite(Date.parse(entry.expiresAt)))
+    ) {
+      fail(`${path}.expiresAt`, "Application API-key expiry is not a valid timestamp");
+    }
+  }
 
   function sqliteStorage(
     value: Record<string, unknown>,
@@ -1969,8 +2057,8 @@ export function compareValues(
         identity(String(a.id), String(b.id), `${path}.id`, "entity");
       }
 
-      const leftKey = sqliteApiKeyReceipt(a) && sqliteStorage(a, leftSqliteApiKeys);
-      const rightKey = sqliteApiKeyReceipt(b) && sqliteStorage(b, rightSqliteApiKeys);
+      const leftKey = storedApiKeyReceipt(a) && sqliteStorage(a, leftSqliteApiKeys);
+      const rightKey = storedApiKeyReceipt(b) && sqliteStorage(b, rightSqliteApiKeys);
 
       if (leftKey) {
         leftKeyIds.add(String(a.id));
@@ -3781,7 +3869,7 @@ export function compareValues(
       const computedLifetime =
         !inApplicationData && !traceShape(path) && sessionLifetime(a, b, path);
       const apiKey = !inApplicationData && !traceShape(path) && apiKeyRow(a) && apiKeyRow(b);
-      const sqliteApiKey = apiKey && (sqliteApiKeyReceipt(a) || sqliteApiKeyReceipt(b));
+      const sqliteApiKey = apiKey && (storedApiKeyReceipt(a) || storedApiKeyReceipt(b));
       const issuedLeft =
         !sqliteApiKey && typeof a.key === "string"
           ? a.key
@@ -3927,6 +4015,12 @@ export function compareValues(
           }
 
           identity(leftMaterial, rightMaterial, childPath, `jwk:${childKey}`);
+        } else if (
+          childKey === "key" &&
+          applicationApiKeyLookups.has(a) &&
+          applicationApiKeyLookups.has(b)
+        ) {
+          identity(String(a.key), String(b.key), childPath, "api-key-storage");
         } else if (sqliteApiKey && childKey === "key") {
           const leftStorage = sqliteStorage(a, leftSqliteApiKeys);
           const rightStorage = sqliteStorage(b, rightSqliteApiKeys);

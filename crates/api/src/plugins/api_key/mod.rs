@@ -899,8 +899,7 @@ impl ApiKeyPlugin {
             .get("id")
             .ok_or_else(|| AuthError::bad_request("Query parameter 'id' is required"))?;
         let config_id = req.query.get("configId").map(String::as_str);
-        let response = get_key_core(id, config_id, user.id(), self, ctx).await?;
-        Ok(AuthResponse::json(200, &response)?)
+        key_json_response(get_key_core(id, config_id, user.id(), self, ctx).await)
     }
 
     async fn handle_list(
@@ -916,8 +915,7 @@ impl ApiKeyPlugin {
             Ok(query) => query,
             Err(response) => return Ok(response),
         };
-        let response = list_keys_core(user.id(), &query, self, ctx).await?;
-        Ok(AuthResponse::json(200, &response)?)
+        key_json_response(list_keys_core(user.id(), &query, self, ctx).await)
     }
 
     async fn handle_update(
@@ -990,6 +988,19 @@ impl ApiKeyPlugin {
         };
         let response = delete_key_core(&body, user.id(), self, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)
+    }
+}
+
+fn key_json_response<T: serde::Serialize>(result: AuthResult<T>) -> AuthResult<AuthResponse> {
+    match result {
+        Ok(response) => Ok(AuthResponse::json(200, &response)?),
+        Err(error)
+            if error.status_code() >= 500
+                && !matches!(error, AuthError::Upstream { .. } | AuthError::Api { .. }) =>
+        {
+            Ok(AuthResponse::new(500))
+        }
+        Err(error) => Err(error),
     }
 }
 
@@ -3871,10 +3882,12 @@ mod crud_tests {
             );
             if fallback {
                 let persisted = ctx.database.get_api_key_by_id(id).await.unwrap().unwrap();
-                assert_eq!(
-                    serde_json::to_value(&persisted).unwrap(),
-                    serde_json::to_value(&row).unwrap()
-                );
+                let mut persisted_json = serde_json::to_value(&persisted).unwrap();
+                // The database model stores JSON text; the public application
+                // storage contract stores the actual metadata value.
+                *persisted_json.get_mut("metadata").unwrap() =
+                    serde_json::from_str(persisted.metadata.as_deref().unwrap_or("null")).unwrap();
+                assert_eq!(persisted_json, serde_json::to_value(&row).unwrap());
                 cache.delete(&by_id).await.unwrap();
                 cache.delete(&by_hash).await.unwrap();
                 assert_eq!(

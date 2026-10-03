@@ -78,7 +78,7 @@ impl ApiKeyPlugin {
                 fresh.last_request = mutations.last_request;
             }
             fresh.updated_at = mutations.updated_at;
-            write_storage(storage.as_ref(), &fresh, false).await?;
+            write_storage(storage, &fresh, false).await?;
             Ok::<_, better_auth_core::AuthError>(Some(fresh))
         };
         if config.defer_updates {

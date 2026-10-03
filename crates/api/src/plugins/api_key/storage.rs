@@ -88,7 +88,7 @@ impl ApiKeyConfig {
         let storage = self
             .secondary()
             .ok_or_else(|| AuthError::internal("Secondary storage is required"))?;
-        write_storage(storage.as_ref(), key, self.fallback_to_database).await
+        write_storage(storage, key, self.fallback_to_database).await
     }
     pub(super) async fn remove_key(
         &self,
@@ -99,7 +99,7 @@ impl ApiKeyConfig {
             let storage = self
                 .secondary()
                 .ok_or_else(|| AuthError::internal("Secondary storage is required"))?;
-            remove_storage(storage.as_ref(), key, self.fallback_to_database).await?;
+            remove_storage(storage, key, self.fallback_to_database).await?;
         }
         if self.uses_database() {
             ctx.database.delete_api_key(&key.id).await?;
@@ -205,13 +205,13 @@ impl ApiKeyConfig {
         if let Some(storage) = &storage {
             let ids = reference_ids(storage.as_ref(), reference).await?;
             if !ids.is_empty() {
-                let mut keys = Vec::new();
-                for id in ids {
-                    if let Some(key) = read_storage(storage.as_ref(), &id, false).await? {
-                        keys.push(key);
-                    }
-                }
-                return Ok(keys);
+                let storage = Arc::clone(storage);
+                let keys = storage_map(ids, move |id| {
+                    let storage = Arc::clone(&storage);
+                    async move { read_storage(storage.as_ref(), &id, false).await }
+                })
+                .await?;
+                return Ok(keys.into_iter().flatten().collect());
             }
         }
         if !self.fallback_to_database {
@@ -221,9 +221,14 @@ impl ApiKeyConfig {
         if let Some(storage) = storage
             && !keys.is_empty()
         {
-            for key in &keys {
-                write_storage(storage.as_ref(), key, true).await?;
-            }
+            let cache = Arc::clone(&storage);
+            drop(
+                storage_map(keys.clone(), move |key| {
+                    let storage = Arc::clone(&cache);
+                    async move { write_storage(storage, &key, true).await }
+                })
+                .await?,
+            );
             let ids: Vec<_> = keys.iter().map(|key| &key.id).collect();
             storage
                 .set(&ref_index(reference), &serde_json::to_string(&ids)?, None)
@@ -239,8 +244,7 @@ impl ApiKeyPlugin {
         ctx: &AuthContext<impl AuthSchema>,
         reference: &str,
     ) -> AuthResult<Vec<ApiKey>> {
-        let mut keys = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        let mut operations = Vec::new();
         let mut stores = std::collections::HashSet::new();
         for config in &self.configurations {
             let identifier = if config.storage == ApiKeyStorageMode::Database {
@@ -259,10 +263,27 @@ impl ApiKeyPlugin {
                 )
             };
             if stores.insert(identifier) {
-                for key in config.list_stored_keys(ctx, reference).await? {
-                    if seen.insert(key.id.clone()) {
-                        keys.push(key);
-                    }
+                let config = config.clone();
+                let reference = reference.to_owned();
+                let context = AuthContext {
+                    config: Arc::clone(&ctx.config),
+                    database: Arc::clone(&ctx.database),
+                    email_provider: ctx.email_provider.clone(),
+                    metadata: ctx.metadata.clone(),
+                    extensions: ctx.extensions.clone(),
+                };
+                operations.push(start_storage_task(async move {
+                    config.list_stored_keys(&context, &reference).await
+                }));
+            }
+        }
+        let groups = storage_results(operations).await?;
+        let mut keys = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for group in groups {
+            for key in group {
+                if seen.insert(key.id.clone()) {
+                    keys.push(key);
                 }
             }
         }
@@ -298,13 +319,15 @@ pub(super) async fn read_storage(
     let Ok(mut value) = serde_json::from_str::<serde_json::Value>(&data) else {
         return Ok(None);
     };
-    if let Some(metadata) = value.get_mut("metadata") {
+    if let Some(metadata) = value.get_mut("metadata")
+        && !metadata.is_null()
+    {
         *metadata = serde_json::Value::String(serde_json::to_string(metadata)?);
     }
     Ok(serde_json::from_value(value).ok())
 }
 pub(super) async fn write_storage(
-    storage: &dyn ApiKeyStorage,
+    storage: Arc<dyn ApiKeyStorage>,
     key: &ApiKey,
     fallback: bool,
 ) -> AuthResult<()> {
@@ -316,39 +339,154 @@ pub(super) async fn write_storage(
         .filter(|seconds| *seconds > 0)
         .map(Duration::seconds);
     let mut value = serde_json::to_value(key)?;
-    value["metadata"] = key
-        .metadata
-        .as_deref()
-        .map(serde_json::from_str)
-        .transpose()?
-        .unwrap_or(serde_json::Value::Null);
+    let fields = value
+        .as_object_mut()
+        .ok_or_else(|| AuthError::internal("Invalid API key"))?;
+    drop(
+        fields.insert(
+            "metadata".to_owned(),
+            key.metadata
+                .as_deref()
+                .map(serde_json::from_str)
+                .transpose()?
+                .unwrap_or(serde_json::Value::Null),
+        ),
+    );
     if !fallback && key.permissions.is_none() {
-        drop(
-            value
-                .as_object_mut()
-                .ok_or_else(|| AuthError::internal("Invalid API key"))?
-                .remove("permissions"),
-        );
+        drop(fields.remove("permissions"));
     }
     let data = serde_json::to_string(&value)?;
     let hash = hash_index(&key.key_hash);
     let id = id_index(&key.id);
+    let mut operations = vec![
+        spawn_set(Arc::clone(&storage), hash, data.clone(), ttl),
+        spawn_set(Arc::clone(&storage), id, data, ttl),
+    ];
     if fallback {
-        let reference = ref_index(&key.reference_id);
-        let (a, b, c) = tokio::join!(
-            storage.set(&hash, &data, ttl),
-            storage.set(&id, &data, ttl),
-            storage.delete(&reference)
-        );
-        a?;
-        b?;
-        c
-    } else {
-        let (a, b) = tokio::join!(storage.set(&hash, &data, ttl), storage.set(&id, &data, ttl));
-        a?;
-        b?;
-        modify_reference(storage, &key.reference_id, &key.id, true).await
+        operations.push(spawn_delete(
+            Arc::clone(&storage),
+            ref_index(&key.reference_id),
+        ));
     }
+    drop(storage_results(operations).await?);
+    if fallback {
+        Ok(())
+    } else {
+        modify_reference(storage.as_ref(), &key.reference_id, &key.id, true).await
+    }
+}
+
+type StorageTask<T> = (
+    tokio::sync::oneshot::Receiver<()>,
+    tokio::task::JoinHandle<AuthResult<T>>,
+);
+fn start_storage_task<T: Send + 'static>(
+    operation: impl std::future::Future<Output = AuthResult<T>> + Send + 'static,
+) -> StorageTask<T> {
+    let (sender, receiver) = tokio::sync::oneshot::channel();
+    let handle = tokio::spawn(async move {
+        let mut operation = Box::pin(operation);
+        let mut sender = Some(sender);
+        std::future::poll_fn(|context| {
+            let result = operation.as_mut().poll(context);
+            if let Some(sender) = sender.take() {
+                let _ = sender.send(());
+            }
+            result
+        })
+        .await
+    });
+    (receiver, handle)
+}
+fn spawn_set(
+    storage: Arc<dyn ApiKeyStorage>,
+    index: String,
+    value: String,
+    ttl: Option<Duration>,
+) -> StorageTask<()> {
+    start_storage_task(async move { storage.set(&index, &value, ttl).await })
+}
+fn spawn_delete(storage: Arc<dyn ApiKeyStorage>, index: String) -> StorageTask<()> {
+    start_storage_task(async move { storage.delete(&index).await })
+}
+async fn storage_results<T: Send + 'static>(operations: Vec<StorageTask<T>>) -> AuthResult<Vec<T>> {
+    use futures_util::StreamExt as _;
+    // Source Promise.all starts every IO, then rejects on the first failure;
+    // the other initiated operations continue. First-poll acknowledgements
+    // preserve initiation, and dropped JoinHandles detach instead of cancel.
+    let mut results: Vec<Option<T>> = std::iter::repeat_with(|| None)
+        .take(operations.len())
+        .collect();
+    let pending = futures_util::stream::FuturesUnordered::new();
+    for (index, (started, handle)) in operations.into_iter().enumerate() {
+        started
+            .await
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        pending.push(async move {
+            handle
+                .await
+                .map_err(|error| AuthError::internal(error.to_string()))?
+                .map(|value| (index, value))
+        });
+    }
+    let mut pending = pending;
+    while let Some(result) = pending.next().await {
+        let (index, value) = result?;
+        *results
+            .get_mut(index)
+            .ok_or_else(|| AuthError::internal("Invalid storage result index"))? = Some(value);
+    }
+    Ok(results.into_iter().flatten().collect())
+}
+async fn storage_map<T, R, F, Fut>(items: Vec<T>, mapper: F) -> AuthResult<Vec<R>>
+where
+    T: Send + 'static,
+    R: Send + 'static,
+    F: Fn(T) -> Fut + Send + Sync + 'static,
+    Fut: std::future::Future<Output = AuthResult<R>> + Send + 'static,
+{
+    use futures_util::StreamExt as _;
+    let mut results: Vec<Option<R>> = std::iter::repeat_with(|| None).take(items.len()).collect();
+    let mut items = items.into_iter().enumerate();
+    let mapper = Arc::new(mapper);
+    let failed = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let launch = |(index, item)| {
+        let mapper = Arc::clone(&mapper);
+        let failed = Arc::clone(&failed);
+        start_storage_task(async move {
+            match mapper(item).await {
+                Ok(value) => Ok((index, value)),
+                Err(error) => {
+                    failed.store(true, std::sync::atomic::Ordering::SeqCst);
+                    Err(error)
+                }
+            }
+        })
+    };
+    let mut pending = futures_util::stream::FuturesUnordered::new();
+    let initial: Vec<_> = items.by_ref().take(10).map(&launch).collect();
+    for (started, handle) in initial {
+        started
+            .await
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        pending.push(handle);
+    }
+    while let Some(result) = pending.next().await {
+        let (index, value) = result.map_err(|error| AuthError::internal(error.to_string()))??;
+        *results
+            .get_mut(index)
+            .ok_or_else(|| AuthError::internal("Invalid storage result index"))? = Some(value);
+        if !failed.load(std::sync::atomic::Ordering::SeqCst)
+            && let Some(item) = items.next()
+        {
+            let (started, handle) = launch(item);
+            started
+                .await
+                .map_err(|error| AuthError::internal(error.to_string()))?;
+            pending.push(handle);
+        }
+    }
+    Ok(results.into_iter().flatten().collect())
 }
 async fn reference_ids(storage: &dyn ApiKeyStorage, reference: &str) -> AuthResult<Vec<String>> {
     Ok(storage
@@ -397,21 +535,25 @@ async fn modify_reference(
 }
 
 pub(super) async fn remove_storage(
-    storage: &dyn ApiKeyStorage,
+    storage: Arc<dyn ApiKeyStorage>,
     key: &ApiKey,
     fallback: bool,
 ) -> AuthResult<()> {
     let hash = hash_index(&key.key_hash);
     let id = id_index(&key.id);
     let reference = ref_index(&key.reference_id);
-    let (a, b, c) = tokio::join!(storage.delete(&hash), storage.delete(&id), async {
-        if fallback {
-            storage.delete(&reference).await
-        } else {
-            modify_reference(storage, &key.reference_id, &key.id, false).await
-        }
-    });
-    a?;
-    b?;
-    c
+    let mut operations = vec![
+        spawn_delete(Arc::clone(&storage), hash),
+        spawn_delete(Arc::clone(&storage), id),
+    ];
+    if fallback {
+        operations.push(spawn_delete(storage, reference));
+    } else {
+        let reference = key.reference_id.clone();
+        let id = key.id.clone();
+        operations.push(start_storage_task(async move {
+            modify_reference(storage.as_ref(), &reference, &id, false).await
+        }));
+    }
+    storage_results(operations).await.map(|_| ())
 }
