@@ -851,13 +851,14 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
     super::super::helpers::record_completed_session_user_view::<S>(
         &user,
         &session,
-        ctx.user_view(&user),
+        ctx.trusted_user_view(&user),
     );
 
     Ok(PasskeyHandlerOutcome::Success((
         serde_json::to_value(SessionResponse {
             session: ctx.session_view(&session),
-            user: ctx.user_view(&user),
+            // The pinned verification endpoint returns the adapter user directly.
+            user: ctx.trusted_user_view(&user),
         })?,
         session.token().to_owned(),
     )))
