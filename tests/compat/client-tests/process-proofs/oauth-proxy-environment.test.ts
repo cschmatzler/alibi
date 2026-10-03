@@ -70,6 +70,12 @@ compatScenario(
     const vendorPayload = JSON.parse(await symmetricDecrypt({ key: secret, data: vendorToken }));
     const vendorCompleted = await response(await owner.fetch(vendorBridge, { redirect: "manual" }));
     expect(vendorCompleted.location).toBe(`${ctx.baseURL}/vendor-done`);
+    const skipEnvironment = await ctx.rawRequest({
+      path: "/__test/oauth-proxy/options",
+      method: "POST",
+      json: { mode: "environment-skip" },
+    });
+    expect(skipEnvironment.status).toBe(200);
     // BETTER_AUTH_URL selects whether to skip; it does not replace the auth
     // base for exchange when productionURL is absent in the plugin options.
     const start = await owner.fetch(`${ctx.baseURL}${path}/sign-in/social`, {
@@ -145,6 +151,7 @@ compatScenario(
       vendorProfile: { oauthProxyProfile: { token: vendorToken, payload: vendorPayload } },
       vendorCompleted,
       environment,
+      skipEnvironment,
       started,
       environmentState: {
         ...packed,

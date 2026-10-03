@@ -27,6 +27,7 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
     "request",
     "dynamic",
     "environment",
+    "environment-skip",
     "error",
     "empty-error",
     "fractional",
@@ -90,7 +91,9 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
         baseURL:
           mode === "dynamic"
             ? { allowedHosts: ["localhost:*", "127.0.0.1:*"], protocol: "http", fallback: origin }
-            : origin,
+            : mode === "environment"
+              ? production
+              : origin,
         ...(mode === "error"
           ? { onAPIError: { errorURL: `${preview}/configured-error?kept=yes` } }
           : mode === "empty-error"
@@ -118,8 +121,12 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
         trustedOrigins: [preview, production],
         plugins: [
           oAuthProxy({
-            ...(["request", "dynamic", "environment"].includes(mode) ? {} : { currentURL: origin }),
-            ...(mode === "environment" ? {} : { productionURL: production }),
+            ...(["request", "dynamic", "environment", "environment-skip"].includes(mode)
+              ? {}
+              : { currentURL: origin }),
+            ...(["environment", "environment-skip"].includes(mode)
+              ? {}
+              : { productionURL: production }),
             maxAge:
               mode === "fractional"
                 ? 0.125

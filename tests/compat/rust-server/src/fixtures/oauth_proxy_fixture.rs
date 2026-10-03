@@ -36,6 +36,7 @@ const OPTION_MODES: &[&str] = &[
     "request",
     "dynamic",
     "environment",
+    "environment-skip",
     "error",
     "empty-error",
     "fractional",
@@ -288,6 +289,9 @@ async fn build_router(
                 .base_path(path)
                 .trusted_origin(config.base_url.clone())
                 .trusted_origin(production_origin.clone());
+            if mode == "environment" {
+                settings = settings.base_url(&production_origin);
+            }
             if mode == "dynamic" {
                 settings.dynamic_base_url = Some(better_auth_core::config::DynamicBaseUrl {
                     allowed_hosts: vec!["localhost:*".into(), "127.0.0.1:*".into()],
@@ -359,8 +363,9 @@ async fn build_router(
                     .plugin(SessionManagementPlugin::new())
                     .plugin(OAuthPlugin::new().add_provider("gitlab", provider))
                     .plugin(OAuthProxyPlugin::with_config(OAuthProxyConfig {
-                        current_url: (!["request", "dynamic", "environment"].contains(&mode))
-                            .then(|| origin.clone()),
+                        current_url: (!["request", "dynamic", "environment", "environment-skip"]
+                            .contains(&mode))
+                        .then(|| origin.clone()),
                         max_age_seconds: match mode {
                             "fractional" => 0.125,
                             "nan" => f64::NAN,
@@ -368,7 +373,8 @@ async fn build_router(
                             "negative-infinity" => f64::NEG_INFINITY,
                             _ => 60.0,
                         },
-                        production_url: (mode != "environment").then(|| production_origin.clone()),
+                        production_url: (!["environment", "environment-skip"].contains(&mode))
+                            .then(|| production_origin.clone()),
                         secret: (!managed).then(|| SECRET.into()),
                     }))
                     .plugin(CompletedRequests(fixture.clone()))
