@@ -389,14 +389,15 @@ export function compareValues(
     b: Record<string, unknown>,
     left: RequestWindow,
     right: RequestWindow,
+    provider: "gitlab" | "discord" = "gitlab",
   ) {
-    // The local GitLab token endpoint returns this exact token with expires_in
+    // The declared local token endpoint returns this exact token with expires_in
     // 3600. Its deadline precedes account creation and belongs to the callback.
     if (
-      a.providerId !== "gitlab" ||
-      b.providerId !== "gitlab" ||
-      a.accessToken !== "fixture-gitlab-access" ||
-      b.accessToken !== "fixture-gitlab-access" ||
+      a.providerId !== provider ||
+      b.providerId !== provider ||
+      a.accessToken !== `fixture-${provider}-access` ||
+      b.accessToken !== `fixture-${provider}-access` ||
       !isDate(a.accessTokenExpiresAt) ||
       !isDate(b.accessTokenExpiresAt)
     ) {
@@ -991,14 +992,18 @@ export function compareValues(
       }
 
       for (const producer of previous) {
+        const discord =
+          !managed &&
+          producer.path === "/__test/profiles/social-discord-default/api/auth/callback/discord";
         // The local GitLab fixture issues a one-hour provider token and the
         // default seven-day session. Its actual signed redirect owns these rows.
         if (
-          !(
-            managed
-              ? /^\/__test\/profiles\/managed-(?:old|retained|retired|legacy|bare)\/api\/auth\/callback\/github$/
-              : /^\/__test\/profiles\/social-gitlab-(?:issuer|issuer-slashes)\/api\/auth\/callback\/gitlab$/
-          ).test(producer.path) ||
+          (!discord &&
+            !(
+              managed
+                ? /^\/__test\/profiles\/managed-(?:old|retained|retired|legacy|bare)\/api\/auth\/callback\/github$/
+                : /^\/__test\/profiles\/social-gitlab-(?:issuer|issuer-slashes)\/api\/auth\/callback\/gitlab$/
+            ).test(producer.path)) ||
           producer.a.method !== "GET" ||
           producer.a.responseStatus !== 302 ||
           producer.b.responseStatus !== 302
@@ -1043,7 +1048,7 @@ export function compareValues(
             (row) =>
               record(row) &&
               row.userId === id &&
-              row.providerId === (managed ? "github" : "gitlab"),
+              row.providerId === (managed ? "github" : discord ? "discord" : "gitlab"),
           );
         const au = user(a, am.userId);
         const bu = user(b, bm.userId);
@@ -1054,8 +1059,116 @@ export function compareValues(
           continue;
         }
 
+        if (discord) {
+          const prior = previous.slice(previous.indexOf(producer) + 1);
+          const configured = prior.find(
+            (pair) =>
+              pair.path === "/__test/social-provider/profile" &&
+              pair.a.method === "POST" &&
+              pair.a.responseStatus === 200 &&
+              pair.b.responseStatus === 200 &&
+              pair.left.finishedAt <= producer.left.startedAt &&
+              pair.right.finishedAt <= producer.right.startedAt,
+          );
+          const ap = configured?.left.verificationInput;
+          const bp = configured?.right.verificationInput;
+          const before = prior.find(
+            (pair) =>
+              pair.path === observer.path &&
+              pair.a.method === "GET" &&
+              pair.a.responseStatus === 200 &&
+              pair.b.responseStatus === 200 &&
+              pair.left.finishedAt <= producer.left.startedAt &&
+              pair.right.finishedAt <= producer.right.startedAt,
+          );
+          const priorLeft = before && controlBody(before.left, "social-provider");
+          const priorRight = before && controlBody(before.right, "social-provider");
+          const read = previous
+            .slice(0, previous.indexOf(producer))
+            .find(
+              (pair) =>
+                pair.path === `${authPath}/get-session` &&
+                pair.a.method === "GET" &&
+                pair.a.responseStatus === 200 &&
+                pair.b.responseStatus === 200 &&
+                pair.left.startedAt >= producer.left.finishedAt &&
+                pair.right.startedAt >= producer.right.finishedAt,
+            );
+          const publicOwner = (
+            body: unknown,
+            window: RequestWindow | undefined,
+            session: Record<string, unknown>,
+            user: Record<string, unknown>,
+          ) => {
+            if (!record(body) || !record(body.session) || !record(body.user)) return false;
+            const observed = body.session;
+            return (
+              ["id", "token", "userId"].every((field) => observed[field] === session[field]) &&
+              body.user.id === user.id &&
+              body.user.email === user.email &&
+              issuedCookie(window?.sessionCookie, session.token as string, authPath)
+            );
+          };
+          const newRows = (before: Record<string, unknown> | undefined, rows: unknown[]) =>
+            before &&
+            ["users", "accounts", "sessions"].every(
+              (key, index) =>
+                Array.isArray(before[key]) &&
+                record(rows[index]) &&
+                !(before[key] as unknown[]).some(
+                  (row) => record(row) && row.id === (rows[index] as Record<string, unknown>).id,
+                ),
+            );
+          const providerReceipts = (
+            body: Record<string, unknown>,
+            before: Record<string, unknown> | undefined,
+            trace: Record<string, unknown>,
+            baseURL: string,
+          ) => {
+            if (!Array.isArray(body.receipts) || !Array.isArray(before?.receipts)) return false;
+            const receipts = body.receipts.slice(before.receipts.length);
+            const token = receipts[0];
+            const info = receipts[1];
+            return (
+              receipts.length === 2 &&
+              record(token) &&
+              token.path === "/token" &&
+              token.method === "POST" &&
+              record(token.body) &&
+              token.body.grant_type === "authorization_code" &&
+              token.body.code === new URL(trace.path as string, baseURL).searchParams.get("code") &&
+              token.body.redirect_uri === `${baseURL}${authPath}/callback/discord` &&
+              record(info) &&
+              info.path === "/userinfo" &&
+              info.method === "GET" &&
+              info.authorization === "Bearer fixture-discord-access"
+            );
+          };
+          if (
+            !record(ap) ||
+            !record(bp) ||
+            !samePublication(ap, bp) ||
+            typeof ap.id !== "string" ||
+            !ap.id ||
+            aa.accountId !== ap.id ||
+            ba.accountId !== bp.id ||
+            au.email !== ap.email ||
+            bu.email !== bp.email ||
+            aa.accessToken !== "fixture-discord-access" ||
+            ba.accessToken !== "fixture-discord-access" ||
+            !newRows(priorLeft, [au, aa, am]) ||
+            !newRows(priorRight, [bu, ba, bm]) ||
+            !publicOwner(read?.a.responseBody, read?.left, am, au) ||
+            !publicOwner(read?.b.responseBody, read?.right, bm, bu) ||
+            !providerReceipts(a, priorLeft, producer.a, context.leftBaseURL) ||
+            !providerReceipts(b, priorRight, producer.b, context.rightBaseURL)
+          ) {
+            continue;
+          }
+        }
+
         if (
-          managed &&
+          (managed || discord) &&
           issuedCookie(producer.left.issuedSessionCookie, at, authPath) &&
           issuedCookie(producer.right.issuedSessionCookie, bt, authPath)
         ) {
@@ -1081,7 +1194,13 @@ export function compareValues(
           producer.left,
           producer.right,
         );
-        collectFixtureTokenDate(aa, ba, producer.left, producer.right);
+        collectFixtureTokenDate(
+          aa,
+          ba,
+          producer.left,
+          producer.right,
+          discord ? "discord" : "gitlab",
+        );
 
         for (const [left, right, field, lifetime] of [[am, bm, "expiresAt", 604800000]] as const) {
           if (
