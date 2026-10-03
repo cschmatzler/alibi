@@ -449,20 +449,30 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
             .get("response")
             .and_then(|response| response.get("transports"))
         {
-            None | Some(JsValue::Null) => None,
-            Some(value @ JsValue::Array(_)) => match value.coerce_string() {
-                Ok(value) => Some(vec![value]),
-                Err(_) => return passkey_registration_failure(),
+            None | Some(JsValue::Null) => Ok(None),
+            Some(JsValue::Array(values)) => match values
+                .iter()
+                .map(|value| {
+                    if value.is_null() {
+                        Ok(String::new())
+                    } else {
+                        value.coerce_string()
+                    }
+                })
+                .collect::<Result<Vec<_>, _>>()
+            {
+                Ok(values) => Ok(Some(values)),
+                Err(_) => Err(AuthError::internal("Invalid transports")),
             },
-            Some(_) => return passkey_registration_failure(),
+            Some(_) => Err(AuthError::internal("Invalid transports")),
         }
     } else {
-        registration.response.transports.as_ref().map(|transports| {
+        Ok(registration.response.transports.as_ref().map(|transports| {
             transports
                 .iter()
                 .map(ToString::to_string)
                 .collect::<Vec<_>>()
-        })
+        }))
     };
 
     let verified = VerifiedPasskeyRegistration {
@@ -496,7 +506,7 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
         counter: snapshot.counter,
         device_type: snapshot.device_type().to_owned(),
         backed_up: snapshot.backed_up,
-        transports: transports_to_csv(transports.as_deref()),
+        transports: None,
         credential: snapshot.serialized,
         aaguid: metadata.aaguid,
     };
@@ -547,6 +557,8 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
                 }
             }
         }
+        // Source joins transport metadata after the verification callback.
+        input_2.transports = transports_to_csv(transports?.as_deref());
         if input_2.user_id.is_empty() {
             return Err(AuthError::Upstream {
                 status: 400,

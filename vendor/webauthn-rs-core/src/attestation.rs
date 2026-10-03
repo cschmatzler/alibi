@@ -883,7 +883,18 @@ pub(crate) fn verify_tpm_attestation(
             // Name contains two bytes at the start for what algo is used. The spec
             // says nothing about validating them, so instead we prepend the bytes into the hash
             // so we do enforce these are checked
-            let (algorithm, identifier) = match pubarea.name_alg {
+            let name_algorithm = if source_policy {
+                match name.get(..2) {
+                    Some([0, 4]) => TpmAlgId::Sha1,
+                    Some([0, 11]) => TpmAlgId::Sha256,
+                    Some([0, 12]) => TpmAlgId::Sha384,
+                    Some([0, 13]) => TpmAlgId::Sha512,
+                    _ => return Err(WebauthnError::AttestationTpmPubAreaHashUnknown),
+                }
+            } else {
+                pubarea.name_alg
+            };
+            let (algorithm, identifier) = match name_algorithm {
                 TpmAlgId::Sha1 => (COSEAlgorithm::INSECURE_RS1, 4),
                 TpmAlgId::Sha256 => (COSEAlgorithm::ES256, 11),
                 TpmAlgId::Sha384 => (COSEAlgorithm::ES384, 12),

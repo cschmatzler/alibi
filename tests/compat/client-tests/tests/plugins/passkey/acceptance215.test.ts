@@ -652,6 +652,7 @@ compatScenario(
       ["rsa-short-exponent", "packed", "valid", true, false],
       ["u2f-ed25519", "fido-u2f", "valid", false, true],
       ["apple-opaque", "apple", "apple-opaque", false, false],
+      ["tpm-sha384-name", "tpm", "tpm-sha384-name", false, false],
     ] as const) {
       const device = new CertificateDevice(label, rsa, ed);
       if (rsa) {

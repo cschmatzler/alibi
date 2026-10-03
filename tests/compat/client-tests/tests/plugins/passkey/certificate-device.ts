@@ -175,7 +175,8 @@ export type CeremonyMode =
   | "version-number"
   | "u2f-p384"
   | "apple-opaque"
-  | "nonzero-aaguid";
+  | "nonzero-aaguid"
+  | "tpm-sha384-name";
 
 /** Software certificates and attestation signatures; never a synthetic verified flag. */
 export class CertificateDevice {
@@ -291,7 +292,14 @@ export class CertificateDevice {
         sized(mode === "wrong-nonce" ? Buffer.alloc(32, 1) : hash(signed)),
         Buffer.alloc(17),
         Buffer.alloc(8),
-        sized(Buffer.concat([u16(0x0b), hash(pubArea)])),
+        sized(
+          Buffer.concat([
+            u16(mode === "tpm-sha384-name" ? 0x0c : 0x0b),
+            mode === "tpm-sha384-name"
+              ? createHash("sha384").update(pubArea).digest()
+              : hash(pubArea),
+          ]),
+        ),
         u16(0),
       ]);
       statement.set("ver", "2.0");
