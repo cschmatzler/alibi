@@ -2658,20 +2658,23 @@ mod dynamic_role_tests {
             "YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION",
         )?;
         assert_eq!(
-            ctx.database
-                .get_organization_role(
-                    &org,
-                    &OrganizationRoleSelector::Id(
-                        (rows)
-                            .first()
-                            .expect("fixture contains the requested index")
-                            .id
-                            .clone()
+            serde_json::from_str::<OrganizationPermissions>(
+                ctx.database
+                    .get_organization_role(
+                        &org,
+                        &OrganizationRoleSelector::Id(
+                            (rows)
+                                .first()
+                                .expect("fixture contains the requested index")
+                                .id
+                                .clone()
+                        )
                     )
-                )
-                .await?
-                .ok_or("Role missing")?
-                .permission,
+                    .await?
+                    .ok_or("Role missing")?
+                    .permission
+                    .as_str()
+            )?,
             permission("team", "create")
         );
 
@@ -2700,23 +2703,29 @@ mod dynamic_role_tests {
             )
             .await?
             .ok_or("Role missing")?;
-        assert_eq!(first_snapshot.permission, permission("team", "update"));
+        assert_eq!(
+            serde_json::from_str::<OrganizationPermissions>(first_snapshot.permission.as_str())?,
+            permission("team", "update")
+        );
         assert!(first_snapshot.updated_at.is_some());
         assert_eq!(
-            ctx.database
-                .get_organization_role(
-                    &org,
-                    &OrganizationRoleSelector::Id(
-                        (rows)
-                            .get(1)
-                            .expect("fixture contains the requested index")
-                            .id
-                            .clone()
+            serde_json::from_str::<OrganizationPermissions>(
+                ctx.database
+                    .get_organization_role(
+                        &org,
+                        &OrganizationRoleSelector::Id(
+                            (rows)
+                                .get(1)
+                                .expect("fixture contains the requested index")
+                                .id
+                                .clone()
+                        )
                     )
-                )
-                .await?
-                .ok_or("Role missing")?
-                .permission,
+                    .await?
+                    .ok_or("Role missing")?
+                    .permission
+                    .as_str()
+            )?,
             permission("team", "create")
         );
 
@@ -2746,11 +2755,12 @@ mod dynamic_role_tests {
         );
         let updated = ctx.database.list_organization_roles(&org).await?;
         assert_eq!(updated.len(), 2);
-        assert!(
-            updated
-                .iter()
-                .all(|row| row.permission == permission("member", "update"))
-        );
+        for row in &updated {
+            assert_eq!(
+                serde_json::from_str::<OrganizationPermissions>(row.permission.as_str())?,
+                permission("member", "update")
+            );
+        }
         assert!(
             (updated)
                 .first()
@@ -2782,7 +2792,10 @@ mod dynamic_role_tests {
             )
             .await?
             .ok_or("Foreign role missing")?;
-        assert_eq!(unaffected.permission, permission("team", "create"));
+        assert_eq!(
+            serde_json::from_str::<OrganizationPermissions>(unaffected.permission.as_str())?,
+            permission("team", "create")
+        );
         assert_eq!(unaffected.updated_at, None);
 
         let deleted = call(
@@ -3202,7 +3215,10 @@ mod dynamic_role_tests {
                 .get_organization_role(&org, &OrganizationRoleSelector::Id(role.id.clone()))
                 .await?
                 .ok_or("Role missing")?;
-            assert_eq!(persisted.permission, permission("team", "create"));
+            assert_eq!(
+                serde_json::from_str::<OrganizationPermissions>(persisted.permission.as_str())?,
+                permission("team", "create")
+            );
             assert_eq!(persisted.updated_at, None);
         }
         let selected = call(
@@ -3227,11 +3243,14 @@ mod dynamic_role_tests {
             role.id
         );
         assert_eq!(
-            ctx.database
-                .get_organization_role(&org, &OrganizationRoleSelector::Id(role.id.clone()))
-                .await?
-                .ok_or("Role missing")?
-                .permission,
+            serde_json::from_str::<OrganizationPermissions>(
+                ctx.database
+                    .get_organization_role(&org, &OrganizationRoleSelector::Id(role.id.clone()))
+                    .await?
+                    .ok_or("Role missing")?
+                    .permission
+                    .as_str()
+            )?,
             permission("team", "update")
         );
         Ok(())
@@ -3676,7 +3695,10 @@ mod dynamic_role_tests {
                 .get_organization_role(&org, &OrganizationRoleSelector::Id(manager_id))
                 .await?
                 .ok_or("Updated manager role missing")?;
-            assert_eq!(manager_2.permission, permission("ac", "create"));
+            assert_eq!(
+                serde_json::from_str::<OrganizationPermissions>(manager_2.permission.as_str())?,
+                permission("ac", "create")
+            );
             let created = ctx
                 .database
                 .get_organization_role(
@@ -3689,7 +3711,9 @@ mod dynamic_role_tests {
                 assert_eq!(ctx.database.count_organization_roles(&org).await?, 1);
             } else {
                 assert_eq!(
-                    created.ok_or("Delegated role missing")?.permission,
+                    serde_json::from_str::<OrganizationPermissions>(
+                        created.ok_or("Delegated role missing")?.permission.as_str()
+                    )?,
                     permission("team", "create")
                 );
                 assert_eq!(ctx.database.count_organization_roles(&org).await?, 2);
@@ -3934,7 +3958,10 @@ mod dynamic_role_tests {
                 .get_organization_role(&org, &OrganizationRoleSelector::Id(role.id.clone()))
                 .await?
                 .ok_or("Role missing")?;
-            assert_eq!(persisted.permission, permission("team", "create"));
+            assert_eq!(
+                serde_json::from_str::<OrganizationPermissions>(persisted.permission.as_str())?,
+                permission("team", "create")
+            );
             assert_eq!(persisted.updated_at, None);
             assert_eq!(ctx.database.count_organization_roles(&org).await?, 1);
         }
@@ -3942,11 +3969,14 @@ mod dynamic_role_tests {
         Some(json!({"organizationId":org,"roleId":role.id,"data":{"permission":{"team":["update"]}}})), &[]).await?;
         assert_eq!(allowed.status, 200);
         assert_eq!(
-            ctx.database
-                .get_organization_role(&org, &OrganizationRoleSelector::Id(role.id))
-                .await?
-                .ok_or("Role missing")?
-                .permission,
+            serde_json::from_str::<OrganizationPermissions>(
+                ctx.database
+                    .get_organization_role(&org, &OrganizationRoleSelector::Id(role.id))
+                    .await?
+                    .ok_or("Role missing")?
+                    .permission
+                    .as_str()
+            )?,
             permission("team", "update")
         );
         Ok(())

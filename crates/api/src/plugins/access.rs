@@ -32,7 +32,8 @@ impl From<Vec<String>> for ActionRequest {
     }
 }
 
-/// Ordered resource requests. Order determines the first AND rejection.
+/// Resource requests. Numeric index names are visited first, in ascending
+/// order; other names retain insertion order, matching Source object entries.
 pub type AuthorizeRequest = IndexMap<String, ActionRequest>;
 
 /// A successful authorization has no error; a rejection explains the first failure.
@@ -76,9 +77,17 @@ impl Role {
         request: &AuthorizeRequest,
         connector: Connector,
     ) -> AuthorizeResponse {
+        let mut entries: Vec<_> = request.iter().collect();
+        entries.sort_by_key(|(resource, _)| {
+            resource
+                .parse::<u32>()
+                .ok()
+                .filter(|index| *index != u32::MAX && index.to_string() == resource.as_str())
+                .unwrap_or(u32::MAX)
+        });
         authorize(
             |resource| self.statements.get(resource).map(Vec::as_slice),
-            request.iter().map(|(resource, rule)| {
+            entries.into_iter().map(|(resource, rule)| {
                 let (actions, connector) = match rule {
                     ActionRequest::Actions(actions) => (actions, Connector::And),
                     ActionRequest::Rule { actions, connector } => (actions, *connector),

@@ -40,3 +40,34 @@ Organization membership and permissions are checked per operation. Configure rol
 ## Frontend
 
 See the official [Organization guide](https://www.better-auth.com/docs/plugins/organization).
+
+## Application-side access control
+
+`better_auth::plugins::access` provides `role`, `create_access_control`, and
+`AccessControl::new_role` for literal resource/action grants. Plain action lists
+and `Role::authorize` use AND. A resource rule can choose OR for its actions;
+`authorize_with_connector` independently chooses AND or OR across resources.
+Empty requests and empty action lists deny, and resources and actions are case
+sensitive. AND returns the first rejection in Source object-entry order.
+
+```rust
+use better_auth::plugins::access::{ActionRequest, Connector, create_access_control};
+
+let ac = create_access_control(
+    [("report".into(), vec!["read".into(), "publish".into()])].into(),
+);
+let reviewer = ac.new_role([("report".into(), vec!["read".into()])].into());
+let request = [("report".into(), ActionRequest::Rule {
+    actions: vec!["read".into(), "publish".into()],
+    connector: Connector::Or,
+})].into();
+assert!(reviewer.authorize(&request).success());
+```
+
+These are typed application utilities. They do not change the organization
+HTTP permission schema, which accepts action arrays and requires one assigned
+role to satisfy the entire request. Rust declarations do not enforce Source's
+TypeScript compile-time resource/action subset constraints; grants are supplied
+as string lists, matching Source's runtime constructor behavior. Arbitrary
+JavaScript values and custom-adapter permission representations remain outside
+this typed API.

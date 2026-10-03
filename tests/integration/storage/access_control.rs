@@ -7,7 +7,7 @@ use better_auth::plugins::organization::{
     DynamicAccessControlConfig, OrganizationConfig,
     handlers::extension_common::{has_permissions, organization_roles},
 };
-use better_auth_core::store::{OrganizationRoleStore, OrganizationStore, TeamStore};
+use better_auth_core::store::{OrganizationRoleStore, OrganizationStore};
 use better_auth_core::types::{CreateOrganizationRole, OrganizationPermissions};
 use better_auth_core::{AuthConfig, AuthContext, CreateOrganization, CreateTeam};
 use serde_json::{Value, json};
@@ -23,8 +23,8 @@ fn connector(value: &str) -> Connector {
     }
 }
 
-fn request(value: &Value) -> AuthorizeRequest {
-    value
+fn request(value: &Value, order: Option<&Value>) -> AuthorizeRequest {
+    let request: AuthorizeRequest = value
         .as_object()
         .unwrap()
         .iter()
@@ -46,7 +46,19 @@ fn request(value: &Value) -> AuthorizeRequest {
             };
             (resource.clone(), rule)
         })
-        .collect()
+        .collect();
+    match order {
+        Some(order) => order
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|resource| {
+                let name = resource.as_str().unwrap();
+                (name.to_owned(), request[name].clone())
+            })
+            .collect(),
+        None => request,
+    }
 }
 
 fn response(value: AuthorizeResponse) -> Value {
@@ -112,9 +124,16 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
             .await?
             .is_empty()
     );
+    let permission_before = db
+        .text(
+            "SELECT permission FROM organization_role WHERE id = $1",
+            &[&stored.id],
+        )
+        .await?;
+    let count_before = db.count("team").await?;
     let mut effects = Vec::new();
     for case in fixture["cases"].as_array().unwrap() {
-        let requested = request(&case["request"]);
+        let requested = request(&case["request"], case.get("insertionOrder"));
         let mode = connector(case["connector"].as_str().unwrap());
         let result = custom.authorize_with_connector(&requested, mode);
         assert_eq!(
@@ -165,6 +184,28 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
         );
     }
     assert_eq!(json!(effects), fixture["effects"]);
+    let physical_effects: Value = serde_json::from_str(
+        &db.text(
+            "SELECT json_group_array(name) FROM (SELECT name FROM team ORDER BY rowid)",
+            &[],
+        )
+        .await?
+        .ok_or("missing physical effects")?,
+    )?;
+    assert_eq!(physical_effects, fixture["effects"]);
+    let physical = json!({
+        "permissionBefore": permission_before,
+        "permissionAfter": db.text("SELECT permission FROM organization_role WHERE id = $1", &[&stored.id]).await?,
+        "teamCountBefore": count_before,
+        "teamCountAfter": db.count("team").await?,
+    });
+    assert_eq!(physical, fixture["physical"]);
+    println!(
+        "{} physical={} effects={}",
+        std::any::type_name::<B>(),
+        physical,
+        physical_effects
+    );
     assert_eq!(
         db.count_where(
             "SELECT COUNT(*) FROM team WHERE organization_id = $1",
