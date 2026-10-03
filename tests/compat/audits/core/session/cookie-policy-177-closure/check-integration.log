@@ -1,0 +1,81 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 17.3ms
+• Running devenv:files
+✓ Running devenv:files in 41.3ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 8.09ms
+    Checking serde v1.0.228
+    Checking indexmap v2.13.0
+    Checking deranged v0.5.8
+    Checking uuid v1.21.0
+   Compiling serde_json v1.0.149
+    Checking hyper v1.8.1
+    Checking tower v0.5.3
+    Checking axum-core v0.5.6
+    Checking serde_with v3.18.0
+    Checking url v2.5.8
+    Checking chrono v0.4.44
+    Checking rust_decimal v1.40.0
+    Checking serde_urlencoded v0.7.1
+    Checking base64urlsafedata v0.5.4
+    Checking serde_cbor_2 v0.13.0
+   Compiling smallvec v1.15.1
+   Compiling either v1.15.0
+    Checking time v0.3.47
+    Checking serde_yaml v0.9.34+deprecated
+    Checking totp-rs v5.7.0
+    Checking webauthn-attestation-ca v0.5.4
+    Checking sea-orm-cli v2.0.4
+   Compiling itertools v0.14.0
+   Compiling icu_normalizer v2.1.1
+   Compiling parking_lot_core v0.9.12
+    Checking validator v0.21.0
+    Checking jsonwebtoken v11.1.0
+    Checking webauthn-rs-proto v0.5.4
+    Checking oas3 v0.20.1
+   Compiling idna_adapter v1.2.1
+    Checking sqlx-core v0.9.0
+    Checking asn1-rs v0.6.2
+    Checking sea-query v1.0.2
+    Checking cookie v0.18.1
+   Compiling parking_lot v0.12.5
+   Compiling sea-orm-macros v2.0.4
+   Compiling idna v1.1.0
+   Compiling futures-intrusive v0.5.0
+    Checking der-parser v9.0.0
+    Checking oid-registry v0.7.1
+    Checking x509-parser v0.16.0
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-postgres v0.9.0
+    Checking webauthn-rs-core v0.5.4
+   Compiling sqlx-macros-core v0.9.0
+   Compiling sqlx-macros v0.9.0
+    Checking tower-http v0.6.8
+    Checking hyper-util v0.1.20
+    Checking webauthn-rs v0.5.4
+    Checking axum v0.8.8
+    Checking hyper-tls v0.6.0
+    Checking reqwest v0.12.28
+    Checking sqlx v0.9.0
+    Checking sea-query-sqlx v0.9.1
+    Checking sea-schema v0.18.1
+    Checking better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-close177/crates/core)
+    Checking sea-orm v2.0.4
+    Checking better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-close177/crates/api)
+    Checking better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-close177/crates/sqlx)
+    Checking sea-orm-migration v2.0.4
+    Checking better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-close177/crates/seaorm)
+    Checking better-auth v1.0.0-alpha.3 (/tmp/better-auth-close177)
+mbx[progress]: 15s elapsed; 42 hits, 0 misses, 0 bypassed, 27 not looked up; ~14.78s compiler work saved
+warning: unused result of type `tokio::sync::BarrierWaitResult`
+  --> tests/integration/core/dynamic_providers.rs:42:13
+   |
+42 |             self.barrier.wait().await;
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: requested on the command line with `-W unused-results`
+
+warning: `better-auth` (test "integration") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 22.35s
+mbx[cache]: 42 hits, 0 misses, 27 not looked up; 0 B downloaded, 0 B uploaded, 57.4 MiB stored locally
+mbx[savings]: 377606 compilations, and the box has forgotten none of them.

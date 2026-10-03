@@ -1266,7 +1266,7 @@ impl<S: AuthSchema> AuthContext<S> {
             .await
             .map_err(|_error| AuthError::Unauthenticated)?;
         let Some(session) = read.session else {
-            self.queue_session_cleanup(req);
+            self.queue_session_cleanup(req)?;
             return Err(AuthError::Unauthenticated);
         };
         let user = self
@@ -1274,13 +1274,13 @@ impl<S: AuthSchema> AuthContext<S> {
             .await
             .map_err(|_error| AuthError::Unauthenticated)?;
         let Some(user) = user else {
-            self.queue_session_cleanup(req);
+            self.queue_session_cleanup(req)?;
             return Err(AuthError::Unauthenticated);
         };
         if read.refreshed {
             req.queue_response_header(
                 "Set-Cookie",
-                crate::utils::cookie_utils::create_session_cookie(session.token(), &self.config),
+                crate::utils::cookie_utils::create_session_cookie(session.token(), &self.config)?,
             );
         }
         Ok((
@@ -1291,10 +1291,11 @@ impl<S: AuthSchema> AuthContext<S> {
         ))
     }
 
-    fn queue_session_cleanup(&self, req: &impl crate::session::SessionRequest) {
-        for cookie in crate::utils::cookie_utils::delete_session_cookie_headers(&self.config) {
+    fn queue_session_cleanup(&self, req: &impl crate::session::SessionRequest) -> AuthResult<()> {
+        for cookie in crate::utils::cookie_utils::delete_session_cookie_headers(&self.config)? {
             req.queue_response_header("Set-Cookie", cookie);
         }
+        Ok(())
     }
 
     /// Read the request's established session without extending its lifetime.

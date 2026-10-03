@@ -575,7 +575,7 @@ pub async fn handle_team_request<S: AuthSchema>(
                         better_auth_core::utils::cookie_utils::create_session_cookie(
                             better_auth_core::AuthSession::token(&updated),
                             &ctx.config,
-                        ),
+                        )?,
                     );
                 }
                 response
@@ -606,7 +606,7 @@ pub async fn handle_team_request<S: AuthSchema>(
                     better_auth_core::utils::cookie_utils::create_session_cookie(
                         better_auth_core::AuthSession::token(&updated),
                         &ctx.config,
-                    ),
+                    )?,
                 )
             }
         }

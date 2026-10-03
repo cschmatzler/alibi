@@ -1120,18 +1120,15 @@ fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> f64 {
         .cookies
         .get("account_data")
         .and_then(|cookie| cookie.attributes.max_age)
-        .map_or_else(
-            || {
-                better_auth_core::cache::effective_max_age(
-                    config
-                        .session
-                        .cookie_cache
-                        .as_ref()
-                        .map_or(300.0, |cache| cache.max_age),
-                )
-            },
-            |age| age as f64,
-        )
+        .unwrap_or_else(|| {
+            better_auth_core::cache::effective_max_age(
+                config
+                    .session
+                    .cookie_cache
+                    .as_ref()
+                    .map_or(300.0, |cache| cache.max_age),
+            )
+        })
 }
 
 /// Emit the encrypted account snapshot and clear stale incoming chunks.
@@ -1185,7 +1182,7 @@ fn attach_state_cookie(
             &value,
             Duration::minutes(5).num_seconds(),
             config,
-        ),
+        )?,
     ))
 }
 
@@ -1202,7 +1199,7 @@ fn attach_cookie_state_payload(
             &value,
             Duration::minutes(10).num_seconds(),
             config,
-        ),
+        )?,
     ))
 }
 
@@ -2610,7 +2607,7 @@ pub(in crate::plugins) async fn handle_social_sign_in(
         if let Some(token) = response.token.as_deref() {
             auth_response = auth_response.with_appended_header(
                 "Set-Cookie",
-                better_auth_core::utils::cookie_utils::create_session_cookie(token, &ctx.config),
+                better_auth_core::utils::cookie_utils::create_session_cookie(token, &ctx.config)?,
             );
         }
         return Ok(auth_response);
@@ -2634,7 +2631,7 @@ pub(in crate::plugins) async fn handle_social_sign_in(
     if let Some(token) = response.token.as_deref() {
         auth_response = auth_response.with_appended_header(
             "Set-Cookie",
-            better_auth_core::utils::cookie_utils::create_session_cookie(token, &ctx.config),
+            better_auth_core::utils::cookie_utils::create_session_cookie(token, &ctx.config)?,
         );
     }
 
@@ -2803,7 +2800,7 @@ pub(super) async fn handle_callback(
                     better_auth_core::utils::cookie_utils::create_clear_cookie(
                         &state_cookie_name(&ctx.config),
                         &ctx.config,
-                    ),
+                    )?,
                 ));
             }
             payload
@@ -2853,7 +2850,7 @@ pub(super) async fn handle_callback(
     let clear_state_cookie = better_auth_core::utils::cookie_utils::create_clear_cookie(
         &state_cookie_name(&ctx.config),
         &ctx.config,
-    );
+    )?;
     let error_url = payload
         .error_url
         .clone()
@@ -3097,7 +3094,7 @@ pub(super) async fn handle_callback(
             better_auth_core::utils::cookie_utils::create_session_cookie(
                 outcome.session.token(),
                 &ctx.config,
-            ),
+            )?,
         );
     if let Some(account_cookie) = outcome.account_cookie.as_ref() {
         for header in create_account_cookie_headers(&ctx.config, account_cookie, req)? {

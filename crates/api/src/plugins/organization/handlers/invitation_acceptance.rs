@@ -226,14 +226,14 @@ pub(super) async fn accept<S: AuthSchema>(
                     Some(updated.token()),
                     (!dont_remember).then(|| auth_config.session.expires_in.num_seconds()),
                     &auth_config,
-                ));
+                )?);
                 if dont_remember {
                     tx_transport.issue_cookie(create_session_like_cookie(
                         &preference,
                         &sign_cookie_value("true", auth_config.current_secret()),
                         None,
                         &auth_config,
-                    ));
+                    )?);
                 }
             }
             let member = tx

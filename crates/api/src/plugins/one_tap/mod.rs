@@ -279,7 +279,7 @@ impl OneTapPlugin {
         )?
         .with_appended_header(
             "Set-Cookie",
-            create_session_cookie_with_max_age(Some(&outcome.session.token), max_age, &ctx.config),
+            create_session_cookie_with_max_age(Some(&outcome.session.token), max_age, &ctx.config)?,
         );
         if dont_remember {
             response = response.with_appended_header(
@@ -289,7 +289,7 @@ impl OneTapPlugin {
                     &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
-                ),
+                )?,
             );
         }
         if let Some(cookie) = outcome.account_cookie.as_ref() {

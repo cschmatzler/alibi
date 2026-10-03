@@ -711,7 +711,7 @@ impl EmailOtpPlugin {
                 better_auth_core::utils::cookie_utils::create_session_cookie(
                     &session.token,
                     &ctx.config,
-                ),
+                )?,
             ))
     }
 }

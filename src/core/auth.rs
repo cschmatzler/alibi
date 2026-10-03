@@ -1102,7 +1102,7 @@ impl<S: AuthSchema> BetterAuth<S> {
             let cookie_header = better_auth_core::utils::cookie_utils::create_session_cookie(
                 &token,
                 &context.config,
-            );
+            )?;
             response = response.with_header("Set-Cookie", cookie_header);
         }
 

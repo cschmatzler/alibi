@@ -48,7 +48,7 @@ pub(super) fn synthetic_response(
     body: &SignUpRequest,
     config: &EmailPasswordConfig,
     context: &AuthContext<impl AuthSchema>,
-) -> AuthResult<(SignUpResponse<Value>, Option<String>)> {
+) -> AuthResult<(SignUpResponse<Value>, Option<Vec<String>>)> {
     let now = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true);
     let core_fields = Map::from_iter([
         ("name".into(), json!(body.name)),

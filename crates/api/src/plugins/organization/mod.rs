@@ -845,7 +845,8 @@ mod extension_tests {
             let cookie = better_auth_core::utils::cookie_utils::create_session_cookie(
                 &owner_session.token,
                 &ctx.config,
-            );
+            )
+            .unwrap();
             request.headers.insert(
                 "cookie".to_owned(),
                 cookie
@@ -1218,7 +1219,8 @@ mod extension_tests {
         let mut req = AuthRequest::new(method, path);
         if let Some(token) = token {
             let cookie =
-                better_auth_core::utils::cookie_utils::create_session_cookie(token, &ctx.config);
+                better_auth_core::utils::cookie_utils::create_session_cookie(token, &ctx.config)
+                    .unwrap();
             let pair = cookie
                 .split(';')
                 .next()

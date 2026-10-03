@@ -76,7 +76,7 @@ impl MultiSessionPlugin {
         ctx: &AuthContext<impl AuthSchema>,
         token: &str,
         response: &mut AuthResponse,
-    ) {
+    ) -> AuthResult<()> {
         let name = related_cookie_name(&ctx.config, "dont_remember");
         let dont_remember = Self::cookie_value(req, &name)
             .and_then(|value| verify_cookie_value(&value, ctx.config.current_secret()))
@@ -91,7 +91,7 @@ impl MultiSessionPlugin {
                     Some(ctx.config.session.expires_in.num_seconds())
                 },
                 &ctx.config,
-            ),
+            )?,
         );
         if dont_remember {
             response.headers.append(
@@ -101,9 +101,10 @@ impl MultiSessionPlugin {
                     &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
-                ),
+                )?,
             );
         }
+        Ok(())
     }
 
     fn multi_cookies(req: &AuthRequest) -> Vec<(String, String)> {
@@ -187,7 +188,7 @@ impl MultiSessionPlugin {
             let mut response = AuthResponse::json(200, &json!({"status":true}))?;
             response.headers.append(
                 "set-cookie",
-                create_derived_session_cookie(&name, "", true, &ctx.config),
+                create_derived_session_cookie(&name, "", true, &ctx.config)?,
             );
             if current
                 .as_ref()
@@ -224,10 +225,10 @@ impl MultiSessionPlugin {
                             ),
                         )
                         .await?;
-                        Self::set_active_cookie(req, ctx, session.token(), &mut response);
+                        Self::set_active_cookie(req, ctx, session.token(), &mut response)?;
                     }
                     None => {
-                        for header in delete_session_cookie_headers(&ctx.config) {
+                        for header in delete_session_cookie_headers(&ctx.config)? {
                             response.headers.append("set-cookie", header);
                         }
                     }
@@ -241,7 +242,7 @@ impl MultiSessionPlugin {
             let mut response = invalid_token().to_auth_response();
             response.headers.append(
                 "set-cookie",
-                create_derived_session_cookie(&name, "", true, &ctx.config),
+                create_derived_session_cookie(&name, "", true, &ctx.config)?,
             );
             return Ok(response);
         };
@@ -265,7 +266,7 @@ impl MultiSessionPlugin {
             ),
         )
         .await?;
-        Self::set_active_cookie(req, ctx, session.token(), &mut response);
+        Self::set_active_cookie(req, ctx, session.token(), &mut response)?;
         super::helpers::record_completed_session::<S>(&user, session.stored());
         Ok(response)
     }
@@ -335,7 +336,7 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
                         "",
                         true,
                         &ctx.config,
-                    ),
+                    )?,
                 );
             }
             return Ok(response);
@@ -366,7 +367,7 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
                 tokens_to_delete.push(token);
                 response.headers.append(
                     "set-cookie",
-                    create_derived_session_cookie(old_name, "", true, &ctx.config),
+                    create_derived_session_cookie(old_name, "", true, &ctx.config)?,
                 );
             }
         }
@@ -388,7 +389,7 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
         let signed = sign_cookie_value(session.token(), ctx.config.current_secret());
         response.headers.append(
             "set-cookie",
-            create_derived_session_cookie(&name, &signed, false, &ctx.config),
+            create_derived_session_cookie(&name, &signed, false, &ctx.config)?,
         );
         Ok(response)
     }
@@ -483,7 +484,7 @@ mod tests {
             )
         };
         let cookies = vec![
-            pair(&create_session_cookie(&bob_session.token, &ctx.config)),
+            pair(&create_session_cookie(&bob_session.token, &ctx.config).unwrap()),
             cookie_for(&bob_session.token),
             cookie_for(&alice_session.token),
         ];
@@ -555,7 +556,7 @@ mod tests {
                 HttpMethod::Post,
                 path,
                 &[
-                    pair(&create_session_cookie(&bob_session.token, &ctx.config)),
+                    pair(&create_session_cookie(&bob_session.token, &ctx.config).unwrap()),
                     format!(
                         "{}={}",
                         MultiSessionPlugin::cookie_name(&alice_session.token, &ctx),
@@ -655,7 +656,7 @@ mod tests {
             sign_cookie_value(&two.token, &ctx.config.secret)
         );
         let cookies = vec![
-            pair(&create_session_cookie(&one.token, &ctx.config)),
+            pair(&create_session_cookie(&one.token, &ctx.config).unwrap()),
             first.clone(),
             second.clone(),
         ];

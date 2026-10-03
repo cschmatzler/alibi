@@ -244,7 +244,7 @@ impl PasswordManagementPlugin {
                 Some(&token),
                 (!dont_remember).then(|| ctx.config.session.expires_in.num_seconds()),
                 &ctx.config,
-            );
+            )?;
             let mut response = auth_response.with_header("Set-Cookie", cookie_header);
             if dont_remember {
                 response.headers.append(
@@ -254,7 +254,7 @@ impl PasswordManagementPlugin {
                         &sign_cookie_value("true", ctx.config.current_secret()),
                         None,
                         &ctx.config,
-                    ),
+                    )?,
                 );
             }
             Ok(response)

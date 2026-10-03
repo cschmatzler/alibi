@@ -1,0 +1,133 @@
+diff --git a/crates/api/src/plugins/helpers.rs b/crates/api/src/plugins/helpers.rs
+index 57376df0..92e72852 100644
+--- a/crates/api/src/plugins/helpers.rs
++++ b/crates/api/src/plugins/helpers.rs
+@@ -707,7 +707,6 @@ pub fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
+ }
+ 
+ /// TS-style cookie clearing used by `deleteSessionCookie`.
+-#[must_use]
+ pub fn delete_session_cookie_headers(
+     config: &better_auth_core::AuthConfig,
+ ) -> AuthResult<Vec<String>> {
+diff --git a/crates/api/src/plugins/oauth/handlers/mod.rs b/crates/api/src/plugins/oauth/handlers/mod.rs
+index 2eaaf5e4..7c9d1cd3 100644
+--- a/crates/api/src/plugins/oauth/handlers/mod.rs
++++ b/crates/api/src/plugins/oauth/handlers/mod.rs
+@@ -1120,18 +1120,15 @@ fn account_cookie_max_age(config: &better_auth_core::AuthConfig) -> f64 {
+         .cookies
+         .get("account_data")
+         .and_then(|cookie| cookie.attributes.max_age)
+-        .map_or_else(
+-            || {
+-                better_auth_core::cache::effective_max_age(
+-                    config
+-                        .session
+-                        .cookie_cache
+-                        .as_ref()
+-                        .map_or(300.0, |cache| cache.max_age),
+-                )
+-            },
+-            |age| age,
+-        )
++        .unwrap_or_else(|| {
++            better_auth_core::cache::effective_max_age(
++                config
++                    .session
++                    .cookie_cache
++                    .as_ref()
++                    .map_or(300.0, |cache| cache.max_age),
++            )
++        })
+ }
+ 
+ /// Emit the encrypted account snapshot and clear stale incoming chunks.
+diff --git a/crates/api/src/plugins/passkey/webauthn.rs b/crates/api/src/plugins/passkey/webauthn.rs
+index 2053b646..d414a612 100644
+--- a/crates/api/src/plugins/passkey/webauthn.rs
++++ b/crates/api/src/plugins/passkey/webauthn.rs
+@@ -354,12 +354,12 @@ pub(super) fn create_challenge_cookie(
+         &claims,
+         &EncodingKey::from_secret(auth_config.current_secret().as_bytes()),
+     )?;
+-    Ok(better_auth_core::utils::cookie_utils::create_cookie(
++    better_auth_core::utils::cookie_utils::create_cookie(
+         &challenge_cookie_name(auth_config),
+         &signed,
+         ttl_secs,
+         auth_config,
+-    )?)
++    )
+ }
+ 
+ ///
+diff --git a/crates/api/src/plugins/two_factor/mod.rs b/crates/api/src/plugins/two_factor/mod.rs
+index 63ba5d67..cb6e7960 100644
+--- a/crates/api/src/plugins/two_factor/mod.rs
++++ b/crates/api/src/plugins/two_factor/mod.rs
+@@ -2472,12 +2472,6 @@ async fn create_trust_device_cookie_header(
+     )
+ }
+ 
+-#[expect(
+-    clippy::as_conversions,
+-    clippy::cast_possible_truncation,
+-    clippy::cast_sign_loss,
+-    reason = "JavaScript-compatible numbers deliberately retain IEEE754 rounding and guarded integer coercion at the wire or adapter boundary"
+-)]
+ fn create_signed_cookie_header(
+     secret: &str,
+     config: &better_auth_core::AuthConfig,
+diff --git a/crates/core/src/utils/cookie_utils.rs b/crates/core/src/utils/cookie_utils.rs
+index eb6afa76..05b705b8 100644
+--- a/crates/core/src/utils/cookie_utils.rs
++++ b/crates/core/src/utils/cookie_utils.rs
+@@ -35,11 +35,13 @@ pub fn create_cookie_with_max_age(
+     let mut attributes = cookie_attributes(name, config);
+     if producer_age.is_some() {
+         attributes.max_age = producer_age;
+-        if let Some(age) = config.advanced.cookies.iter().find_map(|(logical, entry)| {
+-            (related_cookie_name(config, logical) == name)
+-                .then_some(entry.attributes.max_age)
+-                .flatten()
+-        }) {
++        if let Some(age) = config
++            .advanced
++            .cookies
++            .iter()
++            .find(|(logical, _)| related_cookie_name(config, logical) == name)
++            .and_then(|(_, entry)| entry.attributes.max_age)
++        {
+             attributes.max_age = Some(age);
+         }
+     }
+@@ -361,9 +363,11 @@ fn render_encoded_cookie(
+     let mut header = format!("{name}={value}");
+     if let Some(age) = attributes.max_age.filter(|age| *age >= 0.0) {
+         if age > 34_560_000.0 {
+-            return Err(crate::AuthError::CallbackFailure(Box::new(crate::AuthError::internal(
+-                "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
+-            ))));
++            return Err(crate::AuthError::CallbackFailure(Box::new(
++                crate::AuthError::internal(
++                    "Cookies Max-Age SHOULD NOT be greater than 400 days (34560000 seconds) in duration.",
++                ),
++            )));
+         }
+         // JavaScript renders Math.floor(-0) as "0".
+         let age = if age == 0.0 { 0.0 } else { age.floor() };
+@@ -391,9 +395,11 @@ fn render_encoded_cookie(
+             .num_milliseconds()
+             > 34_560_000_000
+         {
+-            return Err(crate::AuthError::CallbackFailure(Box::new(crate::AuthError::internal(
+-                "Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.",
+-            ))));
++            return Err(crate::AuthError::CallbackFailure(Box::new(
++                crate::AuthError::internal(
++                    "Cookies Expires SHOULD NOT be greater than 400 days (34560000 seconds) in the future.",
++                ),
++            )));
+         }
+         _ = write!(
+             header,

@@ -501,7 +501,7 @@ impl AdminPlugin {
         let admin_cookie_name = related_cookie_name(&ctx.config, "admin_session");
 
         let mut auth_response = AuthResponse::json(200, &response)?;
-        for cookie in delete_session_cookie_headers(&ctx.config) {
+        for cookie in delete_session_cookie_headers(&ctx.config)? {
             auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
         }
         auth_response = auth_response.with_appended_header(
@@ -511,11 +511,11 @@ impl AdminPlugin {
                 &admin_cookie,
                 Some(ctx.config.session.expires_in.num_seconds()),
                 &ctx.config,
-            ),
+            )?,
         );
         auth_response = auth_response.with_appended_header(
             "Set-Cookie",
-            create_session_cookie_with_max_age(Some(&token), None, &ctx.config),
+            create_session_cookie_with_max_age(Some(&token), None, &ctx.config)?,
         );
         auth_response = auth_response.with_appended_header(
             "Set-Cookie",
@@ -527,7 +527,7 @@ impl AdminPlugin {
                 ),
                 None,
                 &ctx.config,
-            ),
+            )?,
         );
         Ok(auth_response)
     }
@@ -569,7 +569,7 @@ impl AdminPlugin {
                     Some(ctx.config.session.expires_in.num_seconds())
                 },
                 &ctx.config,
-            ),
+            )?,
         );
         if admin_cookie.dont_remember {
             auth_response = auth_response.with_appended_header(
@@ -582,12 +582,12 @@ impl AdminPlugin {
                     ),
                     None,
                     &ctx.config,
-                ),
+                )?,
             );
         }
         auth_response = auth_response.with_appended_header(
             "Set-Cookie",
-            create_clear_cookie(&admin_cookie_name, &ctx.config),
+            create_clear_cookie(&admin_cookie_name, &ctx.config)?,
         );
         Ok(auth_response)
     }

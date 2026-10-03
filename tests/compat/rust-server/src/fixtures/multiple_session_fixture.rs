@@ -58,7 +58,7 @@ pub(crate) async fn router(
                 path: Some(path.clone()),
                 http_only: Some(false),
                 same_site: Some(SameSite::Strict),
-                max_age: Some(71),
+                max_age: Some(71.0),
                 ..Default::default()
             };
             if name.ends_with("alias") {
@@ -69,7 +69,7 @@ pub(crate) async fn router(
                         attributes: CookieAttributes {
                             http_only: Some(true),
                             same_site: Some(SameSite::Lax),
-                            max_age: Some(123),
+                            max_age: Some(123.0),
                             ..Default::default()
                         },
                     },

@@ -186,7 +186,7 @@ impl OAuthPopupPlugin {
                 &sign_cookie_value(&marker, ctx.config.current_secret()),
                 600,
                 &ctx.config,
-            ),
+            )?,
         );
         response.status = 302;
         response.body.clear();
@@ -240,7 +240,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
         };
         response
             .headers
-            .append("set-cookie", create_clear_cookie(&name, &ctx.config));
+            .append("set-cookie", create_clear_cookie(&name, &ctx.config)?);
         let Ok(marker) = serde_json::from_str::<Marker>(&marker) else {
             return Ok(response);
         };

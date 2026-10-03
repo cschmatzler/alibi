@@ -354,12 +354,12 @@ pub(super) fn create_challenge_cookie(
         &claims,
         &EncodingKey::from_secret(auth_config.current_secret().as_bytes()),
     )?;
-    Ok(better_auth_core::utils::cookie_utils::create_cookie(
+    better_auth_core::utils::cookie_utils::create_cookie(
         &challenge_cookie_name(auth_config),
         &signed,
         ttl_secs,
         auth_config,
-    ))
+    )
 }
 
 ///

@@ -269,7 +269,7 @@ impl UserManagementPlugin {
         let mut response =
             AuthResponse::json(200, &better_auth_core::StatusResponse { status: true })?;
         if projection.is_some() {
-            append_session_cookie(&mut response, req, &session.token, &ctx.config);
+            append_session_cookie(&mut response, req, &session.token, &ctx.config)?;
         }
         Ok(response)
     }
@@ -293,7 +293,7 @@ impl UserManagementPlugin {
             && !body.token.as_deref().is_some_and(|token| !token.is_empty());
         let mut response = AuthResponse::json(200, &response)?;
         if deleted {
-            append_clear_session_cookies(&mut response, &ctx.config);
+            append_clear_session_cookies(&mut response, &ctx.config)?;
         }
         Ok(response)
     }
@@ -330,12 +330,12 @@ impl UserManagementPlugin {
                 headers,
                 body: Vec::new(),
             };
-            append_clear_session_cookies(&mut response_2, &ctx.config);
+            append_clear_session_cookies(&mut response_2, &ctx.config)?;
             return Ok(response_2);
         }
 
         let mut response = AuthResponse::json(200, &response)?;
-        append_clear_session_cookies(&mut response, &ctx.config);
+        append_clear_session_cookies(&mut response, &ctx.config)?;
         Ok(response)
     }
 }
@@ -383,24 +383,24 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
 pub(super) fn append_clear_session_cookies(
     response: &mut AuthResponse,
     config: &better_auth_core::AuthConfig,
-) {
+) -> AuthResult<()> {
     response.headers.append(
         "Set-Cookie",
-        better_auth_core::utils::cookie_utils::create_clear_session_cookie(config),
+        better_auth_core::utils::cookie_utils::create_clear_session_cookie(config)?,
     );
     response.headers.append(
         "Set-Cookie",
         better_auth_core::utils::cookie_utils::create_clear_cookie(
             &related_cookie_name(config, "session_data"),
             config,
-        ),
+        )?,
     );
     response.headers.append(
         "Set-Cookie",
         better_auth_core::utils::cookie_utils::create_clear_cookie(
             &related_cookie_name(config, "dont_remember"),
             config,
-        ),
+        )?,
     );
     if config.account.store_account_cookie {
         response.headers.append(
@@ -408,9 +408,10 @@ pub(super) fn append_clear_session_cookies(
             better_auth_core::utils::cookie_utils::create_clear_cookie(
                 &related_cookie_name(config, "account_data"),
                 config,
-            ),
+            )?,
         );
     }
+    Ok(())
 }
 
 pub(in crate::plugins) fn append_session_cookie(
@@ -418,7 +419,7 @@ pub(in crate::plugins) fn append_session_cookie(
     req: &AuthRequest,
     token: &str,
     config: &better_auth_core::AuthConfig,
-) {
+) -> AuthResult<()> {
     use better_auth_core::utils::cookie_utils::{
         create_session_cookie_with_max_age, verify_cookie_value,
     };
@@ -432,8 +433,9 @@ pub(in crate::plugins) fn append_session_cookie(
             Some(token),
             (!dont_remember).then(|| config.session.expires_in.num_seconds()),
             config,
-        ),
+        )?,
     );
+    Ok(())
 }
 
 fn related_cookie_name(config: &better_auth_core::AuthConfig, suffix: &str) -> String {

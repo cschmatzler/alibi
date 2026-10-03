@@ -430,20 +430,12 @@ impl EmailPasswordPlugin {
             signup_req.remember_me == Some(false),
         );
         let meta = RequestMeta::from_request(req);
-        let (response, session_token) =
-            sign_up_core(req, &signup_req, &self.config, &meta, ctx).await?;
-
-        if let Some(token) = session_token {
-            let cookie_header =
-                create_session_cookie_for_remember_me(&token, signup_req.remember_me, &ctx.config);
-            Ok(append_dont_remember_cookie(
-                AuthResponse::json(200, &response)?.with_header("Set-Cookie", cookie_header),
-                signup_req.remember_me,
-                &ctx.config,
-            ))
-        } else {
-            Ok(AuthResponse::json(200, &response)?)
+        let (response, cookies) = sign_up_core(req, &signup_req, &self.config, &meta, ctx).await?;
+        let mut response = AuthResponse::json(200, &response)?;
+        for cookie in cookies.into_iter().flatten() {
+            response.headers.append("Set-Cookie", cookie);
         }
+        Ok(response)
     }
 
     async fn handle_sign_in(
@@ -496,7 +488,7 @@ impl EmailPasswordPlugin {
                         &token,
                         signin_req.remember_me,
                         &ctx.config,
-                    ),
+                    )?,
                 );
                 if let Some(url) = signin_req
                     .callback_url
@@ -512,7 +504,7 @@ impl EmailPasswordPlugin {
                     auth_response,
                     signin_req.remember_me,
                     &ctx.config,
-                ))
+                )?)
             }
             SignInCoreResult::TwoFactorRedirect {
                 response,
@@ -587,7 +579,7 @@ impl EmailPasswordPlugin {
                             &token,
                             signin_req.remember_me,
                             &ctx.config,
-                        ),
+                        )?,
                     );
                 if let Some(url) = signin_req
                     .callback_url
@@ -603,7 +595,7 @@ impl EmailPasswordPlugin {
                     auth_response,
                     signin_req.remember_me,
                     &ctx.config,
-                ))
+                )?)
             }
             Ok(SignInCoreResult::TwoFactorRedirect {
                 response,
@@ -811,7 +803,7 @@ fn create_session_cookie_for_remember_me(
     token: &str,
     remember_me: Option<bool>,
     config: &better_auth_core::AuthConfig,
-) -> String {
+) -> AuthResult<String> {
     if remember_me == Some(false) {
         create_session_cookie_with_max_age(Some(token), None, config)
     } else {
@@ -823,8 +815,8 @@ fn append_dont_remember_cookie(
     response: AuthResponse,
     remember_me: Option<bool>,
     config: &better_auth_core::AuthConfig,
-) -> AuthResponse {
-    if remember_me == Some(false) {
+) -> AuthResult<AuthResponse> {
+    Ok(if remember_me == Some(false) {
         response.with_appended_header(
             "Set-Cookie",
             create_session_like_cookie(
@@ -832,11 +824,11 @@ fn append_dont_remember_cookie(
                 &sign_cookie_value("true", config.current_secret()),
                 None,
                 config,
-            ),
+            )?,
         )
     } else {
         response
-    }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -845,8 +837,9 @@ fn append_dont_remember_cookie(
 
 /// Core sign-up logic.
 ///
-/// Returns `(response, Option<session_token>)`. The session token is present
-/// only when `auto_sign_in` is true.
+/// Returns the response and optional rendered session headers. Real automatic
+/// sign-in renders once inside the signup transaction; synthetic duplicates
+/// return no headers.
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
@@ -860,7 +853,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
     config: &EmailPasswordConfig,
     meta: &RequestMeta,
     ctx: &AuthContext<S>,
-) -> AuthResult<(SignUpResponse<serde_json::Value>, Option<String>)> {
+) -> AuthResult<(SignUpResponse<serde_json::Value>, Option<Vec<String>>)> {
     if !config.enabled || !config.enable_signup {
         return Err(AuthError::Upstream {
             status: 400,
@@ -981,6 +974,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
     let transaction_database = Arc::clone(&database);
     let require_email_verification = config.require_email_verification;
     let callback_url = body.callback_url.clone();
+    let remember_me = body.remember_me;
     let duplicate_body = body.clone();
     let duplicate_config = config.clone();
     let signup_context = AuthContext {
@@ -1063,6 +1057,21 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
                     })
                     .await?;
                 let token = session.token().to_owned();
+                // Source sign-up emits inside its transaction. Serializer failure
+                // rolls back these rows; sign-in retains its separate commit policy.
+                let mut cookies = vec![create_session_cookie_for_remember_me(
+                    &token,
+                    remember_me,
+                    &signup_context.config,
+                )?];
+                if remember_me == Some(false) {
+                    cookies.push(create_session_like_cookie(
+                        &related_cookie_name(&signup_context.config, "dont_remember"),
+                        &sign_cookie_value("true", signup_context.config.current_secret()),
+                        None,
+                        &signup_context.config,
+                    )?);
+                }
                 better_auth_core::cache::runtime::emit_issuance_in_transaction(
                     &signup_context,
                     &user,
@@ -1077,7 +1086,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
                         token: Some(token.clone()),
                         user: password_utils::serialize_to_value(&signup_context.user_view(&user))?,
                     },
-                    Some(token),
+                    Some(cookies),
                 ))
             } else {
                 Ok((

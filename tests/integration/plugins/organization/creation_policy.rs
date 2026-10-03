@@ -79,7 +79,7 @@ mod tests {
     }), None).await;
         assert_eq!(response.status, 200);
         let token = issued.get("token").and_then(Value::as_str).unwrap();
-        let cookie = create_session_cookie(token, auth.config());
+        let cookie = create_session_cookie(token, auth.config()).unwrap();
         let (response_2, first) = post(
             &auth,
             "/organization/create",

@@ -1666,6 +1666,13 @@ for (const mode of ["standard", "defaults", "attributes"] as const) {
         expect(parsed.domain).toBe(mode !== "standard" ? "localhost" : null);
         expect(parsed.httpOnly).toBe(mode === "standard");
         expect(parsed.sameSite).toBe(mode !== "standard" ? "strict" : "lax");
+        if (mode === "attributes") {
+          expect(parsed.secure).toBe(true);
+          expect(parsed.expires instanceof Date && parsed.expires.toISOString()).toBe(
+            "2027-01-01T00:00:00.000Z",
+          );
+          expect(part.endsWith("; SameSite=Strict; Partitioned")).toBe(true);
+        }
       }
 
       // Independently apply real wire headers to a standards-aware browser jar.
@@ -1757,6 +1764,13 @@ for (const mode of ["standard", "defaults", "attributes"] as const) {
         expect(parsed.domain).toBe(mode !== "standard" ? "localhost" : null);
         expect(parsed.httpOnly).toBe(mode === "standard");
         expect(parsed.sameSite).toBe(mode !== "standard" ? "strict" : "lax");
+        if (mode === "attributes") {
+          expect(parsed.secure).toBe(true);
+          expect(parsed.expires instanceof Date && parsed.expires.toISOString()).toBe(
+            "2027-01-01T00:00:00.000Z",
+          );
+          expect(raw.endsWith("; SameSite=Strict; Partitioned")).toBe(true);
+        }
       }
       for (const raw of owner.headers.at(-1)!.getSetCookie()) {
         await scopeJar.setCookie(raw, scopeURL, { ignoreError: true });
@@ -1965,6 +1979,46 @@ compatScenario(
   },
   ["GET /get-session"],
 );
+
+for (const [mode, age, ttl] of [
+  ["override-fractional", 0.5, 500],
+  ["override-nan", NaN, 60000],
+  ["override-positive", 17, 17000],
+  ["override-zero", 0, 60000],
+  ["override-negative", -1, -1000],
+] as const) {
+  compatScenario(
+    `compact ${mode} uses only session_data override for header and payload lifetime`,
+    async (ctx) => {
+      const owner = client(ctx, mode);
+      const signup = await owner.sdk.signUp.email({
+        email: ctx.uniqueEmail(mode),
+        name: "Override owner",
+        password: "password123",
+      });
+      expect(signup.error).toBeNull();
+      const headers = owner.headers.at(-1)!;
+      const issued = await atom(headers, age === 0 || Number.isNaN(age) ? 60 : age, !(age < 0));
+      const lifetime =
+        issued.compactSessionCache.envelope.expiresAt -
+        issued.compactSessionCache.envelope.session.updatedAt;
+      expect(lifetime).toBeGreaterThanOrEqual(ttl);
+      expect(lifetime).toBeLessThanOrEqual(ttl + 10);
+      const raw = headers.getSetCookie();
+      const data = Cookie.parse(raw.find((h) => h.startsWith(cookieName + "="))!)!;
+      expect(data.maxAge).toBe(age >= 0 ? Math.floor(age) : null);
+      expect(
+        Cookie.parse(raw.find((h) => h.startsWith("better-auth.session_token="))!)!.maxAge,
+      ).toBe(604800);
+      return {
+        signup: ctx.snapshot(signup),
+        issued,
+        state: await ctx.readUserState({ userId: signup.data!.user.id }),
+      };
+    },
+    ["POST /sign-up/email"],
+  );
+}
 
 for (const mode of ["zero", "nan", "fractional"] as const) {
   compatScenario(

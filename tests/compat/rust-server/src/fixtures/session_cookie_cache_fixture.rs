@@ -217,6 +217,11 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         "jwt",
         "jwe",
         "managed",
+        "override-fractional",
+        "override-nan",
+        "override-positive",
+        "override-zero",
+        "override-negative",
         "standard",
         "attributes",
         "defaults",
@@ -312,6 +317,26 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             "label".into(),
             FieldConfig::new(json!({"type":"string"})).default_value(json!("cache-public-label")),
         );
+        if mode.starts_with("override-") {
+            use better_auth_core::{CookieAttributes, CookieOverride};
+            config.advanced.default_cookie_attributes.max_age = Some(99.0);
+            config.advanced.cookies.insert(
+                "session_data".into(),
+                CookieOverride {
+                    attributes: CookieAttributes {
+                        max_age: Some(match mode {
+                            "override-fractional" => 0.5,
+                            "override-nan" => f64::NAN,
+                            "override-zero" => 0.0,
+                            "override-negative" => -1.0,
+                            _ => 17.0,
+                        }),
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            );
+        }
         if mode == "defaults" {
             use better_auth_core::{CookieAttributes, SameSite};
             config.advanced.use_secure_cookies = Some(false);
@@ -346,6 +371,13 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                                 SameSite::Lax
                             }),
                             http_only: Some(logical != "session_data"),
+                            expires: (logical == "session_data").then(|| {
+                                chrono::DateTime::parse_from_rfc3339("2027-01-01T00:00:00Z")
+                                    .unwrap()
+                                    .with_timezone(&chrono::Utc)
+                            }),
+                            partitioned: (logical == "session_data").then_some(true),
+                            secure: (logical == "session_data").then_some(true),
                             ..Default::default()
                         },
                         ..Default::default()

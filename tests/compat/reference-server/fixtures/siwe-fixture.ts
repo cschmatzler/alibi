@@ -95,11 +95,12 @@ export async function createSiweFixture(
   const rpcCalls: unknown[] = [];
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
 
-  for (const name of ["siwe", "siwe-email", "siwe-contract"]) {
+  for (const name of ["siwe", "siwe-email", "siwe-contract", "siwe-cookie-limit"]) {
     const path = `/__test/profiles/${name}/api/auth`;
     const options: BetterAuthOptions = {
       ...base,
       basePath: path,
+      ...(name === "siwe-cookie-limit" ? { session: { ...base.session, expiresIn: 34560001 } } : {}),
       plugins: [
         admin(),
         twoFactor(),

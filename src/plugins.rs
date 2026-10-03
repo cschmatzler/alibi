@@ -24,6 +24,8 @@ pub use better_auth_api::plugins::last_login_method::{
 };
 pub use better_auth_api::plugins::magic_link::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
 pub use better_auth_api::plugins::multi_session::{self, MultiSessionConfig, MultiSessionPlugin};
+pub use better_auth_api::plugins::oauth_popup::{self, OAuthPopupPlugin};
+pub use better_auth_api::plugins::oauth_token_conversion;
 pub use better_auth_api::plugins::one_tap::{
     self, GoogleJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin,
 };
@@ -57,6 +59,3 @@ pub use better_auth_api::plugins::{
 };
 pub use better_auth_api::plugins::{SiweConfig, SiwePlugin, siwe};
 pub use better_auth_api::{OAuthProxyConfig, OAuthProxyPlugin};
-
-pub use better_auth_api::plugins::oauth_token_conversion;
-pub use better_auth_api::plugins::oauth_popup::{self, OAuthPopupPlugin};

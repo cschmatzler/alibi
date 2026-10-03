@@ -739,6 +739,7 @@ mod tests {
                     &session_token,
                     auth.config()
                 )
+                .unwrap()
                 .split(';')
                 .next()
                 .unwrap()

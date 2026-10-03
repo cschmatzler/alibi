@@ -6,6 +6,15 @@ import { type BetterAuthOptions, betterAuth } from "better-auth";
 export function physicalCookieProfiles(base: BetterAuthOptions, database: Database) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const mode of [
+    "serializer-valid",
+    "serializer-host",
+    "serializer-age-boundary",
+    "serializer-age-limit",
+    "serializer-expiry-limit",
+    "cross-localhost",
+    "cross-ipv6",
+    "cross-inferred",
+    "cross-proxy",
     "default",
     "attributes",
     "secure",
@@ -35,6 +44,11 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
       path,
       betterAuth({
         ...base,
+        ...(mode.startsWith("cross-") ? {
+          baseURL: mode === "cross-proxy" ? {
+            allowedHosts: ["cookie177.test:*", "auth.cookie177.test:*"], protocol: "https" as const,
+          } : mode === "cross-ipv6" ? "https://[::1]:4377" : mode === "cross-localhost" ? "https://localhost:4377" : "https://cookie177.test",
+        } : {}),
         basePath: path,
         ...(mode.startsWith("https-") ? { baseURL: "https://localhost" } : {}),
         ...(mode.startsWith("dynamic-")
@@ -54,22 +68,41 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
           ...((base.trustedOrigins as string[] | undefined) ?? []),
           String(base.baseURL),
           "https://localhost",
+          "https://cookie177.test:*",
+          "https://auth.cookie177.test:*",
         ],
         plugins: [],
         session: {
           ...base.session,
-          expiresIn: mode === "short" ? 60 : 604800,
+          expiresIn: mode === "serializer-age-boundary" ? 34560000 : mode === "serializer-age-limit" ? 34560001 : mode === "short" ? 60 : 604800,
           cookieCache: { enabled: false },
         },
         advanced: {
           ...base.advanced,
-          ...(mode === "https-default" || mode.startsWith("dynamic-")
+          ...(mode.startsWith("cross-") ? {
+            crossSubDomainCookies: { enabled: true },
+            trustedProxyHeaders: true,
+          } : {}),
+          ...(mode.startsWith("cross-") || mode === "https-default" || mode.startsWith("dynamic-")
             ? {}
             : {
                 useSecureCookies:
                   mode === "secure-prefix" || mode === "secure-custom" || mode === "secure-alias",
               }),
           defaultCookieAttributes: attributes,
+          ...(mode.startsWith("serializer-") ? {
+            useSecureCookies: false,
+            defaultCookieAttributes: { path, domain: "localhost", httpOnly: false, sameSite: "strict", expires: new Date("2027-01-01T00:00:00Z"), partitioned: false },
+            cookies: {
+              session_token: {
+                ...(mode === "serializer-host" ? { name: "__Host-policy" } : {}),
+                attributes: { secure: true, partitioned: true, httpOnly: true,
+                  ...(mode === "serializer-expiry-limit" ? { expires: new Date(Date.now()+401*86400000) } : {}),
+                },
+              },
+              dont_remember: { attributes: { maxAge: 121.9 } },
+            },
+          } : {}),
           ...(mode === "secure-alias"
             ? {
                 cookies: { session_token: { name: "alias.session_token" } },
@@ -120,10 +153,11 @@ export function physicalCookieProfiles(base: BetterAuthOptions, database: Databa
         return null;
       }
 
-      const id = url.searchParams.get("userId");
+      const id = url.searchParams.get("userId") ?? (url.searchParams.get("email")
+        ? (database.query("SELECT id FROM user WHERE email=?").get(url.searchParams.get("email")) as {id:string}|null)?.id : undefined);
 
       if (!id) {
-        return Response.json({ message: "userId required" }, { status: 400 });
+        return Response.json({ user: [], accounts: [], sessions: [] });
       }
 
       // All declared core columns, physically read with an independently scoped bind.

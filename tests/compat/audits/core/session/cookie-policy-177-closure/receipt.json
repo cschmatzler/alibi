@@ -1,0 +1,48 @@
+{
+  "pr": "https://github.com/cschmatzler/better-auth-rs/pull/425",
+  "productionHead": "99cd6199a415ff36cafa19f52de94ef48cca1d30",
+  "integrationBase": "ffdbdafb46a994e3e84b684a91e04838e3a87af5",
+  "independentReview": "Coordinator qualified exact 99cd6199, no blocking findings, after collision first-match correction; receipt-only final commit does not change production",
+  "source": "authentic published Better Auth1.7.6 and Better Call1.4.0; private files verified",
+  "checks": {
+    "SQLx": {
+      "serializer": 12,
+      "cache": 6,
+      "factor": 1,
+      "SIWE": 1,
+      "quoted": 1,
+      "TLS": 4
+    },
+    "SeaORM": {
+      "serializer": 12,
+      "cache": 6,
+      "factor": 1,
+      "SIWE": 1,
+      "quoted": 1,
+      "TLS": 4
+    },
+    "productionClippy": "core+api --lib -D warnings passed",
+    "clientTypes": "passed",
+    "focusedClientAndSourceLint": "passed",
+    "affectedCoreApiTestsCompile": "passed",
+    "integrationCompile": "passed with incoming #424 unused BarrierWaitResult warning",
+    "diffCheck": "passed"
+  },
+  "notRun": [
+    "full suites",
+    "devenv test",
+    "coverage",
+    "hosted CI"
+  ],
+  "actionsDisabled": true,
+  "reusedReceipts": [
+    401,
+    415,
+    395,
+    418,
+    419,
+    420,
+    421
+  ],
+  "scope": "all supported #177 acceptance reconciled; no universal ledger/atomicity or arbitrary browser-domain acceptance claim"
+}

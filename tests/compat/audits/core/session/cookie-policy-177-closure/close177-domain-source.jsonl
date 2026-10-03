@@ -1,0 +1,9 @@
+{"baseURL":"https://cookie177.test:4437","cookie":{"name":"__Secure-better-auth.session_token","attributes":{"secure":true,"sameSite":"lax","path":"/","httpOnly":true,"domain":"cookie177.test"}}}
+{"baseURL":"https://cookie177.test:4437","domain":"","cookie":{"name":"__Secure-better-auth.session_token","attributes":{"secure":true,"sameSite":"lax","path":"/","httpOnly":true,"domain":"cookie177.test"}}}
+{"baseURL":"https://cookie177.test:4437","domain":".explicit.test","cookie":{"name":"__Secure-better-auth.session_token","attributes":{"secure":true,"sameSite":"lax","path":"/","httpOnly":true,"domain":".explicit.test"}}}
+{"baseURL":"http://localhost:4437","cookie":{"name":"better-auth.session_token","attributes":{"secure":false,"sameSite":"lax","path":"/","httpOnly":true,"domain":"localhost"}}}
+{"baseURL":"http://localhost:4437","domain":"","cookie":{"name":"better-auth.session_token","attributes":{"secure":false,"sameSite":"lax","path":"/","httpOnly":true,"domain":"localhost"}}}
+{"baseURL":"http://localhost:4437","domain":".explicit.test","cookie":{"name":"better-auth.session_token","attributes":{"secure":false,"sameSite":"lax","path":"/","httpOnly":true,"domain":".explicit.test"}}}
+{"baseURL":"https://[::1]:4437","cookie":{"name":"__Secure-better-auth.session_token","attributes":{"secure":true,"sameSite":"lax","path":"/","httpOnly":true,"domain":"[::1]"}}}
+{"baseURL":"https://[::1]:4437","domain":"","cookie":{"name":"__Secure-better-auth.session_token","attributes":{"secure":true,"sameSite":"lax","path":"/","httpOnly":true,"domain":"[::1]"}}}
+{"baseURL":"https://[::1]:4437","domain":".explicit.test","cookie":{"name":"__Secure-better-auth.session_token","attributes":{"secure":true,"sameSite":"lax","path":"/","httpOnly":true,"domain":".explicit.test"}}}

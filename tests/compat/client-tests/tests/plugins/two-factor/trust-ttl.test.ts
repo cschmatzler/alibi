@@ -949,3 +949,77 @@ for (const profile of [
     ]);
   }
 }
+
+compatScenario(
+  "two-factor factory overrides retain fractional header ages and attributes independently of stored proof lifetimes",
+  async (ctx) => {
+    const profile = "two-factor-skip-cookie-attributes";
+    const path = authProfilePath(profile);
+    let latest: Headers | undefined;
+    const actor = ctx.actor("factory", profile);
+    const owner = createAuthClient({
+      baseURL: ctx.baseURL + path,
+      plugins: [twoFactorClient()],
+      fetchOptions: {
+        customFetchImpl: actor.fetch,
+        onSuccess({ response }) {
+          latest = new Headers(response.headers);
+        },
+      },
+    });
+    const email = ctx.uniqueEmail("factor-attributes");
+    const password = "password123";
+    const signup = await owner.signUp.email({ email, password, name: "Factory owner" });
+    expect(signup.error).toBeNull();
+    expect((await owner.twoFactor.enable({ password })).error).toBeNull();
+    expect((await owner.signOut()).error).toBeNull();
+    const pending = await owner.signIn.email({ email, password, rememberMe: false });
+    expect(pending.data).toMatchObject({ twoFactorRedirect: true });
+    const challengeRaw = latest!
+      .getSetCookie()
+      .find((raw) => raw.startsWith("better-auth.two_factor="))!;
+    const challenge = Cookie.parse(challengeRaw)!;
+    const key = payload(challenge);
+    expect(challengeRaw.slice(challengeRaw.indexOf(";"))).toBe(
+      `; Max-Age=121; Domain=localhost; Path=${path}; Expires=Fri, 01 Jan 2027 00:00:00 GMT; HttpOnly; Secure; SameSite=Strict; Partitioned`,
+    );
+    const proof = await readRows(ctx, key);
+    expect(proof).toHaveLength(1);
+    lifetime(proof[0]!, 600);
+    expect((await owner.twoFactor.sendOtp()).error).toBeNull();
+    const sent = await ctx.rawRequest({
+      path: "/__test/two-factor-policy",
+      method: "POST",
+      json: { deliveryEmail: email },
+    });
+    const otp = (sent.body as any).otp;
+    expect(otp).toBeString();
+    const verified = await owner.twoFactor.verifyOtp({ code: otp, trustDevice: true });
+    expect(verified.error).toBeNull();
+    const trustRaw = latest!
+      .getSetCookie()
+      .find((raw) => raw.startsWith("better-auth.trust_device="))!;
+    const trust = Cookie.parse(trustRaw)!;
+    expect(trust.maxAge).toBe(321);
+    expect(trustRaw.slice(trustRaw.indexOf(";"))).toBe(
+      `; Max-Age=321; Domain=localhost; Path=${path}; Expires=Fri, 01 Jan 2027 00:00:00 GMT; HttpOnly; Secure; SameSite=Strict; Partitioned`,
+    );
+    const trustId = payload(trust).split("!").at(-1)!;
+    const trustRows = await readRows(ctx, trustId);
+    expect(trustRows).toHaveLength(1);
+    lifetime(trustRows[0]!, 2592000);
+    expect(await readRows(ctx, key)).toEqual([]);
+    const after = await ctx.readUserState({ userId: signup.data!.user.id });
+    return {
+      signup: ctx.snapshot(signup),
+      pending: ctx.snapshot(pending),
+      challengeRaw: challengeRaw.replace(challenge.value, "{signed-challenge}"),
+      proof: projectRows(proof),
+      verified: ctx.snapshot(verified),
+      trustRaw: trustRaw.replace(trust.value, "{signed-trust}"),
+      trustRows: projectRows(trustRows),
+      after: ctx.snapshot(after),
+    };
+  },
+  ["POST /two-factor/verify-otp"],
+);

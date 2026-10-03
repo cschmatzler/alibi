@@ -212,7 +212,7 @@ impl SessionManagementPlugin {
                 401,
                 &serde_json::json!({"code":"FAILED_TO_GET_SESSION","message":"Failed to get session"}),
             )?;
-            for cookie in delete_session_cookie_headers(&ctx.config) {
+            for cookie in delete_session_cookie_headers(&ctx.config)? {
                 response.headers.append("Set-Cookie", cookie);
             }
             return Ok(response);
@@ -242,7 +242,7 @@ impl SessionManagementPlugin {
                     Some(ctx.config.session.expires_in.num_seconds())
                 },
                 &ctx.config,
-            ),
+            )?,
         );
         if dont_remember {
             response = response.with_appended_header(
@@ -252,7 +252,7 @@ impl SessionManagementPlugin {
                     &sign_cookie_value("true", ctx.config.current_secret()),
                     None,
                     &ctx.config,
-                ),
+                )?,
             );
         }
         Ok(response)
@@ -346,7 +346,7 @@ impl SessionManagementPlugin {
         }
 
         let mut response = AuthResponse::json(200, &SuccessResponse { success: true })?;
-        for cookie in delete_session_cookie_headers(&ctx.config) {
+        for cookie in delete_session_cookie_headers(&ctx.config)? {
             response.headers.append("Set-Cookie", cookie);
         }
         for (logical, account) in [("session_data", false), ("account_data", true)] {
