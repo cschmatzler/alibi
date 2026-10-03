@@ -486,7 +486,7 @@ impl OAuthProxyPlugin {
                 .find_map(|secret| verified_server_context(&state, &payload.state, secret)),
             OAuthStateStrategy::Cookie => authenticated_cookie
                 .as_deref()
-                .and_then(|cookie| super::token_crypto::decryption_key(cookie, &ctx.config))
+                .and_then(|cookie| super::token_crypto::decryption_key(cookie, &ctx.config).ok())
                 .and_then(|secret| verified_server_context(&state, &payload.state, secret)),
         };
         if let Some(context) = context {

@@ -1,4 +1,4 @@
-# OAuth proxy: database-state completion across two origins
+# OAuth proxy: database and cookie state completion across two origins
 
 Reference: published Better Auth 1.7.6 `dist/plugins/oauth-proxy/index.mjs`,
 `dist/plugins/oauth-proxy/utils.mjs`, `dist/state.mjs`, `dist/api/state/oauth.mjs`,
@@ -8,9 +8,9 @@ Reference: published Better Auth 1.7.6 `dist/plugins/oauth-proxy/index.mjs`,
 The public immutable `OAuthProxyConfig` configures current/production origins,
 an optional dedicated secret, and a floating-point maximum payload age (default
 60 seconds). `OAuthProxyPlugin` supports the provider completion route and the
-legacy completion route with database OAuth state. Cookie-state configuration
-fails explicitly at initialization. This is a bounded implementation, not a
-claim that every Source proxy configuration is supported.
+legacy completion route with database or authenticated cookie OAuth state.
+This is a bounded implementation, not a claim that every Source proxy
+configuration is supported.
 
 The preview dispatch retains an application-only request extension. The ordinary
 OAuth handler still checks authorization, requested redirect targets and the
@@ -99,9 +99,9 @@ The coordinator owns full gates, inventories, shared dependencies and publicatio
 
 ## Remaining issue candidates
 
-- Implement cookie-state proxy restoration, including Source nonce checks, genuine
-  cookie expiry/replay and old pending-state consumption. Existing database-state
-  cookie signing and verification identifier codecs remain different.
+- Pending cookie state across configuration/key changes remains unproved. Cookie
+  restoration, nonce/expiry, saved owner and browser replay are covered below.
+  Existing state codec differences remain tracked separately in #189.
 - Support secret rotation / managed `$ba$<version>$...` encrypted envelopes. The
   measured explicit secret and default ordinary single-string secret use bare
   hexadecimal ciphertext; no rotating-key claim.
@@ -217,3 +217,45 @@ the coordinator; this focused result is not a complete-gate claim.
 Remaining proxy configurations are tracked in [issue #227](https://github.com/cschmatzler/better-auth-rs/issues/227).
 Shared lifecycle, state codecs and rotation are #181, #189 and #176; account
 cookie variants are #230. Default database-state completion is implemented.
+
+
+## Cookie-state restoration (#227)
+
+Cookie mode now initializes and restores the originating browser's actual full
+`oauth_state` cookie instead of looking up a verification row. `parseGenericState`
+in the fresh published 1.7.6 tarball requires the cookie even when the proxy
+requests `skipStateCookieCheck`, authenticates its JSON, requires a present exact
+`oauthState`, expires the browser cookie, then checks the state's own deadline.
+Native uses its existing authenticated cookie decoder and the same ordering.
+The saved `link` owner remains authoritative; a current foreign signed session
+cannot select the linked account owner. Trusted server context is recovered only
+with the key that authenticated that cookie. The database branch remains intact.
+
+The two new scenarios extend the existing owner file and independent host fixture,
+with a separate cookie-mode pair of migrated SQL databases. Actual one-use HTTP
+provider grants, PKCE receipts, full authenticated state and profile, all state
+fields, stored rows, response cookies and current sessions are retained. The
+foreign session-change input uses the actual issued signed session cookie.
+Consumption means browser clearing: ordinary replay without the cookie fails,
+while explicitly restoring a still-valid cookie can succeed again within profile
+maxAge, exactly as Source does. No server replay ledger or transactional
+single-winner guarantee is claimed.
+
+`cookie-state-227/` retains the raw Source/Native pairs for both cookie owners on
+SQLx and SeaORM, source integrity hashes, before failure, and focused run logs.
+Each final adapter run passed all six proxy owners / 930 assertions; client
+TypeScript and strict package-scoped API/fixture Clippy passed. The
+dependency-inclusive strict Clippy attempt stopped at the pre-existing core
+`endpoint.rs:553` `double_must_use` warning; its log is retained and no full
+Clippy success is claimed. The baseline proof retains the old completion path but removes
+only the initialization prohibition so it can reach the regression: both cookie
+owners then fail at genuine completion with `state_mismatch`. No comparator,
+normalization, oracle source, or exclusion was weakened. The modified pre-existing
+cache candidate is explicitly excluded; both dependency trees used fresh private
+published tarball copies. No mutation campaign, full suite or coverage gate ran.
+
+Remaining #227 scope: environment/dynamic current and production URL selection,
+custom callback paths and POST query/body merging, errorURL/signup option modes,
+custom account keys and loose profiles, browser preferences/cache composition,
+fractional/nonfinite maxAge, concurrent completion and pending state across
+configuration changes. This bounded fix does not close #227.

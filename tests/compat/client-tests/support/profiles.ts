@@ -518,6 +518,7 @@ export const FIXTURE_PROFILES = [
   "social-apple-mapped",
   "social-apple-empty-clients",
   "oauth-proxy",
+  "oauth-proxy-cookie",
   "managed-proxy",
   "two-factor-pending-lookup",
   "two-factor-pending-lookup-disabled",

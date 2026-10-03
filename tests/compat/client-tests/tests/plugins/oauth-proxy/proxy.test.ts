@@ -31,8 +31,10 @@ type State = {
   afterRequests: { callbackURL: string }[];
 };
 
-async function state(ctx: ScenarioContext): Promise<State> {
-  const r = await ctx.rawRequest({ path: "/__test/oauth-proxy/state" });
+async function state(ctx: ScenarioContext, cookie = false): Promise<State> {
+  const r = await ctx.rawRequest({
+    path: cookie ? "/__test/oauth-proxy-cookie/state" : "/__test/oauth-proxy/state",
+  });
   expect(r.status).toBe(200);
   return r.body as State;
 }
@@ -71,7 +73,9 @@ async function issue(
   ctx: ScenarioContext,
   actor: ReturnType<ScenarioContext["actor"]>,
   link = false,
+  cookie = false,
 ) {
+  const fixturePath = cookie ? authProfilePath("oauth-proxy-cookie") : path;
   const body = {
     provider: "gitlab",
     callbackURL: `${ctx.baseURL}/proxy-done?application=kept`,
@@ -83,14 +87,42 @@ async function issue(
       application: { kept: true },
     },
   };
-  const started = link
-    ? await actor.client.linkSocial(body)
-    : await actor.client.signIn.social(body);
+  let issuedCookie: { raw: string; token: string; payload: any } | undefined;
+  const start = cookie
+    ? await actor.fetch(`${ctx.baseURL}${fixturePath}/${link ? "link-social" : "sign-in/social"}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        redirect: "manual",
+      })
+    : undefined;
+  if (start) {
+    const raw = start.headers
+      .getSetCookie()
+      .find((value) => value.startsWith("better-auth.oauth_state="))!;
+    expect(raw).toBeDefined();
+    const token = raw.slice(raw.indexOf("=") + 1, raw.indexOf(";"));
+    issuedCookie = {
+      raw,
+      token,
+      payload: JSON.parse(
+        await symmetricDecrypt({
+          key: "compat-test-only-key-not-real-minimum-32chars",
+          data: token,
+        }),
+      ),
+    };
+  }
+  const started = start
+    ? { data: await start.json(), error: null }
+    : link
+      ? await actor.client.linkSocial(body)
+      : await actor.client.signIn.social(body);
   expect(started.error).toBeNull();
 
   const authorization = new URL(started.data!.url!);
   expect(authorization.searchParams.get("redirect_uri")).toBe(
-    `${ctx.baseURL.replace("localhost", "127.0.0.1")}${path}/callback/gitlab`,
+    `${ctx.baseURL.replace("localhost", "127.0.0.1")}${fixturePath}/callback/gitlab`,
   );
 
   const raw = authorization.searchParams.get("state")!;
@@ -124,6 +156,7 @@ async function issue(
     }),
   ).toBe(stateBytes);
 
+  if (issuedCookie) expect(issuedCookie.payload).toEqual(original);
   const issuedState = { ...pack, stateCookie: { token: pack.stateCookie, payload: retained } };
   expect(JSON.stringify({ ...issuedState, stateCookie: issuedState.stateCookie.token })).toBe(
     packageBytes,
@@ -135,6 +168,7 @@ async function issue(
     state: pack.state,
     verifier: original.codeVerifier,
     issuedState,
+    issuedCookie,
   };
 }
 
@@ -142,7 +176,9 @@ async function forward(
   ctx: ScenarioContext,
   actor: ReturnType<ScenarioContext["actor"]>,
   issued: Awaited<ReturnType<typeof issue>>,
+  cookie = false,
 ) {
+  const fixturePath = cookie ? authProfilePath("oauth-proxy-cookie") : path;
   const approved = await response(await actor.fetch(issued.authorization, { redirect: "manual" }));
   expect(approved.status).toBe(302);
 
@@ -153,7 +189,7 @@ async function forward(
 
   const bridge = new URL(forwarded.location!);
   expect(bridge.origin).toBe(ctx.baseURL);
-  expect(bridge.pathname).toBe(`${path}/callback/gitlab/oauth-proxy`);
+  expect(bridge.pathname).toBe(`${fixturePath}/callback/gitlab/oauth-proxy`);
 
   const token = bridge.searchParams.get("profile")!;
   const payload = JSON.parse(await symmetricDecrypt({ key: secret, data: token }));
@@ -161,7 +197,7 @@ async function forward(
   expect(payload.account.providerId).toBe("gitlab");
   expect(payload.userInfo.email).toBe("proxy-owner@fixture.test");
 
-  const stored = await state(ctx);
+  const stored = await state(ctx, cookie);
   const receipt = stored.receipts.filter((r) => r.stage === "token").at(-1)!;
   expect(receipt.body!.code_verifier).toBe(issued.verifier);
   expect(issued.verifier).toHaveLength(128);
@@ -714,6 +750,200 @@ compatScenario(
     };
   },
   ["POST /sign-in/social", "GET /callback/{}/oauth-proxy"],
+  undefined,
+  comparison,
+);
+
+compatScenario(
+  "OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics",
+  async (ctx) => {
+    const owner = ctx.actor("cookie-owner", "oauth-proxy-cookie");
+    const foreign = ctx.actor("cookie-foreign", "oauth-proxy-cookie");
+    const before = await state(ctx, true);
+    const issued = await issue(ctx, owner, false, true);
+    const pending = await state(ctx, true);
+    expect(pending.preview.verification).toEqual([]);
+    expect(pending.production).toEqual(before.production);
+    const forwarded = await forward(ctx, owner, issued, true);
+    const afterProduction = await state(ctx, true);
+    expect(afterProduction.preview).toEqual(before.preview);
+    expect(afterProduction.production).toEqual(before.production);
+    const controls = [];
+    const unchanged = afterProduction.preview;
+    const cookieName = "better-auth.oauth_state";
+    const cookieKey = "compat-test-only-key-not-real-minimum-32chars";
+
+    // Invalid cookies fail before browser consumption; expired but matching
+    // state is consumed before rejecting. All profiles came from a real grant.
+    for (const mode of ["missing", "bad-cipher", "nonce", "missing-nonce", "expired"]) {
+      const stored = structuredClone(issued.issuedCookie!.payload);
+      if (mode === "nonce") stored.oauthState = "foreign-nonce";
+      if (mode === "missing-nonce") delete stored.oauthState;
+      if (mode === "expired") stored.expiresAt = Date.now() - 60000;
+      const token =
+        mode === "bad-cipher"
+          ? "wrong"
+          : await symmetricEncrypt({ key: cookieKey, data: JSON.stringify(stored) });
+      const r = await foreign.fetch(forwarded.bridge, {
+        redirect: "manual",
+        credentials: "omit",
+        headers: mode === "missing" ? {} : { cookie: `${cookieName}=${token}` },
+      });
+      const cookies = r.headers.getSetCookie();
+      const result = await response(r);
+      expect(new URL(result.location!).searchParams.get("error")).toBe("state_mismatch");
+      expect(cookies.some((value) => value.startsWith(`${cookieName}=`))).toBe(mode === "expired");
+      const after = await state(ctx, true);
+      expect(after.preview).toEqual(unchanged);
+      expect(after.production).toEqual(before.production);
+      controls.push({ mode, result, after: observations(after) });
+    }
+    const result = await owner.fetch(forwarded.bridge, { redirect: "manual" });
+    const clear = result.headers.getSetCookie().find((value) => value.startsWith(`${cookieName}=`));
+    expect(clear).toContain("Max-Age=0");
+    const completed = await response(result);
+    expect(completed.location).toBe(`${ctx.baseURL}/proxy-new`);
+    const current = await owner.client.getSession();
+    expect(current.data!.user.email).toBe("proxy-owner@fixture.test");
+    const after = await state(ctx, true);
+    expect(after.preview.users).toHaveLength(1);
+    expect(after.preview.accounts).toHaveLength(1);
+    expect(after.preview.sessions).toHaveLength(1);
+    expect(after.preview.verification).toEqual([]);
+    expect(after.production).toEqual(before.production);
+    const replay = await response(await owner.fetch(forwarded.bridge, { redirect: "manual" }));
+    expect(new URL(replay.location!).searchParams.get("error")).toBe("state_mismatch");
+    expect((await state(ctx, true)).preview).toEqual(after.preview);
+    // Source has no server ledger for cookie state. An explicitly restored
+    // still-valid authenticated cookie can be replayed within profile maxAge.
+    const restored = await response(
+      await owner.fetch(forwarded.bridge, {
+        redirect: "manual",
+        credentials: "omit",
+        headers: { cookie: `${cookieName}=${issued.issuedCookie!.token}` },
+      }),
+    );
+    expect(restored.location).toBe(`${ctx.baseURL}/proxy-done?application=kept`);
+    const final = await state(ctx, true);
+    expect(final.preview.users).toEqual(after.preview.users);
+    expect(final.preview.sessions).toHaveLength(2);
+    expect(final.production).toEqual(before.production);
+    return {
+      before: observations(before),
+      started: issued.started,
+      issuedState: issued.issuedState,
+      cookieState: {
+        token: issued.issuedCookie!.token,
+        payload: issued.issuedState.stateCookie.payload,
+      },
+      pending: observations(pending),
+      approved: forwarded.approved,
+      forwarded: forwarded.forwarded,
+      oauthProxyProfile: forwarded.atom,
+      afterProduction: observations(afterProduction),
+      controls,
+      completed,
+      current,
+      after: observations(after),
+      replay,
+      restored,
+      final: observations(final),
+    };
+  },
+  ["POST /sign-in/social", "GET /callback/{}/oauth-proxy"],
+  undefined,
+  comparison,
+);
+
+compatScenario(
+  "OAuth proxy cookie linking restores the saved owner across browser session changes",
+  async (ctx) => {
+    const owner = ctx.actor("cookie-link-owner", "oauth-proxy-cookie");
+    const foreign = ctx.actor("cookie-link-foreign", "oauth-proxy-cookie");
+    const signed = await owner.client.signUp.email({
+      email: "proxy-owner@fixture.test",
+      name: "Owner",
+      password: "password123",
+    });
+    const registered = await foreign.fetch(
+      `${ctx.baseURL}${authProfilePath("oauth-proxy-cookie")}/sign-up/email`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: ctx.uniqueEmail("cookie-link-foreign"),
+          name: "Foreign",
+          password: "password123",
+        }),
+      },
+    );
+    expect(registered.status).toBe(200);
+    const foreignSession = registered.headers
+      .getSetCookie()
+      .find((value) => value.startsWith("better-auth.session_token="))!
+      .split(";")[0]!;
+    const other = { data: await registered.json(), error: null };
+    const foreignBefore = await foreign.client.getSession();
+    expect(foreignBefore.data!.user.id).toBe(other.data.user.id);
+    expect(signed.error).toBeNull();
+    expect(other.error).toBeNull();
+    const before = await state(ctx, true);
+    const issued = await issue(ctx, owner, true, true);
+    expect(issued.issuedCookie!.payload.link).toEqual({
+      email: signed.data!.user.email,
+      userId: signed.data!.user.id,
+    });
+    const forwarded = await forward(ctx, owner, issued, true);
+    const missing = await response(await foreign.fetch(forwarded.bridge, { redirect: "manual" }));
+    expect(new URL(missing.location!).searchParams.get("error")).toBe("state_mismatch");
+    expect((await state(ctx, true)).preview).toEqual(before.preview);
+    // Authentic state chooses the initiating owner even if the current
+    // browser session belongs to another user. No identity is read from profile.
+    const completed = await response(
+      await foreign.fetch(forwarded.bridge, {
+        redirect: "manual",
+        headers: {
+          cookie: `better-auth.oauth_state=${issued.issuedCookie!.token}; ${foreignSession}`,
+        },
+      }),
+    );
+    expect(completed.location).toBe(`${ctx.baseURL}/proxy-done?application=kept`);
+    const after = await state(ctx, true);
+    expect(after.preview.users).toEqual(before.preview.users);
+    expect(after.preview.sessions).toEqual(before.preview.sessions);
+    expect(after.preview.accounts).toHaveLength(3);
+    expect(after.preview.accounts.find((row) => row.providerId === "gitlab")!.userId).toBe(
+      signed.data!.user.id,
+    );
+    expect(after.preview.verification).toEqual([]);
+    expect(after.production).toEqual(before.production);
+    const replay = await response(await foreign.fetch(forwarded.bridge, { redirect: "manual" }));
+    expect(new URL(replay.location!).searchParams.get("error")).toBe("state_mismatch");
+    expect((await state(ctx, true)).preview).toEqual(after.preview);
+    const foreignAfter = await foreign.client.getSession();
+    expect(foreignAfter.data!.session.token).toBe(foreignBefore.data!.session.token);
+    return {
+      signed,
+      other,
+      foreignBefore,
+      foreignAfter,
+      before: observations(before),
+      started: issued.started,
+      issuedState: issued.issuedState,
+      cookieState: {
+        token: issued.issuedCookie!.token,
+        payload: issued.issuedState.stateCookie.payload,
+      },
+      approved: forwarded.approved,
+      forwarded: forwarded.forwarded,
+      oauthProxyProfile: forwarded.atom,
+      missing,
+      completed,
+      after: observations(after),
+      replay,
+    };
+  },
+  ["POST /link-social", "GET /callback/{}/oauth-proxy"],
   undefined,
   comparison,
 );

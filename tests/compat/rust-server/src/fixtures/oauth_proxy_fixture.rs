@@ -167,18 +167,29 @@ impl Fixture {
     }
 }
 pub(crate) async fn router(config: &AuthConfig) -> AuthResult<(Router, Fixture)> {
-    build_router(config, false).await
+    build_router(config, false, false).await
 }
 pub(crate) async fn managed_router(config: &AuthConfig) -> AuthResult<(Router, Fixture)> {
-    build_router(config, true).await
+    build_router(config, true, false).await
 }
-async fn build_router(config: &AuthConfig, managed: bool) -> AuthResult<(Router, Fixture)> {
-    let path = if managed {
+pub(crate) async fn cookie_router(config: &AuthConfig) -> AuthResult<(Router, Fixture)> {
+    build_router(config, false, true).await
+}
+async fn build_router(
+    config: &AuthConfig,
+    managed: bool,
+    cookie: bool,
+) -> AuthResult<(Router, Fixture)> {
+    let path = if cookie {
+        "/__test/profiles/oauth-proxy-cookie/api/auth"
+    } else if managed {
         "/__test/profiles/managed-proxy/api/auth"
     } else {
         PATH
     };
-    let control = if managed {
+    let control = if cookie {
+        "/__test/oauth-proxy-cookie"
+    } else if managed {
         "/__test/managed-proxy"
     } else {
         "/__test/oauth-proxy"
@@ -228,6 +239,10 @@ async fn build_router(config: &AuthConfig, managed: bool) -> AuthResult<(Router,
                 .base_path(path)
                 .trusted_origin(config.base_url.clone())
                 .trusted_origin(production_origin.clone());
+            if cookie {
+                settings.account.store_state_strategy =
+                    better_auth_core::OAuthStateStrategy::Cookie;
+            }
             if managed {
                 const OLD: &str = "managed-old-reader-key-at-least-32-characters";
                 const CURRENT: &str = "compat-test-only-key-not-real-minimum-32chars";

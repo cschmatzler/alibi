@@ -1,0 +1,2753 @@
+{
+  "scenarioName": "OAuth proxy cookie linking restores the saved owner across browser session changes",
+  "ts": {
+    "oauthURL": "http://127.0.0.1:39157",
+    "startedAt": 1791042912374,
+    "observation": {
+      "signed": {
+        "data": {
+          "token": "5ZtivMtG1Hzd7hqbybkjWnsMX8XKcFij",
+          "user": {
+            "name": "Owner",
+            "email": "proxy-owner@fixture.test",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.425Z",
+            "updatedAt": "2026-10-03T15:55:12.425Z",
+            "id": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf"
+          }
+        },
+        "error": null
+      },
+      "other": {
+        "data": {
+          "token": "0hiYdiraeMnH99M1BpgzvgPy4juwrKLQ",
+          "user": {
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.464Z",
+            "updatedAt": "2026-10-03T15:55:12.464Z",
+            "id": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c"
+          }
+        },
+        "error": null
+      },
+      "foreignBefore": {
+        "data": {
+          "session": {
+            "expiresAt": "2026-10-10T15:55:12.465Z",
+            "token": "0hiYdiraeMnH99M1BpgzvgPy4juwrKLQ",
+            "createdAt": "2026-10-03T15:55:12.465Z",
+            "updatedAt": "2026-10-03T15:55:12.465Z",
+            "ipAddress": "",
+            "userAgent": "Bun/1.4.2",
+            "userId": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+            "id": "WNf7GLqFMphmauaQuU4Od4dyIschOVZd"
+          },
+          "user": {
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.464Z",
+            "updatedAt": "2026-10-03T15:55:12.464Z",
+            "id": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c"
+          }
+        },
+        "error": null
+      },
+      "foreignAfter": {
+        "data": {
+          "session": {
+            "expiresAt": "2026-10-10T15:55:12.465Z",
+            "token": "0hiYdiraeMnH99M1BpgzvgPy4juwrKLQ",
+            "createdAt": "2026-10-03T15:55:12.465Z",
+            "updatedAt": "2026-10-03T15:55:12.465Z",
+            "ipAddress": "",
+            "userAgent": "Bun/1.4.2",
+            "userId": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+            "id": "WNf7GLqFMphmauaQuU4Od4dyIschOVZd"
+          },
+          "user": {
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.464Z",
+            "updatedAt": "2026-10-03T15:55:12.464Z",
+            "id": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c"
+          }
+        },
+        "error": null
+      },
+      "before": {
+        "preview": {
+          "users": [
+            {
+              "id": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+              "name": "Owner",
+              "email": "proxy-owner@fixture.test",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T15:55:12.425Z",
+              "updatedAt": "2026-10-03T15:55:12.425Z"
+            },
+            {
+              "id": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+              "name": "Foreign",
+              "email": "cookie-link-foreign-179104291236@test.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T15:55:12.464Z",
+              "updatedAt": "2026-10-03T15:55:12.464Z"
+            }
+          ],
+          "accounts": [
+            {
+              "id": "Tfg6L9RcfMlVKTBmSZarnGcZA0JNzU38",
+              "userId": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+              "accountId": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+              "providerId": "credential",
+              "accessToken": null,
+              "refreshToken": null,
+              "idToken": null,
+              "scope": null,
+              "accessTokenExpiresAt": null,
+              "refreshTokenExpiresAt": null,
+              "createdAt": "2026-10-03T15:55:12.426Z",
+              "updatedAt": "2026-10-03T15:55:12.426Z"
+            },
+            {
+              "id": "LlWK11GjMS90nV5iKbk0TQvznoGGwR6I",
+              "userId": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+              "accountId": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+              "providerId": "credential",
+              "accessToken": null,
+              "refreshToken": null,
+              "idToken": null,
+              "scope": null,
+              "accessTokenExpiresAt": null,
+              "refreshTokenExpiresAt": null,
+              "createdAt": "2026-10-03T15:55:12.465Z",
+              "updatedAt": "2026-10-03T15:55:12.465Z"
+            }
+          ],
+          "sessions": [
+            {
+              "id": "2GK6kss5Z34P8fs0gG4azR3iPMcMPjHa",
+              "userId": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+              "token": "5ZtivMtG1Hzd7hqbybkjWnsMX8XKcFij",
+              "expiresAt": "2026-10-10T15:55:12.426Z",
+              "createdAt": "2026-10-03T15:55:12.426Z",
+              "updatedAt": "2026-10-03T15:55:12.426Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2"
+            },
+            {
+              "id": "WNf7GLqFMphmauaQuU4Od4dyIschOVZd",
+              "userId": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+              "token": "0hiYdiraeMnH99M1BpgzvgPy4juwrKLQ",
+              "expiresAt": "2026-10-10T15:55:12.465Z",
+              "createdAt": "2026-10-03T15:55:12.465Z",
+              "updatedAt": "2026-10-03T15:55:12.465Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2"
+            }
+          ],
+          "verification": []
+        },
+        "production": {
+          "users": [],
+          "accounts": [],
+          "sessions": [],
+          "verification": []
+        },
+        "receipts": [],
+        "sessionHooks": [],
+        "afterRequests": []
+      },
+      "started": {
+        "data": {
+          "url": "http://localhost:33133/__test/oauth-proxy-cookie/provider/oauth/authorize?response_type=code&client_id=proxy-fixture-client&state=a24fa6f6b6a8ddc90d48032b8a91c5f93d5a9ec6ccea639e21eb6f28f984c11eb7fc5daf4a45bd8bac3741edf0e99e81bc13b19e872ab061aa65d6870c7cb5ced3034e30886ab9d6809e56acf88b29b22fcf94227a61134d3bf7fcb9fa875c7a9b6be964795e244ad7a0e31aba4b14f6fc9934a67808d5150e2a93969cb0b0dc68b6487363568a64897ee9acdfeab0c2110a956600530041da8f3e50a4c4e0466d370555c8166c1324576bd3ef0da0d682e64280a2c70ce7ef6d8e212a6b535252fafc7d9100f1d22667d0c48863b6e4759179806911307af4f4556e04f7deec6540748bac88724bc7269facff5ae5629518134accd5ea42b6570824ad8ab9b3e2a1c8144ea82524d8f5cca3e09eed770bff8921ac478b14b0716858afc3e4edfc556b22ad0ec24a2f44f71838f0d650e582feeb297aa192d8b953c696951aa365bbdc48c25efd7c488a744e0a1d616a0ce4e72b31ebde50f120b7d76a51ab2b9b957ee8fb322f15bb5593b93b26939886a5a173f7bf0dd777a3d992bbcf5bd433b57c5f03b45845e1df692397a067bdf9cede6e9d2c96e62131841c9583aa950eba8ebcc86cfbcbad66c526cbd4ffd18f676b89c450fd50c22762ccebe366fa8cba3fde52c036556b703600b47805b57822c6d243f3ba3b4c23a838cc347f2beabc1cb848ba7bc3d05dbe337dc79f1236e5bb57054725f487476fd6cf911fbd2df5aba70b69875ee1943e7eabd52ea708c9ec2e95c07b086930cc82965635ac7bddbfa6e03f3744ea69c9de2b3d77c10279521c22c0e02acdcc16d4441a99aa074da87a28a2dca965302675425a44ae28be8ec9966b3f84effc66e06b1a8c764cba21cf9913879b2daea318cb44f55a81a9d42d2ed7d57b1187b733dea8fab4d5b6bf3f8540ae34051bf78fb30b1557ec8d85ba7dd95f3fcb27c216b445795c093bbefff987f4baa33acdfbd467b85712239efdbb0ce30b814649566f61c78d7689bb1efda07aecfa5a210e252043a0c7f02fc8654cdc9315985197960d13bc758292af4416c6111e6a129604276d4a98f3750975eeae3bfc192646f2960b1875d6209e2432aefa78a60c91901f5f22f6df52dee53893ddb4ead075edd99413da4657a6f95633af0bd81b80a254f4fdf9f83bb48d07170eee570108a63d91e1f68ca8a315a81e543180545b5f51aebbef2a37bbd277a93643cde0610423cea2330d77fc1d8bb87a3a44f0cf4a8d5fe7806147f715c296f39d7d9f36a2b8d2ab4d267ec89b1f051fe0142c29c81156c4c33fd77e23d67f9837c57c64c3ac5dc80f9911ed25df3535d9371aa0059e20e62dff2d5d5250f40797a6147f1936ee57305e3027c4f6575f923015be6dd110fb1c836ecbc930d90805b76b5ca0b24fb1521da7087b5ede1c89f68ce27da3aa7c77f5f6ef2633505616e98c2a004100caa865b133a03087bda53b2300df396712ea67c3679e0bb227758c8a08019911bbe4a4ca058002906ed6fe2f1b2d203e5fe20d34db75e7b587ae2280ee310c65ffb5c63fa2031afc9198faa7b58ba690d6e3d6dd621738c81a246c68960863944a500299b4b0f5d37e6ccff2c53b20d930929f71b057e4f8f7260231c96485971df8d5eb7e1eeef7f3ee587332e21c7a6cf01d56c6c0b9eea8e85a773bc53d565a472883b7441ea3ad019c334e586312067dbb2e04db4d504b97ac7c516804aa7d8a1a9ad78c7d9eca9f442dd94aff346355ccc684cce0764d12ce7f271a22e3a25e0901ee39cca0da0a456a9b755de570292bead406e82c941bc20092c6eec93f188c27d959be54fb68426797ae60a2077b35caba1798eca090844637818cd54fc8304a4557267f31cc32169d8b2b1230be67f168d1412ecfdfa3d36f8e590c59d59954&scope=read_user&redirect_uri=http%3A%2F%2F127.0.0.1%3A33133%2F__test%2Fprofiles%2Foauth-proxy-cookie%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=ORKo4NboScA79El_NFoxpwAXWjpBNWcnEdqs5Do1WO8",
+          "redirect": false
+        },
+        "error": null
+      },
+      "issuedState": {
+        "state": "GDGM-C0kgnxDjs8_vuaEVkskSDjxm2nX",
+        "stateCookie": {
+          "token": "9bdbe17cfb7f9d83a27a54d009ca763bbde2c8089e0c9b6761b4782f31eae2aaef9a4f85f56bab775741a97864979332589973d55cbb7721a2a10f2908cf7f82331294765df3a0960066c21ad8023ff1e57110c6a567d3b61946b5cd096aad52e4cb87ee910fd5a3020cb20820f579309dfa7e857b44ae523fc97f71a37f9ae400bde009c0bccda946b30e89e01966f7d3d154baaffae16fc9cfecfdfc051f56101447f1c6f5c71bcfe5c6aa8e05162dcec58d23aef9cf5a2c0c70b0912c25fa7501b56e2f538e3ff6d646ed1d965e8186c457a25953919d81bd8b804a6682724d1dc8d89a9e752d60f49e9c75a38ffe5434741232c1e9191dcc7316c33323708ddfde561aacaa9863b270bfd429919c77ae7454ab45f6e6467724f76cd387b2896ae4ed3ff2f86bfa8df54a2f37831424cdc578911159f62c24258cba9bc4f9a51501f6de09d193ffbb7760ab46a917df7da3e08486bd17d9545bc58ced80bd5a80451c9f624e537728c380d5d7410b1fe69f4e16ed0a14216a7814c2e4eb1fab8ce5f0230b09b941e0b9482e98f8f0cb93b9d2c9b2a0bd64f4183c7c0d4e6072034449a01ff1e33b6ab27e9507bf7cd69f40357623ebdfa7c24dc8866f6ef5bde63e5603c8de1f9982c993ec48c4e9641c2bca733986887fef72b9d0113e658fbb8c2ab99e26c7ee101fcf18a2daf8a96e42cc506486aeda86f228f622664ed41726a3dbd14c91a6e36c8d1e8c0a8fc615d5002ecd1fc301f1de9cc437b741030310c664d0f2bc7792c5c119062aeedc13ceb7adf586a77e03352fae554b91ac7eeb0dfec3d22574bd6e17697460ac29f059abd2b0ef6fe6478efb26b2da2e100be12711",
+          "payload": {
+            "application": {
+              "kept": true
+            },
+            "callbackURL": "http://localhost:33133/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A33133%2Fproxy-done%3Fapplication%3Dkept",
+            "codeVerifier": {
+              "token": "RFHjs6vchYkc9T85fptCnjHFzi_ROHAmgzIGl-88NCsS6YWm3M9RgEyebUCBjtsPF1DPXBCE60-MQbQ46r5ScSaPg6j2wH7rOF0I_qjGks3Oot3pAgiBS8ZyspGJJZSL"
+            },
+            "errorURL": "http://localhost:33133/proxy-error",
+            "link": {
+              "userId": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+              "email": "proxy-owner@fixture.test"
+            },
+            "expiresAt": "2026-10-03T16:05:12.477Z",
+            "oauthState": {
+              "state": "GDGM-C0kgnxDjs8_vuaEVkskSDjxm2nX"
+            }
+          }
+        },
+        "isOAuthProxy": true
+      },
+      "cookieState": {
+        "token": "f7c56ff8ca1d52676d24bc73fa6c11b216dd01a5337c29a7ffcc8dbf60241cddc12cd730171c711ff783d31bb472da006ee401dd86462cf4156e9ac876dd15ba0f0498bad6ad5646ba15815f2bc3fcc37c93e2b26779f82b69d11b4fcb452b6a5257b6a7f0cfa606f933801a88cfbdd655e63b3b7c2bcbed5e7e8357918f9d218e35388144c5185eae147b0bd35c76831997ad6cb78ff0fda94b18c3d0ea5477a32131404d94bb315fbd8077a023fe20838152378f2d22b52dfbf22e95a936ec9228b77f8a5b64587aa1540e5c06db303345871a57e4ce08a31a58880dcbdebac50cac867d894323d67f7c3d97d387cff2572a6e3cc04f0c9a1501808d5857597636db6e768401b4882a045faf2af874c05858f3815a0a179875a6ea87e8eaa0cfae302ebad4a2e5d0d5e60f3f9c33247ecba67bcd9915c19e44b09b7914fc2e7822fdd78d81ecdb9e077f094b5362b646a9d88fdabb2472af2e785ed7209e87e8ae221b621cd6dad4d56cbb5662ef7014dc43c2ab1b53e2e9126530218b3bde04bde61dc4e0ebc457e91a9e8e5486b6ca4bc5ac21b2148f59d7a21c1a35eb809843f6a0d6a501f31bb82eaf9ce4fe4b6920ca471b368883ce1813b91acfbb4ad35280745710055e61377766942471033b93707ef6fd95752d7654ed770d84c213db8c20b776f6f069ede8457bbc473444cde483f7a636aed118faefd2e527777450a98ee41edf6e46bd7f8e03a2c4c7047790afa4ee9d87a5b3c919d7679fbe304a5a7be366001ec39ef03d081b9c1a285a788889189e8a71cfe0c78a11f198f8ba869d5650cd44f646b00bc9ff9842ec22dc06af6fdd9e874c3d187d09451e0ecc6dccfa",
+        "payload": {
+          "application": {
+            "kept": true
+          },
+          "callbackURL": "http://localhost:33133/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A33133%2Fproxy-done%3Fapplication%3Dkept",
+          "codeVerifier": {
+            "token": "RFHjs6vchYkc9T85fptCnjHFzi_ROHAmgzIGl-88NCsS6YWm3M9RgEyebUCBjtsPF1DPXBCE60-MQbQ46r5ScSaPg6j2wH7rOF0I_qjGks3Oot3pAgiBS8ZyspGJJZSL"
+          },
+          "errorURL": "http://localhost:33133/proxy-error",
+          "link": {
+            "userId": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+            "email": "proxy-owner@fixture.test"
+          },
+          "expiresAt": "2026-10-03T16:05:12.477Z",
+          "oauthState": {
+            "state": "GDGM-C0kgnxDjs8_vuaEVkskSDjxm2nX"
+          }
+        }
+      },
+      "approved": {
+        "status": 302,
+        "location": "http://127.0.0.1:33133/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab?code=proxy-fixture-code-1&state=a24fa6f6b6a8ddc90d48032b8a91c5f93d5a9ec6ccea639e21eb6f28f984c11eb7fc5daf4a45bd8bac3741edf0e99e81bc13b19e872ab061aa65d6870c7cb5ced3034e30886ab9d6809e56acf88b29b22fcf94227a61134d3bf7fcb9fa875c7a9b6be964795e244ad7a0e31aba4b14f6fc9934a67808d5150e2a93969cb0b0dc68b6487363568a64897ee9acdfeab0c2110a956600530041da8f3e50a4c4e0466d370555c8166c1324576bd3ef0da0d682e64280a2c70ce7ef6d8e212a6b535252fafc7d9100f1d22667d0c48863b6e4759179806911307af4f4556e04f7deec6540748bac88724bc7269facff5ae5629518134accd5ea42b6570824ad8ab9b3e2a1c8144ea82524d8f5cca3e09eed770bff8921ac478b14b0716858afc3e4edfc556b22ad0ec24a2f44f71838f0d650e582feeb297aa192d8b953c696951aa365bbdc48c25efd7c488a744e0a1d616a0ce4e72b31ebde50f120b7d76a51ab2b9b957ee8fb322f15bb5593b93b26939886a5a173f7bf0dd777a3d992bbcf5bd433b57c5f03b45845e1df692397a067bdf9cede6e9d2c96e62131841c9583aa950eba8ebcc86cfbcbad66c526cbd4ffd18f676b89c450fd50c22762ccebe366fa8cba3fde52c036556b703600b47805b57822c6d243f3ba3b4c23a838cc347f2beabc1cb848ba7bc3d05dbe337dc79f1236e5bb57054725f487476fd6cf911fbd2df5aba70b69875ee1943e7eabd52ea708c9ec2e95c07b086930cc82965635ac7bddbfa6e03f3744ea69c9de2b3d77c10279521c22c0e02acdcc16d4441a99aa074da87a28a2dca965302675425a44ae28be8ec9966b3f84effc66e06b1a8c764cba21cf9913879b2daea318cb44f55a81a9d42d2ed7d57b1187b733dea8fab4d5b6bf3f8540ae34051bf78fb30b1557ec8d85ba7dd95f3fcb27c216b445795c093bbefff987f4baa33acdfbd467b85712239efdbb0ce30b814649566f61c78d7689bb1efda07aecfa5a210e252043a0c7f02fc8654cdc9315985197960d13bc758292af4416c6111e6a129604276d4a98f3750975eeae3bfc192646f2960b1875d6209e2432aefa78a60c91901f5f22f6df52dee53893ddb4ead075edd99413da4657a6f95633af0bd81b80a254f4fdf9f83bb48d07170eee570108a63d91e1f68ca8a315a81e543180545b5f51aebbef2a37bbd277a93643cde0610423cea2330d77fc1d8bb87a3a44f0cf4a8d5fe7806147f715c296f39d7d9f36a2b8d2ab4d267ec89b1f051fe0142c29c81156c4c33fd77e23d67f9837c57c64c3ac5dc80f9911ed25df3535d9371aa0059e20e62dff2d5d5250f40797a6147f1936ee57305e3027c4f6575f923015be6dd110fb1c836ecbc930d90805b76b5ca0b24fb1521da7087b5ede1c89f68ce27da3aa7c77f5f6ef2633505616e98c2a004100caa865b133a03087bda53b2300df396712ea67c3679e0bb227758c8a08019911bbe4a4ca058002906ed6fe2f1b2d203e5fe20d34db75e7b587ae2280ee310c65ffb5c63fa2031afc9198faa7b58ba690d6e3d6dd621738c81a246c68960863944a500299b4b0f5d37e6ccff2c53b20d930929f71b057e4f8f7260231c96485971df8d5eb7e1eeef7f3ee587332e21c7a6cf01d56c6c0b9eea8e85a773bc53d565a472883b7441ea3ad019c334e586312067dbb2e04db4d504b97ac7c516804aa7d8a1a9ad78c7d9eca9f442dd94aff346355ccc684cce0764d12ce7f271a22e3a25e0901ee39cca0da0a456a9b755de570292bead406e82c941bc20092c6eec93f188c27d959be54fb68426797ae60a2077b35caba1798eca090844637818cd54fc8304a4557267f31cc32169d8b2b1230be67f168d1412ecfdfa3d36f8e590c59d59954",
+        "body": ""
+      },
+      "forwarded": {
+        "status": 302,
+        "location": "http://localhost:33133/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A33133%2Fproxy-done%3Fapplication%3Dkept&profile=c7c94894391ee9b0f266d8fd421ba5bbcd25f735ea542e82319be671a46ffeffc0e54569c0f57a94fc0c59e8fb4b240c766bcc55696e1170f88b174943de9aa6861093f25466504ffffcc0fc2f6be0739b4fe4722c1902ef56b650909efee0d025798df0ab401053bf419618c1235be0d0ce32023e60f45fc251e767933aed50eb430f6ffe8d921f72ae1325196d7b4214db4f0ad4a3ff78f494e16a4982704174af8b8471b674c4d13e022e0461b510bc55fa7ca8de30e8e40811539f39397bcdff1ef418fea255b2cd5a80d2c709e5988b027c5811a94457c1326813efdd2804730c4a3e73519101f12cf62a95dc33051799239f366adef4d936ecfd48f13f5ae444940f7956bd40547faa7e158eb95ab91f7d0a5e6eecf1771f5edcc4d6d896a66ce0823f39b0e9dda65845978012060e9af88f4a2236320f3f719d700b280cc19071c7f685df713552a4443624b21a4529eacb59ffba8def30e37e8972d7b3083356c13c6e33d88bfe9288936d514a953d6cc929a7cceced1084892c88904060ac2d123669be1e9733fe725c4605638c79fd69cd87fd6008f25d319a8cf84730001e8620244eb0218aa62516386f0bfdf799054fdd962db7ded2b5c1859b15a11baea54b046bd3e3b4403d6aeac1a772d857d305282ba38bd5d0eb7383d355d804ee148c70c2bbffeb1f85b0e7e7bc448225937718bb1db18f8d5055d1e4a61526cb9f4aafbf4c447f44eea11fb7c6948a3c3ddac363b307c343d7bdd9bcef119469219de657d36b563ad0cd87b5c82224a79ba65611ff669026971a52c2bfa02472e9b1e81a382e23b748847ca91b5d714cff4e2599dc6b8c93cb782f984965fa43f59c44aa62e68fecae1e9346f71baacdc4db2e33c84db63837e8a4d1d538a4d7c8de195c8b4273c368e5eadc981021fec348373b04a10b68d879cb6317e6d7ef8b787fad92bf8fb782975010f80b70d8b130c6e6bd8e612d50b1a0e0af916d62136f8401e0e4857f5147e84a8e302bada09f751e0dd13f22608130e21f5a33e1a5f7847e344544f3081514c0757587dbfd46acac2b7120fc03097c82146f6ad8abf3c202d18c08afefcc423eeac7c8451ffcdf6df4ab6034c91fef637acc3cb62a846917fcb498b68bebe9800e9333",
+        "body": ""
+      },
+      "oauthProxyProfile": {
+        "token": "c7c94894391ee9b0f266d8fd421ba5bbcd25f735ea542e82319be671a46ffeffc0e54569c0f57a94fc0c59e8fb4b240c766bcc55696e1170f88b174943de9aa6861093f25466504ffffcc0fc2f6be0739b4fe4722c1902ef56b650909efee0d025798df0ab401053bf419618c1235be0d0ce32023e60f45fc251e767933aed50eb430f6ffe8d921f72ae1325196d7b4214db4f0ad4a3ff78f494e16a4982704174af8b8471b674c4d13e022e0461b510bc55fa7ca8de30e8e40811539f39397bcdff1ef418fea255b2cd5a80d2c709e5988b027c5811a94457c1326813efdd2804730c4a3e73519101f12cf62a95dc33051799239f366adef4d936ecfd48f13f5ae444940f7956bd40547faa7e158eb95ab91f7d0a5e6eecf1771f5edcc4d6d896a66ce0823f39b0e9dda65845978012060e9af88f4a2236320f3f719d700b280cc19071c7f685df713552a4443624b21a4529eacb59ffba8def30e37e8972d7b3083356c13c6e33d88bfe9288936d514a953d6cc929a7cceced1084892c88904060ac2d123669be1e9733fe725c4605638c79fd69cd87fd6008f25d319a8cf84730001e8620244eb0218aa62516386f0bfdf799054fdd962db7ded2b5c1859b15a11baea54b046bd3e3b4403d6aeac1a772d857d305282ba38bd5d0eb7383d355d804ee148c70c2bbffeb1f85b0e7e7bc448225937718bb1db18f8d5055d1e4a61526cb9f4aafbf4c447f44eea11fb7c6948a3c3ddac363b307c343d7bdd9bcef119469219de657d36b563ad0cd87b5c82224a79ba65611ff669026971a52c2bfa02472e9b1e81a382e23b748847ca91b5d714cff4e2599dc6b8c93cb782f984965fa43f59c44aa62e68fecae1e9346f71baacdc4db2e33c84db63837e8a4d1d538a4d7c8de195c8b4273c368e5eadc981021fec348373b04a10b68d879cb6317e6d7ef8b787fad92bf8fb782975010f80b70d8b130c6e6bd8e612d50b1a0e0af916d62136f8401e0e4857f5147e84a8e302bada09f751e0dd13f22608130e21f5a33e1a5f7847e344544f3081514c0757587dbfd46acac2b7120fc03097c82146f6ad8abf3c202d18c08afefcc423eeac7c8451ffcdf6df4ab6034c91fef637acc3cb62a846917fcb498b68bebe9800e9333",
+        "payload": {
+          "userInfo": {
+            "id": "777",
+            "email": "proxy-owner@fixture.test",
+            "name": "Proxy Owner",
+            "image": "https://assets.fixture.test/avatar.png",
+            "emailVerified": true
+          },
+          "profile": {
+            "id": 777,
+            "email": "proxy-owner@fixture.test",
+            "email_verified": true,
+            "name": "Proxy Owner",
+            "avatar_url": "https://assets.fixture.test/avatar.png",
+            "state": "active",
+            "locked": false
+          },
+          "scopes": [
+            "read_user",
+            "issued"
+          ],
+          "account": {
+            "providerId": "gitlab",
+            "accountId": "777",
+            "accessToken": "proxy-fixture-access",
+            "refreshToken": "proxy-fixture-refresh",
+            "accessTokenExpiresAt": "2026-10-03T16:55:12.482Z",
+            "scope": "read_user,issued"
+          },
+          "state": "GDGM-C0kgnxDjs8_vuaEVkskSDjxm2nX",
+          "callbackURL": "http://localhost:33133/proxy-done?application=kept",
+          "errorURL": "http://localhost:33133/proxy-error",
+          "disableSignUp": false,
+          "timestamp": 1791042912483
+        }
+      },
+      "missing": {
+        "status": 302,
+        "location": "http://localhost:33133/proxy-error?error=state_mismatch",
+        "body": ""
+      },
+      "completed": {
+        "status": 302,
+        "location": "http://localhost:33133/proxy-done?application=kept",
+        "body": ""
+      },
+      "after": {
+        "preview": {
+          "users": [
+            {
+              "id": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+              "name": "Owner",
+              "email": "proxy-owner@fixture.test",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T15:55:12.425Z",
+              "updatedAt": "2026-10-03T15:55:12.425Z"
+            },
+            {
+              "id": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+              "name": "Foreign",
+              "email": "cookie-link-foreign-179104291236@test.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T15:55:12.464Z",
+              "updatedAt": "2026-10-03T15:55:12.464Z"
+            }
+          ],
+          "accounts": [
+            {
+              "id": "Tfg6L9RcfMlVKTBmSZarnGcZA0JNzU38",
+              "userId": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+              "accountId": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+              "providerId": "credential",
+              "accessToken": null,
+              "refreshToken": null,
+              "idToken": null,
+              "scope": null,
+              "accessTokenExpiresAt": null,
+              "refreshTokenExpiresAt": null,
+              "createdAt": "2026-10-03T15:55:12.426Z",
+              "updatedAt": "2026-10-03T15:55:12.426Z"
+            },
+            {
+              "id": "LlWK11GjMS90nV5iKbk0TQvznoGGwR6I",
+              "userId": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+              "accountId": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+              "providerId": "credential",
+              "accessToken": null,
+              "refreshToken": null,
+              "idToken": null,
+              "scope": null,
+              "accessTokenExpiresAt": null,
+              "refreshTokenExpiresAt": null,
+              "createdAt": "2026-10-03T15:55:12.465Z",
+              "updatedAt": "2026-10-03T15:55:12.465Z"
+            },
+            {
+              "id": "x0rHS5BYvWRrE9jaHlch4AUWC6KPxtGw",
+              "userId": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+              "accountId": "777",
+              "providerId": "gitlab",
+              "accessToken": "proxy-fixture-access",
+              "refreshToken": "proxy-fixture-refresh",
+              "idToken": null,
+              "scope": "read_user,issued",
+              "accessTokenExpiresAt": "2026-10-03T16:55:12.482Z",
+              "refreshTokenExpiresAt": null,
+              "createdAt": "2026-10-03T15:55:12.491Z",
+              "updatedAt": "2026-10-03T15:55:12.491Z"
+            }
+          ],
+          "sessions": [
+            {
+              "id": "2GK6kss5Z34P8fs0gG4azR3iPMcMPjHa",
+              "userId": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf",
+              "token": "5ZtivMtG1Hzd7hqbybkjWnsMX8XKcFij",
+              "expiresAt": "2026-10-10T15:55:12.426Z",
+              "createdAt": "2026-10-03T15:55:12.426Z",
+              "updatedAt": "2026-10-03T15:55:12.426Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2"
+            },
+            {
+              "id": "WNf7GLqFMphmauaQuU4Od4dyIschOVZd",
+              "userId": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+              "token": "0hiYdiraeMnH99M1BpgzvgPy4juwrKLQ",
+              "expiresAt": "2026-10-10T15:55:12.465Z",
+              "createdAt": "2026-10-03T15:55:12.465Z",
+              "updatedAt": "2026-10-03T15:55:12.465Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2"
+            }
+          ],
+          "verification": []
+        },
+        "production": {
+          "users": [],
+          "accounts": [],
+          "sessions": [],
+          "verification": []
+        },
+        "receipts": [
+          {
+            "stage": "authorize",
+            "query": {
+              "response_type": "code",
+              "client_id": "proxy-fixture-client",
+              "state": "a24fa6f6b6a8ddc90d48032b8a91c5f93d5a9ec6ccea639e21eb6f28f984c11eb7fc5daf4a45bd8bac3741edf0e99e81bc13b19e872ab061aa65d6870c7cb5ced3034e30886ab9d6809e56acf88b29b22fcf94227a61134d3bf7fcb9fa875c7a9b6be964795e244ad7a0e31aba4b14f6fc9934a67808d5150e2a93969cb0b0dc68b6487363568a64897ee9acdfeab0c2110a956600530041da8f3e50a4c4e0466d370555c8166c1324576bd3ef0da0d682e64280a2c70ce7ef6d8e212a6b535252fafc7d9100f1d22667d0c48863b6e4759179806911307af4f4556e04f7deec6540748bac88724bc7269facff5ae5629518134accd5ea42b6570824ad8ab9b3e2a1c8144ea82524d8f5cca3e09eed770bff8921ac478b14b0716858afc3e4edfc556b22ad0ec24a2f44f71838f0d650e582feeb297aa192d8b953c696951aa365bbdc48c25efd7c488a744e0a1d616a0ce4e72b31ebde50f120b7d76a51ab2b9b957ee8fb322f15bb5593b93b26939886a5a173f7bf0dd777a3d992bbcf5bd433b57c5f03b45845e1df692397a067bdf9cede6e9d2c96e62131841c9583aa950eba8ebcc86cfbcbad66c526cbd4ffd18f676b89c450fd50c22762ccebe366fa8cba3fde52c036556b703600b47805b57822c6d243f3ba3b4c23a838cc347f2beabc1cb848ba7bc3d05dbe337dc79f1236e5bb57054725f487476fd6cf911fbd2df5aba70b69875ee1943e7eabd52ea708c9ec2e95c07b086930cc82965635ac7bddbfa6e03f3744ea69c9de2b3d77c10279521c22c0e02acdcc16d4441a99aa074da87a28a2dca965302675425a44ae28be8ec9966b3f84effc66e06b1a8c764cba21cf9913879b2daea318cb44f55a81a9d42d2ed7d57b1187b733dea8fab4d5b6bf3f8540ae34051bf78fb30b1557ec8d85ba7dd95f3fcb27c216b445795c093bbefff987f4baa33acdfbd467b85712239efdbb0ce30b814649566f61c78d7689bb1efda07aecfa5a210e252043a0c7f02fc8654cdc9315985197960d13bc758292af4416c6111e6a129604276d4a98f3750975eeae3bfc192646f2960b1875d6209e2432aefa78a60c91901f5f22f6df52dee53893ddb4ead075edd99413da4657a6f95633af0bd81b80a254f4fdf9f83bb48d07170eee570108a63d91e1f68ca8a315a81e543180545b5f51aebbef2a37bbd277a93643cde0610423cea2330d77fc1d8bb87a3a44f0cf4a8d5fe7806147f715c296f39d7d9f36a2b8d2ab4d267ec89b1f051fe0142c29c81156c4c33fd77e23d67f9837c57c64c3ac5dc80f9911ed25df3535d9371aa0059e20e62dff2d5d5250f40797a6147f1936ee57305e3027c4f6575f923015be6dd110fb1c836ecbc930d90805b76b5ca0b24fb1521da7087b5ede1c89f68ce27da3aa7c77f5f6ef2633505616e98c2a004100caa865b133a03087bda53b2300df396712ea67c3679e0bb227758c8a08019911bbe4a4ca058002906ed6fe2f1b2d203e5fe20d34db75e7b587ae2280ee310c65ffb5c63fa2031afc9198faa7b58ba690d6e3d6dd621738c81a246c68960863944a500299b4b0f5d37e6ccff2c53b20d930929f71b057e4f8f7260231c96485971df8d5eb7e1eeef7f3ee587332e21c7a6cf01d56c6c0b9eea8e85a773bc53d565a472883b7441ea3ad019c334e586312067dbb2e04db4d504b97ac7c516804aa7d8a1a9ad78c7d9eca9f442dd94aff346355ccc684cce0764d12ce7f271a22e3a25e0901ee39cca0da0a456a9b755de570292bead406e82c941bc20092c6eec93f188c27d959be54fb68426797ae60a2077b35caba1798eca090844637818cd54fc8304a4557267f31cc32169d8b2b1230be67f168d1412ecfdfa3d36f8e590c59d59954",
+              "scope": "read_user",
+              "redirect_uri": "http://127.0.0.1:33133/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab",
+              "code_challenge_method": "S256",
+              "code_challenge": "ORKo4NboScA79El_NFoxpwAXWjpBNWcnEdqs5Do1WO8"
+            }
+          },
+          {
+            "stage": "token",
+            "body": {
+              "grant_type": "authorization_code",
+              "code": "proxy-fixture-code-1",
+              "code_verifier": {
+                "token": "RFHjs6vchYkc9T85fptCnjHFzi_ROHAmgzIGl-88NCsS6YWm3M9RgEyebUCBjtsPF1DPXBCE60-MQbQ46r5ScSaPg6j2wH7rOF0I_qjGks3Oot3pAgiBS8ZyspGJJZSL",
+                "length": 128
+              },
+              "redirect_uri": "http://127.0.0.1:33133/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab",
+              "client_id": "proxy-fixture-client",
+              "client_secret": "proxy-fixture-secret"
+            }
+          },
+          {
+            "stage": "userinfo",
+            "authorization": "Bearer proxy-fixture-access"
+          }
+        ],
+        "sessionHooks": [],
+        "afterRequests": []
+      },
+      "replay": {
+        "status": 302,
+        "location": "http://localhost:33133/proxy-error?error=state_mismatch",
+        "body": ""
+      }
+    },
+    "finishedAt": 1791042912497,
+    "traces": [
+      {
+        "actor": "cookie-link-owner",
+        "method": "POST",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/sign-up/email",
+        "requestBodyShape": {
+          "email": "string",
+          "name": "string",
+          "password": "string"
+        },
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json"
+        },
+        "responseCookies": {
+          "better-auth.session_token;;/": {
+            "path": "/",
+            "domain": null,
+            "httpOnly": true,
+            "secure": false,
+            "sameSite": "lax",
+            "maxAge": 604800,
+            "expiresAt": null
+          }
+        },
+        "responseBodyShape": {
+          "token": "string",
+          "user": {
+            "name": "string",
+            "email": "string",
+            "emailVerified": "boolean",
+            "image": "null",
+            "createdAt": "string",
+            "updatedAt": "string",
+            "id": "string"
+          }
+        },
+        "responseBody": {
+          "token": "5ZtivMtG1Hzd7hqbybkjWnsMX8XKcFij",
+          "user": {
+            "name": "Owner",
+            "email": "proxy-owner@fixture.test",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.425Z",
+            "updatedAt": "2026-10-03T15:55:12.425Z",
+            "id": "9SsGnetJ6nqKwknWLSdazQNYRqTLjDaf"
+          }
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "POST",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/sign-up/email",
+        "requestBodyShape": {
+          "email": "string",
+          "name": "string",
+          "password": "string"
+        },
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json"
+        },
+        "responseCookies": {
+          "better-auth.session_token;;/": {
+            "path": "/",
+            "domain": null,
+            "httpOnly": true,
+            "secure": false,
+            "sameSite": "lax",
+            "maxAge": 604800,
+            "expiresAt": null
+          }
+        },
+        "responseBodyShape": {
+          "token": "string",
+          "user": {
+            "name": "string",
+            "email": "string",
+            "emailVerified": "boolean",
+            "image": "null",
+            "createdAt": "string",
+            "updatedAt": "string",
+            "id": "string"
+          }
+        },
+        "responseBody": {
+          "token": "0hiYdiraeMnH99M1BpgzvgPy4juwrKLQ",
+          "user": {
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.464Z",
+            "updatedAt": "2026-10-03T15:55:12.464Z",
+            "id": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c"
+          }
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/get-session",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "cache-control": "no-store",
+          "content-type": "application/json",
+          "pragma": "no-cache"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "session": {
+            "expiresAt": "string",
+            "token": "string",
+            "createdAt": "string",
+            "updatedAt": "string",
+            "ipAddress": "string",
+            "userAgent": "string",
+            "userId": "string",
+            "id": "string"
+          },
+          "user": {
+            "name": "string",
+            "email": "string",
+            "emailVerified": "boolean",
+            "image": "null",
+            "createdAt": "string",
+            "updatedAt": "string",
+            "id": "string"
+          }
+        },
+        "responseBody": {
+          "session": {
+            "expiresAt": "2026-10-10T15:55:12.465Z",
+            "token": "0hiYdiraeMnH99M1BpgzvgPy4juwrKLQ",
+            "createdAt": "2026-10-03T15:55:12.465Z",
+            "updatedAt": "2026-10-03T15:55:12.465Z",
+            "ipAddress": "",
+            "userAgent": "Bun/1.4.2",
+            "userId": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+            "id": "WNf7GLqFMphmauaQuU4Od4dyIschOVZd"
+          },
+          "user": {
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.464Z",
+            "updatedAt": "2026-10-03T15:55:12.464Z",
+            "id": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c"
+          }
+        }
+      },
+      {
+        "actor": "primary",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/state",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json;charset=utf-8"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "preview": {
+            "users": [
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "accounts": [
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "sessions": [
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              }
+            ],
+            "verification": []
+          },
+          "production": {
+            "users": [],
+            "accounts": [],
+            "sessions": [],
+            "verification": []
+          },
+          "receipts": [],
+          "sessionHooks": [],
+          "afterRequests": []
+        }
+      },
+      {
+        "actor": "cookie-link-owner",
+        "method": "POST",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/link-social",
+        "requestBodyShape": {
+          "provider": "string",
+          "callbackURL": "string",
+          "newUserCallbackURL": "string",
+          "errorCallbackURL": "string",
+          "disableRedirect": "boolean",
+          "additionalData": {
+            "serverContext": {
+              "anonymousUserId": "string"
+            },
+            "application": {
+              "kept": "boolean"
+            }
+          }
+        },
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json"
+        },
+        "responseCookies": {
+          "better-auth.oauth_state;;/": {
+            "path": "/",
+            "domain": null,
+            "httpOnly": true,
+            "secure": false,
+            "sameSite": "lax",
+            "maxAge": 600,
+            "expiresAt": null
+          }
+        },
+        "responseBodyShape": {
+          "url": "string",
+          "redirect": "boolean"
+        },
+        "responseBody": {
+          "url": "http://localhost:33133/__test/oauth-proxy-cookie/provider/oauth/authorize?response_type=code&client_id=proxy-fixture-client&state=a24fa6f6b6a8ddc90d48032b8a91c5f93d5a9ec6ccea639e21eb6f28f984c11eb7fc5daf4a45bd8bac3741edf0e99e81bc13b19e872ab061aa65d6870c7cb5ced3034e30886ab9d6809e56acf88b29b22fcf94227a61134d3bf7fcb9fa875c7a9b6be964795e244ad7a0e31aba4b14f6fc9934a67808d5150e2a93969cb0b0dc68b6487363568a64897ee9acdfeab0c2110a956600530041da8f3e50a4c4e0466d370555c8166c1324576bd3ef0da0d682e64280a2c70ce7ef6d8e212a6b535252fafc7d9100f1d22667d0c48863b6e4759179806911307af4f4556e04f7deec6540748bac88724bc7269facff5ae5629518134accd5ea42b6570824ad8ab9b3e2a1c8144ea82524d8f5cca3e09eed770bff8921ac478b14b0716858afc3e4edfc556b22ad0ec24a2f44f71838f0d650e582feeb297aa192d8b953c696951aa365bbdc48c25efd7c488a744e0a1d616a0ce4e72b31ebde50f120b7d76a51ab2b9b957ee8fb322f15bb5593b93b26939886a5a173f7bf0dd777a3d992bbcf5bd433b57c5f03b45845e1df692397a067bdf9cede6e9d2c96e62131841c9583aa950eba8ebcc86cfbcbad66c526cbd4ffd18f676b89c450fd50c22762ccebe366fa8cba3fde52c036556b703600b47805b57822c6d243f3ba3b4c23a838cc347f2beabc1cb848ba7bc3d05dbe337dc79f1236e5bb57054725f487476fd6cf911fbd2df5aba70b69875ee1943e7eabd52ea708c9ec2e95c07b086930cc82965635ac7bddbfa6e03f3744ea69c9de2b3d77c10279521c22c0e02acdcc16d4441a99aa074da87a28a2dca965302675425a44ae28be8ec9966b3f84effc66e06b1a8c764cba21cf9913879b2daea318cb44f55a81a9d42d2ed7d57b1187b733dea8fab4d5b6bf3f8540ae34051bf78fb30b1557ec8d85ba7dd95f3fcb27c216b445795c093bbefff987f4baa33acdfbd467b85712239efdbb0ce30b814649566f61c78d7689bb1efda07aecfa5a210e252043a0c7f02fc8654cdc9315985197960d13bc758292af4416c6111e6a129604276d4a98f3750975eeae3bfc192646f2960b1875d6209e2432aefa78a60c91901f5f22f6df52dee53893ddb4ead075edd99413da4657a6f95633af0bd81b80a254f4fdf9f83bb48d07170eee570108a63d91e1f68ca8a315a81e543180545b5f51aebbef2a37bbd277a93643cde0610423cea2330d77fc1d8bb87a3a44f0cf4a8d5fe7806147f715c296f39d7d9f36a2b8d2ab4d267ec89b1f051fe0142c29c81156c4c33fd77e23d67f9837c57c64c3ac5dc80f9911ed25df3535d9371aa0059e20e62dff2d5d5250f40797a6147f1936ee57305e3027c4f6575f923015be6dd110fb1c836ecbc930d90805b76b5ca0b24fb1521da7087b5ede1c89f68ce27da3aa7c77f5f6ef2633505616e98c2a004100caa865b133a03087bda53b2300df396712ea67c3679e0bb227758c8a08019911bbe4a4ca058002906ed6fe2f1b2d203e5fe20d34db75e7b587ae2280ee310c65ffb5c63fa2031afc9198faa7b58ba690d6e3d6dd621738c81a246c68960863944a500299b4b0f5d37e6ccff2c53b20d930929f71b057e4f8f7260231c96485971df8d5eb7e1eeef7f3ee587332e21c7a6cf01d56c6c0b9eea8e85a773bc53d565a472883b7441ea3ad019c334e586312067dbb2e04db4d504b97ac7c516804aa7d8a1a9ad78c7d9eca9f442dd94aff346355ccc684cce0764d12ce7f271a22e3a25e0901ee39cca0da0a456a9b755de570292bead406e82c941bc20092c6eec93f188c27d959be54fb68426797ae60a2077b35caba1798eca090844637818cd54fc8304a4557267f31cc32169d8b2b1230be67f168d1412ecfdfa3d36f8e590c59d59954&scope=read_user&redirect_uri=http%3A%2F%2F127.0.0.1%3A33133%2F__test%2Fprofiles%2Foauth-proxy-cookie%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=ORKo4NboScA79El_NFoxpwAXWjpBNWcnEdqs5Do1WO8",
+          "redirect": false
+        }
+      },
+      {
+        "actor": "cookie-link-owner",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/provider/oauth/authorize?response_type=code&client_id=proxy-fixture-client&state=a24fa6f6b6a8ddc90d48032b8a91c5f93d5a9ec6ccea639e21eb6f28f984c11eb7fc5daf4a45bd8bac3741edf0e99e81bc13b19e872ab061aa65d6870c7cb5ced3034e30886ab9d6809e56acf88b29b22fcf94227a61134d3bf7fcb9fa875c7a9b6be964795e244ad7a0e31aba4b14f6fc9934a67808d5150e2a93969cb0b0dc68b6487363568a64897ee9acdfeab0c2110a956600530041da8f3e50a4c4e0466d370555c8166c1324576bd3ef0da0d682e64280a2c70ce7ef6d8e212a6b535252fafc7d9100f1d22667d0c48863b6e4759179806911307af4f4556e04f7deec6540748bac88724bc7269facff5ae5629518134accd5ea42b6570824ad8ab9b3e2a1c8144ea82524d8f5cca3e09eed770bff8921ac478b14b0716858afc3e4edfc556b22ad0ec24a2f44f71838f0d650e582feeb297aa192d8b953c696951aa365bbdc48c25efd7c488a744e0a1d616a0ce4e72b31ebde50f120b7d76a51ab2b9b957ee8fb322f15bb5593b93b26939886a5a173f7bf0dd777a3d992bbcf5bd433b57c5f03b45845e1df692397a067bdf9cede6e9d2c96e62131841c9583aa950eba8ebcc86cfbcbad66c526cbd4ffd18f676b89c450fd50c22762ccebe366fa8cba3fde52c036556b703600b47805b57822c6d243f3ba3b4c23a838cc347f2beabc1cb848ba7bc3d05dbe337dc79f1236e5bb57054725f487476fd6cf911fbd2df5aba70b69875ee1943e7eabd52ea708c9ec2e95c07b086930cc82965635ac7bddbfa6e03f3744ea69c9de2b3d77c10279521c22c0e02acdcc16d4441a99aa074da87a28a2dca965302675425a44ae28be8ec9966b3f84effc66e06b1a8c764cba21cf9913879b2daea318cb44f55a81a9d42d2ed7d57b1187b733dea8fab4d5b6bf3f8540ae34051bf78fb30b1557ec8d85ba7dd95f3fcb27c216b445795c093bbefff987f4baa33acdfbd467b85712239efdbb0ce30b814649566f61c78d7689bb1efda07aecfa5a210e252043a0c7f02fc8654cdc9315985197960d13bc758292af4416c6111e6a129604276d4a98f3750975eeae3bfc192646f2960b1875d6209e2432aefa78a60c91901f5f22f6df52dee53893ddb4ead075edd99413da4657a6f95633af0bd81b80a254f4fdf9f83bb48d07170eee570108a63d91e1f68ca8a315a81e543180545b5f51aebbef2a37bbd277a93643cde0610423cea2330d77fc1d8bb87a3a44f0cf4a8d5fe7806147f715c296f39d7d9f36a2b8d2ab4d267ec89b1f051fe0142c29c81156c4c33fd77e23d67f9837c57c64c3ac5dc80f9911ed25df3535d9371aa0059e20e62dff2d5d5250f40797a6147f1936ee57305e3027c4f6575f923015be6dd110fb1c836ecbc930d90805b76b5ca0b24fb1521da7087b5ede1c89f68ce27da3aa7c77f5f6ef2633505616e98c2a004100caa865b133a03087bda53b2300df396712ea67c3679e0bb227758c8a08019911bbe4a4ca058002906ed6fe2f1b2d203e5fe20d34db75e7b587ae2280ee310c65ffb5c63fa2031afc9198faa7b58ba690d6e3d6dd621738c81a246c68960863944a500299b4b0f5d37e6ccff2c53b20d930929f71b057e4f8f7260231c96485971df8d5eb7e1eeef7f3ee587332e21c7a6cf01d56c6c0b9eea8e85a773bc53d565a472883b7441ea3ad019c334e586312067dbb2e04db4d504b97ac7c516804aa7d8a1a9ad78c7d9eca9f442dd94aff346355ccc684cce0764d12ce7f271a22e3a25e0901ee39cca0da0a456a9b755de570292bead406e82c941bc20092c6eec93f188c27d959be54fb68426797ae60a2077b35caba1798eca090844637818cd54fc8304a4557267f31cc32169d8b2b1230be67f168d1412ecfdfa3d36f8e590c59d59954&scope=read_user&redirect_uri=http%3A%2F%2F127.0.0.1%3A33133%2F__test%2Fprofiles%2Foauth-proxy-cookie%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=ORKo4NboScA79El_NFoxpwAXWjpBNWcnEdqs5Do1WO8",
+        "requestBodyShape": null,
+        "responseStatus": 302,
+        "responseHeaders": {
+          "location": "http://127.0.0.1:33133/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab?code=proxy-fixture-code-1&state=a24fa6f6b6a8ddc90d48032b8a91c5f93d5a9ec6ccea639e21eb6f28f984c11eb7fc5daf4a45bd8bac3741edf0e99e81bc13b19e872ab061aa65d6870c7cb5ced3034e30886ab9d6809e56acf88b29b22fcf94227a61134d3bf7fcb9fa875c7a9b6be964795e244ad7a0e31aba4b14f6fc9934a67808d5150e2a93969cb0b0dc68b6487363568a64897ee9acdfeab0c2110a956600530041da8f3e50a4c4e0466d370555c8166c1324576bd3ef0da0d682e64280a2c70ce7ef6d8e212a6b535252fafc7d9100f1d22667d0c48863b6e4759179806911307af4f4556e04f7deec6540748bac88724bc7269facff5ae5629518134accd5ea42b6570824ad8ab9b3e2a1c8144ea82524d8f5cca3e09eed770bff8921ac478b14b0716858afc3e4edfc556b22ad0ec24a2f44f71838f0d650e582feeb297aa192d8b953c696951aa365bbdc48c25efd7c488a744e0a1d616a0ce4e72b31ebde50f120b7d76a51ab2b9b957ee8fb322f15bb5593b93b26939886a5a173f7bf0dd777a3d992bbcf5bd433b57c5f03b45845e1df692397a067bdf9cede6e9d2c96e62131841c9583aa950eba8ebcc86cfbcbad66c526cbd4ffd18f676b89c450fd50c22762ccebe366fa8cba3fde52c036556b703600b47805b57822c6d243f3ba3b4c23a838cc347f2beabc1cb848ba7bc3d05dbe337dc79f1236e5bb57054725f487476fd6cf911fbd2df5aba70b69875ee1943e7eabd52ea708c9ec2e95c07b086930cc82965635ac7bddbfa6e03f3744ea69c9de2b3d77c10279521c22c0e02acdcc16d4441a99aa074da87a28a2dca965302675425a44ae28be8ec9966b3f84effc66e06b1a8c764cba21cf9913879b2daea318cb44f55a81a9d42d2ed7d57b1187b733dea8fab4d5b6bf3f8540ae34051bf78fb30b1557ec8d85ba7dd95f3fcb27c216b445795c093bbefff987f4baa33acdfbd467b85712239efdbb0ce30b814649566f61c78d7689bb1efda07aecfa5a210e252043a0c7f02fc8654cdc9315985197960d13bc758292af4416c6111e6a129604276d4a98f3750975eeae3bfc192646f2960b1875d6209e2432aefa78a60c91901f5f22f6df52dee53893ddb4ead075edd99413da4657a6f95633af0bd81b80a254f4fdf9f83bb48d07170eee570108a63d91e1f68ca8a315a81e543180545b5f51aebbef2a37bbd277a93643cde0610423cea2330d77fc1d8bb87a3a44f0cf4a8d5fe7806147f715c296f39d7d9f36a2b8d2ab4d267ec89b1f051fe0142c29c81156c4c33fd77e23d67f9837c57c64c3ac5dc80f9911ed25df3535d9371aa0059e20e62dff2d5d5250f40797a6147f1936ee57305e3027c4f6575f923015be6dd110fb1c836ecbc930d90805b76b5ca0b24fb1521da7087b5ede1c89f68ce27da3aa7c77f5f6ef2633505616e98c2a004100caa865b133a03087bda53b2300df396712ea67c3679e0bb227758c8a08019911bbe4a4ca058002906ed6fe2f1b2d203e5fe20d34db75e7b587ae2280ee310c65ffb5c63fa2031afc9198faa7b58ba690d6e3d6dd621738c81a246c68960863944a500299b4b0f5d37e6ccff2c53b20d930929f71b057e4f8f7260231c96485971df8d5eb7e1eeef7f3ee587332e21c7a6cf01d56c6c0b9eea8e85a773bc53d565a472883b7441ea3ad019c334e586312067dbb2e04db4d504b97ac7c516804aa7d8a1a9ad78c7d9eca9f442dd94aff346355ccc684cce0764d12ce7f271a22e3a25e0901ee39cca0da0a456a9b755de570292bead406e82c941bc20092c6eec93f188c27d959be54fb68426797ae60a2077b35caba1798eca090844637818cd54fc8304a4557267f31cc32169d8b2b1230be67f168d1412ecfdfa3d36f8e590c59d59954"
+        },
+        "responseCookies": {},
+        "responseBodyShape": null
+      },
+      {
+        "actor": "cookie-link-owner",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab?code=proxy-fixture-code-1&state=a24fa6f6b6a8ddc90d48032b8a91c5f93d5a9ec6ccea639e21eb6f28f984c11eb7fc5daf4a45bd8bac3741edf0e99e81bc13b19e872ab061aa65d6870c7cb5ced3034e30886ab9d6809e56acf88b29b22fcf94227a61134d3bf7fcb9fa875c7a9b6be964795e244ad7a0e31aba4b14f6fc9934a67808d5150e2a93969cb0b0dc68b6487363568a64897ee9acdfeab0c2110a956600530041da8f3e50a4c4e0466d370555c8166c1324576bd3ef0da0d682e64280a2c70ce7ef6d8e212a6b535252fafc7d9100f1d22667d0c48863b6e4759179806911307af4f4556e04f7deec6540748bac88724bc7269facff5ae5629518134accd5ea42b6570824ad8ab9b3e2a1c8144ea82524d8f5cca3e09eed770bff8921ac478b14b0716858afc3e4edfc556b22ad0ec24a2f44f71838f0d650e582feeb297aa192d8b953c696951aa365bbdc48c25efd7c488a744e0a1d616a0ce4e72b31ebde50f120b7d76a51ab2b9b957ee8fb322f15bb5593b93b26939886a5a173f7bf0dd777a3d992bbcf5bd433b57c5f03b45845e1df692397a067bdf9cede6e9d2c96e62131841c9583aa950eba8ebcc86cfbcbad66c526cbd4ffd18f676b89c450fd50c22762ccebe366fa8cba3fde52c036556b703600b47805b57822c6d243f3ba3b4c23a838cc347f2beabc1cb848ba7bc3d05dbe337dc79f1236e5bb57054725f487476fd6cf911fbd2df5aba70b69875ee1943e7eabd52ea708c9ec2e95c07b086930cc82965635ac7bddbfa6e03f3744ea69c9de2b3d77c10279521c22c0e02acdcc16d4441a99aa074da87a28a2dca965302675425a44ae28be8ec9966b3f84effc66e06b1a8c764cba21cf9913879b2daea318cb44f55a81a9d42d2ed7d57b1187b733dea8fab4d5b6bf3f8540ae34051bf78fb30b1557ec8d85ba7dd95f3fcb27c216b445795c093bbefff987f4baa33acdfbd467b85712239efdbb0ce30b814649566f61c78d7689bb1efda07aecfa5a210e252043a0c7f02fc8654cdc9315985197960d13bc758292af4416c6111e6a129604276d4a98f3750975eeae3bfc192646f2960b1875d6209e2432aefa78a60c91901f5f22f6df52dee53893ddb4ead075edd99413da4657a6f95633af0bd81b80a254f4fdf9f83bb48d07170eee570108a63d91e1f68ca8a315a81e543180545b5f51aebbef2a37bbd277a93643cde0610423cea2330d77fc1d8bb87a3a44f0cf4a8d5fe7806147f715c296f39d7d9f36a2b8d2ab4d267ec89b1f051fe0142c29c81156c4c33fd77e23d67f9837c57c64c3ac5dc80f9911ed25df3535d9371aa0059e20e62dff2d5d5250f40797a6147f1936ee57305e3027c4f6575f923015be6dd110fb1c836ecbc930d90805b76b5ca0b24fb1521da7087b5ede1c89f68ce27da3aa7c77f5f6ef2633505616e98c2a004100caa865b133a03087bda53b2300df396712ea67c3679e0bb227758c8a08019911bbe4a4ca058002906ed6fe2f1b2d203e5fe20d34db75e7b587ae2280ee310c65ffb5c63fa2031afc9198faa7b58ba690d6e3d6dd621738c81a246c68960863944a500299b4b0f5d37e6ccff2c53b20d930929f71b057e4f8f7260231c96485971df8d5eb7e1eeef7f3ee587332e21c7a6cf01d56c6c0b9eea8e85a773bc53d565a472883b7441ea3ad019c334e586312067dbb2e04db4d504b97ac7c516804aa7d8a1a9ad78c7d9eca9f442dd94aff346355ccc684cce0764d12ce7f271a22e3a25e0901ee39cca0da0a456a9b755de570292bead406e82c941bc20092c6eec93f188c27d959be54fb68426797ae60a2077b35caba1798eca090844637818cd54fc8304a4557267f31cc32169d8b2b1230be67f168d1412ecfdfa3d36f8e590c59d59954",
+        "requestBodyShape": null,
+        "responseStatus": 302,
+        "responseHeaders": {
+          "content-type": "application/json",
+          "location": "http://localhost:33133/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A33133%2Fproxy-done%3Fapplication%3Dkept&profile=c7c94894391ee9b0f266d8fd421ba5bbcd25f735ea542e82319be671a46ffeffc0e54569c0f57a94fc0c59e8fb4b240c766bcc55696e1170f88b174943de9aa6861093f25466504ffffcc0fc2f6be0739b4fe4722c1902ef56b650909efee0d025798df0ab401053bf419618c1235be0d0ce32023e60f45fc251e767933aed50eb430f6ffe8d921f72ae1325196d7b4214db4f0ad4a3ff78f494e16a4982704174af8b8471b674c4d13e022e0461b510bc55fa7ca8de30e8e40811539f39397bcdff1ef418fea255b2cd5a80d2c709e5988b027c5811a94457c1326813efdd2804730c4a3e73519101f12cf62a95dc33051799239f366adef4d936ecfd48f13f5ae444940f7956bd40547faa7e158eb95ab91f7d0a5e6eecf1771f5edcc4d6d896a66ce0823f39b0e9dda65845978012060e9af88f4a2236320f3f719d700b280cc19071c7f685df713552a4443624b21a4529eacb59ffba8def30e37e8972d7b3083356c13c6e33d88bfe9288936d514a953d6cc929a7cceced1084892c88904060ac2d123669be1e9733fe725c4605638c79fd69cd87fd6008f25d319a8cf84730001e8620244eb0218aa62516386f0bfdf799054fdd962db7ded2b5c1859b15a11baea54b046bd3e3b4403d6aeac1a772d857d305282ba38bd5d0eb7383d355d804ee148c70c2bbffeb1f85b0e7e7bc448225937718bb1db18f8d5055d1e4a61526cb9f4aafbf4c447f44eea11fb7c6948a3c3ddac363b307c343d7bdd9bcef119469219de657d36b563ad0cd87b5c82224a79ba65611ff669026971a52c2bfa02472e9b1e81a382e23b748847ca91b5d714cff4e2599dc6b8c93cb782f984965fa43f59c44aa62e68fecae1e9346f71baacdc4db2e33c84db63837e8a4d1d538a4d7c8de195c8b4273c368e5eadc981021fec348373b04a10b68d879cb6317e6d7ef8b787fad92bf8fb782975010f80b70d8b130c6e6bd8e612d50b1a0e0af916d62136f8401e0e4857f5147e84a8e302bada09f751e0dd13f22608130e21f5a33e1a5f7847e344544f3081514c0757587dbfd46acac2b7120fc03097c82146f6ad8abf3c202d18c08afefcc423eeac7c8451ffcdf6df4ab6034c91fef637acc3cb62a846917fcb498b68bebe9800e9333"
+        },
+        "responseCookies": {},
+        "responseBodyShape": null,
+        "responseBody": null
+      },
+      {
+        "actor": "primary",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/state",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json;charset=utf-8"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "preview": {
+            "users": [
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "accounts": [
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "sessions": [
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              }
+            ],
+            "verification": []
+          },
+          "production": {
+            "users": [],
+            "accounts": [],
+            "sessions": [],
+            "verification": []
+          },
+          "receipts": [
+            {
+              "stage": "string",
+              "query": {
+                "response_type": "string",
+                "client_id": "string",
+                "state": "string",
+                "scope": "string",
+                "redirect_uri": "string",
+                "code_challenge_method": "string",
+                "code_challenge": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "body": {
+                "grant_type": "string",
+                "code": "string",
+                "code_verifier": "string",
+                "redirect_uri": "string",
+                "client_id": "string",
+                "client_secret": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "authorization": "string"
+            }
+          ],
+          "sessionHooks": [],
+          "afterRequests": []
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A33133%2Fproxy-done%3Fapplication%3Dkept&profile=c7c94894391ee9b0f266d8fd421ba5bbcd25f735ea542e82319be671a46ffeffc0e54569c0f57a94fc0c59e8fb4b240c766bcc55696e1170f88b174943de9aa6861093f25466504ffffcc0fc2f6be0739b4fe4722c1902ef56b650909efee0d025798df0ab401053bf419618c1235be0d0ce32023e60f45fc251e767933aed50eb430f6ffe8d921f72ae1325196d7b4214db4f0ad4a3ff78f494e16a4982704174af8b8471b674c4d13e022e0461b510bc55fa7ca8de30e8e40811539f39397bcdff1ef418fea255b2cd5a80d2c709e5988b027c5811a94457c1326813efdd2804730c4a3e73519101f12cf62a95dc33051799239f366adef4d936ecfd48f13f5ae444940f7956bd40547faa7e158eb95ab91f7d0a5e6eecf1771f5edcc4d6d896a66ce0823f39b0e9dda65845978012060e9af88f4a2236320f3f719d700b280cc19071c7f685df713552a4443624b21a4529eacb59ffba8def30e37e8972d7b3083356c13c6e33d88bfe9288936d514a953d6cc929a7cceced1084892c88904060ac2d123669be1e9733fe725c4605638c79fd69cd87fd6008f25d319a8cf84730001e8620244eb0218aa62516386f0bfdf799054fdd962db7ded2b5c1859b15a11baea54b046bd3e3b4403d6aeac1a772d857d305282ba38bd5d0eb7383d355d804ee148c70c2bbffeb1f85b0e7e7bc448225937718bb1db18f8d5055d1e4a61526cb9f4aafbf4c447f44eea11fb7c6948a3c3ddac363b307c343d7bdd9bcef119469219de657d36b563ad0cd87b5c82224a79ba65611ff669026971a52c2bfa02472e9b1e81a382e23b748847ca91b5d714cff4e2599dc6b8c93cb782f984965fa43f59c44aa62e68fecae1e9346f71baacdc4db2e33c84db63837e8a4d1d538a4d7c8de195c8b4273c368e5eadc981021fec348373b04a10b68d879cb6317e6d7ef8b787fad92bf8fb782975010f80b70d8b130c6e6bd8e612d50b1a0e0af916d62136f8401e0e4857f5147e84a8e302bada09f751e0dd13f22608130e21f5a33e1a5f7847e344544f3081514c0757587dbfd46acac2b7120fc03097c82146f6ad8abf3c202d18c08afefcc423eeac7c8451ffcdf6df4ab6034c91fef637acc3cb62a846917fcb498b68bebe9800e9333",
+        "requestBodyShape": null,
+        "responseStatus": 302,
+        "responseHeaders": {
+          "content-type": "application/json",
+          "location": "http://localhost:33133/proxy-error?error=state_mismatch"
+        },
+        "responseCookies": {},
+        "responseBodyShape": null,
+        "responseBody": null
+      },
+      {
+        "actor": "primary",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/state",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json;charset=utf-8"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "preview": {
+            "users": [
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "accounts": [
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "sessions": [
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              }
+            ],
+            "verification": []
+          },
+          "production": {
+            "users": [],
+            "accounts": [],
+            "sessions": [],
+            "verification": []
+          },
+          "receipts": [
+            {
+              "stage": "string",
+              "query": {
+                "response_type": "string",
+                "client_id": "string",
+                "state": "string",
+                "scope": "string",
+                "redirect_uri": "string",
+                "code_challenge_method": "string",
+                "code_challenge": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "body": {
+                "grant_type": "string",
+                "code": "string",
+                "code_verifier": "string",
+                "redirect_uri": "string",
+                "client_id": "string",
+                "client_secret": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "authorization": "string"
+            }
+          ],
+          "sessionHooks": [],
+          "afterRequests": []
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A33133%2Fproxy-done%3Fapplication%3Dkept&profile=c7c94894391ee9b0f266d8fd421ba5bbcd25f735ea542e82319be671a46ffeffc0e54569c0f57a94fc0c59e8fb4b240c766bcc55696e1170f88b174943de9aa6861093f25466504ffffcc0fc2f6be0739b4fe4722c1902ef56b650909efee0d025798df0ab401053bf419618c1235be0d0ce32023e60f45fc251e767933aed50eb430f6ffe8d921f72ae1325196d7b4214db4f0ad4a3ff78f494e16a4982704174af8b8471b674c4d13e022e0461b510bc55fa7ca8de30e8e40811539f39397bcdff1ef418fea255b2cd5a80d2c709e5988b027c5811a94457c1326813efdd2804730c4a3e73519101f12cf62a95dc33051799239f366adef4d936ecfd48f13f5ae444940f7956bd40547faa7e158eb95ab91f7d0a5e6eecf1771f5edcc4d6d896a66ce0823f39b0e9dda65845978012060e9af88f4a2236320f3f719d700b280cc19071c7f685df713552a4443624b21a4529eacb59ffba8def30e37e8972d7b3083356c13c6e33d88bfe9288936d514a953d6cc929a7cceced1084892c88904060ac2d123669be1e9733fe725c4605638c79fd69cd87fd6008f25d319a8cf84730001e8620244eb0218aa62516386f0bfdf799054fdd962db7ded2b5c1859b15a11baea54b046bd3e3b4403d6aeac1a772d857d305282ba38bd5d0eb7383d355d804ee148c70c2bbffeb1f85b0e7e7bc448225937718bb1db18f8d5055d1e4a61526cb9f4aafbf4c447f44eea11fb7c6948a3c3ddac363b307c343d7bdd9bcef119469219de657d36b563ad0cd87b5c82224a79ba65611ff669026971a52c2bfa02472e9b1e81a382e23b748847ca91b5d714cff4e2599dc6b8c93cb782f984965fa43f59c44aa62e68fecae1e9346f71baacdc4db2e33c84db63837e8a4d1d538a4d7c8de195c8b4273c368e5eadc981021fec348373b04a10b68d879cb6317e6d7ef8b787fad92bf8fb782975010f80b70d8b130c6e6bd8e612d50b1a0e0af916d62136f8401e0e4857f5147e84a8e302bada09f751e0dd13f22608130e21f5a33e1a5f7847e344544f3081514c0757587dbfd46acac2b7120fc03097c82146f6ad8abf3c202d18c08afefcc423eeac7c8451ffcdf6df4ab6034c91fef637acc3cb62a846917fcb498b68bebe9800e9333",
+        "requestBodyShape": null,
+        "responseStatus": 302,
+        "responseHeaders": {
+          "content-type": "application/json",
+          "location": "http://localhost:33133/proxy-done?application=kept"
+        },
+        "responseCookies": {
+          "better-auth.oauth_state;;/": {
+            "path": "/",
+            "domain": null,
+            "httpOnly": true,
+            "secure": false,
+            "sameSite": "lax",
+            "maxAge": 0,
+            "expiresAt": null
+          }
+        },
+        "responseBodyShape": null,
+        "responseBody": null
+      },
+      {
+        "actor": "primary",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/state",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json;charset=utf-8"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "preview": {
+            "users": [
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "accounts": [
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "string",
+                "refreshToken": "string",
+                "idToken": "null",
+                "scope": "string",
+                "accessTokenExpiresAt": "string",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "sessions": [
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              }
+            ],
+            "verification": []
+          },
+          "production": {
+            "users": [],
+            "accounts": [],
+            "sessions": [],
+            "verification": []
+          },
+          "receipts": [
+            {
+              "stage": "string",
+              "query": {
+                "response_type": "string",
+                "client_id": "string",
+                "state": "string",
+                "scope": "string",
+                "redirect_uri": "string",
+                "code_challenge_method": "string",
+                "code_challenge": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "body": {
+                "grant_type": "string",
+                "code": "string",
+                "code_verifier": "string",
+                "redirect_uri": "string",
+                "client_id": "string",
+                "client_secret": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "authorization": "string"
+            }
+          ],
+          "sessionHooks": [],
+          "afterRequests": []
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A33133%2Fproxy-done%3Fapplication%3Dkept&profile=c7c94894391ee9b0f266d8fd421ba5bbcd25f735ea542e82319be671a46ffeffc0e54569c0f57a94fc0c59e8fb4b240c766bcc55696e1170f88b174943de9aa6861093f25466504ffffcc0fc2f6be0739b4fe4722c1902ef56b650909efee0d025798df0ab401053bf419618c1235be0d0ce32023e60f45fc251e767933aed50eb430f6ffe8d921f72ae1325196d7b4214db4f0ad4a3ff78f494e16a4982704174af8b8471b674c4d13e022e0461b510bc55fa7ca8de30e8e40811539f39397bcdff1ef418fea255b2cd5a80d2c709e5988b027c5811a94457c1326813efdd2804730c4a3e73519101f12cf62a95dc33051799239f366adef4d936ecfd48f13f5ae444940f7956bd40547faa7e158eb95ab91f7d0a5e6eecf1771f5edcc4d6d896a66ce0823f39b0e9dda65845978012060e9af88f4a2236320f3f719d700b280cc19071c7f685df713552a4443624b21a4529eacb59ffba8def30e37e8972d7b3083356c13c6e33d88bfe9288936d514a953d6cc929a7cceced1084892c88904060ac2d123669be1e9733fe725c4605638c79fd69cd87fd6008f25d319a8cf84730001e8620244eb0218aa62516386f0bfdf799054fdd962db7ded2b5c1859b15a11baea54b046bd3e3b4403d6aeac1a772d857d305282ba38bd5d0eb7383d355d804ee148c70c2bbffeb1f85b0e7e7bc448225937718bb1db18f8d5055d1e4a61526cb9f4aafbf4c447f44eea11fb7c6948a3c3ddac363b307c343d7bdd9bcef119469219de657d36b563ad0cd87b5c82224a79ba65611ff669026971a52c2bfa02472e9b1e81a382e23b748847ca91b5d714cff4e2599dc6b8c93cb782f984965fa43f59c44aa62e68fecae1e9346f71baacdc4db2e33c84db63837e8a4d1d538a4d7c8de195c8b4273c368e5eadc981021fec348373b04a10b68d879cb6317e6d7ef8b787fad92bf8fb782975010f80b70d8b130c6e6bd8e612d50b1a0e0af916d62136f8401e0e4857f5147e84a8e302bada09f751e0dd13f22608130e21f5a33e1a5f7847e344544f3081514c0757587dbfd46acac2b7120fc03097c82146f6ad8abf3c202d18c08afefcc423eeac7c8451ffcdf6df4ab6034c91fef637acc3cb62a846917fcb498b68bebe9800e9333",
+        "requestBodyShape": null,
+        "responseStatus": 302,
+        "responseHeaders": {
+          "content-type": "application/json",
+          "location": "http://localhost:33133/proxy-error?error=state_mismatch"
+        },
+        "responseCookies": {},
+        "responseBodyShape": null,
+        "responseBody": null
+      },
+      {
+        "actor": "primary",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/state",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json;charset=utf-8"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "preview": {
+            "users": [
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "accounts": [
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "string",
+                "refreshToken": "string",
+                "idToken": "null",
+                "scope": "string",
+                "accessTokenExpiresAt": "string",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "sessions": [
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              }
+            ],
+            "verification": []
+          },
+          "production": {
+            "users": [],
+            "accounts": [],
+            "sessions": [],
+            "verification": []
+          },
+          "receipts": [
+            {
+              "stage": "string",
+              "query": {
+                "response_type": "string",
+                "client_id": "string",
+                "state": "string",
+                "scope": "string",
+                "redirect_uri": "string",
+                "code_challenge_method": "string",
+                "code_challenge": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "body": {
+                "grant_type": "string",
+                "code": "string",
+                "code_verifier": "string",
+                "redirect_uri": "string",
+                "client_id": "string",
+                "client_secret": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "authorization": "string"
+            }
+          ],
+          "sessionHooks": [],
+          "afterRequests": []
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/get-session",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "cache-control": "no-store",
+          "content-type": "application/json",
+          "pragma": "no-cache"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "session": {
+            "expiresAt": "string",
+            "token": "string",
+            "createdAt": "string",
+            "updatedAt": "string",
+            "ipAddress": "string",
+            "userAgent": "string",
+            "userId": "string",
+            "id": "string"
+          },
+          "user": {
+            "name": "string",
+            "email": "string",
+            "emailVerified": "boolean",
+            "image": "null",
+            "createdAt": "string",
+            "updatedAt": "string",
+            "id": "string"
+          }
+        },
+        "responseBody": {
+          "session": {
+            "expiresAt": "2026-10-10T15:55:12.465Z",
+            "token": "0hiYdiraeMnH99M1BpgzvgPy4juwrKLQ",
+            "createdAt": "2026-10-03T15:55:12.465Z",
+            "updatedAt": "2026-10-03T15:55:12.465Z",
+            "ipAddress": "",
+            "userAgent": "Bun/1.4.2",
+            "userId": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c",
+            "id": "WNf7GLqFMphmauaQuU4Od4dyIschOVZd"
+          },
+          "user": {
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.464Z",
+            "updatedAt": "2026-10-03T15:55:12.464Z",
+            "id": "d1uAWEt97FnmQcES7F2nMGZGv8ul6T2c"
+          }
+        }
+      }
+    ],
+    "physicalObservations": []
+  },
+  "rust": {
+    "oauthURL": "http://127.0.0.1:57875",
+    "startedAt": 1791042912712,
+    "observation": {
+      "signed": {
+        "data": {
+          "token": "ImLjHdajR5QoXhQBJVzIMy5WbAOMN7C3",
+          "user": {
+            "id": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+            "name": "Owner",
+            "email": "proxy-owner@fixture.test",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.860Z",
+            "updatedAt": "2026-10-03T15:55:12.860Z"
+          }
+        },
+        "error": null
+      },
+      "other": {
+        "data": {
+          "token": "CReAbsp0INi0WptlyzxUh4D8I7PxoK8h",
+          "user": {
+            "id": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.927Z",
+            "updatedAt": "2026-10-03T15:55:12.927Z"
+          }
+        },
+        "error": null
+      },
+      "foreignBefore": {
+        "data": {
+          "session": {
+            "id": "f87d4d7e-cb6d-45b1-981b-61eaf11db8f0",
+            "expiresAt": "2026-10-10T15:55:12.931Z",
+            "token": "CReAbsp0INi0WptlyzxUh4D8I7PxoK8h",
+            "createdAt": "2026-10-03T15:55:12.931Z",
+            "updatedAt": "2026-10-03T15:55:12.931Z",
+            "ipAddress": "",
+            "userAgent": "Bun/1.4.2",
+            "userId": "8a4fdbab-5005-427b-96d5-e55adc8b4421"
+          },
+          "user": {
+            "id": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.927Z",
+            "updatedAt": "2026-10-03T15:55:12.927Z"
+          }
+        },
+        "error": null
+      },
+      "foreignAfter": {
+        "data": {
+          "session": {
+            "id": "f87d4d7e-cb6d-45b1-981b-61eaf11db8f0",
+            "expiresAt": "2026-10-10T15:55:12.931Z",
+            "token": "CReAbsp0INi0WptlyzxUh4D8I7PxoK8h",
+            "createdAt": "2026-10-03T15:55:12.931Z",
+            "updatedAt": "2026-10-03T15:55:12.931Z",
+            "ipAddress": "",
+            "userAgent": "Bun/1.4.2",
+            "userId": "8a4fdbab-5005-427b-96d5-e55adc8b4421"
+          },
+          "user": {
+            "id": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.927Z",
+            "updatedAt": "2026-10-03T15:55:12.927Z"
+          }
+        },
+        "error": null
+      },
+      "before": {
+        "preview": {
+          "users": [
+            {
+              "id": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+              "name": "Owner",
+              "email": "proxy-owner@fixture.test",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T15:55:12.860Z",
+              "updatedAt": "2026-10-03T15:55:12.860Z"
+            },
+            {
+              "id": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+              "name": "Foreign",
+              "email": "cookie-link-foreign-179104291236@test.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T15:55:12.927Z",
+              "updatedAt": "2026-10-03T15:55:12.927Z"
+            }
+          ],
+          "accounts": [
+            {
+              "id": "c9fcde4c-3690-4364-a7ac-c269fe6d1547",
+              "userId": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+              "accountId": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+              "providerId": "credential",
+              "accessToken": null,
+              "refreshToken": null,
+              "idToken": null,
+              "scope": null,
+              "accessTokenExpiresAt": null,
+              "refreshTokenExpiresAt": null,
+              "createdAt": "2026-10-03T15:55:12.862Z",
+              "updatedAt": "2026-10-03T15:55:12.862Z"
+            },
+            {
+              "id": "9d9294ea-28d9-4dad-a11b-dee5314298c2",
+              "userId": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+              "accountId": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+              "providerId": "credential",
+              "accessToken": null,
+              "refreshToken": null,
+              "idToken": null,
+              "scope": null,
+              "accessTokenExpiresAt": null,
+              "refreshTokenExpiresAt": null,
+              "createdAt": "2026-10-03T15:55:12.929Z",
+              "updatedAt": "2026-10-03T15:55:12.929Z"
+            }
+          ],
+          "sessions": [
+            {
+              "id": "a6d7ecf3-2891-4d2d-9e84-08cf5f2ba1f8",
+              "userId": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+              "token": "ImLjHdajR5QoXhQBJVzIMy5WbAOMN7C3",
+              "expiresAt": "2026-10-10T15:55:12.863Z",
+              "createdAt": "2026-10-03T15:55:12.863Z",
+              "updatedAt": "2026-10-03T15:55:12.863Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2"
+            },
+            {
+              "id": "f87d4d7e-cb6d-45b1-981b-61eaf11db8f0",
+              "userId": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+              "token": "CReAbsp0INi0WptlyzxUh4D8I7PxoK8h",
+              "expiresAt": "2026-10-10T15:55:12.931Z",
+              "createdAt": "2026-10-03T15:55:12.931Z",
+              "updatedAt": "2026-10-03T15:55:12.931Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2"
+            }
+          ],
+          "verification": []
+        },
+        "production": {
+          "users": [],
+          "accounts": [],
+          "sessions": [],
+          "verification": []
+        },
+        "receipts": [],
+        "sessionHooks": [],
+        "afterRequests": []
+      },
+      "started": {
+        "data": {
+          "url": "http://localhost:57875/__test/oauth-proxy-cookie/provider/oauth/authorize?response_type=code&client_id=proxy-fixture-client&scope=read_user&redirect_uri=http%3A%2F%2F127.0.0.1%3A57875%2F__test%2Fprofiles%2Foauth-proxy-cookie%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=C1EEZpWPKb7qaysNWrXwqohww63Vl0HZEQOknfT-ttk&state=7336e1fe67062d1db5e7acf7f03ae6933715b78b3b59ed12fd7607a45a3818dd1d5d8dd44fb537764c93a50f2e4aa3681904ffce491002b8d89467594e67692f11ad3d5f455a61629b0420d10965982d698f58f12586744c11785d5683975ebba295f68e7c6cad7e6b271404b29658bb5612769203d04f48012cc7688c4d48d25fefefb43b3255537ddc01a1cb3f79fe8796c5f959443de034d69d709eaac97b376d7ca096c741cd611657dbe4de0db3bc705460cd71747cb2bafc6cfbacdb119e9779c5506293676c9c4a9f73149caeb70272617a930a4c997a11368912d1d4e8a10eb5b5e480a8db94e5b9fef4e0d403444f356baa28cb0b35da67d35bf1dd776029e1f570ab93c215ef267b5dbccc8026d8adaa8317c7f7cca8ad8ed379ee56b98c1efd6ea31826c2db419224bd337d7ac82b37afb3850830b1f8563dcbb9591cc43fe95de14318696ed0f2e403efecec799f2c96dd47e42a5c827996277591c6ce4bde6535c80b8399ec3f1c9dfee25d6297908cee91d7a470d3579039040b171151b8dfd6722ac8e53ea2c8236afb582d0c4f734adbc46d04e78713a3757897c3ce42fd868a4c1931d317e5716373de7835ab5ac50d2ce6a1c8ad7c9d0317a01aeb26cbfb2aa0f3c76ae97557e0173489f1a572ac27ab39a4a7c67fa86dc6a8361ff2221d01d5b985c40418f0037aa42ec668efa4ab850faaa09ab2f2db086c7d63c231a8206a81ababe30fa944c4bb18dc652f7ef415021ad1375d496cc91b8e17e36ab1dfe3eec4351b95ed49f8ab4f8dd795215b3a3abc0bbcff98a0661a5a5adec2d0a0ffb44928ab09a205f212778c6ceb61eb760cbeeee05fa9c20f506f7b10508a46a869c043edf2a961dd1fcfbcedc3c94a5f737dffdc86889d3fe2d3332fce7039066337605287159c543f49135a41e7440f00eaede5a5d07f4b33c6da198186c423b434cae22534502e9f8dbe1bd0c1d16fdbd8046aeac5d60320de5db85d7c669355a919fe6dbf25e3d35cb6d4659c0929655dceac7a13c5afbfb6b465c47a8a210089e0e6a9e22e081012c2a801e94ff437a40d213c716b2d9017f885143858caf28f1c73112586fa63d1de95b42f04069b55112674585fa061026e6b9264c2c23600b3875d96da6cdbc72ef2ae8a9fb2417236fe808e726b44a1982dd5abb5518bddd6efc80201dba83095a617038ba1a1b88c527825daac30db79854add59aedcff033ecb8a2bb4a9f4df1dfa1e25b03efe371f4c4b5fb514baee9ff120764d34bee26b2c37f68000bcf0e5147c6ea81fefab24ac224a20beba68dec7f2e66a52957247d18825702263c6651120b4022306c9be1502cea11ffb84eb2c1b87956aefdd625f92d56ced3097c54555b0755127dd187e3f4790f6dc1ecab555e2a264f0f5bebedbc0434543dbbb1a47365edadcad8bee6fc8afb7772ff3b866b55bd5fe8443e09e9c4b3c5d7e158ea56c9e6ad34bc28aa3e73fc1b5749249ec53b91afbbf3e239da36e369a784c687a8192335b230d54077d8a6641bf05bb79693bb4da99b12b78aba4e8c42125b247520188826e8d55ca90ea254d6e2d026ed2a4f55133279a61ef89e3c4814d586d88af22477a8119b30561f25c2ecc68c78295d22f7ec58d3b6ced46fc87cbb626c65da3bdd3fcacba38ecce3daad9647ea4b61fcfaf4a9cae94657a0420422a59958f6bb887adb4c8ed37529dcfe43a6069e546ab175b5d46743a5d9d879459c0bf3f66794a13ef730df5984c1deaf8599e2e0f8e530d24bc80dddd9ca89c7e685cc756f677fee419c29fe0c88df4acdbc43e9a151ba824ebf3a92d365e5235f5e7fd8dd7ce308791eda5a4c3c5022ebaccdc01c5333058e98a1a92e84c02f08c81d7acc2c7e62dc12fb1b90d9c97d54bb5ff7ede",
+          "redirect": false
+        },
+        "error": null
+      },
+      "issuedState": {
+        "state": "1hrnn_F2qTRsj8oNxM0FPg55MxhhYH9w",
+        "stateCookie": {
+          "token": "71ade4a83f173a367d12bffde9d65ba7a628cdaa1cad9a1b0658b21c7a77cab4da31e3a66924df08ce24de214850ea89c9a203d006d918662c7c669ae0aa5fb6cd5671b7419205706354828fb3107f51fe08ddd41a2214c3e95f765302124611968319e46f95f8d4002e399456f4b09cfee727cb931864a7ab24bef4c40b29a67d4b92b57aa188ef57a3673692739005af5ce03d1661ae8fd302895fdd458d9d16713d441aa9e63d6ad44948987a59616c3e18e8c1a931d168b1055aa9a25437b672a77b217d0e1348b9bf4ebb5558cd9a0ad43f67fa9e5a3608a9939c8ed98a1cfb718732517ec783e6bfede66691e2c4919b2d60ed650442411b5b12af2677476a0053f8e6b3682e5c1a73cfa826dc34f894c0a32ba8927d71535065be59f302dbbaa381bea626ef8cc938ae2764a6aebf1271e8caca2d5d0be3d275cae722e77da825e49487d93b5a31db0b14e6e66e0ee8d60bfa4f431c52da61bd9f8504306df49462a1e2b0a21ece1715beae0b77d88b25a2485473db4c01662fd68c5547e50c34648cdaf2e8ab68299c9d78d66d96064c0687a4fd79d791dc4ca143d2291160ada576fd7351b12596defe8a71f6ccff747e32f03ce21e2342c5e0682d3347e86bf222d49b46e7225aae7150e1d49df014bb03e77ce699feeef692514f31653c0dbae17c852b19d98d405aeecee4c0f4a95571bdd3f6868b2beb80a805912e200bfc5701620a9cf03ad60589d42b528751719168e37536027d6c0ca1b2444cd7fd9499cb9408588c47633b624307ccebcb81d6dda6e31b5ce9921046c318b90257fda9f5f1bb70487a10e7b06e86304702d562f8c9df9b6cf78bddae6ef677d7a8602bb6b43d",
+          "payload": {
+            "callbackURL": "http://localhost:57875/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A57875%2Fproxy-done%3Fapplication%3Dkept",
+            "codeVerifier": {
+              "token": "VgdQRMMIhyDHg5a6snbaUHbkQJeiplCR5GDVbJ8tDjDIatddf6a7kuSL-rgdwCzJNkjah4HmB9GHWSCxkJq7zcp-RaiQlLOdHn2r8D2YBr8XmrXYJ5wuDGJs3DlbVhiC"
+            },
+            "errorURL": "http://localhost:57875/proxy-error",
+            "link": {
+              "email": "proxy-owner@fixture.test",
+              "userId": "00a08dcf-5e48-4245-ad96-05660bbcfb0e"
+            },
+            "expiresAt": "2026-10-03T16:05:12.964Z",
+            "application": {
+              "kept": true
+            },
+            "oauthState": {
+              "state": "1hrnn_F2qTRsj8oNxM0FPg55MxhhYH9w"
+            }
+          }
+        },
+        "isOAuthProxy": true
+      },
+      "cookieState": {
+        "token": "cebd4033bafe204ded05b04553771245205f39e651133f0716cdc27e6189f12ece72e0c392860b8480ae61b050f3ffe71fbebcce74b1cc06a6b2b794ce3b77ccbdb22fa9c9031203d134bf0bfd5bb51ac6730aae877424cab558143369bb4d3164fdbe1c42db4315781f6878aef82fb558bc06937c91a24dbdd3d9754df824a6a7ab300d90a3fc2644de6324fd0d9ec62794d1e2366df9a3fba28ee6b117222ccaef57ba9c1706b788835d6ff8085aeb40825580ee26886cca4f0212c102609f1775e4983aab704928e5ab18577e808e8a9ebc7712bcc1dc12b8e10c678a8f1339bf710dc8b426de377db305c3033df5685022841471650c1446ee6946cf13470ec045a51c722ca95ffa65283ab8221fdd94d93f0fae216173f4bf4fe32c0b59a6934b0175f8370fc831334b42bcfa7a9090691fa507493a59534635ef49c334a6925eeaec65487dc3a8137034f4e0d32a71d630fe5418a771fa554d4c2c927974de00901c576b5432e6e76e1029e72174afec1aaa3ae49ca28dd1956a348922ceef49bcb3ab522cf1c63bb0835371a61e39e6e9b9229870eb19b252bc3446b02cfb43460bd6d00cb4d06709e329c37678a41372c9ef8265cf1f046edb0e1b611a8a7be6e6a6f8eb2a96e8754f83605aa839426195829c56b9a314ed22975133bd00d7edad3d3e7692ab4b79789284d179a0ac2805d9d39ec752f9850706cb0195917fb3d9c8b306cf93f5e26b46fd99eab2d866dd02f1609d2fea2354760d010a9f393f2a7d6ff9085890593244e2b0f6b68c2dae77da29de74edfcb212e959574f02572adc14ab6d6d92f3a2ca7af0aec19ea79d35f1f752521cf39b86d26ff7249506f45f485502",
+        "payload": {
+          "callbackURL": "http://localhost:57875/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A57875%2Fproxy-done%3Fapplication%3Dkept",
+          "codeVerifier": {
+            "token": "VgdQRMMIhyDHg5a6snbaUHbkQJeiplCR5GDVbJ8tDjDIatddf6a7kuSL-rgdwCzJNkjah4HmB9GHWSCxkJq7zcp-RaiQlLOdHn2r8D2YBr8XmrXYJ5wuDGJs3DlbVhiC"
+          },
+          "errorURL": "http://localhost:57875/proxy-error",
+          "link": {
+            "email": "proxy-owner@fixture.test",
+            "userId": "00a08dcf-5e48-4245-ad96-05660bbcfb0e"
+          },
+          "expiresAt": "2026-10-03T16:05:12.964Z",
+          "application": {
+            "kept": true
+          },
+          "oauthState": {
+            "state": "1hrnn_F2qTRsj8oNxM0FPg55MxhhYH9w"
+          }
+        }
+      },
+      "approved": {
+        "status": 302,
+        "location": "http://127.0.0.1:57875/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab?code=proxy-fixture-code-1&state=7336e1fe67062d1db5e7acf7f03ae6933715b78b3b59ed12fd7607a45a3818dd1d5d8dd44fb537764c93a50f2e4aa3681904ffce491002b8d89467594e67692f11ad3d5f455a61629b0420d10965982d698f58f12586744c11785d5683975ebba295f68e7c6cad7e6b271404b29658bb5612769203d04f48012cc7688c4d48d25fefefb43b3255537ddc01a1cb3f79fe8796c5f959443de034d69d709eaac97b376d7ca096c741cd611657dbe4de0db3bc705460cd71747cb2bafc6cfbacdb119e9779c5506293676c9c4a9f73149caeb70272617a930a4c997a11368912d1d4e8a10eb5b5e480a8db94e5b9fef4e0d403444f356baa28cb0b35da67d35bf1dd776029e1f570ab93c215ef267b5dbccc8026d8adaa8317c7f7cca8ad8ed379ee56b98c1efd6ea31826c2db419224bd337d7ac82b37afb3850830b1f8563dcbb9591cc43fe95de14318696ed0f2e403efecec799f2c96dd47e42a5c827996277591c6ce4bde6535c80b8399ec3f1c9dfee25d6297908cee91d7a470d3579039040b171151b8dfd6722ac8e53ea2c8236afb582d0c4f734adbc46d04e78713a3757897c3ce42fd868a4c1931d317e5716373de7835ab5ac50d2ce6a1c8ad7c9d0317a01aeb26cbfb2aa0f3c76ae97557e0173489f1a572ac27ab39a4a7c67fa86dc6a8361ff2221d01d5b985c40418f0037aa42ec668efa4ab850faaa09ab2f2db086c7d63c231a8206a81ababe30fa944c4bb18dc652f7ef415021ad1375d496cc91b8e17e36ab1dfe3eec4351b95ed49f8ab4f8dd795215b3a3abc0bbcff98a0661a5a5adec2d0a0ffb44928ab09a205f212778c6ceb61eb760cbeeee05fa9c20f506f7b10508a46a869c043edf2a961dd1fcfbcedc3c94a5f737dffdc86889d3fe2d3332fce7039066337605287159c543f49135a41e7440f00eaede5a5d07f4b33c6da198186c423b434cae22534502e9f8dbe1bd0c1d16fdbd8046aeac5d60320de5db85d7c669355a919fe6dbf25e3d35cb6d4659c0929655dceac7a13c5afbfb6b465c47a8a210089e0e6a9e22e081012c2a801e94ff437a40d213c716b2d9017f885143858caf28f1c73112586fa63d1de95b42f04069b55112674585fa061026e6b9264c2c23600b3875d96da6cdbc72ef2ae8a9fb2417236fe808e726b44a1982dd5abb5518bddd6efc80201dba83095a617038ba1a1b88c527825daac30db79854add59aedcff033ecb8a2bb4a9f4df1dfa1e25b03efe371f4c4b5fb514baee9ff120764d34bee26b2c37f68000bcf0e5147c6ea81fefab24ac224a20beba68dec7f2e66a52957247d18825702263c6651120b4022306c9be1502cea11ffb84eb2c1b87956aefdd625f92d56ced3097c54555b0755127dd187e3f4790f6dc1ecab555e2a264f0f5bebedbc0434543dbbb1a47365edadcad8bee6fc8afb7772ff3b866b55bd5fe8443e09e9c4b3c5d7e158ea56c9e6ad34bc28aa3e73fc1b5749249ec53b91afbbf3e239da36e369a784c687a8192335b230d54077d8a6641bf05bb79693bb4da99b12b78aba4e8c42125b247520188826e8d55ca90ea254d6e2d026ed2a4f55133279a61ef89e3c4814d586d88af22477a8119b30561f25c2ecc68c78295d22f7ec58d3b6ced46fc87cbb626c65da3bdd3fcacba38ecce3daad9647ea4b61fcfaf4a9cae94657a0420422a59958f6bb887adb4c8ed37529dcfe43a6069e546ab175b5d46743a5d9d879459c0bf3f66794a13ef730df5984c1deaf8599e2e0f8e530d24bc80dddd9ca89c7e685cc756f677fee419c29fe0c88df4acdbc43e9a151ba824ebf3a92d365e5235f5e7fd8dd7ce308791eda5a4c3c5022ebaccdc01c5333058e98a1a92e84c02f08c81d7acc2c7e62dc12fb1b90d9c97d54bb5ff7ede",
+        "body": ""
+      },
+      "forwarded": {
+        "status": 302,
+        "location": "http://localhost:57875/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A57875%2Fproxy-done%3Fapplication%3Dkept&profile=bf95a1ff7c99a5067dbad2e62c3b6a292bb2a9f42ee0c2f4de23262ea6ceb7a4d1b76dcd02b59a394fcfe50c7e2f261a5daf022a1e344c6fa06520f35e6885199375f378e42e4a85dacd9709130e4e17c6e43b39d2faaa63c2f45c54b59297f06fc272451792dc2252fc9f6644790d3a97d27627338c643c725198fd8279dec27c4e08d366c837f8db32f42ce80af4838243d6f4687ab23081567a3e2f00996abe347127ef72d1d33ff3229ac25eac7f9122ad7ae8bbf75c477078eb71c1e6a681c33f3ab08788e096dd777affb041b628eefe3ae393008b4d6b459d50ef96c13249ab13887dff6c8aecc794c252358a7823e2184ab386fbeb03f3c624a5f88413018b3f25c4b1c986603145b43ec0d4a8e08bcf321676b684210080ce72006abcc49578b317e4469a56d5d3925abfd8123e55d9fe1630e6098b3cd1c2ccd411c920d1a2fc6d449b673962c8d65b9d1c5f5b78fd65bbb38ee0c4ed945c02792c150ae776fe1ddb343bd867543a20ff47c94972ca9447c014fff57d35be41563f368e13188d5f6806071f842487dbb64862f7f97f7c3fc42d3a115dd7aeb835cbc59af5175e911e15cb21b58d3ad29764e0d68d436f558e36daf313c46d004785840c8c621ed45ee013518c192e0efc230064f1c00faf72c04aa2a24ba3cb31e10581e7b0c69bf1b14f4cf6ffa93c0a1020a099e9f6918faa11abc8d21c48e7e92d9d5b9319b7ec4e3e109f832d0f979875d03bcbf0ad6853914680b815a8c8a0d7a0257d787460e0d376fffa1c668b51238a332bffa019656fd4b391dee6d02a1a4a068dbb589334fe628a9d72e70d74e064fc210890fa7cbfda0ccfa1daa0f23b41e044fa914a5754f030e4b0a5d34fb1ad53743e5593c5f5a25a49508d971380f1a9884201fbfe089f00a6d6a4b6d4f691f5eef8d3f6ba7b47fd3448c1d0258e3f890e84f262efa3f7b54843b14a20fbd7a0d1e51b0d901a39e7b5c06935e4a3b6d9cca67cc52d98da4db72810590a49bb1ba44dc9e7f171457fcfc9aa5a1064fdce3a2b53c7ab4f8f9ce664f02b520fa65f733aea2bbb308991910952a4604187e6abe18ab795c28641764d182ee21e78631c44096671ffb2e9711756e47b767e6b5e7146ce7b209dc4598d47ad63c3e401",
+        "body": ""
+      },
+      "oauthProxyProfile": {
+        "token": "bf95a1ff7c99a5067dbad2e62c3b6a292bb2a9f42ee0c2f4de23262ea6ceb7a4d1b76dcd02b59a394fcfe50c7e2f261a5daf022a1e344c6fa06520f35e6885199375f378e42e4a85dacd9709130e4e17c6e43b39d2faaa63c2f45c54b59297f06fc272451792dc2252fc9f6644790d3a97d27627338c643c725198fd8279dec27c4e08d366c837f8db32f42ce80af4838243d6f4687ab23081567a3e2f00996abe347127ef72d1d33ff3229ac25eac7f9122ad7ae8bbf75c477078eb71c1e6a681c33f3ab08788e096dd777affb041b628eefe3ae393008b4d6b459d50ef96c13249ab13887dff6c8aecc794c252358a7823e2184ab386fbeb03f3c624a5f88413018b3f25c4b1c986603145b43ec0d4a8e08bcf321676b684210080ce72006abcc49578b317e4469a56d5d3925abfd8123e55d9fe1630e6098b3cd1c2ccd411c920d1a2fc6d449b673962c8d65b9d1c5f5b78fd65bbb38ee0c4ed945c02792c150ae776fe1ddb343bd867543a20ff47c94972ca9447c014fff57d35be41563f368e13188d5f6806071f842487dbb64862f7f97f7c3fc42d3a115dd7aeb835cbc59af5175e911e15cb21b58d3ad29764e0d68d436f558e36daf313c46d004785840c8c621ed45ee013518c192e0efc230064f1c00faf72c04aa2a24ba3cb31e10581e7b0c69bf1b14f4cf6ffa93c0a1020a099e9f6918faa11abc8d21c48e7e92d9d5b9319b7ec4e3e109f832d0f979875d03bcbf0ad6853914680b815a8c8a0d7a0257d787460e0d376fffa1c668b51238a332bffa019656fd4b391dee6d02a1a4a068dbb589334fe628a9d72e70d74e064fc210890fa7cbfda0ccfa1daa0f23b41e044fa914a5754f030e4b0a5d34fb1ad53743e5593c5f5a25a49508d971380f1a9884201fbfe089f00a6d6a4b6d4f691f5eef8d3f6ba7b47fd3448c1d0258e3f890e84f262efa3f7b54843b14a20fbd7a0d1e51b0d901a39e7b5c06935e4a3b6d9cca67cc52d98da4db72810590a49bb1ba44dc9e7f171457fcfc9aa5a1064fdce3a2b53c7ab4f8f9ce664f02b520fa65f733aea2bbb308991910952a4604187e6abe18ab795c28641764d182ee21e78631c44096671ffb2e9711756e47b767e6b5e7146ce7b209dc4598d47ad63c3e401",
+        "payload": {
+          "userInfo": {
+            "id": "777",
+            "email": "proxy-owner@fixture.test",
+            "name": "Proxy Owner",
+            "image": "https://assets.fixture.test/avatar.png",
+            "emailVerified": true
+          },
+          "account": {
+            "providerId": "gitlab",
+            "accountId": "777",
+            "accessToken": "proxy-fixture-access",
+            "refreshToken": "proxy-fixture-refresh",
+            "accessTokenExpiresAt": "2026-10-03T16:55:13.046Z",
+            "scope": "read_user,issued"
+          },
+          "profile": {
+            "id": 777,
+            "email": "proxy-owner@fixture.test",
+            "email_verified": true,
+            "name": "Proxy Owner",
+            "avatar_url": "https://assets.fixture.test/avatar.png",
+            "state": "active",
+            "locked": false
+          },
+          "scopes": [
+            "read_user",
+            "issued"
+          ],
+          "state": "1hrnn_F2qTRsj8oNxM0FPg55MxhhYH9w",
+          "callbackURL": "http://localhost:57875/proxy-done?application=kept",
+          "errorURL": "http://localhost:57875/proxy-error",
+          "disableSignUp": false,
+          "timestamp": 1791042913147
+        }
+      },
+      "missing": {
+        "status": 302,
+        "location": "http://localhost:57875/proxy-error?error=state_mismatch",
+        "body": ""
+      },
+      "completed": {
+        "status": 302,
+        "location": "http://localhost:57875/proxy-done?application=kept",
+        "body": ""
+      },
+      "after": {
+        "preview": {
+          "users": [
+            {
+              "id": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+              "name": "Owner",
+              "email": "proxy-owner@fixture.test",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T15:55:12.860Z",
+              "updatedAt": "2026-10-03T15:55:12.860Z"
+            },
+            {
+              "id": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+              "name": "Foreign",
+              "email": "cookie-link-foreign-179104291236@test.com",
+              "emailVerified": false,
+              "image": null,
+              "createdAt": "2026-10-03T15:55:12.927Z",
+              "updatedAt": "2026-10-03T15:55:12.927Z"
+            }
+          ],
+          "accounts": [
+            {
+              "id": "c9fcde4c-3690-4364-a7ac-c269fe6d1547",
+              "userId": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+              "accountId": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+              "providerId": "credential",
+              "accessToken": null,
+              "refreshToken": null,
+              "idToken": null,
+              "scope": null,
+              "accessTokenExpiresAt": null,
+              "refreshTokenExpiresAt": null,
+              "createdAt": "2026-10-03T15:55:12.862Z",
+              "updatedAt": "2026-10-03T15:55:12.862Z"
+            },
+            {
+              "id": "9d9294ea-28d9-4dad-a11b-dee5314298c2",
+              "userId": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+              "accountId": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+              "providerId": "credential",
+              "accessToken": null,
+              "refreshToken": null,
+              "idToken": null,
+              "scope": null,
+              "accessTokenExpiresAt": null,
+              "refreshTokenExpiresAt": null,
+              "createdAt": "2026-10-03T15:55:12.929Z",
+              "updatedAt": "2026-10-03T15:55:12.929Z"
+            },
+            {
+              "id": "ca59aed1-4eef-4814-8196-a6766b58ae42",
+              "userId": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+              "accountId": "777",
+              "providerId": "gitlab",
+              "accessToken": "proxy-fixture-access",
+              "refreshToken": "proxy-fixture-refresh",
+              "idToken": null,
+              "scope": "read_user,issued",
+              "accessTokenExpiresAt": "2026-10-03T16:55:13.046Z",
+              "refreshTokenExpiresAt": null,
+              "createdAt": "2026-10-03T15:55:13.175Z",
+              "updatedAt": "2026-10-03T15:55:13.175Z"
+            }
+          ],
+          "sessions": [
+            {
+              "id": "a6d7ecf3-2891-4d2d-9e84-08cf5f2ba1f8",
+              "userId": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+              "token": "ImLjHdajR5QoXhQBJVzIMy5WbAOMN7C3",
+              "expiresAt": "2026-10-10T15:55:12.863Z",
+              "createdAt": "2026-10-03T15:55:12.863Z",
+              "updatedAt": "2026-10-03T15:55:12.863Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2"
+            },
+            {
+              "id": "f87d4d7e-cb6d-45b1-981b-61eaf11db8f0",
+              "userId": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+              "token": "CReAbsp0INi0WptlyzxUh4D8I7PxoK8h",
+              "expiresAt": "2026-10-10T15:55:12.931Z",
+              "createdAt": "2026-10-03T15:55:12.931Z",
+              "updatedAt": "2026-10-03T15:55:12.931Z",
+              "ipAddress": "",
+              "userAgent": "Bun/1.4.2"
+            }
+          ],
+          "verification": []
+        },
+        "production": {
+          "users": [],
+          "accounts": [],
+          "sessions": [],
+          "verification": []
+        },
+        "receipts": [
+          {
+            "stage": "authorize",
+            "query": {
+              "response_type": "code",
+              "redirect_uri": "http://127.0.0.1:57875/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab",
+              "code_challenge": "C1EEZpWPKb7qaysNWrXwqohww63Vl0HZEQOknfT-ttk",
+              "state": "7336e1fe67062d1db5e7acf7f03ae6933715b78b3b59ed12fd7607a45a3818dd1d5d8dd44fb537764c93a50f2e4aa3681904ffce491002b8d89467594e67692f11ad3d5f455a61629b0420d10965982d698f58f12586744c11785d5683975ebba295f68e7c6cad7e6b271404b29658bb5612769203d04f48012cc7688c4d48d25fefefb43b3255537ddc01a1cb3f79fe8796c5f959443de034d69d709eaac97b376d7ca096c741cd611657dbe4de0db3bc705460cd71747cb2bafc6cfbacdb119e9779c5506293676c9c4a9f73149caeb70272617a930a4c997a11368912d1d4e8a10eb5b5e480a8db94e5b9fef4e0d403444f356baa28cb0b35da67d35bf1dd776029e1f570ab93c215ef267b5dbccc8026d8adaa8317c7f7cca8ad8ed379ee56b98c1efd6ea31826c2db419224bd337d7ac82b37afb3850830b1f8563dcbb9591cc43fe95de14318696ed0f2e403efecec799f2c96dd47e42a5c827996277591c6ce4bde6535c80b8399ec3f1c9dfee25d6297908cee91d7a470d3579039040b171151b8dfd6722ac8e53ea2c8236afb582d0c4f734adbc46d04e78713a3757897c3ce42fd868a4c1931d317e5716373de7835ab5ac50d2ce6a1c8ad7c9d0317a01aeb26cbfb2aa0f3c76ae97557e0173489f1a572ac27ab39a4a7c67fa86dc6a8361ff2221d01d5b985c40418f0037aa42ec668efa4ab850faaa09ab2f2db086c7d63c231a8206a81ababe30fa944c4bb18dc652f7ef415021ad1375d496cc91b8e17e36ab1dfe3eec4351b95ed49f8ab4f8dd795215b3a3abc0bbcff98a0661a5a5adec2d0a0ffb44928ab09a205f212778c6ceb61eb760cbeeee05fa9c20f506f7b10508a46a869c043edf2a961dd1fcfbcedc3c94a5f737dffdc86889d3fe2d3332fce7039066337605287159c543f49135a41e7440f00eaede5a5d07f4b33c6da198186c423b434cae22534502e9f8dbe1bd0c1d16fdbd8046aeac5d60320de5db85d7c669355a919fe6dbf25e3d35cb6d4659c0929655dceac7a13c5afbfb6b465c47a8a210089e0e6a9e22e081012c2a801e94ff437a40d213c716b2d9017f885143858caf28f1c73112586fa63d1de95b42f04069b55112674585fa061026e6b9264c2c23600b3875d96da6cdbc72ef2ae8a9fb2417236fe808e726b44a1982dd5abb5518bddd6efc80201dba83095a617038ba1a1b88c527825daac30db79854add59aedcff033ecb8a2bb4a9f4df1dfa1e25b03efe371f4c4b5fb514baee9ff120764d34bee26b2c37f68000bcf0e5147c6ea81fefab24ac224a20beba68dec7f2e66a52957247d18825702263c6651120b4022306c9be1502cea11ffb84eb2c1b87956aefdd625f92d56ced3097c54555b0755127dd187e3f4790f6dc1ecab555e2a264f0f5bebedbc0434543dbbb1a47365edadcad8bee6fc8afb7772ff3b866b55bd5fe8443e09e9c4b3c5d7e158ea56c9e6ad34bc28aa3e73fc1b5749249ec53b91afbbf3e239da36e369a784c687a8192335b230d54077d8a6641bf05bb79693bb4da99b12b78aba4e8c42125b247520188826e8d55ca90ea254d6e2d026ed2a4f55133279a61ef89e3c4814d586d88af22477a8119b30561f25c2ecc68c78295d22f7ec58d3b6ced46fc87cbb626c65da3bdd3fcacba38ecce3daad9647ea4b61fcfaf4a9cae94657a0420422a59958f6bb887adb4c8ed37529dcfe43a6069e546ab175b5d46743a5d9d879459c0bf3f66794a13ef730df5984c1deaf8599e2e0f8e530d24bc80dddd9ca89c7e685cc756f677fee419c29fe0c88df4acdbc43e9a151ba824ebf3a92d365e5235f5e7fd8dd7ce308791eda5a4c3c5022ebaccdc01c5333058e98a1a92e84c02f08c81d7acc2c7e62dc12fb1b90d9c97d54bb5ff7ede",
+              "scope": "read_user",
+              "client_id": "proxy-fixture-client",
+              "code_challenge_method": "S256"
+            }
+          },
+          {
+            "stage": "token",
+            "body": {
+              "redirect_uri": "http://127.0.0.1:57875/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab",
+              "grant_type": "authorization_code",
+              "code_verifier": {
+                "token": "VgdQRMMIhyDHg5a6snbaUHbkQJeiplCR5GDVbJ8tDjDIatddf6a7kuSL-rgdwCzJNkjah4HmB9GHWSCxkJq7zcp-RaiQlLOdHn2r8D2YBr8XmrXYJ5wuDGJs3DlbVhiC",
+                "length": 128
+              },
+              "client_id": "proxy-fixture-client",
+              "client_secret": "proxy-fixture-secret",
+              "code": "proxy-fixture-code-1"
+            }
+          },
+          {
+            "stage": "userinfo",
+            "authorization": "Bearer proxy-fixture-access"
+          }
+        ],
+        "sessionHooks": [],
+        "afterRequests": []
+      },
+      "replay": {
+        "status": 302,
+        "location": "http://localhost:57875/proxy-error?error=state_mismatch",
+        "body": ""
+      }
+    },
+    "finishedAt": 1791042913192,
+    "traces": [
+      {
+        "actor": "cookie-link-owner",
+        "method": "POST",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/sign-up/email",
+        "requestBodyShape": {
+          "email": "string",
+          "name": "string",
+          "password": "string"
+        },
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json"
+        },
+        "responseCookies": {
+          "better-auth.session_token;;/": {
+            "path": "/",
+            "domain": null,
+            "httpOnly": true,
+            "secure": false,
+            "sameSite": "lax",
+            "maxAge": 604800,
+            "expiresAt": null
+          }
+        },
+        "responseBodyShape": {
+          "token": "string",
+          "user": {
+            "id": "string",
+            "name": "string",
+            "email": "string",
+            "emailVerified": "boolean",
+            "image": "null",
+            "createdAt": "string",
+            "updatedAt": "string"
+          }
+        },
+        "responseBody": {
+          "token": "ImLjHdajR5QoXhQBJVzIMy5WbAOMN7C3",
+          "user": {
+            "id": "00a08dcf-5e48-4245-ad96-05660bbcfb0e",
+            "name": "Owner",
+            "email": "proxy-owner@fixture.test",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.860Z",
+            "updatedAt": "2026-10-03T15:55:12.860Z"
+          }
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "POST",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/sign-up/email",
+        "requestBodyShape": {
+          "email": "string",
+          "name": "string",
+          "password": "string"
+        },
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json"
+        },
+        "responseCookies": {
+          "better-auth.session_token;;/": {
+            "path": "/",
+            "domain": null,
+            "httpOnly": true,
+            "secure": false,
+            "sameSite": "lax",
+            "maxAge": 604800,
+            "expiresAt": null
+          }
+        },
+        "responseBodyShape": {
+          "token": "string",
+          "user": {
+            "id": "string",
+            "name": "string",
+            "email": "string",
+            "emailVerified": "boolean",
+            "image": "null",
+            "createdAt": "string",
+            "updatedAt": "string"
+          }
+        },
+        "responseBody": {
+          "token": "CReAbsp0INi0WptlyzxUh4D8I7PxoK8h",
+          "user": {
+            "id": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.927Z",
+            "updatedAt": "2026-10-03T15:55:12.927Z"
+          }
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/get-session",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "cache-control": "no-store",
+          "content-type": "application/json",
+          "pragma": "no-cache"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "session": {
+            "id": "string",
+            "expiresAt": "string",
+            "token": "string",
+            "createdAt": "string",
+            "updatedAt": "string",
+            "ipAddress": "string",
+            "userAgent": "string",
+            "userId": "string"
+          },
+          "user": {
+            "id": "string",
+            "name": "string",
+            "email": "string",
+            "emailVerified": "boolean",
+            "image": "null",
+            "createdAt": "string",
+            "updatedAt": "string"
+          }
+        },
+        "responseBody": {
+          "session": {
+            "id": "f87d4d7e-cb6d-45b1-981b-61eaf11db8f0",
+            "expiresAt": "2026-10-10T15:55:12.931Z",
+            "token": "CReAbsp0INi0WptlyzxUh4D8I7PxoK8h",
+            "createdAt": "2026-10-03T15:55:12.931Z",
+            "updatedAt": "2026-10-03T15:55:12.931Z",
+            "ipAddress": "",
+            "userAgent": "Bun/1.4.2",
+            "userId": "8a4fdbab-5005-427b-96d5-e55adc8b4421"
+          },
+          "user": {
+            "id": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.927Z",
+            "updatedAt": "2026-10-03T15:55:12.927Z"
+          }
+        }
+      },
+      {
+        "actor": "primary",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/state",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json;charset=utf-8"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "preview": {
+            "users": [
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "accounts": [
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "sessions": [
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              }
+            ],
+            "verification": []
+          },
+          "production": {
+            "users": [],
+            "accounts": [],
+            "sessions": [],
+            "verification": []
+          },
+          "receipts": [],
+          "sessionHooks": [],
+          "afterRequests": []
+        }
+      },
+      {
+        "actor": "cookie-link-owner",
+        "method": "POST",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/link-social",
+        "requestBodyShape": {
+          "provider": "string",
+          "callbackURL": "string",
+          "newUserCallbackURL": "string",
+          "errorCallbackURL": "string",
+          "disableRedirect": "boolean",
+          "additionalData": {
+            "serverContext": {
+              "anonymousUserId": "string"
+            },
+            "application": {
+              "kept": "boolean"
+            }
+          }
+        },
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json"
+        },
+        "responseCookies": {
+          "better-auth.oauth_state;;/": {
+            "path": "/",
+            "domain": null,
+            "httpOnly": true,
+            "secure": false,
+            "sameSite": "lax",
+            "maxAge": 600,
+            "expiresAt": null
+          }
+        },
+        "responseBodyShape": {
+          "url": "string",
+          "redirect": "boolean"
+        },
+        "responseBody": {
+          "url": "http://localhost:57875/__test/oauth-proxy-cookie/provider/oauth/authorize?response_type=code&client_id=proxy-fixture-client&scope=read_user&redirect_uri=http%3A%2F%2F127.0.0.1%3A57875%2F__test%2Fprofiles%2Foauth-proxy-cookie%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=C1EEZpWPKb7qaysNWrXwqohww63Vl0HZEQOknfT-ttk&state=7336e1fe67062d1db5e7acf7f03ae6933715b78b3b59ed12fd7607a45a3818dd1d5d8dd44fb537764c93a50f2e4aa3681904ffce491002b8d89467594e67692f11ad3d5f455a61629b0420d10965982d698f58f12586744c11785d5683975ebba295f68e7c6cad7e6b271404b29658bb5612769203d04f48012cc7688c4d48d25fefefb43b3255537ddc01a1cb3f79fe8796c5f959443de034d69d709eaac97b376d7ca096c741cd611657dbe4de0db3bc705460cd71747cb2bafc6cfbacdb119e9779c5506293676c9c4a9f73149caeb70272617a930a4c997a11368912d1d4e8a10eb5b5e480a8db94e5b9fef4e0d403444f356baa28cb0b35da67d35bf1dd776029e1f570ab93c215ef267b5dbccc8026d8adaa8317c7f7cca8ad8ed379ee56b98c1efd6ea31826c2db419224bd337d7ac82b37afb3850830b1f8563dcbb9591cc43fe95de14318696ed0f2e403efecec799f2c96dd47e42a5c827996277591c6ce4bde6535c80b8399ec3f1c9dfee25d6297908cee91d7a470d3579039040b171151b8dfd6722ac8e53ea2c8236afb582d0c4f734adbc46d04e78713a3757897c3ce42fd868a4c1931d317e5716373de7835ab5ac50d2ce6a1c8ad7c9d0317a01aeb26cbfb2aa0f3c76ae97557e0173489f1a572ac27ab39a4a7c67fa86dc6a8361ff2221d01d5b985c40418f0037aa42ec668efa4ab850faaa09ab2f2db086c7d63c231a8206a81ababe30fa944c4bb18dc652f7ef415021ad1375d496cc91b8e17e36ab1dfe3eec4351b95ed49f8ab4f8dd795215b3a3abc0bbcff98a0661a5a5adec2d0a0ffb44928ab09a205f212778c6ceb61eb760cbeeee05fa9c20f506f7b10508a46a869c043edf2a961dd1fcfbcedc3c94a5f737dffdc86889d3fe2d3332fce7039066337605287159c543f49135a41e7440f00eaede5a5d07f4b33c6da198186c423b434cae22534502e9f8dbe1bd0c1d16fdbd8046aeac5d60320de5db85d7c669355a919fe6dbf25e3d35cb6d4659c0929655dceac7a13c5afbfb6b465c47a8a210089e0e6a9e22e081012c2a801e94ff437a40d213c716b2d9017f885143858caf28f1c73112586fa63d1de95b42f04069b55112674585fa061026e6b9264c2c23600b3875d96da6cdbc72ef2ae8a9fb2417236fe808e726b44a1982dd5abb5518bddd6efc80201dba83095a617038ba1a1b88c527825daac30db79854add59aedcff033ecb8a2bb4a9f4df1dfa1e25b03efe371f4c4b5fb514baee9ff120764d34bee26b2c37f68000bcf0e5147c6ea81fefab24ac224a20beba68dec7f2e66a52957247d18825702263c6651120b4022306c9be1502cea11ffb84eb2c1b87956aefdd625f92d56ced3097c54555b0755127dd187e3f4790f6dc1ecab555e2a264f0f5bebedbc0434543dbbb1a47365edadcad8bee6fc8afb7772ff3b866b55bd5fe8443e09e9c4b3c5d7e158ea56c9e6ad34bc28aa3e73fc1b5749249ec53b91afbbf3e239da36e369a784c687a8192335b230d54077d8a6641bf05bb79693bb4da99b12b78aba4e8c42125b247520188826e8d55ca90ea254d6e2d026ed2a4f55133279a61ef89e3c4814d586d88af22477a8119b30561f25c2ecc68c78295d22f7ec58d3b6ced46fc87cbb626c65da3bdd3fcacba38ecce3daad9647ea4b61fcfaf4a9cae94657a0420422a59958f6bb887adb4c8ed37529dcfe43a6069e546ab175b5d46743a5d9d879459c0bf3f66794a13ef730df5984c1deaf8599e2e0f8e530d24bc80dddd9ca89c7e685cc756f677fee419c29fe0c88df4acdbc43e9a151ba824ebf3a92d365e5235f5e7fd8dd7ce308791eda5a4c3c5022ebaccdc01c5333058e98a1a92e84c02f08c81d7acc2c7e62dc12fb1b90d9c97d54bb5ff7ede",
+          "redirect": false
+        }
+      },
+      {
+        "actor": "cookie-link-owner",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/provider/oauth/authorize?response_type=code&client_id=proxy-fixture-client&scope=read_user&redirect_uri=http%3A%2F%2F127.0.0.1%3A57875%2F__test%2Fprofiles%2Foauth-proxy-cookie%2Fapi%2Fauth%2Fcallback%2Fgitlab&code_challenge_method=S256&code_challenge=C1EEZpWPKb7qaysNWrXwqohww63Vl0HZEQOknfT-ttk&state=7336e1fe67062d1db5e7acf7f03ae6933715b78b3b59ed12fd7607a45a3818dd1d5d8dd44fb537764c93a50f2e4aa3681904ffce491002b8d89467594e67692f11ad3d5f455a61629b0420d10965982d698f58f12586744c11785d5683975ebba295f68e7c6cad7e6b271404b29658bb5612769203d04f48012cc7688c4d48d25fefefb43b3255537ddc01a1cb3f79fe8796c5f959443de034d69d709eaac97b376d7ca096c741cd611657dbe4de0db3bc705460cd71747cb2bafc6cfbacdb119e9779c5506293676c9c4a9f73149caeb70272617a930a4c997a11368912d1d4e8a10eb5b5e480a8db94e5b9fef4e0d403444f356baa28cb0b35da67d35bf1dd776029e1f570ab93c215ef267b5dbccc8026d8adaa8317c7f7cca8ad8ed379ee56b98c1efd6ea31826c2db419224bd337d7ac82b37afb3850830b1f8563dcbb9591cc43fe95de14318696ed0f2e403efecec799f2c96dd47e42a5c827996277591c6ce4bde6535c80b8399ec3f1c9dfee25d6297908cee91d7a470d3579039040b171151b8dfd6722ac8e53ea2c8236afb582d0c4f734adbc46d04e78713a3757897c3ce42fd868a4c1931d317e5716373de7835ab5ac50d2ce6a1c8ad7c9d0317a01aeb26cbfb2aa0f3c76ae97557e0173489f1a572ac27ab39a4a7c67fa86dc6a8361ff2221d01d5b985c40418f0037aa42ec668efa4ab850faaa09ab2f2db086c7d63c231a8206a81ababe30fa944c4bb18dc652f7ef415021ad1375d496cc91b8e17e36ab1dfe3eec4351b95ed49f8ab4f8dd795215b3a3abc0bbcff98a0661a5a5adec2d0a0ffb44928ab09a205f212778c6ceb61eb760cbeeee05fa9c20f506f7b10508a46a869c043edf2a961dd1fcfbcedc3c94a5f737dffdc86889d3fe2d3332fce7039066337605287159c543f49135a41e7440f00eaede5a5d07f4b33c6da198186c423b434cae22534502e9f8dbe1bd0c1d16fdbd8046aeac5d60320de5db85d7c669355a919fe6dbf25e3d35cb6d4659c0929655dceac7a13c5afbfb6b465c47a8a210089e0e6a9e22e081012c2a801e94ff437a40d213c716b2d9017f885143858caf28f1c73112586fa63d1de95b42f04069b55112674585fa061026e6b9264c2c23600b3875d96da6cdbc72ef2ae8a9fb2417236fe808e726b44a1982dd5abb5518bddd6efc80201dba83095a617038ba1a1b88c527825daac30db79854add59aedcff033ecb8a2bb4a9f4df1dfa1e25b03efe371f4c4b5fb514baee9ff120764d34bee26b2c37f68000bcf0e5147c6ea81fefab24ac224a20beba68dec7f2e66a52957247d18825702263c6651120b4022306c9be1502cea11ffb84eb2c1b87956aefdd625f92d56ced3097c54555b0755127dd187e3f4790f6dc1ecab555e2a264f0f5bebedbc0434543dbbb1a47365edadcad8bee6fc8afb7772ff3b866b55bd5fe8443e09e9c4b3c5d7e158ea56c9e6ad34bc28aa3e73fc1b5749249ec53b91afbbf3e239da36e369a784c687a8192335b230d54077d8a6641bf05bb79693bb4da99b12b78aba4e8c42125b247520188826e8d55ca90ea254d6e2d026ed2a4f55133279a61ef89e3c4814d586d88af22477a8119b30561f25c2ecc68c78295d22f7ec58d3b6ced46fc87cbb626c65da3bdd3fcacba38ecce3daad9647ea4b61fcfaf4a9cae94657a0420422a59958f6bb887adb4c8ed37529dcfe43a6069e546ab175b5d46743a5d9d879459c0bf3f66794a13ef730df5984c1deaf8599e2e0f8e530d24bc80dddd9ca89c7e685cc756f677fee419c29fe0c88df4acdbc43e9a151ba824ebf3a92d365e5235f5e7fd8dd7ce308791eda5a4c3c5022ebaccdc01c5333058e98a1a92e84c02f08c81d7acc2c7e62dc12fb1b90d9c97d54bb5ff7ede",
+        "requestBodyShape": null,
+        "responseStatus": 302,
+        "responseHeaders": {
+          "location": "http://127.0.0.1:57875/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab?code=proxy-fixture-code-1&state=7336e1fe67062d1db5e7acf7f03ae6933715b78b3b59ed12fd7607a45a3818dd1d5d8dd44fb537764c93a50f2e4aa3681904ffce491002b8d89467594e67692f11ad3d5f455a61629b0420d10965982d698f58f12586744c11785d5683975ebba295f68e7c6cad7e6b271404b29658bb5612769203d04f48012cc7688c4d48d25fefefb43b3255537ddc01a1cb3f79fe8796c5f959443de034d69d709eaac97b376d7ca096c741cd611657dbe4de0db3bc705460cd71747cb2bafc6cfbacdb119e9779c5506293676c9c4a9f73149caeb70272617a930a4c997a11368912d1d4e8a10eb5b5e480a8db94e5b9fef4e0d403444f356baa28cb0b35da67d35bf1dd776029e1f570ab93c215ef267b5dbccc8026d8adaa8317c7f7cca8ad8ed379ee56b98c1efd6ea31826c2db419224bd337d7ac82b37afb3850830b1f8563dcbb9591cc43fe95de14318696ed0f2e403efecec799f2c96dd47e42a5c827996277591c6ce4bde6535c80b8399ec3f1c9dfee25d6297908cee91d7a470d3579039040b171151b8dfd6722ac8e53ea2c8236afb582d0c4f734adbc46d04e78713a3757897c3ce42fd868a4c1931d317e5716373de7835ab5ac50d2ce6a1c8ad7c9d0317a01aeb26cbfb2aa0f3c76ae97557e0173489f1a572ac27ab39a4a7c67fa86dc6a8361ff2221d01d5b985c40418f0037aa42ec668efa4ab850faaa09ab2f2db086c7d63c231a8206a81ababe30fa944c4bb18dc652f7ef415021ad1375d496cc91b8e17e36ab1dfe3eec4351b95ed49f8ab4f8dd795215b3a3abc0bbcff98a0661a5a5adec2d0a0ffb44928ab09a205f212778c6ceb61eb760cbeeee05fa9c20f506f7b10508a46a869c043edf2a961dd1fcfbcedc3c94a5f737dffdc86889d3fe2d3332fce7039066337605287159c543f49135a41e7440f00eaede5a5d07f4b33c6da198186c423b434cae22534502e9f8dbe1bd0c1d16fdbd8046aeac5d60320de5db85d7c669355a919fe6dbf25e3d35cb6d4659c0929655dceac7a13c5afbfb6b465c47a8a210089e0e6a9e22e081012c2a801e94ff437a40d213c716b2d9017f885143858caf28f1c73112586fa63d1de95b42f04069b55112674585fa061026e6b9264c2c23600b3875d96da6cdbc72ef2ae8a9fb2417236fe808e726b44a1982dd5abb5518bddd6efc80201dba83095a617038ba1a1b88c527825daac30db79854add59aedcff033ecb8a2bb4a9f4df1dfa1e25b03efe371f4c4b5fb514baee9ff120764d34bee26b2c37f68000bcf0e5147c6ea81fefab24ac224a20beba68dec7f2e66a52957247d18825702263c6651120b4022306c9be1502cea11ffb84eb2c1b87956aefdd625f92d56ced3097c54555b0755127dd187e3f4790f6dc1ecab555e2a264f0f5bebedbc0434543dbbb1a47365edadcad8bee6fc8afb7772ff3b866b55bd5fe8443e09e9c4b3c5d7e158ea56c9e6ad34bc28aa3e73fc1b5749249ec53b91afbbf3e239da36e369a784c687a8192335b230d54077d8a6641bf05bb79693bb4da99b12b78aba4e8c42125b247520188826e8d55ca90ea254d6e2d026ed2a4f55133279a61ef89e3c4814d586d88af22477a8119b30561f25c2ecc68c78295d22f7ec58d3b6ced46fc87cbb626c65da3bdd3fcacba38ecce3daad9647ea4b61fcfaf4a9cae94657a0420422a59958f6bb887adb4c8ed37529dcfe43a6069e546ab175b5d46743a5d9d879459c0bf3f66794a13ef730df5984c1deaf8599e2e0f8e530d24bc80dddd9ca89c7e685cc756f677fee419c29fe0c88df4acdbc43e9a151ba824ebf3a92d365e5235f5e7fd8dd7ce308791eda5a4c3c5022ebaccdc01c5333058e98a1a92e84c02f08c81d7acc2c7e62dc12fb1b90d9c97d54bb5ff7ede"
+        },
+        "responseCookies": {},
+        "responseBodyShape": null
+      },
+      {
+        "actor": "cookie-link-owner",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab?code=proxy-fixture-code-1&state=7336e1fe67062d1db5e7acf7f03ae6933715b78b3b59ed12fd7607a45a3818dd1d5d8dd44fb537764c93a50f2e4aa3681904ffce491002b8d89467594e67692f11ad3d5f455a61629b0420d10965982d698f58f12586744c11785d5683975ebba295f68e7c6cad7e6b271404b29658bb5612769203d04f48012cc7688c4d48d25fefefb43b3255537ddc01a1cb3f79fe8796c5f959443de034d69d709eaac97b376d7ca096c741cd611657dbe4de0db3bc705460cd71747cb2bafc6cfbacdb119e9779c5506293676c9c4a9f73149caeb70272617a930a4c997a11368912d1d4e8a10eb5b5e480a8db94e5b9fef4e0d403444f356baa28cb0b35da67d35bf1dd776029e1f570ab93c215ef267b5dbccc8026d8adaa8317c7f7cca8ad8ed379ee56b98c1efd6ea31826c2db419224bd337d7ac82b37afb3850830b1f8563dcbb9591cc43fe95de14318696ed0f2e403efecec799f2c96dd47e42a5c827996277591c6ce4bde6535c80b8399ec3f1c9dfee25d6297908cee91d7a470d3579039040b171151b8dfd6722ac8e53ea2c8236afb582d0c4f734adbc46d04e78713a3757897c3ce42fd868a4c1931d317e5716373de7835ab5ac50d2ce6a1c8ad7c9d0317a01aeb26cbfb2aa0f3c76ae97557e0173489f1a572ac27ab39a4a7c67fa86dc6a8361ff2221d01d5b985c40418f0037aa42ec668efa4ab850faaa09ab2f2db086c7d63c231a8206a81ababe30fa944c4bb18dc652f7ef415021ad1375d496cc91b8e17e36ab1dfe3eec4351b95ed49f8ab4f8dd795215b3a3abc0bbcff98a0661a5a5adec2d0a0ffb44928ab09a205f212778c6ceb61eb760cbeeee05fa9c20f506f7b10508a46a869c043edf2a961dd1fcfbcedc3c94a5f737dffdc86889d3fe2d3332fce7039066337605287159c543f49135a41e7440f00eaede5a5d07f4b33c6da198186c423b434cae22534502e9f8dbe1bd0c1d16fdbd8046aeac5d60320de5db85d7c669355a919fe6dbf25e3d35cb6d4659c0929655dceac7a13c5afbfb6b465c47a8a210089e0e6a9e22e081012c2a801e94ff437a40d213c716b2d9017f885143858caf28f1c73112586fa63d1de95b42f04069b55112674585fa061026e6b9264c2c23600b3875d96da6cdbc72ef2ae8a9fb2417236fe808e726b44a1982dd5abb5518bddd6efc80201dba83095a617038ba1a1b88c527825daac30db79854add59aedcff033ecb8a2bb4a9f4df1dfa1e25b03efe371f4c4b5fb514baee9ff120764d34bee26b2c37f68000bcf0e5147c6ea81fefab24ac224a20beba68dec7f2e66a52957247d18825702263c6651120b4022306c9be1502cea11ffb84eb2c1b87956aefdd625f92d56ced3097c54555b0755127dd187e3f4790f6dc1ecab555e2a264f0f5bebedbc0434543dbbb1a47365edadcad8bee6fc8afb7772ff3b866b55bd5fe8443e09e9c4b3c5d7e158ea56c9e6ad34bc28aa3e73fc1b5749249ec53b91afbbf3e239da36e369a784c687a8192335b230d54077d8a6641bf05bb79693bb4da99b12b78aba4e8c42125b247520188826e8d55ca90ea254d6e2d026ed2a4f55133279a61ef89e3c4814d586d88af22477a8119b30561f25c2ecc68c78295d22f7ec58d3b6ced46fc87cbb626c65da3bdd3fcacba38ecce3daad9647ea4b61fcfaf4a9cae94657a0420422a59958f6bb887adb4c8ed37529dcfe43a6069e546ab175b5d46743a5d9d879459c0bf3f66794a13ef730df5984c1deaf8599e2e0f8e530d24bc80dddd9ca89c7e685cc756f677fee419c29fe0c88df4acdbc43e9a151ba824ebf3a92d365e5235f5e7fd8dd7ce308791eda5a4c3c5022ebaccdc01c5333058e98a1a92e84c02f08c81d7acc2c7e62dc12fb1b90d9c97d54bb5ff7ede",
+        "requestBodyShape": null,
+        "responseStatus": 302,
+        "responseHeaders": {
+          "content-type": "application/json",
+          "location": "http://localhost:57875/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A57875%2Fproxy-done%3Fapplication%3Dkept&profile=bf95a1ff7c99a5067dbad2e62c3b6a292bb2a9f42ee0c2f4de23262ea6ceb7a4d1b76dcd02b59a394fcfe50c7e2f261a5daf022a1e344c6fa06520f35e6885199375f378e42e4a85dacd9709130e4e17c6e43b39d2faaa63c2f45c54b59297f06fc272451792dc2252fc9f6644790d3a97d27627338c643c725198fd8279dec27c4e08d366c837f8db32f42ce80af4838243d6f4687ab23081567a3e2f00996abe347127ef72d1d33ff3229ac25eac7f9122ad7ae8bbf75c477078eb71c1e6a681c33f3ab08788e096dd777affb041b628eefe3ae393008b4d6b459d50ef96c13249ab13887dff6c8aecc794c252358a7823e2184ab386fbeb03f3c624a5f88413018b3f25c4b1c986603145b43ec0d4a8e08bcf321676b684210080ce72006abcc49578b317e4469a56d5d3925abfd8123e55d9fe1630e6098b3cd1c2ccd411c920d1a2fc6d449b673962c8d65b9d1c5f5b78fd65bbb38ee0c4ed945c02792c150ae776fe1ddb343bd867543a20ff47c94972ca9447c014fff57d35be41563f368e13188d5f6806071f842487dbb64862f7f97f7c3fc42d3a115dd7aeb835cbc59af5175e911e15cb21b58d3ad29764e0d68d436f558e36daf313c46d004785840c8c621ed45ee013518c192e0efc230064f1c00faf72c04aa2a24ba3cb31e10581e7b0c69bf1b14f4cf6ffa93c0a1020a099e9f6918faa11abc8d21c48e7e92d9d5b9319b7ec4e3e109f832d0f979875d03bcbf0ad6853914680b815a8c8a0d7a0257d787460e0d376fffa1c668b51238a332bffa019656fd4b391dee6d02a1a4a068dbb589334fe628a9d72e70d74e064fc210890fa7cbfda0ccfa1daa0f23b41e044fa914a5754f030e4b0a5d34fb1ad53743e5593c5f5a25a49508d971380f1a9884201fbfe089f00a6d6a4b6d4f691f5eef8d3f6ba7b47fd3448c1d0258e3f890e84f262efa3f7b54843b14a20fbd7a0d1e51b0d901a39e7b5c06935e4a3b6d9cca67cc52d98da4db72810590a49bb1ba44dc9e7f171457fcfc9aa5a1064fdce3a2b53c7ab4f8f9ce664f02b520fa65f733aea2bbb308991910952a4604187e6abe18ab795c28641764d182ee21e78631c44096671ffb2e9711756e47b767e6b5e7146ce7b209dc4598d47ad63c3e401"
+        },
+        "responseCookies": {},
+        "responseBodyShape": null,
+        "responseBody": null
+      },
+      {
+        "actor": "primary",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/state",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json;charset=utf-8"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "preview": {
+            "users": [
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "accounts": [
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "sessions": [
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              }
+            ],
+            "verification": []
+          },
+          "production": {
+            "users": [],
+            "accounts": [],
+            "sessions": [],
+            "verification": []
+          },
+          "receipts": [
+            {
+              "stage": "string",
+              "query": {
+                "response_type": "string",
+                "redirect_uri": "string",
+                "code_challenge": "string",
+                "state": "string",
+                "scope": "string",
+                "client_id": "string",
+                "code_challenge_method": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "body": {
+                "redirect_uri": "string",
+                "grant_type": "string",
+                "code_verifier": "string",
+                "client_id": "string",
+                "client_secret": "string",
+                "code": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "authorization": "string"
+            }
+          ],
+          "sessionHooks": [],
+          "afterRequests": []
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A57875%2Fproxy-done%3Fapplication%3Dkept&profile=bf95a1ff7c99a5067dbad2e62c3b6a292bb2a9f42ee0c2f4de23262ea6ceb7a4d1b76dcd02b59a394fcfe50c7e2f261a5daf022a1e344c6fa06520f35e6885199375f378e42e4a85dacd9709130e4e17c6e43b39d2faaa63c2f45c54b59297f06fc272451792dc2252fc9f6644790d3a97d27627338c643c725198fd8279dec27c4e08d366c837f8db32f42ce80af4838243d6f4687ab23081567a3e2f00996abe347127ef72d1d33ff3229ac25eac7f9122ad7ae8bbf75c477078eb71c1e6a681c33f3ab08788e096dd777affb041b628eefe3ae393008b4d6b459d50ef96c13249ab13887dff6c8aecc794c252358a7823e2184ab386fbeb03f3c624a5f88413018b3f25c4b1c986603145b43ec0d4a8e08bcf321676b684210080ce72006abcc49578b317e4469a56d5d3925abfd8123e55d9fe1630e6098b3cd1c2ccd411c920d1a2fc6d449b673962c8d65b9d1c5f5b78fd65bbb38ee0c4ed945c02792c150ae776fe1ddb343bd867543a20ff47c94972ca9447c014fff57d35be41563f368e13188d5f6806071f842487dbb64862f7f97f7c3fc42d3a115dd7aeb835cbc59af5175e911e15cb21b58d3ad29764e0d68d436f558e36daf313c46d004785840c8c621ed45ee013518c192e0efc230064f1c00faf72c04aa2a24ba3cb31e10581e7b0c69bf1b14f4cf6ffa93c0a1020a099e9f6918faa11abc8d21c48e7e92d9d5b9319b7ec4e3e109f832d0f979875d03bcbf0ad6853914680b815a8c8a0d7a0257d787460e0d376fffa1c668b51238a332bffa019656fd4b391dee6d02a1a4a068dbb589334fe628a9d72e70d74e064fc210890fa7cbfda0ccfa1daa0f23b41e044fa914a5754f030e4b0a5d34fb1ad53743e5593c5f5a25a49508d971380f1a9884201fbfe089f00a6d6a4b6d4f691f5eef8d3f6ba7b47fd3448c1d0258e3f890e84f262efa3f7b54843b14a20fbd7a0d1e51b0d901a39e7b5c06935e4a3b6d9cca67cc52d98da4db72810590a49bb1ba44dc9e7f171457fcfc9aa5a1064fdce3a2b53c7ab4f8f9ce664f02b520fa65f733aea2bbb308991910952a4604187e6abe18ab795c28641764d182ee21e78631c44096671ffb2e9711756e47b767e6b5e7146ce7b209dc4598d47ad63c3e401",
+        "requestBodyShape": null,
+        "responseStatus": 302,
+        "responseHeaders": {
+          "content-type": "application/json",
+          "location": "http://localhost:57875/proxy-error?error=state_mismatch"
+        },
+        "responseCookies": {},
+        "responseBodyShape": null,
+        "responseBody": null
+      },
+      {
+        "actor": "primary",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/state",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json;charset=utf-8"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "preview": {
+            "users": [
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "accounts": [
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "sessions": [
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              }
+            ],
+            "verification": []
+          },
+          "production": {
+            "users": [],
+            "accounts": [],
+            "sessions": [],
+            "verification": []
+          },
+          "receipts": [
+            {
+              "stage": "string",
+              "query": {
+                "response_type": "string",
+                "redirect_uri": "string",
+                "code_challenge": "string",
+                "state": "string",
+                "scope": "string",
+                "client_id": "string",
+                "code_challenge_method": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "body": {
+                "redirect_uri": "string",
+                "grant_type": "string",
+                "code_verifier": "string",
+                "client_id": "string",
+                "client_secret": "string",
+                "code": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "authorization": "string"
+            }
+          ],
+          "sessionHooks": [],
+          "afterRequests": []
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A57875%2Fproxy-done%3Fapplication%3Dkept&profile=bf95a1ff7c99a5067dbad2e62c3b6a292bb2a9f42ee0c2f4de23262ea6ceb7a4d1b76dcd02b59a394fcfe50c7e2f261a5daf022a1e344c6fa06520f35e6885199375f378e42e4a85dacd9709130e4e17c6e43b39d2faaa63c2f45c54b59297f06fc272451792dc2252fc9f6644790d3a97d27627338c643c725198fd8279dec27c4e08d366c837f8db32f42ce80af4838243d6f4687ab23081567a3e2f00996abe347127ef72d1d33ff3229ac25eac7f9122ad7ae8bbf75c477078eb71c1e6a681c33f3ab08788e096dd777affb041b628eefe3ae393008b4d6b459d50ef96c13249ab13887dff6c8aecc794c252358a7823e2184ab386fbeb03f3c624a5f88413018b3f25c4b1c986603145b43ec0d4a8e08bcf321676b684210080ce72006abcc49578b317e4469a56d5d3925abfd8123e55d9fe1630e6098b3cd1c2ccd411c920d1a2fc6d449b673962c8d65b9d1c5f5b78fd65bbb38ee0c4ed945c02792c150ae776fe1ddb343bd867543a20ff47c94972ca9447c014fff57d35be41563f368e13188d5f6806071f842487dbb64862f7f97f7c3fc42d3a115dd7aeb835cbc59af5175e911e15cb21b58d3ad29764e0d68d436f558e36daf313c46d004785840c8c621ed45ee013518c192e0efc230064f1c00faf72c04aa2a24ba3cb31e10581e7b0c69bf1b14f4cf6ffa93c0a1020a099e9f6918faa11abc8d21c48e7e92d9d5b9319b7ec4e3e109f832d0f979875d03bcbf0ad6853914680b815a8c8a0d7a0257d787460e0d376fffa1c668b51238a332bffa019656fd4b391dee6d02a1a4a068dbb589334fe628a9d72e70d74e064fc210890fa7cbfda0ccfa1daa0f23b41e044fa914a5754f030e4b0a5d34fb1ad53743e5593c5f5a25a49508d971380f1a9884201fbfe089f00a6d6a4b6d4f691f5eef8d3f6ba7b47fd3448c1d0258e3f890e84f262efa3f7b54843b14a20fbd7a0d1e51b0d901a39e7b5c06935e4a3b6d9cca67cc52d98da4db72810590a49bb1ba44dc9e7f171457fcfc9aa5a1064fdce3a2b53c7ab4f8f9ce664f02b520fa65f733aea2bbb308991910952a4604187e6abe18ab795c28641764d182ee21e78631c44096671ffb2e9711756e47b767e6b5e7146ce7b209dc4598d47ad63c3e401",
+        "requestBodyShape": null,
+        "responseStatus": 302,
+        "responseHeaders": {
+          "content-type": "application/json",
+          "location": "http://localhost:57875/proxy-done?application=kept"
+        },
+        "responseCookies": {
+          "better-auth.oauth_state;;/": {
+            "path": "/",
+            "domain": null,
+            "httpOnly": true,
+            "secure": false,
+            "sameSite": "lax",
+            "maxAge": 0,
+            "expiresAt": null
+          }
+        },
+        "responseBodyShape": null,
+        "responseBody": null
+      },
+      {
+        "actor": "primary",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/state",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json;charset=utf-8"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "preview": {
+            "users": [
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "accounts": [
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "string",
+                "refreshToken": "string",
+                "idToken": "null",
+                "scope": "string",
+                "accessTokenExpiresAt": "string",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "sessions": [
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              }
+            ],
+            "verification": []
+          },
+          "production": {
+            "users": [],
+            "accounts": [],
+            "sessions": [],
+            "verification": []
+          },
+          "receipts": [
+            {
+              "stage": "string",
+              "query": {
+                "response_type": "string",
+                "redirect_uri": "string",
+                "code_challenge": "string",
+                "state": "string",
+                "scope": "string",
+                "client_id": "string",
+                "code_challenge_method": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "body": {
+                "redirect_uri": "string",
+                "grant_type": "string",
+                "code_verifier": "string",
+                "client_id": "string",
+                "client_secret": "string",
+                "code": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "authorization": "string"
+            }
+          ],
+          "sessionHooks": [],
+          "afterRequests": []
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy?callbackURL=http%3A%2F%2Flocalhost%3A57875%2Fproxy-done%3Fapplication%3Dkept&profile=bf95a1ff7c99a5067dbad2e62c3b6a292bb2a9f42ee0c2f4de23262ea6ceb7a4d1b76dcd02b59a394fcfe50c7e2f261a5daf022a1e344c6fa06520f35e6885199375f378e42e4a85dacd9709130e4e17c6e43b39d2faaa63c2f45c54b59297f06fc272451792dc2252fc9f6644790d3a97d27627338c643c725198fd8279dec27c4e08d366c837f8db32f42ce80af4838243d6f4687ab23081567a3e2f00996abe347127ef72d1d33ff3229ac25eac7f9122ad7ae8bbf75c477078eb71c1e6a681c33f3ab08788e096dd777affb041b628eefe3ae393008b4d6b459d50ef96c13249ab13887dff6c8aecc794c252358a7823e2184ab386fbeb03f3c624a5f88413018b3f25c4b1c986603145b43ec0d4a8e08bcf321676b684210080ce72006abcc49578b317e4469a56d5d3925abfd8123e55d9fe1630e6098b3cd1c2ccd411c920d1a2fc6d449b673962c8d65b9d1c5f5b78fd65bbb38ee0c4ed945c02792c150ae776fe1ddb343bd867543a20ff47c94972ca9447c014fff57d35be41563f368e13188d5f6806071f842487dbb64862f7f97f7c3fc42d3a115dd7aeb835cbc59af5175e911e15cb21b58d3ad29764e0d68d436f558e36daf313c46d004785840c8c621ed45ee013518c192e0efc230064f1c00faf72c04aa2a24ba3cb31e10581e7b0c69bf1b14f4cf6ffa93c0a1020a099e9f6918faa11abc8d21c48e7e92d9d5b9319b7ec4e3e109f832d0f979875d03bcbf0ad6853914680b815a8c8a0d7a0257d787460e0d376fffa1c668b51238a332bffa019656fd4b391dee6d02a1a4a068dbb589334fe628a9d72e70d74e064fc210890fa7cbfda0ccfa1daa0f23b41e044fa914a5754f030e4b0a5d34fb1ad53743e5593c5f5a25a49508d971380f1a9884201fbfe089f00a6d6a4b6d4f691f5eef8d3f6ba7b47fd3448c1d0258e3f890e84f262efa3f7b54843b14a20fbd7a0d1e51b0d901a39e7b5c06935e4a3b6d9cca67cc52d98da4db72810590a49bb1ba44dc9e7f171457fcfc9aa5a1064fdce3a2b53c7ab4f8f9ce664f02b520fa65f733aea2bbb308991910952a4604187e6abe18ab795c28641764d182ee21e78631c44096671ffb2e9711756e47b767e6b5e7146ce7b209dc4598d47ad63c3e401",
+        "requestBodyShape": null,
+        "responseStatus": 302,
+        "responseHeaders": {
+          "content-type": "application/json",
+          "location": "http://localhost:57875/proxy-error?error=state_mismatch"
+        },
+        "responseCookies": {},
+        "responseBodyShape": null,
+        "responseBody": null
+      },
+      {
+        "actor": "primary",
+        "method": "GET",
+        "path": "/__test/oauth-proxy-cookie/state",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "content-type": "application/json;charset=utf-8"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "preview": {
+            "users": [
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "name": "string",
+                "email": "string",
+                "emailVerified": "boolean",
+                "image": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "accounts": [
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "null",
+                "refreshToken": "null",
+                "idToken": "null",
+                "scope": "null",
+                "accessTokenExpiresAt": "null",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "accountId": "string",
+                "providerId": "string",
+                "accessToken": "string",
+                "refreshToken": "string",
+                "idToken": "null",
+                "scope": "string",
+                "accessTokenExpiresAt": "string",
+                "refreshTokenExpiresAt": "null",
+                "createdAt": "string",
+                "updatedAt": "string"
+              }
+            ],
+            "sessions": [
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              },
+              {
+                "id": "string",
+                "userId": "string",
+                "token": "string",
+                "expiresAt": "string",
+                "createdAt": "string",
+                "updatedAt": "string",
+                "ipAddress": "string",
+                "userAgent": "string"
+              }
+            ],
+            "verification": []
+          },
+          "production": {
+            "users": [],
+            "accounts": [],
+            "sessions": [],
+            "verification": []
+          },
+          "receipts": [
+            {
+              "stage": "string",
+              "query": {
+                "response_type": "string",
+                "redirect_uri": "string",
+                "code_challenge": "string",
+                "state": "string",
+                "scope": "string",
+                "client_id": "string",
+                "code_challenge_method": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "body": {
+                "redirect_uri": "string",
+                "grant_type": "string",
+                "code_verifier": "string",
+                "client_id": "string",
+                "client_secret": "string",
+                "code": "string"
+              }
+            },
+            {
+              "stage": "string",
+              "authorization": "string"
+            }
+          ],
+          "sessionHooks": [],
+          "afterRequests": []
+        }
+      },
+      {
+        "actor": "cookie-link-foreign",
+        "method": "GET",
+        "path": "/__test/profiles/oauth-proxy-cookie/api/auth/get-session",
+        "requestBodyShape": null,
+        "responseStatus": 200,
+        "responseHeaders": {
+          "cache-control": "no-store",
+          "content-type": "application/json",
+          "pragma": "no-cache"
+        },
+        "responseCookies": {},
+        "responseBodyShape": {
+          "session": {
+            "id": "string",
+            "expiresAt": "string",
+            "token": "string",
+            "createdAt": "string",
+            "updatedAt": "string",
+            "ipAddress": "string",
+            "userAgent": "string",
+            "userId": "string"
+          },
+          "user": {
+            "id": "string",
+            "name": "string",
+            "email": "string",
+            "emailVerified": "boolean",
+            "image": "null",
+            "createdAt": "string",
+            "updatedAt": "string"
+          }
+        },
+        "responseBody": {
+          "session": {
+            "id": "f87d4d7e-cb6d-45b1-981b-61eaf11db8f0",
+            "expiresAt": "2026-10-10T15:55:12.931Z",
+            "token": "CReAbsp0INi0WptlyzxUh4D8I7PxoK8h",
+            "createdAt": "2026-10-03T15:55:12.931Z",
+            "updatedAt": "2026-10-03T15:55:12.931Z",
+            "ipAddress": "",
+            "userAgent": "Bun/1.4.2",
+            "userId": "8a4fdbab-5005-427b-96d5-e55adc8b4421"
+          },
+          "user": {
+            "id": "8a4fdbab-5005-427b-96d5-e55adc8b4421",
+            "name": "Foreign",
+            "email": "cookie-link-foreign-179104291236@test.com",
+            "emailVerified": false,
+            "image": null,
+            "createdAt": "2026-10-03T15:55:12.927Z",
+            "updatedAt": "2026-10-03T15:55:12.927Z"
+          }
+        }
+      }
+    ],
+    "physicalObservations": []
+  }
+}

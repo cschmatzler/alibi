@@ -1,0 +1,16 @@
+{"ok":true,"oauthBaseURL":"http://127.0.0.1:33321","upstreamVersion":"1.7.6"}
+{"ok":true,"upstreamVersion":"1.7.6"}
+bun test v1.4.2 (744846f84)
+
+tests/plugins/oauth-proxy/proxy.test.ts:
+(pass) OAuth proxy exchanges on production then consumes preview state for only the provider owner [1015.98ms]
+(pass) OAuth proxy checks origin provider authenticated age and state before writes and retains legacy completion [651.66ms]
+(pass) OAuth proxy linking follows the saved authenticated owner without creating any session [1204.81ms]
+(pass) OAuth proxy restoration and session failures preserve exact stages rows and retry [1355.20ms]
+(pass) OAuth proxy cookie state authenticates nonce consumes expiry and retains Source replay semantics [676.58ms]
+(pass) OAuth proxy cookie linking restores the saved owner across browser session changes [855.25ms]
+
+ 6 pass
+ 0 fail
+ 930 expect() calls
+Ran 6 tests across 1 file. [5.83s]
