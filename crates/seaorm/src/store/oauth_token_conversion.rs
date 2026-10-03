@@ -6,7 +6,7 @@ use better_auth_core::{
     oauth_token_conversion::{OAuthTokenConversionStore, OAuthTokenSnapshot, OAuthTokenValues},
 };
 use sea_orm::{
-    ColumnTrait, EntityTrait, QueryFilter,
+    ColumnTrait, EntityTrait, QueryFilter, TransactionTrait,
     sea_query::{Expr, SimpleExpr},
 };
 
@@ -67,11 +67,16 @@ where
             };
             query = query.filter(predicate);
         }
-        Ok(query
-            .exec(self.connection())
-            .await
-            .map_err(map_db_err)?
-            .rows_affected
-            == 1)
+        let transaction = self.connection().begin().await.map_err(map_db_err)?;
+        match query.exec(&transaction).await {
+            Ok(result) => {
+                transaction.commit().await.map_err(map_db_err)?;
+                Ok(result.rows_affected == 1)
+            }
+            Err(error) => {
+                transaction.rollback().await.map_err(map_db_err)?;
+                Err(map_db_err(error))
+            }
+        }
     }
 }

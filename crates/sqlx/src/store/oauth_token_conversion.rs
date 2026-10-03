@@ -1,6 +1,7 @@
 use super::SqlxStore;
 use crate::{
     model::SqlxModel,
+    pool::Exec,
     schema::{AuthSchema, SqlxAccountModel},
     sql::Sql,
 };
@@ -82,7 +83,10 @@ where
                 sql.push(" IS NULL");
             }
         }
-        Ok(self.exec().execute(sql).await? == 1)
+        self.in_transaction(true, async move |tx| {
+            Ok(Exec::Tx(tx).execute(sql).await? == 1)
+        })
+        .await
     }
 }
 

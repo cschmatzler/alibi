@@ -68,14 +68,16 @@ authenticated `Source` values are retained byte for byte. ID tokens become plain
 Preparation errors contain no token or secret values. Manifest and plan types
 omit `Debug` to reduce accidental credential logging; keep them private.
 
-Apply performs **one atomic compare-and-swap per account**, matching the observed
+Apply performs **one atomic compare-and-swap per account in an explicit
+transaction**, matching the observed
 identity, owner, and all three nullable token values. A concurrent refresh,
 reassignment, identity change, deletion, or token change makes it return `false`.
 Only the three token columns are written: timestamps, expirations, passwords,
 scope, and application-owned columns are preserved. Account-update hooks are
 intentionally bypassed so they cannot mutate this operator-controlled write.
-Database triggers still run; an ordinary statement failure rolls back all three
-columns. Review installation-specific triggers before operating on real rows.
+Database triggers still run; the adapter rolls back its transaction on a
+statement error, including SQLite `RAISE(FAIL)` after a trigger has already
+changed a token. Review installation-specific triggers before operating on real rows.
 This is not a transaction across a multi-row manifest.
 
 A failed statement can be retried with the same plan. After a successful apply,

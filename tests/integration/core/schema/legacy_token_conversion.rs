@@ -180,11 +180,17 @@ async fn exercise<S: AuthSchema>(
     }
     assert_eq!(db.table("accounts").await?, initial);
     let plan = OAuthTokenConversion::prepare(input.clone(), ORIGINAL, &config())?;
-    // Failure after SQLite has begun the update must roll back every column.
-    _ = db.execute("CREATE TRIGGER conversion190_fail AFTER UPDATE OF access_token ON accounts BEGIN SELECT RAISE(ABORT, 'owned fixture failure'); END", &[]).await?;
-    assert!(plan.apply(store).await.is_err());
-    assert_eq!(db.table("accounts").await?, initial);
-    _ = db.execute("DROP TRIGGER conversion190_fail", &[]).await?;
+    // FAIL preserves prior statement/trigger writes unless the adapter rolls
+    // back an explicit transaction; ABORT alone cannot prove that contract.
+    for action in ["ABORT", "FAIL"] {
+        _ = db.execute(&format!("CREATE TRIGGER conversion190_fail AFTER UPDATE OF access_token ON accounts BEGIN UPDATE accounts SET refresh_token='trigger-change' WHERE id=NEW.id; SELECT RAISE({action}, 'owned fixture failure'); END"), &[]).await?;
+        assert!(plan.apply(store).await.is_err());
+        assert!(
+            db.table("accounts").await? == initial,
+            "{action} must roll back token and trigger writes"
+        );
+        _ = db.execute("DROP TRIGGER conversion190_fail", &[]).await?;
+    }
     assert!(plan.apply(store).await?);
     let converted = store
         .get_account("operator-fixture", "legacy-row")
