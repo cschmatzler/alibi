@@ -681,13 +681,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_invite_member_rejects_empty_role_inputs() {
+    async fn test_invite_member_accepts_empty_role_inputs() {
         let auth = create_test_auth().await;
-        let (owner_token, _) =
+        let (owner_token, owner) =
             signup_user(&auth, "role-owner@example.com", "password123", "Owner").await;
-        let (invitee_token, _) =
-            signup_user(&auth, "role-invitee@example.com", "password123", "Invitee").await;
-        drop(invitee_token);
+        let owner_id = owner["user"]["id"].as_str().expect("owner id");
 
         let (status, create_body) = send_request(
             &auth,
@@ -702,43 +700,97 @@ mod tests {
         )
         .await;
         assert_eq!(status, 200, "create org failed: {create_body}");
-
         let org_id = create_body["id"].as_str().expect("org id");
 
-        let (status_2, body) = send_request(
-            &auth,
-            post_json_with_auth(
-                "/organization/invite-member",
-                serde_json::json!({
-                    "organizationId": org_id,
-                    "email": "role-invitee@example.com",
-                    "role": ""
-                }),
-                &owner_token,
-            ),
-        )
-        .await;
-        assert_eq!(
-            status_2, 400,
-            "empty string role should be rejected: {body}"
-        );
+        // Published 1.7.6 admits both forms and persists an empty role string.
+        // Separate recipients ensure each reaches creation, not duplicate denial.
+        let mut invitations = Vec::new();
+        for (role, email) in [
+            (serde_json::json!(""), "empty-string@example.com"),
+            (serde_json::json!([]), "empty-array@example.com"),
+        ] {
+            let (status, body) = send_request(
+                &auth,
+                post_json_with_auth(
+                    "/organization/invite-member",
+                    serde_json::json!({
+                        "organizationId": org_id,
+                        "email": email,
+                        "role": role
+                    }),
+                    &owner_token,
+                ),
+            )
+            .await;
+            assert_eq!(status, 200, "empty role should be admitted: {body}");
+            assert_eq!(body["role"], "");
+            assert_eq!(body["email"], email);
+            assert_eq!(body["organizationId"], org_id);
+            assert_eq!(body["inviterId"], owner_id);
+            assert_eq!(body["status"], "pending");
+            let invitation_id = body["id"].as_str().expect("invitation id");
+            let stored = auth
+                .context()
+                .database
+                .get_invitation_by_id(invitation_id)
+                .await
+                .expect("invitation lookup should succeed")
+                .expect("admitted invitation should be persisted");
+            assert_eq!(stored.role, "");
+            assert_eq!(stored.email, email);
+            assert_eq!(stored.organization_id, org_id);
+            assert_eq!(stored.inviter_id, owner_id);
+            invitations.push(body);
+        }
+        assert_ne!(invitations[0]["id"], invitations[1]["id"]);
 
-        let (status_3, body_2) = send_request(
+        let (status, listed) = send_request(
+            &auth,
+            get_with_auth_and_query(
+                "/organization/list-invitations",
+                &owner_token,
+                vec![("organizationId", org_id)],
+            ),
+        )
+        .await;
+        assert_eq!(status, 200, "list invitations failed: {listed}");
+        let listed = listed.as_array().expect("invitation list");
+        assert_eq!(listed.len(), invitations.len());
+        for invitation in invitations {
+            assert!(
+                listed.contains(&invitation),
+                "persisted invitation: {invitation}"
+            );
+        }
+
+        let (status, denied) = send_request(
             &auth,
             post_json_with_auth(
                 "/organization/invite-member",
                 serde_json::json!({
                     "organizationId": org_id,
-                    "email": "role-invitee@example.com",
-                    "role": []
+                    "email": "unknown-role@example.com",
+                    "role": "not-a-role"
                 }),
                 &owner_token,
             ),
         )
         .await;
+        assert_eq!(status, 400, "unknown role should be rejected: {denied}");
         assert_eq!(
-            status_3, 400,
-            "empty array role should be rejected: {body_2}"
+            denied,
+            serde_json::json!({ "message": "ROLE_NOT_FOUND: not-a-role" })
         );
+        let (status, after_denial) = send_request(
+            &auth,
+            get_with_auth_and_query(
+                "/organization/list-invitations",
+                &owner_token,
+                vec![("organizationId", org_id)],
+            ),
+        )
+        .await;
+        assert_eq!(status, 200, "list after denial failed: {after_denial}");
+        assert_eq!(after_denial.as_array().expect("invitation list"), listed);
     }
 }
