@@ -31,6 +31,8 @@ alchemy/               docs deployment (Railway) with Alchemy
 
 See [Workspace crates](/reference/crates/) for what each crate publishes.
 
+The [release policy](/guides/releases/) defines Rust versioning, upstream compatibility requirements, and the checks required before publication.
+
 ## Tests
 
 | Tier | Where | Establishes | Run |

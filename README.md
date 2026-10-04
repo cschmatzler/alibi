@@ -1,108 +1,147 @@
 # Better Auth RS
 
-**Better Auth for Rust.** Authentication built around your database, your models, and your stack.
-
 [![CI](https://github.com/cschmatzler/better-auth-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/cschmatzler/better-auth-rs/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Better Auth compatibility](https://img.shields.io/badge/better--auth-v1.7.6-blue)](https://www.npmjs.com/package/better-auth/v/1.7.6)
 
-Email and password, social login, passkeys, two-factor authentication, organizations, and API keys — composed with Rust plugins. Use SQLx or SeaORM for storage and Axum for routing and typed session extractors.
+A Rust implementation of [Better Auth](https://www.better-auth.com/), built to work with its official TypeScript client. Run authentication in your Rust backend while keeping Better Auth's frontend API.
 
-Inspired by [Better Auth](https://www.better-auth.com/). HTTP compatibility targets `better-auth@1.7.6` and is checked against the official TypeScript runtime and client.
+Use email and password, social login, passkeys, two-factor authentication, organizations, and API keys through composable plugins. Store auth data with SQLx or SeaORM, own the generated models and migrations, and mount the server in Axum or Poem.
 
 > [!WARNING]
-> **Unreleased and under active development.** APIs, wire formats, and schemas may change. Production use is not recommended yet.
+> **Unreleased and under active development.** Use the repository directly from Git and pin a reviewed commit. Rust APIs and generated schemas may change before the first stable release. Production use is not recommended yet.
 
-## Quick start
+## Upstream compatibility
 
-Use the project directly from Git.
+The upstream Better Auth API is our compatibility contract. The current target is **`better-auth@1.7.6`**: endpoints, request and response shapes, status and error codes, redirects, cookie attributes, and supported stored data formats.
+
+We verify this contract with a differential suite that runs the official TypeScript client against both the pinned upstream runtime and the Rust implementation, comparing responses and stored state. Rust configuration, callbacks, plugins, and database models use native Rust APIs.
+
+See the [compatibility guide](docs/src/content/docs/reference/compatibility.md) for supported features, known boundaries, and upstream packages outside our scope. Newer upstream behavior becomes part of the contract when we upgrade and verify the target.
+
+## Get started
+
+The example below runs email and password authentication with Axum and SQLite. Add these dependencies to your application:
 
 ```toml
 [dependencies]
-better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", version = "1.0.0-alpha.3", features = ["axum"] }
+better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", features = ["axum"] }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+sqlx = { version = "0.9", default-features = false, features = ["sqlite", "chrono", "json", "derive"] }
 ```
 
-Generate application-owned auth models (SQLx is the default backend):
+For reproducible builds, add `rev = "<commit>"` to the Git dependency and install the CLI from that same commit with `--rev <commit>`.
+
+Generate your auth models:
 
 ```bash
 cargo install --git https://github.com/cschmatzler/better-auth-rs --locked better-auth-cli
 better-auth-rs generate -o src/auth_schema.rs
 ```
 
-Create your auth instance with the generated schema and a configured store:
+Set the environment variables in your shell:
+
+```bash
+export BETTER_AUTH_SECRET="$(openssl rand -base64 32)"
+export BETTER_AUTH_URL="http://localhost:3000"
+export DATABASE_URL="sqlite://auth.db?mode=rwc"
+```
+
+Add this to `src/main.rs`:
 
 ```rust
 mod auth_schema;
 
-use auth_schema::AppAuthSchema;
+use auth_schema::{AppAuthSchema, run_app_migrations};
+use axum::Router;
+use better_auth::integrations::axum::AxumIntegration;
 use better_auth::plugins::EmailPasswordPlugin;
 use better_auth::sqlx::{SqlxPool, SqlxStore};
 use better_auth::{AuthConfig, BetterAuth};
+use std::sync::Arc;
 
-async fn build_auth() -> Result<BetterAuth<AppAuthSchema>, Box<dyn std::error::Error>> {
-    let config =
-        AuthConfig::new(std::env::var("BETTER_AUTH_SECRET")?).base_url("http://localhost:3000");
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let config = AuthConfig::new(std::env::var("BETTER_AUTH_SECRET")?)
+        .base_url(std::env::var("BETTER_AUTH_URL")?);
     let pool = SqlxPool::connect(&std::env::var("DATABASE_URL")?).await?;
-    auth_schema::run_app_migrations(&pool).await?;
+    run_app_migrations(&pool).await?;
     let store = SqlxStore::<AppAuthSchema>::new(config.clone(), pool);
 
-    Ok(BetterAuth::<AppAuthSchema>::new(config)
-        .store(store)
-        .plugin(EmailPasswordPlugin::new().enable_signup(true))
-        .build()
-        .await?)
+    let auth = Arc::new(
+        BetterAuth::<AppAuthSchema>::new(config)
+            .store(store)
+            .plugin(EmailPasswordPlugin::new().enable_signup(true))
+            .build()
+            .await?,
+    );
+
+    let app = Router::new()
+        .nest("/api/auth", auth.clone().axum_router())
+        .with_state(auth);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000").await?;
+    axum::serve(listener, app).await?;
+    Ok(())
 }
 ```
 
-For SeaORM, enable the `seaorm` feature, generate models with `better-auth-rs generate --backend seaorm -o src/auth_schema.rs`, and replace the SQLx connection and store setup with:
+Run `cargo run`, then check the server from another terminal:
 
-```rust
-use better_auth::seaorm::{Database, SeaOrmStore};
-
-let database = Database::connect(&std::env::var("DATABASE_URL")?).await?;
-auth_schema::run_app_migrations(&database).await?;
-let store = SeaOrmStore::<AppAuthSchema>::new(config.clone(), database);
+```bash
+curl http://localhost:3000/api/auth/ok
+# {"ok":true}
 ```
 
-The [installation guide](docs/src/content/docs/installation.md) includes all dependencies, environment setup, and a runnable Axum server.
+The generated schema belongs to your application. `run_app_migrations` sets up a new local database; use your own versioned migrations as the schema evolves. The default build uses OpenSSL; see [Cargo features](docs/src/content/docs/reference/features.md) for Rustls.
+
+Continue with the [installation guide](docs/src/content/docs/installation.md), [basic usage](docs/src/content/docs/basic-usage.md), or [SeaORM setup](docs/src/content/docs/databases/seaorm.md). For the frontend, follow Better Auth's official [client setup](https://www.better-auth.com/docs/concepts/client).
+
+## Releases
+
+Rust releases use independent Semantic Versioning. Each release records the exact upstream Better Auth version it targets.
+
+Compatible Rust bug fixes can ship as patch releases without waiting for upstream. Compatible additions use minor releases; breaking changes require major releases. Upstream upgrades are versioned by their effect on Rust users.
+
+For example, Rust `1.0.0` and `1.0.1` could both target Better Auth `1.7.7`, with `1.0.1` fixing a Rust implementation bug. These are examples, not published versions: the current workspace version is `1.0.0-alpha.3`.
+
+See the [release policy](docs/src/content/docs/guides/releases.md) for compatibility rules and publication checks.
 
 ## Documentation
 
-The [backend docs](docs/src/content/docs/introduction.md) follow Better Auth's structure with Rust examples. For the frontend, use the official [client setup](https://www.better-auth.com/docs/concepts/client) and [usage guides](https://www.better-auth.com/docs/basic-usage).
+Read the [documentation site](https://better-auth-rs.schmatzler.com) or browse the guides in this repository:
 
-Backend topics:
+- [Plugins](docs/src/content/docs/plugins/index.md) and [social sign-on](docs/src/content/docs/authentication/social-sign-on.md)
+- [SQLx](docs/src/content/docs/databases/sqlx.md), [SeaORM](docs/src/content/docs/databases/seaorm.md), and [existing databases](docs/src/content/docs/databases/existing-databases.md)
+- [Sessions](docs/src/content/docs/concepts/session-management.md), [security](docs/src/content/docs/concepts/security.md), and [cross-origin applications](docs/src/content/docs/guides/cross-origin.md)
+- [HTTP API](docs/src/content/docs/reference/http-api.md), [configuration](docs/src/content/docs/reference/options.md), and [CLI](docs/src/content/docs/reference/cli.md)
+- [Server-side calls](docs/src/content/docs/guides/server-side-calls.md) and [writing plugins](docs/src/content/docs/guides/writing-a-plugin.md)
 
-- [Basic usage](docs/src/content/docs/basic-usage.md) · [Server-side calls](docs/src/content/docs/guides/server-side-calls.md) · [Cross-origin applications](docs/src/content/docs/guides/cross-origin.md)
-- [SQLx](docs/src/content/docs/databases/sqlx.md) · [SeaORM](docs/src/content/docs/databases/seaorm.md) · [No database](docs/src/content/docs/databases/no-database.md) · [Existing databases](docs/src/content/docs/databases/existing-databases.md)
-- [Sessions](docs/src/content/docs/concepts/session-management.md) · [Cookies](docs/src/content/docs/concepts/cookies.md) · [Security](docs/src/content/docs/concepts/security.md) · [Rate limiting](docs/src/content/docs/concepts/rate-limit.md) · [Secondary storage](docs/src/content/docs/concepts/secondary-storage.md)
-- [Plugins](docs/src/content/docs/plugins/index.md) · [Social sign-on](docs/src/content/docs/authentication/social-sign-on.md) · [Writing a plugin](docs/src/content/docs/guides/writing-a-plugin.md)
-- [Options](docs/src/content/docs/reference/options.md) · [HTTP API](docs/src/content/docs/reference/http-api.md) · [Cargo features](docs/src/content/docs/reference/features.md) · [CLI](docs/src/content/docs/reference/cli.md)
-- [Compatibility](docs/src/content/docs/reference/compatibility.md) · [API source](https://github.com/cschmatzler/better-auth-rs/tree/main/src)
+Use the official [Better Auth documentation](https://www.better-auth.com/docs/basic-usage) for frontend usage, matching the upstream version we target.
 
-Run the Astro Starlight site locally with Bun:
+## Contributing
 
-```bash
-bun install
-bun run docs:dev
-```
-
-`bun run docs:check` validates the site; `bun run docs:build` produces a static build with search. Read the [live documentation](https://better-auth-rs.schmatzler.com).
-
-Railway deployment uses Alchemy with SOPS and Varlock. See the [deployment guide](alchemy/README.md) for secrets, planning, and deployment commands.
-
-## Development
-
-The repository uses [devenv](https://devenv.sh/getting-started/) and direnv:
+Development uses [devenv](https://devenv.sh/getting-started/) and direnv:
 
 ```bash
 direnv allow
 devenv shell -- ./scripts/check.sh
 ```
 
-See [contributing](docs/src/content/docs/guides/development.md) for environment requirements, [tests](tests/README.md) for test tiers, and [compatibility testing](tests/compat/README.md) for focused checks.
+The check script runs the complete project gate. Read [contributing](docs/src/content/docs/guides/development.md) for environment requirements, [tests](tests/README.md) for test tiers, and [compatibility testing](tests/compat/README.md) for the differential harness.
 
-## License
+To work on the Astro Starlight documentation site:
 
-This project is a fork of [better-auth-rs/better-auth-rs](https://github.com/better-auth-rs/better-auth-rs) by AprilNEA, continuing under the [MIT license](LICENSE). Original copyright is retained in the license notice; contribution history is preserved in the fork's git history.
+```bash
+bun install
+bun run docs:dev
+```
 
-[MIT](LICENSE)
+Use `bun run docs:check` for diagnostics and `bun run docs:build` for the static build. The [deployment guide](alchemy/README.md) covers hosting.
+
+## License and origins
+
+[MIT](LICENSE). This project continues the work of [better-auth-rs/better-auth-rs](https://github.com/better-auth-rs/better-auth-rs) by AprilNEA. Original copyright notices and contribution history are preserved.

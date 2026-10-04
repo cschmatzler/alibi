@@ -162,6 +162,7 @@ export default defineConfig({
             'reference/compatibility',
             'reference/crates',
             'guides/development',
+            'guides/releases',
           ],
         },
       ],
