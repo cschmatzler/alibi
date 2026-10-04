@@ -10,7 +10,7 @@ use better_auth_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
     CreateUser, CreateVerification,
 };
-use rand::{Rng, rngs::OsRng};
+use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
@@ -140,9 +140,9 @@ impl MagicLinkPlugin {
             generator.generate(&body.email).await?
         } else {
             let alphabet = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-            let mut rng = OsRng;
+            let mut rng = rand::rng();
             (0..32)
-                .filter_map(|_| alphabet.get(rng.gen_range(0..alphabet.len())).copied())
+                .filter_map(|_| alphabet.get(rng.random_range(0..alphabet.len())).copied())
                 .map(char::from)
                 .collect()
         };

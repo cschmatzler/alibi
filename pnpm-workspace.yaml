@@ -1,5 +1,0 @@
-packages:
-  - docs
-
-patchedDependencies:
-  alchemy@2.0.0-beta.80: patches/alchemy@2.0.0-beta.80.patch

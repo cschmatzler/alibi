@@ -57,7 +57,10 @@ impl PwnedPasswordClient {
     /// Returns the published provider status or generic retry error when the
     /// response cannot be checked, including a malformed matching count.
     pub async fn is_password_compromised(&self, password: &str) -> AuthResult<bool> {
-        let digest = format!("{:X}", Sha1::digest(password.as_bytes()));
+        let digest = Sha1::digest(password.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02X}"))
+            .collect::<String>();
         let (prefix, suffix) = digest.split_at(5);
         let endpoint = self
             .range_api

@@ -14,6 +14,8 @@ categories = { workspace = true }
 workspace = true
 
 [dependencies]
+rand_core = { version = "0.6", features = ["getrandom"] }
+signature = "3"
 better-auth-core = { workspace = true }
 
 # Asynchronous runtime
@@ -48,7 +50,7 @@ k256 = { workspace = true }
 aes-gcm = { workspace = true }
 ed25519-dalek = { workspace = true }
 p256 = { workspace = true }
-p384 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+p384 = { version = "0.14", features = ["ecdsa", "pkcs8"] }
 p521 = { workspace = true }
 rsa = { workspace = true }
 chacha20poly1305 = { workspace = true }
@@ -85,5 +87,5 @@ better-auth-seaorm = { path = "../seaorm" }
 [features]
 default = ["native-tls"]
 native-tls = ["reqwest/default-tls"]
-rustls = ["reqwest/rustls-tls"]
+rustls = ["reqwest/__rustls-aws-lc-rs", "reqwest/system-proxy"]
 axum = ["better-auth-core/axum"]

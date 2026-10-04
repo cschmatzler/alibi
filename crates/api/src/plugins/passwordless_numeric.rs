@@ -2,7 +2,7 @@
 use better_auth_core::{AuthError, AuthResult};
 use chrono::{DateTime, Utc};
 use num_traits::ToPrimitive;
-use rand::{Rng, rngs::OsRng};
+use rand::RngExt;
 
 pub(super) fn generate_code(length: f64) -> AuthResult<String> {
     if length.is_nan() {
@@ -21,9 +21,9 @@ pub(super) fn generate_code(length: f64) -> AuthResult<String> {
         .ceil()
         .to_u32()
         .ok_or_else(|| AuthError::internal("Unsupported random code length"))?;
-    let mut rng = OsRng;
+    let mut rng = rand::rng();
     Ok((0..count)
-        .map(|_| char::from(b'0' + rng.gen_range(0..10)))
+        .map(|_| char::from(b'0' + rng.random_range(0..10)))
         .collect())
 }
 

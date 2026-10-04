@@ -46,10 +46,10 @@ See [Workspace crates](/reference/crates/) for what each crate publishes.
 The documentation is an Astro Starlight site in `docs/`. From the repository root:
 
 ```bash
-pnpm install
-pnpm docs:dev       # live preview
-pnpm docs:check     # Astro diagnostics
-pnpm docs:build     # static build and search index
+bun install
+bun run docs:dev       # live preview
+bun run docs:check     # Astro diagnostics
+bun run docs:build     # static build and search index
 ```
 
 - Content lives in `docs/src/content/docs`; **navigation** (the sidebar order and groups) is configured explicitly in `docs/astro.config.mjs`. A new page does not appear until you add it there.

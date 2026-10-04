@@ -4,7 +4,7 @@ use base64::engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD};
 use better_auth_core::{AuthConfig, AuthError, AuthRequest, AuthResult};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom as _;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::time::Duration;
@@ -415,7 +415,7 @@ pub(super) fn decode_challenge_cookie(
 }
 
 pub(super) fn generate_ts_user_handle() -> String {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let handle: String = (0..GENERATED_USER_ID_LENGTH)
         .map(|_| {
             char::from(

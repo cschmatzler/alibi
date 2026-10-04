@@ -9,7 +9,6 @@ use crate::plugin::AuthContext;
 use crate::schema::AuthSchema;
 use crate::types::UpdateUser;
 use async_trait::async_trait;
-use rand::{RngCore, rngs::OsRng};
 use serde::Serialize;
 use std::fmt::Write;
 use std::sync::Arc;
@@ -77,7 +76,7 @@ impl PasswordHasher for ScryptHasher {
         let password = password.to_owned();
         tokio::task::spawn_blocking(move || {
             let mut salt = [0; 16];
-            OsRng.fill_bytes(&mut salt);
+            rand::fill(&mut salt);
             let salt = hexadecimal(&salt);
             let key = derive_scrypt(&password, &salt)?;
             Ok(format!("{salt}:{}", hexadecimal(&key)))
@@ -114,7 +113,7 @@ impl PasswordHasher for ScryptHasher {
 }
 
 fn derive_scrypt(password: &str, salt: &str) -> AuthResult<[u8; 64]> {
-    let params = scrypt::Params::new(14, 16, 1, 64)
+    let params = scrypt::Params::new(14, 16, 1)
         .map_err(|error| AuthError::PasswordHash(error.to_string()))?;
     let password = password.nfkc().collect::<String>();
     let mut key = [0; 64];

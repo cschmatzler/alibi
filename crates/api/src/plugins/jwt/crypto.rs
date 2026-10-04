@@ -2,12 +2,14 @@ use super::{JwtAlgorithm, JwtKeyPairConfig};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth_core::{AuthError, AuthResult};
 use ed25519_dalek::{Signer, Verifier};
-use p256::elliptic_curve::sec1::ToEncodedPoint;
-use rand::rngs::OsRng;
-use rsa::signature::{RandomizedSigner, SignatureEncoding};
+use p256::elliptic_curve::Generate as _;
+use p256::elliptic_curve::sec1::ToSec1Point;
+use rsa::sha2::Sha256 as RsaSha256;
+use rsa::signature::SignatureEncoding;
+use rsa::signature::{RandomizedSigner as _, Signer as _, Verifier as _};
 use rsa::traits::{PrivateKeyParts, PublicKeyParts};
 use serde_json::{Value, json};
-use sha2::Sha256;
+use signature::RandomizedSigner as _;
 
 ///
 /// # Errors
@@ -15,37 +17,29 @@ use sha2::Sha256;
 pub(super) fn generate(config: &JwtKeyPairConfig) -> AuthResult<(Value, Value)> {
     match config.algorithm {
         JwtAlgorithm::EdDsa => {
-            let key = ed25519_dalek::SigningKey::generate(&mut OsRng);
+            let key = ed25519_dalek::SigningKey::generate(&mut rand::rng());
             let public = json!({ "kty": "OKP", "crv": "Ed25519", "x": encode(key.verifying_key().as_bytes()) });
             let private = private_jwk(&public, [("d", json!(encode(key.as_bytes())))])?;
             Ok((public, private))
         }
         JwtAlgorithm::Es256 => {
-            let key = p256::SecretKey::random(&mut OsRng);
-            let point = key.public_key().to_encoded_point(false);
+            let key = p256::SecretKey::generate();
+            let point = key.public_key().to_sec1_point(false);
             ec_pair(
                 "P-256",
                 key.to_bytes().as_slice(),
-                point
-                    .x()
-                    .map(sha2::digest::generic_array::GenericArray::as_slice),
-                point
-                    .y()
-                    .map(sha2::digest::generic_array::GenericArray::as_slice),
+                point.x().map(|x| x.as_slice()),
+                point.y().map(|x| x.as_slice()),
             )
         }
         JwtAlgorithm::Es512 => {
-            let key = p521::SecretKey::random(&mut OsRng);
-            let point = key.public_key().to_encoded_point(false);
+            let key = p521::SecretKey::generate();
+            let point = key.public_key().to_sec1_point(false);
             ec_pair(
                 "P-521",
                 key.to_bytes().as_slice(),
-                point
-                    .x()
-                    .map(sha2::digest::generic_array::GenericArray::as_slice),
-                point
-                    .y()
-                    .map(sha2::digest::generic_array::GenericArray::as_slice),
+                point.x().map(|x| x.as_slice()),
+                point.y().map(|x| x.as_slice()),
             )
         }
         JwtAlgorithm::Ps256 | JwtAlgorithm::Rs256 => {
@@ -55,7 +49,8 @@ pub(super) fn generate(config: &JwtKeyPairConfig) -> AuthResult<(Value, Value)> 
                     "RSA modulus length must be at least 2048 bits",
                 ));
             }
-            let mut key = rsa::RsaPrivateKey::new(&mut OsRng, bits).map_err(crypto_error)?;
+            let mut key =
+                rsa::RsaPrivateKey::new(&mut rsa::rand_core::OsRng, bits).map_err(crypto_error)?;
             key.precompute().map_err(crypto_error)?;
             let public = json!({ "kty": "RSA", "n": encode(&key.n().to_bytes_be()), "e": encode(&key.e().to_bytes_be()) });
             let mut primes = key.primes().iter();
@@ -150,11 +145,10 @@ pub(super) fn sign(
         JwtAlgorithm::Es256 => {
             let secret = ec_field(private, "d", 32)?;
             let key = p256::ecdsa::SigningKey::from_slice(&secret).map_err(crypto_error)?;
-            validate_ec_pair(
-                private,
-                key.verifying_key().to_encoded_point(false).as_bytes(),
-            )?;
-            let signature: p256::ecdsa::Signature = key.sign_with_rng(&mut OsRng, message);
+            validate_ec_pair(private, key.verifying_key().to_sec1_point(false).as_bytes())?;
+            let signature: p256::ecdsa::Signature = key
+                .try_sign_with_rng(&mut rand::rng(), message)
+                .map_err(crypto_error)?;
             Ok(signature.to_bytes().to_vec())
         }
         JwtAlgorithm::Es512 => {
@@ -162,18 +156,22 @@ pub(super) fn sign(
             let public = p521::SecretKey::from_slice(&secret)
                 .map_err(crypto_error)?
                 .public_key();
-            validate_ec_pair(private, public.to_encoded_point(false).as_bytes())?;
+            validate_ec_pair(private, public.to_sec1_point(false).as_bytes())?;
             let key = p521::ecdsa::SigningKey::from_slice(&secret).map_err(crypto_error)?;
-            let signature: p521::ecdsa::Signature = key.sign_with_rng(&mut OsRng, message);
+            let signature: p521::ecdsa::Signature = key
+                .try_sign_with_rng(&mut rand::rng(), message)
+                .map_err(crypto_error)?;
             Ok(signature.to_bytes().to_vec())
         }
         JwtAlgorithm::Rs256 => {
-            let key = rsa::pkcs1v15::SigningKey::<Sha256>::new(rsa_private(private)?);
+            let key = rsa::pkcs1v15::SigningKey::<RsaSha256>::new(rsa_private(private)?);
             Ok(key.sign(message).to_vec())
         }
         JwtAlgorithm::Ps256 => {
-            let key = rsa::pss::SigningKey::<Sha256>::new(rsa_private(private)?);
-            Ok(key.sign_with_rng(&mut OsRng, message).to_vec())
+            let key = rsa::pss::SigningKey::<RsaSha256>::new(rsa_private(private)?);
+            Ok(key
+                .sign_with_rng(&mut rsa::rand_core::OsRng, message)
+                .to_vec())
         }
     }
 }
@@ -211,12 +209,12 @@ pub(super) fn verify(
             key.verify(message, &signature).is_ok()
         }
         JwtAlgorithm::Rs256 => {
-            let key = rsa::pkcs1v15::VerifyingKey::<Sha256>::new(rsa_public(public)?);
+            let key = rsa::pkcs1v15::VerifyingKey::<RsaSha256>::new(rsa_public(public)?);
             let signature = rsa::pkcs1v15::Signature::try_from(signature).map_err(crypto_error)?;
             key.verify(message, &signature).is_ok()
         }
         JwtAlgorithm::Ps256 => {
-            let key = rsa::pss::VerifyingKey::<Sha256>::new(rsa_public(public)?);
+            let key = rsa::pss::VerifyingKey::<RsaSha256>::new(rsa_public(public)?);
             let signature = rsa::pss::Signature::try_from(signature).map_err(crypto_error)?;
             key.verify(message, &signature).is_ok()
         }

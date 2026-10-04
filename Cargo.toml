@@ -5,14 +5,11 @@ version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
-
 readme = { workspace = true }
 keywords = { workspace = true }
 categories = { workspace = true }
-
 [lints]
 workspace = true
-
 [workspace]
 resolver = "2"
 members = [
@@ -30,7 +27,6 @@ members = [
     "vendor/webauthn-rs",
 ]
 exclude = ["tests/compat/rust-server"]
-
 [workspace.package]
 readme = "README.md"
 keywords = ["auth", "authentication", "session", "oauth", "security"]
@@ -39,10 +35,8 @@ version = "1.0.0-alpha.3"
 edition = "2024"
 license = "MIT"
 repository = "https://github.com/cschmatzler/better-auth-rs"
-
 [workspace.dependencies]
 regex = "1"
-# Sub-crates
 better-auth-core = { version = "1.0.0-alpha.3", path = "crates/core" }
 better-auth-api = { version = "1.0.0-alpha.3", path = "crates/api", default-features = false }
 better-auth-macros = { version = "1.0.0-alpha.3", path = "crates/derive", package = "better-auth-macros" }
@@ -50,74 +44,47 @@ better-auth-seaorm = { version = "1.0.0-alpha.3", path = "crates/seaorm" }
 better-auth-schema-registry = { version = "1.0.0-alpha.3", path = "crates/schema-registry" }
 better-auth-entity-codegen = { version = "1.0.0-alpha.3", path = "crates/entity-codegen" }
 better-auth-sqlx = { version = "1.0.0-alpha.3", path = "crates/sqlx", default-features = false }
-prettyplease = "0.2"
-
-# Asynchronous runtime
+prettyplease = "0.3"
 tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1.92"
-
-# Serialization
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0", features = ["preserve_order", "float_roundtrip"] }
 ryu-js = "1.0.3"
 indexmap = { version = "2", features = ["serde"] }
-
-# Logging and tracing
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# Error handling
 thiserror = "2.0"
-
-# Time handling
 chrono = { version = "0.4", features = ["serde"] }
-
-# Cookie handling
 cookie = "0.18"
-
-# Data structures
 uuid = { version = "1.18", features = ["v4", "v7", "serde"] }
-
-# Validation
 validator = { version = "0.21", features = ["derive"] }
-
-# Crypto
-scrypt = "0.11"
+scrypt = "0.12"
 unicode-normalization = "0.1"
-rand = "0.8"
-base64 = "0.22"
+rand = "0.10"
+base64 = "0.23"
 jsonwebtoken = { version = "11", default-features = false, features = ["rust_crypto"] }
-sha2 = "0.10"
-sha1 = "0.10"
-sha3 = "=0.10.8"
-k256 = { version = "=0.13.4", features = ["ecdsa"] }
-aes-gcm = "0.10"
-ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8"] }
-p256 = { version = "0.13", features = ["pkcs8"] }
-p521 = { version = "0.13", features = ["pkcs8"] }
+sha2 = "0.11"
+sha1 = "0.11"
+sha3 = "0.12"
+k256 = { version = "0.14", features = ["ecdsa"] }
+aes-gcm = "0.11"
+ed25519-dalek = { version = "3", features = ["rand_core", "pkcs8"] }
+p256 = { version = "0.14", features = ["pkcs8"] }
+p521 = { version = "0.14", features = ["pkcs8"] }
 rsa = { version = "0.9", features = ["sha2"] }
-chacha20poly1305 = "0.10"
-hkdf = "0.12"
-hmac = "0.12"
-totp-rs = { version = "5", features = ["gen_secret", "otpauth"] }
-
-# HTTP client
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
-
-# Web frameworks
+chacha20poly1305 = "0.11"
+hkdf = "0.13"
+hmac = "0.13"
+totp-rs = { version = "6", features = ["gen_secret", "otpauth"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "form", "query"] }
 axum = "0.8"
 poem = { version = "3.1.12", default-features = false }
 tower = "0.5"
 url = "2"
-
-# Cache
-redis = "0.27"
-
-# Proc macro utilities
+redis = "1.7"
 proc-macro2 = "1"
 quote = "1"
-syn = { version = "2", features = ["full"] }
-
+syn = { version = "3", features = ["full"] }
 [features]
 default = ["native-tls", "sqlx"]
 native-tls = [
@@ -143,49 +110,30 @@ sqlx = ["sqlx-sqlite", "sqlx-postgres"]
 sqlx-sqlite = ["dep:better-auth-sqlx", "better-auth-sqlx/sqlite"]
 sqlx-postgres = ["dep:better-auth-sqlx", "better-auth-sqlx/postgres"]
 redis-cache = ["better-auth-core/redis-cache"]
-
 [dependencies]
-# Core crates
 better-auth-core = { workspace = true }
 better-auth-api = { workspace = true }
 better-auth-seaorm = { workspace = true, optional = true }
 better-auth-sqlx = { workspace = true, optional = true, default-features = false }
-
-# Asynchronous runtime
 tokio = { workspace = true }
 async-trait = { workspace = true }
-
-# Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = "0.9"
 multer = { version = "3.1", features = ["tokio-io"] }
-clap = { version = "4.5", features = ["derive"] }
-
-# Error handling
+clap = { version = "4.6", features = ["derive"] }
 thiserror = { workspace = true }
-
-# Time handling
 chrono = { workspace = true }
-
-# Data structures
 uuid = { workspace = true }
-
-# Crypto
 rand = { workspace = true }
 base64 = { workspace = true }
 jsonwebtoken = { workspace = true }
-
-# Web framework (optional)
 axum = { workspace = true, optional = true }
 poem = { workspace = true, optional = true }
 tower = { workspace = true, optional = true }
 url = { workspace = true }
-
-# Cache (optional)
 tracing.workspace = true
 http-body-util = { version = "0.1", optional = true }
-
 [dev-dependencies]
 axum = { workspace = true }
 aes-gcm = { workspace = true }
@@ -198,20 +146,17 @@ sqlx = { version = "0.9", default-features = false, features = ["sqlite", "postg
 tokio = { workspace = true, features = ["full", "test-util"] }
 serde_yaml = "0.9"
 multer = { version = "3.1", features = ["tokio-io"] }
-tower-http = { version = "0.6", features = ["cors"] }
+tower-http = { version = "0.7", features = ["cors"] }
 tracing-subscriber = { workspace = true }
-oas3 = { version = "0.20.1", features = ["yaml-spec"] }
+oas3 = { version = "0.22.0", features = ["yaml-spec"] }
 proptest = "1.10.0"
 reqwest = { workspace = true }
-
 [[bin]]
 name = "sync_better_auth_openapi"
 path = "scripts/sync_better_auth_openapi.rs"
-
 [[bin]]
 name = "openapi_alignment_report"
 path = "scripts/openapi_alignment_report.rs"
-
 [workspace.lints.clippy]
 allow_attributes = "warn"
 allow_attributes_without_reason = "warn"
@@ -230,12 +175,10 @@ await_holding_refcell_ref = "warn"
 unused_async = "warn"
 multiple_unsafe_ops_per_block = "warn"
 unnecessary_safety_comment = "warn"
-
 [workspace.lints.rust]
 unfulfilled_lint_expectations = "warn"
 unreachable_pub = "warn"
 unused_results = "warn"
-
 [profile.release]
 opt-level = 3
 lto = "fat"
@@ -244,23 +187,16 @@ panic = "abort"
 strip = true
 incremental = false
 debug = false
-
-# Password interoperability retains the pinned runtime parameters in tests.
 [profile.dev.package.scrypt]
 opt-level = 3
-
 [profile.dev.package.salsa20]
 opt-level = 3
-
 [profile.ci]
 inherits = "release"
 opt-level = 2
 lto = "thin"
 codegen-units = 16
-
-# Keep managed RSA key generation practical in debug and compatibility builds.
 [profile.dev.package.rsa]
 opt-level = 3
-
 [profile.dev.package.num-bigint-dig]
 opt-level = 3

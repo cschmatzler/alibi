@@ -95,7 +95,7 @@ fn main() -> Result<(), DynError> {
 
     ensure_command_available("git")?;
     ensure_command_available("node")?;
-    ensure_command_available("pnpm")?;
+    ensure_command_available("bun")?;
 
     let repo_dir = options.repo_dir.clone();
     let output_dir = options.output_dir.clone();
@@ -105,14 +105,10 @@ fn main() -> Result<(), DynError> {
     let commit = git_rev_parse_head(&repo_dir)?;
 
     if !options.skip_install {
-        run_checked(
-            "pnpm",
-            &["install", "--no-frozen-lockfile"],
-            Some(&repo_dir),
-        )?;
+        run_checked("bun", &["install", "--no-frozen-lockfile"], Some(&repo_dir))?;
     }
     if !options.skip_build {
-        run_checked("pnpm", &["build"], Some(&repo_dir))?;
+        run_checked("bun", &["run", "build"], Some(&repo_dir))?;
     }
 
     fs::create_dir_all(&output_dir)?;

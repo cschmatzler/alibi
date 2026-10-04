@@ -20,12 +20,12 @@ tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 async-trait = "0.1.89"
-base64 = "0.22"
-sha2 = "0.10"
-hmac = "0.12"
+base64 = "0.23"
+sha2 = "0.11"
+hmac = "0.13"
 chrono = "0.4.44"
 url = "2.5.8"
-reqwest = { version = "0.12", default-features = false, features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
 
 [features]
 # Serve every fixture from the SeaORM store instead of the default SQLx store.

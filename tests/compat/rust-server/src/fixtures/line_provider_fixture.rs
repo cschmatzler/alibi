@@ -221,7 +221,7 @@ fn verify_remote_proof(
     fields: &std::collections::BTreeMap<String, String>,
 ) -> Option<Value> {
     use base64::Engine;
-    use hmac::{Hmac, Mac};
+    use hmac::{Hmac, KeyInit, Mac};
     let segments: Vec<_> = token.split('.').collect();
     let [header, payload, signature] = segments.as_slice() else {
         return None;

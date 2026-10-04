@@ -17,7 +17,7 @@ use better_auth_core::{
 };
 use chrono::{Duration, Utc};
 pub use endpoint::OneTimeTokenOutput;
-use rand::{rngs::OsRng, seq::SliceRandom};
+use rand::seq::IndexedRandom as _;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
@@ -494,7 +494,7 @@ fn message_response(status: u16, message: &str) -> AuthResult<AuthResponse> {
 fn random_token() -> String {
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
     (0..32)
-        .map(|_| char::from(ALPHABET.choose(&mut OsRng).copied().unwrap_or(b'a')))
+        .map(|_| char::from(ALPHABET.choose(&mut rand::rng()).copied().unwrap_or(b'a')))
         .collect()
 }
 

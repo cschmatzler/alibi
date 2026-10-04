@@ -172,7 +172,11 @@ fn decrypt_legacy(value: &str, secret: &str) -> AuthResult<String> {
     let (nonce, ciphertext) = bytes.split_at_checked(12).ok_or_else(invalid)?;
     let plain = Aes256Gcm::new_from_slice(&key)
         .map_err(|_| invalid())?
-        .decrypt(Nonce::from_slice(nonce), ciphertext)
+        .decrypt(
+            &Nonce::try_from(nonce)
+                .map_err(|_error| AuthError::Encryption("Invalid nonce".into()))?,
+            ciphertext,
+        )
         .map_err(|_| invalid())?;
     String::from_utf8(plain).map_err(|_| invalid())
 }

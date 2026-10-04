@@ -2,6 +2,7 @@ use super::config::{SiweCallbackResult, SiweVerification, SiweVerifier};
 use super::parse::valid_address;
 use async_trait::async_trait;
 use k256::ecdsa::{RecoveryId, Signature, VerifyingKey};
+use k256::elliptic_curve::scalar::IsHigh;
 use sha3::{Digest, Keccak256};
 
 /// Secure EIP-191 verifier for externally owned Ethereum accounts. Contract
@@ -47,7 +48,7 @@ impl Eip191Verifier {
         };
         // Reject noncanonical signatures rather than allowing an alternative
         // high-S encoding to bypass the verifier's signature policy.
-        if signature_3.normalize_s().is_some() {
+        if signature_3.s().is_high().into() {
             return None;
         }
         let key = VerifyingKey::recover_from_prehash(
@@ -56,7 +57,7 @@ impl Eip191Verifier {
             RecoveryId::try_from(recovery).ok()?,
         )
         .ok()?;
-        let public_key = key.to_encoded_point(false);
+        let public_key = key.to_sec1_point(false);
         let hash = Keccak256::digest(public_key.as_bytes().get(1..)?);
         let mut address = String::from("0x");
 

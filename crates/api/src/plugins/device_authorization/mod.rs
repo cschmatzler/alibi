@@ -7,8 +7,7 @@ use better_auth_core::{
     UpdateDeviceCode,
 };
 use chrono::{Duration, Utc};
-use rand::RngCore;
-use rand::distributions::{Alphanumeric, DistString};
+use rand::distr::{Alphanumeric, SampleString};
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
@@ -689,8 +688,7 @@ impl DeviceAuthorizationPlugin {
         match &self.config.generate_device_code {
             Some(generator) => generator().await.map_err(device_callback_error),
             None => {
-                Ok(Alphanumeric
-                    .sample_string(&mut rand::rngs::OsRng, self.config.device_code_length))
+                Ok(Alphanumeric.sample_string(&mut rand::rng(), self.config.device_code_length))
             }
         }
     }
@@ -1009,7 +1007,7 @@ async fn find_device_code_by_user_code(
 
 fn default_generate_user_code(length: usize) -> String {
     let mut bytes = vec![0u8; length];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    rand::fill(&mut bytes);
     bytes
         .into_iter()
         .map(|byte| {

@@ -786,7 +786,7 @@ mod tests {
             related_cookie_name, sign_cookie_value, verify_cookie_value,
         };
         use better_auth_core::{AuthInitContext, UpdateUser};
-        use hmac::{Hmac, Mac};
+        use hmac::{Hmac, KeyInit, Mac};
         use sha2::Sha256;
 
         let mut ctx = context().await;

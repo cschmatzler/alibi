@@ -3,7 +3,7 @@ use better_auth_core::entity::AuthAccount;
 use better_auth_core::utils::cookie_utils::{sign_cookie_value, verify_cookie_value};
 use better_auth_core::{AuthConfig, AuthError, AuthRequest, AuthResult, OAuthStateStrategy};
 use chrono::{Duration, Utc};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use sha2::Sha256;

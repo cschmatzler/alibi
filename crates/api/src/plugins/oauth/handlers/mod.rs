@@ -28,7 +28,7 @@ use better_auth_core::{
     CreateVerification, UpdateAccount, UpdateUser,
 };
 use chrono::{Duration, Utc};
-use rand::{Rng, thread_rng};
+use rand::RngExt;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
@@ -173,11 +173,11 @@ async fn require_session<S: better_auth_core::AuthSchema>(
 
 fn generate_pkce() -> (String, String) {
     const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
-    let mut random = thread_rng();
+    let mut random = rand::rng();
     let verifier: String = (0..128)
         .filter_map(|_| {
             ALPHABET
-                .get(random.gen_range(0..ALPHABET.len()))
+                .get(random.random_range(0..ALPHABET.len()))
                 .copied()
                 .map(char::from)
         })
@@ -2469,11 +2469,11 @@ async fn initiate_oauth_flow_core(
     let (code_verifier, code_challenge) = generate_pkce();
     let state: String = {
         let alphabet = b"abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ-_";
-        let mut random = thread_rng();
+        let mut random = rand::rng();
         (0..32)
             .filter_map(|_| {
                 alphabet
-                    .get(random.gen_range(0..alphabet.len()))
+                    .get(random.random_range(0..alphabet.len()))
                     .copied()
                     .map(char::from)
             })

@@ -79,14 +79,14 @@ Backend topics:
 - [Options](docs/src/content/docs/reference/options.md) · [HTTP API](docs/src/content/docs/reference/http-api.md) · [Cargo features](docs/src/content/docs/reference/features.md) · [CLI](docs/src/content/docs/reference/cli.md)
 - [Compatibility](docs/src/content/docs/reference/compatibility.md) · [API source](https://github.com/cschmatzler/better-auth-rs/tree/main/src)
 
-Run the Astro Starlight site locally with Node.js 22.12+ and pnpm:
+Run the Astro Starlight site locally with Bun:
 
 ```bash
-pnpm install
-pnpm docs:dev
+bun install
+bun run docs:dev
 ```
 
-`pnpm docs:check` validates the site; `pnpm docs:build` produces a static build with search. Read the [live documentation](https://better-auth-rs.schmatzler.com).
+`bun run docs:check` validates the site; `bun run docs:build` produces a static build with search. Read the [live documentation](https://better-auth-rs.schmatzler.com).
 
 Railway deployment uses Alchemy with SOPS and Varlock. See the [deployment guide](alchemy/README.md) for secrets, planning, and deployment commands.
 

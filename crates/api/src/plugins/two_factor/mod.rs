@@ -10,7 +10,7 @@ use crate::plugins::helpers::{
     SessionIssueError, get_credential_password_hash, issue_user_session_record,
     issue_user_session_with_overrides_record,
 };
-use aes_gcm::aead::{Aead, KeyInit};
+use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
 use async_trait::async_trait;
 pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
@@ -28,10 +28,10 @@ use better_auth_core::{
 use chrono::{Duration, Utc};
 pub use endpoint::{BackupCodesOutput, TotpOutput};
 use hkdf::Hkdf;
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 pub use otp_storage::{TwoFactorOtpCipher, TwoFactorOtpHasher, TwoFactorOtpStorage};
-use rand::Rng;
-use rand::distributions::Alphanumeric;
+use rand::RngExt;
+use rand::distr::Alphanumeric;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use std::sync::Arc;
@@ -68,8 +68,6 @@ const DEFAULT_TOTP_PERIOD_SECS: f64 = 30.0;
 const DEFAULT_TOTP_DIGITS: f64 = 6.0;
 
 const ENCRYPTION_INFO: &[u8] = b"better-auth-two-factor-encryption";
-
-type HmacSha256 = Hmac<Sha256>;
 
 /// Callback used by the two-factor plugin to deliver a one-time password.
 #[async_trait]
@@ -2167,7 +2165,7 @@ fn generate_totp_at(
     } else {
         remainder as u64
     };
-    let mut mac = <Hmac<sha1::Sha1> as Mac>::new_from_slice(secret.as_bytes())
+    let mut mac = Hmac::<sha1::Sha1>::new_from_slice(secret.as_bytes())
         .map_err(|_error| AuthError::internal("Invalid TOTP HMAC input"))?;
     mac.update(&counter.to_be_bytes());
     let digest = mac.finalize().into_bytes();
@@ -2222,9 +2220,7 @@ fn totp_uri(
     email: &str,
     enrollment: bool,
 ) -> String {
-    let secret = totp_rs::Secret::Raw(secret.as_bytes().to_vec())
-        .to_encoded()
-        .to_string();
+    let secret = totp_rs::Secret::new(secret.as_bytes().to_vec().into_boxed_slice()).to_base32();
     let digits = js_number_string(totp_digits(config));
     // Enrollment forwards the configured period directly; the authenticator
     // provider and generator use the upstream truthy default for zero.
@@ -2307,7 +2303,7 @@ fn parse_password_body<T: serde::de::DeserializeOwned + 'static>(
 }
 
 fn generate_secret() -> String {
-    rand::thread_rng()
+    rand::rng()
         .sample_iter(&Alphanumeric)
         .take(32)
         .map(char::from)
@@ -2375,10 +2371,10 @@ fn generate_numeric_string(length: f64, decimal: bool) -> Option<String> {
     let count = length.ceil() as usize;
     let mut code = String::new();
     code.try_reserve_exact(count).ok()?;
-    let mut random = rand::thread_rng();
+    let mut random = rand::rng();
     for _ in 0..count {
         code.push(if decimal {
-            char::from(b'0' + random.gen_range(0..10u8))
+            char::from(b'0' + random.random_range(0..10u8))
         } else {
             char::from(random.sample(Alphanumeric))
         });
@@ -2535,7 +2531,7 @@ fn verify_factor_cookie_value(secret: &str, signed_value: &str) -> Option<String
     )
     .decode(signature)
     .ok()?;
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(secret.as_bytes()).ok()?;
+    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes()).ok()?;
     mac.update(payload.as_bytes());
     mac.verify_slice(&signature).ok()?;
     Some(payload.to_owned())
@@ -2562,7 +2558,7 @@ fn sign_cookie_value(secret: &str, value: &str) -> String {
 }
 
 fn sign_value(secret: &str, value: &str) -> AuthResult<String> {
-    let mut mac = <HmacSha256 as Mac>::new_from_slice(secret.as_bytes())
+    let mut mac = Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|error| AuthError::internal(format!("Failed to initialize HMAC: {error}")))?;
     mac.update(value.as_bytes());
     Ok(URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes()))
@@ -2574,7 +2570,7 @@ fn derive_encryption_key(secret: &str) -> AuthResult<Key<Aes256Gcm>> {
     hkdf.expand(ENCRYPTION_INFO, &mut okm).map_err(|error| {
         AuthError::internal(format!("Failed to derive encryption key: {error}"))
     })?;
-    Ok(*Key::<Aes256Gcm>::from_slice(&okm))
+    Ok(Key::<Aes256Gcm>::from(okm))
 }
 
 fn encrypt_value(secret: &better_auth_core::AuthConfig, plaintext: &str) -> AuthResult<String> {
@@ -2605,11 +2601,12 @@ fn decrypt_legacy_value(secret: &str, encrypted: &str) -> AuthResult<String> {
         ));
     }
     let (nonce_bytes, ciphertext) = bytes.split_at(12);
-    let plaintext = cipher
-        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
-        .map_err(|error| {
-            AuthError::internal(format!("Failed to decrypt two-factor data: {error}"))
-        })?;
+    let nonce: &Nonce<aes_gcm::aead::consts::U12> = nonce_bytes
+        .try_into()
+        .map_err(|_error| AuthError::Encryption("Invalid nonce".into()))?;
+    let plaintext = cipher.decrypt(nonce, ciphertext).map_err(|error| {
+        AuthError::internal(format!("Failed to decrypt two-factor data: {error}"))
+    })?;
     String::from_utf8(plaintext).map_err(|error| {
         AuthError::internal(format!("Two-factor plaintext is not valid UTF-8: {error}"))
     })

@@ -565,7 +565,7 @@ mod tests {
         let mut digest = Keccak256::new();
         digest.update(prefix.as_bytes());
         digest.update(message.as_bytes());
-        let (signature, recovery) = key.sign_prehash_recoverable(&digest.finalize()).unwrap();
+        let (signature, recovery) = key.sign_prehash_recoverable(&digest.finalize());
         let mut bytes = signature.to_bytes().to_vec();
         bytes.push(recovery.to_byte() + 27);
         format!(

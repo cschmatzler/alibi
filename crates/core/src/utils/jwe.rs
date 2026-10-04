@@ -5,7 +5,7 @@ use crate::{
 };
 use aes_gcm::aes::{
     Aes256,
-    cipher::{BlockDecrypt, BlockEncrypt, KeyInit, generic_array::GenericArray},
+    cipher::{BlockCipherDecrypt, BlockCipherEncrypt, KeyInit},
 };
 use base64::{
     Engine, alphabet,
@@ -17,7 +17,7 @@ use base64::{
 use chrono::Utc;
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
-use rand::{RngCore, rngs::OsRng};
+use hybrid_array::Array;
 use serde_json::json;
 use sha2::{Digest, Sha256, Sha512};
 
@@ -71,7 +71,7 @@ fn authentication(
     iv: &[u8],
     ciphertext: &[u8],
 ) -> AuthResult<Hmac<Sha512>> {
-    let mut mac = <Hmac<Sha512> as Mac>::new_from_slice(key.get(..32).ok_or_else(invalid)?)
+    let mut mac = Hmac::<Sha512>::new_from_slice(key.get(..32).ok_or_else(invalid)?)
         .map_err(|_error| invalid())?;
     mac.update(header.as_bytes());
     mac.update(iv);
@@ -118,7 +118,7 @@ pub fn encode(
         u8::try_from(padding).map_err(|error| AuthError::Internal(error.to_string()))?,
     );
     let mut iv = [0; 16];
-    OsRng.fill_bytes(&mut iv);
+    rand::fill(&mut iv);
     let cipher =
         Aes256::new_from_slice(key.get(32..).ok_or_else(invalid)?).map_err(|_error| invalid())?;
     let mut previous = iv;
@@ -126,7 +126,8 @@ pub fn encode(
         for (byte, previous_2_3) in block.iter_mut().zip(previous) {
             *byte ^= previous_2_3;
         }
-        cipher.encrypt_block(GenericArray::from_mut_slice(block));
+        let block_array: &mut Array<u8, _> = block.into();
+        cipher.encrypt_block(block_array);
         previous.copy_from_slice(block);
     }
     let tag = authentication(&key, &header, &iv, &ciphertext)?
@@ -198,7 +199,8 @@ pub fn decode_parsed(secret: &str, salt: &str, token: &str) -> AuthResult<serde_
     for block in ciphertext.as_chunks_mut::<16>().0 {
         let mut encrypted = [0; 16];
         encrypted.copy_from_slice(block);
-        cipher.decrypt_block(GenericArray::from_mut_slice(block));
+        let block_array: &mut Array<u8, _> = block.into();
+        cipher.decrypt_block(block_array);
         for (byte, previous_2) in block.iter_mut().zip(previous) {
             *byte ^= previous_2;
         }

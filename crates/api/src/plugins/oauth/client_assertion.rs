@@ -7,7 +7,6 @@ use base64::{
         DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig, general_purpose::URL_SAFE_NO_PAD,
     },
 };
-use rand::rngs::OsRng;
 use rsa::{
     pkcs8::DecodePrivateKey,
     signature::{RandomizedSigner, SignatureEncoding, Signer},
@@ -138,27 +137,30 @@ impl OAuthPrivateKeyJwtOptions {
                             .to_vec()
                     } else {
                         rsa::pss::SigningKey::<$digest>::new(key)
-                            .sign_with_rng(&mut OsRng, message)
+                            .sign_with_rng(&mut rsa::rand_core::OsRng, message)
                             .to_vec()
                     }
                 };
             }
             return Ok(match algorithm {
-                "RS256" | "PS256" => rsa_sign!(sha2::Sha256),
-                "RS384" | "PS384" => rsa_sign!(sha2::Sha384),
-                _ => rsa_sign!(sha2::Sha512),
+                "RS256" | "PS256" => rsa_sign!(rsa::sha2::Sha256),
+                "RS384" | "PS384" => rsa_sign!(rsa::sha2::Sha384),
+                _ => rsa_sign!(rsa::sha2::Sha512),
             });
         }
         macro_rules! ec_sign {
             ($curve:ident) => {{
+                use $curve::ecdsa::signature::RandomizedSigner as _;
+                use $curve::elliptic_curve::pkcs8::DecodePrivateKey as _;
+                use $curve::elliptic_curve::sec1::ToSec1Point as _;
+
                 let key = if let Some(jwk) = jwk {
                     $curve::SecretKey::from_slice(&field(jwk, "d")?).map_err(key_error)?
                 } else {
                     $curve::SecretKey::from_pkcs8_pem(pem).map_err(key_error)?
                 };
-                use p256::elliptic_curve::sec1::ToEncodedPoint;
                 if let Some(jwk) = jwk {
-                    let public = key.public_key().to_encoded_point(false);
+                    let public = key.public_key().to_sec1_point(false);
                     if public.x().map(|x| x.as_slice()) != Some(field(jwk, "x")?.as_slice())
                         || public.y().map(|y| y.as_slice()) != Some(field(jwk, "y")?.as_slice())
                     {
@@ -167,7 +169,9 @@ impl OAuthPrivateKeyJwtOptions {
                 }
                 let signer = $curve::ecdsa::SigningKey::from_slice(key.to_bytes().as_slice())
                     .map_err(key_error)?;
-                let signature: $curve::ecdsa::Signature = signer.sign_with_rng(&mut OsRng, message);
+                let signature: $curve::ecdsa::Signature = signer
+                    .try_sign_with_rng(&mut rand::rng(), message)
+                    .map_err(key_error)?;
                 signature.to_bytes().to_vec()
             }};
         }
@@ -176,12 +180,14 @@ impl OAuthPrivateKeyJwtOptions {
             "ES384" => ec_sign!(p384),
             "ES512" => ec_sign!(p521),
             "EdDSA" => {
+                use ed25519_dalek::Signer;
                 let key = if let Some(jwk) = jwk {
                     let seed: [u8; 32] = field(jwk, "d")?
                         .try_into()
                         .map_err(|_| "Invalid Ed25519 seed")?;
                     ed25519_dalek::SigningKey::from_bytes(&seed)
                 } else {
+                    use ed25519_dalek::pkcs8::DecodePrivateKey as _;
                     ed25519_dalek::SigningKey::from_pkcs8_pem(pem).map_err(key_error)?
                 };
                 key.sign(message).to_bytes().to_vec()

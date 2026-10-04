@@ -10,7 +10,7 @@ use better_auth_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, AuthUser, BeforeRequestAction, CreateUser, HttpMethod, RequestMeta,
 };
-use rand::distributions::{Alphanumeric, DistString};
+use rand::distr::{Alphanumeric, SampleString};
 use serde_json::json;
 use std::sync::Arc;
 
@@ -99,7 +99,7 @@ impl AnonymousPlugin {
             }
             email
         } else {
-            let id = Alphanumeric.sample_string(&mut rand::thread_rng(), 32);
+            let id = Alphanumeric.sample_string(&mut rand::rng(), 32);
             self.config
                 .email_domain_name
                 .as_ref()

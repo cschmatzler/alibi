@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use better_auth_core::AuthResponse;
-use rand::Rng;
-use rand::distributions::Alphanumeric;
+use rand::RngExt;
+use rand::distr::Alphanumeric;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
@@ -47,7 +47,7 @@ pub struct RandomSiweNonce;
 #[async_trait]
 impl SiweNonceProvider for RandomSiweNonce {
     async fn get_nonce(&self) -> SiweCallbackResult<String> {
-        Ok(rand::thread_rng()
+        Ok(rand::rng()
             .sample_iter(&Alphanumeric)
             .take(32)
             .map(char::from)

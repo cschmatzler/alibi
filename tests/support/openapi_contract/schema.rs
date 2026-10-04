@@ -184,11 +184,30 @@ pub fn get_operation<'a>(
 /// Resolve an `ObjectOrReference<ObjectSchema>` to a concrete `ObjectSchema`.
 pub fn resolve_object_schema(
     spec: &oas3::spec::Spec,
+    schema: &oas3::spec::Schema,
+) -> Option<ObjectSchema> {
+    match schema {
+        oas3::spec::Schema::Boolean(_) => None,
+        oas3::spec::Schema::Object(obj_ref) => resolve_object_ref(spec, obj_ref),
+    }
+}
+
+fn resolve_object_ref(
+    spec: &oas3::spec::Spec,
     obj_or_ref: &ObjectOrReference<ObjectSchema>,
 ) -> Option<ObjectSchema> {
     match obj_or_ref {
         ObjectOrReference::Object(obj) => Some(obj.clone()),
-        ObjectOrReference::Ref { .. } => obj_or_ref.resolve(spec).ok(),
+        ObjectOrReference::Ref { ref_path, .. } => {
+            let refpath = ref_path.parse::<oas3::spec::Ref>().ok()?;
+            if refpath.kind != oas3::spec::RefType::Schema {
+                return None;
+            }
+            spec.components
+                .as_ref()
+                .and_then(|components| components.schemas.get(&refpath.name))
+                .and_then(|schema| resolve_object_schema(spec, schema))
+        }
     }
 }
 
@@ -310,8 +329,10 @@ pub fn object_schema_to_field(spec: &oas3::spec::Spec, obj: &ObjectSchema) -> Fi
         obj.items
             .as_ref()
             .and_then(|item_schema| match item_schema.as_ref() {
-                oas3::spec::Schema::Object(boxed) => resolve_object_schema(spec, boxed)
-                    .map(|s| Box::new(object_schema_to_field(spec, &s))),
+                oas3::spec::Schema::Object(boxed) => {
+                    resolve_object_ref(spec, boxed as &ObjectOrReference<ObjectSchema>)
+                        .map(|s| Box::new(object_schema_to_field(spec, &s)))
+                }
                 oas3::spec::Schema::Boolean(_) => None,
             })
     } else {

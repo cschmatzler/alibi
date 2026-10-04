@@ -295,7 +295,11 @@ pub(in crate::plugins) async fn verify_jwks_token(
                     let claim = payload.get("nonce").and_then(JsValue::as_str)?;
                     if claim != nonce
                         && (!matches!(config.nonce_comparison, OAuthNonceComparison::ExactOrSha256)
-                            || claim != format!("{:x}", Sha256::digest(nonce.as_bytes())))
+                            || claim
+                                != Sha256::digest(nonce.as_bytes())
+                                    .iter()
+                                    .map(|byte| format!("{byte:02x}"))
+                                    .collect::<String>())
                     {
                         return None;
                     }

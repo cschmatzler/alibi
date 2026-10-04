@@ -10,7 +10,7 @@ use better_auth_core::utils::password as password_utils;
 use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, UpdateUser};
 use chrono::{Duration, Utc};
-use rand::{Rng, rngs::OsRng};
+use rand::RngExt;
 
 /// Send an email using the configured email provider, logging on failure.
 pub(super) async fn send_email_or_log(
@@ -325,7 +325,7 @@ pub(in crate::plugins) async fn delete_user_core(
     {
         let token: String = (0..32)
             .map(|_| {
-                let value = OsRng.gen_range(0_u8..36);
+                let value = rand::rng().random_range(0_u8..36);
                 char::from(if value < 10 {
                     b'0' + value
                 } else {

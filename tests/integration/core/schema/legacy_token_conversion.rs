@@ -68,9 +68,9 @@ fn legacy(plain: &str) -> TestResult<String> {
     Hkdf::<Sha256>::new(None, ORIGINAL.as_bytes())
         .expand(b"better-auth-oauth-token-encryption", &mut key)
         .map_err(|_| "fixture HKDF")?;
-    let nonce = [19; 12];
+    let nonce = Nonce::from([19u8; 12]);
     let ciphertext = Aes256Gcm::new_from_slice(&key)?
-        .encrypt(Nonce::from_slice(&nonce), plain.as_bytes())
+        .encrypt(&Nonce::from(nonce), plain.as_bytes())
         .map_err(|_| "fixture encryption")?;
     Ok(STANDARD.encode(nonce.into_iter().chain(ciphertext).collect::<Vec<_>>()))
 }
@@ -90,7 +90,10 @@ fn source_plain(value: &str) -> TestResult<String> {
         .collect::<TestResult<Vec<_>>>()?;
     let (nonce, ciphertext) = bytes.split_at(24);
     let plain = XChaCha20Poly1305::new(&Sha256::digest(CURRENT.as_bytes()))
-        .decrypt(XNonce::from_slice(nonce), ciphertext)
+        .decrypt(
+            &XNonce::try_from(nonce).map_err(|_| "Source nonce")?,
+            ciphertext,
+        )
         .map_err(|_| "Source authentication")?;
     Ok(String::from_utf8(plain)?)
 }

@@ -21,7 +21,7 @@ pub use callbacks::{
     ApiKeyGetter, ApiKeyPermissions, ApiKeyValidator,
 };
 use handlers::{create_key_core, delete_key_core, get_key_core, list_keys_core, update_key_core};
-use rand::seq::SliceRandom;
+use rand::seq::IndexedRandom;
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 pub use types::{
@@ -545,7 +545,7 @@ impl ApiKeyPlugin {
             .map_err(|error| AuthError::internal(error.to_string()))?;
         // Match TS: generateRandomString(length, "a-z", "A-Z") — alpha only
         const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut raw = String::new();
         raw.try_reserve_exact(
             usize::try_from(capacity).map_err(|error| AuthError::internal(error.to_string()))?,

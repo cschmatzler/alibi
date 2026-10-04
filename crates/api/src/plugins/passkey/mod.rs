@@ -835,7 +835,7 @@ mod tests {
     fn pending_registration_challenges_keep_original_verification_policy()
     -> Result<(), Box<dyn std::error::Error>> {
         use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-        use p256::elliptic_curve::sec1::ToEncodedPoint;
+        use p256::elliptic_curve::{Generate as _, sec1::ToSec1Point as _};
         use serde_cbor_2::Value as Cbor;
         use sha2::{Digest, Sha256};
         use std::collections::BTreeMap;
@@ -867,8 +867,8 @@ mod tests {
         let webauthn::StoredRegistrationVerifier::Legacy(state) = decoded.state else {
             panic!("Old challenge changed verifier policy");
         };
-        let secret = p256::SecretKey::random(&mut rand::thread_rng());
-        let point = secret.public_key().to_encoded_point(false);
+        let secret = p256::SecretKey::generate();
+        let point = secret.public_key().to_sec1_point(false);
         let key = Cbor::Map(BTreeMap::from([
             (Cbor::Integer(1), Cbor::Integer(2)),
             (Cbor::Integer(3), Cbor::Integer(-7)),

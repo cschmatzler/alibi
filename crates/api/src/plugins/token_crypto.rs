@@ -4,7 +4,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth_core::{AuthError, AuthResult};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, KeyInit},
 };
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
@@ -84,7 +84,9 @@ pub(in crate::plugins) fn hash_token(token: &str) -> String {
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn encrypt(plain: &str, secret: &str) -> AuthResult<String> {
     let cipher = XChaCha20Poly1305::new(&Sha256::digest(secret.as_bytes()));
-    let nonce = XChaCha20Poly1305::generate_nonce(&mut OsRng);
+    let mut nonce_bytes = [0u8; 24];
+    rand::fill(&mut nonce_bytes);
+    let nonce = XNonce::from(nonce_bytes);
     let ciphertext = cipher
         .encrypt(&nonce, plain.as_bytes())
         .map_err(|_error| AuthError::Encryption("token encryption failed".into()))?;
@@ -119,7 +121,11 @@ pub(in crate::plugins) fn decrypt(stored: &str, secret: &str) -> AuthResult<Stri
         .ok_or_else(|| AuthError::Encryption("Invalid encrypted token".into()))?;
     let cipher = XChaCha20Poly1305::new(&Sha256::digest(secret.as_bytes()));
     let plain = cipher
-        .decrypt(XNonce::from_slice(nonce), ciphertext)
+        .decrypt(
+            &XNonce::try_from(nonce)
+                .map_err(|_error| AuthError::Encryption("Invalid encrypted token".into()))?,
+            ciphertext,
+        )
         .map_err(|_error| AuthError::Encryption("token decryption failed".into()))?;
     String::from_utf8(plain)
         .map_err(|_error| AuthError::Encryption("Invalid encrypted token".into()))

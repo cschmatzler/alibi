@@ -5,10 +5,10 @@
   "main": "index.js",
   "scripts": {
     "test": "devenv shell -- ./scripts/check.sh",
-    "docs:dev": "pnpm --dir docs dev",
-    "docs:build": "pnpm --dir docs build",
-    "docs:check": "pnpm --dir docs check",
-    "docs:preview": "pnpm --dir docs preview",
+    "docs:dev": "bun --cwd docs dev",
+    "docs:build": "bun --cwd docs build",
+    "docs:check": "bun --cwd docs check",
+    "docs:preview": "bun --cwd docs preview",
     "docs:infra:check": "tsc --project alchemy/tsconfig.json",
     "docs:plan": "APP_ENV=production bun --bun varlock run -- alchemy plan alchemy/alchemy.run.ts --stage prod --profile better-auth-rs",
     "docs:deploy": "APP_ENV=production bun --bun varlock run -- alchemy deploy alchemy/alchemy.run.ts --stage prod --profile better-auth-rs",
@@ -18,7 +18,13 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "packageManager": "pnpm@10.28.2",
+  "workspaces": [
+    "docs"
+  ],
+  "patchedDependencies": {
+    "alchemy@2.0.0-beta.80": "patches/alchemy@2.0.0-beta.80.patch"
+  },
+  "packageManager": "bun@1.4.2",
   "private": true,
   "devDependencies": {
     "@distilled.cloud/core": "1.0.0-rc.13",
@@ -26,12 +32,12 @@
     "@effect/platform-bun": "4.0.0",
     "@effect/platform-node": "4.0.0",
     "@types/bun": "1.4.2",
-    "@types/node": "26.6.3",
+    "@types/node": "26.6.4",
     "alchemy": "2.0.0-beta.80",
     "effect": "4.0.0",
-    "hono": "4.12.14",
-    "typescript": "6.0.3",
-    "varlock": "1.20.0"
+    "hono": "4.13.13",
+    "typescript": "7.0.2",
+    "varlock": "1.21.1"
   },
   "type": "module"
 }

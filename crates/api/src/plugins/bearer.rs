@@ -10,7 +10,7 @@ use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     BeforeRequestAction,
 };
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use indexmap::IndexMap;
 use sha2::Sha256;
 
