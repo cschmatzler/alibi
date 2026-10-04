@@ -1430,269 +1430,302 @@ async function replayBrowser(
   };
 }
 
-compatScenario(
-  "browser OAuth creation and linking validate fresh mapped identity with complete raw provider context at the Source guards",
-  async (ctx) => {
-    const other = await foreign(ctx);
-    const web = ctx.actor("browser", "validation");
-    const observations = [];
-    const profile = {
-      id: 1831,
-      email: ctx.uniqueEmail("browser-provider").toUpperCase(),
-      name: null,
-      username: "Mapped Browser Name",
-      avatar_url: "https://images.example/gitlab-raw.png",
-      email_verified: true,
-      state: "active",
-      locked: false,
-      applicationClaim: { only: "unmapped-provider-record" },
-    };
-    const controlled = await providerControl(ctx, profile);
+for (const stage of ["creation", "implicit linking", "explicit linking"] as const) {
+  compatScenario(
+    `browser OAuth creation and linking validate fresh mapped identity with complete raw provider context at the Source guards: ${stage}`,
+    async (ctx) => {
+      const other = await foreign(ctx);
+      const web = ctx.actor("browser", "validation");
+      const observations = [];
+      const profile = {
+        id: 1831,
+        email: ctx.uniqueEmail("browser-provider").toUpperCase(),
+        name: null,
+        username: "Mapped Browser Name",
+        avatar_url: "https://images.example/gitlab-raw.png",
+        email_verified: true,
+        state: "active",
+        locked: false,
+        applicationClaim: { only: "unmapped-provider-record" },
+      };
+      const controlled = await providerControl(ctx, profile);
 
-    for (const mode of ["deny", "throw", "mutate"]) {
-      const configured = await configure(ctx, mode);
-      const before = await state(ctx);
-      const receiptsBefore = await providerReceipts(ctx);
-      const completed = await browserProvider(ctx, web);
-      const after = await state(ctx);
-      const receiptsAfter = await providerReceipts(ctx);
-      expect(receiptsAfter).toHaveLength(receiptsBefore.length + 2);
-      expect(validations(after)).toHaveLength(1);
-      expect(validations(after)[0]).toMatchObject({
-        user: {
-          email: profile.email.toLowerCase(),
-          name: profile.username,
-          image: profile.avatar_url,
-          emailVerified: true,
-        },
-        source: {
-          method: "oauth",
-          action: "create-user",
-          oauth: { providerId: "gitlab", profile },
-        },
-        context: {
-          path: "/callback/:id",
-          body: null,
-          request: { method: "GET", path: "/callback/gitlab", marker: "actual-browser-provider" },
-        },
+      if (stage === "creation") {
+        for (const mode of ["deny", "throw", "mutate"]) {
+          const configured = await configure(ctx, mode);
+          const before = await state(ctx);
+          const receiptsBefore = await providerReceipts(ctx);
+          const completed = await browserProvider(ctx, web);
+          const after = await state(ctx);
+          const receiptsAfter = await providerReceipts(ctx);
+          expect(receiptsAfter).toHaveLength(receiptsBefore.length + 2);
+          expect(validations(after)).toHaveLength(1);
+          expect(validations(after)[0]).toMatchObject({
+            user: {
+              email: profile.email.toLowerCase(),
+              name: profile.username,
+              image: profile.avatar_url,
+              emailVerified: true,
+            },
+            source: {
+              method: "oauth",
+              action: "create-user",
+              oauth: { providerId: "gitlab", profile },
+            },
+            context: {
+              path: "/callback/:id",
+              body: null,
+              request: {
+                method: "GET",
+                path: "/callback/gitlab",
+                marker: "actual-browser-provider",
+              },
+            },
+          });
+          expect(validations(after)[0]!.user).not.toHaveProperty("applicationClaim");
+          expect(validations(after)[0]!.user).not.toHaveProperty("id");
+
+          if (mode !== "mutate") {
+            providerError(
+              completed.result,
+              mode === "throw" ? "validation_failed" : "identity_denied",
+              mode === "throw" ? "User validation failed" : "Configured identity rejected",
+            );
+            expect(identities(after)).toEqual(identities(before));
+            expect(after.events).toHaveLength(1);
+          } else {
+            expect(completed.result).toMatchObject({
+              status: 302,
+              location: "/validation-complete",
+            });
+            expect(after.users).toHaveLength(before.users.length + 1);
+
+            const admitted = after.users.find(
+              (row) => row.email === "MUTATED@VALIDATION.FIXTURE.TEST",
+            )!;
+            expect(admitted).toMatchObject({
+              name: "Validated Identity",
+              createdAt: "2001-01-01T00:00:00.000Z",
+              emailVerified: true,
+            });
+            expect(after.accounts.find((row) => row.providerId === "gitlab")).toMatchObject({
+              accountId: "1831",
+              userId: admitted.id,
+            });
+            expect(after.events.filter((event) => event.stage === "validation")).toHaveLength(1);
+          }
+
+          const replay = await replayBrowser(ctx, web, completed.path);
+          await unchangedForeign(ctx, other);
+          observations.push({
+            mode,
+            configured,
+            before: observed(before),
+            receiptsBefore: observedReceipts(receiptsBefore),
+            started: completed.started,
+            completed: completed.result,
+            after: observed(after),
+            receiptsAfter: observedReceipts(receiptsAfter),
+            replay,
+          });
+        }
+
+        return {
+          foreign: other,
+          controlled,
+          observations,
+          receipts: observedReceipts(await providerReceipts(ctx)),
+        };
+      }
+
+      const normal = await configure(ctx, "normal");
+      const unverified = ctx.actor("unverified-link", "validation");
+      const unverifiedSignup = await unverified.client.signUp.email({
+        email: ctx.uniqueEmail("unverified-link"),
+        name: "Unverified Local",
+        password: "password123",
       });
-      expect(validations(after)[0]!.user).not.toHaveProperty("applicationClaim");
-      expect(validations(after)[0]!.user).not.toHaveProperty("id");
+      expect(unverifiedSignup.error).toBeNull();
 
-      if (mode !== "mutate") {
+      const unverifiedProfile = {
+        ...profile,
+        id: 1832,
+        email: unverifiedSignup.data!.user.email.toUpperCase(),
+      };
+      const unverifiedControl = await providerControl(ctx, unverifiedProfile);
+      if (stage === "implicit linking") {
+        const unverifiedConfig = await configure(ctx, "deny");
+        const unverifiedBefore = await state(ctx);
+        const guarded = await browserProvider(ctx, ctx.actor("implicit-guard", "validation"));
+        const unverifiedAfter = await state(ctx);
+        providerError(guarded.result, "account_not_linked");
+        expect(validations(unverifiedAfter)).toEqual([]);
+        expect(identities(unverifiedAfter)).toEqual(identities(unverifiedBefore));
+
+        const guardedReplay = await replayBrowser(
+          ctx,
+          ctx.actor("implicit-guard", "validation"),
+          guarded.path,
+        );
+        const verifiedConfig = await configure(ctx, "normal");
+        const verifiedFlow = proofFlow(ctx, "email-otp", "verified-local");
+        const verifiedProof = await verifiedFlow.issue();
+        const verified = await verifiedFlow.submit(verifiedProof.proof);
+        expect((verified as any).error).toBeNull();
+
+        const verifiedId = (verified as any).data.user.id;
+        const verifiedEmail = ctx.uniqueEmail("verified-local");
+        const implicitProfile = { ...profile, id: 1833, email: verifiedEmail.toUpperCase() };
+        const implicitControl = await providerControl(ctx, implicitProfile);
+        const implicit = [];
+
+        for (const mode of ["deny", "mutate"]) {
+          const configured = await configure(ctx, mode);
+          const before = await state(ctx);
+          const completed = await browserProvider(ctx, ctx.actor(`implicit-${mode}`, "validation"));
+          const after = await state(ctx);
+          expect(validations(after)).toHaveLength(1);
+          expect(validations(after)[0]).toMatchObject({
+            user: { id: verifiedId, email: verifiedEmail, name: profile.username },
+            source: {
+              method: "oauth",
+              action: "link-account",
+              oauth: { providerId: "gitlab", profile: implicitProfile },
+            },
+          });
+
+          if (mode === "deny") {
+            providerError(completed.result, "identity_denied", "Configured identity rejected");
+            expect(identities(after)).toEqual(identities(before));
+          } else {
+            expect(completed.result.location).toBe("/validation-complete");
+            expect(after.users).toEqual(before.users);
+            expect(
+              after.accounts.filter(
+                (row) => row.userId === verifiedId && row.providerId === "gitlab",
+              ),
+            ).toEqual([expect.objectContaining({ accountId: "1833", userId: verifiedId })]);
+            expect(after.sessions).toHaveLength(before.sessions.length + 1);
+          }
+
+          const replay = await replayBrowser(
+            ctx,
+            ctx.actor(`implicit-${mode}`, "validation"),
+            completed.path,
+          );
+          implicit.push({
+            mode,
+            configured,
+            before: observed(before),
+            started: completed.started,
+            completed: completed.result,
+            after: observed(after),
+            replay,
+          });
+        }
+
+        await unchangedForeign(ctx, other);
+        return {
+          foreign: other,
+          controlled,
+          normal,
+          unverifiedSignup,
+          unverifiedControl,
+          unverifiedConfig,
+          unverifiedBefore: observed(unverifiedBefore),
+          guarded: guarded.result,
+          guardedReplay,
+          unverifiedAfter: observed(unverifiedAfter),
+          verifiedConfig,
+          verifiedProof: observedProof("email-otp", verifiedProof),
+          verified,
+          implicitControl,
+          implicit,
+          receipts: observedReceipts(await providerReceipts(ctx)),
+        };
+      }
+
+      const mismatchProfile = {
+        ...profile,
+        id: 1834,
+        email: ctx.uniqueEmail("explicit-mismatch").toUpperCase(),
+      };
+      const mismatchControl = await providerControl(ctx, mismatchProfile);
+      const explicit = [];
+
+      for (const mode of ["deny", "normal"]) {
+        const configured = await configure(ctx, mode);
+        const before = await state(ctx);
+        const completed = await browserProvider(ctx, unverified, true);
+        const after = await state(ctx);
+        expect(validations(after)).toHaveLength(1);
+        expect(validations(after)[0]).toMatchObject({
+          user: { id: unverifiedSignup.data!.user.id, email: mismatchProfile.email },
+          source: {
+            method: "oauth",
+            action: "link-account",
+            oauth: { providerId: "gitlab", profile: mismatchProfile },
+          },
+        });
+
         providerError(
           completed.result,
-          mode === "throw" ? "validation_failed" : "identity_denied",
-          mode === "throw" ? "User validation failed" : "Configured identity rejected",
+          mode === "deny" ? "identity_denied" : "email_does_not_match",
+          mode === "deny" ? "Configured identity rejected" : undefined,
         );
         expect(identities(after)).toEqual(identities(before));
-        expect(after.events).toHaveLength(1);
-      } else {
-        expect(completed.result).toMatchObject({ status: 302, location: "/validation-complete" });
-        expect(after.users).toHaveLength(before.users.length + 1);
 
-        const admitted = after.users.find(
-          (row) => row.email === "MUTATED@VALIDATION.FIXTURE.TEST",
-        )!;
-        expect(admitted).toMatchObject({
-          name: "Validated Identity",
-          createdAt: "2001-01-01T00:00:00.000Z",
-          emailVerified: true,
+        const replay = await replayBrowser(ctx, unverified, completed.path);
+        explicit.push({
+          mode,
+          configured,
+          before: observed(before),
+          started: completed.started,
+          completed: completed.result,
+          after: observed(after),
+          replay,
         });
-        expect(after.accounts.find((row) => row.providerId === "gitlab")).toMatchObject({
-          accountId: "1831",
-          userId: admitted.id,
-        });
-        expect(after.events.filter((event) => event.stage === "validation")).toHaveLength(1);
       }
 
-      const replay = await replayBrowser(ctx, web, completed.path);
+      const matchingControl = await providerControl(ctx, unverifiedProfile);
+      const matchingConfig = await configure(ctx, "mutate");
+      const matchingBefore = await state(ctx);
+      const linked = await browserProvider(ctx, unverified, true);
+      const matchingAfter = await state(ctx);
+      expect(linked.result.location).toBe("/validation-complete");
+      expect(matchingAfter.users).toEqual(matchingBefore.users);
+      expect(matchingAfter.sessions).toEqual(matchingBefore.sessions);
+      expect(
+        matchingAfter.accounts.filter(
+          (row) => row.userId === unverifiedSignup.data!.user.id && row.providerId === "gitlab",
+        ),
+      ).toEqual([
+        expect.objectContaining({ accountId: "1832", userId: unverifiedSignup.data!.user.id }),
+      ]);
+      expect(validations(matchingAfter)).toHaveLength(1);
+      expect(validations(matchingAfter)[0]!.user.email).toBe(unverifiedProfile.email);
+
+      const linkReplay = await replayBrowser(ctx, unverified, linked.path);
       await unchangedForeign(ctx, other);
-      observations.push({
-        mode,
-        configured,
-        before: observed(before),
-        receiptsBefore: observedReceipts(receiptsBefore),
-        started: completed.started,
-        completed: completed.result,
-        after: observed(after),
-        receiptsAfter: observedReceipts(receiptsAfter),
-        replay,
-      });
-    }
-
-    const normal = await configure(ctx, "normal");
-    const unverified = ctx.actor("unverified-link", "validation");
-    const unverifiedSignup = await unverified.client.signUp.email({
-      email: ctx.uniqueEmail("unverified-link"),
-      name: "Unverified Local",
-      password: "password123",
-    });
-    expect(unverifiedSignup.error).toBeNull();
-
-    const unverifiedProfile = {
-      ...profile,
-      id: 1832,
-      email: unverifiedSignup.data!.user.email.toUpperCase(),
-    };
-    const unverifiedControl = await providerControl(ctx, unverifiedProfile);
-    const unverifiedConfig = await configure(ctx, "deny");
-    const unverifiedBefore = await state(ctx);
-    const guarded = await browserProvider(ctx, ctx.actor("implicit-guard", "validation"));
-    const unverifiedAfter = await state(ctx);
-    providerError(guarded.result, "account_not_linked");
-    expect(validations(unverifiedAfter)).toEqual([]);
-    expect(identities(unverifiedAfter)).toEqual(identities(unverifiedBefore));
-
-    const guardedReplay = await replayBrowser(
-      ctx,
-      ctx.actor("implicit-guard", "validation"),
-      guarded.path,
-    );
-    const verifiedConfig = await configure(ctx, "normal");
-    const verifiedFlow = proofFlow(ctx, "email-otp", "verified-local");
-    const verifiedProof = await verifiedFlow.issue();
-    const verified = await verifiedFlow.submit(verifiedProof.proof);
-    expect((verified as any).error).toBeNull();
-
-    const verifiedId = (verified as any).data.user.id;
-    const verifiedEmail = ctx.uniqueEmail("verified-local");
-    const implicitProfile = { ...profile, id: 1833, email: verifiedEmail.toUpperCase() };
-    const implicitControl = await providerControl(ctx, implicitProfile);
-    const implicit = [];
-
-    for (const mode of ["deny", "mutate"]) {
-      const configured = await configure(ctx, mode);
-      const before = await state(ctx);
-      const completed = await browserProvider(ctx, ctx.actor(`implicit-${mode}`, "validation"));
-      const after = await state(ctx);
-      expect(validations(after)).toHaveLength(1);
-      expect(validations(after)[0]).toMatchObject({
-        user: { id: verifiedId, email: verifiedEmail, name: profile.username },
-        source: {
-          method: "oauth",
-          action: "link-account",
-          oauth: { providerId: "gitlab", profile: implicitProfile },
-        },
-      });
-
-      if (mode === "deny") {
-        providerError(completed.result, "identity_denied", "Configured identity rejected");
-        expect(identities(after)).toEqual(identities(before));
-      } else {
-        expect(completed.result.location).toBe("/validation-complete");
-        expect(after.users).toEqual(before.users);
-        expect(
-          after.accounts.filter((row) => row.userId === verifiedId && row.providerId === "gitlab"),
-        ).toEqual([expect.objectContaining({ accountId: "1833", userId: verifiedId })]);
-        expect(after.sessions).toHaveLength(before.sessions.length + 1);
-      }
-
-      const replay = await replayBrowser(
-        ctx,
-        ctx.actor(`implicit-${mode}`, "validation"),
-        completed.path,
-      );
-      implicit.push({
-        mode,
-        configured,
-        before: observed(before),
-        started: completed.started,
-        completed: completed.result,
-        after: observed(after),
-        replay,
-      });
-    }
-
-    const mismatchProfile = {
-      ...profile,
-      id: 1834,
-      email: ctx.uniqueEmail("explicit-mismatch").toUpperCase(),
-    };
-    const mismatchControl = await providerControl(ctx, mismatchProfile);
-    const explicit = [];
-
-    for (const mode of ["deny", "normal"]) {
-      const configured = await configure(ctx, mode);
-      const before = await state(ctx);
-      const completed = await browserProvider(ctx, unverified, true);
-      const after = await state(ctx);
-      expect(validations(after)).toHaveLength(1);
-      expect(validations(after)[0]).toMatchObject({
-        user: { id: unverifiedSignup.data!.user.id, email: mismatchProfile.email },
-        source: {
-          method: "oauth",
-          action: "link-account",
-          oauth: { providerId: "gitlab", profile: mismatchProfile },
-        },
-      });
-
-      providerError(
-        completed.result,
-        mode === "deny" ? "identity_denied" : "email_does_not_match",
-        mode === "deny" ? "Configured identity rejected" : undefined,
-      );
-      expect(identities(after)).toEqual(identities(before));
-
-      const replay = await replayBrowser(ctx, unverified, completed.path);
-      explicit.push({
-        mode,
-        configured,
-        before: observed(before),
-        started: completed.started,
-        completed: completed.result,
-        after: observed(after),
-        replay,
-      });
-    }
-
-    const matchingControl = await providerControl(ctx, unverifiedProfile);
-    const matchingConfig = await configure(ctx, "mutate");
-    const matchingBefore = await state(ctx);
-    const linked = await browserProvider(ctx, unverified, true);
-    const matchingAfter = await state(ctx);
-    expect(linked.result.location).toBe("/validation-complete");
-    expect(matchingAfter.users).toEqual(matchingBefore.users);
-    expect(matchingAfter.sessions).toEqual(matchingBefore.sessions);
-    expect(
-      matchingAfter.accounts.filter(
-        (row) => row.userId === unverifiedSignup.data!.user.id && row.providerId === "gitlab",
-      ),
-    ).toEqual([
-      expect.objectContaining({ accountId: "1832", userId: unverifiedSignup.data!.user.id }),
-    ]);
-    expect(validations(matchingAfter)).toHaveLength(1);
-    expect(validations(matchingAfter)[0]!.user.email).toBe(unverifiedProfile.email);
-
-    const linkReplay = await replayBrowser(ctx, unverified, linked.path);
-    await unchangedForeign(ctx, other);
-    return {
-      foreign: other,
-      controlled,
-      observations,
-      normal,
-      unverifiedSignup,
-      unverifiedControl,
-      unverifiedConfig,
-      unverifiedBefore: observed(unverifiedBefore),
-      guarded: guarded.result,
-      guardedReplay,
-      unverifiedAfter: observed(unverifiedAfter),
-      verifiedConfig,
-      verifiedProof: observedProof("email-otp", verifiedProof),
-      verified,
-      implicitControl,
-      implicit,
-      mismatchControl,
-      explicit,
-      matchingControl,
-      matchingConfig,
-      matchingBefore: observed(matchingBefore),
-      linked: { started: linked.started, result: linked.result },
-      matchingAfter: observed(matchingAfter),
-      linkReplay,
-      receipts: observedReceipts(await providerReceipts(ctx)),
-    };
-  },
-  ["POST /sign-in/social", "GET /callback/{}", "POST /link-social"],
-);
+      return {
+        foreign: other,
+        controlled,
+        normal,
+        unverifiedSignup,
+        unverifiedControl,
+        mismatchControl,
+        explicit,
+        matchingControl,
+        matchingConfig,
+        matchingBefore: observed(matchingBefore),
+        linked: { started: linked.started, result: linked.result },
+        matchingAfter: observed(matchingAfter),
+        linkReplay,
+        receipts: observedReceipts(await providerReceipts(ctx)),
+      };
+    },
+    stage === "explicit linking"
+      ? ["POST /link-social", "GET /callback/{}"]
+      : ["POST /sign-in/social", "GET /callback/{}"],
+  );
+}
