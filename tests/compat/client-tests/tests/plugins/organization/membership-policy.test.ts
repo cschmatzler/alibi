@@ -411,10 +411,16 @@ compatScenario(
 compatScenario(
   "organization invitation creation stays permitted at capacity and admission checks recipient then membership policy before writes",
   async (ctx) => {
-    const [owner, existing, target, foreign] = await actors(ctx, [
+    const target = await signup(ctx, "invite-policy-target");
+    const sent = await target.client.sendVerificationEmail({ email: target.email });
+    expect(sent.error).toBeNull();
+
+    const proof = z
+      .object({ token: z.string() })
+      .parse(await ctx.readVerificationEmail({ email: target.email }));
+    const [owner, existing, foreign] = await actors(ctx, [
       "invite-policy-owner",
       "invite-policy-existing",
-      "invite-policy-target",
       "invite-policy-foreign",
     ]);
     const own = await org(ctx, owner!, "invite-policy-own");
@@ -470,12 +476,6 @@ compatScenario(
     expect((await state(ctx)).receipts).toEqual([]);
     expect((await state(ctx)).snapshot).toEqual(pending.snapshot);
 
-    const sent = await target!.client.sendVerificationEmail({ email: target!.email });
-    expect(sent.error).toBeNull();
-
-    const proof = z
-      .object({ token: z.string() })
-      .parse(await ctx.readVerificationEmail({ email: target!.email }));
     const verified = await target!.client.verifyEmail({ query: { token: proof.token } });
     expect(verified.error).toBeNull();
 
