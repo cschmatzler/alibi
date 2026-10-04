@@ -89,10 +89,21 @@ async fn wait_for_health(port: u16, child: &mut ManagedChild, timeout: Duration)
     );
 }
 
-fn start_reference_server(port: u16, node_env: &str, test_flag: &str) -> ManagedChild {
+fn start_reference_server(
+    port: u16,
+    node_env: &str,
+    test_flag: &str,
+    proxy_environment: bool,
+) -> ManagedChild {
     let child = Command::new("bun")
         .args(["run", "server.ts"])
         .current_dir(project_root().join("tests/compat/reference-server"))
+        // The process owner deliberately distinguishes vendor receiver, configured
+        // auth base, and production skip URL. Keep these inputs out of other suites.
+        .envs(proxy_environment.then(|| [
+            ("NETLIFY_URL", format!("http://localhost:{port}")),
+            ("BETTER_AUTH_URL", format!("http://127.0.0.1:{port}")),
+        ]).into_iter().flatten())
         .env("PORT", port.to_string())
         .env("NODE_ENV", node_env)
         .env("BUN_ENV", node_env)
@@ -158,10 +169,17 @@ fn start_rust_compat_server(
     executable: &std::path::Path,
     node_env: &str,
     test_flag: &str,
+    proxy_environment: bool,
 ) -> ManagedChild {
     // Own the server process directly, so Drop cannot leave a cargo child behind.
     let child = Command::new(executable)
         .current_dir(project_root())
+        // The process owner deliberately distinguishes vendor receiver, configured
+        // auth base, and production skip URL. Keep these inputs out of other suites.
+        .envs(proxy_environment.then(|| [
+            ("NETLIFY_URL", format!("http://localhost:{port}")),
+            ("BETTER_AUTH_URL", format!("http://127.0.0.1:{port}")),
+        ]).into_iter().flatten())
         .env("PORT", port.to_string())
         .env("NODE_ENV", node_env)
         .env("BUN_ENV", node_env)
@@ -263,8 +281,15 @@ async fn run_client_compat_in_environment(
     let ts_port = allocate_port();
     let rust_port = allocate_port();
 
-    let mut ts_server = start_reference_server(ts_port, node_env, test_flag);
-    let mut rust_server = start_rust_compat_server(rust_port, executable, node_env, test_flag);
+    let mut ts_server =
+        start_reference_server(ts_port, node_env, test_flag, paths == ["environment"]);
+    let mut rust_server = start_rust_compat_server(
+        rust_port,
+        executable,
+        node_env,
+        test_flag,
+        paths == ["environment"],
+    );
 
     wait_for_health(ts_port, &mut ts_server, Duration::from_secs(20)).await;
     wait_for_health(rust_port, &mut rust_server, Duration::from_secs(90)).await;
