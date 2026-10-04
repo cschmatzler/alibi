@@ -40,7 +40,7 @@ behavior changes in the supported surface.
 ## Upgrade behavior
 
 Upgrade servers sharing a verification store and all OAuth proxy participants
- together. Request new Magic Links and restart pending OAuth flows. Old identifiers
+together. Request new Magic Links and restart pending OAuth flows. Old identifiers
 and old raw-key OAuth ciphertext are deliberately rejected; there is no fallback
 that restores the cross-purpose confusion. Existing account credentials, password
 hashes and session records need no migration for these release changes.
@@ -56,3 +56,24 @@ exclusion or tolerance change is introduced. The final PR records exact commands
 results and pre-port controls. Historical audits remain evidence for their recorded
 1.7.6 releases; no new full-suite, universal-parity, hosted-CI or coverage-floor
 claim is made.
+
+### Focused results
+
+- Actual SQLx and SeaORM affected runtime selections: 45 cases / 3,344 assertions
+  each. SQLx uses the 44 passing cases from its final group plus the corrected
+  existing proxy owner; SeaORM ran the complete final group. The rejected-input
+  fixture correction supplies the same authentic negative ciphertext to both
+  runtimes; it does not change comparison behavior.
+- Four actual SQLx controls built with the pre-port production owners fail for
+  the expected reasons: old OAuth purpose keys (two owners), bare Magic Link
+  acceptance, and explicit signup disabling ignored by the ID-token path.
+- Focused native state/proxy/Magic Link owners: 15 passed. Integrated target
+  consistency checks: 3 passed; independent published encrypted-JWK interoperability:
+  1 passed. Client type checking and the complete comparison
+  harness: 105 passed / 3,170 assertions. Strict affected Rust Clippy passed.
+- Both frozen Bun installs succeeded. Every published member of the six oracle
+  packages in both private installs matches registry-authenticated 1.7.7 archives
+  before and after testing.
+
+Raw runs, initial failures, corrected expectations, independent source verification
+and exact commit attribution are retained with the coordinator's upgrade evidence.

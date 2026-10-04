@@ -1,0 +1,44 @@
+{
+  "upstreamFrom": "1.7.6",
+  "upstreamTarget": "1.7.7",
+  "upstreamCommit": "db02f233918ad1233bf0753e437e1c0da353273d",
+  "prePortBase": "93a9d1bded75314477425980df4fac4eb7f5c7a5",
+  "integratedBase": "cbbb27e45d146bb6dff27d597dd5c91ab76f8c29",
+  "nativeAffected": 15,
+  "nativeTargetPin": 3,
+  "nativePublishedJwk": 1,
+  "harness": {
+    "passed": 105,
+    "failed": 0,
+    "assertions": 3170
+  },
+  "runtime": {
+    "sqlx": {
+      "passed": 45,
+      "failed": 0,
+      "assertions": 3344,
+      "qualification": "44 passing final grouped cases plus corrected existing proxy case; initial wrong-purpose fixture ciphertext comparison failure retained"
+    },
+    "seaorm": {
+      "passed": 45,
+      "failed": 0,
+      "assertions": 3344,
+      "qualification": "complete final affected group, actual feature-compiled backend"
+    }
+  },
+  "prePortControls": {
+    "passed": 0,
+    "failed": 4,
+    "expected": true
+  },
+  "oraclePackagesPerProject": 6,
+  "projects": 2,
+  "archive": "upgrade-1.7.7-proof.tar.gz",
+  "archiveSha256": "f16645f734befd8fb1b6216fb16998775745243f17cebe9a5ab8d3791ad96679",
+  "notRun": [
+    "full-suite",
+    "full PostgreSQL contention campaign",
+    "canonical coverage floor",
+    "hosted CI"
+  ]
+}

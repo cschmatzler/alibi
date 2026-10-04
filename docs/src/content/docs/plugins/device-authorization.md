@@ -76,7 +76,7 @@ Poll responses follow RFC 8628:
 
 `access_token` is an ordinary **session token**. Use it as `Authorization: Bearer <token>` with the [bearer plugin](/plugins/bearer/), or store it as the device's session cookie value. Responses carry `Cache-Control: no-store`.
 
-Concurrent approve/deny calls that both read a pending code can both succeed; the last completed write decides the state, as in Better Auth 1.7.6. A later decision that sees an already processed code is rejected.
+Concurrent approve/deny calls that both read a pending code can both succeed; the last completed write decides the state, matching the behavior measured on Better Auth 1.7.6 and unchanged in 1.7.7. A later decision that sees an already processed code is rejected.
 
 ## Configuration
 

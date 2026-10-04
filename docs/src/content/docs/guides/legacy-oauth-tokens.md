@@ -1,13 +1,13 @@
 ---
 title: "Legacy OAuth token conversion"
-description: "Operator guide: convert OAuth token rows written by early better-auth-rs versions to the current Better Auth 1.7.6 format."
+description: "Operator guide: convert OAuth token rows written by early better-auth-rs versions to the current Better Auth 1.7.7 format."
 ---
 
 This is an **operator procedure** for installations that stored OAuth provider tokens with an earlier version of this library. New installations never need it, and nothing converts rows automatically.
 
 ## When you need it
 
-Better Auth 1.7.6 stores **access and refresh tokens** encrypted in its "Source" format and **ID tokens in plain text**. Earlier better-auth-rs versions wrote AES-256-GCM ciphertext for all three fields, with HKDF-SHA256 (`better-auth-oauth-token-encryption`) and standard base64 (`12-byte nonce || ciphertext || tag`). Current readers neither recognize that older format nor upgrade it, so linked-provider tokens from those installations cannot be read until they are converted — or the user reconnects the provider.
+Better Auth 1.7.7 stores **access and refresh tokens** encrypted in its "Source" format and **ID tokens in plain text**. Earlier better-auth-rs versions wrote AES-256-GCM ciphertext for all three fields, with HKDF-SHA256 (`better-auth-oauth-token-encryption`) and standard base64 (`12-byte nonce || ciphertext || tag`). Current readers neither recognize that older format nor upgrade it, so linked-provider tokens from those installations cannot be read until they are converted — or the user reconnects the provider.
 
 Conversion is an explicit, native **administrative capability**. It is not an HTTP endpoint, and it does not claim differential parity with an upstream upgrade API.
 
