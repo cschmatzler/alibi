@@ -54,6 +54,7 @@ pub mod prelude;
 pub mod schema;
 #[cfg(feature = "seaorm")]
 pub mod seaorm;
+pub mod session;
 #[cfg(any(feature = "sqlx-sqlite", feature = "sqlx-postgres"))]
 pub mod sqlx;
 pub mod store;
