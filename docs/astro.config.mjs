@@ -2,7 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: "https://betterauw2n43ibxrvdioxbqmvfbcm7r-production.up.railway.app",
+  site: "https://better-auth-rs.schmatzler.com",
   integrations: [
     starlight({
       title: 'Better Auth RS',

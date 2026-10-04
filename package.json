@@ -21,6 +21,8 @@
   "packageManager": "pnpm@10.28.2",
   "private": true,
   "devDependencies": {
+    "@distilled.cloud/core": "1.0.0-rc.13",
+    "@distilled.cloud/railway": "1.0.0-rc.13",
     "@effect/platform-bun": "4.0.0",
     "@effect/platform-node": "4.0.0",
     "@types/bun": "1.4.2",

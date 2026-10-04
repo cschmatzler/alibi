@@ -85,7 +85,7 @@ pnpm install
 pnpm docs:dev
 ```
 
-`pnpm docs:check` validates the site; `pnpm docs:build` produces a static build with search. Read the [live documentation](https://betterauw2n43ibxrvdioxbqmvfbcm7r-production.up.railway.app).
+`pnpm docs:check` validates the site; `pnpm docs:build` produces a static build with search. Read the [live documentation](https://better-auth-rs.schmatzler.com).
 
 Railway deployment uses Alchemy with SOPS and Varlock. See the [deployment guide](alchemy/README.md) for secrets, planning, and deployment commands.
 

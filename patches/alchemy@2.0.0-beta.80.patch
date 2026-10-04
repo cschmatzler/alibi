@@ -1,3 +1,20 @@
+diff --git a/lib/Cloudflare/DNS/Record.js b/lib/Cloudflare/DNS/Record.js
+index 7a16857d17f5102bb155e07fbe591e7e713aea6e..8d022b40038a39a2e0eb6c5effbf22fdcdabcf74 100644
+--- a/lib/Cloudflare/DNS/Record.js
++++ b/lib/Cloudflare/DNS/Record.js
+@@ -113,7 +113,11 @@ export const RecordProvider = () => Provider.succeed(Record, {
+             return { action: "replace" };
+         }
+         if (o.name !== undefined && o.name !== n.name) {
+-            return { action: "replace" };
++            // Relative names and FQDNs identify the same Cloudflare record.
++            const zone = yield* zones.getZone({ zoneId: n.zoneId });
++            if (normalizeRecordName(o.name, zone.name) !== normalizeRecordName(n.name, zone.name)) {
++                return { action: "replace" };
++            }
+         }
+         // zoneId is Input<string>; by reconcile time both sides are
+         // concrete strings.
 diff --git a/lib/Railway/Website/Astro.js b/lib/Railway/Website/Astro.js
 index 4c52cc06ca4c51bfbfbb3c1187e8e1dc44bc0429..766b25bc36dd2809212d9a19ef1ca259ea9d94ed 100644
 --- a/lib/Railway/Website/Astro.js
@@ -19,6 +36,48 @@ index 4c52cc06ca4c51bfbfbb3c1187e8e1dc44bc0429..766b25bc36dd2809212d9a19ef1ca259
          static: output === "static" ? staticConfigFromAssets(props.assets) : undefined,
      }).pipe(Namespace.push(id));
  };
+diff --git a/lib/Railway/Website/FrameworkSite.d.ts b/lib/Railway/Website/FrameworkSite.d.ts
+index 1f3c90039dc325b784208c6a1be3bbe33b468caa..916e6d28fd637adafc82be90b562816ba0da4871 100644
+--- a/lib/Railway/Website/FrameworkSite.d.ts
++++ b/lib/Railway/Website/FrameworkSite.d.ts
+@@ -72,6 +72,8 @@ export interface FrameworkSiteProps {
+      * `https://{domain}` instead of the generated `*.up.railway.app`.
+      */
+     domain?: string;
++    /** Railway service display name. Updating it renames the existing service. */
++    serviceName?: string;
+     /**
+      * User-defined tags. Railway Services do not persist tags; accepted
+      * for API parity with AWS/Cloudflare Website composites.
+diff --git a/lib/Railway/Website/FrameworkSite.js b/lib/Railway/Website/FrameworkSite.js
+index e2b726136446cd7b608d6997c352bb87e41f5b3d..98d4b52fa1f9a667c5710f82a38a271dd8971229 100644
+--- a/lib/Railway/Website/FrameworkSite.js
++++ b/lib/Railway/Website/FrameworkSite.js
+@@ -98,6 +98,7 @@ const runFrameworkSite = Effect.fn("Railway.Website.FrameworkSite")(function* (_
+         ? yield* props.environment
+         : (props.environment ?? project);
+     const service = yield* Service("Service", {
++        name: props.serviceName,
+         project,
+         environment,
+         main: main,
+diff --git a/src/Cloudflare/DNS/Record.ts b/src/Cloudflare/DNS/Record.ts
+index ea4c14420be9d549f937dde03059c329ef2eed42..c2e1c3c8f8f1047cc19e09c61b9485b915b6b62b 100644
+--- a/src/Cloudflare/DNS/Record.ts
++++ b/src/Cloudflare/DNS/Record.ts
+@@ -301,7 +301,11 @@ export const RecordProvider = () =>
+         return { action: "replace" } as const;
+       }
+       if (o.name !== undefined && o.name !== n.name) {
+-        return { action: "replace" } as const;
++        // Relative names and FQDNs identify the same Cloudflare record.
++        const zone = yield* zones.getZone({ zoneId: n.zoneId });
++        if (normalizeRecordName(o.name, zone.name) !== normalizeRecordName(n.name, zone.name)) {
++          return { action: "replace" } as const;
++        }
+       }
+       // zoneId is Input<string>; by reconcile time both sides are
+       // concrete strings.
 diff --git a/src/Railway/Website/Astro.ts b/src/Railway/Website/Astro.ts
 index db5eadb87051c1b1c78394d6dd24aa561e757a6b..c266de88af883b2bc284a2dd7674c3b4bde91df6 100644
 --- a/src/Railway/Website/Astro.ts
@@ -41,3 +100,24 @@ index db5eadb87051c1b1c78394d6dd24aa561e757a6b..c266de88af883b2bc284a2dd7674c3b4
      static:
        output === "static" ? staticConfigFromAssets(props.assets) : undefined,
    }).pipe(Namespace.push(id));
+diff --git a/src/Railway/Website/FrameworkSite.ts b/src/Railway/Website/FrameworkSite.ts
+index 1584ce966e1a46b1584b1ded9cab410735e77b18..30ab0027fa3f3b41447768ee0dc2070b89fea2ea 100644
+--- a/src/Railway/Website/FrameworkSite.ts
++++ b/src/Railway/Website/FrameworkSite.ts
+@@ -93,6 +93,8 @@ export interface FrameworkSiteProps {
+    * `https://{domain}` instead of the generated `*.up.railway.app`.
+    */
+   domain?: string;
++  /** Railway service display name. Updating it renames the existing service. */
++  serviceName?: string;
+   /**
+    * User-defined tags. Railway Services do not persist tags; accepted
+    * for API parity with AWS/Cloudflare Website composites.
+@@ -293,6 +295,7 @@ const runFrameworkSite = Effect.fn("Railway.Website.FrameworkSite")(function* (
+     ? yield* props.environment
+     : (props.environment ?? project);
+   const service = yield* Service("Service", {
++    name: props.serviceName,
+     project,
+     environment,
+     main: main as unknown as string,
