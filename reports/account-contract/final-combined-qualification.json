@@ -1,0 +1,25 @@
+{
+  "actualCombinedMain": "14655ecfdb945feed395f0a236a4b4ccefe0aacf",
+  "approvedFixtureHead": "6386c42d2a7cb1d99402c4711f6d41f5a535b3fa",
+  "ownerBlobs": {
+    "crates/api/src/plugins/oauth/account_cookie/mod.rs": {
+      "approved": "af41529f4b2b208e53dbe391baeca2f3cf7e48e3",
+      "combined": "af41529f4b2b208e53dbe391baeca2f3cf7e48e3"
+    },
+    "tests/integration/core/account_oauth.rs": {
+      "approved": "46af00b4a6e963be7b10560beba1139cb986fc4f",
+      "combined": "46af00b4a6e963be7b10560beba1139cb986fc4f"
+    },
+    "tests/fixtures/oauth/account-cookie-vectors.json": {
+      "approved": "091f73782f346b7cf68d37f828188adc6324139f",
+      "combined": "091f73782f346b7cf68d37f828188adc6324139f"
+    }
+  },
+  "optionalRecordsBlob": {
+    "incomingMain": "a26cb14184cd360a1f7e267c9c08c7b78d083649",
+    "combined": "a26cb14184cd360a1f7e267c9c08c7b78d083649"
+  },
+  "strictIntegrationClippyExitCode": 0,
+  "noSourceOrAdapterProofReplay": true,
+  "noUniversalGreenClaim": true
+}

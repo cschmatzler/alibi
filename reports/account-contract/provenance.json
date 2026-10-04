@@ -1,0 +1,24 @@
+{
+  "npmPackage": "better-auth",
+  "version": "1.7.6",
+  "baseline": "30c912a0e808baef91535a963a9cb820683c58e2",
+  "history": [
+    "eb94cca5be205c6ea58c28e36f73818c4b0ba84d (#395)",
+    "7a9d2fa325e633a4cd566db5996e76f34914f4bc (#420)",
+    "56f729a75bb0804dac45710583ca4cb09948e627 (#421)"
+  ],
+  "files": {
+    "package.json": "2befe4221311f2c83712d30486535e1accd911844e15c2c6351aa2b10f6ea016",
+    "dist/api/routes/account.mjs": "d85a04ec15c72c24fe15fadaa6d56d2bd77d03cbf3c2e202b60a5fce037426b7",
+    "dist/cookies/session-store.mjs": "379d65b86f7f5fb551e38072508612951d76f37628e024ab82022bb0c6e982ca",
+    "dist/crypto/jwt.mjs": "21850eb3477ea95a75bb691da39ce61ad82cc4f5313ddf0b0473a3fec22f536e",
+    "dist/context/store-capabilities.mjs": "d27a77df67199a263c618a1b20d71dc141324cd3ec86f66c5ae11e31bbb94838"
+  },
+  "frozenLockSha256": "c97812a1fd72e85de5484bfdd1dbc75398731e3d311805b6314eb1246bc60c26",
+  "ownerFileSha256": {
+    "tests/integration/core/account_oauth.rs": "5d06938e9f3cfc3d93c4d4977a5e9f62ee61634bd57f25c7fdc4b6701258ff82",
+    "crates/api/src/plugins/oauth/account_cookie/mod.rs": "2e6ff77281f9598e72cebeb132ddc0156c21ffcd486abc55dbdd53c5476258af",
+    "tests/fixtures/oauth/account-cookie-vectors.json": "09a3dba399db8ff13f806561cc0ad28717312d3bc633b1deb49b09e0b0452a90"
+  },
+  "npmLockReceipt": "\"better-auth\": [\"better-auth@1.7.6\", \"\", { \"dependencies\": { \"@better-auth/core\": \"1.7.6\", \"@better-auth/drizzle-adapter\": \"1.7.6\", \"@better-auth/kysely-adapter\": \"1.7.6\", \"@better-auth/memory-adapter\": \"1.7.6\", \"@better-auth/mongo-adapter\": \"1.7.6\", \"@better-auth/prisma-adapter\": \"1.7.6\", \"@better-auth/telemetry\": \"1.7.6\", \"@better-auth/utils\": \"0.4.2\", \"@better-fetch/fetch\": \"1.3.2\", \"@noble/ciphers\": \"^2.2.0\", \"@noble/hashes\": \"^2.2.0\", \"better-call\": \"1.4.0\", \"defu\": \"^6.1.4\", \"jose\": \"^6.2.3\", \"kysely\": \"^0.28.17 || ^0.29.0\", \"nanostores\": \"^1.3.0\", \"zod\": \"^4.5.4\" }, \"peerDependencies\": { \"@lynx-js/react\": \"*\", \"@prisma/client\": \"^5.0.0 || ^6.0.0 || ^7.0.0\", \"@sveltejs/kit\": \"^2.0.0\", \"@tanstack/react-start\": \"^1.0.0\", \"@tanstack/solid-start\": \"^1.0.0\", \"drizzle-kit\": \">=0.31.4 || >=1.0.0-beta.1\", \"drizzle-orm\": \"^0.45.2 || >=1.0.0-rc.1 <2.0.0\", \"mongodb\": \"^6.0.0 || ^7.0.0\", \"mysql2\": \"^3.0.0\", \"next\": \"^14.0.0 || ^15.0.0 || ^16.0.0\", \"pg\": \"^8.0.0\", \"prisma\": \"^5.0.0 || ^6.0.0 || ^7.0.0\", \"react\": \"^18.0.0 || ^19.0.0\", \"react-dom\": \"^18.0.0 || ^19.0.0\", \"solid-js\": \"^1.0.0\", \"svelte\": \"^4.0.0 || ^5.0.0\", \"vitest\": \"^2.0.0 || ^3.0.0 || ^4.0.0 || ^5.0.0\", \"vue\": \"^3.0.0\" }, \"optionalPeers\": [\"@lynx-js/react\", \"@prisma/client\", \"@sveltejs/kit\", \"@tanstack/react-start\", \"@tanstack/solid-start\", \"drizzle-kit\", \"drizzle-orm\", \"mongodb\", \"mysql2\", \"next\", \"pg\", \"prisma\", \"react\", \"react-dom\", \"solid-js\", \"svelte\", \"vitest\", \"vue\"] }, \"sha512-WTMqOpmTTj+oBoX7zzPOzL85342Upyf+/v0IkH1kvGRA85lV4JGRFIYMIRKqvjZ6ShsuL5VX/c9C13jtoZXcKA==\"],"
+}

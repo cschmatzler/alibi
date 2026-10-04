@@ -1,0 +1,26 @@
+{
+  "approvedFixtureHead": "6386c42d2a7cb1d99402c4711f6d41f5a535b3fa",
+  "actualLandedMain": "7513f934d713645ef3d3da9205836c1ccc548fb1",
+  "rebasedImplementationHead": "066faffca68e0ea2e90d7a58fc344d7974aa8f65",
+  "ownerBlobs": {
+    "crates/api/src/plugins/oauth/account_cookie/mod.rs": {
+      "approved": "af41529f4b2b208e53dbe391baeca2f3cf7e48e3",
+      "rebased": "af41529f4b2b208e53dbe391baeca2f3cf7e48e3"
+    },
+    "tests/fixtures/oauth/account-cookie-vectors.json": {
+      "approved": "091f73782f346b7cf68d37f828188adc6324139f",
+      "rebased": "091f73782f346b7cf68d37f828188adc6324139f"
+    },
+    "tests/integration/core/account_oauth.rs": {
+      "approved": "46af00b4a6e963be7b10560beba1139cb986fc4f",
+      "rebased": "46af00b4a6e963be7b10560beba1139cb986fc4f"
+    }
+  },
+  "repairRangeDiff": "1: 6386c42d = 1: 066faffc",
+  "ownChangesToOptionalRecordsAndStateless": false,
+  "blockedIntegrationClippy": {
+    "command": "CARGO_BUILD_JOBS=2 CARGO_PROFILE_DEV_DEBUG=0 CARGO_PROFILE_TEST_DEBUG=0 CARGO_TARGET_DIR=/tmp/better-auth-final-verification-20261004/account-contract-target devenv shell -- cargo clippy --locked -p better-auth --test integration --features axum,seaorm -- -D warnings",
+    "exitCode": 0
+  },
+  "sourceAndNativeProofReplayed": false
+}

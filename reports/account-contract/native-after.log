@@ -1,0 +1,20 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 19.1ms
+• Running devenv:files
+✓ Running devenv:files in 42.4ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 13.9ms
+   Compiling better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-final-verification-20261004/account-contract-repair/crates/api)
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-final-verification-20261004/account-contract-repair)
+    Finished `test` profile [unoptimized] target(s) in 13.22s
+────────────
+ Nextest run ID 0ce9a3ee-bf05-4516-aeac-bcbfd4d58c47 with nextest profile: default
+    Starting 4 tests across 7 binaries (879 tests skipped)
+        PASS [   0.007s] (1/4) better-auth-api plugins::oauth::account_cookie::tests::account_cookie_accepts_pinned_encrypted_vectors_and_rejects_unauthenticated_values
+        PASS [   0.066s] (2/4) better-auth::integration core::account_oauth::tests::test_get_access_token_rejects_cookie_for_the_wrong_user
+        PASS [   0.151s] (3/4) better-auth::integration core::account_oauth::tests::test_refresh_token_persists_rotated_tokens_for_cookie_matched_account
+        PASS [   0.153s] (4/4) better-auth::integration core::account_oauth::tests::test_get_access_token_refresh_persists_rotated_tokens_for_cookie_matched_account
+────────────
+     Summary [   0.154s] 4 tests run: 4 passed, 879 skipped
+mbx[cache]: 10 hits, 0 misses, 1 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: 10 compilations you did not wait for. the 40s is yours now. spend it wisely.
