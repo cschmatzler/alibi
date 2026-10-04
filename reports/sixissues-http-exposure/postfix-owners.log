@@ -1,0 +1,77 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 21.9ms
+• Running devenv:files
+✓ Running devenv:files in 28.6ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 13.0ms
+ Downloading crates ...
+  Downloaded arcstr v1.2.0
+  Downloaded base64urlsafedata v0.1.3
+  Downloaded futures-macro v0.3.34
+  Downloaded combine v4.6.8
+  Downloaded uncased v0.9.10
+  Downloaded poem-derive v3.1.12
+  Downloaded rfc7239 v0.1.3
+  Downloaded webauthn-attestation-ca v0.1.0
+  Downloaded sha1 v0.10.7
+  Downloaded headers-core v0.3.0
+  Downloaded sha1_smol v1.0.1
+  Downloaded hex-literal v0.4.1
+  Downloaded webauthn-rs-device-catalog v0.5.0-20230418
+  Downloaded peg-runtime v0.8.6
+  Downloaded wildmatch v2.6.1
+  Downloaded xxhash-rust v0.8.19
+  Downloaded peg v0.8.6
+  Downloaded peg-macros v0.8.6
+  Downloaded headers v0.4.2
+  Downloaded h2 v0.4.19
+  Downloaded poem v3.1.12
+  Downloaded webpki-roots v1.0.9
+  Downloaded redis v1.7.1
+   Compiling der-parser v9.0.0
+   Compiling better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure/crates/core)
+   Compiling x509-parser v0.16.0
+   Compiling sea-orm-macros v2.0.4
+   Compiling sea-orm v2.0.4
+   Compiling better-auth-webauthn-core v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure/vendor/webauthn-rs-core)
+   Compiling better-auth-webauthn-rs v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure/vendor/webauthn-rs)
+   Compiling sea-orm-migration v2.0.4
+   Compiling better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure/crates/seaorm)
+   Compiling better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure/crates/sqlx)
+   Compiling better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure/crates/api)
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure)
+    Finished `test` profile [unoptimized] target(s) in 1m 31s
+────────────
+ Nextest run ID f3e4c9cc-620f-4157-a21d-ab605693d385 with nextest profile: default
+    Starting 4 tests across 1 binary (439 tests skipped)
+        PASS [   0.041s] (1/4) better-auth::integration axum_integration::router::openapi_embedding_requires_plugin_in_axum
+        FAIL [   0.091s] (2/4) better-auth::integration plugins::open_api::tests::application_schema_and_plugin_annotations_reach_the_public_document_without_changing_routes
+  stdout ───
+
+    running 1 test
+    test plugins::open_api::tests::application_schema_and_plugin_annotations_reach_the_public_document_without_changing_routes ... FAILED
+
+    failures:
+
+    failures:
+        plugins::open_api::tests::application_schema_and_plugin_annotations_reach_the_public_document_without_changing_routes
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 442 filtered out; finished in 0.09s
+
+  stderr ───
+
+    thread 'plugins::open_api::tests::application_schema_and_plugin_annotations_reach_the_public_document_without_changing_routes' (564070) panicked at tests/integration/plugins/open_api.rs:282:13:
+    assertion `left == right` failed
+      left: false
+     right: true
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 2 tests still running
+        PASS [   0.205s] (3/4) better-auth::integration storage::http_composition::on_sqlx::physical_http_composition_preserves_principals_and_committed_rows
+        PASS [   0.230s] (4/4) better-auth::integration storage::http_composition::on_seaorm::physical_http_composition_preserves_principals_and_committed_rows
+────────────
+     Summary [   0.232s] 4 tests run: 3 passed, 1 failed, 439 skipped
+        FAIL [   0.091s] (2/4) better-auth::integration plugins::open_api::tests::application_schema_and_plugin_annotations_reach_the_public_document_without_changing_routes
+error: test run failed
+mbx[cache]: 7 hits, 1 misses, 7 not looked up, 8 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+mbx[savings]: 426831 cache hits and counting. rustc thinks it has been busy.

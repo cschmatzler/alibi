@@ -126,7 +126,6 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
         let mut paths = std::collections::HashSet::from([
             core_paths::OK.to_owned(),
             core_paths::ERROR.to_owned(),
-            core_paths::OPENAPI_SPEC.to_owned(),
             core_paths::UPDATE_USER.to_owned(),
         ]);
         for plugin in self.plugins() {

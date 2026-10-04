@@ -151,6 +151,31 @@ mod tests {
     )]
     async fn application_schema_and_plugin_annotations_reach_the_public_document_without_changing_routes()
      {
+        let config = AuthConfig::new("native-open-api-fixture-secret-at-least-32-chars")
+            .base_path("/identity");
+        let database = Database::connect("sqlite::memory:").await.unwrap();
+        let default_auth = AuthBuilder::<AppSchema>::new(config.clone())
+            .store(SeaOrmStore::<AppSchema>::new(config, database))
+            .build()
+            .await
+            .unwrap();
+        let absent = default_auth
+            .handle_request(AuthRequest::new(
+                HttpMethod::Get,
+                "/identity/__test/openapi.json",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(absent.status, 404);
+        assert!(absent.body.is_empty());
+        assert!(
+            default_auth
+                .openapi_spec_with_native_extensions()
+                .to_value()
+                .unwrap()["paths"]
+                .get("/__test/openapi.json")
+                .is_none()
+        );
         for include_native in [false, true] {
             let config = AuthConfig::new("native-open-api-fixture-secret-at-least-32-chars")
                 .base_url("https://app.fixture.test")

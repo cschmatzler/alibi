@@ -683,5 +683,88 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
             Value::Null
         );
     }
+    // Native CORS preflights must reach CORS without supplying a CAPTCHA token.
+    let config = AuthConfig::new(secret).base_url("http://original.test");
+    let mut captcha_cors =
+        better_auth_core::middleware::CorsConfig::new().allowed_origin("http://original.test");
+    captcha_cors
+        .allowed_headers
+        .push("x-captcha-response".into());
+    let captcha_auth = AuthBuilder::<B::Schema>::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .cors(captcha_cors)
+        .plugin(better_auth::plugins::EmailPasswordPlugin::new())
+        .plugin(better_auth::plugins::CaptchaPlugin::new(
+            better_auth::plugins::CaptchaConfig::new(
+                better_auth::plugins::CaptchaProvider::CloudflareTurnstile(
+                    better_auth::plugins::captcha::TurnstileConfig::new("configured-secret"),
+                ),
+            ),
+        ))
+        .build()
+        .await?;
+    for (method, origin, expected_status) in [
+        (HttpMethod::Options, "http://original.test", 204),
+        (HttpMethod::Options, "http://untrusted.test", 404),
+        (HttpMethod::Post, "http://original.test", 400),
+    ] {
+        let mut request = AuthRequest::new(method.clone(), "/api/auth/sign-in/email");
+        if method == HttpMethod::Post {
+            request.body =
+                Some(br#"{"email":"a@composition.test","password":"Password123!"}"#.to_vec());
+            drop(
+                request
+                    .headers
+                    .insert("content-type".into(), "application/json".into()),
+            );
+        }
+        drop(request.headers.insert("origin".into(), origin.into()));
+        drop(
+            request
+                .headers
+                .insert("access-control-request-method".into(), "POST".into()),
+        );
+        drop(request.headers.insert(
+            "access-control-request-headers".into(),
+            "content-type,x-captcha-response".into(),
+        ));
+        let response = captcha_auth.handle_request(request).await?;
+        assert_eq!(
+            response.status,
+            expected_status,
+            "{method:?} {origin}: {}",
+            String::from_utf8_lossy(&response.body)
+        );
+        if method == HttpMethod::Options && expected_status == 204 {
+            assert_eq!(
+                response
+                    .headers
+                    .get("access-control-allow-origin")
+                    .map(String::as_str),
+                Some(origin)
+            );
+            assert!(
+                response
+                    .headers
+                    .get("access-control-allow-methods")
+                    .expect("allowed methods")
+                    .contains("POST")
+            );
+            assert!(
+                response
+                    .headers
+                    .get("access-control-allow-headers")
+                    .expect("allowed headers")
+                    .contains("x-captcha-response")
+            );
+        } else if method == HttpMethod::Options {
+            assert!(!response.headers.contains_key("access-control-allow-origin"));
+        } else {
+            assert_eq!(
+                serde_json::from_slice::<Value>(&response.body)?["code"],
+                "MISSING_RESPONSE"
+            );
+        }
+    }
     B::close(connection).await
 }

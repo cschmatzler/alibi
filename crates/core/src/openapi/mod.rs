@@ -186,7 +186,7 @@ impl OpenApiBuilder {
                 .iter()
                 .filter(|endpoint| endpoint.core == core)
             {
-                if endpoint.plugin == "open-api"
+                if (endpoint.plugin == "open-api" && !endpoint.metadata.native_extension)
                     || endpoint.metadata.server_only
                     || (endpoint.metadata.native_extension && !include_native_extensions)
                     || config.is_path_disabled(&endpoint.route.path)
