@@ -493,8 +493,16 @@ impl<S: AuthSchema> BetterAuth<S> {
                         err.to_auth_response()
                     }
                 };
-                let (mut cache_headers, ordinary_cache_error) =
+                let (mut cache_headers, mut ordinary_cache_error) =
                     better_auth_core::cache::runtime::take_issuance(req.extensions());
+                // HTTP handlers publish into their logical frame; legacy paths
+                // retain the physical request accumulator. Drain both owners.
+                if let Some(frame) = req.extensions().get::<super::endpoint::HttpEndpointFrame>() {
+                    let (headers, ordinary_error) =
+                        better_auth_core::cache::runtime::take_issuance(frame.call.extensions());
+                    cache_headers.extend(headers);
+                    ordinary_cache_error |= ordinary_error;
+                }
                 if ordinary_handler_error || ordinary_cache_error {
                     run_after_hooks = false;
                     response = AuthResponse::new(500);
@@ -826,6 +834,14 @@ impl<S: AuthSchema> BetterAuth<S> {
                         drop(better_auth_core::cache::runtime::take_issuance(
                             internal_req.extensions(),
                         ));
+                        if let Some(frame) = internal_req
+                            .extensions()
+                            .get::<super::endpoint::HttpEndpointFrame>()
+                        {
+                            drop(better_auth_core::cache::runtime::take_issuance(
+                                frame.call.extensions(),
+                            ));
+                        }
                         Ok(response)
                     }
                 };
