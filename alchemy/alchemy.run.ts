@@ -13,15 +13,15 @@ const domainDns = Query.fn((id: string, projectId: string) =>
   RailwayApi.customDomain({ id, projectId }).status.dnsRecords.pipe(
     Query.map((record) => ({
       type: record.recordType,
-      zone: record.zone,
       content: record.requiredValue,
     })),
   ),
 );
 
 export const Docs = Effect.gen(function* () {
-  const domain = yield* Config.String("DOCS_DOMAIN").pipe(Config.withDefault(""));
-  // Keep the project in the website's resource namespace.
+  const domain = yield* Config.String("DOCS_DOMAIN");
+  const zoneId = yield* Config.String("DOCS_DNS_ZONE_ID");
+
   const project = yield* Railway.Project("Project", {
     name: "better-auth-rs",
   }).pipe(Namespace.push("Docs"));
@@ -32,49 +32,60 @@ export const Docs = Effect.gen(function* () {
     serviceName: "docs",
     astro: {
       output: "static",
-      site: domain ? `https://${domain}` : undefined,
+      site: `https://${domain}`,
     },
     assets: { notFoundHandling: "404-page" },
   });
 
-  if (domain && docs.service) {
-    // Keep the existing Docs/Domain resource identity when moving it out
-    // of the website helper so its DNS outputs can drive Cloudflare.
-    const customDomain = yield* Railway.CustomDomain("Domain", {
-      service: docs.service,
-      environment: project,
-      domain,
-      targetPort: 3000,
-    }).pipe(Namespace.push("Docs"));
-    const zoneId = yield* Config.String("DOCS_DNS_ZONE_ID");
-    const records = Output.all(customDomain.customDomainId, project.projectId).pipe(
-      Output.mapEffect(([id, projectId]) => domainDns(id, projectId).pipe(Effect.orDie)),
-    );
-    yield* Cloudflare.DNS.Record("DocsCNAME", {
-      zoneId,
-      type: "CNAME",
-      name: domain,
-      content: records.pipe(Output.map((records) => {
-        const record = records.find((record) => record.type === "DNS_RECORD_TYPE_CNAME");
-        if (!record?.content) {
-          throw new Error(`Railway did not return a CNAME target for ${domain}`);
-        }
-        return record.content;
-      })),
-      proxied: false,
-    });
-    yield* Cloudflare.DNS.Record("DocsTXT", {
-      zoneId,
-      type: "TXT",
-      name: `_railway-verify.${domain}`,
-      content: customDomain.verificationToken.pipe(Output.map((token) => {
-        if (!token) throw new Error(`Railway did not return a verification token for ${domain}`);
-        return token;
-      })),
-    });
-  }
+  const service =
+    docs.service ?? (yield* Effect.die(new Error("Missing Railway service")));
 
-  return { ...docs, url: domain ? `https://${domain}` : docs.url };
+  const customDomain = yield* Railway.CustomDomain("Domain", {
+    service,
+    environment: project,
+    domain,
+    targetPort: 3000,
+  }).pipe(Namespace.push("Docs"));
+
+  const records = Output.mapEffect(
+    (resource: Railway.CustomDomain["Attributes"]) =>
+      domainDns(resource.customDomainId, resource.projectId).pipe(Effect.orDie),
+  )(Output.of(customDomain));
+
+  yield* Cloudflare.DNS.Record("DocsCNAME", {
+    zoneId,
+    type: "CNAME",
+    name: domain,
+    content: Output.map(records, (records) => {
+      const record = records.find(
+        (record) => record.type === "DNS_RECORD_TYPE_CNAME",
+      );
+
+      if (!record?.content) {
+        throw new Error(`Railway did not return a CNAME target for ${domain}`);
+      }
+
+      return record.content;
+    }),
+    proxied: false,
+  });
+
+  yield* Cloudflare.DNS.Record("DocsTXT", {
+    zoneId,
+    type: "TXT",
+    name: `_railway-verify.${domain}`,
+    content: customDomain.verificationToken.pipe(
+      Output.map((token) => {
+        if (!token) {
+          throw new Error(`Railway did not return a verification token for ${domain}`);
+        }
+
+        return token;
+      }),
+    ),
+  });
+
+  return { url: `https://${domain}` };
 });
 
 export default Alchemy.Stack(
@@ -83,8 +94,5 @@ export default Alchemy.Stack(
     providers: Cloudflare.providers().pipe(Layer.provideMerge(Railway.providers())),
     state: Cloudflare.state(),
   },
-  Effect.gen(function* () {
-    const docs = yield* Docs;
-    return { url: docs.url };
-  }),
+  Docs,
 );
