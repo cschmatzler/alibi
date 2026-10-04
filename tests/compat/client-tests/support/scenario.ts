@@ -63,6 +63,7 @@ import {
   setSocialProfile,
 } from "./controls";
 import { normalizeClientValue } from "./normalize";
+import { serializeObservationReceipt } from "./observation-receipt";
 import { ORACLE_RECEIPTS, type OracleExpectations, oracleFindings } from "./oracle";
 import { createTracingFetch, requestWindow, type TraceEntry } from "./trace";
 
@@ -416,7 +417,7 @@ export function compatScenario(
           await mkdir(observationsDirectory, { recursive: true });
           await Bun.write(
             join(observationsDirectory, `${Bun.hash(scenarioName)}.json`),
-            JSON.stringify({ scenarioName, ts, rust }, null, 2),
+            serializeObservationReceipt({ scenarioName, ts, rust }),
           );
         }
         const comparison = {
