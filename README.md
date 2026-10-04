@@ -4,6 +4,7 @@
 
 [![CI](https://github.com/cschmatzler/better-auth-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/cschmatzler/better-auth-rs/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Better Auth compatibility](https://img.shields.io/badge/better--auth-v1.7.6-blue)](https://www.npmjs.com/package/better-auth/v/1.7.6)
 
 Email and password, social login, passkeys, two-factor authentication, organizations, and API keys — composed with Rust plugins. Use SQLx or SeaORM for storage and Axum for routing and typed session extractors.
 
@@ -18,7 +19,7 @@ Use the project directly from Git.
 
 ```toml
 [dependencies]
-better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", features = ["axum"] }
+better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", version = "1.0.0-alpha.3", features = ["axum"] }
 ```
 
 Generate application-owned auth models (SQLx is the default backend):
@@ -51,6 +52,16 @@ async fn build_auth() -> Result<BetterAuth<AppAuthSchema>, Box<dyn std::error::E
         .build()
         .await?)
 }
+```
+
+For SeaORM, enable the `seaorm` feature, generate models with `better-auth-rs generate --backend seaorm -o src/auth_schema.rs`, and replace the SQLx connection and store setup with:
+
+```rust
+use better_auth::seaorm::{Database, SeaOrmStore};
+
+let database = Database::connect(&std::env::var("DATABASE_URL")?).await?;
+auth_schema::run_app_migrations(&database).await?;
+let store = SeaOrmStore::<AppAuthSchema>::new(config.clone(), database);
 ```
 
 The [installation guide](docs/src/content/docs/installation.md) includes all dependencies, environment setup, and a runnable Axum server.
