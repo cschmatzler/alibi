@@ -1,0 +1,23 @@
+Generate the auth schema file with `SQLx` or `SeaORM` entity definitions.
+
+By default generates core-only entities. Use --plugins to include plugin-specific fields (e.g. username, admin ban fields).
+
+Usage: better-auth-rs generate [OPTIONS]
+
+Options:
+  -b, --backend <BACKEND>
+          Store backend to generate entities for
+          
+          [default: sqlx]
+          [possible values: sqlx, seaorm]
+
+  -o, --output <OUTPUT>
+          Write output to a file instead of stdout
+
+  -p, --plugins <PLUGINS>
+          Comma-separated list of plugins whose fields to include. Use "all" to include every plugin's fields
+          
+          [possible values: siwe, jwt, anonymous, phone-number, last-login-method, organization-teams, organization-dynamic-roles, username, two-factor, device-authorization, admin, organization, api-key, passkey, all]
+
+  -h, --help
+          Print help (see a summary with '-h')

@@ -20,6 +20,8 @@ pub struct FieldDef {
     pub ty: &'static str,
     pub is_primary_key: bool,
     pub column_name: Option<&'static str>,
+    /// Database string default, rendered as a literal by each backend.
+    pub default_value: Option<&'static str>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -39,12 +41,19 @@ pub struct ExtraEntitySchema {
 }
 
 macro_rules! f {
+    ($name:expr, $ty:expr, $default:expr) => {
+        FieldDef {
+            default_value: Some($default),
+            ..f!($name, $ty)
+        }
+    };
     ($name:expr, $ty:expr) => {
         FieldDef {
             name: $name,
             ty: $ty,
             is_primary_key: false,
             column_name: None,
+            default_value: None,
         }
     };
 }
@@ -56,6 +65,7 @@ macro_rules! pk {
             ty: $ty,
             is_primary_key: true,
             column_name: None,
+            default_value: None,
         }
     };
 }
@@ -67,6 +77,7 @@ macro_rules! f_col {
             ty: $ty,
             is_primary_key: false,
             column_name: Some($column_name),
+            default_value: None,
         }
     };
 }
@@ -358,7 +369,8 @@ static PLUGINS: &[PluginSchema] = &[
                 f!("start", "Option<String>"),
                 f!("prefix", "Option<String>"),
                 f_col!("key_hash", "String", "key"),
-                f!("user_id", "String"),
+                f!("reference_id", "String"),
+                f!("config_id", "String", "default"),
                 f!("refill_interval", "Option<f64>"),
                 f!("refill_amount", "Option<f64>"),
                 f!("last_refill_at", "Option<DateTimeUtc>"),

@@ -1,0 +1,22 @@
+   Compiling better-auth-entity-codegen v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/entity-codegen)
+   Compiling better-auth-macros v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/derive)
+   Compiling better-auth-webauthn-core v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/vendor/webauthn-rs-core)
+   Compiling better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/core)
+   Compiling better-auth-webauthn-rs v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/vendor/webauthn-rs)
+   Compiling better-auth-sqlx-macros v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/sqlx-macros)
+   Compiling better-auth-seaorm-macros v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/seaorm-macros)
+   Compiling better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/seaorm)
+   Compiling better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/api)
+   Compiling better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/sqlx)
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli)
+    Finished `test` profile [unoptimized] target(s) in 1m 08s
+     Running tests/integration/main.rs (/tmp/better-auth-final-verification-20261004-schema-cli/target/debug/deps/integration-55686e8751d7aaba)
+
+running 4 tests
+test core::schema::generated::sqlx_schema::generated_sqlx_schema_migrates_and_serves_the_store ... ok
+test core::schema::generated::seaorm_schema::generated_seaorm_schema_migrates_and_serves_the_store ... ok
+test core::schema::generated_api_key::seaorm_schema::generated_seaorm_schema_supports_api_key_creation ... ok
+test core::schema::generated_api_key::sqlx_schema::generated_sqlx_schema_supports_api_key_creation ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 395 filtered out; finished in 0.08s
+

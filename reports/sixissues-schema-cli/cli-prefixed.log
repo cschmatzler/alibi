@@ -1,0 +1,112 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 12.4ms
+• Running devenv:files
+✓ Running devenv:files in 18.0ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 6.07ms
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded colorchoice v1.0.5
+  Downloaded heck v0.5.0
+  Downloaded anstream v1.0.0
+  Downloaded clap_derive v4.6.7
+  Downloaded clap_lex v1.1.1
+  Downloaded anstyle-query v1.1.5
+  Downloaded utf8parse v0.2.2
+  Downloaded is_terminal_polyfill v1.70.2
+  Downloaded strsim v0.11.1
+  Downloaded anstyle v1.0.14
+  Downloaded anstyle-parse v1.0.0
+  Downloaded quote v1.0.47
+  Downloaded proc-macro2 v1.0.107
+  Downloaded unicode-ident v1.0.26
+  Downloaded clap_builder v4.6.7
+  Downloaded prettyplease v0.3.0
+  Downloaded clap v4.6.7
+  Downloaded syn v3.0.6
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.26
+   Compiling quote v1.0.47
+   Compiling utf8parse v0.2.2
+   Compiling syn v3.0.6
+   Compiling anstyle-parse v1.0.0
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling anstyle v1.0.14
+   Compiling colorchoice v1.0.5
+   Compiling anstyle-query v1.1.5
+   Compiling anstream v1.0.0
+   Compiling prettyplease v0.3.0
+   Compiling strsim v0.11.1
+   Compiling heck v0.5.0
+   Compiling clap_lex v1.1.1
+   Compiling clap_builder v4.6.7
+   Compiling clap_derive v4.6.7
+   Compiling better-auth-schema-registry v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/schema-registry)
+   Compiling clap v4.6.7
+   Compiling better-auth-cli v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/cli)
+warning: unused result of type `&mut Command`
+  --> crates/cli/tests/generate.rs:33:13
+   |
+33 |             command.args(["generate", "--plugins", plugins]);
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: requested on the command line with `-W unused-results`
+
+warning: unused result of type `&mut Command`
+  --> crates/cli/tests/generate.rs:35:17
+   |
+35 |                 command.arg("--output").arg(path);
+   |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `better-auth-cli` (test "generate") generated 2 warnings
+    Finished `test` profile [unoptimized] target(s) in 11.48s
+     Running tests/generate.rs (/tmp/better-auth-final-verification-20261004-schema-cli/target/debug/deps/generate-9f259f6879f6f2d7)
+
+running 2 tests
+test generate_help_advertises_every_supported_plugin ... FAILED
+test unknown_plugins_fail_without_output_or_filesystem_changes ... FAILED
+
+failures:
+
+---- generate_help_advertises_every_supported_plugin stdout ----
+
+thread 'generate_help_advertises_every_supported_plugin' (500872) panicked at crates/cli/tests/generate.rs:18:9:
+help omitted siwe: Generate the auth schema file with `SQLx` or `SeaORM` entity definitions.
+
+By default generates core-only entities. Use --plugins to include plugin-specific fields (e.g. username, admin ban fields).
+
+Usage: better-auth-rs generate [OPTIONS]
+
+Options:
+  -b, --backend <BACKEND>
+          Store backend to generate entities for
+          
+          [default: sqlx]
+          [possible values: sqlx, seaorm]
+
+  -o, --output <OUTPUT>
+          Write output to a file instead of stdout
+
+  -p, --plugins <PLUGINS>
+          Comma-separated list of plugins whose fields to include. Available: username, two-factor, device-authorization, api-key, admin, organization, passkey. Use "all" to include every plugin's fields
+
+  -h, --help
+          Print help (see a summary with '-h')
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- unknown_plugins_fail_without_output_or_filesystem_changes stdout ----
+
+thread 'unknown_plugins_fail_without_output_or_filesystem_changes' (500873) panicked at crates/cli/tests/generate.rs:38:13:
+accepted unknown plugins: nonsense
+
+
+failures:
+    generate_help_advertises_every_supported_plugin
+    unknown_plugins_fail_without_output_or_filesystem_changes
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+error: test failed, to rerun pass `-p better-auth-cli --test generate`
+mbx[cache]: 9 hits, 9 misses, 12 not looked up; 0 B downloaded, 0 B uploaded, 37.4 MiB stored locally
+mbx[savings]: 2.0 TiB logical of build debris has left the building.

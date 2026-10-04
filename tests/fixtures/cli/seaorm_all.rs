@@ -293,7 +293,9 @@ mod api_key {
         pub prefix: Option<String>,
         #[sea_orm(column_name = "key")]
         pub key_hash: String,
-        pub user_id: String,
+        pub reference_id: String,
+        #[sea_orm(default_value = "default")]
+        pub config_id: String,
         pub refill_interval: Option<f64>,
         pub refill_amount: Option<f64>,
         pub last_refill_at: Option<DateTimeUtc>,

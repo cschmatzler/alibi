@@ -1,0 +1,42 @@
+Authoring gate, issues 447 and 450:
+
+CLI process owner: crates/cli/tests/generate.rs.
+Observable contracts: actual --help advertises every registry name and all;
+every advertised name is accepted; unknown names exit nonzero, emit no schema,
+leave an existing destination intact and create no new parent directory.
+Credible regressions: stale hardcoded help; silent unknown-plugin filtering;
+expanding all before validating the rest; writing before argument validation.
+Existing generator unit tests bypass argument parsing and filesystem handling.
+No production export or injection seam was added. Real executable processes
+and real filesystem destinations are the observation boundary. All invalid
+checks remain intact after lint corrections; errors replace assertion panics.
+
+Generated API key schema owner:
+tests/integration/core/schema/generated_api_key.rs, registered in schema/mod.rs.
+Observable contract: actual CLI-generated all-plugin migrations permit signup,
+POST /api-key/create and persisted reference_id/config_id on SQLx and SeaORM.
+A separate real application insert omits config_id and reads back the database
+string default through the real store. The plugin supplies config_id explicitly,
+so HTTP success alone would miss a missing database default.
+Credible regression: registry emits user_id instead of reference_id and omits
+config_id/default. Both backend HTTP tests failed with empty 500 on baseline.
+Existing generated.rs exercises core roles only and belongs to worker 448.
+The existing generator fixture-equality test links actual CLI output to compiled
+fixtures; it is retained. No snapshot-only regression or source grep was added.
+No test-only production seam was added. Fixture consumer dead-code/public-item
+lint annotations follow the existing generated-schema consumer and are limited
+to generated items intended for application consumers. Checks use actual locked
+SQLx 0.9 and SeaORM 2 dependencies and the newly migrated Rust environment.
+
+Repository guidance: no applicable AGENTS.md files were present in the clone,
+its parents, or relevant scopes; attached checkout AGENTS.md was also absent.
+The test-audit skill was read. Its OpenClaw-specific script and maintainer
+commands are absent here; repository scripts/check.sh was inspected. Scoped
+native owner tests, Clippy with -D warnings and formatting were run instead of
+an unauthorized broad campaign. The user's required root personal exact-head
+review replaces the skill's independent autoreview step.
+
+Scope: 35 additions / 4 deletions in production CLI and registry, generated
+fixture changes tracked separately from the new boundary tests. No deletion
+store changes, core fixture changes, oracle upgrade or dependency edits.
+Merge, GitHub issue closure and owned cleanup remain with the root after review.
