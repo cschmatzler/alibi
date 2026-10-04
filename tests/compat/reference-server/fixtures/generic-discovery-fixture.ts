@@ -75,6 +75,11 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const mode of [
     "success",
+    "expiry-positive",
+    "expiry-zero",
+    "expiry-negative",
+    "custom-token",
+    "custom-token-error",
     "override",
     "failed",
     "fallback",
@@ -124,6 +129,32 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
                   : {}),
                 ...(mode === "logout-invalid" ? { endSessionEndpoint: "http://[bad" } : {}),
                 requireIdTokenVerification: mode === "required",
+                ...(mode.startsWith("expiry-") || mode.startsWith("custom-token")
+                  ? {
+                      accessTokenExpiresIn:
+                        mode === "expiry-zero" ? 0 : mode === "expiry-negative" ? -60 : 17,
+                    }
+                  : {}),
+                ...(mode.startsWith("custom-token")
+                  ? {
+                      getToken: async (data: {
+                        code: string;
+                        redirectURI: string;
+                        codeVerifier?: string;
+                      }) => {
+                        await Promise.resolve();
+                        receipts.push({ kind: "custom-token", ...data });
+                        if (mode === "custom-token-error") {
+                          throw new Error("custom token callback denied");
+                        }
+                        return {
+                          accessToken: "custom-access",
+                          refreshToken: "custom-refresh",
+                          scopes: ["custom-scope"],
+                        };
+                      },
+                    }
+                  : {}),
                 scopes: ["profile"],
                 tokenUrlParams: { resource: "discovery-resource" },
                 refreshTokenParams: { resource: "refresh-resource" },

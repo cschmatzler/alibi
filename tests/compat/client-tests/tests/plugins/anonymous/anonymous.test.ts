@@ -117,86 +117,108 @@ async function observedCookies(
   return result;
 }
 
-compatScenario(
-  "anonymous official client issues repeats and deletes only its actual authenticated owner",
-  async (ctx) => {
-    const primary = actor(ctx, "primary");
-    const foreign = actor(ctx, "foreign");
-    const guest = actor(ctx, "guest");
-    const foreignSignup = await foreign.client.signUp.email({
-      email: ctx.uniqueEmail("anonymous-foreign"),
-      name: "Foreign Owner",
-      password: "password123",
-    });
-    expect(foreignSignup.error).toBeNull();
+for (const mode of ["standard", "attributes"] as const) {
+  compatScenario(
+    `anonymous ${mode} official client issues repeats and deletes only its actual authenticated owner`,
+    async (ctx) => {
+      const primary = actor(ctx, "primary", mode);
+      const foreign = actor(ctx, "foreign", mode);
+      const guest = actor(ctx, "guest", mode);
+      const foreignSignup = await foreign.client.signUp.email({
+        email: ctx.uniqueEmail("anonymous-foreign"),
+        name: "Foreign Owner",
+        password: "password123",
+      });
+      expect(foreignSignup.error).toBeNull();
 
-    const foreignBefore = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
-    const guestDenied = await guest.anonymous.deleteAnonymousUser();
-    expect(guestDenied.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
+      const foreignBefore = await ctx.readUserState({ userId: foreignSignup.data!.user.id });
+      const guestDenied = await guest.anonymous.deleteAnonymousUser();
+      expect(guestDenied.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
 
-    const before = await state(ctx);
-    const issued = await primary.anonymous.signIn.anonymous();
-    expect(issued.error).toBeNull();
-    expect(issued.data!.user).toMatchObject({
-      email: "anonymous-1@fixture.test",
-      name: "Configured Anonymous",
-      emailVerified: false,
-      isAnonymous: true,
-    });
+      const before = await state(ctx);
+      const issued = await primary.anonymous.signIn.anonymous(undefined, {
+        headers: {
+          "x-anonymous-ip": "198.51.100.71",
+          "x-forwarded-for": "192.0.2.70",
+          "user-agent": "anonymous-owner-browser",
+        },
+      });
+      expect(issued.error).toBeNull();
+      expect(issued.data!.user).toMatchObject({
+        email: "anonymous-1@fixture.test",
+        name: "Configured Anonymous",
+        emailVerified: false,
+        isAnonymous: true,
+      });
 
-    const current = await primary.client.getSession();
-    expect(current.data!.session.userId).toBe(issued.data!.user.id);
-    expect(current.data!.session.token).toBe(issued.data!.token);
+      const current = await primary.client.getSession();
+      expect(current.data!.session.userId).toBe(issued.data!.user.id);
+      expect(current.data!.session.token).toBe(issued.data!.token);
 
-    const afterIssued = await state(ctx);
-    expect(afterIssued.users).toHaveLength(before.users.length + 1);
-    expect(afterIssued.accounts).toEqual(before.accounts);
-    expect(afterIssued.sessions).toHaveLength(before.sessions.length + 1);
-    expect(afterIssued.events).toHaveLength(0);
+      const afterIssued = await state(ctx);
+      expect(afterIssued.users).toHaveLength(before.users.length + 1);
+      expect(afterIssued.accounts).toEqual(before.accounts);
+      expect(afterIssued.sessions).toHaveLength(before.sessions.length + 1);
+      expect(afterIssued.events).toHaveLength(0);
+      const physicalSession = afterIssued.sessions.find((row) => row.token === issued.data!.token)!;
+      expect(physicalSession).toMatchObject({
+        userId: issued.data!.user.id,
+        ipAddress: mode === "attributes" ? "198.51.100.71" : "192.0.2.70",
+        userAgent: "anonymous-owner-browser",
+      });
+      expect(current.data!.session).toMatchObject({
+        id: physicalSession.id,
+        token: physicalSession.token,
+        ipAddress: physicalSession.ipAddress,
+        userAgent: physicalSession.userAgent,
+      });
 
-    const repeated = await primary.anonymous.signIn.anonymous();
-    expect(repeated.error).toMatchObject({
-      status: 400,
-      code: "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY",
-    });
+      const repeated = await primary.anonymous.signIn.anonymous();
+      expect(repeated.error).toMatchObject({
+        status: 400,
+        code: "ANONYMOUS_USERS_CANNOT_SIGN_IN_AGAIN_ANONYMOUSLY",
+      });
 
-    const regularDenied = await foreign.anonymous.deleteAnonymousUser();
-    expect(regularDenied.error).toMatchObject({ status: 403, code: "USER_IS_NOT_ANONYMOUS" });
-    expect(await state(ctx)).toEqual(afterIssued);
+      const regularDenied = await foreign.anonymous.deleteAnonymousUser();
+      expect(regularDenied.error).toMatchObject({ status: 403, code: "USER_IS_NOT_ANONYMOUS" });
+      expect(await state(ctx)).toEqual(afterIssued);
 
-    const deleted = await primary.anonymous.deleteAnonymousUser();
-    expect(deleted.data).toEqual({ success: true });
+      const deleted = await primary.anonymous.deleteAnonymousUser();
+      expect(deleted.data).toEqual({ success: true });
 
-    const afterDelete = await state(ctx);
-    expect(stored(afterDelete)).toEqual(stored(before));
+      const afterDelete = await state(ctx);
+      expect(stored(afterDelete)).toEqual(stored(before));
 
-    const stale = await primary.client.getSession();
-    const replay = await primary.anonymous.deleteAnonymousUser();
-    expect(stale.data).toBeNull();
-    expect(replay.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
-    expect(await state(ctx)).toEqual(afterDelete);
-    expect(await ctx.readUserState({ userId: foreignSignup.data!.user.id })).toEqual(foreignBefore);
+      const stale = await primary.client.getSession();
+      const replay = await primary.anonymous.deleteAnonymousUser();
+      expect(stale.data).toBeNull();
+      expect(replay.error).toMatchObject({ status: 401, code: "UNAUTHORIZED" });
+      expect(await state(ctx)).toEqual(afterDelete);
+      expect(await ctx.readUserState({ userId: foreignSignup.data!.user.id })).toEqual(
+        foreignBefore,
+      );
 
-    return {
-      foreignSignup,
-      foreignBefore,
-      guestDenied,
-      before,
-      issued,
-      current,
-      afterIssued,
-      repeated,
-      regularDenied,
-      deleted,
-      afterDelete,
-      stale,
-      replay,
-      final: await state(ctx),
-      foreignAfter: await ctx.readUserState({ userId: foreignSignup.data!.user.id }),
-    };
-  },
-  ["POST /sign-in/anonymous", "POST /delete-anonymous-user"],
-);
+      return {
+        foreignSignup,
+        foreignBefore,
+        guestDenied,
+        before,
+        issued,
+        current,
+        afterIssued,
+        repeated,
+        regularDenied,
+        deleted,
+        afterDelete,
+        stale,
+        replay,
+        final: await state(ctx),
+        foreignAfter: await ctx.readUserState({ userId: foreignSignup.data!.user.id }),
+      };
+    },
+    ["POST /sign-in/anonymous", "POST /delete-anonymous-user"],
+  );
+}
 
 compatScenario(
   "anonymous upgrade transfers original completed user and session snapshots before cleanup",

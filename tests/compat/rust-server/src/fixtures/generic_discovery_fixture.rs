@@ -109,6 +109,11 @@ pub(crate) async fn router(
     let mut router = Router::new();
     for mode in [
         "success",
+        "expiry-positive",
+        "expiry-zero",
+        "expiry-negative",
+        "custom-token",
+        "custom-token-error",
         "override",
         "failed",
         "fallback",
@@ -158,6 +163,29 @@ pub(crate) async fn router(
         }
         if mode == "mapped" {
             generic.map_profile = Some(Arc::new(Mapper));
+        }
+        if mode.starts_with("expiry-") || mode.starts_with("custom-token") {
+            generic.access_token_expires_in = Some(if mode == "expiry-zero" {
+                0.0
+            } else if mode == "expiry-negative" {
+                -60.0
+            } else {
+                17.0
+            });
+            if mode.starts_with("custom-token") {
+                generic
+                    .provider
+                    .authorization
+                    .as_mut()
+                    .expect("generic authorization policy")
+                    .authorization_code =
+                    Some(better_auth::plugins::oauth::OAuthAuthorizationCodeCallback(
+                        Arc::new(CustomCode {
+                            fixture: fixture.clone(),
+                            denied: mode == "custom-token-error",
+                        }),
+                    ));
+            }
         }
         let mut plugin = OAuthPlugin::new();
         if let Some(resolved) = generic
@@ -272,4 +300,28 @@ fn status(value: &Value, key: &str) -> StatusCode {
         .and_then(|v| u16::try_from(v).ok())
         .and_then(|v| StatusCode::from_u16(v).ok())
         .unwrap_or(StatusCode::OK)
+}
+
+struct CustomCode {
+    fixture: Fixture,
+    denied: bool,
+}
+#[async_trait::async_trait]
+impl better_auth::plugins::oauth::OAuthAuthorizationCodeHandler for CustomCode {
+    async fn validate_authorization_code(
+        &self,
+        data: better_auth::plugins::oauth::OAuthAuthorizationCodeContext,
+    ) -> Result<better_auth::plugins::oauth::OAuthTokenSet, String> {
+        tokio::task::yield_now().await;
+        self.fixture.receipts.lock().await.push(json!({"kind":"custom-token","code":data.code,"redirectURI":data.redirect_uri,"codeVerifier":data.code_verifier}));
+        if self.denied {
+            return Err("custom token callback denied".into());
+        }
+        Ok(better_auth::plugins::oauth::OAuthTokenSet {
+            access_token: Some("custom-access".into()),
+            refresh_token: Some("custom-refresh".into()),
+            scopes: vec!["custom-scope".into()],
+            ..Default::default()
+        })
+    }
 }

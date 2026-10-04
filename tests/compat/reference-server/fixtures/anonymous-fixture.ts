@@ -14,6 +14,8 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
   let sequence = 0;
   const modes = [
     "standard",
+    "defaults",
+    "attributes",
     "disabled",
     "link-error",
     "user-cancel",
@@ -38,6 +40,14 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
     const options: BetterAuthOptions = {
       ...base,
       basePath: path,
+      ...(mode === "attributes"
+        ? {
+            advanced: {
+              ...base.advanced,
+              ipAddress: { ipAddressHeaders: ["x-anonymous-ip", "x-forwarded-for"] },
+            },
+          }
+        : {}),
       ...(mode.startsWith("custom") || mode.startsWith("recovery")
         ? {
             user: {
@@ -179,12 +189,18 @@ export async function anonymousFixture(base: BetterAuthOptions, database: Databa
           : []),
         anonymous({
           disableDeleteAnonymousUser: mode === "disabled" || mode === "recovery-disabled",
-          generateRandomEmail: () =>
-            mode === "invalid-email" ? "not an email" : `anonymous-${++sequence}@fixture.test`,
-          generateName: async () => {
-            await Promise.resolve();
-            return mode === "empty-name" ? "" : "Configured Anonymous";
-          },
+          ...(mode === "defaults"
+            ? {}
+            : {
+                generateRandomEmail: () =>
+                  mode === "invalid-email"
+                    ? "not an email"
+                    : `anonymous-${++sequence}@fixture.test`,
+                generateName: async () => {
+                  await Promise.resolve();
+                  return mode === "empty-name" ? "" : "Configured Anonymous";
+                },
+              }),
           onLinkAccount: async ({ anonymousUser, newUser, ctx: context }) => {
             await Promise.resolve();
             events.push({
