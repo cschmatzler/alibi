@@ -8,7 +8,7 @@ use axum::{
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::anonymous::{AnonymousConfig, AnonymousIdentity};
-use better_auth::plugins::jwt::{DefineJwtPayload, JwtPluginConfig, JwtPlugin, JwtSession};
+use better_auth::plugins::jwt::{DefineJwtPayload, JwtPlugin, JwtPluginConfig, JwtSession};
 use better_auth::plugins::one_time_token::{
     GenerateOneTimeToken, HashOneTimeToken, OneTimeTokenConfig, OneTimeTokenPlugin,
     OneTimeTokenSession, OneTimeTokenStorage,

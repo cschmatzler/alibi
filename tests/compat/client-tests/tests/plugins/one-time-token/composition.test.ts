@@ -148,7 +148,7 @@ compatScenario(
     const jwks = await consumer.jwks();
     if (!header || !jwks.data) throw new Error("actual JWT and JWKS required");
     const jwt = await verifyWithOfficialJose(header, jwks.data.keys, ctx.baseURL, ctx.baseURL);
-    expect(header).toBe(upgradedHeader as string | null);
+    expect(header as string | null).toBe(upgradedHeader as string | null);
     expect(jwt.payload).toMatchObject({
       ...JSON.parse(JSON.stringify(upgraded.data.user)),
       sub: upgraded.data.user.id,
