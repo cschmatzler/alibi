@@ -117,6 +117,37 @@ Some operations require a *fresh* session — one created within `fresh_age`: li
 
 `rememberMe: false` on `/sign-in/email`, `/sign-in/username` or `/sign-up/email` issues a browser-session cookie with no `Max-Age` and a signed `dont_remember` cookie that keeps later refreshes from making it persistent. The server-side session still expires after `expires_in`.
 
+## Custom sign-in flows
+
+After your application verifies its own sign-in proof and resolves the user ID,
+use `better_auth::session` to issue a session through the initialized instance.
+The existing session hooks and admin-plugin ban policy still apply. This API
+needs only the top-level `better-auth` dependency.
+
+```rust
+use better_auth::prelude::{AuthResponse, AuthSession};
+use better_auth::session::{SessionIssueError, create_session_cookie, issue_user_session};
+use better_auth::{AuthResult, AuthSchema, BetterAuth};
+
+async fn sign_in_verified_user<S: AuthSchema>(
+    auth: &BetterAuth<S>,
+    user_id: &str,
+) -> AuthResult<AuthResponse> {
+    let issued = issue_user_session(auth.context(), user_id, None, None)
+        .await
+        .map_err(SessionIssueError::into_auth_error)?;
+    let cookie = create_session_cookie(issued.session.token(), auth.config())?;
+    Ok(AuthResponse::new(204).with_header("set-cookie", cookie))
+}
+```
+
+`issue_user_session` returns `IssuedSession<S>` with the user and session in your
+schema's types. Match `SessionIssueError::Banned { message }` separately from
+`SessionIssueError::Auth(error)` when your flow needs a distinct banned-user
+response, or use `into_auth_error` as above. `create_session_cookie` signs the
+token and uses the configured cookie name, lifetime and attributes; it can fail
+if those attributes are invalid.
+
 ## Session metadata
 
 Each session records the client's IP address and user agent. The IP comes from `advanced.ip_address`: the headers to trust (default `x-forwarded-for`), the proxies to strip from the right of a forwarded chain, the IPv6 grouping prefix and an opt-out. Configure it when behind a proxy:
