@@ -1207,7 +1207,16 @@ const ottProfiles = new Map(
           ? [
               anonymous({ generateRandomEmail: () => "ott-composed-anonymous@fixture.test" }),
               multiSession(),
-              jwt(),
+              // Keep the real owner payload and signer while making repeated
+              // publication independent of a whole-second wall-clock boundary.
+              jwt({
+                jwt: {
+                  definePayload: ({ user }) => ({
+                    ...user,
+                    iat: Math.floor(user.createdAt.getTime() / 1000),
+                  }),
+                },
+              }),
             ]
           : []),
       ],

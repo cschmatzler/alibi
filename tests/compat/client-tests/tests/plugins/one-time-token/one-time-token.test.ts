@@ -553,18 +553,19 @@ compatScenario(
   ["POST /one-time-token/verify"],
 );
 
-compatScenario(
-  "one-time token generation refreshes aged sessions and honors query browser and configuration preferences",
-  async (ctx) => {
-    const observations = [];
-    for (const [name, profile, query, dontRemember, refresh] of [
-      ["default", "ott-default", "", false, true],
-      ["query-false", "ott-default", "?disableRefresh=false", false, false],
-      ["query-empty", "ott-default", "?disableRefresh=", false, true],
-      ["browser", "ott-default", "", true, false],
-      ["disabled", "ott-refresh-disabled", "", false, false],
-      ["deferred", "ott-refresh-deferred", "", false, false],
-    ] as const) {
+for (const [name, profile, query, dontRemember, refresh] of [
+  ["default", "ott-default", "", false, true],
+  ["query-false", "ott-default", "?disableRefresh=false", false, false],
+  ["query-empty", "ott-default", "?disableRefresh=", false, true],
+  ["browser", "ott-default", "", true, false],
+  ["disabled", "ott-refresh-disabled", "", false, false],
+  ["deferred", "ott-refresh-deferred", "", false, false],
+] as const) {
+  // Each independent refresh policy owns its execution window, retaining every
+  // raw timestamp without accumulating earlier password-hash latency.
+  compatScenario(
+    `one-time token generation refreshes aged sessions: ${name}`,
+    async (ctx) => {
       const owner = await signUp(ctx, `refresh-${name}`, profile);
       const login = dontRemember
         ? await owner.client.signIn.email({
@@ -673,7 +674,7 @@ compatScenario(
         await ctx.readVerificationState({ identifier: `one-time-token:${generated.token}` }),
       ).toEqual([]);
 
-      observations.push({
+      return {
         name,
         signup: ctx.snapshot(owner.signup),
         login: ctx.snapshot(login),
@@ -682,9 +683,8 @@ compatScenario(
         generated,
         pending,
         consumed: ctx.snapshot(consumed),
-      });
-    }
-    return observations;
-  },
-  ["GET /one-time-token/generate", "POST /one-time-token/verify"],
-);
+      };
+    },
+    ["GET /one-time-token/generate", "POST /one-time-token/verify"],
+  );
+}
