@@ -305,7 +305,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             config = config
                 .base_url("https://session-cache.fixture.test")
                 .trusted_origin(&base.base_url);
-            config.session.cookie_secure = false;
+            config.advanced.use_secure_cookies = Some(false);
         }
         _ = config.session.additional_fields.insert(
             "hidden".into(),

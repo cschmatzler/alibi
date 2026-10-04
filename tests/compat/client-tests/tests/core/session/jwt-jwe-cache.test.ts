@@ -355,7 +355,11 @@ compatScenario(
         ...extra,
       });
       expect(response.status).toBe(200);
-      return response.body as { keys: Record<string, unknown>[] };
+      return response.body as {
+        keys: Record<string, unknown>[];
+        users: Record<string, unknown>[];
+        sessions: Record<string, unknown>[];
+      };
     };
     const actual = await send(source, path + "/sign-up/email", {
       email: ctx.uniqueEmail("source-cache"),
@@ -380,6 +384,24 @@ compatScenario(
     expect(imported.status).toBe(200);
     expect(imported.body.user).toEqual(actual.body.user);
     expect(imported.body.session.token).toBe(actual.body.token);
+    const recipientRows = await command(native, "rows", { userId: actual.body.user.id });
+    expect(recipientRows.users).toEqual([]);
+    expect(recipientRows.sessions).toEqual([]);
+    const bypass = await send(
+      native,
+      path + "/get-session?disableCookieCache=true",
+      undefined,
+      sourceCookies,
+    );
+    expect(bypass.status).toBe(200);
+    expect(bypass.body).toBeNull();
+    const sensitive = await send(
+      native,
+      path + "/change-password",
+      { currentPassword: "password123", newPassword: "different-password123" },
+      sourceCookies,
+    );
+    expect(sensitive.status).toBe(401);
     const { symmetricDecrypt } = await import("better-auth/crypto");
     const { importJWK, SignJWT, decodeJwt } = await import("jose");
     const privateKey = await importJWK(
@@ -482,6 +504,9 @@ compatScenario(
     return {
       actual: actual.body,
       imported: imported.body,
+      recipientRows,
+      bypass: { status: bypass.status, body: bypass.body },
+      sensitive: { status: sensitive.status, body: sensitive.body },
       nativeIssuance: nativeIssuance.body,
       originalObservation,
       nativeObservation,
