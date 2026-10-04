@@ -432,11 +432,16 @@ where
             drop(find_user_by_id::<S::User>(exec, &id, Lock::Exclusive).await?);
             super::teams::remove_owned_team_members(tx, &owner, None).await?;
             super::wallets::remove_owned_wallets(tx, &owner).await?;
-            let mut keys = Sql::with(exec.engine(), "DELETE FROM ");
-            keys.ident("api_keys");
-            keys.push(" WHERE ");
-            keys.compare("api_keys", "reference_id", " = ", owner.clone());
-            _ = exec.execute(keys).await?;
+            // Core-only generated schemas omit this optional table. Check on
+            // the held transaction; a present table must still be cleaned even
+            // when the API-key plugin is no longer registered.
+            if super::migrator::has_table(exec, "api_keys").await? {
+                let mut keys = Sql::with(exec.engine(), "DELETE FROM ");
+                keys.ident("api_keys");
+                keys.push(" WHERE ");
+                keys.compare("api_keys", "reference_id", " = ", owner.clone());
+                _ = exec.execute(keys).await?;
+            }
             let mut users = Sql::with(exec.engine(), "DELETE FROM ");
             users.ident(<S::User as SqlxModel>::TABLE);
             users.push(" WHERE ");

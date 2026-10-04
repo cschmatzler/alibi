@@ -44,7 +44,7 @@ mod teams;
 #[cfg(all(feature = "sqlx", feature = "seaorm"))]
 mod timestamps;
 mod two_factor;
-mod users;
+pub(crate) mod users;
 mod verifications;
 mod wallets;
 
