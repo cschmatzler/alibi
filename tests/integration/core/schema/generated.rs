@@ -201,7 +201,7 @@ mod seaorm_core {
     async fn deletion(admin: bool) -> super::TestResult {
         use better_auth::seaorm::sea_orm::{ConnectionTrait, Statement};
         let mut options = better_auth::seaorm::sea_orm::ConnectOptions::new("sqlite::memory:");
-        options.max_connections(1);
+        _ = options.max_connections(1);
         let database = better_auth::seaorm::Database::connect(options).await?;
         run_app_migrations(&database).await?;
         let raw = database.clone();
