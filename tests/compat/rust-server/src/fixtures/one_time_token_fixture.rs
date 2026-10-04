@@ -8,7 +8,7 @@ use axum::{
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::anonymous::{AnonymousConfig, AnonymousIdentity};
-use better_auth::plugins::jwt::JwtPlugin;
+use better_auth::plugins::jwt::{DefineJwtPayload, JwtPluginConfig, JwtPlugin, JwtSession};
 use better_auth::plugins::one_time_token::{
     GenerateOneTimeToken, HashOneTimeToken, OneTimeTokenConfig, OneTimeTokenPlugin,
     OneTimeTokenSession, OneTimeTokenStorage,
@@ -50,6 +50,23 @@ struct CallbackState {
 }
 #[derive(Clone, Default)]
 struct CustomCallbacks(Arc<Mutex<CallbackState>>);
+
+struct ComposedJwtPayload;
+#[async_trait::async_trait]
+impl DefineJwtPayload for ComposedJwtPayload {
+    async fn define_payload(
+        &self,
+        session: &JwtSession,
+    ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+        let mut payload = serde_json::to_value(&session.user)
+            .map_err(|error| AuthError::internal(error.to_string()))?
+            .as_object()
+            .cloned()
+            .ok_or_else(|| AuthError::internal("JWT user payload must be an object"))?;
+        let _ = payload.insert("iat".into(), json!(session.user.created_at.timestamp()));
+        Ok(payload)
+    }
+}
 
 struct ComposedIdentity;
 #[async_trait::async_trait]
@@ -243,7 +260,10 @@ pub(crate) async fn router(
                     ..Default::default()
                 }))
                 .plugin(MultiSessionPlugin::new())
-                .plugin(JwtPlugin::new());
+                .plugin(JwtPlugin::with_config(JwtPluginConfig {
+                    define_payload: Some(Arc::new(ComposedJwtPayload)),
+                    ..Default::default()
+                }));
         }
         let auth = Arc::new(builder.build().await?);
         let routes: Router<Auth> = auth.clone().axum_router().with_state(auth.clone());

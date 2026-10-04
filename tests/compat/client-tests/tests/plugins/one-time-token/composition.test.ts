@@ -45,7 +45,14 @@ compatScenario(
     expect(anonymousProof.error).toBeNull();
     const upgrade = await owner.signUp.email({ email, password, name: "Composed upgraded owner" });
     expect(upgrade.error).toBeNull();
-    const upgraded = await owner.getSession();
+    let upgradedHeader: string | null = null;
+    const upgraded = await owner.getSession({
+      fetchOptions: {
+        onSuccess({ response }) {
+          upgradedHeader = response.headers.get("set-auth-jwt");
+        },
+      },
+    });
     if (!upgraded.data || !anonymousProof.data) throw new Error("actual upgrade/proof required");
     expect(upgraded.data.user.id).not.toBe(anonymousSession.data.user.id);
     const anonymousAfter = await ctx.readUserState({ userId: anonymousSession.data.user.id });
@@ -141,7 +148,13 @@ compatScenario(
     const jwks = await consumer.jwks();
     if (!header || !jwks.data) throw new Error("actual JWT and JWKS required");
     const jwt = await verifyWithOfficialJose(header, jwks.data.keys, ctx.baseURL, ctx.baseURL);
-    expect(jwt.payload.sub).toBe(upgraded.data.user.id);
+    expect(header).toBe(upgradedHeader as string | null);
+    expect(jwt.payload).toMatchObject({
+      ...JSON.parse(JSON.stringify(upgraded.data.user)),
+      sub: upgraded.data.user.id,
+      iat: Math.floor(new Date(upgraded.data.user.createdAt).getTime() / 1000),
+    });
+    expect(Number(jwt.payload.exp) - Number(jwt.payload.iat)).toBe(900);
     expect(await ctx.readVerificationState({ identifier })).toEqual([]);
     const replay = await guest.oneTimeToken.verify({ token: generated.data.token });
     expect(replay.error?.message).toBe("Invalid token");
@@ -154,6 +167,7 @@ compatScenario(
     if (!enabled.data || !("totpURI" in enabled.data)) {
       throw new Error("actual TOTP enrollment required");
     }
+    expect(decodeURIComponent(new URL(enabled.data.totpURI).pathname)).toContain(email);
     const code = await generateCurrentTotp(enabled.data.totpURI);
     expect((await consumer.twoFactor.verifyTotp({ code })).error).toBeNull();
     let pendingHeader: string | null = null;
