@@ -27,7 +27,7 @@ compatScenario(
     const url = new URL(delivery.url);
     expect(url.pathname).toBe("/api/auth/magic-link/verify");
     expect(url.searchParams.get("callbackURL")).toBe("/");
-    expect(await verificationCount(ctx, delivery.token)).toBe(1);
+    expect(await verificationCount(ctx, `magic-link:${delivery.token}`)).toBe(1);
 
     // Official verify client omits callbackURL so the successful JSON includes
     // the actual session. The delivered browser URL is tested separately below.
@@ -41,7 +41,7 @@ compatScenario(
 
     const state = await readUserState(ctx, user.id);
     expect(state.sessions).toHaveLength(1);
-    expect(await verificationCount(ctx, delivery.token)).toBe(0);
+    expect(await verificationCount(ctx, `magic-link:${delivery.token}`)).toBe(0);
 
     const replay = await ctx.rawRequest({
       path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}`,
@@ -82,7 +82,7 @@ compatScenario(
       redirect: "manual",
     });
     expect(forbidden.status).toBe(403);
-    expect(await verificationCount(ctx, delivery.token)).toBe(1);
+    expect(await verificationCount(ctx, `magic-link:${delivery.token}`)).toBe(1);
 
     const url = new URL(delivery.url);
     const verified = await ctx.rawRequest({
@@ -168,7 +168,7 @@ compatScenario(
     const email = ctx.uniqueEmail("magic-expired");
     await client.signIn.magicLink({ email });
     const delivery = await readMagicLink(ctx, email);
-    await expireVerification(ctx, delivery.token);
+    await expireVerification(ctx, `magic-link:${delivery.token}`);
     const verify = await ctx.rawRequest({
       path: `/api/auth/magic-link/verify?token=${encodeURIComponent(delivery.token)}&errorCallbackURL=${encodeURIComponent("/expired")}`,
       redirect: "manual",
@@ -177,7 +177,7 @@ compatScenario(
     expect(new URL(verify.location ?? "", ctx.baseURL).searchParams.get("error")).toBe(
       "INVALID_TOKEN",
     );
-    expect(await verificationCount(ctx, delivery.token)).toBe(0);
+    expect(await verificationCount(ctx, `magic-link:${delivery.token}`)).toBe(0);
 
     const session = await client.getSession();
     expect(session.data).toBeNull();
@@ -208,6 +208,74 @@ compatScenario(
       results.push(ctx.snapshot(response));
     }
 
+    // 1.7.7 rejects records for another purpose before consuming them or
+    // trusting their email as a login identity, even for an existing account.
+    const victim = ctx.actor("record-victim");
+    const signup = await victim.client.signUp.email({
+      email,
+      password: "password123",
+      name: "Protected",
+    });
+    expect(signup.error).toBeNull();
+    const victimId = requireUser(signup.data?.user).id;
+    const protectedBefore = await readUserState(ctx, victimId);
+    const recordRejections = [];
+    const values = [
+      { email },
+      { type: "oauth-state", email },
+      { type: "magic-link", email, extra: true },
+      { type: "magic-link", email, name: null },
+      { type: "magic-link", email: "invalid-email" },
+      [],
+      null,
+    ];
+    for (const [index, value] of values.entries()) {
+      const token = `wrong-purpose-${index}`;
+      const identifier = `magic-link:${token}`;
+      const seeded = await ctx.rawRequest({
+        path: "/__test/verification-state",
+        method: "POST",
+        json: {
+          action: "seed",
+          identifier,
+          value: JSON.stringify(value),
+          expiresAt: "2099-01-01T00:00:00.000Z",
+        },
+      });
+      expect(seeded.status).toBe(200);
+      const denied = await ctx.rawRequest({
+        path: `/api/auth/magic-link/verify?token=${token}`,
+        redirect: "manual",
+      });
+      expect(denied.status).toBe(302);
+      expect(new URL(denied.location ?? "", ctx.baseURL).searchParams.get("error")).toBe(
+        "INVALID_TOKEN",
+      );
+      expect(await verificationCount(ctx, identifier)).toBe(1);
+      expect(await readUserState(ctx, victimId)).toEqual(protectedBefore);
+      recordRejections.push(ctx.snapshot(denied));
+    }
+    const legacy = await ctx.rawRequest({
+      path: "/__test/verification-state",
+      method: "POST",
+      json: {
+        action: "seed",
+        identifier: "legacy-magic",
+        value: JSON.stringify({ type: "magic-link", email }),
+        expiresAt: "2099-01-01T00:00:00.000Z",
+      },
+    });
+    expect(legacy.status).toBe(200);
+    const legacyDenied = await ctx.rawRequest({
+      path: "/api/auth/magic-link/verify?token=legacy-magic",
+      redirect: "manual",
+    });
+    expect(new URL(legacyDenied.location ?? "", ctx.baseURL).searchParams.get("error")).toBe(
+      "INVALID_TOKEN",
+    );
+    expect(await verificationCount(ctx, "legacy-magic")).toBe(1);
+    expect(await readUserState(ctx, victimId)).toEqual(protectedBefore);
+
     const missing = await ctx.rawRequest({
       path: "/api/auth/magic-link/verify",
       redirect: "manual",
@@ -225,7 +293,7 @@ compatScenario(
       expect(response.status).toBe(403);
 
       results.push(ctx.snapshot(response));
-      expect(await verificationCount(ctx, delivery.token)).toBe(1);
+      expect(await verificationCount(ctx, `magic-link:${delivery.token}`)).toBe(1);
     }
 
     const verify = await client.magicLink.verify({ query: { token: delivery.token } });
@@ -242,6 +310,8 @@ compatScenario(
     return {
       results,
       missing: ctx.snapshot(missing),
+      recordRejections,
+      legacyDenied: ctx.snapshot(legacyDenied),
       verify: ctx.snapshot(verify),
       replay: ctx.snapshot(replay),
     };

@@ -5,9 +5,9 @@ description: "Which Better Auth version this implementation tracks, how parity i
 
 ## The contract
 
-HTTP behavior targets **better-auth@1.7.6**: the same endpoints, request and response shapes, status codes, error codes, redirects and cookie attributes. The official TypeScript client therefore works against a Better Auth RS server without changes, and so do existing database rows and password hashes (scrypt in the TypeScript format).
+HTTP behavior targets **better-auth@1.7.7**: the same endpoints, request and response shapes, status codes, error codes, redirects and cookie attributes. The official TypeScript client therefore works against a Better Auth RS server without changes, and so do existing database rows and password hashes (scrypt in the TypeScript format).
 
-Newer upstream documentation may describe behavior added after 1.7.6; it is outside the target until the pin moves.
+Newer upstream documentation may describe behavior added after 1.7.7; it is outside the target until the pin moves.
 
 Rust releases use independent Semantic Versioning and record the exact upstream target separately, so fixes can ship independently while retaining the upstream contract. See the [release policy](/guides/releases/) for versioning and compatibility rules.
 
@@ -67,7 +67,7 @@ Better Auth RS can *consume* OAuth/OIDC providers (including enterprise IdPs thr
 
 - **Pre-release.** APIs, wire formats and generated schemas may change before a release; the compatibility target does not.
 - **Native token encoding.** Rows written by *early* better-auth-rs versions use an older OAuth-token encoding; see [Legacy OAuth token conversion](/guides/legacy-oauth-tokens/).
-- **Concurrent device decisions** and a few other races intentionally reproduce 1.7.6 behavior, including its edge cases.
+- **Concurrent device decisions** and a few other races retain the behavior measured on 1.7.6, unchanged by the 1.7.7 delta, including its edge cases.
 - The TypeScript generic-OAuth client helper `signIn.oauth2` is not served; use `signIn.social` ([Generic OAuth](/authentication/generic-oauth/#frontend)).
 
 ## Checking a deployment
@@ -77,3 +77,9 @@ Better Auth RS can *consume* OAuth/OIDC providers (including enterprise IdPs thr
 ## Frontend
 
 Use the official [Better Auth client and frontend documentation](https://www.better-auth.com/docs/concepts/client).
+
+## Upgrading from 1.7.6
+
+1.7.7 separates OAuth state, proxy state, proxy packages, and proxy profiles by encryption purpose. Upgrade servers sharing the verification store and OAuth proxy participants together. Request new Magic Links and restart pending OAuth flows: old verification identifiers and ciphertexts are deliberately rejected. Existing account credentials, password hashes, and session records need no migration for this release change.
+
+The upgrade is qualified against the upstream commit delta and focused affected owners. Historical audit receipts remain evidence for their recorded versions; this is not a new full compatibility or coverage campaign.

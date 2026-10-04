@@ -1,5 +1,5 @@
 // Run with the repository's pinned Bun after installing the frozen reference lockfile.
-// This uses only Better Auth 1.7.6's published implementation and actual SQLite.
+// This uses only Better Auth 1.7.7's published implementation and actual SQLite.
 const runtime = new URL("../../compat/reference-server/node_modules/better-auth/dist/", import.meta.url);
 const { betterAuth } = await import(new URL("index.mjs", runtime).href);
 const { createAuthEndpoint } = await import(new URL("api/index.mjs", runtime).href);
@@ -14,7 +14,7 @@ const probe = { id: "private-cipher-probe", endpoints: { cipherProbe: createAuth
  const token = await signJWT(ctx, { payload, signingKeyId: key.id });
  const verified = await verifyJWT(token);
  if (JSON.stringify(verified) !== JSON.stringify(payload)) throw Error("upstream-produced signature must verify");
- return { referenceVersion: "better-auth@1.7.6", origin, secret, payload, key, token };
+ return { referenceVersion: "better-auth@1.7.7", origin, secret, payload, key, token };
 })}};
 const options = { database:new Database(":memory:"), baseURL:origin, secret, plugins:[jwt(),probe], logger:{disabled:true} };
 const auth = betterAuth(options);

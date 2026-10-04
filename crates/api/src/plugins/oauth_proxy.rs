@@ -7,12 +7,13 @@ use super::oauth::handlers::{
 };
 use super::oauth::state::{
     OAuthStatePayload, RecoveredOAuthServerContext, decode_cookie_state_value, get_cookie,
-    state_cookie_name, verified_server_context,
+    state_cookie_name, state_verification_identifier, verified_server_context,
 };
 use super::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthTokenSet, OAuthUserInfo, OAuthUserInfoRequest,
     oauth_callback_path, oauth_disable_sign_up_option, resolve_oauth_account_key,
 };
+use super::token_crypto::EncryptionPurpose;
 use async_trait::async_trait;
 use better_auth_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
@@ -157,16 +158,30 @@ impl OAuthProxyPlugin {
     pub const fn with_config(config: OAuthProxyConfig) -> Self {
         Self { config }
     }
-    fn encrypt<S: AuthSchema>(&self, plain: &str, ctx: &AuthContext<S>) -> AuthResult<String> {
+    fn encrypt<S: AuthSchema>(
+        &self,
+        plain: &str,
+        ctx: &AuthContext<S>,
+        purpose: EncryptionPurpose,
+    ) -> AuthResult<String> {
         match &self.config.secret {
-            Some(secret) => super::token_crypto::encrypt(plain, secret),
-            None => super::token_crypto::encrypt_with_config(plain, &ctx.config),
+            Some(secret) => super::token_crypto::encrypt_for_purpose(plain, secret, purpose),
+            None => {
+                super::token_crypto::encrypt_with_config_for_purpose(plain, &ctx.config, purpose)
+            }
         }
     }
-    fn decrypt<S: AuthSchema>(&self, stored: &str, ctx: &AuthContext<S>) -> AuthResult<String> {
+    fn decrypt<S: AuthSchema>(
+        &self,
+        stored: &str,
+        ctx: &AuthContext<S>,
+        purpose: EncryptionPurpose,
+    ) -> AuthResult<String> {
         match &self.config.secret {
-            Some(secret) => super::token_crypto::decrypt(stored, secret),
-            None => super::token_crypto::decrypt_with_config(stored, &ctx.config),
+            Some(secret) => super::token_crypto::decrypt_for_purpose(stored, secret, purpose),
+            None => {
+                super::token_crypto::decrypt_with_config_for_purpose(stored, &ctx.config, purpose)
+            }
         }
     }
     fn current<S: AuthSchema>(&self, req: &AuthRequest, ctx: &AuthContext<S>) -> String {
@@ -224,7 +239,7 @@ impl OAuthProxyPlugin {
         let Some(encrypted) = params.get("state") else {
             return Ok(None);
         };
-        let Ok(plain) = self.decrypt(encrypted, ctx) else {
+        let Ok(plain) = self.decrypt(encrypted, ctx, EncryptionPurpose::ProxyPackage) else {
             return Ok(None);
         };
         let Ok(package) =
@@ -235,7 +250,8 @@ impl OAuthProxyPlugin {
         if !package.is_oauth_proxy || package.state.is_empty() || package.state_cookie.is_empty() {
             return Ok(None);
         }
-        let Ok(plain_2) = self.decrypt(&package.state_cookie, ctx) else {
+        let Ok(plain_2) = self.decrypt(&package.state_cookie, ctx, EncryptionPurpose::ProxyState)
+        else {
             return Ok(None);
         };
         let Ok(state) =
@@ -372,7 +388,11 @@ impl OAuthProxyPlugin {
         };
         _ = callback.query_pairs_mut().append_pair(
             "profile",
-            &self.encrypt(&better_auth_core::utils::json::to_string(&payload)?, ctx)?,
+            &self.encrypt(
+                &better_auth_core::utils::json::to_string(&payload)?,
+                ctx,
+                EncryptionPurpose::ProxyProfile,
+            )?,
         );
         Ok(Some(redirect(callback.as_str())))
     }
@@ -418,7 +438,7 @@ impl OAuthProxyPlugin {
         else {
             return error_redirect(&default_error, "missing_profile", None);
         };
-        let Ok(plain) = self.decrypt(profile, ctx) else {
+        let Ok(plain) = self.decrypt(profile, ctx, EncryptionPurpose::ProxyProfile) else {
             return error_redirect(&default_error, "invalid_profile", None);
         };
         let Ok(raw) = better_auth_core::utils::json::from_slice::<Value>(plain.as_bytes()) else {
@@ -470,7 +490,11 @@ impl OAuthProxyPlugin {
         let authenticated_cookie = get_cookie(req, &cookie_name);
         let state: OAuthStatePayload = match ctx.config.account.store_state_strategy {
             OAuthStateStrategy::Automatic | OAuthStateStrategy::Database => {
-                let Ok(Some(row)) = ctx.verifications().find(&payload.state).await else {
+                let Ok(Some(row)) = ctx
+                    .verifications()
+                    .find(&state_verification_identifier(&payload.state))
+                    .await
+                else {
                     return error_redirect(error_url, "state_mismatch", None);
                 };
                 let Ok(state) = better_auth_core::utils::json::from_slice(row.value()?.as_bytes())
@@ -515,7 +539,11 @@ impl OAuthProxyPlugin {
         if matches!(
             ctx.config.account.store_state_strategy,
             OAuthStateStrategy::Automatic | OAuthStateStrategy::Database
-        ) && ctx.verifications().delete(&payload.state).await.is_err()
+        ) && ctx
+            .verifications()
+            .delete(&state_verification_identifier(&payload.state))
+            .await
+            .is_err()
         {
             return error_redirect(error_url, "state_mismatch", None);
         }
@@ -906,10 +934,15 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
             state_cookie: self.encrypt(
                 &better_auth_core::utils::json::to_string(&issued.payload)?,
                 ctx,
+                EncryptionPurpose::ProxyState,
             )?,
             is_oauth_proxy: true,
         };
-        let encrypted = self.encrypt(&better_auth_core::utils::json::to_string(&package)?, ctx)?;
+        let encrypted = self.encrypt(
+            &better_auth_core::utils::json::to_string(&package)?,
+            ctx,
+            EncryptionPurpose::ProxyPackage,
+        )?;
         let pairs: Vec<_> = url
             .query_pairs()
             .filter(|(key, _)| key != "state")

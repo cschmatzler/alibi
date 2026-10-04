@@ -111,7 +111,7 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
                 plugin === "phone" ? "code" : plugin === "passwordless" ? "otp" : "token"
               ],
             );
-          const priorKey = plugin === "magic-link" ? priorCode : identifier;
+          const priorKey = plugin === "magic-link" ? `magic-link:${priorCode}` : identifier;
           predecessor = {
             issued: priorIssued,
             delivery: priorDelivery,
@@ -218,11 +218,13 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
                 : 6,
         );
 
-        const key = plugin === "magic-link" ? code : identifier;
+        const key = plugin === "magic-link" ? `magic-link:${code}` : identifier;
         const stored = await storedVerification(ctx, key);
         expect(stored).toHaveLength(1);
         expect(stored[0]?.value).toBe(
-          plugin === "magic-link" ? JSON.stringify({ email, name: undefined }) : `${code}:0`,
+          plugin === "magic-link"
+            ? JSON.stringify({ type: "magic-link", email, name: undefined })
+            : `${code}:0`,
         );
 
         const ttl =
@@ -354,7 +356,7 @@ export function passwordlessNumericScenarios(plugin: "passwordless" | "phone" | 
           .parse(
             nextDelivery[plugin === "phone" ? "code" : plugin === "passwordless" ? "otp" : "token"],
           );
-        const nextKey = plugin === "magic-link" ? nextCode : key;
+        const nextKey = plugin === "magic-link" ? `magic-link:${nextCode}` : key;
         const nextStored = await storedVerification(ctx, nextKey);
         expect(nextStored).toHaveLength(plugin !== "magic-link" && budget === Infinity ? 2 : 1);
         expect(nextStored[0]?.id).not.toBe(stored[0]?.id);

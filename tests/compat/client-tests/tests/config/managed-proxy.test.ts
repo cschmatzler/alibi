@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 
 import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 
+import { oauthPurposeSecret } from "../../support/oauth-encryption";
 import { authProfilePath } from "../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../support/scenario";
 
@@ -17,6 +18,13 @@ const ring = {
   currentVersion: 2,
   legacySecret: legacy,
 };
+const purposeRing = (purpose: Parameters<typeof oauthPurposeSecret>[1]) => ({
+  keys: new Map(
+    [...ring.keys].map(([version, secret]) => [version, oauthPurposeSecret(secret, purpose)]),
+  ),
+  currentVersion: ring.currentVersion,
+  legacySecret: oauthPurposeSecret(legacy, purpose),
+});
 const path = authProfilePath("managed-proxy");
 // Both runtimes receive the same independently Source-encrypted wrong-key vector.
 const wrongKeyVector = symmetricEncrypt({
@@ -27,7 +35,7 @@ const wrongKeyVector = symmetricEncrypt({
   data: JSON.stringify({ authentic: "wrong-key-control" }),
 });
 const tamperVector = symmetricEncrypt({
-  key: ring,
+  key: purposeRing("oauth-proxy-profile"),
   data: JSON.stringify({ authentic: "tamper-control" }),
 }).then((value) => {
   const prefix = "$ba$2$";
@@ -134,9 +142,13 @@ compatScenario(
       );
       const raw = authorization.searchParams.get("state")!;
       expect(raw.startsWith("$ba$0$")).toBe(write === "old");
-      const pack = JSON.parse(await symmetricDecrypt({ key: ring, data: raw }));
+      const pack = JSON.parse(
+        await symmetricDecrypt({ key: purposeRing("oauth-proxy-package"), data: raw }),
+      );
       expect(pack.isOAuthProxy).toBe(true);
-      const original = JSON.parse(await symmetricDecrypt({ key: ring, data: pack.stateCookie }));
+      const original = JSON.parse(
+        await symmetricDecrypt({ key: purposeRing("oauth-proxy-state"), data: pack.stateCookie }),
+      );
       expect(original.oauthState).toBe(pack.state);
       expect(original.serverContext).toBeUndefined();
       expect(original.application).toEqual({ kept: true });
@@ -180,7 +192,9 @@ compatScenario(
       const token = bridge.searchParams.get("profile")!;
       if (producer === "bare") expect(token.startsWith("$ba$")).toBe(false);
       else expect(token.startsWith(producer === "old" ? "$ba$0$" : "$ba$2$")).toBe(true);
-      const payload = JSON.parse(await symmetricDecrypt({ key: ring, data: token }));
+      const payload = JSON.parse(
+        await symmetricDecrypt({ key: purposeRing("oauth-proxy-profile"), data: token }),
+      );
       expect(payload.state).toBe(pack.state);
       expect(payload.account.providerId).toBe("gitlab");
       expect(payload.userInfo.email).toBe("proxy-owner@fixture.test");
@@ -224,7 +238,7 @@ compatScenario(
         if (mode === "foreign-state") {
           submittedPayload = { ...payload, state: seeded.data!.token };
           rejectedToken = await symmetricEncrypt({
-            key: ring,
+            key: purposeRing("oauth-proxy-profile"),
             data: JSON.stringify(submittedPayload),
           });
         }
@@ -318,5 +332,13 @@ compatScenario(
     "GET /get-session",
   ],
   30_000,
-  { oauthProxyProfileManagedKeys: { keys: { 0: old, 2: current }, legacySecret: legacy } },
+  {
+    oauthProxyProfileManagedKeys: {
+      keys: {
+        0: oauthPurposeSecret(old, "oauth-proxy-profile"),
+        2: oauthPurposeSecret(current, "oauth-proxy-profile"),
+      },
+      legacySecret: oauthPurposeSecret(legacy, "oauth-proxy-profile"),
+    },
+  },
 );

@@ -255,11 +255,12 @@ export function verificationPublicationPairs(
         !row(value.delivery) ||
         value.delivery.email !== req.body.email ||
         typeof value.delivery.token !== "string" ||
-        snapshot.value !== JSON.stringify({ email: req.body.email, name: req.body.name })
+        snapshot.value !==
+          JSON.stringify({ type: "magic-link", email: req.body.email, name: req.body.name })
       ) {
         return;
       }
-      logical = value.delivery.token;
+      logical = `magic-link:${value.delivery.token}`;
     } else if (kind === "oauth") {
       const trace = traces[matching[0]!] as Row;
       const window = windows![matching[0]!]!;
@@ -305,7 +306,7 @@ export function verificationPublicationPairs(
           return;
         }
 
-        logical = payload.oauthState;
+        logical = `auth-state:${payload.oauthState}`;
       } catch {
         return;
       }

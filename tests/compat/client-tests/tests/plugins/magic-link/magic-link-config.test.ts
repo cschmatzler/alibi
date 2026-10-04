@@ -17,12 +17,12 @@ compatScenario(
     const link = await readMagicLink(ctx, email);
     const hash = new Bun.CryptoHasher("sha256").update(link.token).digest("base64url");
     expect(await verificationCount(ctx, link.token)).toBe(0);
-    expect(await verificationCount(ctx, hash)).toBe(1);
+    expect(await verificationCount(ctx, `magic-link:${hash}`)).toBe(1);
 
     const verify = await client.magicLink.verify({ query: { token: link.token } });
     expect(verify.error).toBeNull();
     expect(verify.data?.user.email).toBe(email);
-    expect(await verificationCount(ctx, hash)).toBe(0);
+    expect(await verificationCount(ctx, `magic-link:${hash}`)).toBe(0);
 
     const user = requireUser(verify.data?.user);
     const state = await readUserState(ctx, user.id);

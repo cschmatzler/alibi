@@ -148,7 +148,7 @@ mod tests {
             &format!("const UPSTREAM_VERSION: &str = \"{version}\";"),
         );
         assert_eq!(
-            read_json("tests/fixtures/jwt/typescript-1.7.6-encrypted-jwk.json")["referenceVersion"],
+            read_json("tests/fixtures/jwt/typescript-1.7.7-encrypted-jwk.json")["referenceVersion"],
             format!("better-auth@{version}"),
             "the imported encrypted-JWK fixture must come from the pinned release"
         );

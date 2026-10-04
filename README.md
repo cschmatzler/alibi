@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/cschmatzler/better-auth-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/cschmatzler/better-auth-rs/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Better Auth compatibility](https://img.shields.io/badge/better--auth-v1.7.6-blue)](https://www.npmjs.com/package/better-auth/v/1.7.6)
+[![Better Auth compatibility](https://img.shields.io/badge/better--auth-v1.7.7-blue)](https://www.npmjs.com/package/better-auth/v/1.7.7)
 
 A Rust implementation of [Better Auth](https://www.better-auth.com/), built to work with its official TypeScript client. Run authentication in your Rust backend while keeping Better Auth's frontend API.
 
@@ -13,7 +13,7 @@ Use email and password, social login, passkeys, two-factor authentication, organ
 
 ## Upstream compatibility
 
-The upstream Better Auth API is our compatibility contract. The current target is **`better-auth@1.7.6`**: endpoints, request and response shapes, status and error codes, redirects, cookie attributes, and supported stored data formats.
+The upstream Better Auth API is our compatibility contract. The current target is **`better-auth@1.7.7`**: endpoints, request and response shapes, status and error codes, redirects, cookie attributes, and supported stored data formats.
 
 We verify this contract with a differential suite that runs the official TypeScript client against both the pinned upstream runtime and the Rust implementation, comparing responses and stored state. Rust configuration, callbacks, plugins, and database models use native Rust APIs.
 

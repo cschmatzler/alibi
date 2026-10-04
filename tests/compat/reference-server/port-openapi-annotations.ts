@@ -55,7 +55,7 @@ try {
   const json = (value: unknown) => JSON.stringify(value);
   const optional = (value: string | undefined) =>
     value === undefined ? "None" : `Some(${json(value)}.into())`;
-  const header = `//! Source-backed Better Auth 1.7.6 declarations.\n//! Author-time port: tests/compat/reference-server/port-openapi-annotations.ts.\n//! Conversion helpers SHA256: ${createHash("sha256").update(helpers).digest("hex")}.\n//! No generated document or fixture response was captured.\nuse serde_json::json;\n`;
+  const header = `//! Source-backed Better Auth 1.7.7 declarations.\n//! Author-time port: tests/compat/reference-server/port-openapi-annotations.ts.\n//! Conversion helpers SHA256: ${createHash("sha256").update(helpers).digest("hex")}.\n//! No generated document or fixture response was captured.\nuse serde_json::json;\n`;
   let endpoints =
     header +
     "use super::OpenApiEndpoint;\npub(super) fn endpoint(plugin:&str,path:&str)->Option<OpenApiEndpoint>{Some(match(plugin,path){\n";
@@ -64,7 +64,7 @@ try {
     "use super::{OpenApiField,OpenApiModel};\npub(super) fn models(plugin:&str)->Option<Vec<OpenApiModel>>{Some(match plugin{\n";
   let count = 0;
   for (const plugin of factories) {
-    if (plugin.version !== "1.7.6") {
+    if (plugin.version !== "1.7.7") {
       throw new Error(`Wrong pinned ${plugin.id} version: ${plugin.version}`);
     }
     for (const value of Object.values(plugin.endpoints ?? {})) {

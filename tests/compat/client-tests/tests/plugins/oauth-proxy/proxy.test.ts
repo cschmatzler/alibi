@@ -3,11 +3,31 @@ import { createHash } from "node:crypto";
 
 import { symmetricDecrypt, symmetricEncrypt } from "better-auth/crypto";
 
+import { oauthPurposeSecret } from "../../../support/oauth-encryption";
 import { authProfilePath } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
 const secret = "local-fixture-dedicated-oauth-proxy-secret-32";
 const path = authProfilePath("oauth-proxy");
+// Shared authenticated negative inputs keep rejected ciphertext literal in the
+// comparator. Their complete profile shape cannot explain crypto rejection.
+const crossPurposePayload = JSON.stringify({
+  userInfo: {
+    id: "purpose-owner",
+    email: "purpose-owner@fixture.test",
+    name: "Purpose",
+    emailVerified: true,
+  },
+  account: { providerId: "gitlab", accountId: "purpose-owner", accessToken: "purpose-access" },
+  state: "purpose-state",
+  callbackURL: "http://localhost:3000/done",
+  timestamp: Date.now(),
+});
+const wrongPurposeProfile = symmetricEncrypt({
+  key: oauthPurposeSecret(secret, "oauth-proxy-state"),
+  data: crossPurposePayload,
+});
+const legacyProfile = symmetricEncrypt({ key: secret, data: crossPurposePayload });
 
 type Rows = {
   users: Record<string, unknown>[];
@@ -109,7 +129,10 @@ async function issue(
       token,
       payload: JSON.parse(
         await symmetricDecrypt({
-          key: "compat-test-only-key-not-real-minimum-32chars",
+          key: oauthPurposeSecret(
+            "compat-test-only-key-not-real-minimum-32chars",
+            "oauth-state-cookie",
+          ),
           data: token,
         }),
       ),
@@ -128,12 +151,18 @@ async function issue(
   );
 
   const raw = authorization.searchParams.get("state")!;
-  const packageBytes = await symmetricDecrypt({ key: secret, data: raw });
+  const packageBytes = await symmetricDecrypt({
+    key: oauthPurposeSecret(secret, "oauth-proxy-package"),
+    data: raw,
+  });
   const pack = JSON.parse(packageBytes);
   expect(JSON.stringify(pack)).toBe(packageBytes);
   expect(pack.isOAuthProxy).toBe(true);
 
-  const stateBytes = await symmetricDecrypt({ key: secret, data: pack.stateCookie });
+  const stateBytes = await symmetricDecrypt({
+    key: oauthPurposeSecret(secret, "oauth-proxy-state"),
+    data: pack.stateCookie,
+  });
   const original = JSON.parse(stateBytes);
   expect(JSON.stringify(original)).toBe(stateBytes);
   expect(original.oauthState).toBe(pack.state);
@@ -194,7 +223,9 @@ async function forward(
   expect(bridge.pathname).toBe(`${fixturePath}/callback/gitlab/oauth-proxy`);
 
   const token = bridge.searchParams.get("profile")!;
-  const payload = JSON.parse(await symmetricDecrypt({ key: secret, data: token }));
+  const payload = JSON.parse(
+    await symmetricDecrypt({ key: oauthPurposeSecret(secret, "oauth-proxy-profile"), data: token }),
+  );
   expect(payload.state).toBe(issued.state);
   expect(payload.account.providerId).toBe("gitlab");
   expect(payload.userInfo.email).toBe("proxy-owner@fixture.test");
@@ -210,7 +241,7 @@ async function forward(
   return { approved, forwarded, bridge, atom: { token, payload } };
 }
 
-const comparison = { oauthProxyProfileSecret: secret };
+const comparison = { oauthProxyProfileSecret: oauthPurposeSecret(secret, "oauth-proxy-profile") };
 
 compatScenario(
   "OAuth proxy exchanges on production then consumes preview state for only the provider owner",
@@ -312,6 +343,8 @@ compatScenario(
       "unknown-state",
       "bad-payload",
       "bad-cipher",
+      "wrong-purpose",
+      "legacy-cipher",
     ]) {
       const url = new URL(forwarded.bridge);
       const payload = structuredClone(forwarded.atom.payload);
@@ -343,10 +376,20 @@ compatScenario(
       const token =
         mode === "bad-cipher"
           ? "wrong"
-          : await symmetricEncrypt({
-              key: secret,
-              data: JSON.stringify(mode === "bad-payload" ? {} : payload),
-            });
+          : mode === "wrong-purpose"
+            ? await wrongPurposeProfile
+            : mode === "legacy-cipher"
+              ? await legacyProfile
+              : await symmetricEncrypt({
+                  key:
+                    mode === "legacy-cipher"
+                      ? secret
+                      : oauthPurposeSecret(
+                          secret,
+                          mode === "wrong-purpose" ? "oauth-proxy-state" : "oauth-proxy-profile",
+                        ),
+                  data: JSON.stringify(mode === "bad-payload" ? {} : payload),
+                });
       url.searchParams.set("profile", token);
       const result = await response(await actor.fetch(url, { redirect: "manual" }));
       const expected = (
@@ -357,6 +400,8 @@ compatScenario(
           "unknown-state": "state_mismatch",
           "bad-payload": "invalid_payload",
           "bad-cipher": "invalid_profile",
+          "wrong-purpose": "invalid_profile",
+          "legacy-cipher": "invalid_profile",
         } as Record<string, string>
       )[mode];
 
@@ -376,8 +421,9 @@ compatScenario(
         mode,
         url: url.href,
         result,
-        oauthProxyProfile:
-          mode === "bad-cipher" ? null : { token, payload: mode === "bad-payload" ? {} : payload },
+        oauthProxyProfile: ["bad-cipher", "wrong-purpose", "legacy-cipher"].includes(mode)
+          ? null
+          : { token, payload: mode === "bad-payload" ? {} : payload },
         after: observations(after),
       });
     }
@@ -492,7 +538,12 @@ compatScenario(
       );
       const bridge = new URL(transfer.location!);
       const token = bridge.searchParams.get("profile")!;
-      const payload = JSON.parse(await symmetricDecrypt({ key: secret, data: token }));
+      const payload = JSON.parse(
+        await symmetricDecrypt({
+          key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
+          data: token,
+        }),
+      );
       expect(payload.state).toBe(attempt.state);
 
       const rejection = await response(
@@ -777,7 +828,15 @@ compatScenario(
 
     // Invalid cookies fail before browser consumption; expired but matching
     // state is consumed before rejecting. All profiles came from a real grant.
-    for (const mode of ["missing", "bad-cipher", "nonce", "missing-nonce", "expired"]) {
+    for (const mode of [
+      "missing",
+      "bad-cipher",
+      "nonce",
+      "missing-nonce",
+      "expired",
+      "wrong-purpose",
+      "legacy-cipher",
+    ]) {
       const stored = structuredClone(issued.issuedCookie!.payload);
       if (mode === "nonce") stored.oauthState = "foreign-nonce";
       if (mode === "missing-nonce") delete stored.oauthState;
@@ -785,7 +844,16 @@ compatScenario(
       const token =
         mode === "bad-cipher"
           ? "wrong"
-          : await symmetricEncrypt({ key: cookieKey, data: JSON.stringify(stored) });
+          : await symmetricEncrypt({
+              key:
+                mode === "legacy-cipher"
+                  ? cookieKey
+                  : oauthPurposeSecret(
+                      cookieKey,
+                      mode === "wrong-purpose" ? "oauth-proxy-state" : "oauth-state-cookie",
+                    ),
+              data: JSON.stringify(stored),
+            });
       const r = await foreign.fetch(forwarded.bridge, {
         redirect: "manual",
         credentials: "omit",
@@ -1028,7 +1096,12 @@ compatScenario(
     const bridge = new URL(posted.location!);
     expect(bridge.origin).toBe(ctx.baseURL);
     const token = bridge.searchParams.get("profile")!;
-    const payload = JSON.parse(await symmetricDecrypt({ key: secret, data: token }));
+    const payload = JSON.parse(
+      await symmetricDecrypt({
+        key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
+        data: token,
+      }),
+    );
     expect(payload.state).toBe(issued.state);
     const afterExchange = await state(ctx);
     expect(afterExchange.production).toEqual(initial.production);
@@ -1080,7 +1153,10 @@ compatScenario(
     expect(new URL(negative.location!).searchParams.get("error")).toBe("payload_expired");
     const selectedNaN = await options("nan", ctx.baseURL);
     const agedPayload = { ...payload, timestamp: payload.timestamp - 65000 };
-    const agedToken = await symmetricEncrypt({ key: secret, data: JSON.stringify(agedPayload) });
+    const agedToken = await symmetricEncrypt({
+      key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
+      data: JSON.stringify(agedPayload),
+    });
     const agedBridge = new URL(bridge);
     agedBridge.searchParams.set("profile", agedToken);
     const accepted = await response(await owner.fetch(agedBridge, { redirect: "manual" }));
@@ -1102,7 +1178,7 @@ compatScenario(
       timestamp: forwarded.atom.payload.timestamp - 65000,
     };
     const infiniteToken = await symmetricEncrypt({
-      key: secret,
+      key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
       data: JSON.stringify(infinitePayload),
     });
     const infiniteBridge = new URL(forwarded.bridge);
@@ -1367,9 +1443,17 @@ compatScenario(
       `${ctx.baseURL.replace("localhost", "127.0.0.1")}${path}/provider-return`,
     );
     const pack = JSON.parse(
-      await symmetricDecrypt({ key: secret, data: authorization.searchParams.get("state")! }),
+      await symmetricDecrypt({
+        key: oauthPurposeSecret(secret, "oauth-proxy-package"),
+        data: authorization.searchParams.get("state")!,
+      }),
     );
-    const saved = JSON.parse(await symmetricDecrypt({ key: secret, data: pack.stateCookie }));
+    const saved = JSON.parse(
+      await symmetricDecrypt({
+        key: oauthPurposeSecret(secret, "oauth-proxy-state"),
+        data: pack.stateCookie,
+      }),
+    );
     const issuedState = {
       ...pack,
       stateCookie: {
@@ -1388,7 +1472,12 @@ compatScenario(
     );
     const bridge = new URL(transfer.location!);
     const token = bridge.searchParams.get("profile")!;
-    const payload = JSON.parse(await symmetricDecrypt({ key: secret, data: token }));
+    const payload = JSON.parse(
+      await symmetricDecrypt({
+        key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
+        data: token,
+      }),
+    );
     expect(payload.userInfo.id).toBe("stable-custom-account");
     expect(payload.account.accountId).toBe("stable-custom-account");
     expect(payload.profile).toEqual(profile);
@@ -1405,7 +1494,10 @@ compatScenario(
       account: { ...payload.account, applicationTag: "loose-account" },
       applicationTag: "loose-top-level",
     };
-    const looseToken = await symmetricEncrypt({ key: secret, data: JSON.stringify(loosePayload) });
+    const looseToken = await symmetricEncrypt({
+      key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
+      data: JSON.stringify(loosePayload),
+    });
     const looseBridge = new URL(bridge);
     looseBridge.searchParams.set("profile", looseToken);
     const completed = await response(await owner.fetch(looseBridge, { redirect: "manual" }));
@@ -1456,7 +1548,12 @@ compatScenario(
       );
       const callback = new URL(forwarded.location!);
       const actualToken = callback.searchParams.get("profile")!;
-      const actualPayload = JSON.parse(await symmetricDecrypt({ key: secret, data: actualToken }));
+      const actualPayload = JSON.parse(
+        await symmetricDecrypt({
+          key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
+          data: actualToken,
+        }),
+      );
       expect(Object.hasOwn(actualPayload, "disableSignUp")).toBe(mode !== "signup-absent");
       if (mode !== "signup-absent") {
         expect(actualPayload.disableSignUp).toBe(mode === "signup-disabled");

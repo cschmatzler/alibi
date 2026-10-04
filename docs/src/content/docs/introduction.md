@@ -72,7 +72,7 @@ Every route is owned by exactly one plugin. The builder installs the core plugin
 
 ## Compatibility
 
-HTTP behavior targets **better-auth@1.7.6** and is verified by running the official TypeScript client against both the pinned upstream runtime and this implementation. Rust-specific APIs — schemas, plugin builders, delivery callbacks, framework extractors, server-side dispatch — are native to this crate. See [Compatibility](/reference/compatibility/) for the exact boundary and what is out of scope.
+HTTP behavior targets **better-auth@1.7.7** and is verified by running the official TypeScript client against both the pinned upstream runtime and this implementation. Rust-specific APIs — schemas, plugin builders, delivery callbacks, framework extractors, server-side dispatch — are native to this crate. See [Compatibility](/reference/compatibility/) for the exact boundary and what is out of scope.
 
 ## Where to go next
 

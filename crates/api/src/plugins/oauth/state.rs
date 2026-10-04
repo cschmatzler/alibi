@@ -296,9 +296,10 @@ pub(super) fn create_cookie_state_value(
     config: &AuthConfig,
     payload: &OAuthStatePayload,
 ) -> AuthResult<String> {
-    super::super::token_crypto::encrypt_with_config(
+    super::super::token_crypto::encrypt_with_config_for_purpose(
         &better_auth_core::utils::json::to_string(payload)?,
         config,
+        super::super::token_crypto::EncryptionPurpose::StateCookie,
     )
 }
 
@@ -308,7 +309,11 @@ pub(in crate::plugins) fn decode_cookie_state_value(
     config: &AuthConfig,
     token: &str,
 ) -> AuthResult<OAuthStatePayload> {
-    let plain = super::super::token_crypto::decrypt_with_config(token, config)?;
+    let plain = super::super::token_crypto::decrypt_with_config_for_purpose(
+        token,
+        config,
+        super::super::token_crypto::EncryptionPurpose::StateCookie,
+    )?;
     better_auth_core::utils::json::from_slice(plain.as_bytes()).map_err(AuthError::from)
 }
 
@@ -380,4 +385,9 @@ fn reserved_state_key(key: &str) -> bool {
             | "serverContext"
             | "_serverContextProof"
     )
+}
+
+/// OAuth records cannot be confused with other verification purposes.
+pub(in crate::plugins) fn state_verification_identifier(state: &str) -> String {
+    format!("auth-state:{state}")
 }

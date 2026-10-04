@@ -32,6 +32,8 @@ pub(crate) async fn router(
         "google-id-domain-any",
         "google-id-disabled",
         "google-id-override",
+    "google-id-no-signup",
+    "google-id-no-implicit-signup",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let configured = config.clone().base_path(&path);
@@ -56,6 +58,16 @@ pub(crate) async fn router(
         if let Some(policy) = provider.id_token.as_mut() {
             policy.jwks_source = crate::fixtures::one_tap_fixture::local_keys(&config.base_url);
         }
+        if name == "google-id-no-signup" {
+            // Factory options are still authoritative for ID-token signup even
+            // where the code-grant factory policy does not honor those options.
+            provider.authorization = Some(better_auth::plugins::oauth::OAuthAuthorizationPolicy {
+                disable_sign_up_option: Some(true),
+                honor_factory_options: false,
+                ..Default::default()
+            });
+        }
+        provider.disable_implicit_sign_up = name == "google-id-no-implicit-signup";
         provider.disable_id_token_sign_in = name == "google-id-disabled";
         if name == "google-id-disabled" {
             provider.verify_id_token = Some(Arc::new(ApplicationVerifier(true)));

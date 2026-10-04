@@ -2710,10 +2710,10 @@ mod tests {
     #[tokio::test]
     async fn signs_pinned_typescript_encrypted_key_and_refuses_a_changed_secret() {
         let fixture: Value = serde_json::from_str(include_str!(
-            "../../../../../tests/fixtures/jwt/typescript-1.7.6-encrypted-jwk.json"
+            "../../../../../tests/fixtures/jwt/typescript-1.7.7-encrypted-jwk.json"
         ))
         .unwrap();
-        assert_eq!(fixture["referenceVersion"], "better-auth@1.7.6");
+        assert_eq!(fixture["referenceVersion"], "better-auth@1.7.7");
         let config = better_auth_core::AuthConfig::new(fixture["secret"].as_str().unwrap())
             .base_url(fixture["origin"].as_str().unwrap());
         let ctx = test_helpers::create_test_context_with_config(config.clone()).await;

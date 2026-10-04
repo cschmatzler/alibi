@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "upstreamVersion": "1.7.6",
+  "upstreamVersion": "1.7.7",
   "commit": "229a02a652185ed32e87eab0c77c09d58532e0f1",
   "excludedPackages": [
     { "package": "@better-auth/oauth-provider", "reason": "Explicit integration exclusion in the compatibility scope." },

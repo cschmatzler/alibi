@@ -69,7 +69,7 @@ async fn rejection_restores_flow<S: AuthSchema>(
     let cookie_pair = cookie.split(';').next().unwrap().to_owned();
     let row_before = auth
         .store()
-        .get_verification_by_identifier(&state)
+        .get_verification_by_identifier(&format!("auth-state:{state}"))
         .await
         .unwrap();
     assert_eq!(
@@ -108,7 +108,7 @@ async fn rejection_restores_flow<S: AuthSchema>(
     );
     assert_eq!(
         auth.store()
-            .get_verification_by_identifier(&state)
+            .get_verification_by_identifier(&format!("auth-state:{state}"))
             .await
             .unwrap()
             .is_some(),
@@ -153,7 +153,7 @@ async fn rejection_restores_flow<S: AuthSchema>(
     );
     assert!(
         auth.store()
-            .get_verification_by_identifier(&state)
+            .get_verification_by_identifier(&format!("auth-state:{state}"))
             .await
             .unwrap()
             .is_none()

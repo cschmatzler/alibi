@@ -351,7 +351,7 @@ fn error_response(status: u16, message: &str, code: &str) -> AuthResponse {
         status,
         format!("{{\"message\":\"{message}\",\"code\":\"{code}\"}}"),
     )
-    .with_header("content-type", "text/plain;charset=utf-8")
+    .with_header("content-type", "application/json")
 }
 
 fn normalized_path(path: &str, base: &str) -> String {

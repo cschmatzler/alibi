@@ -2220,7 +2220,7 @@ async fn shutdown_signal() {
 
 /// The pinned upstream release this fixture claims parity with; the harness
 /// refuses to compare against a reference server reporting another version.
-const UPSTREAM_VERSION: &str = "1.7.6";
+const UPSTREAM_VERSION: &str = "1.7.7";
 
 async fn health_check() -> impl IntoResponse {
     axum::Json(serde_json::json!({ "ok": true, "upstreamVersion": UPSTREAM_VERSION }))

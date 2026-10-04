@@ -168,8 +168,26 @@ const policies: {
   profile: FixtureProfile;
   claims?: Row;
   success?: boolean;
+  requestSignUp?: boolean;
   code?: string;
 }[] = [
+  {
+    name: "explicit signup disable defeats request override",
+    profile: "google-id-no-signup",
+    requestSignUp: true,
+    code: "OAUTH_LINK_ERROR",
+  },
+  {
+    name: "implicit signup disable rejects an unrequested new account",
+    profile: "google-id-no-implicit-signup",
+    code: "OAUTH_LINK_ERROR",
+  },
+  {
+    name: "explicit request permits implicitly disabled signup",
+    profile: "google-id-no-implicit-signup",
+    requestSignUp: true,
+    success: true,
+  },
   {
     name: "secondary audience",
     profile: "google-id-array",
@@ -250,6 +268,7 @@ for (const p of policies) {
       const result = await actor.client.signIn.social({
         provider: "google",
         idToken: { token },
+        ...(p.requestSignUp === undefined ? {} : { requestSignUp: p.requestSignUp }),
       });
       const current = await actor.client.getSession();
       const after = await read(ctx);
