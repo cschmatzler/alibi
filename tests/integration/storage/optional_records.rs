@@ -62,6 +62,7 @@ async fn optional_record_workflow<B: Backend>(db: Db) -> TestResult {
             .await?;
     workflow(
         &auth,
+        Some(&db),
         std::any::type_name::<B>().rsplit("::").next().unwrap(),
     )
     .await?;
@@ -76,7 +77,7 @@ async fn without_database_optional_record_workflow() -> TestResult {
     let auth = plugins(AuthBuilder::without_database(config.clone()))
         .build()
         .await?;
-    workflow(&auth, "without-database").await?;
+    workflow(&auth, None, "without-database").await?;
     // Retain live records before constructing a fresh instance. A restart must
     // lose actual provisioned state, rather than merely miss an arbitrary ID.
     let owner = auth
@@ -261,7 +262,11 @@ async fn without_database_optional_record_workflow() -> TestResult {
     assert!(auth.store().get_passkey_by_id(&key.id).await?.is_none());
     Ok(())
 }
-async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResult {
+async fn workflow<S: AuthSchema>(
+    auth: &BetterAuth<S>,
+    physical: Option<&Db>,
+    owner: &str,
+) -> TestResult {
     let mut trace = Vec::new();
     let signup = Box::pin(auth.handle_request(request(
         "/sign-up/email",
@@ -336,7 +341,23 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
     .await?;
     observe(&mut trace, "/two-factor/verify-backup-code", &replay);
     assert_eq!(replay.status, 401, "{}", body(&replay));
-    let passkey = auth.store().create_passkey(passkey_input(&user_id)).await?;
+    let mut input = passkey_input(&user_id);
+    if physical.is_some() {
+        input.name = None;
+        input.transports = None;
+    }
+    let expected_name = input.name.clone();
+    let passkey = auth.store().create_passkey(input).await?;
+    let before_list = if let Some(db) = physical {
+        let rows: Value = serde_json::from_str(&db.raw.table("passkeys").await?)?;
+        assert_eq!(rows.as_array().unwrap().len(), 1);
+        let row = &rows[0];
+        assert_eq!(row.get("name"), Some(&Value::Null));
+        assert_eq!(row.get("transports"), Some(&Value::Null));
+        Some(rows)
+    } else {
+        None
+    };
     let list = Box::pin(auth.handle_request(request(
         "/passkey/list-user-passkeys",
         None,
@@ -346,6 +367,20 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
     observe(&mut trace, "/passkey/list-user-passkeys", &list);
     assert_eq!(list.status, 200, "{}", body(&list));
     assert_eq!(body(&list)[0]["id"], passkey.id);
+    if let Some(db) = physical {
+        let payload = body(&list);
+        assert_eq!(payload.as_array().unwrap().len(), 1);
+        let row = &payload[0];
+        assert_eq!(row.get("name"), Some(&Value::Null));
+        assert_eq!(row.get("transports"), Some(&Value::Null));
+        assert!(!row.as_object().unwrap().contains_key("updatedAt"));
+        let after_list: Value = serde_json::from_str(&db.raw.table("passkeys").await?)?;
+        assert_eq!(
+            Some(after_list),
+            before_list,
+            "listing must not write the row"
+        );
+    }
     assert!(!String::from_utf8_lossy(&list.body).contains("private-credential"));
     for path in ["/passkey/update-passkey", "/passkey/delete-passkey"] {
         let denied = Box::pin(auth.handle_request(request(
@@ -364,7 +399,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             .unwrap()
             .name
             .as_deref(),
-        Some("Original")
+        expected_name.as_deref()
     );
     let rename = Box::pin(auth.handle_request(request(
         "/passkey/update-passkey",

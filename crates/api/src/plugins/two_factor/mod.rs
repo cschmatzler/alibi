@@ -3406,7 +3406,9 @@ mod tests {
             .on_init(&mut configured)
             .await
             .unwrap();
-        ctx.metadata = configured.into_parts().metadata;
+        let configured = configured.into_parts();
+        ctx.metadata = configured.metadata;
+        ctx.extensions = configured.extensions;
         let cookie = create_session_cookie(&session.token, &ctx.config).unwrap();
         let mut enrollment = AuthRequest::new(HttpMethod::Post, "/two-factor/enable");
         drop(
@@ -3431,6 +3433,10 @@ mod tests {
             Arc::clone(&ctx.config),
             Arc::clone(&ctx.database),
         );
+        // Keep the initialized plugin policy when adding the observer. The
+        // wrapped adapter projects the old snapshot using this same context.
+        init.metadata = ctx.metadata.clone();
+        init.extensions = ctx.extensions.clone();
         init.register_user_update_transform(move |id, mut update| {
             observed
                 .lock()

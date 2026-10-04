@@ -657,7 +657,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_list_user_passkeys_includes_updated_at_and_optional_fields() {
+    async fn test_list_user_passkeys_omits_updated_at_and_retains_sql_null_fields() {
         let plugin = passkey_plugin();
         let (ctx, user, session) = test_helpers::create_test_context_with_user(
             CreateUser::new()
@@ -704,11 +704,10 @@ mod tests {
                 .unwrap_or(&serde_json::Value::Null)),
             "00000000-0000-0000-0000-000000000000"
         );
-        assert!(
-            (*(body).get(0).unwrap_or(&serde_json::Value::Null))
-                .get("name")
-                .is_none()
-        );
+        let passkey = body.get(0).unwrap();
+        // The published SQL adapter returns nullable columns as own properties.
+        assert_eq!(passkey.get("name"), Some(&serde_json::Value::Null));
+        assert_eq!(passkey.get("transports"), Some(&serde_json::Value::Null));
     }
 
     #[tokio::test]

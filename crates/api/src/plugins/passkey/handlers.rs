@@ -960,7 +960,19 @@ pub(super) async fn list_user_passkeys_core(
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Vec<Value>> {
     let passkeys = ctx.database.list_passkeys_by_user(&user.id()).await?;
-    passkeys.iter().map(registration_value).collect()
+    passkeys
+        .iter()
+        .map(|passkey| {
+            let mut value = registration_value(passkey)?;
+            // Source lists adapter rows, retaining an own SQL NULL property.
+            if passkey.transports.is_none()
+                && let Some(object) = value.as_object_mut()
+            {
+                drop(object.insert("transports".into(), Value::Null));
+            }
+            Ok(value)
+        })
+        .collect()
 }
 
 ///
