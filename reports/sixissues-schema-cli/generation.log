@@ -1,0 +1,16 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 12.3ms
+• Running devenv:files
+✓ Running devenv:files in 24.8ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 9.61ms
+   Compiling better-auth-schema-registry v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/schema-registry)
+   Compiling better-auth-cli v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/cli)
+    Finished `dev` profile [unoptimized] target(s) in 0.60s
+     Running `mbx-launch /tmp/better-auth-final-verification-20261004-schema-cli/target/debug/better-auth-rs generate --backend sqlx --plugins all --output tests/fixtures/cli/sqlx_all.rs`
+mbx[cache]: 0 hits, 1 misses, 1 not looked up, 2 incremental; 0 B downloaded, 0 B uploaded, 0 B stored locally
+wrote auth schema to tests/fixtures/cli/sqlx_all.rs
+mbx[savings]: 873.1 GiB in every checkout, 873.1 GiB on disk. arithmetic declined to comment.
+    Finished `dev` profile [unoptimized] target(s) in 0.06s
+     Running `mbx-launch /tmp/better-auth-final-verification-20261004-schema-cli/target/debug/better-auth-rs generate --backend seaorm --plugins all --output tests/fixtures/cli/seaorm_all.rs`
+wrote auth schema to tests/fixtures/cli/seaorm_all.rs

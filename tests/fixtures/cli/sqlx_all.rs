@@ -227,7 +227,8 @@ pub mod api_key {
         pub prefix: Option<String>,
         #[sqlx(rename = "key")]
         pub key_hash: String,
-        pub user_id: String,
+        pub reference_id: String,
+        pub config_id: String,
         pub refill_interval: Option<f64>,
         pub refill_amount: Option<f64>,
         pub last_refill_at: Option<chrono::DateTime<chrono::Utc>>,
@@ -285,7 +286,7 @@ const SQLITE_TABLES: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS \"organization\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT NOT NULL, \"slug\" TEXT NOT NULL, \"logo\" TEXT, \"metadata\" TEXT, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL)",
     "CREATE TABLE IF NOT EXISTS \"member\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"organization_id\" TEXT NOT NULL, \"user_id\" TEXT NOT NULL, \"role\" TEXT NOT NULL, \"created_at\" TEXT NOT NULL)",
     "CREATE TABLE IF NOT EXISTS \"invitation\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"organization_id\" TEXT NOT NULL, \"email\" TEXT NOT NULL, \"role\" TEXT NOT NULL, \"team_id\" TEXT, \"status\" TEXT NOT NULL, \"inviter_id\" TEXT NOT NULL, \"expires_at\" TEXT NOT NULL, \"created_at\" TEXT NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS \"api_keys\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT, \"start\" TEXT, \"prefix\" TEXT, \"key\" TEXT NOT NULL, \"user_id\" TEXT NOT NULL, \"refill_interval\" REAL, \"refill_amount\" REAL, \"last_refill_at\" TEXT, \"enabled\" BOOLEAN NOT NULL, \"rate_limit_enabled\" BOOLEAN NOT NULL, \"rate_limit_time_window\" REAL, \"rate_limit_max\" REAL, \"request_count\" REAL, \"remaining\" REAL, \"last_request\" TEXT, \"expires_at\" TEXT, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, \"permissions\" TEXT, \"metadata\" TEXT)",
+    "CREATE TABLE IF NOT EXISTS \"api_keys\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT, \"start\" TEXT, \"prefix\" TEXT, \"key\" TEXT NOT NULL, \"reference_id\" TEXT NOT NULL, \"config_id\" TEXT NOT NULL DEFAULT 'default', \"refill_interval\" REAL, \"refill_amount\" REAL, \"last_refill_at\" TEXT, \"enabled\" BOOLEAN NOT NULL, \"rate_limit_enabled\" BOOLEAN NOT NULL, \"rate_limit_time_window\" REAL, \"rate_limit_max\" REAL, \"request_count\" REAL, \"remaining\" REAL, \"last_request\" TEXT, \"expires_at\" TEXT, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL, \"permissions\" TEXT, \"metadata\" TEXT)",
     "CREATE TABLE IF NOT EXISTS \"passkeys\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT, \"public_key\" TEXT NOT NULL, \"user_id\" TEXT NOT NULL, \"credential_id\" TEXT NOT NULL, \"counter\" INTEGER NOT NULL, \"device_type\" TEXT NOT NULL, \"backed_up\" BOOLEAN NOT NULL, \"transports\" TEXT, \"credential\" TEXT NOT NULL, \"aaguid\" TEXT, \"created_at\" TEXT NOT NULL, \"updated_at\" TEXT NOT NULL)",
 ];
 const POSTGRES_TABLES: &[&str] = &[
@@ -303,7 +304,7 @@ const POSTGRES_TABLES: &[&str] = &[
     "CREATE TABLE IF NOT EXISTS \"organization\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT NOT NULL, \"slug\" TEXT NOT NULL, \"logo\" TEXT, \"metadata\" JSONB, \"created_at\" TIMESTAMPTZ NOT NULL, \"updated_at\" TIMESTAMPTZ NOT NULL)",
     "CREATE TABLE IF NOT EXISTS \"member\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"organization_id\" TEXT NOT NULL, \"user_id\" TEXT NOT NULL, \"role\" TEXT NOT NULL, \"created_at\" TIMESTAMPTZ NOT NULL)",
     "CREATE TABLE IF NOT EXISTS \"invitation\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"organization_id\" TEXT NOT NULL, \"email\" TEXT NOT NULL, \"role\" TEXT NOT NULL, \"team_id\" TEXT, \"status\" TEXT NOT NULL, \"inviter_id\" TEXT NOT NULL, \"expires_at\" TIMESTAMPTZ NOT NULL, \"created_at\" TIMESTAMPTZ NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS \"api_keys\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT, \"start\" TEXT, \"prefix\" TEXT, \"key\" TEXT NOT NULL, \"user_id\" TEXT NOT NULL, \"refill_interval\" DOUBLE PRECISION, \"refill_amount\" DOUBLE PRECISION, \"last_refill_at\" TIMESTAMPTZ, \"enabled\" BOOLEAN NOT NULL, \"rate_limit_enabled\" BOOLEAN NOT NULL, \"rate_limit_time_window\" DOUBLE PRECISION, \"rate_limit_max\" DOUBLE PRECISION, \"request_count\" DOUBLE PRECISION, \"remaining\" DOUBLE PRECISION, \"last_request\" TIMESTAMPTZ, \"expires_at\" TIMESTAMPTZ, \"created_at\" TIMESTAMPTZ NOT NULL, \"updated_at\" TIMESTAMPTZ NOT NULL, \"permissions\" TEXT, \"metadata\" TEXT)",
+    "CREATE TABLE IF NOT EXISTS \"api_keys\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT, \"start\" TEXT, \"prefix\" TEXT, \"key\" TEXT NOT NULL, \"reference_id\" TEXT NOT NULL, \"config_id\" TEXT NOT NULL DEFAULT 'default', \"refill_interval\" DOUBLE PRECISION, \"refill_amount\" DOUBLE PRECISION, \"last_refill_at\" TIMESTAMPTZ, \"enabled\" BOOLEAN NOT NULL, \"rate_limit_enabled\" BOOLEAN NOT NULL, \"rate_limit_time_window\" DOUBLE PRECISION, \"rate_limit_max\" DOUBLE PRECISION, \"request_count\" DOUBLE PRECISION, \"remaining\" DOUBLE PRECISION, \"last_request\" TIMESTAMPTZ, \"expires_at\" TIMESTAMPTZ, \"created_at\" TIMESTAMPTZ NOT NULL, \"updated_at\" TIMESTAMPTZ NOT NULL, \"permissions\" TEXT, \"metadata\" TEXT)",
     "CREATE TABLE IF NOT EXISTS \"passkeys\" (\"id\" TEXT NOT NULL PRIMARY KEY, \"name\" TEXT, \"public_key\" TEXT NOT NULL, \"user_id\" TEXT NOT NULL, \"credential_id\" TEXT NOT NULL, \"counter\" BIGINT NOT NULL, \"device_type\" TEXT NOT NULL, \"backed_up\" BOOLEAN NOT NULL, \"transports\" TEXT, \"credential\" TEXT NOT NULL, \"aaguid\" TEXT, \"created_at\" TIMESTAMPTZ NOT NULL, \"updated_at\" TIMESTAMPTZ NOT NULL)",
 ];
 pub async fn run_app_migrations(

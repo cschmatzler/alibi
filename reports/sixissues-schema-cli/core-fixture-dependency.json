@@ -1,0 +1,16 @@
+{
+  "owner_pr": 457,
+  "owner_head": "fbff1189c2310b426a857f75f595051ac1f26307",
+  "source_clone": "/tmp/better-auth-sixissues-user-deletion",
+  "fixture_files": [
+    {
+      "path": "tests/fixtures/cli/sqlx_core.rs",
+      "sha256": "001f82594d5eea5880b98c16e711bf6441e24c73c2f9bd9390c4934561214cc2"
+    },
+    {
+      "path": "tests/fixtures/cli/seaorm_core.rs",
+      "sha256": "962517f482d80c0991e46a19500d6a1931807564148daa300d2f356cb485a7a5"
+    }
+  ],
+  "local_validation": "Exact worker-owned files copied as untracked dependencies; no fixture content changed and no fixture included in the schema/CLI commit."
+}

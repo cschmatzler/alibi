@@ -1,0 +1,52 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 19.1ms
+• Running devenv:files
+✓ Running devenv:files in 17.4ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 5.90ms
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli)
+warning: unused result of type `ExecResult`
+  --> tests/integration/core/schema/generated_api_key.rs:54:9
+   |
+54 |         database.execute_unprepared(super::DEFAULT_KEY_INSERT).await?;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: requested on the command line with `-W unused-results`
+
+mbx[progress]: 15s elapsed; 0 hits, 0 misses, 0 bypassed, 0 not looked up; ~0s compiler work saved
+mbx[progress]: 30s elapsed; 0 hits, 0 misses, 0 bypassed, 0 not looked up; ~0s compiler work saved
+warning: `better-auth` (test "integration") generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 39.18s
+     Running tests/integration/main.rs (/tmp/better-auth-final-verification-20261004-schema-cli/target/debug/deps/integration-aa020217e6c63dd3)
+
+running 2 tests
+test core::schema::generated_api_key::sqlx_schema::generated_sqlx_schema_supports_api_key_creation ... FAILED
+test core::schema::generated_api_key::seaorm_schema::generated_seaorm_schema_supports_api_key_creation ... FAILED
+
+failures:
+
+---- core::schema::generated_api_key::sqlx_schema::generated_sqlx_schema_supports_api_key_creation stdout ----
+
+thread 'core::schema::generated_api_key::sqlx_schema::generated_sqlx_schema_supports_api_key_creation' (550926) panicked at tests/integration/core/schema/generated_api_key.rs:104:5:
+assertion `left == right` failed: API key creation: []
+  left: 500
+ right: 200
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- core::schema::generated_api_key::seaorm_schema::generated_seaorm_schema_supports_api_key_creation stdout ----
+
+thread 'core::schema::generated_api_key::seaorm_schema::generated_seaorm_schema_supports_api_key_creation' (550925) panicked at tests/integration/core/schema/generated_api_key.rs:104:5:
+assertion `left == right` failed: API key creation: []
+  left: 500
+ right: 200
+
+
+failures:
+    core::schema::generated_api_key::seaorm_schema::generated_seaorm_schema_supports_api_key_creation
+    core::schema::generated_api_key::sqlx_schema::generated_sqlx_schema_supports_api_key_creation
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 397 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `-p better-auth --test integration`
+mbx[cache]: 0 hits, 1 misses; 0 B downloaded, 0 B uploaded, 221.5 MiB stored locally
+mbx[savings]: 426624 compilations retrieved with a straight face.

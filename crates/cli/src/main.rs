@@ -38,9 +38,15 @@ enum Command {
         output: Option<PathBuf>,
 
         /// Comma-separated list of plugins whose fields to include.
-        /// Available: username, two-factor, device-authorization, api-key, admin, organization, passkey.
         /// Use "all" to include every plugin's fields.
-        #[arg(short, long, value_delimiter = ',')]
+        #[arg(
+            short,
+            long,
+            value_delimiter = ',',
+            value_parser = clap::builder::PossibleValuesParser::new(
+                list_plugins().into_iter().chain(["all"])
+            )
+        )]
         plugins: Vec<String>,
     },
 }
@@ -321,7 +327,10 @@ fn create_table(table: &str, fields: &[&FieldDef], dialect: SqlDialect) -> Strin
             } else {
                 " NOT NULL"
             };
-            format!("\"{column}\" {sql_type}{constraint}")
+            let default = field.default_value.map_or_else(String::new, |value| {
+                format!(" DEFAULT '{}'", value.replace('\'', "''"))
+            });
+            format!("\"{column}\" {sql_type}{constraint}{default}")
         })
         .collect::<Vec<_>>()
         .join(", ");
@@ -429,15 +438,20 @@ fn gen_entity(
             let column_attr = f.column_name.map(|column_name| {
                 quote! { #[sea_orm(column_name = #column_name)] }
             });
+            let default_attr = f.default_value.map(|value| {
+                quote! { #[sea_orm(default_value = #value)] }
+            });
             if f.is_primary_key {
                 quote! {
                     #column_attr
+                    #default_attr
                     #[sea_orm(primary_key, auto_increment = false)]
                     pub #name: #ty,
                 }
             } else {
                 quote! {
                     #column_attr
+                    #default_attr
                     pub #name: #ty,
                 }
             }
@@ -481,15 +495,20 @@ fn gen_extra_entity(entity: &ExtraEntitySchema) -> TokenStream {
             let column_attr = f.column_name.map(|column_name| {
                 quote! { #[sea_orm(column_name = #column_name)] }
             });
+            let default_attr = f.default_value.map(|value| {
+                quote! { #[sea_orm(default_value = #value)] }
+            });
             if f.is_primary_key {
                 quote! {
                     #column_attr
+                    #default_attr
                     #[sea_orm(primary_key, auto_increment = false)]
                     pub #name: #ty,
                 }
             } else {
                 quote! {
                     #column_attr
+                    #default_attr
                     pub #name: #ty,
                 }
             }
@@ -597,9 +616,18 @@ mod tests {
     }
 
     // The checked-in fixtures are compiled and exercised by the integration
-    // tests; regenerate them with `better-auth-rs generate --plugins all`.
+    // tests; regenerate with `better-auth-rs generate`, adding `--plugins all`
+    // for the all-plugin fixtures and selecting the matching backend.
     #[test]
     fn generated_schemas_match_compiled_fixtures() {
+        assert_eq!(
+            generate_schema(&[], Backend::Sqlx),
+            include_str!("../../../tests/fixtures/cli/sqlx_core.rs")
+        );
+        assert_eq!(
+            generate_schema(&[], Backend::Seaorm),
+            include_str!("../../../tests/fixtures/cli/seaorm_core.rs")
+        );
         assert_eq!(
             generate_schema(&all(), Backend::Sqlx),
             include_str!("../../../tests/fixtures/cli/sqlx_all.rs")

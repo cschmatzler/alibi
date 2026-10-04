@@ -1,0 +1,33 @@
+    Blocking waiting for file lock on build directory
+   Compiling better-auth-cli v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/cli)
+    Finished `test` profile [unoptimized] target(s) in 41.79s
+     Running unittests src/main.rs (/tmp/better-auth-final-verification-20261004-schema-cli/target/debug/deps/better_auth_rs-6e8ea3f1bd2a1cea)
+
+running 5 tests
+test tests::list_plugins_includes_passkey ... ok
+test tests::seaorm_schema_with_passkey_emits_entity_and_migration ... ok
+test tests::seaorm_schema_builtin_plugins_emit_required_entities ... ok
+test tests::sqlx_schema_with_passkey_emits_row_type_and_tables ... ok
+test tests::generated_schemas_match_compiled_fixtures ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running tests/generate.rs (/tmp/better-auth-final-verification-20261004-schema-cli/target/debug/deps/generate-5aec9d99bfae19ac)
+
+running 2 tests
+test unknown_plugins_fail_without_output_or_filesystem_changes ... ok
+test generate_help_advertises_and_parser_accepts_every_supported_plugin ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.07s
+
+     Running unittests src/lib.rs (/tmp/better-auth-final-verification-20261004-schema-cli/target/debug/deps/better_auth_schema_registry-9a8a12c5d8742412)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests better_auth_schema_registry
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

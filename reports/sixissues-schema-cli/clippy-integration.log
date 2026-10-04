@@ -1,0 +1,13 @@
+   Compiling better-auth-schema-registry v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/schema-registry)
+   Compiling better-auth-macros v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/derive)
+   Compiling better-auth-entity-codegen v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/entity-codegen)
+   Compiling better-auth-webauthn-core v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/vendor/webauthn-rs-core)
+    Checking better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/core)
+    Checking better-auth-webauthn-rs v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/vendor/webauthn-rs)
+   Compiling better-auth-sqlx-macros v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/sqlx-macros)
+   Compiling better-auth-seaorm-macros v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/seaorm-macros)
+    Checking better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/api)
+    Checking better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/seaorm)
+    Checking better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli/crates/sqlx)
+    Checking better-auth v1.0.0-alpha.3 (/tmp/better-auth-sixissues-schema-cli)
+    Finished `dev` profile [unoptimized] target(s) in 16.31s

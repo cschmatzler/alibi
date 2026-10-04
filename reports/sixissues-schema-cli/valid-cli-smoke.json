@@ -1,0 +1,58 @@
+[
+  {
+    "backend": "sqlx",
+    "plugins": "all",
+    "exit": 0,
+    "bytes": 19521,
+    "sha256": "9276b7f9544dad90f08e3e724b70c61c799d407247f4164c95fca864badb83d8"
+  },
+  {
+    "backend": "sqlx",
+    "plugins": "api-key",
+    "exit": 0,
+    "bytes": 7845,
+    "sha256": "8544582015145d9c48346f6edf7f31d4dede3bb52b7ee721a692b7ecd1da31b1"
+  },
+  {
+    "backend": "sqlx",
+    "plugins": "username,api-key",
+    "exit": 0,
+    "bytes": 8021,
+    "sha256": "d75b8ec21de060573946b2ba077d388e49e63eacf25b9c0b125926f03a80e2e3"
+  },
+  {
+    "backend": "sqlx",
+    "plugins": "username",
+    "exit": 0,
+    "bytes": 5601,
+    "sha256": "d3cc606a54bbfd5be6f1ba91ad83e2216c8a779961b031477d1a308b8dab3fcb"
+  },
+  {
+    "backend": "seaorm",
+    "plugins": "all",
+    "exit": 0,
+    "bytes": 13633,
+    "sha256": "8d6eea8bc2faa59bb8532f23af8ea5711e2b4653cd70e7b12eb1c4a24bee7da0"
+  },
+  {
+    "backend": "seaorm",
+    "plugins": "api-key",
+    "exit": 0,
+    "bytes": 5248,
+    "sha256": "6957ac5ce4ceb8e162582941cfc4c1b6a1f6d188c20d2c6dfcba3f6931df44ea"
+  },
+  {
+    "backend": "seaorm",
+    "plugins": "username,api-key",
+    "exit": 0,
+    "bytes": 5332,
+    "sha256": "6c5107e1df101b8986406eaabd7ee3d0e4a8eaf887dfeb518b4b479c1cea6ee3"
+  },
+  {
+    "backend": "seaorm",
+    "plugins": "username",
+    "exit": 0,
+    "bytes": 3973,
+    "sha256": "f1b1a0bcdfe1149fd51ef907d26b5e7aa960a6aafd5deb59177edfb58657c76c"
+  }
+]
