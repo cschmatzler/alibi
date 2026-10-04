@@ -562,7 +562,7 @@ impl DatabaseHooks<ApplicationSchema, crate::backend::Backend> for Application {
     }
 }
 async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Router, Application)> {
-    let database = Database::connect("sqlite::memory:")
+    let database = Database::connect(crate::sqlite_fixture::options())
         .await
         .map_err(db_error)?;
     for statement in crate::additional_field_models::TABLES {
