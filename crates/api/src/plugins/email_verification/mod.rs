@@ -655,6 +655,16 @@ mod tests {
             (true, true, true),
         ] {
             let mut ctx = test_helpers::create_test_context().await;
+            // AuthBuilder finalizes even empty session policies, installing the
+            // adapter projection instead of the physical model's serialization.
+            let mut init = better_auth_core::AuthInitContext::new(
+                Arc::clone(&ctx.config),
+                Arc::clone(&ctx.database),
+            );
+            init.extensions
+                .insert(better_auth_core::field_policy::SessionFields::default());
+            ctx.database = init.database_with_registered_transforms();
+            ctx.extensions = init.into_parts().extensions;
             let observer = Arc::new(Observer::default());
             if background {
                 Arc::make_mut(&mut ctx.config).background_tasks = Some(observer.clone());
