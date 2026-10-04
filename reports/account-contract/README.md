@@ -113,3 +113,59 @@ Root authorized a fixture-only rebase after this fixed-baseline proof. On the
 actual #432 landed main, compare range-diff and owning file hashes; rerun only the
 originally blocked integration scoped Clippy when incoming commits have not
 changed these owners. Root must qualify the exact pushed head before merge.
+
+
+## Actual landed-main qualification
+
+Root personally approved the full fixture/Source/native checkpoint at
+`6386c42d2a7cb1d99402c4711f6d41f5a535b3fa`. PR #432 then actually merged as
+`7513f934d713645ef3d3da9205836c1ccc548fb1`. Clean rebasing onto that main produced
+implementation commit `066faffca68e0ea2e90d7a58fc344d7974aa8f65`; range-diff marks
+the repair patch equal. All three owner Git blobs exactly match the approved
+fixture head. No substantive conflict or new owner delta occurred.
+
+The only previously blocked command, strict integration Clippy, now PASSES
+with the original flags (see `clippy-integration-landed.log`). The original
+Source and four native case proofs were retained without replay, as authorized.
+The rebased branch makes zero edits to optional_records/stateless relative to
+landed main. Those unowned files changed versus the original baseline because
+#432 boxed identical futures; this report does not claim their whole-file hash
+matches the original baseline. #434 remains a separate owning repair; this
+branch neither changes nor reverts its physical SQL NULL/denial assertions or
+noDB fixtures. Other ordinary campaign failures remain outside this repair;
+these bounded results are not a universal green claim.
+
+Incoming application dispatch changes only add the already-landed #436 content
+type on disabled endpoints; that unrelated path does not change this account
+fixture's route/token authority. No production account/cookie owner changed.
+The additional commit records qualification evidence only. Root final exact
+combined-head merge authorization is required before landing and owned cleanup.
+
+
+Main advanced during qualification to `a8c2fb2c79b96e1576eab12f460c1d981fcec817`
+with #438 OTT compatibility fixture/timing changes. A second clean rebase
+incorporates that actual main. The incoming commit changes no Cargo manifests,
+lock, src/crates, native integration/support files or OAuth vector fixture;
+therefore the native workspace and original blocked Clippy inputs are unchanged
+from the qualified #432 main. The exact approved account owner blobs remain
+identical. Native, Source and strict Clippy evidence carries forward without
+unrelated replay; see `late-main-qualification.json`.
+
+
+#434 subsequently landed as `14655ecfdb945feed395f0a236a4b4ccefe0aacf` while
+this report was being submitted. The final clean rebase includes that actual
+combined main. All account owner blobs still match the original approved
+fixture checkpoint. Its isolated passkey-list production fix does not change
+OAuth token/cookie owner behavior; email-verification/two-factor changes are
+inside tests. The optional_records file in this branch exactly equals incoming
+main, preserving #434's real physical SQL NULL/denial assertions and original
+noDB fixture along with #432's identical-future boxing allocations. This is an
+equality claim against incoming #434 main, not against the original baseline.
+
+Because #434 substantively changed native integration inputs, the same original
+strict integration Clippy command was run once more on the final combined tree:
+PASS, no flags relaxed. No Source/native/adapter proof was replayed. See
+`final-combined-qualification.json` and `clippy-integration-final-combined.log`.
+The full repair range still preserves the originally approved owner patch;
+all additional owned changes record qualification evidence only. Other campaign
+failures remain an honest separate inventory, with no universal green claim.
