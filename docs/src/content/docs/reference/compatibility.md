@@ -9,6 +9,8 @@ HTTP behavior targets **better-auth@1.7.6**: the same endpoints, request and res
 
 Newer upstream documentation may describe behavior added after 1.7.6; it is outside the target until the pin moves.
 
+Rust releases use independent Semantic Versioning and record the exact upstream target separately, so fixes can ship independently while retaining the upstream contract. See the [release policy](/guides/releases/) for versioning and compatibility rules.
+
 ## How parity is verified
 
 Parity is established by **one mechanism**: a differential suite that runs the *official client* against **both** the pinned TypeScript runtime and this implementation, then compares everything they return and store.
