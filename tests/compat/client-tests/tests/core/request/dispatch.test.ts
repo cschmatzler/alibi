@@ -9,6 +9,51 @@ async function events(ctx: ScenarioContext) {
   return response.body as { path: string; method: string }[];
 }
 
+// Every operation keeps its own real credential/session setup and issuance window.
+// Earlier independent password operations must not accumulate into later raw dates.
+const admissionCases = [
+  {
+    kind: "origin",
+    name: "foreign-cookie-origin",
+    headers: { origin: "https://foreign.fixture.test" },
+    callbackURL: "/owned",
+  },
+  {
+    kind: "origin",
+    name: "foreign-callback",
+    headers: {},
+    callbackURL: "https://foreign.fixture.test/owned",
+  },
+  {
+    kind: "origin",
+    name: "null-same-origin",
+    headers: { origin: "null", "sec-fetch-site": "same-origin" },
+    callbackURL: "/owned",
+  },
+  {
+    kind: "origin",
+    name: "null-cross-site",
+    headers: { origin: "null", "sec-fetch-site": "cross-site" },
+    callbackURL: "/owned",
+  },
+  {
+    kind: "origin",
+    name: "null-forged-host",
+    headers: {
+      origin: "null",
+      "sec-fetch-site": "same-origin",
+      host: "foreign.fixture.test",
+    },
+    callbackURL: "/owned",
+  },
+
+  { kind: "navigation", name: "cross-site-navigation" },
+  { kind: "legacy", name: "legacy-no-origin", explicitOrigin: false },
+  { kind: "legacy", name: "legacy-explicit-origin", explicitOrigin: true },
+  { kind: "prefix", name: "prefix-child", route: "/sign-in/child" },
+  { kind: "prefix", name: "prefix-peer", route: "/sign-in-peer" },
+] as const;
+
 for (const mode of [
   "default",
   "csrf-off",
@@ -16,159 +61,154 @@ for (const mode of [
   "origin-off-explicit-csrf",
   "origin-path",
 ] as const) {
-  compatScenario(
-    `dispatch ${mode} origin and CSRF configuration preserves writes only after admission`,
-    async (ctx) => {
-      const profile = `dispatch-${mode}` as FixtureProfile;
-      const owner = ctx.actor("owner", profile);
-      const foreign = ctx.actor("foreign", profile);
-      const signup = await owner.client.signUp.email({
-        email: ctx.uniqueEmail("dispatch-owner"),
-        password: "password123",
-        name: "Owner",
-      });
-      const other = await foreign.client.signUp.email({
-        email: ctx.uniqueEmail("dispatch-foreign"),
-        password: "password123",
-        name: "Foreign",
-      });
-      expect(signup.error).toBeNull();
-      expect(other.error).toBeNull();
-
-      const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
-      await events(ctx);
-      const observations = [];
-
-      for (const input of [
-        {
-          name: "foreign-cookie-origin",
-          headers: { origin: "https://foreign.fixture.test" },
-          callbackURL: "/owned",
-        },
-        {
-          name: "foreign-callback",
-          headers: {},
-          callbackURL: "https://foreign.fixture.test/owned",
-        },
-        {
-          name: "null-same-origin",
-          headers: { origin: "null", "sec-fetch-site": "same-origin" },
-          callbackURL: "/owned",
-        },
-        {
-          name: "null-cross-site",
-          headers: { origin: "null", "sec-fetch-site": "cross-site" },
-          callbackURL: "/owned",
-        },
-        {
-          name: "null-forged-host",
-          headers: {
-            origin: "null",
-            "sec-fetch-site": "same-origin",
-            host: "foreign.fixture.test",
-          },
-          callbackURL: "/owned",
-        },
-      ]) {
-        const before = await ctx.readUserState({ userId: signup.data!.user.id });
-        const result = await owner.client.signIn.email(
-          {
-            email: signup.data!.user.email,
-            password: "password123",
-            callbackURL: input.callbackURL,
-          },
-          { headers: input.headers },
-        );
-        const allowed =
-          input.name === "null-same-origin" ||
-          (input.name === "foreign-callback"
-            ? ["origin-off", "origin-off-explicit-csrf", "origin-path"].includes(mode)
-            : mode !== "default");
-        const after = await ctx.readUserState({ userId: signup.data!.user.id });
-        const callbacks = await events(ctx);
-
-        if (allowed) {
-          expect(result.error).toBeNull();
-          expect(result.data?.user.id).toBe(signup.data!.user.id);
-          expect(callbacks).toEqual([{ path: "/sign-in/email", method: "POST" }]);
-        } else {
-          expect(result.error?.code).toBe(
-            input.name === "null-cross-site"
-              ? "MISSING_OR_NULL_ORIGIN"
-              : input.name === "foreign-callback"
-                ? "INVALID_CALLBACK_URL"
-                : "INVALID_ORIGIN",
-          );
-          expect(after).toEqual(before);
-          expect(callbacks).toEqual([]);
-        }
-
-        expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
-
-        observations.push({ input, before, result: ctx.snapshot(result), after, callbacks });
-      }
-
-      const guest = ctx.actor("cross-site", profile);
-      const before = await ctx.readUserState({ userId: signup.data!.user.id });
-      const navigation = await guest.client.signIn.email(
-        { email: signup.data!.user.email, password: "password123" },
-        {
-          headers: {
-            "sec-fetch-site": "cross-site",
-            "sec-fetch-mode": "navigate",
-            origin: "https://foreign.fixture.test",
-          },
-        },
-      );
-      const callbacks = await events(ctx);
-      const after = await ctx.readUserState({ userId: signup.data!.user.id });
-
-      if (mode === "csrf-off" || mode === "origin-off") {
-        expect(navigation.error).toBeNull();
-      } else {
-        expect(navigation.error?.code).toBe("CROSS_SITE_NAVIGATION_LOGIN_BLOCKED");
-        expect(after).toEqual(before);
-        expect(callbacks).toEqual([{ path: "/sign-in/email", method: "POST" }]);
-      }
-
-      expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
-
-      const legacy = [];
-
-      for (const explicitOrigin of [false, true]) {
-        const legacyBefore = await ctx.readUserState({ userId: signup.data!.user.id });
-        const result = await ctx
-          .actor(`legacy-${explicitOrigin}`, profile)
-          .client.signIn.email(
-            { email: signup.data!.user.email, password: "password123" },
-            { headers: explicitOrigin ? { origin: "https://foreign.fixture.test" } : {} },
-          );
-        const legacyAfter = await ctx.readUserState({ userId: signup.data!.user.id });
-        const receipts = await events(ctx);
-
-        if (explicitOrigin && mode === "default") {
-          expect(result.error?.code).toBe("INVALID_ORIGIN");
-          expect(legacyAfter).toEqual(legacyBefore);
-        } else {
-          expect(result.error).toBeNull();
-          expect(result.data?.user.id).toBe(signup.data!.user.id);
-        }
-
-        expect(receipts).toEqual([{ path: "/sign-in/email", method: "POST" }]);
-        expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
-
-        legacy.push({
-          explicitOrigin,
-          result: ctx.snapshot(result),
-          before: legacyBefore,
-          after: legacyAfter,
-          receipts,
+  for (const input of admissionCases) {
+    compatScenario(
+      `dispatch ${mode} origin and CSRF configuration preserves writes only after admission: ${input.name}`,
+      async (ctx) => {
+        const profile = `dispatch-${mode}` as FixtureProfile;
+        const owner = ctx.actor("owner", profile);
+        const foreign = ctx.actor("foreign", profile);
+        const signup = await owner.client.signUp.email({
+          email: ctx.uniqueEmail("dispatch-owner"),
+          password: "password123",
+          name: "Owner",
         });
-      }
+        const other = await foreign.client.signUp.email({
+          email: ctx.uniqueEmail("dispatch-foreign"),
+          password: "password123",
+          name: "Foreign",
+        });
+        expect(signup.error).toBeNull();
+        expect(other.error).toBeNull();
 
-      const prefixes = [];
+        const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
+        await events(ctx);
+        if (input.kind === "origin") {
+          const before = await ctx.readUserState({ userId: signup.data!.user.id });
+          const result = await owner.client.signIn.email(
+            {
+              email: signup.data!.user.email,
+              password: "password123",
+              callbackURL: input.callbackURL,
+            },
+            { headers: input.headers },
+          );
+          const allowed =
+            input.name === "null-same-origin" ||
+            (input.name === "foreign-callback"
+              ? ["origin-off", "origin-off-explicit-csrf", "origin-path"].includes(mode)
+              : mode !== "default");
+          const after = await ctx.readUserState({ userId: signup.data!.user.id });
+          const callbacks = await events(ctx);
 
-      for (const route of ["/sign-in/child", "/sign-in-peer"]) {
+          if (allowed) {
+            expect(result.error).toBeNull();
+            expect(result.data?.user.id).toBe(signup.data!.user.id);
+            expect(callbacks).toEqual([{ path: "/sign-in/email", method: "POST" }]);
+          } else {
+            expect(result.error?.code).toBe(
+              input.name === "null-cross-site"
+                ? "MISSING_OR_NULL_ORIGIN"
+                : input.name === "foreign-callback"
+                  ? "INVALID_CALLBACK_URL"
+                  : "INVALID_ORIGIN",
+            );
+            expect(after).toEqual(before);
+            expect(callbacks).toEqual([]);
+          }
+
+          expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
+          return {
+            input,
+            before,
+            result: ctx.snapshot(result),
+            after,
+            callbacks,
+            signup: ctx.snapshot(signup),
+            other: ctx.snapshot(other),
+            foreignBefore,
+            foreignAfter: await ctx.readUserState({ userId: other.data!.user.id }),
+          };
+        }
+
+        if (input.kind === "navigation") {
+          const guest = ctx.actor("cross-site", profile);
+          const before = await ctx.readUserState({ userId: signup.data!.user.id });
+          const navigation = await guest.client.signIn.email(
+            { email: signup.data!.user.email, password: "password123" },
+            {
+              headers: {
+                "sec-fetch-site": "cross-site",
+                "sec-fetch-mode": "navigate",
+                origin: "https://foreign.fixture.test",
+              },
+            },
+          );
+          const callbacks = await events(ctx);
+          const after = await ctx.readUserState({ userId: signup.data!.user.id });
+
+          if (mode === "csrf-off" || mode === "origin-off") {
+            expect(navigation.error).toBeNull();
+          } else {
+            expect(navigation.error?.code).toBe("CROSS_SITE_NAVIGATION_LOGIN_BLOCKED");
+            expect(after).toEqual(before);
+            expect(callbacks).toEqual([{ path: "/sign-in/email", method: "POST" }]);
+          }
+
+          expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
+          return {
+            input,
+            navigation: ctx.snapshot(navigation),
+            callbacks,
+            before,
+            after,
+            signup: ctx.snapshot(signup),
+            other: ctx.snapshot(other),
+            foreignBefore,
+            foreignAfter: await ctx.readUserState({ userId: other.data!.user.id }),
+          };
+        }
+
+        if (input.kind === "legacy") {
+          const { explicitOrigin } = input;
+          const legacyBefore = await ctx.readUserState({ userId: signup.data!.user.id });
+          const result = await ctx
+            .actor(`legacy-${explicitOrigin}`, profile)
+            .client.signIn.email(
+              { email: signup.data!.user.email, password: "password123" },
+              { headers: explicitOrigin ? { origin: "https://foreign.fixture.test" } : {} },
+            );
+          const legacyAfter = await ctx.readUserState({ userId: signup.data!.user.id });
+          const receipts = await events(ctx);
+
+          if (explicitOrigin && mode === "default") {
+            expect(result.error?.code).toBe("INVALID_ORIGIN");
+            expect(legacyAfter).toEqual(legacyBefore);
+          } else {
+            expect(result.error).toBeNull();
+            expect(result.data?.user.id).toBe(signup.data!.user.id);
+          }
+
+          expect(receipts).toEqual([{ path: "/sign-in/email", method: "POST" }]);
+          expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
+
+          return {
+            input,
+            explicitOrigin,
+            result: ctx.snapshot(result),
+            before: legacyBefore,
+            after: legacyAfter,
+            receipts,
+            signup: ctx.snapshot(signup),
+            other: ctx.snapshot(other),
+            foreignBefore,
+            foreignAfter: await ctx.readUserState({ userId: other.data!.user.id }),
+          };
+        }
+
+        const { route } = input;
         const physicalBefore = await ctx.readUserState({ userId: signup.data!.user.id });
         const response = await owner.fetch(authProfilePath(profile) + route, {
           method: "POST",
@@ -193,25 +233,22 @@ for (const mode of [
         expect(physicalAfter).toEqual(physicalBefore);
         expect(await ctx.readUserState({ userId: other.data!.user.id })).toEqual(foreignBefore);
 
-        prefixes.push({ route, result, receipts, before: physicalBefore, after: physicalAfter });
-      }
-
-      return {
-        prefixes,
-        legacy,
-        signup: ctx.snapshot(signup),
-        other: ctx.snapshot(other),
-        observations,
-        navigation: ctx.snapshot(navigation),
-        callbacks,
-        before,
-        after,
-        foreignBefore,
-        foreignAfter: await ctx.readUserState({ userId: other.data!.user.id }),
-      };
-    },
-    ["POST /sign-up/email", "POST /sign-in/email"],
-  );
+        return {
+          input,
+          route,
+          result,
+          receipts,
+          before: physicalBefore,
+          after: physicalAfter,
+          signup: ctx.snapshot(signup),
+          other: ctx.snapshot(other),
+          foreignBefore,
+          foreignAfter: await ctx.readUserState({ userId: other.data!.user.id }),
+        };
+      },
+      ["POST /sign-up/email", "POST /sign-in/email"],
+    );
+  }
 }
 
 for (const mode of [
