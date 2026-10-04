@@ -1342,9 +1342,8 @@ mod postgres_numeric_columns {
         #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
         async fn declared_numeric_filters_preserve_rows_types_and_index() -> TestResult {
             let db = Db::postgres().await?;
-            let raw = match &db.raw {
-                crate::storage::Raw::Postgres(raw) => raw,
-                _ => unreachable!(),
+            let crate::storage::Raw::Postgres(raw) = &db.raw else {
+                return Err("numeric filter fixture requires a PostgreSQL pool".into());
             };
             install(raw).await?;
             let connection = sqlx::postgres::PgPoolOptions::new()
@@ -1365,9 +1364,8 @@ mod postgres_numeric_columns {
         #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
         async fn declared_numeric_filters_preserve_rows_types_and_index() -> TestResult {
             let db = Db::postgres().await?;
-            let raw = match &db.raw {
-                crate::storage::Raw::Postgres(raw) => raw,
-                _ => unreachable!(),
+            let crate::storage::Raw::Postgres(raw) = &db.raw else {
+                return Err("numeric filter fixture requires a PostgreSQL pool".into());
             };
             install(raw).await?;
             let mut options = better_auth::seaorm::sea_orm::ConnectOptions::new(db.url.clone());
