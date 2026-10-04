@@ -54,8 +54,9 @@ compatScenario(
         });
         expect(rejected.error?.status).toBe(kind === "ordinary" ? 500 : 403);
         if (kind === "ordinary") ordinaryBodies.push(rawBody);
-        else
+        else {
           expect(JSON.parse(rawBody)).toEqual({ code: "OTT_VETO", message: "OTT callback veto" });
+        }
         const receipt = await control("callbacks");
         expect(receipt.events.map((event: { stage: string }) => event.stage)).toEqual(
           stage === "generate" ? ["generate"] : ["generate", "hash"],
@@ -161,11 +162,12 @@ compatScenario(
       before,
       after,
     };
-    if (process.env.OTT210_PROOF_DIR)
+    if (process.env.OTT210_PROOF_DIR) {
       await Bun.write(
         `${process.env.OTT210_PROOF_DIR}/${new URL(ctx.baseURL).port}.json`,
         JSON.stringify(result, null, 2),
       );
+    }
     expect(ordinaryBodies).toEqual(["", "", ""]);
     return result;
   },

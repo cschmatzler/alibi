@@ -316,8 +316,9 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
       if (url.pathname.startsWith(`${path}/`)) {
         const origin = databases.has(url.origin) ? url.origin : preview;
         const forwardedURL = new URL(url);
-        if (forwardedURL.pathname === `${path}/provider-return`)
+        if (forwardedURL.pathname === `${path}/provider-return`) {
           forwardedURL.pathname = `${path}/callback/gitlab`;
+        }
         return instances
           .get(`${origin}:${modes.get(origin)}`)!
           .handler(forwardedURL.href === url.href ? request : new Request(forwardedURL, request));
@@ -341,10 +342,12 @@ export async function oauthProxyFixture(base: BetterAuthOptions, managed = false
         if (
           !optionModes.includes(input.mode) ||
           (input.origin && ![preview, production].includes(input.origin))
-        )
+        ) {
           return Response.json({ error: "Unknown option runtime" }, { status: 400 });
-        for (const origin of input.origin ? [input.origin] : [preview, production])
+        }
+        for (const origin of input.origin ? [input.origin] : [preview, production]) {
           modes.set(origin, input.mode);
+        }
         return Response.json({ status: true });
       }
       if (url.pathname === `${control}/state`) {

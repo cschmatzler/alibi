@@ -1,4 +1,5 @@
 import { appendFileSync } from "node:fs";
+
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
 /** Run the published factory; redirect only its fixed provider HTTP destinations. */
@@ -14,8 +15,21 @@ export function redditProviderFixture(base: BetterAuthOptions) {
         request.method === "POST"
           ? Object.fromEntries(new URLSearchParams(await request.text()))
           : null;
-      if (process.env.REDDIT_WIRE_LOG) appendFileSync(process.env.REDDIT_WIRE_LOG, JSON.stringify({path, method: request.method, headers: Object.fromEntries(request.headers), body}) + "\n");
-      const declaredHeader = (name: string) => { const value = request.headers.get(`x-fixture-reddit-${name}`); return value === "__absent__" ? null : value; };
+      if (process.env.REDDIT_WIRE_LOG) {
+        appendFileSync(
+          process.env.REDDIT_WIRE_LOG,
+          JSON.stringify({
+            path,
+            method: request.method,
+            headers: Object.fromEntries(request.headers),
+            body,
+          }) + "\n",
+        );
+      }
+      const declaredHeader = (name: string) => {
+        const value = request.headers.get(`x-fixture-reddit-${name}`);
+        return value === "__absent__" ? null : value;
+      };
       receipts.push({
         path,
         method: request.method,
@@ -72,7 +86,10 @@ export function redditProviderFixture(base: BetterAuthOptions) {
     ) {
       // Preserve the exact factory headers independently of Bun ambient defaults.
       request.headers.set("x-fixture-reddit-accept", request.headers.get("accept") ?? "__absent__");
-      request.headers.set("x-fixture-reddit-user-agent", request.headers.get("user-agent") ?? "__absent__");
+      request.headers.set(
+        "x-fixture-reddit-user-agent",
+        request.headers.get("user-agent") ?? "__absent__",
+      );
       return previousFetch(
         new Request(
           `${transport.url}${url.hostname === "www.reddit.com" ? "token" : "user"}`,

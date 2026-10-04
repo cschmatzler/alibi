@@ -353,34 +353,58 @@ for (const mode of [
   );
 }
 
-compatScenario("physical first session cookie accepts genuine quoted proof and preserves duplicate and replay limits", async(ctx)=>{
-  const path=authProfilePath("physical-cookie-default");
-  const owner=ctx.actor("quoted","physical-cookie-default").client;
-  let headers:Headers|undefined;
-  const signup=await owner.signUp.email({email:ctx.uniqueEmail("quoted"),name:"Quoted owner",password,fetchOptions:{onSuccess({response}){headers=new Headers(response.headers);}}});
-  expect(signup.error).toBeNull();
-  const id=signup.data!.user.id;
-  const before=await storage(ctx,id);
-  const raw=headers!.getSetCookie()[0]!.split(";")[0]!;
-  const equal=raw.indexOf("=");const name=raw.slice(0,equal);const value=raw.slice(equal+1);
-  const observations=[];
-  for(const [cookie,accepted] of [
-    [`${name}="${value}"`,true],
-    [`${raw}; ${name}=bad`,true],
-    [`${name}=bad; ${raw}`,false],
-    [`${name}="${value}`,false],
-    [`${name}=${value}corrupt`,false],
-  ] as const){
-    const read=await ctx.rawRequest({path:path+"/get-session",headers:{cookie}});
-    expect(read.status).toBe(200);
-    if(accepted)expect((read.body as any).user.id).toBe(id);else expect(read.body).toBeNull();
-    observations.push({cookie:cookie.replaceAll(value,"{genuine-signed-token}"),read});
-  }
-  expect(await storage(ctx,id)).toEqual(before);
-  const logout=await ctx.rawRequest({path:path+"/sign-out",method:"POST",headers:{cookie:`${name}="${value}"`},json:{}});
-  expect(logout.status).toBe(200);
-  const after=await storage(ctx,id);expect(after.sessions).toEqual([]);
-  expect(after.user).toEqual(before.user);expect(after.accounts).toEqual(before.accounts);
-  const replay=await ctx.rawRequest({path:path+"/get-session",headers:{cookie:raw}});expect(replay.body).toBeNull();
-  return {signup:ctx.snapshot(signup),before,observations,logout,after,replay};
-},["GET /get-session","POST /sign-out"]);
+compatScenario(
+  "physical first session cookie accepts genuine quoted proof and preserves duplicate and replay limits",
+  async (ctx) => {
+    const path = authProfilePath("physical-cookie-default");
+    const owner = ctx.actor("quoted", "physical-cookie-default").client;
+    let headers: Headers | undefined;
+    const signup = await owner.signUp.email({
+      email: ctx.uniqueEmail("quoted"),
+      name: "Quoted owner",
+      password,
+      fetchOptions: {
+        onSuccess({ response }) {
+          headers = new Headers(response.headers);
+        },
+      },
+    });
+    expect(signup.error).toBeNull();
+    const id = signup.data!.user.id;
+    const before = await storage(ctx, id);
+    const raw = headers!.getSetCookie()[0]!.split(";")[0]!;
+    const equal = raw.indexOf("=");
+    const name = raw.slice(0, equal);
+    const value = raw.slice(equal + 1);
+    const observations = [];
+    for (const [cookie, accepted] of [
+      [`${name}="${value}"`, true],
+      [`${raw}; ${name}=bad`, true],
+      [`${name}=bad; ${raw}`, false],
+      [`${name}="${value}`, false],
+      [`${name}=${value}corrupt`, false],
+    ] as const) {
+      const read = await ctx.rawRequest({ path: path + "/get-session", headers: { cookie } });
+      expect(read.status).toBe(200);
+      if (accepted) expect((read.body as any).user.id).toBe(id);
+      else expect(read.body).toBeNull();
+      observations.push({ cookie: cookie.replaceAll(value, "{genuine-signed-token}"), read });
+    }
+    expect(await storage(ctx, id)).toEqual(before);
+    const logout = await ctx.rawRequest({
+      path: path + "/sign-out",
+      method: "POST",
+      headers: { cookie: `${name}="${value}"` },
+      json: {},
+    });
+    expect(logout.status).toBe(200);
+    const after = await storage(ctx, id);
+    expect(after.sessions).toEqual([]);
+    expect(after.user).toEqual(before.user);
+    expect(after.accounts).toEqual(before.accounts);
+    const replay = await ctx.rawRequest({ path: path + "/get-session", headers: { cookie: raw } });
+    expect(replay.body).toBeNull();
+    return { signup: ctx.snapshot(signup), before, observations, logout, after, replay };
+  },
+  ["GET /get-session", "POST /sign-out"],
+);

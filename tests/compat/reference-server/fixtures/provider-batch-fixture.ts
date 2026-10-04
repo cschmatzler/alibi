@@ -110,8 +110,9 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
         declaredHeaders,
       };
       receipts.push(receipt);
-      if (process.env.PROVIDER_BATCH_WIRE_LOG)
+      if (process.env.PROVIDER_BATCH_WIRE_LOG) {
         appendFileSync(process.env.PROVIDER_BATCH_WIRE_LOG, `${JSON.stringify(receipt)}\n`);
+      }
       if (stage === "token" || stage === "refresh") {
         const response = Object.hasOwn(control, "tokenResponse")
           ? control.tokenResponse
@@ -134,13 +135,14 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
             };
         return Response.json(response, { status: Number(control.tokenStatus ?? 200) });
       }
-      if (stage === "email")
+      if (stage === "email") {
         return Response.json(
           Object.hasOwn(control, "emailProfile")
             ? control.emailProfile
             : { data: { confirmed_email: "batch@example.invalid" } },
           { status: Number(control.emailStatus ?? 200) },
         );
+      }
       return Response.json(
         Object.hasOwn(control, "profile")
           ? control.profile
@@ -158,13 +160,14 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
     const destination = destinations[active];
     const endpoint = `${url.origin}${url.pathname}`;
     let stage: string | undefined;
-    if (destination.token.includes(endpoint))
+    if (destination.token.includes(endpoint)) {
       stage = endpoint.includes("refresh_token") ? "refresh" : "token";
-    else if (endpoint === destination.user)
+    } else if (endpoint === destination.user) {
       stage =
         active === "twitter" && url.searchParams.get("user.fields") === "confirmed_email"
           ? "email"
           : "user";
+    }
     if (!stage) return previousFetch(input, init);
     request.headers.set(
       "x-provider-batch-declared-headers",
@@ -173,7 +176,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
     return previousFetch(new Request(`${transport.url}${active}/${stage}${url.search}`, request));
   }) as typeof fetch;
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
-  for (const provider of Object.keys(inputs))
+  for (const provider of Object.keys(inputs)) {
     for (const mode of providerBatchModes) {
       const path = `/__test/profiles/provider-batch-${provider}-${mode}/api/auth`;
       const providerOptions: Record<string, unknown> = {
@@ -196,7 +199,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
         ...(mode === "implicit-disabled" ? { disableImplicitSignUp: true } : {}),
         ...(mode === "required" ? { requireEmailVerification: true } : {}),
       };
-      if (["mapped-async", "mapper-error"].includes(mode))
+      if (["mapped-async", "mapper-error"].includes(mode)) {
         providerOptions.mapProfileToUser = async (profile: unknown) => {
           callbacks.push({ kind: "mapper", provider, profile });
           await Promise.resolve();
@@ -211,7 +214,8 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
                 image: null,
               };
         };
-      if (["custom-async", "custom-error"].includes(mode))
+      }
+      if (["custom-async", "custom-error"].includes(mode)) {
         providerOptions.getUserInfo = async (token: unknown) => {
           callbacks.push({ kind: "userinfo", provider, token });
           await Promise.resolve();
@@ -231,7 +235,8 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
                 : inputs[provider as keyof typeof inputs],
           };
         };
-      if (mode === "refresh-callback")
+      }
+      if (mode === "refresh-callback") {
         providerOptions.refreshAccessToken = async (refreshToken: unknown) => {
           callbacks.push({ kind: "refresh", provider, refreshToken });
           await Promise.resolve();
@@ -242,6 +247,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
             scopes: ["callback-scope"],
           };
         };
+      }
       const settings: BetterAuthOptions = {
         ...base,
         basePath: path,
@@ -251,6 +257,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
       };
       profiles.set(path, betterAuth(settings));
     }
+  }
   return {
     profiles,
     reset() {
@@ -266,7 +273,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
       }
       if (path === "/__test/provider-batch/receipts") return Response.json(receipts);
       if (path === "/__test/provider-batch/callbacks") return Response.json(callbacks);
-      if (path === "/__test/provider-batch/sql-state")
+      if (path === "/__test/provider-batch/sql-state") {
         return Response.json(
           Object.fromEntries(
             ["user", "account", "session", "verification"].map((table) => [
@@ -275,6 +282,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
             ]),
           ),
         );
+      }
       return null;
     },
   };

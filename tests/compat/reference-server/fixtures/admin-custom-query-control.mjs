@@ -33,9 +33,7 @@ for (const [id, day] of [
   [42, 3],
   [43, 2],
 ]) {
-  const date = new Date(
-    `2020-01-${String(day).padStart(2, "0")}T00:00:00Z`,
-  ).toISOString();
+  const date = new Date(`2020-01-${String(day).padStart(2, "0")}T00:00:00Z`).toISOString();
   database
     .query(
       "INSERT INTO user(id,name,email,emailVerified,createdAt,updatedAt,role,banned) VALUES (?,?,?,0,?,?,'user',0)",
@@ -53,12 +51,7 @@ for (const [id, score, day, tier] of [
     .query(
       "UPDATE user SET score=?, reviewedAt=?, profile=?, createdAt='2019-01-01T00:00:00Z', updatedAt='2019-01-01T00:00:00Z' WHERE id=?",
     )
-    .run(
-      score,
-      `2020-01-${String(day).padStart(2, "0")}T00:00:00Z`,
-      JSON.stringify({ tier }),
-      id,
-    );
+    .run(score, `2020-01-${String(day).padStart(2, "0")}T00:00:00Z`, JSON.stringify({ tier }), id);
 }
 const session = await ctx.internalAdapter.createSession("1");
 const snapshot = () =>
@@ -70,22 +63,12 @@ const snapshot = () =>
   );
 const before = snapshot();
 const signed = encodeURIComponent(
-  session.token +
-    "." +
-    createHmac("sha256", secret).update(session.token).digest("base64"),
+  session.token + "." + createHmac("sha256", secret).update(session.token).digest("base64"),
 );
 for (const [field, operator, value, sort, direction, expected, total] of [
   ["score", "gte", "3", "score", "asc", ["3", "2"], 3],
   ["score", "gte", "3", "score", "desc", ["3", "42"], 3],
-  [
-    "reviewedAt",
-    "gt",
-    "2020-01-01T00:00:00Z",
-    "reviewedAt",
-    "asc",
-    ["42", "3"],
-    4,
-  ],
+  ["reviewedAt", "gt", "2020-01-01T00:00:00Z", "reviewedAt", "asc", ["42", "3"], 4],
   ["profile", "eq", '{"tier":"a"}', "score", "asc", ["43", "3"], 3],
   ["profile", "contains", "b", "id", "asc", ["42"], 2],
   ["score", "gte", "3", "profile", "asc", ["2", "42"], 3],

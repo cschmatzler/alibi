@@ -987,7 +987,7 @@ compatScenario(
     const afterEmptyCode = await state(ctx);
     // Retain the bounded pre-fix witness even when the regression assertion
     // stops the comparison before its ordinary full-pair artifact is written.
-    if (process.env.COMPAT_OBSERVATIONS_DIR)
+    if (process.env.COMPAT_OBSERVATIONS_DIR) {
       await Bun.write(
         `${process.env.COMPAT_OBSERVATIONS_DIR}/empty-code-${new URL(ctx.baseURL).port}.json`,
         JSON.stringify(
@@ -1003,6 +1003,7 @@ compatScenario(
           2,
         ),
       );
+    }
     expect(emptyCode.location).toBe(`${ctx.baseURL}/proxy-error?error=no_code`);
     expect(afterEmptyCode).toEqual(beforeEmptyCode);
     const postURL = new URL(approved);
@@ -1248,8 +1249,9 @@ compatScenario(
         ),
       ),
     );
-    for (const completion of completions)
+    for (const completion of completions) {
       expect(completion.location).toBe(`${ctx.baseURL}/proxy-done?application=kept`);
+    }
     const final = await state(ctx, true);
     expect(final.preview.sessions).toHaveLength(beforeConcurrent.preview.sessions.length + 2);
     expect(final.preview.users).toEqual(beforeConcurrent.preview.users);
@@ -1456,8 +1458,9 @@ compatScenario(
       const actualToken = callback.searchParams.get("profile")!;
       const actualPayload = JSON.parse(await symmetricDecrypt({ key: secret, data: actualToken }));
       expect(Object.hasOwn(actualPayload, "disableSignUp")).toBe(mode !== "signup-absent");
-      if (mode !== "signup-absent")
+      if (mode !== "signup-absent") {
         expect(actualPayload.disableSignUp).toBe(mode === "signup-disabled");
+      }
       const before = await state(ctx);
       const result = await response(await owner.fetch(callback, { redirect: "manual" }));
       if (mode === "signup-disabled") {

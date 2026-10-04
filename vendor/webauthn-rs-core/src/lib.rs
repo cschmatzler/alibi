@@ -37,8 +37,8 @@ mod constants;
 
 pub mod attestation;
 pub mod crypto;
-pub mod source_policy;
 pub mod fake;
+pub mod source_policy;
 
 mod core;
 pub mod error;

@@ -1445,7 +1445,7 @@ compatScenario(
     expect(rawAccountCookies[0]).toContain("Max-Age=1");
     expect(rawAccountCookies[0]).not.toContain("HttpOnly");
     expect(rawAccountCookies[0]).toContain("SameSite=Strict");
-    if (process.env.COMPAT_OBSERVATIONS_DIR)
+    if (process.env.COMPAT_OBSERVATIONS_DIR) {
       await Bun.write(
         `${process.env.COMPAT_OBSERVATIONS_DIR}/custom-raw-${new URL(ctx.baseURL).port}.json`,
         JSON.stringify(
@@ -1454,6 +1454,7 @@ compatScenario(
           2,
         ),
       );
+    }
     expect(Object.hasOwn(payload!, "omitted")).toBe(false);
     const accountCookie = {
       token: accountToken,

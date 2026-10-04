@@ -3,48 +3,22 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 
 import inputs from "../../../../fixtures/provider-batch-profiles.json";
-import {
-  authProfilePath,
-  type FixtureProfile,
-} from "../../../support/profiles";
-import {
-  compatScenario,
-  type ScenarioContext,
-} from "../../../support/scenario";
+import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
+import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 
 // Independent published contracts, exercised through the official social SDK.
 // Existing dedicated owners retain lifecycle/proof/ownership/rotation controls.
 const contracts = {
-  roblox: [
-    "https://apis.roblox.com/oauth/v1/authorize",
-    ["openid", "profile"],
-    false,
-  ],
+  roblox: ["https://apis.roblox.com/oauth/v1/authorize", ["openid", "profile"], false],
   salesforce: [
     "https://login.salesforce.com/services/oauth2/authorize",
     ["openid", "email", "profile"],
     true,
   ],
-  slack: [
-    "https://slack.com/openid/connect/authorize",
-    ["openid", "profile", "email"],
-    false,
-  ],
-  spotify: [
-    "https://accounts.spotify.com/authorize",
-    ["user-read-email"],
-    true,
-  ],
-  tiktok: [
-    "https://www.tiktok.com/v2/auth/authorize",
-    ["user.info.profile"],
-    false,
-  ],
-  twitch: [
-    "https://id.twitch.tv/oauth2/authorize",
-    ["user:read:email", "openid"],
-    false,
-  ],
+  slack: ["https://slack.com/openid/connect/authorize", ["openid", "profile", "email"], false],
+  spotify: ["https://accounts.spotify.com/authorize", ["user-read-email"], true],
+  tiktok: ["https://www.tiktok.com/v2/auth/authorize", ["user.info.profile"], false],
+  twitch: ["https://id.twitch.tv/oauth2/authorize", ["user:read:email", "openid"], false],
   twitter: [
     "https://x.com/i/oauth2/authorize",
     ["users.read", "tweet.read", "offline.access", "users.email"],
@@ -52,11 +26,7 @@ const contracts = {
   ],
   vercel: ["https://vercel.com/oauth/authorize", [], true],
   vk: ["https://id.vk.com/authorize", ["email", "phone"], true],
-  wechat: [
-    "https://open.weixin.qq.com/connect/qrconnect",
-    ["snsapi_login"],
-    false,
-  ],
+  wechat: ["https://open.weixin.qq.com/connect/qrconnect", ["snsapi_login"], false],
   zoom: ["https://zoom.us/oauth/authorize", [], true],
 } as const;
 type Provider = keyof typeof inputs;
@@ -116,12 +86,7 @@ function grantBody(row: Record<string, any>) {
     },
   };
 }
-async function flow(
-  ctx: ScenarioContext,
-  provider: Provider,
-  mode: string,
-  scopes?: string[],
-) {
+async function flow(ctx: ScenarioContext, provider: Provider, mode: string, scopes?: string[]) {
   const profile = selected(provider, mode);
   const actor = ctx.actor("batch", profile);
   const start = await actor.client.signIn.social({
@@ -149,33 +114,27 @@ function status(response: Response, baseURL: string) {
     status: response.status,
     location: response.headers.get("location"),
     error: response.headers.get("location")
-      ? new URL(response.headers.get("location")!, baseURL).searchParams.get(
-          "error",
-        )
+      ? new URL(response.headers.get("location")!, baseURL).searchParams.get("error")
       : null,
     clearsState: response.headers
       .getSetCookie()
       .some(
-        (value) =>
-          /better-auth\.(?:oauth_)?state=;/.test(value) &&
-          value.includes("Max-Age=0"),
+        (value) => /better-auth\.(?:oauth_)?state=;/.test(value) && value.includes("Max-Age=0"),
       ),
   };
 }
 
-for (const provider of Object.keys(contracts) as Array<keyof typeof contracts>)
+for (const provider of Object.keys(contracts) as Array<keyof typeof contracts>) {
   for (const mode of ["default", "configured", "disabled-configured"]) {
     compatScenario(
       `provider batch ${provider} ${mode} factory and real callback`,
       async (ctx) => {
         await control(ctx, provider);
-        const requested =
-          mode === "default" ? undefined : ["requested", "shared", "requested"];
+        const requested = mode === "default" ? undefined : ["requested", "shared", "requested"];
         const completed = await flow(ctx, provider, mode, requested);
         const [endpoint, defaults, pkce] = contracts[provider];
         expect(completed.url.origin + completed.url.pathname).toBe(endpoint);
-        const configured =
-          mode === "default" ? [] : ["configured", "shared", "configured"];
+        const configured = mode === "default" ? [] : ["configured", "shared", "configured"];
         const base = mode === "disabled-configured" ? [] : [...defaults];
         const scopes =
           provider === "slack"
@@ -190,42 +149,31 @@ for (const provider of Object.keys(contracts) as Array<keyof typeof contracts>)
                 ? ""
                 : null,
         );
-        expect(completed.url.searchParams.get("code_challenge_method")).toBe(
-          pkce ? "S256" : null,
-        );
+        expect(completed.url.searchParams.get("code_challenge_method")).toBe(pkce ? "S256" : null);
         expect(completed.url.searchParams.get("owner")).toBe("batch");
-        expect(completed.url.searchParams.get("state")).not.toBe(
-          "must-not-replace-state",
-        );
+        expect(completed.url.searchParams.get("state")).not.toBe("must-not-replace-state");
         expect(
           completed.url.searchParams.get(
-            provider === "tiktok"
-              ? "client_key"
-              : provider === "wechat"
-                ? "appid"
-                : "client_id",
+            provider === "tiktok" ? "client_key" : provider === "wechat" ? "appid" : "client_id",
           ),
         ).toBe("batch-client");
-        if (provider === "twitch")
+        if (provider === "twitch") {
           expect(completed.url.searchParams.get("claims")).toBe(
             '{"id_token":{"email":null,"email_verified":null,"preferred_username":null,"picture":null}}',
           );
+        }
         expect(completed.response.status).toBe(302);
         expect(completed.response.headers.get("location")).toBe("/dashboard");
         const session = await completed.actor.client.getSession();
         expect(session.error).toBeNull();
         expect(session.data?.user.name).toBe("Batch Name");
-        const wire = (await read(ctx, "receipts")) as Array<
-          Record<string, any>
-        >;
+        const wire = (await read(ctx, "receipts")) as Array<Record<string, any>>;
         expect(wire[0]!.stage).toBe("token");
         expect(wire[0]!.method).toBe(provider === "wechat" ? "GET" : "POST");
         const grant = provider === "wechat" ? wire[0]!.query : wire[0]!.body;
         expect(grant.code).toBe("batch-code");
         expect(grant.grant_type).toBe("authorization_code");
-        expect(Boolean(grant.code_verifier)).toBe(
-          pkce || provider === "tiktok",
-        );
+        expect(Boolean(grant.code_verifier)).toBe(pkce || provider === "tiktok");
         if (pkce) {
           expect(grant.code_verifier).toMatch(/^[A-Za-z0-9_-]+$/);
           expect(
@@ -234,13 +182,11 @@ for (const provider of Object.keys(contracts) as Array<keyof typeof contracts>)
               .digest("base64url"),
           ).toBe(completed.url.searchParams.get("code_challenge")!);
         }
-        if (provider === "twitter")
-          expect(
-            (wire[0]!.declaredHeaders ?? wire[0]!.headers).authorization,
-          ).toBe(
-            "Basic " +
-              Buffer.from("batch-client:batch-secret").toString("base64"),
+        if (provider === "twitter") {
+          expect((wire[0]!.declaredHeaders ?? wire[0]!.headers).authorization).toBe(
+            "Basic " + Buffer.from("batch-client:batch-secret").toString("base64"),
           );
+        }
         if (provider === "vk") {
           expect(wire[1]!.method).toBe("POST");
           expect(wire[1]!.body).toEqual({
@@ -248,12 +194,9 @@ for (const provider of Object.keys(contracts) as Array<keyof typeof contracts>)
             client_id: "batch-client",
           });
         }
-        if (provider === "twitter")
-          expect(wire.map((row) => row.stage)).toEqual([
-            "token",
-            "user",
-            "email",
-          ]);
+        if (provider === "twitter") {
+          expect(wire.map((row) => row.stage)).toEqual(["token", "user", "email"]);
+        }
         if (provider === "twitch") expect(wire).toHaveLength(1);
         const sql = (await read(ctx, "sql-state")) as Record<
           string,
@@ -266,12 +209,8 @@ for (const provider of Object.keys(contracts) as Array<keyof typeof contracts>)
         expect(users).toHaveLength(1);
         expect(accounts).toHaveLength(1);
         expect(sessions).toHaveLength(1);
-        expect(accounts[0]![source ? "accountId" : "account_id"]).toBe(
-          "batch-subject",
-        );
-        expect(accounts[0]![source ? "accessToken" : "access_token"]).toBe(
-          "batch-access",
-        );
+        expect(accounts[0]![source ? "accountId" : "account_id"]).toBe("batch-subject");
+        expect(accounts[0]![source ? "accessToken" : "access_token"]).toBe("batch-access");
         await archive(ctx, `${provider}-${mode}`, {
           start: completed.start,
           session,
@@ -297,25 +236,17 @@ for (const provider of Object.keys(contracts) as Array<keyof typeof contracts>)
       ["POST /sign-in/social", "GET /callback/{}"],
     );
   }
+}
 
-for (const provider of providers)
-  for (const mode of [
-    "mapped-async",
-    "custom-async",
-    "mapper-error",
-    "custom-error",
-  ]) {
+for (const provider of providers) {
+  for (const mode of ["mapped-async", "custom-async", "mapper-error", "custom-error"]) {
     compatScenario(
       `provider batch ${provider} ${mode} application callback contract`,
       async (ctx) => {
         await control(ctx, provider);
         const completed = await flow(ctx, provider, mode);
-        const ignored =
-          provider === "tiktok" &&
-          ["mapped-async", "mapper-error"].includes(mode);
-        const caught =
-          ["paypal", "salesforce"].includes(provider) &&
-          mode === "mapper-error";
+        const ignored = provider === "tiktok" && ["mapped-async", "mapper-error"].includes(mode);
+        const caught = ["paypal", "salesforce"].includes(provider) && mode === "mapper-error";
         const failure = mode.endsWith("error") && !ignored;
         const outcome = status(completed.response, ctx.baseURL);
         expect(outcome.status).toBe(failure ? (caught ? 302 : 500) : 302);
@@ -327,16 +258,10 @@ for (const provider of providers)
           expect(outcome.location).toBe("/dashboard");
           const session = await completed.actor.client.getSession();
           expect(session.data?.user.name).toBe(
-            mode === "custom-async"
-              ? "Callback Name"
-              : ignored
-                ? "Batch Name"
-                : "Async Name",
+            mode === "custom-async" ? "Callback Name" : ignored ? "Batch Name" : "Async Name",
           );
         }
-        const callbacks = (await read(ctx, "callbacks")) as Array<
-          Record<string, unknown>
-        >;
+        const callbacks = (await read(ctx, "callbacks")) as Array<Record<string, unknown>>;
         expect(callbacks).toHaveLength(ignored ? 0 : 1);
         const sql = (await read(ctx, "sql-state")) as Record<
           string,
@@ -345,12 +270,11 @@ for (const provider of providers)
         const source = "user" in sql;
         expect(sql[source ? "user" : "users"]).toHaveLength(failure ? 0 : 1);
         expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
-        if (!failure)
+        if (!failure) {
           expect(
-            sql[source ? "account" : "accounts"]![0]![
-              source ? "accountId" : "account_id"
-            ],
+            sql[source ? "account" : "accounts"]![0]![source ? "accountId" : "account_id"],
           ).toBe("batch-subject");
+        }
         await archive(ctx, `${provider}-${mode}`, { outcome });
         return {
           outcome,
@@ -361,31 +285,11 @@ for (const provider of providers)
       ["POST /sign-in/social", "GET /callback/{}"],
     );
   }
+}
 
-for (const [
-  label,
-  provider,
-  profile,
-  expectedName,
-  expectedVerified,
-  physicalVerified,
-] of [
-  [
-    "empty verification",
-    "paypal",
-    { ...inputs.paypal, email_verified: "" },
-    "Batch Name",
-    "",
-    "",
-  ],
-  [
-    "numeric verification",
-    "slack",
-    { ...inputs.slack, email_verified: 2 },
-    "Batch Name",
-    false,
-    2,
-  ],
+for (const [label, provider, profile, expectedName, expectedVerified, physicalVerified] of [
+  ["empty verification", "paypal", { ...inputs.paypal, email_verified: "" }, "Batch Name", "", ""],
+  ["numeric verification", "slack", { ...inputs.slack, email_verified: 2 }, "Batch Name", false, 2],
   [
     "numeric name and image",
     "notion",
@@ -410,20 +314,14 @@ for (const [
       const session = await completed.actor.client.getSession();
       expect(session.error).toBeNull();
       expect(session.data?.user.name).toBe(expectedName);
-      expect(
-        (session.data?.user as unknown as Record<string, unknown>)
-          ?.emailVerified,
-      ).toEqual(expectedVerified);
+      expect((session.data?.user as unknown as Record<string, unknown>)?.emailVerified).toEqual(
+        expectedVerified,
+      );
       if (provider === "notion") expect(session.data?.user.image).toBe("2");
-      const sql = (await read(ctx, "sql-state")) as Record<
-        string,
-        Array<Record<string, unknown>>
-      >;
+      const sql = (await read(ctx, "sql-state")) as Record<string, Array<Record<string, unknown>>>;
       const source = "user" in sql;
       const row = sql[source ? "user" : "users"]![0]!;
-      expect(row[source ? "emailVerified" : "email_verified"]).toBe(
-        physicalVerified,
-      );
+      expect(row[source ? "emailVerified" : "email_verified"]).toBe(physicalVerified);
       expect(sql[source ? "account" : "accounts"]).toHaveLength(1);
       expect(sql[source ? "session" : "sessions"]).toHaveLength(1);
       await archive(ctx, label, {
@@ -446,23 +344,13 @@ for (const provider of ["vk", "wechat"] as const) {
       await control(ctx, provider);
       const completed = await flow(ctx, provider, "client-array");
       expect(completed.response.headers.get("location")).toBe("/dashboard");
-      expect(
-        completed.url.searchParams.get(
-          provider === "wechat" ? "appid" : "client_id",
-        ),
-      ).toBe(
-        provider === "wechat"
-          ? "batch-client,secondary-client"
-          : "batch-client",
+      expect(completed.url.searchParams.get(provider === "wechat" ? "appid" : "client_id")).toBe(
+        provider === "wechat" ? "batch-client,secondary-client" : "batch-client",
       );
-      const receipts = (await read(ctx, "receipts")) as Array<
-        Record<string, any>
-      >;
-      expect(
-        provider === "wechat"
-          ? receipts[0]!.query.appid
-          : receipts[1]!.body.client_id,
-      ).toBe("batch-client,secondary-client");
+      const receipts = (await read(ctx, "receipts")) as Array<Record<string, any>>;
+      expect(provider === "wechat" ? receipts[0]!.query.appid : receipts[1]!.body.client_id).toBe(
+        "batch-client,secondary-client",
+      );
       await archive(ctx, `${provider}-client-array`, {
         start: completed.start,
       });
@@ -487,10 +375,7 @@ for (const provider of ["spotify", "wechat", "vercel"] as const) {
       await control(ctx, provider);
       const completed = await flow(ctx, provider, "encrypted");
       expect(completed.response.headers.get("location")).toBe("/dashboard");
-      const sql = (await read(ctx, "sql-state")) as Record<
-        string,
-        Array<Record<string, unknown>>
-      >;
+      const sql = (await read(ctx, "sql-state")) as Record<string, Array<Record<string, unknown>>>;
       const source = "user" in sql;
       const account = sql[source ? "account" : "accounts"]![0]!;
       const token = await completed.actor.client.getAccessToken({
@@ -502,16 +387,15 @@ for (const provider of ["spotify", "wechat", "vercel"] as const) {
       expect(stored).toBeString();
       expect(stored).not.toBe("batch-access");
       expect(String(stored)).toMatch(/^(?:\$ba\$\d+\$)?[0-9a-f]+$/);
-      if (provider === "wechat")
+      if (provider === "wechat") {
         expect(account[source ? "idToken" : "id_token"]).toBeNull();
+      }
       await archive(ctx, `${provider}-encrypted`, { token });
       return {
         token: ctx.snapshot(token),
         encrypted: true,
         idToken:
-          provider === "wechat"
-            ? account[source ? "idToken" : "id_token"]
-            : "not-applicable",
+          provider === "wechat" ? account[source ? "idToken" : "id_token"] : "not-applicable",
       };
     },
     ["GET /callback/{}", "POST /get-access-token"],
@@ -558,19 +442,15 @@ for (const provider of providers) {
       expect(second.response.headers.get("location")).toBe("/dashboard");
       const after = await second.actor.client.getSession();
       expect(after.data?.user.id).toBe(before.data?.user.id);
-      expect(after.data?.user.name).toBe(
-        provider === "zoom" ? "Batch Name" : "Updated Name",
-      );
+      expect(after.data?.user.name).toBe(provider === "zoom" ? "Batch Name" : "Updated Name");
       const sql: any = await read(ctx, "sql-state");
       const source = "user" in sql;
       expect(sql[source ? "user" : "users"]).toHaveLength(1);
       expect(sql[source ? "account" : "accounts"]).toHaveLength(1);
       expect(sql[source ? "session" : "sessions"]).toHaveLength(2);
-      expect(
-        sql[source ? "account" : "accounts"][0][
-          source ? "accountId" : "account_id"
-        ],
-      ).toBe("batch-subject");
+      expect(sql[source ? "account" : "accounts"][0][source ? "accountId" : "account_id"]).toBe(
+        "batch-subject",
+      );
       await archive(ctx, `${provider}-override`, { before, after });
       return { before: ctx.snapshot(before), after: ctx.snapshot(after) };
     },
@@ -600,23 +480,15 @@ for (const provider of ["spotify", "wechat", "vercel"] as const) {
         expect(token.error).toBeNull();
         expect(token.data?.accessToken).toBe("callback-access");
         expect(token.data?.refreshToken).toBe("callback-refresh");
-        expect(callbacks).toEqual([
-          { kind: "refresh", provider, refreshToken: "batch-refresh" },
-        ]);
+        expect(callbacks).toEqual([{ kind: "refresh", provider, refreshToken: "batch-refresh" }]);
         const after: any = await read(ctx, "sql-state");
         expect(
-          after[source ? "account" : "accounts"][0][
-            source ? "accessToken" : "access_token"
-          ],
+          after[source ? "account" : "accounts"][0][source ? "accessToken" : "access_token"],
         ).toBe("callback-access");
         expect(
-          after[source ? "account" : "accounts"][0][
-            source ? "refreshToken" : "refresh_token"
-          ],
+          after[source ? "account" : "accounts"][0][source ? "refreshToken" : "refresh_token"],
         ).toBe("callback-refresh");
-        expect(after[source ? "user" : "users"]).toEqual(
-          sql[source ? "user" : "users"],
-        );
+        expect(after[source ? "user" : "users"]).toEqual(sql[source ? "user" : "users"]);
         expect(after[source ? "session" : "sessions"]).toEqual(
           sql[source ? "session" : "sessions"],
         );

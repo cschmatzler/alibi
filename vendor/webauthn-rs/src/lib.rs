@@ -189,14 +189,13 @@ extern crate tracing;
 
 mod interface;
 
+use crate::interface::*;
 use std::time::Duration;
 use url::Url;
 use uuid::Uuid;
+use webauthn_rs_core::WebauthnCore;
 use webauthn_rs_core::error::{WebauthnError, WebauthnResult};
 use webauthn_rs_core::proto::*;
-use webauthn_rs_core::WebauthnCore;
-
-use crate::interface::*;
 
 /// Fake `CredentialID` generator. See [WebauthnFakeCredentialGenerator](fake::WebauthnFakeCredentialGenerator) for more details.
 pub mod fake {

@@ -31,12 +31,12 @@ compatScenario(
         fetchOptions: { customFetchImpl: transport.fetch },
       });
     }
-    const owner = actor("composed-owner"),
-      consumer = actor("composed-consumer"),
-      guest = actor("composed-guest"),
-      factor = actor("composed-factor");
-    const email = ctx.uniqueEmail("composed-upgrade"),
-      password = "password123";
+    const owner = actor("composed-owner");
+    const consumer = actor("composed-consumer");
+    const guest = actor("composed-guest");
+    const factor = actor("composed-factor");
+    const email = ctx.uniqueEmail("composed-upgrade");
+    const password = "password123";
     const anonymous = await owner.signIn.anonymous();
     expect(anonymous.error).toBeNull();
     const anonymousSession = await owner.getSession();
@@ -93,8 +93,9 @@ compatScenario(
     await cancellationControl("verification-cancel");
     const canceled = await owner.oneTimeToken.generate();
     expect(canceled.error).toBeNull();
-    if (!canceled.data)
+    if (!canceled.data) {
       throw new Error("Source returns the generated token after verification cancellation");
+    }
     expect(
       await ctx.readVerificationState({ identifier: `one-time-token:${canceled.data.token}` }),
     ).toEqual([]);
@@ -124,8 +125,8 @@ compatScenario(
     expect(new Set(devices.data?.map((item) => item.user.id))).toEqual(
       new Set([upgraded.data.user.id, foreign.data!.user.id]),
     );
-    let header: string | null = null,
-      exposed: string | null = null;
+    let header: string | null = null;
+    let exposed: string | null = null;
     const current = await consumer.getSession({
       fetchOptions: {
         onSuccess({ response }) {
@@ -150,8 +151,9 @@ compatScenario(
     expect(foreignAfter).toEqual(foreignBefore);
     const enabled = await consumer.twoFactor.enable({ password });
     expect(enabled.error).toBeNull();
-    if (!enabled.data || !("totpURI" in enabled.data))
+    if (!enabled.data || !("totpURI" in enabled.data)) {
       throw new Error("actual TOTP enrollment required");
+    }
     const code = await generateCurrentTotp(enabled.data.totpURI);
     expect((await consumer.twoFactor.verifyTotp({ code })).error).toBeNull();
     let pendingHeader: string | null = null;
@@ -228,11 +230,12 @@ compatScenario(
       factorTransfer: ctx.snapshot(factorTransfer),
       factorRows,
     };
-    if (process.env.OTT210_PROOF_DIR)
+    if (process.env.OTT210_PROOF_DIR) {
       await Bun.write(
         `${process.env.OTT210_PROOF_DIR}/${new URL(ctx.baseURL).port}.json`,
         JSON.stringify(result, null, 2),
       );
+    }
     return result;
   },
   [

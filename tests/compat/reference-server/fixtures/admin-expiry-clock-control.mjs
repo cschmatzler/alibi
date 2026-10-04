@@ -1,10 +1,11 @@
 import { Database } from "bun:sqlite";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+
+import { APIError } from "@better-auth/core/error";
 import { betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 import { admin } from "better-auth/plugins/admin";
-import { APIError } from "@better-auth/core/error";
 // Explicit fixture clock; published files are untouched. Both constructor and
 // Date.now return the exact same instant; monotonic runtime clocks stay real.
 const RealDate = Date;
@@ -90,13 +91,7 @@ for (const id of [1, 2, 3, 42, 43]) {
     .query(
       "INSERT INTO account(id,accountId,providerId,userId,password,createdAt,updatedAt) VALUES(?,?,'credential',?,'fixture-password',?,?)",
     )
-    .run(
-      id,
-      String(id),
-      id,
-      new Date().toISOString(),
-      new Date().toISOString(),
-    );
+    .run(id, String(id), id, new Date().toISOString(), new Date().toISOString());
 }
 const original = await ctx.internalAdapter.createSession("1");
 await ctx.internalAdapter.createSession("42");
@@ -108,9 +103,7 @@ const snapshot = () =>
     ]),
   );
 const signed = encodeURIComponent(
-  original.token +
-    "." +
-    createHmac("sha256", secret).update(original.token).digest("base64"),
+  original.token + "." + createHmac("sha256", secret).update(original.token).digest("base64"),
 );
 for (const [m, delta, target, status, expected, cleared, inserted] of [
   [0, 0, "00042", 403, [], false, false],
@@ -124,36 +117,12 @@ for (const [m, delta, target, status, expected, cleared, inserted] of [
     true,
     true,
   ],
-  [
-    1,
-    -1,
-    "00042",
-    409,
-    ["user-before", "user-after", "session-before"],
-    true,
-    false,
-  ],
-  [
-    2,
-    -1,
-    "00042",
-    500,
-    ["user-before", "user-after", "session-before"],
-    true,
-    false,
-  ],
+  [1, -1, "00042", 409, ["user-before", "user-after", "session-before"], true, false],
+  [2, -1, "00042", 500, ["user-before", "user-after", "session-before"], true, false],
   [3, -1, "00042", 409, ["user-before"], false, false],
   [4, -1, "00042", 409, ["user-before", "user-after"], true, false],
   [5, 0, "43", 200, ["session-before", "session-after"], false, true],
-  [
-    6,
-    -1,
-    "00042",
-    500,
-    ["user-before", "user-after", "session-before"],
-    true,
-    false,
-  ],
+  [6, -1, "00042", 500, ["user-before", "user-after", "session-before"], true, false],
   [
     7,
     -1,
@@ -177,9 +146,7 @@ for (const [m, delta, target, status, expected, cleared, inserted] of [
 ]) {
   mode = m;
   database
-    .query(
-      "UPDATE user SET banned=1,banReason='boundary',banExpires=?,updatedAt=? WHERE id=42",
-    )
+    .query("UPDATE user SET banned=1,banReason='boundary',banExpires=?,updatedAt=? WHERE id=42")
     .run(new Date(clockMs + delta).toISOString(), new Date().toISOString());
   events.length = 0;
   const before = snapshot();

@@ -97,6 +97,14 @@ fn req(method: HttpMethod, path: &str, host: &str, trust: &str, body: Value) -> 
     r.body = Some(body.to_string().into_bytes());
     r.with_url(url::Url::parse(&format!("https://{host}/api/auth{path}")).unwrap())
 }
+// Keep the composed callback scenario's polling frame small on the default
+// test-thread stack; dispatch still executes the same public request boundary.
+async fn dispatch<S: AuthSchema>(
+    auth: &BetterAuth<S>,
+    request: AuthRequest,
+) -> AuthResult<AuthResponse> {
+    Box::pin(auth.handle_request(request)).await
+}
 async fn issuer() -> (String, tokio::task::JoinHandle<()>, Arc<Mutex<Vec<Value>>>) {
     use axum::{
         Form, Json, Router,
@@ -144,7 +152,7 @@ async fn start<S: AuthSchema>(
     if let Some(cookie) = cookie {
         _ = r.headers.insert("cookie".into(), cookie.into());
     }
-    let response = auth.handle_request(r).await.unwrap();
+    let response = dispatch(auth, r).await.unwrap();
     assert_eq!(
         response.status,
         200,
@@ -272,15 +280,11 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
         ("allow", "deny", "allow", true),
     ] {
         let (state, cookies, start) = start(&auth, code, start_trust, None).await;
-        let response = auth
-            .handle_request(callback(
-                code,
-                "a.example.test",
-                callback_trust,
-                &state,
-                &cookies,
-            ))
-            .await?;
+        let response = dispatch(
+            &auth,
+            callback(code, "a.example.test", callback_trust, &state, &cookies),
+        )
+        .await?;
         assert_eq!(response.status, 302);
         let location = response.headers.get("location").unwrap();
         assert_eq!(
@@ -305,15 +309,11 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
                 .await?
                 .is_none()
         );
-        let replay = auth
-            .handle_request(callback(
-                code,
-                "a.example.test",
-                callback_trust,
-                &state,
-                &cookies,
-            ))
-            .await?;
+        let replay = dispatch(
+            &auth,
+            callback(code, "a.example.test", callback_trust, &state, &cookies),
+        )
+        .await?;
         assert!(!replay.headers.get("location").unwrap().ends_with("/done"));
         receipts.push(json!({"case":code,"start":start,"callbackLocation":location,"cookies":response.headers.get_all("set-cookie").collect::<Vec<_>>(),"replay":replay.headers.get("location")}));
     }
@@ -323,7 +323,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
     let mut allowed = callback("parallel-allow", "b.example.test", "allow", &as_, &ac);
     _ = denied.headers.insert("x-overlap".into(), "yes".into());
     _ = allowed.headers.insert("x-overlap".into(), "yes".into());
-    let (denied, allowed) = tokio::join!(auth.handle_request(denied), auth.handle_request(allowed));
+    let (denied, allowed) = tokio::join!(dispatch(&auth, denied), dispatch(&auth, allowed));
     assert_eq!(
         denied?.headers.get("location").unwrap(),
         "https://a.example.test/failed?error=account_not_linked"
@@ -379,15 +379,11 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
     );
     let (state, cookies, start) = start(&auth, "actor", "allow", Some(&session_cookie)).await;
     let cookies = format!("{cookies}; {session_cookie}");
-    let foreign_result = auth
-        .handle_request(callback(
-            "actor",
-            "a.example.test",
-            "allow",
-            &state,
-            &cookies,
-        ))
-        .await?;
+    let foreign_result = dispatch(
+        &auth,
+        callback("actor", "a.example.test", "allow", &state, &cookies),
+    )
+    .await?;
     assert_eq!(
         foreign_result.headers.get("location").unwrap(),
         "https://a.example.test/failed?error=account_already_linked_to_different_user"
@@ -406,15 +402,17 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
     ).await?, 1);
     for mode in ["error", "api-error"] {
         let calls_before = policy.calls.lock().unwrap().len();
-        let failed = auth
-            .handle_request(req(
+        let failed = dispatch(
+            &auth,
+            req(
                 HttpMethod::Post,
                 "/sign-in/social",
                 "a.example.test",
                 mode,
                 json!({"provider":"gitlab"}),
-            ))
-            .await?;
+            ),
+        )
+        .await?;
         assert_eq!(failed.status, 500);
         assert!(failed.body.is_empty());
         assert_eq!(policy.calls.lock().unwrap().len(), calls_before + 1);
