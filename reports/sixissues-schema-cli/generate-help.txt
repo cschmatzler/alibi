@@ -7,7 +7,7 @@ Usage: better-auth-rs generate [OPTIONS]
 Options:
   -b, --backend <BACKEND>
           Store backend to generate entities for
-          
+
           [default: sqlx]
           [possible values: sqlx, seaorm]
 
@@ -16,7 +16,7 @@ Options:
 
   -p, --plugins <PLUGINS>
           Comma-separated list of plugins whose fields to include. Use "all" to include every plugin's fields
-          
+
           [possible values: siwe, jwt, anonymous, phone-number, last-login-method, organization-teams, organization-dynamic-roles, username, two-factor, device-authorization, admin, organization, api-key, passkey, all]
 
   -h, --help

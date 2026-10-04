@@ -19,4 +19,3 @@ test core::schema::generated_api_key::seaorm_schema::generated_seaorm_schema_sup
 test core::schema::generated_api_key::sqlx_schema::generated_sqlx_schema_supports_api_key_creation ... ok
 
 test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 395 filtered out; finished in 0.08s
-

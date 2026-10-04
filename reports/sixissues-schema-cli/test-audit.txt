@@ -40,3 +40,6 @@ Scope: 35 additions / 4 deletions in production CLI and registry, generated
 fixture changes tracked separately from the new boundary tests. No deletion
 store changes, core fixture changes, oracle upgrade or dependency edits.
 Merge, GitHub issue closure and owned cleanup remain with the root after review.
+
+Repository evidence copies have trailing whitespace/blank EOF lines normalized;
+original bytes are preserved under the private artifact directory/raw-logs.

@@ -80,7 +80,7 @@ Usage: better-auth-rs generate [OPTIONS]
 Options:
   -b, --backend <BACKEND>
           Store backend to generate entities for
-          
+
           [default: sqlx]
           [possible values: sqlx, seaorm]
 
