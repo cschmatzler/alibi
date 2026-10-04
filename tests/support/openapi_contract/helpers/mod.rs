@@ -499,8 +499,8 @@ pub fn post_with_auth(path: &str, token: &str) -> AuthRequest {
 // ---------------------------------------------------------------------------
 
 pub async fn send_request(auth: &TestAuth, req: AuthRequest) -> (u16, Value) {
-    let resp = auth
-        .handle_request(req)
+    // Heap-allocate dispatch so composed endpoint scenarios fit the default test stack.
+    let resp = Box::pin(auth.handle_request(req))
         .await
         .unwrap_or_else(|e| panic!("Request should not panic: {e}"));
     let status = resp.status;

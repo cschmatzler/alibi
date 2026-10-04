@@ -291,7 +291,7 @@ compatScenario(
     );
     expect(revokedResponse.status).toBe(200);
     const revoked = await revokedResponse.json();
-    if (process.env.COMPAT_OBSERVATIONS_DIR)
+    if (process.env.COMPAT_OBSERVATIONS_DIR) {
       await Bun.write(
         `${process.env.COMPAT_OBSERVATIONS_DIR}/lifecycle-raw-${new URL(ctx.baseURL).port}.json`,
         JSON.stringify(
@@ -306,6 +306,7 @@ compatScenario(
           2,
         ),
       );
+    }
     expect((await request(cookie.token, signedSession, true)).status).toBe(401);
     const revokedState = await state(ctx);
     expect(revokedState.sessions.some((row) => row.token === session)).toBe(false);
@@ -393,11 +394,12 @@ for (const [suffix, lifetime] of [
         expect(account).not.toContain("HttpOnly");
         expect(account).toContain("SameSite=Strict");
       }
-      if (process.env.COMPAT_OBSERVATIONS_DIR)
+      if (process.env.COMPAT_OBSERVATIONS_DIR) {
         await Bun.write(
           `${process.env.COMPAT_OBSERVATIONS_DIR}/ttl-raw-${new URL(ctx.baseURL).port}-${suffix}.json`,
           JSON.stringify({ raw, compact, payload }, null, 2),
         );
+      }
       const observation = {
         suffix,
         lifetime,

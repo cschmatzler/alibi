@@ -100,7 +100,9 @@ export async function createSiweFixture(
     const options: BetterAuthOptions = {
       ...base,
       basePath: path,
-      ...(name === "siwe-cookie-limit" ? { session: { ...base.session, expiresIn: 34560001 } } : {}),
+      ...(name === "siwe-cookie-limit"
+        ? { session: { ...base.session, expiresIn: 34560001 } }
+        : {}),
       plugins: [
         admin(),
         twoFactor(),

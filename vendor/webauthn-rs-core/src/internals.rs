@@ -3,18 +3,15 @@
 
 use crate::error::WebauthnError;
 use crate::proto::*;
-use serde::Deserialize;
-
 use base64urlsafedata::{Base64UrlSafeData, HumanBinaryData};
-
-use std::borrow::Borrow;
-use std::ops::Deref;
-
 use nom::bytes::complete::{tag, take};
 use nom::combinator::cond;
 use nom::combinator::{map_opt, verify};
 use nom::error::ParseError;
 use nom::number::complete::{be_u16, be_u32, be_u64};
+use serde::Deserialize;
+use std::borrow::Borrow;
+use std::ops::Deref;
 
 /// Representation of a UserId
 pub type UserId = Vec<u8>;
@@ -396,13 +393,26 @@ impl<T: Ceremony> AuthenticatorData<T> {
     /// signed input. Better Auth validates their Source CBOR/iterable admission
     /// separately; Source does not enforce typed extension-specific policy.
     pub fn from_source(bytes: &[u8]) -> Result<Self, WebauthnError> {
-        let (remaining, rp_id_hash) = take::<_, _, nom::error::Error<_>>(32usize)(bytes).map_err(|_| WebauthnError::ParseNOMFailure)?;
-        let (remaining, flags) = authenticator_data_flags(remaining).map_err(|_| WebauthnError::ParseNOMFailure)?;
-        let (remaining, counter) = be_u32::<_, nom::error::Error<_>>(remaining).map_err(|_| WebauthnError::ParseNOMFailure)?;
-        let (_, acd) = cond(flags.1, acd_parser)(remaining).map_err(|_| WebauthnError::ParseNOMFailure)?;
-        Ok(Self { rp_id_hash: rp_id_hash.try_into().map_err(|_| WebauthnError::ParseNOMFailure)?, counter,
-            user_verified: flags.2, user_present: flags.3, backup_eligible: flags.4, backup_state: flags.5,
-            acd, extensions: Default::default() })
+        let (remaining, rp_id_hash) = take::<_, _, nom::error::Error<_>>(32usize)(bytes)
+            .map_err(|_| WebauthnError::ParseNOMFailure)?;
+        let (remaining, flags) =
+            authenticator_data_flags(remaining).map_err(|_| WebauthnError::ParseNOMFailure)?;
+        let (remaining, counter) = be_u32::<_, nom::error::Error<_>>(remaining)
+            .map_err(|_| WebauthnError::ParseNOMFailure)?;
+        let (_, acd) =
+            cond(flags.1, acd_parser)(remaining).map_err(|_| WebauthnError::ParseNOMFailure)?;
+        Ok(Self {
+            rp_id_hash: rp_id_hash
+                .try_into()
+                .map_err(|_| WebauthnError::ParseNOMFailure)?,
+            counter,
+            user_verified: flags.2,
+            user_present: flags.3,
+            backup_eligible: flags.4,
+            backup_state: flags.5,
+            acd,
+            extensions: Default::default(),
+        })
     }
 }
 
@@ -450,11 +460,17 @@ impl<T: Ceremony> AttestationObject<T> {
         let mut decoder = serde_cbor_2::de::Deserializer::from_slice(bytes);
         let object: serde_cbor_2::Value = serde::Deserialize::deserialize(&mut decoder)?;
         let _ = object;
-        let inner: AttestationObjectInner = serde_cbor_2::from_slice(&bytes[..decoder.byte_offset()])?;
+        let inner: AttestationObjectInner =
+            serde_cbor_2::from_slice(&bytes[..decoder.byte_offset()])?;
         let auth_data_bytes = inner.auth_data.to_owned();
-        Ok(Self { fmt: inner.fmt.to_owned(), att_stmt: inner.att_stmt,
-            auth_data: AuthenticatorData::from_source(&auth_data_bytes)?, auth_data_bytes,
-            _ep_att: inner.ep_att, _large_blob_key: inner.large_blob_key.map(ToOwned::to_owned) })
+        Ok(Self {
+            fmt: inner.fmt.to_owned(),
+            att_stmt: inner.att_stmt,
+            auth_data: AuthenticatorData::from_source(&auth_data_bytes)?,
+            auth_data_bytes,
+            _ep_att: inner.ep_att,
+            _large_blob_key: inner.large_blob_key.map(ToOwned::to_owned),
+        })
     }
 }
 
@@ -505,10 +521,15 @@ pub(crate) struct AuthenticatorAttestationResponse<T: Ceremony> {
 }
 
 impl<T: Ceremony> AuthenticatorAttestationResponse<T> {
-    pub(crate) fn from_source(aarr: &AuthenticatorAttestationResponseRaw) -> Result<Self, WebauthnError> {
+    pub(crate) fn from_source(
+        aarr: &AuthenticatorAttestationResponseRaw,
+    ) -> Result<Self, WebauthnError> {
         Ok(Self {
             attestation_object: AttestationObject::from_source(aarr.attestation_object.as_ref())?,
-            client_data_json: crate::source_policy::client_data(aarr.client_data_json.as_ref(), "not-supported")?,
+            client_data_json: crate::source_policy::client_data(
+                aarr.client_data_json.as_ref(),
+                "not-supported",
+            )?,
             client_data_json_bytes: aarr.client_data_json.clone().into(),
             transports: aarr.transports.clone(),
         })
@@ -545,11 +566,16 @@ pub(crate) struct AuthenticatorAssertionResponse<T: Ceremony> {
 }
 
 impl<T: Ceremony> AuthenticatorAssertionResponse<T> {
-    pub(crate) fn from_source(aarr: &AuthenticatorAssertionResponseRaw) -> Result<Self, WebauthnError> {
+    pub(crate) fn from_source(
+        aarr: &AuthenticatorAssertionResponseRaw,
+    ) -> Result<Self, WebauthnError> {
         Ok(Self {
             authenticator_data: AuthenticatorData::from_source(aarr.authenticator_data.as_ref())?,
             authenticator_data_bytes: aarr.authenticator_data.clone().into(),
-            client_data: crate::source_policy::client_data(aarr.client_data_json.as_ref(), "notSupported")?,
+            client_data: crate::source_policy::client_data(
+                aarr.client_data_json.as_ref(),
+                "notSupported",
+            )?,
             client_data_bytes: aarr.client_data_json.clone().into(),
             signature: aarr.signature.clone().into(),
             _user_handle: aarr.user_handle.clone().map(Into::into),
@@ -1352,11 +1378,11 @@ impl TryFrom<&[u8]> for TpmVendor {
 mod tests {
     use super::{
         AttestationObject, Authentication, AuthenticatorData, CredentialProtectionPolicy,
-        RegisterPublicKeyCredential, Registration, RegistrationSignedExtensions, TpmsAttest,
-        TpmtPublic, TpmtSignature, TPM_GENERATED_VALUE,
+        RegisterPublicKeyCredential, Registration, RegistrationSignedExtensions,
+        TPM_GENERATED_VALUE, TpmsAttest, TpmtPublic, TpmtSignature,
     };
     use crate::interface::*;
-    use base64::{engine::general_purpose::STANDARD, Engine};
+    use base64::{Engine, engine::general_purpose::STANDARD};
 
     #[test]
     fn deserialise_register_response() {

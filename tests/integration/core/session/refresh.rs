@@ -77,7 +77,7 @@ async fn request(
         );
         req.body = Some(serde_json::to_vec(&body).unwrap());
     }
-    let response = auth.handle_request(req).await.unwrap();
+    let response = Box::pin(auth.handle_request(req)).await.unwrap();
     let body_2 = serde_json::from_slice(&response.body).unwrap();
     (response, body_2)
 }

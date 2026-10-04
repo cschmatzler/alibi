@@ -95,7 +95,7 @@ pub(crate) mod reddit_provider_fixture;
 
 pub(crate) mod provider_batch_fixture;
 
-pub(crate) mod oauth_popup_fixture;
 pub(crate) mod generic_token_params_fixture;
+pub(crate) mod oauth_popup_fixture;
 
 pub(crate) mod generic_discovery_fixture;

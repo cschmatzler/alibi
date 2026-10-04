@@ -93,14 +93,21 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
         .plugin(SkipRefresh)
         .build()
         .await?;
-    let signup = auth.handle_request(request("/sign-up/email", Some(json!({"email":"native172@fixture.test","password":"Password123!","name":"Stateless"})), "")).await?;
+    let signup = Box::pin(auth.handle_request(request(
+        "/sign-up/email",
+        Some(
+            json!({"email":"native172@fixture.test","password":"Password123!","name":"Stateless"}),
+        ),
+        "",
+    )))
+    .await?;
     assert_eq!(signup.status, 200, "{}", body(&signup));
     let cookie = cookies(&signup);
     let issued = body(&signup)["token"].as_str().unwrap().to_owned();
     assert_eq!(db.count("sessions").await?, 0);
     let mut get = request("/get-session", None, &cookie);
     drop(get.query.insert("disableRefresh".into(), "true".into()));
-    let first = auth.handle_request(get).await?;
+    let first = Box::pin(auth.handle_request(get)).await?;
     assert_eq!(first.status, 200, "{}", body(&first));
     let snapshot = body(&first);
     if let Ok(directory) = std::env::var("STATELESS_172_EVIDENCE") {
@@ -120,9 +127,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
     let renewed = cookies(&first);
     assert!(renewed.contains("session_data="));
     assert!(renewed.contains("session_token="));
-    let replay = auth
-        .handle_request(request("/get-session", None, &cookie))
-        .await?;
+    let replay = Box::pin(auth.handle_request(request("/get-session", None, &cookie))).await?;
     assert_eq!(body(&replay), snapshot);
     let mut bypass_before = request("/get-session", None, &cookie);
     drop(
@@ -130,7 +135,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
             .query
             .insert("disableCookieCache".into(), "true".into()),
     );
-    let physical = body(&auth.handle_request(bypass_before).await?);
+    let physical = body(&Box::pin(auth.handle_request(bypass_before)).await?);
     assert_eq!(physical["session"], snapshot["session"]);
     assert_eq!(physical["user"], snapshot["user"]);
     assert_eq!(physical["needsRefresh"], false);
@@ -140,14 +145,11 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
             .headers
             .insert("x-fixture-skip-refresh".into(), "1".into()),
     );
-    assert!(cookies(&auth.handle_request(skipped).await?).is_empty());
-    let logout = auth
-        .handle_request(request("/sign-out", Some(json!({})), &cookie))
-        .await?;
+    assert!(cookies(&Box::pin(auth.handle_request(skipped)).await?).is_empty());
+    let logout =
+        Box::pin(auth.handle_request(request("/sign-out", Some(json!({})), &cookie))).await?;
     assert_eq!(logout.status, 200);
-    let replay = auth
-        .handle_request(request("/get-session", None, &cookie))
-        .await?;
+    let replay = Box::pin(auth.handle_request(request("/get-session", None, &cookie))).await?;
     assert_eq!(body(&replay), snapshot);
     assert_eq!(db.count("sessions").await?, 0);
     let mut bypass = request("/get-session", None, &cookie);
@@ -156,7 +158,10 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
             .query
             .insert("disableCookieCache".into(), "true".into()),
     );
-    assert_eq!(body(&auth.handle_request(bypass).await?), Value::Null);
+    assert_eq!(
+        body(&Box::pin(auth.handle_request(bypass)).await?),
+        Value::Null
+    );
     // A changed deployment version invalidates captured cookies without any SQL authority.
     config.session.cookie_cache.as_mut().unwrap().version = Some(
         better_auth_core::CookieCacheVersion::Literal("retired".into()),
@@ -166,11 +171,7 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
         .build()
         .await?;
     assert_eq!(
-        body(
-            &versioned
-                .handle_request(request("/get-session", None, &cookie))
-                .await?
-        ),
+        body(&Box::pin(versioned.handle_request(request("/get-session", None, &cookie))).await?),
         Value::Null
     );
     // Historical database default still inserts and authoritatively revokes rows.
@@ -180,33 +181,30 @@ async fn stateless_session_lifecycle<B: Backend>(db: Db) -> TestResult {
         .plugin(EmailPasswordPlugin::new())
         .build()
         .await?;
-    let login = durable
-        .handle_request(request(
-            "/sign-in/email",
-            Some(json!({"email":"native172@fixture.test","password":"Password123!"})),
-            "",
-        ))
-        .await?;
+    let login = Box::pin(durable.handle_request(request(
+        "/sign-in/email",
+        Some(json!({"email":"native172@fixture.test","password":"Password123!"})),
+        "",
+    )))
+    .await?;
     assert_eq!(login.status, 200, "{}", body(&login));
     assert_eq!(db.count("sessions").await?, 1);
     let durable_cookie = cookies(&login);
     assert!(
         body(
-            &durable
-                .handle_request(request("/get-session", None, &durable_cookie))
+            &Box::pin(durable.handle_request(request("/get-session", None, &durable_cookie)))
                 .await?
         )
         .is_object()
     );
-    let logout = durable
-        .handle_request(request("/sign-out", Some(json!({})), &durable_cookie))
-        .await?;
+    let logout =
+        Box::pin(durable.handle_request(request("/sign-out", Some(json!({})), &durable_cookie)))
+            .await?;
     assert_eq!(logout.status, 200);
     assert_eq!(db.count("sessions").await?, 0);
     assert_eq!(
         body(
-            &durable
-                .handle_request(request("/get-session", None, &durable_cookie))
+            &Box::pin(durable.handle_request(request("/get-session", None, &durable_cookie)))
                 .await?
         ),
         Value::Null
@@ -242,12 +240,17 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
         .plugin(EmailPasswordPlugin::new())
         .build()
         .await?;
-    let signup = auth.handle_request(request("/sign-up/email", Some(json!({"email":"no-db172@fixture.test","password":"Password123!","name":"No database"})), "")).await?;
+    let signup = Box::pin(auth.handle_request(request(
+        "/sign-up/email",
+        Some(
+            json!({"email":"no-db172@fixture.test","password":"Password123!","name":"No database"}),
+        ),
+        "",
+    )))
+    .await?;
     assert_eq!(signup.status, 200, "{}", body(&signup));
     let cookie = cookies(&signup);
-    let first = auth
-        .handle_request(request("/get-session", None, &cookie))
-        .await?;
+    let first = Box::pin(auth.handle_request(request("/get-session", None, &cookie))).await?;
     assert_eq!(body(&first)["user"]["email"], "no-db172@fixture.test");
     assert_eq!(body(&first)["user"]["tier"], "starter");
     assert!(body(&first)["user"].get("image").is_none());
@@ -270,13 +273,12 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
     let claims = better_auth_core::utils::jwe::decode(SECRET, "better-auth-session", value)?;
     let short_cache =
         better_auth_core::utils::jwe::encode(SECRET, "better-auth-session", &claims, 30.0)?;
-    let renewed = auth
-        .handle_request(request(
-            "/get-session",
-            None,
-            &cookie.replace(value, &short_cache),
-        ))
-        .await?;
+    let renewed = Box::pin(auth.handle_request(request(
+        "/get-session",
+        None,
+        &cookie.replace(value, &short_cache),
+    )))
+    .await?;
     assert_eq!(
         body(&renewed),
         body(&first),
@@ -299,22 +301,23 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
             .query
             .insert("disableCookieCache".into(), "true".into()),
     );
-    assert_eq!(body(&auth.handle_request(bypass).await?), body(&first));
-    let update = auth
-        .handle_request(request(
-            "/update-user",
-            Some(json!({"name":"Updated locally"})),
-            &cookie,
-        ))
-        .await?;
+    assert_eq!(
+        body(&Box::pin(auth.handle_request(bypass)).await?),
+        body(&first)
+    );
+    let update = Box::pin(auth.handle_request(request(
+        "/update-user",
+        Some(json!({"name":"Updated locally"})),
+        &cookie,
+    )))
+    .await?;
     assert_eq!(update.status, 200, "{}", body(&update));
-    let login = auth
-        .handle_request(request(
-            "/sign-in/email",
-            Some(json!({"email":"no-db172@fixture.test","password":"Password123!"})),
-            "",
-        ))
-        .await?;
+    let login = Box::pin(auth.handle_request(request(
+        "/sign-in/email",
+        Some(json!({"email":"no-db172@fixture.test","password":"Password123!"})),
+        "",
+    )))
+    .await?;
     assert_eq!(login.status, 200, "{}", body(&login));
     assert_ne!(body(&signup)["token"], body(&login)["token"]);
     config.session = config.session.stateless();
@@ -324,32 +327,26 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
         .build()
         .await?;
     assert_eq!(
-        body(
-            &restarted
-                .handle_request(request("/get-session", None, &cookie))
-                .await?
-        ),
+        body(&Box::pin(restarted.handle_request(request("/get-session", None, &cookie))).await?),
         body(&first)
     );
-    let disabled_renewal = restarted
-        .handle_request(request(
-            "/get-session",
-            None,
-            &cookie.replace(value, &short_cache),
-        ))
-        .await?;
+    let disabled_renewal = Box::pin(restarted.handle_request(request(
+        "/get-session",
+        None,
+        &cookie.replace(value, &short_cache),
+    )))
+    .await?;
     assert_eq!(body(&disabled_renewal), body(&first));
     assert!(
         cookies(&disabled_renewal).is_empty(),
         "no-database construction preserves explicit refreshCache=false"
     );
-    let failed_login = restarted
-        .handle_request(request(
-            "/sign-in/email",
-            Some(json!({"email":"no-db172@fixture.test","password":"Password123!"})),
-            "",
-        ))
-        .await?;
+    let failed_login = Box::pin(restarted.handle_request(request(
+        "/sign-in/email",
+        Some(json!({"email":"no-db172@fixture.test","password":"Password123!"})),
+        "",
+    )))
+    .await?;
     assert_ne!(failed_login.status, 200);
     Ok(())
 }
@@ -384,12 +381,10 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
             .plugin(better_auth::plugins::BearerPlugin::new())
             .build()
             .await?;
-        let signup = auth.handle_request(request("/sign-up/email", Some(json!({"email":format!("mode{index}@fixture.test"),"password":"Password123!","name":"Policy"})), "")).await?;
+        let signup = Box::pin(auth.handle_request(request("/sign-up/email", Some(json!({"email":format!("mode{index}@fixture.test"),"password":"Password123!","name":"Policy"})), ""))).await?;
         assert_eq!(signup.status, 200, "{}", body(&signup));
         let cookie = cookies(&signup);
-        let read = auth
-            .handle_request(request("/get-session", None, &cookie))
-            .await?;
+        let read = Box::pin(auth.handle_request(request("/get-session", None, &cookie))).await?;
         assert!(body(&read).is_object());
         assert!(
             cookies(&read).is_empty(),
@@ -403,7 +398,7 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
                 .insert("authorization".into(), format!("Bearer {token}")),
         );
         assert_eq!(
-            body(&auth.handle_request(bearer).await?)["user"]["email"],
+            body(&Box::pin(auth.handle_request(bearer)).await?)["user"]["email"],
             format!("mode{index}@fixture.test")
         );
         // Bind cached identity to the separately authenticated token; an unknown
@@ -413,11 +408,7 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
             &sign_cookie_value("unknown-session-token", SECRET),
         );
         assert_eq!(
-            body(
-                &auth
-                    .handle_request(request("/get-session", None, &mismatch))
-                    .await?
-            ),
+            body(&Box::pin(auth.handle_request(request("/get-session", None, &mismatch))).await?),
             Value::Null
         );
         assert_eq!(db.count("sessions").await?, 0);
@@ -429,13 +420,12 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
         .plugin(EmailPasswordPlugin::new())
         .build()
         .await?;
-    let signup = auth
-        .handle_request(request(
-            "/sign-up/email",
-            Some(json!({"email":"keys172@fixture.test","password":"Password123!","name":"Keys"})),
-            "",
-        ))
-        .await?;
+    let signup = Box::pin(auth.handle_request(request(
+        "/sign-up/email",
+        Some(json!({"email":"keys172@fixture.test","password":"Password123!","name":"Keys"})),
+        "",
+    )))
+    .await?;
     assert_eq!(signup.status, 200, "{}", body(&signup));
     let cookie = cookies(&signup);
     let value = cookie
@@ -452,11 +442,7 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
         .build()
         .await?;
     assert_eq!(
-        body(
-            &retained
-                .handle_request(request("/get-session", None, &cookie))
-                .await?
-        ),
+        body(&Box::pin(retained.handle_request(request("/get-session", None, &cookie))).await?),
         Value::Null,
         "signed token uses current key only"
     );
@@ -465,11 +451,7 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
         &sign_cookie_value(&token, next),
     );
     assert_eq!(
-        body(
-            &retained
-                .handle_request(request("/get-session", None, &rebound))
-                .await?
-        )["session"],
+        body(&Box::pin(retained.handle_request(request("/get-session", None, &rebound))).await?)["session"],
         original_session
     );
     config.managed_secrets = Some(ManagedSecrets::new(2, next));
@@ -478,26 +460,16 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
         .build()
         .await?;
     assert_eq!(
-        body(
-            &retired
-                .handle_request(request("/get-session", None, &rebound))
-                .await?
-        ),
+        body(&Box::pin(retired.handle_request(request("/get-session", None, &rebound))).await?),
         Value::Null
     );
     // Real logout removes the in-memory fallback. Authenticated but expired
     // snapshots must then reject both envelope and embedded-session expiry.
-    _ = auth
-        .handle_request(request("/sign-out", Some(json!({})), &cookie))
-        .await?;
+    _ = Box::pin(auth.handle_request(request("/sign-out", Some(json!({})), &cookie))).await?;
     let expired_envelope = jwe::encode(SECRET, "better-auth-session", &original, -60.0)?;
     let expired_cookie = cookie.replace(value, &expired_envelope);
     assert_eq!(
-        body(
-            &auth
-                .handle_request(request("/get-session", None, &expired_cookie))
-                .await?
-        ),
+        body(&Box::pin(auth.handle_request(request("/get-session", None, &expired_cookie))).await?),
         Value::Null
     );
     let mut expired_session = original.clone();
@@ -505,13 +477,12 @@ async fn stateless_policy_boundaries<B: Backend>(db: Db) -> TestResult {
     let expired_value = jwe::encode(SECRET, "better-auth-session", &expired_session, 300.0)?;
     assert_eq!(
         body(
-            &auth
-                .handle_request(request(
-                    "/get-session",
-                    None,
-                    &cookie.replace(value, &expired_value)
-                ))
-                .await?
+            &Box::pin(auth.handle_request(request(
+                "/get-session",
+                None,
+                &cookie.replace(value, &expired_value)
+            )))
+            .await?
         ),
         Value::Null
     );
@@ -532,7 +503,14 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
         .plugin(EmailPasswordPlugin::new())
         .build()
         .await?;
-    let signup = auth.handle_request(request("/sign-up/email", Some(json!({"email":"deferred172@fixture.test","password":"Password123!","name":"Deferred"})), "")).await?;
+    let signup = Box::pin(auth.handle_request(request(
+        "/sign-up/email",
+        Some(
+            json!({"email":"deferred172@fixture.test","password":"Password123!","name":"Deferred"}),
+        ),
+        "",
+    )))
+    .await?;
     assert_eq!(signup.status, 200, "{}", body(&signup));
     let cookie = cookies(&signup);
     let token = body(&signup)["token"].as_str().unwrap().to_owned();
@@ -564,7 +542,7 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
         .await?;
     let mut get = request("/get-session", None, &cookie);
     drop(get.query.insert("disableCookieCache".into(), "true".into()));
-    let deferred = auth.handle_request(get).await?;
+    let deferred = Box::pin(auth.handle_request(get)).await?;
     assert_eq!(body(&deferred)["needsRefresh"], true);
     assert_eq!(
         auth.store()
@@ -579,7 +557,7 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
         post.query
             .insert("disableCookieCache".into(), "true".into()),
     );
-    let refreshed = auth.handle_request(post).await?;
+    let refreshed = Box::pin(auth.handle_request(post)).await?;
     assert_eq!(refreshed.status, 200, "{}", body(&refreshed));
     assert_eq!(body(&refreshed)["session"]["token"], token);
     assert!(
@@ -591,30 +569,23 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
             > near_expiry + chrono::Duration::days(6)
     );
     assert!(cookies(&refreshed).contains("session_data="));
-    let login = auth
-        .handle_request(request(
-            "/sign-in/email",
-            Some(json!({"email":"deferred172@fixture.test","password":"Password123!"})),
-            "",
-        ))
-        .await?;
+    let login = Box::pin(auth.handle_request(request(
+        "/sign-in/email",
+        Some(json!({"email":"deferred172@fixture.test","password":"Password123!"})),
+        "",
+    )))
+    .await?;
     assert_eq!(login.status, 200, "{}", body(&login));
     let other_cookie = cookies(&login);
-    let listed = auth
-        .handle_request(request("/list-sessions", None, &cookie))
-        .await?;
+    let listed = Box::pin(auth.handle_request(request("/list-sessions", None, &cookie))).await?;
     assert_eq!(body(&listed).as_array().unwrap().len(), 2);
-    let revoked = auth
-        .handle_request(request("/revoke-other-sessions", Some(json!({})), &cookie))
-        .await?;
+    let revoked =
+        Box::pin(auth.handle_request(request("/revoke-other-sessions", Some(json!({})), &cookie)))
+            .await?;
     assert_eq!(revoked.status, 200, "{}", body(&revoked));
     assert!(
-        body(
-            &auth
-                .handle_request(request("/get-session", None, &other_cookie))
-                .await?
-        )
-        .is_object(),
+        body(&Box::pin(auth.handle_request(request("/get-session", None, &other_cookie))).await?)
+            .is_object(),
         "captured cached identity survives instance-local revocation"
     );
     let mut bypass = request("/get-session", None, &other_cookie);
@@ -623,10 +594,13 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
             .query
             .insert("disableCookieCache".into(), "true".into()),
     );
-    assert_eq!(body(&auth.handle_request(bypass).await?), Value::Null);
-    let revoke_all = auth
-        .handle_request(request("/revoke-sessions", Some(json!({})), &cookie))
-        .await?;
+    assert_eq!(
+        body(&Box::pin(auth.handle_request(bypass)).await?),
+        Value::Null
+    );
+    let revoke_all =
+        Box::pin(auth.handle_request(request("/revoke-sessions", Some(json!({})), &cookie)))
+            .await?;
     assert_eq!(revoke_all.status, 200, "{}", body(&revoke_all));
     assert!(
         auth.store()

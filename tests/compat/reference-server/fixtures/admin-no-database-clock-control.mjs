@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
+
 import { betterAuth } from "better-auth";
 import { admin } from "better-auth/plugins/admin";
 // Explicit fixture clock; published files are untouched. Both constructor and
@@ -54,9 +55,7 @@ const snapshot = async () =>
     ),
   );
 const signed = encodeURIComponent(
-  original.token +
-    "." +
-    createHmac("sha256", secret).update(original.token).digest("base64"),
+  original.token + "." + createHmac("sha256", secret).update(original.token).digest("base64"),
 );
 for (const path of ["/admin/impersonate-user", "/sign-in/email"]) {
   for (const [delta, status] of [
@@ -117,10 +116,7 @@ for (const path of ["/admin/impersonate-user", "/sign-in/email"]) {
     if (status === 403) assert.deepEqual(after, before);
     else {
       assert.equal(JSON.parse(body).user.id, target.id);
-      assert.equal(
-        (await ctx.internalAdapter.findUserById(target.id)).banned,
-        false,
-      );
+      assert.equal((await ctx.internalAdapter.findUserById(target.id)).banned, false);
     }
   }
 }

@@ -53,7 +53,7 @@ async fn call<S: AuthSchema>(
     );
     drop(req.headers.insert("cookie".into(), cookie.into()));
     req.body = input.map(|v| serde_json::to_vec(&v).unwrap());
-    let response = auth.handle_request(req).await?;
+    let response = Box::pin(auth.handle_request(req)).await?;
     trace.push(json!({"path":path,"status":response.status,"body":String::from_utf8(response.body.clone())?}));
     Ok(response)
 }

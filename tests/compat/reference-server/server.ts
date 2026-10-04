@@ -1077,8 +1077,9 @@ const userValidationFixture = await createUserValidationFixture(database, authOp
 const ottCallbackState = { mode: "success", events: [] as unknown[], serial: 0 };
 function ottCallbackResult(stage: string) {
   if (ottCallbackState.mode === `${stage}-ordinary`) throw new Error("private OTT callback cause");
-  if (ottCallbackState.mode === `${stage}-veto`)
+  if (ottCallbackState.mode === `${stage}-veto`) {
     throw new APIError("FORBIDDEN", { code: "OTT_VETO", message: "OTT callback veto" });
+  }
 }
 const OTT_PROFILE_NAMES = [
   "ott-composed",
@@ -3531,12 +3532,14 @@ const server = Bun.serve({
                 [identifier, SettingsService.getRootCertificates({ identifier })] as const,
             );
             try {
-              for (const identifier of passkeyTrustFormats)
+              for (const identifier of passkeyTrustFormats) {
                 SettingsService.setRootCertificates({ identifier, certificates: [passkeyTestCA] });
+              }
               return await instance.handler(request);
             } finally {
-              for (const [identifier, certificates] of previous)
+              for (const [identifier, certificates] of previous) {
                 SettingsService.setRootCertificates({ identifier, certificates });
+              }
             }
           }
           return instance.handler(request);

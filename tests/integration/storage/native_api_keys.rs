@@ -73,7 +73,7 @@ async fn call<S: AuthSchema>(
     for (key, value) in query {
         drop(req.query.insert((*key).into(), (*value).into()));
     }
-    let response = auth.handle_request(req).await?;
+    let response = Box::pin(auth.handle_request(req)).await?;
     trace.push(json!({"path":path,"status":response.status,"body":String::from_utf8(response.body.clone())?,"cookies":response.headers.get_all("set-cookie").collect::<Vec<_>>()}));
     Ok(response)
 }

@@ -385,17 +385,25 @@ impl<S: AuthSchema> SessionManager<S> {
     #[must_use]
     pub fn extract_session_token(&self, req: &impl SessionRequest) -> Option<String> {
         let header = req.session_headers().get("cookie")?;
-        header.split(';').find_map(|pair| {
-            let (name, value) = pair.split_once('=')?;
-            (crate::utils::javascript::trim(name) == self.config.session.cookie_name)
-                .then(|| crate::utils::javascript::trim(value))
-        })
+        header
+            .split(';')
+            .find_map(|pair| {
+                let (name, value) = pair.split_once('=')?;
+                (crate::utils::javascript::trim(name) == self.config.session.cookie_name)
+                    .then(|| crate::utils::javascript::trim(value))
+            })
             .map(|value| {
                 // Better Call unwraps the first quoted value before verifying;
                 // later duplicates cannot recover an invalid first credential.
-                if value.starts_with('"') { value.get(1..value.len().saturating_sub(1)).unwrap_or("") } else { value }
+                if value.starts_with('"') {
+                    value.get(1..value.len().saturating_sub(1)).unwrap_or("")
+                } else {
+                    value
+                }
             })
-            .and_then(|value| crate::utils::cookie_utils::verify_cookie_value(value, self.config.current_secret()))
+            .and_then(|value| {
+                crate::utils::cookie_utils::verify_cookie_value(value, self.config.current_secret())
+            })
             .filter(|token| !token.is_empty())
     }
 }

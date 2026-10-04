@@ -1,11 +1,10 @@
 //! Fake `CredentialID` generator. See [WebauthnFakeCredentialGenerator] for more details.
 
+use crate::error::WebauthnError;
+use crate::proto::CredentialID;
 use openssl::{hash, pkey, sign};
 use rand::prelude::*;
 use rand_chacha::ChaCha8Rng;
-
-use crate::error::WebauthnError;
-use crate::proto::CredentialID;
 
 /// A trait for implementing custom `CredentialID` distributions. You *must* use the provided
 /// rng for generating `CredentialID`s to ensure that the outputs are deterministic.

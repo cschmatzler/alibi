@@ -1,8 +1,9 @@
+import { Database } from "bun:sqlite";
+import { readFileSync } from "node:fs";
+
 // Run with Bun from the repository root. The published package owns decisions;
 // SQLite records the effects of an application consuming its public role API.
 import { createAccessControl, role } from "better-auth/plugins/access";
-import { Database } from "bun:sqlite";
-import { readFileSync } from "node:fs";
 
 const fixture = JSON.parse(readFileSync("tests/fixtures/access/operators-1.7.6.json", "utf8"));
 const db = new Database(":memory:");
@@ -16,7 +17,7 @@ const custom = ac.newRole(statements);
 const direct = role(statements);
 for (const entry of fixture.cases) {
   const request = entry.insertionOrder
-    ? Object.fromEntries(entry.insertionOrder.map(name => [name, entry.request[name]]))
+    ? Object.fromEntries(entry.insertionOrder.map((name) => [name, entry.request[name]]))
     : entry.request;
   const result = custom.authorize(request, entry.connector);
   const same = direct.authorize(request, entry.connector);
@@ -24,7 +25,10 @@ for (const entry of fixture.cases) {
   if (result.success) db.query("INSERT INTO effects VALUES (?)").run(entry.name);
   entry.expected = result;
 }
-fixture.effects = db.query("SELECT name FROM effects ORDER BY rowid").all().map(row => row.name);
+fixture.effects = db
+  .query("SELECT name FROM effects ORDER BY rowid")
+  .all()
+  .map((row) => row.name);
 if (db.query("SELECT permission FROM grants").get().permission !== fixture.literal) {
   throw new Error("authorization changed literal grants");
 }

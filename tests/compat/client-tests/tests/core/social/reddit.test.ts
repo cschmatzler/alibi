@@ -159,7 +159,9 @@ for (const mode of [
           ? "https://configured.example.invalid"
           : "https://www.reddit.com",
       );
-      expect(url.pathname).toBe(mode === "configured-endpoint" ? "/authorize" : "/api/v1/authorize");
+      expect(url.pathname).toBe(
+        mode === "configured-endpoint" ? "/authorize" : "/api/v1/authorize",
+      );
       expect(url.searchParams.get("response_type")).toBe("code");
       expect(url.searchParams.get("response_mode")).toBeNull();
       expect(url.searchParams.get("login_hint")).toBeNull();
@@ -408,7 +410,11 @@ for (const variant of [
       await control(ctx, { profile: data });
       const flow = await callback(
         ctx,
-        variant === "mapped" ? "social-reddit-mapped" : variant === "mapped-empty-email" ? "social-reddit-mapped-empty-email" : "social-reddit-default",
+        variant === "mapped"
+          ? "social-reddit-mapped"
+          : variant === "mapped-empty-email"
+            ? "social-reddit-mapped-empty-email"
+            : "social-reddit-default",
       );
       expect(flow.response.headers.get("location")).toBe("/dashboard");
       const persisted = await state(ctx);
@@ -417,7 +423,10 @@ for (const variant of [
       expect(persisted.sessions).toHaveLength(1);
       expect(persisted.accounts[0]!.accountId).toBe(String(data.id));
       const mapped = variant === "mapped" || variant === "mapped-empty-email";
-      const email = variant === "mapped" ? "mapped-reddit@example.invalid" : `${data.id}@reddit.placeholder.invalid`;
+      const email =
+        variant === "mapped"
+          ? "mapped-reddit@example.invalid"
+          : `${data.id}@reddit.placeholder.invalid`;
       const name = ["missing-name", "null-name", "empty-name", "zero-name"].includes(variant)
         ? ""
         : variant === "numeric-name"
@@ -510,14 +519,6 @@ for (const variant of [
         data.id = null;
       }
 
-
-
-
-
-
-
-
-
       await control(ctx, {
         profile: data,
         ...(variant === "userinfo-status" ? { profileStatus: 500 } : {}),
@@ -539,10 +540,10 @@ for (const variant of [
         new URL(flow.response.headers.get("location")!, ctx.baseURL).searchParams.get("error"),
       ).toBe(
         variant.startsWith("token-") || variant === "missing-secret"
-            ? "invalid_code"
-            : variant.endsWith("disabled")
-              ? "signup_disabled"
-              : "unable_to_get_user_info",
+          ? "invalid_code"
+          : variant.endsWith("disabled")
+            ? "signup_disabled"
+            : "unable_to_get_user_info",
       );
 
       const after = await state(ctx);
@@ -690,38 +691,50 @@ compatScenario(
   ["POST /sign-in/social", "GET /callback/{}"],
 );
 
-compatScenario("reddit caller duration overrides configured duration without changing proof", async (ctx) => {
-  const result = await ctx.actor("reddit", "social-reddit-permanent").client.signIn.social({
-    provider: "reddit",
-    additionalParams: { duration: "temporary", custom: "value" },
-  });
-  expect(result.error).toBeNull();
-  const url = new URL(result.data!.url!);
-  expect(url.searchParams.get("duration")).toBe("temporary");
-  expect(url.searchParams.get("scope")).toBe("identity");
-  expect(url.searchParams.get("code_challenge")).toBeNull();
-  expect(url.searchParams.get("state")).toBeTruthy();
-  expect(await receipts(ctx)).toEqual([]);
-  return { result: ctx.snapshot(result), persisted: await state(ctx) };
-});
+compatScenario(
+  "reddit caller duration overrides configured duration without changing proof",
+  async (ctx) => {
+    const result = await ctx.actor("reddit", "social-reddit-permanent").client.signIn.social({
+      provider: "reddit",
+      additionalParams: { duration: "temporary", custom: "value" },
+    });
+    expect(result.error).toBeNull();
+    const url = new URL(result.data!.url!);
+    expect(url.searchParams.get("duration")).toBe("temporary");
+    expect(url.searchParams.get("scope")).toBe("identity");
+    expect(url.searchParams.get("code_challenge")).toBeNull();
+    expect(url.searchParams.get("state")).toBeTruthy();
+    expect(await receipts(ctx)).toEqual([]);
+    return { result: ctx.snapshot(result), persisted: await state(ctx) };
+  },
+);
 
-compatScenario("reddit existing account info keeps persisted original subject after invalid mapped profile", async (ctx) => {
-  await control(ctx, { profile: profile(ctx) });
-  const flow = await callback(ctx, "social-reddit-mapped");
-  expect(flow.response.headers.get("location")).toBe("/dashboard");
-  const before = await state(ctx);
-  const data = { ...profile(ctx), id: null, applicationField: "read-only original" };
-  await control(ctx, { profile: data });
-  const info = await flow.actor.client.$fetch("/account-info", {
-    query: { accountId: String(before.accounts[0]!.id) },
-  });
-  expect(info.error).toBeNull();
-  expect(info.data).toMatchObject({
-    user: { id: "cannot-replace-account-subject", email: "mapped-reddit@example.invalid" },
-    data,
-    account: { accountId: before.accounts[0]!.accountId },
-  });
-  expect(await state(ctx)).toEqual(before);
-  expect(await receipts(ctx)).toHaveLength(3);
-  return { before, after: await state(ctx), info: ctx.snapshot(info), receipts: await receipts(ctx) };
-}, ["GET /account-info"]);
+compatScenario(
+  "reddit existing account info keeps persisted original subject after invalid mapped profile",
+  async (ctx) => {
+    await control(ctx, { profile: profile(ctx) });
+    const flow = await callback(ctx, "social-reddit-mapped");
+    expect(flow.response.headers.get("location")).toBe("/dashboard");
+    const before = await state(ctx);
+    const data = { ...profile(ctx), id: null, applicationField: "read-only original" };
+    await control(ctx, { profile: data });
+    const info = await flow.actor.client.$fetch("/account-info", {
+      query: { accountId: String(before.accounts[0]!.id) },
+    });
+    expect(info.error).toBeNull();
+    expect(info.data).toMatchObject({
+      user: { id: "cannot-replace-account-subject", email: "mapped-reddit@example.invalid" },
+      data,
+      account: { accountId: before.accounts[0]!.accountId },
+    });
+    expect(await state(ctx)).toEqual(before);
+    expect(await receipts(ctx)).toHaveLength(3);
+    return {
+      before,
+      after: await state(ctx),
+      info: ctx.snapshot(info),
+      receipts: await receipts(ctx),
+    };
+  },
+  ["GET /account-info"],
+);

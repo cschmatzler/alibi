@@ -15,8 +15,9 @@ const auth = betterAuth({
   },
   hooks: {
     before: createAuthMiddleware(async (ctx) => {
-      if (ctx.headers?.get("x-fixture-skip-refresh") === "1")
+      if (ctx.headers?.get("x-fixture-skip-refresh") === "1") {
         await setShouldSkipSessionRefresh(true);
+      }
     }),
   },
 });

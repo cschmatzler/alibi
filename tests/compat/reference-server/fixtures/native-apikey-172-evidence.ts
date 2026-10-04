@@ -43,8 +43,8 @@ const signup = await call("/sign-up/email", {
   email: "apikey172@fixture.test",
   password: "Password123!",
 });
-const owner = signup.body.user.id,
-  cookie = cookies(signup.response);
+const owner = signup.body.user.id;
+const cookie = cookies(signup.response);
 const other = await call("/sign-up/email", {
   name: "Other",
   email: "foreignkey172@fixture.test",
@@ -85,11 +85,12 @@ const permission = await auth.api.verifyApiKey({
   body: { key: limited.key, permissions: { files: ["write"] } },
 });
 const permissionRow = structuredClone(await find(limited.id));
-for (let i = 0; i < 2; i++)
+for (let i = 0; i < 2; i++) {
   trace.push({
     operation: "verifyApiKey",
     body: await auth.api.verifyApiKey({ body: { key: limited.key } }),
   });
+}
 const limitedRow = structuredClone(await find(limited.id));
 await context.adapter.update({
   model: "apikey",
@@ -108,12 +109,13 @@ for (const [keyId, ownerCookie] of [
   [id, cookie],
   [billing.body.id, cookie],
   [foreign.body.id, foreignCookie],
-])
+]) {
   await call(
     "/api-key/delete",
     { keyId, configId: keyId === billing.body.id ? "billing" : "default" },
     ownerCookie,
   );
+}
 const retained = await auth.api.createApiKey({
   body: {
     userId: owner,
@@ -146,8 +148,8 @@ const nullCounter = await context.adapter.incrementOne({
   ],
   increment: { requestCount: 1 },
 });
-const restarted = betterAuth(options),
-  restartContext = await restarted.$context;
+const restarted = betterAuth(options);
+const restartContext = await restarted.$context;
 const lost = await restartContext.adapter.findOne({
   model: "apikey",
   where: [{ field: "id", value: retained.id }],
