@@ -12,7 +12,7 @@ Install dependencies with `pnpm install` and enter `devenv shell` for Bun and SO
 pnpm docs:secrets:edit
 ```
 
-Use a Railway account token; the stack manages the `better-auth-rs` project. Cloudflare hosts Alchemy's encrypted state under the `better-auth-rs` profile. Keep this profile and the `prod` stage consistent when planning, deploying, and destroying.
+Use a Railway account token; the stack manages the `better-auth-rs` project. The Cloudflare token needs Zone Read and DNS Edit permissions for `schmatzler.com`, in addition to its existing state-store permissions. Cloudflare hosts Alchemy's encrypted state under the `better-auth-rs` profile. Keep this profile and the `prod` stage consistent when planning, deploying, and destroying.
 
 ## Deploy
 
@@ -25,9 +25,9 @@ pnpm docs:plan
 pnpm docs:deploy
 ```
 
-The first command that accesses remote state may bootstrap Alchemy's Cloudflare state store. Deployment creates the Railway project and docs service. The docs are live at [betterauw2n43ibxrvdioxbqmvfbcm7r-production.up.railway.app](https://betterauw2n43ibxrvdioxbqmvfbcm7r-production.up.railway.app).
+The first command that accesses remote state may bootstrap Alchemy's Cloudflare state store. Deployment creates the Railway project and docs service. The docs are live at [better-auth-rs.schmatzler.com](https://better-auth-rs.schmatzler.com).
 
-Railway generates a public hostname by default. To use a custom hostname, set `DOCS_DOMAIN=docs.example.com` in `.env.production.local` before planning. Alchemy attaches the domain and uses it as Astro's canonical site URL. Add the DNS records Railway requests to verify ownership and enable HTTPS. Use the same domain configuration on later deployments.
+The production hostname is configured as `DOCS_DOMAIN=better-auth-rs.schmatzler.com` in `.env.production`. To override it, set `DOCS_DOMAIN=docs.example.com` in `.env.production.local` before planning. Set `DOCS_DNS_ZONE_ID` to the existing Cloudflare zone containing that hostname when overriding the domain. Alchemy attaches the domain, uses it as Astro's canonical site URL, and manages the CNAME and ownership TXT records from Railway's required DNS values. The CNAME uses DNS-only mode so Railway can verify ownership and issue HTTPS certificates. Use the same domain and zone configuration on later deployments.
 
 To remove the docs deployment:
 

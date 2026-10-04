@@ -6,13 +6,19 @@ settings:
 
 patchedDependencies:
   alchemy@2.0.0-beta.80:
-    hash: 0f60224091f0e2d6bce02822dfe7312790c862b6b1dada92fad54eb58daaa081
+    hash: e99b65a2f8ec3f21fc71ea3d730eba4307a4b1e80a4ff6fec9e86b14fe31a2f6
     path: patches/alchemy@2.0.0-beta.80.patch
 
 importers:
 
   .:
     devDependencies:
+      '@distilled.cloud/core':
+        specifier: 1.0.0-rc.13
+        version: 1.0.0-rc.13(effect@4.0.0)
+      '@distilled.cloud/railway':
+        specifier: 1.0.0-rc.13
+        version: 1.0.0-rc.13(effect@4.0.0)
       '@effect/platform-bun':
         specifier: 4.0.0
         version: 4.0.0(effect@4.0.0)
@@ -27,7 +33,7 @@ importers:
         version: 26.6.3
       alchemy:
         specifier: 2.0.0-beta.80
-        version: 2.0.0-beta.80(patch_hash=0f60224091f0e2d6bce02822dfe7312790c862b6b1dada92fad54eb58daaa081)(@alchemy.run/frontend-frameworks@2.0.0-beta.80(@effect/platform-bun@4.0.0(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.3.0))(@types/node@26.6.3)(astro@7.3.5(@types/node@26.6.3)(yaml@2.9.1))(effect@4.0.0)(hono@4.12.14)(typescript@6.0.3)(vite@8.3.2(@types/node@26.6.3)(esbuild@0.28.2)(yaml@2.9.1)))(@effect/platform-bun@4.0.0(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.3.0))(@types/node@26.6.3)(effect@4.0.0)(hono@4.12.14)(typescript@6.0.3)(vite@8.3.2(@types/node@26.6.3)(esbuild@0.28.2)(yaml@2.9.1))(ws@8.22.0)
+        version: 2.0.0-beta.80(patch_hash=e99b65a2f8ec3f21fc71ea3d730eba4307a4b1e80a4ff6fec9e86b14fe31a2f6)(@alchemy.run/frontend-frameworks@2.0.0-beta.80(@effect/platform-bun@4.0.0(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.3.0))(@types/node@26.6.3)(astro@7.3.5(@types/node@26.6.3)(yaml@2.9.1))(effect@4.0.0)(hono@4.12.14)(typescript@6.0.3)(vite@8.3.2(@types/node@26.6.3)(esbuild@0.28.2)(yaml@2.9.1)))(@effect/platform-bun@4.0.0(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.3.0))(@types/node@26.6.3)(effect@4.0.0)(hono@4.12.14)(typescript@6.0.3)(vite@8.3.2(@types/node@26.6.3)(esbuild@0.28.2)(yaml@2.9.1))(ws@8.22.0)
       effect:
         specifier: 4.0.0
         version: 4.0.0
@@ -4244,7 +4250,7 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  alchemy@2.0.0-beta.80(patch_hash=0f60224091f0e2d6bce02822dfe7312790c862b6b1dada92fad54eb58daaa081)(@alchemy.run/frontend-frameworks@2.0.0-beta.80(@effect/platform-bun@4.0.0(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.3.0))(@types/node@26.6.3)(astro@7.3.5(@types/node@26.6.3)(yaml@2.9.1))(effect@4.0.0)(hono@4.12.14)(typescript@6.0.3)(vite@8.3.2(@types/node@26.6.3)(esbuild@0.28.2)(yaml@2.9.1)))(@effect/platform-bun@4.0.0(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.3.0))(@types/node@26.6.3)(effect@4.0.0)(hono@4.12.14)(typescript@6.0.3)(vite@8.3.2(@types/node@26.6.3)(esbuild@0.28.2)(yaml@2.9.1))(ws@8.22.0):
+  alchemy@2.0.0-beta.80(patch_hash=e99b65a2f8ec3f21fc71ea3d730eba4307a4b1e80a4ff6fec9e86b14fe31a2f6)(@alchemy.run/frontend-frameworks@2.0.0-beta.80(@effect/platform-bun@4.0.0(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.3.0))(@types/node@26.6.3)(astro@7.3.5(@types/node@26.6.3)(yaml@2.9.1))(effect@4.0.0)(hono@4.12.14)(typescript@6.0.3)(vite@8.3.2(@types/node@26.6.3)(esbuild@0.28.2)(yaml@2.9.1)))(@effect/platform-bun@4.0.0(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.3.0))(@types/node@26.6.3)(effect@4.0.0)(hono@4.12.14)(typescript@6.0.3)(vite@8.3.2(@types/node@26.6.3)(esbuild@0.28.2)(yaml@2.9.1))(ws@8.22.0):
     dependencies:
       '@alchemy.run/cloudflare-runtime': 2.0.0-beta.80(@distilled.cloud/cloudflare@1.0.0-rc.13(effect@4.0.0))(@effect/platform-bun@4.0.0(effect@4.0.0))(@effect/platform-node@4.0.0(effect@4.0.0)(redis@6.3.0))(@types/node@26.6.3)(effect@4.0.0)(rolldown@1.2.5)(typescript@6.0.3)(vite@8.3.2(@types/node@26.6.3)(esbuild@0.28.2)(yaml@2.9.1))
       '@alchemy.run/floci': 2.0.0-beta.80(effect@4.0.0)
