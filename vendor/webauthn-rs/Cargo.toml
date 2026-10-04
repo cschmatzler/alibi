@@ -91,4 +91,5 @@ package = "better-auth-webauthn-core"
 version = "1.0.0-alpha.3"
 path = "../webauthn-rs-core"
 
-[dev-dependencies]
+[dev-dependencies.webauthn-rs-device-catalog]
+version = "=0.5.0-20230418"

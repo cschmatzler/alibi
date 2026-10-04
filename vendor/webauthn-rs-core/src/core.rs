@@ -613,36 +613,6 @@ impl WebauthnCore {
             .as_ref()
             .ok_or(WebauthnError::MissingAttestationCredentialData)?;
 
-        if self.source_policy.is_none() {
-            // Preserve the locked verifier's historical crypto admission. The
-            // expanded selectors and certificate key types belong to Source.
-            let key = COSEKey::try_from(&acd.credential_pk)?;
-            if matches!(&key.key, COSEKeyType::RSA(rsa) if key.type_ != COSEAlgorithm::RS256 || rsa.n.len() != 256 || rsa.e.len() != 3)
-            {
-                return Err(WebauthnError::COSEKeyInvalidType);
-            }
-            if matches!(attest_format, AttestationFormat::Tpm) {
-                return Err(WebauthnError::COSEKeyInvalidType);
-            }
-            if matches!(
-                attest_format,
-                AttestationFormat::AndroidKey | AttestationFormat::AppleAnonymous
-            ) && !matches!(key.key, COSEKeyType::EC_EC2(_))
-            {
-                return Err(WebauthnError::COSEKeyInvalidType);
-            }
-            let algorithm = match &data.attestation_object.att_stmt {
-                serde_cbor_2::Value::Map(statement) => {
-                    statement.get(&serde_cbor_2::Value::Text("alg".into()))
-                }
-                _ => None,
-            };
-            if matches!(algorithm, Some(serde_cbor_2::Value::Integer(value)) if !matches!(*value, -7 | -257 | -8))
-            {
-                return Err(WebauthnError::COSEKeyInvalidType);
-            }
-        }
-
         if let Some(policy) = &self.source_policy {
             policy.check_leaf(&data.attestation_object)?;
         }
@@ -717,6 +687,33 @@ impl WebauthnCore {
 
         if let Some(policy) = &self.source_policy {
             policy.verify_path(&data.attestation_object.fmt, &attestation_data)?;
+        }
+
+        if self.source_policy.is_none() {
+            // Preserve the locked verifier's historical crypto admission. The
+            // expanded selectors and certificate key types belong to Source.
+            let key = COSEKey::try_from(&acd.credential_pk)?;
+            if matches!(&key.key, COSEKeyType::RSA(rsa) if key.type_ != COSEAlgorithm::RS256 || rsa.n.len() != 256 || rsa.e.len() != 3)
+            {
+                return Err(WebauthnError::COSEKeyInvalidType);
+            }
+            if matches!(
+                attest_format,
+                AttestationFormat::AndroidKey | AttestationFormat::AppleAnonymous
+            ) && !matches!(key.key, COSEKeyType::EC_EC2(_))
+            {
+                return Err(WebauthnError::COSEKeyInvalidType);
+            }
+            let algorithm = match &data.attestation_object.att_stmt {
+                serde_cbor_2::Value::Map(statement) => {
+                    statement.get(&serde_cbor_2::Value::Text("alg".into()))
+                }
+                _ => None,
+            };
+            if matches!(algorithm, Some(serde_cbor_2::Value::Integer(value)) if !matches!(*value, -7 | -257 | -8))
+            {
+                return Err(WebauthnError::COSEKeyInvalidType);
+            }
         }
 
         let credential: Credential = Credential::new(

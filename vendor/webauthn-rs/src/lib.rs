@@ -819,9 +819,22 @@ impl Webauthn {
     /// use webauthn_rs_device_catalog::Data;
     /// let device_catalog = Data::strict();
     ///
-    /// let attestation_ca_list = (&device_catalog)
-    ///     .try_into()
-    ///     .expect("Failed to build attestation ca list");
+    /// // The published catalog uses an older CA-list type. Import its trust
+    /// // anchors and device IDs through the current public builder.
+    /// let mut ca_builder = AttestationCaListBuilder::new();
+    /// for device in device_catalog.iter() {
+    ///     for authority in &device.aaguid.ca {
+    ///         ca_builder
+    ///             .insert_device_x509(
+    ///                 authority.ca.clone(),
+    ///                 device.aaguid.id,
+    ///                 device.skus[0].display_name.clone(),
+    ///                 Default::default(),
+    ///             )
+    ///             .expect("Failed to import attestation CA");
+    ///     }
+    /// }
+    /// let attestation_ca_list = ca_builder.build();
     ///
     /// let (ccr, skr) = webauthn
     ///     .start_securitykey_registration(
@@ -1096,9 +1109,22 @@ impl Webauthn {
     /// // Create a device catalog reference that contains a list of known high quality authenticators
     /// let device_catalog = Data::all_known_devices();
     ///
-    /// let attestation_ca_list = (&device_catalog)
-    ///     .try_into()
-    ///     .expect("Failed to build attestation ca list");
+    /// // The published catalog uses an older CA-list type. Import its trust
+    /// // anchors and device IDs through the current public builder.
+    /// let mut ca_builder = AttestationCaListBuilder::new();
+    /// for device in device_catalog.iter() {
+    ///     for authority in &device.aaguid.ca {
+    ///         ca_builder
+    ///             .insert_device_x509(
+    ///                 authority.ca.clone(),
+    ///                 device.aaguid.id,
+    ///                 device.skus[0].display_name.clone(),
+    ///                 Default::default(),
+    ///             )
+    ///             .expect("Failed to import attestation CA");
+    ///     }
+    /// }
+    /// let attestation_ca_list = ca_builder.build();
     ///
     /// // Initiate a basic registration flow, allowing any attested cryptograhpic authenticator to proceed.
     /// // Hint (but do not enforce) that we prefer this to be a token/key like a yubikey.
@@ -1121,9 +1147,22 @@ impl Webauthn {
     ///
     /// let device_catalog = Data::strict();
     ///
-    /// let attestation_ca_list = (&device_catalog)
-    ///     .try_into()
-    ///     .expect("Failed to build attestation ca list");
+    /// // The published catalog uses an older CA-list type. Import its trust
+    /// // anchors and device IDs through the current public builder.
+    /// let mut ca_builder = AttestationCaListBuilder::new();
+    /// for device in device_catalog.iter() {
+    ///     for authority in &device.aaguid.ca {
+    ///         ca_builder
+    ///             .insert_device_x509(
+    ///                 authority.ca.clone(),
+    ///                 device.aaguid.id,
+    ///                 device.skus[0].display_name.clone(),
+    ///                 Default::default(),
+    ///             )
+    ///             .expect("Failed to import attestation CA");
+    ///     }
+    /// }
+    /// let attestation_ca_list = ca_builder.build();
     ///
     /// let (ccr, skr) = webauthn
     ///     .start_attested_passkey_registration(

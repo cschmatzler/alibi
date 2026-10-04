@@ -861,6 +861,14 @@ pub(crate) fn verify_tpm_attestation(
 
     // Verify that extraData is set to the hash of attToBeSigned using the hash algorithm
     // employed in "alg".
+    // The upstream default verifier rejects at this hashing stage. Source
+    // ceremonies opt into the extended hash algorithms below.
+    if !source_policy {
+        return Err(match alg {
+            COSEAlgorithm::INSECURE_RS1 => WebauthnError::CredentialInsecureCryptography,
+            _ => WebauthnError::COSEKeyInvalidType,
+        });
+    }
     let hash_verification_data = only_hash_from_type(alg, verification_data.as_slice())?;
 
     if hash_verification_data != extra_data_hash {
