@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 static DATABASE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 use better_auth_seaorm::{Database, DatabaseConnection};
 
-fn options() -> ConnectOptions {
+pub(crate) fn options() -> ConnectOptions {
     let name = format!(
         "file:better-auth-fixture-{}-{}",
         std::process::id(),
@@ -106,37 +106,115 @@ mod tests {
         );
     }
 
-    // Accelerate enabled/default retirement policies while preserving disabled
-    // policies. This exercises the real driver without waiting its 10/30-minute
-    // defaults; no mock storage or authentication fixture state is supplied.
+    // Exercise the real pool's retirement, not a mock store. Accelerate inherited
+    // policies only; explicitly disabled fixture policies must remain disabled.
     #[tokio::test]
     async fn retains_migrations_and_user_identity_across_connection_maintenance() {
-        let mut configured = options();
-        let interval = Duration::from_millis(40);
-        if configured.get_idle_timeout() != Some(None) {
-            configured.idle_timeout(interval);
+        for (label, mut configured, retain) in [
+            (
+                "inherited-defaults",
+                ConnectOptions::new("sqlite::memory:"),
+                false,
+            ),
+            ("persistent-fixture", options(), true),
+        ] {
+            configured.max_connections(1).min_connections(1);
+            let interval = Duration::from_secs(1);
+            if configured.get_idle_timeout() != Some(None) {
+                configured.idle_timeout(interval);
+            }
+            if configured.get_max_lifetime() != Some(None) {
+                configured.max_lifetime(interval);
+            }
+            let database = Database::connect(configured).await.unwrap();
+            crate::backend::migrate(&database).await.unwrap();
+            let config = better_auth::AuthConfig::new(
+                "fixture-database-retention-test-secret-at-least-32chars",
+            );
+            let store = crate::backend::store::<crate::TestSchema>(config, database.clone());
+            let issued = better_auth_core::store::UserStore::create_user(
+                &store,
+                CreateUser::new().with_email("retained@fixture.test"),
+            )
+            .await
+            .unwrap();
+            let pool = database.get_sqlite_connection_pool();
+            // A TEMP table belongs to this physical connection; its random token
+            // distinguishes connection retention from merely recreating schema.
+            sqlx::query(sqlx::AssertSqlSafe(
+                "CREATE TEMP TABLE connection_identity AS SELECT hex(randomblob(16)) AS token",
+            ))
+            .execute(pool)
+            .await
+            .unwrap();
+            let before: String =
+                sqlx::query_scalar(sqlx::AssertSqlSafe("SELECT token FROM connection_identity"))
+                    .fetch_one(pool)
+                    .await
+                    .unwrap();
+            let tables_before: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(
+                "SELECT count(*) FROM sqlite_master WHERE type='table'",
+            ))
+            .fetch_one(pool)
+            .await
+            .unwrap();
+            assert!(tables_before > 0);
+            tokio::time::sleep(Duration::from_millis(2200)).await;
+            let tables_after: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(
+                "SELECT count(*) FROM sqlite_master WHERE type='table'",
+            ))
+            .fetch_one(pool)
+            .await
+            .unwrap();
+            let connection = sqlx::query_scalar::<_, String>(sqlx::AssertSqlSafe(
+                "SELECT token FROM connection_identity",
+            ))
+            .fetch_one(pool)
+            .await;
+            let found =
+                better_auth_core::store::UserStore::get_user_by_id(&store, issued.id().as_ref())
+                    .await;
+            eprintln!(
+                "{label}: tables={tables_before}->{tables_after}; connection={before}->{connection:?}; user={found:?}"
+            );
+            if retain {
+                assert_eq!(tables_after, tables_before);
+                assert_eq!(connection.unwrap(), before);
+                let found = found.unwrap().expect("persisted fixture user must survive");
+                assert_eq!(found.id(), issued.id());
+                assert_eq!(found.email(), issued.email());
+                // A separate fixture must have independent schema and rows.
+                let independent = Database::connect(options()).await.unwrap();
+                crate::backend::migrate(&independent).await.unwrap();
+                let independent_store = crate::backend::store::<crate::TestSchema>(
+                    better_auth::AuthConfig::new(
+                        "fixture-database-isolation-test-secret-at-least-32chars",
+                    ),
+                    independent,
+                );
+                assert!(
+                    better_auth_core::store::UserStore::get_user_by_id(
+                        &independent_store,
+                        issued.id().as_ref(),
+                    )
+                    .await
+                    .unwrap()
+                    .is_none()
+                );
+                eprintln!("persistent-fixture: independent database has no issued user");
+            } else {
+                assert_eq!(
+                    tables_after, 0,
+                    "retirement must reproduce migrated table loss"
+                );
+                assert!(
+                    connection
+                        .unwrap_err()
+                        .to_string()
+                        .contains("no such table")
+                );
+                assert!(found.unwrap_err().to_string().contains("no such table"));
+            }
         }
-        if configured.get_max_lifetime() != Some(None) {
-            configured.max_lifetime(interval);
-        }
-        let database = Database::connect(configured).await.unwrap();
-        crate::backend::migrate(&database).await.unwrap();
-        let config =
-            better_auth::AuthConfig::new("fixture-database-retention-test-secret-at-least-32chars");
-        let store = crate::backend::store::<crate::TestSchema>(config, database);
-        let issued = better_auth_core::store::UserStore::create_user(
-            &store,
-            CreateUser::new().with_email("retained@fixture.test"),
-        )
-        .await
-        .unwrap();
-        tokio::time::sleep(Duration::from_millis(160)).await;
-        let found =
-            better_auth_core::store::UserStore::get_user_by_id(&store, issued.id().as_ref())
-                .await
-                .expect("connection maintenance must preserve migrated fixture tables")
-                .expect("connection maintenance must retain the actual persisted user");
-        assert_eq!(found.id(), issued.id());
-        assert_eq!(found.email(), issued.email());
     }
 }

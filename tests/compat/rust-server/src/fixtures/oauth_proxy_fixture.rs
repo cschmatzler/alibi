@@ -245,10 +245,10 @@ async fn build_router(
         "/__test/oauth-proxy"
     };
     let initial_mode = if managed { "old" } else { "dedicated" };
-    let preview = Database::connect("sqlite::memory:")
+    let preview = Database::connect(crate::sqlite_fixture::options())
         .await
         .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
-    let production = Database::connect("sqlite::memory:")
+    let production = Database::connect(crate::sqlite_fixture::options())
         .await
         .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
     let fixture = Fixture {

@@ -41,7 +41,7 @@ struct Fixture {
 }
 
 pub(crate) async fn router(config: &AuthConfig) -> AuthResult<Router> {
-    let database = Database::connect("sqlite::memory:")
+    let database = Database::connect(crate::sqlite_fixture::options())
         .await
         .map_err(|e| better_auth::AuthError::internal(e.to_string()))?;
     crate::backend::migrate(&database)
