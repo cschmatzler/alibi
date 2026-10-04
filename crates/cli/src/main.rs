@@ -616,9 +616,18 @@ mod tests {
     }
 
     // The checked-in fixtures are compiled and exercised by the integration
-    // tests; regenerate them with `better-auth-rs generate --plugins all`.
+    // tests; regenerate with `better-auth-rs generate`, adding `--plugins all`
+    // for the all-plugin fixtures and selecting the matching backend.
     #[test]
     fn generated_schemas_match_compiled_fixtures() {
+        assert_eq!(
+            generate_schema(&[], Backend::Sqlx),
+            include_str!("../../../tests/fixtures/cli/sqlx_core.rs")
+        );
+        assert_eq!(
+            generate_schema(&[], Backend::Seaorm),
+            include_str!("../../../tests/fixtures/cli/seaorm_core.rs")
+        );
         assert_eq!(
             generate_schema(&all(), Backend::Sqlx),
             include_str!("../../../tests/fixtures/cli/sqlx_all.rs")

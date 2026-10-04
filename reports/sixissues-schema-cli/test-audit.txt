@@ -43,3 +43,16 @@ Merge, GitHub issue closure and owned cleanup remain with the root after review.
 
 Repository evidence copies have trailing whitespace/blank EOF lines normalized;
 original bytes are preserved under the private artifact directory/raw-logs.
+
+Requested core-fixture owner extension:
+The existing generated_schemas_match_compiled_fixtures test now checks zero-plugin
+SQLx and SeaORM output against worker 448's actual core fixtures. This guards the
+link between actual default CLI generation and the fixtures used by the owning
+deletion integration regression: generator drift could otherwise leave that
+regression exercising stale application schemas. The prior owner checked only
+all-plugin output. No new test function, source grep or production seam was added.
+Both fixture files remain owned and committed by PR 457. Local validation uses
+exact copied bytes, records their hashes, and does not claim standalone main
+contains those dependencies yet. The expanded existing owner, focused CLI Clippy
+with warnings denied and formatting pass. PR 457 must provide the fixtures before
+this final CLI source can build on main. Root must qualify the final changed head.

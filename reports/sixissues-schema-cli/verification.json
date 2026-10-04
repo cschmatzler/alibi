@@ -55,5 +55,15 @@
     "No JavaScript files changed; no Bun installation or oracle change needed for these native CLI/schema checks."
   ],
   "coordination": "Worker 448 owns generated.rs, sqlx_core.rs, seaorm_core.rs and user-store deletion paths. This PR does not modify those files. schema/mod.rs only adds generated_api_key.",
-  "review": "Root personal review of the exact PR head is required before merge, issue closure, and owned cleanup. No independent reviewer or subagent was invoked."
+  "review": "Root personal review of the exact PR head is required before merge, issue closure, and owned cleanup. No independent reviewer or subagent was invoked.",
+  "core_fixture_extension": {
+    "owner_test": "generated_schemas_match_compiled_fixtures",
+    "dependency_pr": 457,
+    "proof": "core-fixture-owner-test.log",
+    "dependency_provenance": "core-fixture-dependency.json",
+    "clippy": "core-fixture-clippy.log",
+    "format": "core-fixture-format.log",
+    "scope": "Two assertions and a regeneration comment in the existing CLI owner; no new test function or generated.rs edit.",
+    "qualification": "Additional code delta after root reviewed 58e75e02; final head requires root qualification."
+  }
 }
