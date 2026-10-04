@@ -81,7 +81,7 @@ combined gate remains pending for this capability.
 
 The historical fresh-row evidence below is retained. The subsequent explicit
 operator conversion API for #190 is documented in
-[legacy OAuth token conversion](../../../../../docs/legacy-oauth-token-conversion.md).
+[legacy OAuth token conversion](../../../../../docs/src/content/docs/guides/legacy-oauth-tokens.md).
 It authenticates explicitly classified legacy fields under the original secret
 and uses a trusted ownership manifest plus transactional snapshot CAS in both
 physical adapters. This does not add a live legacy fallback or an automatic

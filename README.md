@@ -72,10 +72,11 @@ The [backend docs](docs/src/content/docs/introduction.md) follow Better Auth's s
 
 Backend topics:
 
-- [Basic usage](docs/src/content/docs/basic-usage.md)
-- [SQLx](docs/src/content/docs/databases/sqlx.md) · [SeaORM](docs/src/content/docs/databases/seaorm.md) · [Existing databases](docs/src/content/docs/guides/existing-databases.md)
-- [Sessions](docs/src/content/docs/concepts/session-management.md) · [Secondary storage](docs/src/content/docs/concepts/secondary-storage.md)
-- [Plugins](docs/src/content/docs/plugins/index.md) · [Options](docs/src/content/docs/reference/options.md) · [Cargo features](docs/src/content/docs/reference/features.md)
+- [Basic usage](docs/src/content/docs/basic-usage.md) · [Server-side calls](docs/src/content/docs/guides/server-side-calls.md) · [Cross-origin applications](docs/src/content/docs/guides/cross-origin.md)
+- [SQLx](docs/src/content/docs/databases/sqlx.md) · [SeaORM](docs/src/content/docs/databases/seaorm.md) · [No database](docs/src/content/docs/databases/no-database.md) · [Existing databases](docs/src/content/docs/databases/existing-databases.md)
+- [Sessions](docs/src/content/docs/concepts/session-management.md) · [Cookies](docs/src/content/docs/concepts/cookies.md) · [Security](docs/src/content/docs/concepts/security.md) · [Rate limiting](docs/src/content/docs/concepts/rate-limit.md) · [Secondary storage](docs/src/content/docs/concepts/secondary-storage.md)
+- [Plugins](docs/src/content/docs/plugins/index.md) · [Social sign-on](docs/src/content/docs/authentication/social-sign-on.md) · [Writing a plugin](docs/src/content/docs/guides/writing-a-plugin.md)
+- [Options](docs/src/content/docs/reference/options.md) · [HTTP API](docs/src/content/docs/reference/http-api.md) · [Cargo features](docs/src/content/docs/reference/features.md) · [CLI](docs/src/content/docs/reference/cli.md)
 - [Compatibility](docs/src/content/docs/reference/compatibility.md) · [API source](https://github.com/cschmatzler/better-auth-rs/tree/main/src)
 
 Run the Astro Starlight site locally with Node.js 22.12+ and pnpm:

@@ -1,11 +1,30 @@
 ---
 title: "Rate limiting"
-description: "Configure request quotas, endpoint rules, and shared storage."
+description: "Default quotas, per-endpoint rules, dynamic policies and shared storage."
 ---
 
-Rate limiting defaults to 100 requests per 10 seconds, with tighter rules for sensitive endpoints.
+Rate limiting is on by default. Each client IP gets a quota **per path**: the default is 100 requests per 10 seconds, with much tighter built-in rules for credential and email endpoints. A request over quota is answered with `429` and an `X-Retry-After` header (seconds until the next request is admitted):
 
-## Set endpoint quotas
+```http
+HTTP/1.1 429 Too Many Requests
+x-retry-after: 9
+
+{"message":"Too many requests. Please try again later."}
+```
+
+## Built-in rules
+
+| Paths | Limit |
+| --- | --- |
+| `/sign-in*`, `/sign-up*`, `/change-password`, `/change-email` | 3 requests / 10 s |
+| `/request-password-reset`, `/send-verification-email`, `/email-otp/send-verification-otp`, `/email-otp/request-password-reset`, `/forget-password*` | 3 requests / 60 s |
+| `/phone-number*` | 10 requests / 60 s |
+| `/device` | 5 requests per code lifetime |
+| everything else | `RateLimitConfig::default` (100 / 10 s) |
+
+Plugins that issue codes carry their own limits too — for example the email OTP and magic-link plugins take a `rate_limit` option. Windows are **rolling**: every admitted request extends the window, and the bucket resets after the window passes without exhausting the quota.
+
+## Configure quotas
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
@@ -21,30 +40,108 @@ async fn build_auth(
 ) -> AuthResult<BetterAuth<AppAuthSchema>> {
     BetterAuth::<AppAuthSchema>::new(config)
         .store(store)
-        .plugin(EmailPasswordPlugin::new())
+        .plugin(EmailPasswordPlugin::new().enable_signup(true))
         .rate_limit(
             RateLimitConfig::new()
                 .default_limit(Duration::from_secs(10), 100)
-                .endpoint("/sign-in/email", Duration::from_secs(60), 5),
+                .endpoint("/sign-in/email", Duration::from_secs(60), 5)
+                .endpoint("/get-session", Duration::from_secs(10), 1000),
         )
         .build()
         .await
 }
 ```
 
-Exact and wildcard overrides are ordered: the first match wins. `RateLimitRule::Disabled` bypasses a path; an asynchronous resolver can select a rule per request.
+Rules are matched against the path **relative to `base_path`** and checked in the order you add them: the first match wins and replaces both the default and any built-in rule. A pattern may use `*` (any characters) and `?` (one character); everything else is literal. For example `"/organization/*"` covers every organization endpoint.
+
+Disable a path, or compute the rule per request:
+
+```rust
+use async_trait::async_trait;
+use better_auth::middleware::{EndpointRateLimit, RateLimitConfig, RateLimitResolver, RateLimitRule};
+use better_auth::prelude::AuthRequest;
+use better_auth::AuthResult;
+use std::sync::Arc;
+
+#[derive(Debug)]
+struct TrustedPartners;
+
+#[async_trait]
+impl RateLimitResolver for TrustedPartners {
+    // `inherited` is the rule that would otherwise apply. Return `None` to skip limiting.
+    async fn resolve(
+        &self,
+        request: &AuthRequest,
+        inherited: &EndpointRateLimit,
+    ) -> AuthResult<Option<EndpointRateLimit>> {
+        Ok(match request.headers.get("x-partner-key") {
+            Some(_) => None,
+            None => Some(inherited.clone()),
+        })
+    }
+}
+
+fn limits() -> RateLimitConfig {
+    RateLimitConfig::new()
+        .rule("/ok", RateLimitRule::Disabled)
+        .rule("/api-key/*", RateLimitRule::Dynamic(Arc::new(TrustedPartners)))
+}
+```
+
+`RateLimitConfig::enabled(false)` turns the middleware off entirely, and `max_buckets` (default 100 000) bounds memory. When the bucket table is full, **new** clients are rejected instead of evicting active ones — a flood of spoofed keys cannot reset a real attacker's quota.
+
+## Client identity
+
+Quotas are keyed by `<client ip>|<path>`. The IP comes from `advanced.ip_address` (see [Session management](/concepts/session-management/#session-metadata)): which headers to trust, which proxies to strip, and the IPv6 grouping prefix (default `/64`, so one subscriber's whole prefix shares a bucket).
+
+- Requests with no resolvable IP share a single bucket per path (`no-trusted-ip`). Behind a proxy, configure the header, or all clients will throttle each other.
+- `disable_ip_tracking: true` disables rate limiting entirely, since there is nothing to key on.
+- Trusted server calls made with `dispatch_endpoint` do not pass through HTTP middleware and never consume quota.
 
 ## Share quotas
 
-| Storage | Scope |
-| --- | --- |
-| Default memory | One auth instance |
-| Shared `MemoryRateLimitStorage` | Instances in one process |
-| `CacheRateLimitStorage` | Processes using an atomic cache backend |
-| SQLx / SeaORM rate-limit storage | Processes sharing a database |
+The default store is process-local memory. Run several instances? Share the counters:
 
-Migrate database rate-limit storage before installing it; its ledger is separate from ordinary auth migrations. Memory storage bounds active buckets and rejects new ones at capacity. Redis uses fixed windows and requires positive whole-second TTLs; invalid TTLs or missing atomic increments fail closed.
+| Storage | Scope | Window |
+| --- | --- | --- |
+| Default memory | One auth instance | Rolling |
+| `MemoryRateLimitStorage` in an `Arc` | Several instances in one process | Rolling |
+| `CacheRateLimitStorage` (Redis via `redis-cache`) | Every process using the cache | Fixed |
+| `SqlxRateLimitStorage` / `SeaOrmRateLimitStorage` | Every process sharing the database | Rolling |
 
-`config.advanced.ip_address` determines client identity. Requests without a trusted IP share a bucket per path, and disabling IP tracking also disables rate limiting. Trusted server dispatch does not consume HTTP quotas.
+```rust
+use better_auth::middleware::{CacheRateLimitStorage, RateLimitConfig};
+use better_auth::store::RedisAdapter;
+use std::sync::Arc;
 
-See the [rate-limit audit](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/compat/audits/core/request/rate-limits.md) for cleanup, numeric, and retry-header details.
+async fn redis_limits(url: &str) -> Result<RateLimitConfig, Box<dyn std::error::Error>> {
+    let cache = Arc::new(RedisAdapter::new(url).await?);
+    Ok(RateLimitConfig::new().storage(Arc::new(CacheRateLimitStorage::new(cache))))
+}
+```
+
+The cache backend must support an atomic `increment` (Redis and `MemoryCacheAdapter` do). A fixed window counts every attempt, including rejected ones. Window lengths must be positive whole seconds for Redis; an unusable TTL or a backend without atomic increments **fails closed** — the request is not admitted.
+
+For database storage, install the table before serving requests. It has its own migration ledger (`better_auth_rate_limit_migrations`), separate from the auth schema:
+
+```rust
+use better_auth::middleware::RateLimitConfig;
+use better_auth::sqlx::{SqlxPool, SqlxRateLimitStorage};
+use better_auth::store::SchemaMigrator;
+use better_auth::AuthResult;
+use std::sync::Arc;
+
+async fn shared_limits(pool: SqlxPool) -> AuthResult<RateLimitConfig> {
+    let storage = SqlxRateLimitStorage::new(pool);
+    storage.migrate().await?;
+    Ok(RateLimitConfig::new().storage(Arc::new(storage)))
+}
+```
+
+`SeaOrmRateLimitStorage::new(database)` works the same way. Implement the `RateLimitStorage` trait (`async fn consume(&self, key, rule) -> RateLimitDecision`) to use any other backend; it must decide and consume atomically.
+
+## Operational notes
+
+- Windows are floating-point seconds and counts are floating-point numbers. A zero or `NaN` *default* window or count falls back to 10 s and 100.
+- Because built-in rules are very tight, tests that sign in repeatedly should either raise `/sign-in/email` or call `.rate_limit(RateLimitConfig::new().enabled(false))`.
+- Plugin rate limits (OTP, magic link, API key) are separate: [Email OTP](/plugins/email-otp/), [Magic link](/plugins/magic-link/), [API key](/plugins/api-key/).

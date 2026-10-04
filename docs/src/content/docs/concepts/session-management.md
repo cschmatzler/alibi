@@ -1,66 +1,172 @@
 ---
 title: "Session management"
-description: "Session expiry, refresh, revocation, and storage."
+description: "Session lifetime, refresh, freshness, listing, revocation and where sessions are stored."
 ---
 
-The builder includes `SessionManagementPlugin` for session reads, sign-out, listing, and revocation.
+A session proves that a browser or client is signed in. By default it is a row in your `sessions` table plus a signed `HttpOnly` cookie holding the session token. The core `SessionManagementPlugin` is installed on every instance and serves the endpoints below.
 
-## Configure lifetime
+## Lifetime and refresh
 
-Configure sessions before constructing the store so both use the same options:
+Configure sessions on `AuthConfig` **before** constructing the store, so the store and the builder see the same policy:
 
 ```rust
 use better_auth::AuthConfig;
 use chrono::Duration;
 
 fn auth_config(secret: &str) -> AuthConfig {
-    let mut config = AuthConfig::new(secret).base_url("http://localhost:3000");
-    config.session.expires_in = Duration::days(7);
-    config.session.update_age = Some(Duration::days(1));
+    let mut config = AuthConfig::new(secret).base_url("https://auth.example.com");
+    config.session.expires_in = Duration::days(30);       // total lifetime
+    config.session.update_age = Some(Duration::days(1));  // extend at most once a day
+    config.session.fresh_age = Some(Duration::minutes(10)); // "recent sign-in" window
     config
 }
 ```
 
-A read refreshes expiry after `update_age`. `disable_session_refresh` stops automatic refresh; `defer_session_refresh` moves refresh writes to POST `/get-session`. That method is rejected when deferral is disabled.
+| `SessionConfig` field | Default | Meaning |
+| --- | --- | --- |
+| `expires_in` | 7 days | Lifetime of a new or refreshed session |
+| `update_age` | 1 day | A read extends the session once it is older than this. `None` extends on every read |
+| `disable_session_refresh` | `false` | Never extend sessions on read |
+| `defer_session_refresh` | `false` | Report `needsRefresh` on `GET` and perform writes only on `POST /get-session` |
+| `fresh_age` | 1 day | Window in which a session counts as fresh; `None` or zero disables the check |
+| `cookie_name` | `better-auth.session_token` | Session cookie name (prefixed with `__Secure-` over HTTPS) |
+| `cookie_secure`, `cookie_http_only`, `cookie_same_site` | derived from `base_url`, `true`, `Lax` | Cookie attributes; see [Cookies](/concepts/cookies/) |
+| `cookie_cache` | none | Cache session data in a cookie to skip database reads |
+| `secondary_storage`, `store_in_database`, `preserve_in_database` | none | Keep sessions in Redis or memory; see [Secondary storage](/concepts/secondary-storage/) |
+| `stateless` | `false` | No server-side session store; see [No database](/databases/no-database/) |
+| `additional_fields` | none | Extra session columns; see [Additional fields](/concepts/field-policies/) |
+
+Builder shortcuts exist for the common ones: `session_expires_in`, `session_update_age`, `session_fresh_age`, `disable_session_refresh` and `session_cookie_cache`.
+
+A refresh moves `expires_at` to *now + `expires_in`* and updates `updated_at`. It happens during `GET /get-session` (and any other authenticated read) when `expires_at − expires_in + update_age` has passed. Append `?disableRefresh=true` to a `get-session` request to read without extending, and `?disableCookieCache=true` to bypass a [cookie cache](/concepts/cookies/#cache-the-session-in-a-cookie).
+
+### Deferred refresh
+
+Writing to the database on a `GET` is awkward behind CDNs and read replicas. With `defer_session_refresh = true`, `GET /get-session` stays read-only and returns `needsRefresh: true` when a refresh is due; the client then calls `POST /get-session` to perform it. Without the flag, `POST /get-session` is rejected with `405 METHOD_NOT_ALLOWED_DEFER_SESSION_REQUIRED`.
+
+```rust
+use better_auth::AuthConfig;
+
+fn auth_config(secret: &str) -> AuthConfig {
+    let mut config = AuthConfig::new(secret);
+    config.session.defer_session_refresh = true;
+    config
+}
+```
 
 ## Endpoints
 
-Paths are relative to `/api/auth`:
+Paths are relative to `/api/auth`. All of them need the session cookie (or a [bearer token](/plugins/bearer/)).
 
-| Method | Path | Action |
-| --- | --- | --- |
-| GET | `/get-session` | Read the current session |
-| GET | `/list-sessions` | List active sessions |
-| POST | `/sign-out` | End the current session |
-| POST | `/revoke-session` | Revoke a specific token |
-| POST | `/revoke-sessions` | Revoke all sessions |
-| POST | `/revoke-other-sessions` | Keep only the current session |
+| Method | Path | Body | Action |
+| --- | --- | --- | --- |
+| `GET` | `/get-session` | — | Current session and user, or `null` |
+| `POST` | `/get-session` | — | Same, performing a deferred refresh (requires `defer_session_refresh`) |
+| `GET` | `/list-sessions` | — | Every active session of the user |
+| `POST` | `/update-session` | session fields | Update [additional session fields](/concepts/field-policies/) |
+| `POST` | `/sign-out` | optional `callbackURL`, `disableRedirect`, `state` | End the current session and clear cookies |
+| `POST` | `/revoke-session` | `{"token":"…"}` | Revoke one session by token |
+| `POST` | `/revoke-sessions` | — | Revoke all sessions |
+| `POST` | `/revoke-other-sessions` | — | Revoke everything except the current session |
 
-Use [Axum extractors](/integrations/axum/) in protected handlers. Sessions use SQL by default unless [secondary storage](/concepts/secondary-storage/) or stateless mode is configured; a [cookie cache](/concepts/cookies/) can reduce reads.
+```bash
+# Revoke every other device
+curl -b cookies.txt -X POST http://localhost:3000/api/auth/revoke-other-sessions \
+  -H 'Origin: http://localhost:3000'
+# {"status":true}
 
-## Without a database
-
-`AuthBuilder::without_database` provisions users, accounts, verification records and sessions in instance-local memory through the ordinary authentication paths. It needs no SQL connection. The default `OAuthStateStrategy::Automatic` resolves to cookie state for this constructor and database state for an explicitly configured store, even if its session policy is stateless. Explicit `Cookie` and `Database` choices are preserved; database state in noDB mode uses ephemeral verification records:
-
-```rust
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth::plugins::EmailPasswordPlugin;
-
-let config = AuthConfig::new("a-secret-with-at-least-32-characters")
-    .base_url("http://localhost:3000");
-let auth = AuthBuilder::without_database(config)
-    .plugin(EmailPasswordPlugin::new())
-    .build()
-    .await?;
+# Revoke a specific session
+curl -b cookies.txt -X POST http://localhost:3000/api/auth/revoke-session \
+  -H 'Content-Type: application/json' -H 'Origin: http://localhost:3000' \
+  -d '{"token":"07gTGnxj0gFlvsKpTV7hBC3aMyH7Jnty"}'
 ```
 
-The default session cache is an encrypted JWE, with the session lifetime as its maximum age. Automatic renewal starts when less than 20% of the cache lifetime remains. Renewal preserves the token and embedded session expiry; it extends the outer cache and token cookie lifetime. `disable_session_refresh`, deferred refresh and `disableRefresh` do not suppress cache-hit renewal. Trusted request hooks can insert `better_auth_core::session::SessionRefreshSuppressed` to suppress renewal for that request.
+`GET /list-sessions` requires a [fresh](#session-freshness) session and omits sessions created by [admin impersonation](/plugins/admin/#impersonation). Session tokens are 32 alphanumeric characters.
 
-To retain SQL users/accounts while keeping session records in memory, set `config.session = config.session.stateless()` before constructing the store. SQL session rows are never read or written in this mode. Configure `cookie_cache` afterwards to override the strategy, age or version, and `cookie_refresh_cache` with `better_auth::config::CookieRefreshCache::{Disabled, Automatic, UpdateAge(seconds)}` to select renewal. The no-database builder preserves an already selected stateless renewal policy.
+### Choose which endpoints exist
 
-Cache bypass and cache misses use the ephemeral session records. GET reads can defer renewal to POST `/get-session`. Sign-out and revocation remove these records, but captured, authenticated cookie copies remain usable until the embedded expiry, cache version invalidation or key invalidation. Restarting loses credentials and ephemeral records while existing authenticated caches remain usable. Deployments needing immediate revocation must use durable session storage.
+```rust
+use crate::auth_schema::AppAuthSchema;
+use better_auth::plugins::SessionManagementPlugin;
+use better_auth::sqlx::SqlxStore;
+use better_auth::{AuthConfig, AuthResult, BetterAuth};
 
-The built-in no-database store supports core user/account/verification provisioning. Storage for organization, two-factor, passkey, API-key and other optional plugin records requires an application store; those operations return explicit unsupported errors. Application model types retain their physical authority: handlers requiring a typed model cannot manufacture one from a cookie. Use cache-aware session APIs for cookie authority, or the native no-database schema.
+async fn build_auth(
+    config: AuthConfig,
+    store: SqlxStore<AppAuthSchema>,
+) -> AuthResult<BetterAuth<AppAuthSchema>> {
+    BetterAuth::<AppAuthSchema>::new(config)
+        .store(store)
+        .plugin(
+            SessionManagementPlugin::new()
+                .enable_session_listing(false)   // no /list-sessions
+                .enable_session_revocation(false), // no /revoke-*
+        )
+        .build()
+        .await
+}
+```
+
+To disable any single route outright, use `AuthConfig::disabled_path("/list-sessions")`; matching requests receive `404`.
+
+## Session freshness
+
+Some operations require a *fresh* session — one created within `fresh_age`: listing sessions, registering a [passkey](/plugins/passkey/) for an existing user, and [deleting the account](/concepts/users-accounts/#delete-an-account) without supplying the password. A stale session receives `403 SESSION_NOT_FRESH` (or `400 Session expired. Re-authenticate…` for deletion) and the user has to sign in again. Set `fresh_age = None` to turn the rule off.
+
+## Remember me
+
+`rememberMe: false` on `/sign-in/email`, `/sign-in/username` or `/sign-up/email` issues a browser-session cookie with no `Max-Age` and a signed `dont_remember` cookie that keeps later refreshes from making it persistent. The server-side session still expires after `expires_in`.
+
+## Session metadata
+
+Each session records the client's IP address and user agent. The IP comes from `advanced.ip_address`: the headers to trust (default `x-forwarded-for`), the proxies to strip from the right of a forwarded chain, the IPv6 grouping prefix and an opt-out. Configure it when behind a proxy:
+
+```rust
+use better_auth::AuthConfig;
+use better_auth::config::{AdvancedConfig, IpAddressConfig};
+
+fn auth_config(secret: &str) -> AuthConfig {
+    AuthConfig::new(secret).advanced(AdvancedConfig {
+        ip_address: IpAddressConfig {
+            headers: vec!["cf-connecting-ip".into(), "x-forwarded-for".into()],
+            trusted_proxies: vec!["10.0.0.0/8".into()],
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+}
+```
+
+The same resolved address keys [rate limits](/concepts/rate-limit/). Only enable headers that your edge replaces or strips; a client-controlled `x-forwarded-for` is trivially spoofed.
+
+## Where sessions live
+
+| Mode | Source of truth | Reads | Revocation | Configure |
+| --- | --- | --- | --- | --- |
+| Database (default) | `sessions` table | One query per request | Immediate | — |
+| Database + cookie cache | `sessions` table | Cookie, database after `max_age` | Within `max_age` | [Cookies](/concepts/cookies/#cache-the-session-in-a-cookie) |
+| Secondary storage | Redis / memory | Cache lookup | Immediate | [Secondary storage](/concepts/secondary-storage/) |
+| Stateless | The cookie itself | No server state | Only by expiry or key rotation | [No database](/databases/no-database/) |
+
+## Use the session in your application
+
+Axum and Poem extractors give you the authenticated `user` and `session` in your own model types:
+
+```rust
+use crate::auth_schema::AppAuthSchema;
+use better_auth::integrations::axum::CurrentSession;
+use better_auth::prelude::{AuthSession, AuthUser};
+
+async fn whoami(session: CurrentSession<AppAuthSchema>) -> String {
+    format!(
+        "{} — session expires {}",
+        session.user.email().unwrap_or("(no email)"),
+        session.session.expires_at(),
+    )
+}
+```
+
+Details: [Axum](/integrations/axum/), [Poem](/integrations/poem/). For a custom host, resolve the session by dispatching a `get-session` request through [`handle_request`](/integrations/other-frameworks/).
 
 ## Frontend
 
