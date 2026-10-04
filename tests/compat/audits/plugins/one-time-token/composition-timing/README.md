@@ -31,6 +31,13 @@ refreshing a disabled session. Prior #169 default owner and #416 callback and
 composition receipts remain intact. Production exports, test-only production
 seams, comparison rules and exclusions are unchanged.
 
-Repair base: `5c1ea0f8d5d5d2c8ca695e19b43791e9ce212820`. Focused after-proof is
-in progress at this draft checkpoint. The baseline command and both adapter
-raw states are in the archive. No merge is qualified yet.
+Repair base: `5e97381835dd9f5d15b2bbad1153e799efa00262` (fixture-lifetime repair).
+Validated code head: `43088f146e54c1143620ba5e5ec86f734a9aba75`.
+Both actual adapter focused runs pass 17 cases / 670 assertions, including the
+existing callback failure, consumption, replay, foreign-state and hook owners.
+Clippy passes for the fixture server with both default and SeaORM features;
+focused formatting, TypeScript checking and diff whitespace checks pass.
+Existing TypeScript lint findings remain with native-gate owner #432.
+The archive includes full baseline and final paired states, logs, package
+provenance and private-inode receipts. Coordinator exact-head review remains
+required before merge.
