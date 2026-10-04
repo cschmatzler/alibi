@@ -9,6 +9,84 @@ use chacha20poly1305::{
 use sha2::{Digest, Sha256};
 use std::fmt::Write;
 
+/// Separate OAuth ciphertext domains without changing other encrypted records.
+#[derive(Clone, Copy)]
+pub(in crate::plugins) enum EncryptionPurpose {
+    StateCookie,
+    ProxyState,
+    ProxyPackage,
+    ProxyProfile,
+}
+
+impl EncryptionPurpose {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::StateCookie => "oauth-state-cookie",
+            Self::ProxyState => "oauth-proxy-state",
+            Self::ProxyPackage => "oauth-proxy-package",
+            Self::ProxyProfile => "oauth-proxy-profile",
+        }
+    }
+}
+
+fn purpose_secret(secret: &str, purpose: EncryptionPurpose) -> AuthResult<String> {
+    let mut key = [0u8; 32];
+    hkdf::Hkdf::<Sha256>::new(Some(b"better-auth:oauth-encryption:v1"), secret.as_bytes())
+        .expand(
+            format!("better-auth:{}:v1", purpose.label()).as_bytes(),
+            &mut key,
+        )
+        .map_err(|_| AuthError::Encryption("OAuth key derivation failed".into()))?;
+    // Source passes the lowercase hexadecimal string to symmetricEncrypt,
+    // whose separate SHA256 step hashes these UTF-8 bytes.
+    Ok(key.iter().fold(String::new(), |mut output, byte| {
+        _ = write!(output, "{byte:02x}");
+        output
+    }))
+}
+
+pub(in crate::plugins) fn encrypt_for_purpose(
+    plain: &str,
+    secret: &str,
+    purpose: EncryptionPurpose,
+) -> AuthResult<String> {
+    encrypt(plain, &purpose_secret(secret, purpose)?)
+}
+
+pub(in crate::plugins) fn decrypt_for_purpose(
+    stored: &str,
+    secret: &str,
+    purpose: EncryptionPurpose,
+) -> AuthResult<String> {
+    decrypt(stored, &purpose_secret(secret, purpose)?)
+}
+
+pub(in crate::plugins) fn encrypt_with_config_for_purpose(
+    plain: &str,
+    config: &better_auth_core::AuthConfig,
+    purpose: EncryptionPurpose,
+) -> AuthResult<String> {
+    let encrypted = encrypt_for_purpose(plain, config.current_secret(), purpose)?;
+    match &config.managed_secrets {
+        Some(keys) => Ok(format!("$ba${}${encrypted}", keys.current_version())),
+        None => Ok(encrypted),
+    }
+}
+
+pub(in crate::plugins) fn decrypt_with_config_for_purpose(
+    stored: &str,
+    config: &better_auth_core::AuthConfig,
+    purpose: EncryptionPurpose,
+) -> AuthResult<String> {
+    let secret = decryption_key(stored, config)?;
+    let ciphertext = if config.managed_secrets.is_some() {
+        parse_envelope(stored).map_or(stored, |(_, ciphertext)| ciphertext)
+    } else {
+        stored
+    };
+    decrypt_for_purpose(ciphertext, secret, purpose)
+}
+
 /// Encrypt persistence data with the configured current version.
 pub(in crate::plugins) fn encrypt_with_config(
     plain: &str,

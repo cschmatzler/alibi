@@ -17,7 +17,7 @@ For example, hypothetical Rust releases `1.0.0` and `1.0.1` could both target Be
 
 Stable releases have no suffix. Reserve `-alpha.N`, `-beta.N`, and `-rc.N` for actual prereleases. Never reuse a published version or move its Git tag. Release tags use `v` followed by the Rust version, for example `v1.0.1`.
 
-The repository currently targets **Better Auth `1.7.6`** and uses the development workspace version `1.0.0-alpha.3`. These examples do not change either version or imply a published release.
+The repository currently targets **Better Auth `1.7.7`** and uses the development workspace version `1.0.0-alpha.3`. These examples do not change either version or imply a published release.
 
 ## Compatibility rules
 

@@ -1,8 +1,8 @@
-# Better Auth 1.7.6 implementation ledger
+# Better Auth implementation ledger
 
 The current task is to finish, review, validate and merge existing work, and file
 remaining behavior for triage. No new capability families are being started.
-This is not a full-parity claim. The oracle remains Better Auth **1.7.6**, Rust
+This is not a full-parity claim. The oracle targets Better Auth **1.7.7**, Rust
 interfaces remain native, passwords use **scrypt only**, and the raw comparison
 exception list is empty. The source line coverage floor remains **75%**.
 
@@ -108,3 +108,5 @@ CHANGELOG are not restored.
 | #232 (scoped; remains open) | Raw `f64` maximum-session comparison and derived session-token cookie names/attributes; six bounded numeric profiles and configured alias/prefix lifecycle/expiry owners retain complete state. [Source research and residual dependencies](audits/plugins/multi-session/README.md#issue-232-raw-numeric-limits-and-configured-token-cookies). | Post-rebase SQLx and SeaORM each pass 52 scenarios / 3,216 assertions; two native owner tests and strict production/fixture Clippy pass. Actual-Source signed-cookie negative controls: 5 tests / 554 assertions; comparator/trace/evidence harnesses: 38 / 379. Full-suite and coverage execution remain coordinator-owned. Wider composition/storage and JWT/stateless dependency modes remain open. |
 
 | #132 OAuth popup | Public GET start, trusted opener/redirect checks, signed 600-second marker, existing state lifecycle and authentic escaped callback HTML/CSP/postMessage token/error delivery; bearer and official generic-provider composition. [Audit and raw pairs](audits/plugins/oauth-popup/README.md). | Actual SQLx and SeaORM each pass one focused Source/Chromium owner / 232 assertions; strict API Clippy and focused types/lint pass. Self-review fixed original callback headers. Integration-only #397 rebase retains identical popup code and proof; Actions disabled. No full-sweep or full-compatibility claim. |
+
+The 1.7.7 upgrade ports the upstream release delta. Historical receipts below remain 1.7.6 evidence; they are not relabeled as a full 1.7.7 campaign.

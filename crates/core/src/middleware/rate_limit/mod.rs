@@ -451,7 +451,7 @@ impl RateLimitMiddleware {
             429,
             r#"{"message":"Too many requests. Please try again later."}"#,
         )
-        .with_header("content-type", "text/plain;charset=utf-8")
+        .with_header("content-type", "application/json")
         .with_header(
             "X-Retry-After",
             ryu_js::Buffer::new().format(retry_after).to_owned(),

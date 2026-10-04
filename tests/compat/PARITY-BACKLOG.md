@@ -2,7 +2,7 @@
 
 Status: implementation is wrapping up at the user's request. Finish the existing
 reviewed stack; further capability work is tracked for triage. The reference
-remains Better Auth **1.7.6** and scrypt is the sole built-in password algorithm.
+targets Better Auth **1.7.7** and scrypt is the sole built-in password algorithm.
 
 The [GitHub triage index](https://github.com/cschmatzler/better-auth-rs/issues/234)
 tracks the open issues. Each distinguishes a confirmed runtime/code
@@ -40,3 +40,5 @@ named trees. Prepared or focused-tested work is not described as delivered.
 Every remaining issue keeps the pinned oracle, full observations and persisted
 state, applicable authorization/expiry/replay/concurrency evidence, independent
 review and the canonical gate with its unchanged 75% source line floor.
+
+The 1.7.7 upgrade ports the upstream release delta. Historical receipts below remain 1.7.6 evidence; they are not relabeled as a full 1.7.7 campaign.

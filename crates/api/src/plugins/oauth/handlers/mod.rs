@@ -9,7 +9,7 @@ use super::state::{
     account_cookie_name, capture_server_context, create_account_cookie_value,
     create_cookie_state_value, create_database_state_cookie_value, decode_account_cookie_value,
     decode_cookie_state_value, decode_database_state_cookie_value, filter_additional_state_data,
-    get_cookie, state_cookie_name, verified_server_context,
+    get_cookie, state_cookie_name, state_verification_identifier, verified_server_context,
 };
 use super::types::{
     LinkSocialRequest, OAuthIdTokenRequest, SocialSignInRequest, SocialSignInResponse,
@@ -2134,11 +2134,8 @@ async fn sign_in_with_id_token_core(
             ..Default::default()
         },
         provider.disable_implicit_sign_up && !body.request_sign_up.unwrap_or(false)
-            || (oauth_disable_sign_up_option(provider).unwrap_or(false)
-                && provider
-                    .authorization
-                    .as_ref()
-                    .is_none_or(|policy| policy.honor_factory_options)),
+            || oauth_disable_sign_up_option(provider).unwrap_or(false)
+            || provider.disable_sign_up,
         meta,
         ctx,
     )
@@ -2525,7 +2522,7 @@ async fn initiate_oauth_flow_core(
             let created = ctx
                 .verifications()
                 .create(CreateVerification {
-                    identifier: state.clone(),
+                    identifier: state_verification_identifier(&state),
                     value: serde_json::to_string(&payload)?,
                     expires_at: Utc::now() + Duration::minutes(10),
                 })
@@ -2735,7 +2732,11 @@ pub(super) async fn handle_callback(
     let payload = match ctx.config.account.store_state_strategy {
         better_auth_core::OAuthStateStrategy::Automatic
         | better_auth_core::OAuthStateStrategy::Database => {
-            let verification = match ctx.verifications().find(&state_param).await {
+            let verification = match ctx
+                .verifications()
+                .find(&state_verification_identifier(&state_param))
+                .await
+            {
                 Ok(Some(verification)) => verification,
                 Ok(None) => {
                     return Ok(redirect_response(&callback_failure_location(
@@ -2790,7 +2791,12 @@ pub(super) async fn handle_callback(
                     return Ok(state_mismatch());
                 }
             }
-            if ctx.verifications().delete(&state_param).await.is_err() {
+            if ctx
+                .verifications()
+                .delete(&state_verification_identifier(&state_param))
+                .await
+                .is_err()
+            {
                 return Ok(redirect_response(&callback_failure_location(
                     ctx,
                     "internal_server_error",

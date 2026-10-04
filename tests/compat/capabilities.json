@@ -1,5 +1,5 @@
 {
-  "upstreamVersion": "1.7.6",
+  "upstreamVersion": "1.7.7",
   "capabilities": [
     {
       "route": "GET /account-info",

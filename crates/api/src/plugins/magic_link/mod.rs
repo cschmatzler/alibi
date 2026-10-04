@@ -148,6 +148,7 @@ impl MagicLinkPlugin {
         };
         let stored = self.store_token(&token).await?;
         let data = LinkData {
+            record_type: "magic-link".into(),
             email: body.email.clone(),
             name: body.name,
         };
@@ -159,7 +160,7 @@ impl MagicLinkPlugin {
         drop(
             ctx.verifications()
                 .create(CreateVerification {
-                    identifier: stored,
+                    identifier: format!("magic-link:{stored}"),
                     value: serde_json::to_string(&data)?,
                     expires_at,
                 })
@@ -258,11 +259,22 @@ impl MagicLinkPlugin {
             )
             .map_err(|_error| AuthError::bad_request("Invalid newUserCallbackURL"))?;
         let stored = self.store_token(token).await?;
-        let Some(verification) = ctx.verifications().consume(&stored).await? else {
+        let identifier = format!("magic-link:{stored}");
+        let pending = ctx.verifications().find(&identifier).await?;
+        if pending
+            .as_ref()
+            .and_then(|row| parse_link_data(row.value().ok()?))
+            .is_none()
+        {
+            return Ok(error_redirect(error_url, "INVALID_TOKEN", None));
+        }
+        let Some(verification) = ctx.verifications().consume(&identifier).await? else {
             return Ok(error_redirect(error_url, "INVALID_TOKEN", None));
         };
 
-        let data: LinkData = serde_json::from_str(verification.value()?)?;
+        let Some(data) = parse_link_data(verification.value()?) else {
+            return Ok(error_redirect(error_url, "INVALID_TOKEN", None));
+        };
         let mut is_new_user = false;
         let user = match ctx.database.get_user_by_email_record(&data.email).await? {
             Some(user) if !user.email_verified() => {
@@ -355,9 +367,26 @@ struct SignInRequest {
 
 #[derive(Deserialize, Serialize)]
 struct LinkData {
+    #[serde(rename = "type")]
+    record_type: String,
     email: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     name: Option<String>,
+}
+
+fn parse_link_data(value: &str) -> Option<LinkData> {
+    let value: serde_json::Value = serde_json::from_str(value).ok()?;
+    let object = value.as_object()?;
+    if object
+        .keys()
+        .any(|key| !matches!(key.as_str(), "type" | "email" | "name"))
+        || object.get("type")?.as_str()? != "magic-link"
+        || !super::authentication_helpers::is_valid_email(object.get("email")?.as_str()?)
+        || object.get("name").is_some_and(|name| !name.is_string())
+    {
+        return None;
+    }
+    serde_json::from_value(value).ok()
 }
 
 impl RequestBody for SignInRequest {

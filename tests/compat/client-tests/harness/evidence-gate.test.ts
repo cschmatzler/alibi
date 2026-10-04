@@ -30,7 +30,7 @@ test("capability gate requires every committed scenario and regeneration preserv
 
     const inventoryPath = join(root, "tests/compat/capabilities.json");
     const inventory = {
-      upstreamVersion: "1.7.6",
+      upstreamVersion: "1.7.7",
       capabilities: [
         {
           route: "GET /token",

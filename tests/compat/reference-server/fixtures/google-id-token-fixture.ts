@@ -11,6 +11,8 @@ export function googleIdTokenProfiles(options: BetterAuthOptions) {
     "google-id-domain-any",
     "google-id-disabled",
     "google-id-override",
+    "google-id-no-signup",
+    "google-id-no-implicit-signup",
   ] as const) {
     profiles.set(
       name,
@@ -29,6 +31,8 @@ export function googleIdTokenProfiles(options: BetterAuthOptions) {
             ...(name === "google-id-domain" ? { hd: "workspace.fixture.test" } : {}),
             ...(name === "google-id-domain-any" ? { hd: "*" } : {}),
             disableIdTokenSignIn: name === "google-id-disabled",
+            disableSignUp: name === "google-id-no-signup",
+            disableImplicitSignUp: name === "google-id-no-implicit-signup",
             ...(name === "google-id-disabled" ? { verifyIdToken: async () => true } : {}),
             ...(name === "google-id-override" ? { verifyIdToken: async () => false } : {}),
           },

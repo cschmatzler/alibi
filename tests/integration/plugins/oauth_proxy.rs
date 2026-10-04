@@ -353,7 +353,7 @@ mod tests {
             fixture
                 .preview
                 .store()
-                .get_verification_by_identifier(original_state)
+                .get_verification_by_identifier(&format!("auth-state:{original_state}"))
                 .await
                 .unwrap()
                 .is_none()

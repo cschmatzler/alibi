@@ -69,7 +69,7 @@ compatScenario(
       status: 429,
       body: { message: "Too many requests. Please try again later." },
       headers: {
-        "content-type": "text/plain;charset=utf-8",
+        "content-type": "application/json",
         "x-retry-after": "60",
         "set-cookie": null,
       },
@@ -196,7 +196,7 @@ compatScenario(
       status: 429,
       body: { message: "Too many requests. Please try again later." },
       headers: {
-        "content-type": "text/plain;charset=utf-8",
+        "content-type": "application/json",
         "x-retry-after": "60",
         "set-cookie": null,
       },

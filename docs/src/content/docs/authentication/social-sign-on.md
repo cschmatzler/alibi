@@ -199,7 +199,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 }
 ```
 
-With `encrypt_oauth_tokens` the access and refresh tokens are encrypted at rest (XChaCha20-Poly1305 with a key derived from the [secret](/reference/secrets/), versioned for rotation); ID tokens are stored as issued — the same layout as Better Auth 1.7.6. Rows written by older versions of this library use a different format; convert them with [Legacy OAuth token conversion](/guides/legacy-oauth-tokens/).
+With `encrypt_oauth_tokens` the access and refresh tokens are encrypted at rest (XChaCha20-Poly1305 with a key derived from the [secret](/reference/secrets/), versioned for rotation); ID tokens are stored as issued — the same layout as Better Auth 1.7.7. Rows written by older versions of this library use a different format; convert them with [Legacy OAuth token conversion](/guides/legacy-oauth-tokens/).
 
 ## State and cookies
 

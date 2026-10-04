@@ -939,6 +939,8 @@ export const FIXTURE_PROFILES = [
   "google-id-domain-any",
   "google-id-disabled",
   "google-id-override",
+  "google-id-no-signup",
+  "google-id-no-implicit-signup",
   "set-password-default",
   "set-password-policy",
   "set-password-cache",

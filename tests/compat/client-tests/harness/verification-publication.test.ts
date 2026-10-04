@@ -763,7 +763,7 @@ async function runOAuth(
       expect(publication.set.rawValue).toBe(JSON.stringify(publication.snapshot));
       expect(publication.set.value).toEqual(publication.snapshot);
       expect(publication.set.key).toBe(
-        `verification:${createHash("sha256").update(value.oauthState).digest("base64url")}`,
+        `verification:${createHash("sha256").update(`auth-state:${value.oauthState}`).digest("base64url")}`,
       );
       expect(publication.set.ttl).toBeGreaterThanOrEqual(
         Math.floor((expiry - Date.parse(publication.set.executedAt)) / 1000),
