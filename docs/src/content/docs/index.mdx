@@ -23,12 +23,14 @@ This project is used directly from Git. APIs and schemas may change. The pinned 
 ## One auth instance. The features you need.
 
 ```rust
-use better_auth::plugins::EmailPasswordPlugin;
+use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, TwoFactorPlugin};
 use better_auth::{AuthBuilder, AuthResult, AuthSchema, BetterAuth};
 
-async fn with_passwords<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<S>> {
+async fn with_features<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<S>> {
     builder
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
+        .plugin(TwoFactorPlugin::new())
+        .plugin(OrganizationPlugin::new())
         .build()
         .await
 }
@@ -38,16 +40,16 @@ Start with the [complete setup](/installation/), then add the plugins your appli
 
 <CardGrid>
   <Card title="Your database" icon="database">
-    Use SQLx or SeaORM with application-owned models and migrations. Keep authentication alongside your application data.
+    SQLx or SeaORM with application-owned models, generated schemas and your own migrations. Or run without a database at all.
   </Card>
   <Card title="Rust throughout" icon="approve-check">
-    Async APIs, typed schemas, and Axum session extractors. Compose authentication in the same language as your backend.
+    Async APIs, typed schemas and callbacks, session extractors for Axum and Poem, and trusted server-side calls without a network hop.
   </Card>
-  <Card title="Room to grow" icon="puzzle">
-    Email/password, OAuth, passkeys, two-factor authentication, organizations, and API keys, configured with Rust plugins.
+  <Card title="Everything you expect" icon="puzzle">
+    Passwords, 36 OAuth providers, passkeys, two-factor, magic links, organizations, API keys, JWTs and more — each a plugin you register.
   </Card>
   <Card title="A familiar API" icon="seti:typescript">
-    Better Auth's HTTP semantics, tested against its pinned runtime and official client. Native APIs where Rust needs them.
+    Better Auth's HTTP contract, verified against its pinned runtime with the official client. Your existing frontend keeps working.
   </Card>
 </CardGrid>
 
@@ -55,8 +57,11 @@ Start with the [complete setup](/installation/), then add the plugins your appli
 
 <CardGrid>
   <LinkCard title="Installation" description="Build an auth instance and start an Axum server." href="/installation/" />
-  <LinkCard title="Basic usage" description="Sign up, sign in, read a session, and sign out." href="/basic-usage/" />
-  <LinkCard title="Plugin catalog" description="Add passwordless login, second factors, and more." href="/plugins/" />
+  <LinkCard title="Basic usage" description="Sign up, sign in, read a session, protect a route and sign out." href="/basic-usage/" />
+  <LinkCard title="Plugin catalog" description="Passwordless login, second factors, organizations, API keys and more." href="/plugins/" />
+  <LinkCard title="Concepts" description="Database, sessions, cookies, security, hooks and rate limiting." href="/concepts/database/" />
+  <LinkCard title="Cross-origin apps" description="Run the frontend and the auth server on different origins." href="/guides/cross-origin/" />
+  <LinkCard title="HTTP API" description="Every route, grouped by feature." href="/reference/http-api/" />
+  <LinkCard title="Compatibility" description="What is verified against Better Auth 1.7.6 and what is native." href="/reference/compatibility/" />
   <LinkCard title="Frontend documentation" description="Use the official Better Auth client and frontend guides." href="https://www.better-auth.com/docs/concepts/client" />
-  <LinkCard title="Compatibility" description="Understand the upstream target and native boundaries." href="/reference/compatibility/" />
 </CardGrid>

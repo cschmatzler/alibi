@@ -1,13 +1,11 @@
 ---
 title: "OpenAPI"
-description: "Inspect your configured authentication API and generate an API reference."
+description: "Generate an OpenAPI document and an interactive API reference for your configured auth API."
 ---
 
-`OpenApiPlugin` generates an API reference for the configured authentication endpoints.
+`OpenApiPlugin` describes **your instance's** endpoints — core routes plus whatever plugins you registered, including your own [additional fields](/concepts/field-policies/) on the user model — as an OpenAPI 3.1 document and serves an interactive reference page. Use it to explore the API, generate clients, or diff what you expose.
 
 ## Setup
-
-Use the schema, configuration, and store from [installation](/installation/).
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
@@ -27,11 +25,23 @@ async fn build_auth(
 }
 ```
 
-## Endpoints and options
+## Endpoints
 
-The plugin serves JSON at `/open-api/generate-schema` and an interactive reference at `/reference`.
+| Method | Path | Result |
+| --- | --- | --- |
+| `GET` | `/open-api/generate-schema` | The OpenAPI JSON document |
+| `GET` | `/reference` | An interactive HTML reference (configurable path) |
 
-You can also generate the specification directly from the built instance:
+```bash
+curl http://localhost:3000/api/auth/open-api/generate-schema | jq '.paths | keys | length'
+# 141   (with a broad plugin set)
+```
+
+The document has one operation per route, request and response schemas, error responses, tags per plugin, and the `bearerAuth` and `apiKeyCookie` security schemes. Models such as `User` and `Session` include your additional fields.
+
+## Generate the document in Rust
+
+Export the spec directly from the built instance — for a CI check or to commit the contract:
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
@@ -40,9 +50,45 @@ use better_auth::BetterAuth;
 fn export_openapi(auth: &BetterAuth<AppAuthSchema>) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&auth.openapi_spec())
 }
+
+fn export_with_native(auth: &BetterAuth<AppAuthSchema>) -> Result<String, serde_json::Error> {
+    // Includes operations that exist only in Better Auth RS.
+    serde_json::to_string_pretty(&auth.openapi_spec_with_native_extensions())
+}
 ```
 
-Use `openapi_spec_with_native_extensions()` to include native-only operations. `OpenApiConfig` controls the reference path and presentation.
+`openapi_spec()` matches what the TypeScript server documents; `openapi_spec_with_native_extensions()` adds Rust-only operations. Server-only operations (those available through `dispatch_endpoint`) are never listed because they are not HTTP routes.
+
+## Configuration
+
+Builder methods on `OpenApiConfig` (use `OpenApiPlugin::with_config`):
+
+| Method | Default | Effect |
+| --- | --- | --- |
+| `path("/docs")` | `/reference` | Where the HTML reference is served |
+| `theme("…")` | provider default | Theme name for the reference UI |
+| `nonce("…")` | none | CSP nonce for the reference page's script |
+| `disable_default_reference(true)` | `false` | Serve only the JSON; skip the HTML page |
+| `include_native_extensions(true)` | `false` | Include Rust-only operations in the served document |
+
+```rust
+use better_auth::plugins::{OpenApiConfig, OpenApiPlugin};
+
+fn open_api() -> OpenApiPlugin {
+    OpenApiPlugin::with_config(
+        OpenApiConfig::default()
+            .path("/docs")
+            .disable_default_reference(false)
+            .include_native_extensions(true),
+    )
+}
+```
+
+## Production
+
+The reference lists every route and its parameters. Disable the plugin or the HTML page in production if you do not want to publish your API surface, or protect the paths at your proxy.
+
+The full list of routes by plugin is also maintained in the [HTTP API reference](/reference/http-api/).
 
 ## Frontend
 

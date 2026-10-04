@@ -1,11 +1,11 @@
 ---
 title: "Secondary storage"
-description: "Store sessions and verification credentials in memory or Redis."
+description: "Keep sessions and verification values in Redis or memory, with or without SQL persistence."
 ---
 
-Sessions use SQL by default. Set `session.secondary_storage` to store credentials in a cache; verification credentials have their own setting.
+By default sessions and verification values (reset tokens, OTP codes, magic links, OAuth state) live in SQL. **Secondary storage** moves them to a key–value cache such as Redis, which gives you O(1) session lookups, native expiry and no cleanup jobs. Sessions and verification values are configured independently.
 
-## Configure the backend
+## Configure a backend
 
 ```rust
 use better_auth::AuthConfig;
@@ -21,20 +21,75 @@ fn auth_config(secret: &str) -> AuthConfig {
 }
 ```
 
-Memory storage is local to the process. Use a shared backend, such as the `redis-cache` feature's `RedisAdapter`, across server processes.
+`MemoryCacheAdapter` is local to one process — good for development and tests. For several server processes, use the Redis adapter (`redis-cache` feature):
 
-Application-owned user and session models need `serde::Deserialize` and the `secondary_storage` option on their `AuthEntity` attributes. Other schemas can implement the snapshot and session-preparation traits directly.
+```toml title="Cargo.toml"
+better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", features = ["axum", "redis-cache"] }
+```
 
-## SQL persistence
+```rust
+use better_auth::AuthConfig;
+use better_auth::store::RedisAdapter;
+use std::sync::Arc;
+
+async fn auth_config(secret: &str, redis_url: &str) -> Result<AuthConfig, redis::RedisError> {
+    let redis = Arc::new(RedisAdapter::new(redis_url).await?);
+    let mut config = AuthConfig::new(secret);
+    config.session.secondary_storage = Some(redis.clone());
+    config.verification.secondary_storage = Some(redis);
+    Ok(config)
+}
+```
+
+(`redis::RedisError` comes from the `redis` crate; add `redis = "0.27"` or box the error.)
+
+Application models that are cached must implement `serde::Deserialize`, and the user and session models need `secondary_storage` on their `AuthEntity` attribute so they can be snapshotted:
+
+```rust nocheck
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[auth(role = "session", table = "sessions", secondary_storage)]
+pub struct Session { /* … */ }
+```
+
+## What gets stored
 
 | Setting | Behavior with a secondary backend |
 | --- | --- |
-| Default | Store sessions in the secondary backend |
-| `store_in_database = true` | Also persist SQL session rows |
-| `preserve_in_database = true` | Retain and expire SQL rows on revocation |
+| default | Sessions are stored **only** in the cache |
+| `session.store_in_database = true` | Also write SQL session rows (durable audit trail, cache stays authoritative) |
+| `session.preserve_in_database = true` | Keep ended sessions in SQL (expired, not deleted) when they are revoked |
+| `verification.store_in_database = true` | Also persist verification values in SQL |
 
-Cached credentials and user snapshots are authoritative. SQL fallback for a missing cached credential is allowed only with combined storage and preservation disabled. Invalid cached credentials cannot authenticate; session lists use the secondary index.
+Cached credentials and user snapshots are authoritative. A SQL fallback for a *missing* cached session exists only when both `store_in_database` and `preserve_in_database` are off; a corrupted cached credential never authenticates. `list-sessions` reads the secondary index.
 
-SQL rollback cannot undo completed cache writes. Failed issuance can leave cache entries until expiry, and refreshing cached user snapshots after a committed update is best effort. Treat the backend as credential storage.
+## Verification values
 
-[API keys](/plugins/api-key/#storage) configure their storage independently.
+`config.verification` also controls how short-lived proofs are stored:
+
+| Field | Default | Effect |
+| --- | --- | --- |
+| `secondary_storage` | none | Cache backend for verification values. Single-use values need atomic `get_and_delete` |
+| `store_in_database` | `false` | Persist in SQL as well. Without a secondary backend, SQL is always used |
+| `disable_cleanup` | `false` | Keep expired rows during lookup instead of removing them. An atomic consume still invalidates an expired proof it selects |
+| `store_identifier` | plain | Transform stored identifiers: store them `Hashed`, or hash only selected prefixes (for example `email-otp`) with a `VerificationIdentifierPolicy` from `better-auth-core` |
+
+## Writing a backend
+
+Implement `better_auth::store::CacheAdapter`:
+
+| Method | Required | Used for |
+| --- | --- | --- |
+| `set(key, value, expires_in)`, `get`, `delete`, `exists`, `expire`, `clear` | yes | All storage |
+| `get_and_delete(key)` | for verification values | Single-use tokens must be consumed atomically; read-then-delete is not enough |
+| `increment(key, ttl)` | for [rate limits](/concepts/rate-limit/#share-quotas) | Atomic counter; TTL set only on creation |
+| `set_without_expiry(key, value)` | for permanent [API keys](/plugins/api-key/#storage) | Non-expiring writes |
+
+Methods you do not implement return an explicit error rather than silently degrading.
+
+## Failure modes
+
+- A SQL transaction cannot roll back completed cache writes. If session issuance fails after the cache write, the entry stays until it expires.
+- Refreshing a cached user snapshot after a committed update is best-effort.
+- Treat the backend as credential storage: authenticate it, encrypt traffic and restrict network access.
+
+[API keys](/plugins/api-key/#storage) choose their storage independently of sessions.
