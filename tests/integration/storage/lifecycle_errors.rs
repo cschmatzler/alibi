@@ -21,7 +21,10 @@ impl<S: AuthSchema> AuthPlugin<S> for Writer {
     }
 
     fn routes(&self) -> Vec<AuthRoute> {
-        vec![AuthRoute::get("/callback-error", "callbackError")]
+        vec![
+            AuthRoute::get("/callback-error", "callbackError"),
+            AuthRoute::post("/sign-up/email", "signUpEmail"),
+        ]
     }
 
     async fn on_request(
@@ -29,6 +32,11 @@ impl<S: AuthSchema> AuthPlugin<S> for Writer {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
+        if req.path() == "/sign-up/email" {
+            return better_auth::plugins::EmailPasswordPlugin::new()
+                .on_request(req, ctx)
+                .await;
+        }
         let mode = req.headers.get("x-mode").map_or("success", String::as_str);
         if mode == "success" {
             return Ok(Some(AuthResponse::new(204)));
@@ -47,6 +55,21 @@ impl<S: AuthSchema> AuthPlugin<S> for Writer {
                 "private application cause",
             ))))
         }
+    }
+
+    async fn on_http_endpoint(
+        &self,
+        req: &AuthRequest,
+        ctx: &AuthContext<S>,
+    ) -> AuthResult<Option<better_auth_core::HttpEndpointResponse>> {
+        let response = self.on_request(req, ctx).await?;
+        Ok(response.map(|response| {
+            if req.headers.get("x-mode").map(String::as_str) == Some("cache-raw") {
+                better_auth_core::HttpEndpointResponse::Raw(response)
+            } else {
+                better_auth_core::HttpEndpointResponse::Value(response)
+            }
+        }))
     }
 }
 
@@ -176,6 +199,36 @@ impl<S: AuthSchema> better_auth_core::endpoint::EndpointHook<S> for ConfiguredHo
     }
 }
 
+struct CacheVersion(Arc<Mutex<Vec<String>>>);
+#[async_trait]
+impl better_auth_core::CookieCacheVersionResolver for CacheVersion {
+    async fn resolve(&self, context: &better_auth_core::CacheVersionContext) -> AuthResult<String> {
+        let email = context
+            .user()
+            .email
+            .clone()
+            .expect("actual created email user");
+        self.0
+            .lock()
+            .expect("cache callback receipts")
+            .push(email.clone());
+        let call = better_auth_core::endpoint::current_endpoint_call_context()
+            .expect("issuance belongs to the HTTP handler frame");
+        call.set_response_header("x-cache-stage", "version");
+        if email.starts_with("cache-api@") {
+            Err(AuthError::Api {
+                status: 403,
+                code: None,
+                message: "cache version explicit".into(),
+            })
+        } else if email.starts_with("cache-ordinary@") {
+            Err(AuthError::internal("private cache version cause"))
+        } else {
+            Ok("actual-handler-v1".into())
+        }
+    }
+}
+
 async fn configured_endpoint_hooks_apply_to_http_before_plugin_hooks<B: Backend>(
     db: Db,
 ) -> TestResult {
@@ -206,5 +259,145 @@ async fn configured_endpoint_hooks_apply_to_http_before_plugin_hooks<B: Backend>
         Some("observed")
     );
     assert_eq!(*observed.lock().expect("observer mutex"), vec![200]);
+
+    let versions = Arc::new(Mutex::new(Vec::new()));
+    let config = AuthConfig::new(secret)
+        .base_url("http://lifecycle.fixture.test")
+        .session_cookie_cache(better_auth_core::CookieCacheConfig {
+            enabled: true,
+            version: Some(better_auth_core::CookieCacheVersion::Resolver(Arc::new(
+                CacheVersion(Arc::clone(&versions)),
+            ))),
+            ..Default::default()
+        });
+    let auth = AuthBuilder::<B::Schema>::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .endpoint_hook(ConfiguredHook)
+        .plugin(Writer)
+        .plugin(Observer(Arc::clone(&observed)))
+        .build()
+        .await?;
+    for (index, mode) in ["cache-ordinary", "cache-api", "cache-raw", "cache-success"]
+        .into_iter()
+        .enumerate()
+    {
+        let users_before = db.table("users").await?;
+        let sessions_before = db.table("sessions").await?;
+        let accounts_before = db.table("accounts").await?;
+        let after_before = observed.lock().expect("observer mutex").clone();
+        let mut req = AuthRequest::new(HttpMethod::Post, "/api/auth/sign-up/email");
+        req.headers = std::collections::HashMap::from([
+            ("x-mode".into(), mode.into()),
+            ("x-forwarded-for".into(), format!("192.0.2.{}", index + 1)),
+            ("origin".into(), "http://lifecycle.fixture.test".into()),
+            ("content-type".into(), "application/json".into()),
+        ]);
+        req.body = Some(serde_json::to_vec(&serde_json::json!({
+            "name":mode, "email":format!("{mode}@lifecycle.fixture.test"),
+            "password":"Password123!",
+        }))?);
+        let response = auth.handle_request(req).await?;
+        assert_eq!(
+            versions.lock().expect("cache receipts").last(),
+            Some(&format!("{mode}@lifecycle.fixture.test"))
+        );
+        let cookies = response.headers.get_all("set-cookie").collect::<Vec<_>>();
+        eprintln!(
+            "{}",
+            serde_json::json!({
+                "backend":std::any::type_name::<B>(), "mode":mode,
+                "status":response.status, "headers":response.headers.clone().into_iter().collect::<Vec<_>>(),
+                "body":String::from_utf8_lossy(&response.body), "callbacks":*versions.lock().expect("cache receipts"),
+                "before":{"users":users_before,"sessions":sessions_before,"accounts":accounts_before},
+                "after":{"users":db.table("users").await?,"sessions":db.table("sessions").await?,"accounts":db.table("accounts").await?},
+            })
+        );
+        if mode == "cache-ordinary" || mode == "cache-api" {
+            assert_eq!(db.table("users").await?, users_before);
+            assert_eq!(db.table("sessions").await?, sessions_before);
+            assert_eq!(db.table("accounts").await?, accounts_before);
+            if mode == "cache-ordinary" {
+                assert_eq!(response.status, 500);
+                assert!(response.body.is_empty());
+                assert!(response.headers.is_empty());
+                assert_eq!(*observed.lock().expect("observer mutex"), after_before);
+            } else {
+                assert_eq!(response.status, 403);
+                assert_eq!(
+                    response.headers.get("x-cache-stage").map(String::as_str),
+                    Some("version")
+                );
+                assert_eq!(
+                    response.headers.get("x-global").map(String::as_str),
+                    Some("observed")
+                );
+                assert_eq!(cookies.len(), 1);
+                assert!(cookies[0].starts_with("better-auth.session_token="));
+                assert_eq!(
+                    serde_json::from_slice::<serde_json::Value>(&response.body)?,
+                    serde_json::json!({"message":"cache version explicit"})
+                );
+            }
+        } else {
+            assert_eq!(response.status, 200);
+            let payload: serde_json::Value = serde_json::from_slice(&response.body)?;
+            let id = payload["user"]["id"].as_str().expect("actual signup user");
+            let token = payload["token"].as_str().expect("actual signup token");
+            assert_eq!(
+                db.text("SELECT user_id FROM sessions WHERE token = $1", &[token])
+                    .await?
+                    .as_deref(),
+                Some(id)
+            );
+            for (table, before) in [
+                ("users", users_before),
+                ("sessions", sessions_before),
+                ("accounts", accounts_before),
+            ] {
+                let before: Vec<serde_json::Value> = serde_json::from_str(&before)?;
+                let after: Vec<serde_json::Value> = serde_json::from_str(&db.table(table).await?)?;
+                assert_eq!(after.len(), before.len() + 1);
+                assert!(
+                    before.iter().all(|row| after.contains(row)),
+                    "foreign {table} rows remain exact"
+                );
+            }
+            assert!(
+                cookies
+                    .iter()
+                    .any(|cookie| cookie.starts_with("better-auth.session_token="))
+            );
+            if mode == "cache-raw" {
+                assert_eq!(
+                    cookies.len(),
+                    1,
+                    "raw response bypasses queued compact cache issuance"
+                );
+                assert!(!response.headers.contains_key("x-cache-stage"));
+                assert!(!response.headers.contains_key("x-global"));
+                assert_eq!(*observed.lock().expect("observer mutex"), after_before);
+            } else {
+                assert_eq!(cookies.len(), 2);
+                use base64::Engine as _;
+                let cache = cookies
+                    .iter()
+                    .find_map(|cookie| cookie.strip_prefix("better-auth.session_data="))
+                    .expect("actual compact cache issuance")
+                    .split(';')
+                    .next()
+                    .expect("actual cache token");
+                let envelope: serde_json::Value = serde_json::from_slice(
+                    &base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(cache)?,
+                )?;
+                assert_eq!(envelope["session"]["user"]["id"], id);
+                assert_eq!(envelope["session"]["session"]["token"], token);
+                assert_eq!(envelope["session"]["version"], "actual-handler-v1");
+                assert_eq!(
+                    response.headers.get("x-cache-stage").map(String::as_str),
+                    Some("version")
+                );
+            }
+        }
+    }
     B::close(connection).await
 }
