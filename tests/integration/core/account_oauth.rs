@@ -133,8 +133,8 @@ fn test_config_with_account_cookie() -> AuthConfig {
 }
 
 /// Helper: create a user + OAuth account + session, returning (`user_id`, `session_token`, `account_id`).
-async fn setup_user_with_account(
-    db: &Arc<dyn AuthStore<TestSchema>>,
+async fn setup_user_with_account<S: better_auth_core::AuthSchema>(
+    db: &Arc<dyn AuthStore<S>>,
     config: &Arc<AuthConfig>,
     email: &str,
     provider: &str,
@@ -193,9 +193,9 @@ async fn create_test_database() -> Arc<dyn AuthStore<TestSchema>> {
 }
 
 /// Issue the production encrypted cookie through the OAuth callback lifecycle.
-async fn issue_account_cookie(
+async fn issue_account_cookie<S: better_auth_core::AuthSchema>(
     account: &impl AuthAccount,
-    db: &Arc<dyn AuthStore<TestSchema>>,
+    db: &Arc<dyn AuthStore<S>>,
     config: &Arc<AuthConfig>,
     access_token: Option<&str>,
     refresh_token: Option<&str>,
@@ -242,7 +242,12 @@ async fn issue_account_cookie(
     let plugin = OAuthPlugin::with_config(oauth_config);
     let mut issuer_config = (**config).clone();
     issuer_config.account.skip_state_cookie_check = true;
-    let ctx = AuthContext::new(Arc::new(issuer_config), Arc::clone(db));
+    let auth = better_auth::BetterAuth::<S>::new(issuer_config)
+        .store_arc(Arc::clone(db))
+        .plugin(plugin)
+        .build()
+        .await
+        .unwrap();
     let state = uuid::Uuid::new_v4().to_string();
     db.create_verification(CreateVerification {
         identifier:state.clone(),
@@ -256,7 +261,7 @@ async fn issue_account_cookie(
     req.query.insert("state".into(), state);
     req.query
         .insert("code".into(), "native-cookie-authorization-code".into());
-    let response = plugin.on_request(&req, &ctx).await.unwrap().unwrap();
+    let response = Box::pin(auth.handle_request(req)).await.unwrap();
     assert_eq!(response.status, 302);
     assert_eq!(
         response.headers.get("Location").map(String::as_str),
@@ -579,176 +584,244 @@ mod tests {
         );
     }
 
-    // Upstream reference: packages/better-auth/src/api/routes/account.ts :: getAccessToken/refreshToken cookie-backed token refresh behavior; adapted to the Rust account and OAuth route behavior.
+    // Better Auth 1.7.6 account.ts selects the signed cookie's owner and persists
+    // rotated tokens. Exercise the initialized HTTP path on both actual stores.
     #[tokio::test]
     async fn test_refresh_token_persists_rotated_tokens_for_cookie_matched_account() {
-        let config = Arc::new(test_config_with_account_cookie());
-        let db = create_test_database().await;
+        Box::pin(cookie_token_rotation::<crate::storage::SeaOrm>(
+            "/refresh-token",
+        ))
+        .await;
+        Box::pin(cookie_token_rotation::<crate::storage::Sqlx>(
+            "/refresh-token",
+        ))
+        .await;
+    }
 
+    #[tokio::test]
+    async fn test_get_access_token_refresh_persists_rotated_tokens_for_cookie_matched_account() {
+        Box::pin(cookie_token_rotation::<crate::storage::SeaOrm>(
+            "/get-access-token",
+        ))
+        .await;
+        Box::pin(cookie_token_rotation::<crate::storage::Sqlx>(
+            "/get-access-token",
+        ))
+        .await;
+    }
+
+    async fn cookie_token_rotation<B: crate::storage::Backend>(path: &str) {
+        let config = Arc::new(test_config_with_account_cookie());
+        let physical = crate::storage::Db::sqlite().await.unwrap();
+        let (connection, store) = physical.migrated::<B>(TEST_SECRET).await.unwrap();
+        let db: Arc<dyn AuthStore<B::Schema>> = Arc::new(store);
         let (user_id, session_token, _) = setup_user_with_account(
             &db,
             &config,
-            "rotate-refresh@example.com",
+            "rotate-owner@example.com",
             "google",
             Some("old-access-token".to_owned()),
             Some("old-refresh-token".to_owned()),
         )
         .await;
         let account = db.get_user_accounts(&user_id).await.unwrap().remove(0);
+        let foreign_user = db
+            .create_user(
+                CreateUser::new()
+                    .with_email("foreign-owner@example.com")
+                    .with_name("Foreign owner"),
+            )
+            .await
+            .unwrap();
+        let foreign_session = SessionManager::new(Arc::clone(&config), Arc::clone(&db))
+            .create_session(&foreign_user, None, None)
+            .await
+            .unwrap();
+        let foreign_account = db
+            .create_account(CreateAccount {
+                user_id: foreign_user.id().to_string(),
+                provider_id: "google".into(),
+                account_id: "foreign-subject".into(),
+                access_token: Some("foreign-access-token".into()),
+                refresh_token: Some("foreign-refresh-token".into()),
+                additional_fields: Default::default(),
+                id_token: None,
+                access_token_expires_at: None,
+                refresh_token_expires_at: None,
+                scope: None,
+                password: None,
+            })
+            .await
+            .unwrap();
         let account_cookie = issue_account_cookie(
             &account,
             &db,
             &config,
             Some("old-access-token"),
             Some("old-refresh-token"),
-            Some(Utc::now() + Duration::minutes(30)),
-        )
-        .await;
-
-        let ctx = AuthContext::new(Arc::clone(&config), Arc::clone(&db));
-        let mut oauth_config = OAuthConfig::default();
-        let mut provider = make_test_provider("http://localhost:65535");
-        provider.refresh_access_token = Some(Arc::new(RotatingRefreshHandler {
-            sequence: Arc::new(std::sync::Mutex::new(vec![(
-                "old-refresh-token".to_owned(),
-                OAuthTokenSet {
-                    access_token: Some("rotated-access-token".to_owned()),
-                    refresh_token: Some("rotated-refresh-token".to_owned()),
-                    access_token_expires_at: Some(Utc::now() + Duration::minutes(30)),
-                    refresh_token_expires_at: Some(Utc::now() + Duration::hours(24)),
-                    scopes: vec!["email".to_owned()],
-                    ..Default::default()
-                },
-            )])),
-        }));
-        oauth_config.providers.insert("google".to_owned(), provider);
-        let oauth_plugin = OAuthPlugin::with_config(oauth_config);
-
-        let mut req = AuthRequest::new(HttpMethod::Post, "/refresh-token");
-        req.body = Some(json!({"useAccountCookie": true}).to_string().into_bytes());
-        req.headers
-            .insert("content-type".to_owned(), "application/json".to_owned());
-        set_session_and_account_cookies(&mut req, &session_token, &account_cookie);
-
-        let result = oauth_plugin.on_request(&req, &ctx).await;
-        let resp = match result {
-            Ok(Some(resp)) => resp,
-            other => panic!("refresh-token should succeed, got {other:?}"),
-        };
-
-        assert_eq!(resp.status, 200);
-        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
-        assert_eq!(
-            (*(body)
-                .get("refreshToken")
-                .unwrap_or(&serde_json::Value::Null)),
-            "rotated-refresh-token"
-        );
-
-        let updated_account = db
-            .get_user_accounts(&user_id)
-            .await
-            .unwrap()
-            .into_iter()
-            .find(|candidate| candidate.id() == account.id())
-            .unwrap();
-        assert_eq!(
-            updated_account.refresh_token(),
-            Some("rotated-refresh-token"),
-            "refresh-token should persist rotated refresh tokens back to the DB"
-        );
-        assert!(
-            resp.headers
-                .get_all("Set-Cookie")
-                .any(|value| value.starts_with("better-auth.account_data=")),
-            "refresh-token should refresh the account_data cookie when it is the source of truth"
-        );
-    }
-
-    // Upstream reference: packages/better-auth/src/api/routes/account.ts :: getAccessToken/refreshToken cookie-backed token refresh behavior; adapted to the Rust account and OAuth route behavior.
-    #[tokio::test]
-    async fn test_get_access_token_refresh_persists_rotated_tokens_for_cookie_matched_account() {
-        let config = Arc::new(test_config_with_account_cookie());
-        let db = create_test_database().await;
-
-        let (user_id, session_token, _) = setup_user_with_account(
-            &db,
-            &config,
-            "rotate-access@example.com",
-            "google",
-            Some("expired-access-token".to_owned()),
-            Some("old-refresh-token".to_owned()),
-        )
-        .await;
-        let account = db.get_user_accounts(&user_id).await.unwrap().remove(0);
-        let account_cookie = issue_account_cookie(
-            &account,
-            &db,
-            &config,
-            Some("expired-access-token"),
-            Some("old-refresh-token"),
             Some(Utc::now() - Duration::seconds(10)),
         )
         .await;
-
-        let ctx = AuthContext::new(Arc::clone(&config), Arc::clone(&db));
+        // The issuer must produce a valid authenticated, canonical cookie, so a
+        // foreign-owner denial cannot pass because of malformed fixture data.
+        let issued = better_auth_core::utils::jwe::decode(
+            TEST_SECRET,
+            "better-auth-account",
+            &account_cookie,
+        )
+        .unwrap();
+        assert_eq!(issued.get("userId"), Some(&json!(user_id)));
+        assert_eq!(issued.get("id"), Some(&json!(account.id())));
+        assert_eq!(issued.get("providerId"), Some(&json!("google")));
+        assert_eq!(issued.get("accountId"), Some(&json!(account.account_id())));
+        let before = physical
+            .tables(&["accounts", "users", "sessions"])
+            .await
+            .unwrap();
+        let sequence = Arc::new(std::sync::Mutex::new(vec![(
+            "old-refresh-token".to_owned(),
+            OAuthTokenSet {
+                access_token: Some("rotated-access-token".to_owned()),
+                refresh_token: Some("rotated-refresh-token".to_owned()),
+                access_token_expires_at: Some(Utc::now() + Duration::minutes(30)),
+                refresh_token_expires_at: Some(Utc::now() + Duration::hours(24)),
+                scopes: vec!["email".to_owned()],
+                ..Default::default()
+            },
+        )]));
         let mut oauth_config = OAuthConfig::default();
         let mut provider = make_test_provider("http://localhost:65535");
         provider.refresh_access_token = Some(Arc::new(RotatingRefreshHandler {
-            sequence: Arc::new(std::sync::Mutex::new(vec![(
-                "old-refresh-token".to_owned(),
-                OAuthTokenSet {
-                    access_token: Some("rotated-access-token".to_owned()),
-                    refresh_token: Some("rotated-refresh-token".to_owned()),
-                    access_token_expires_at: Some(Utc::now() + Duration::minutes(30)),
-                    refresh_token_expires_at: Some(Utc::now() + Duration::hours(24)),
-                    scopes: vec!["email".to_owned()],
-                    ..Default::default()
-                },
-            )])),
+            sequence: Arc::clone(&sequence),
         }));
         oauth_config.providers.insert("google".to_owned(), provider);
-        let oauth_plugin = OAuthPlugin::with_config(oauth_config);
-
-        let mut req = AuthRequest::new(HttpMethod::Post, "/get-access-token");
+        let auth = better_auth::BetterAuth::<B::Schema>::new((*config).clone())
+            .store_arc(Arc::clone(&db))
+            .plugin(OAuthPlugin::with_config(oauth_config))
+            .build()
+            .await
+            .unwrap();
+        let mut req = AuthRequest::new(HttpMethod::Post, path);
         req.body = Some(json!({"useAccountCookie": true}).to_string().into_bytes());
         req.headers
             .insert("content-type".to_owned(), "application/json".to_owned());
+        req.headers
+            .insert("origin".to_owned(), "http://localhost:3000".to_owned());
+        set_session_and_account_cookies(&mut req, foreign_session.token(), &account_cookie);
+        let denied = Box::pin(auth.handle_request(req.clone())).await.unwrap();
+        assert_eq!(denied.status, 400);
+        let denied_body: serde_json::Value = serde_json::from_slice(&denied.body).unwrap();
+        assert_eq!(denied_body.get("code"), Some(&json!("ACCOUNT_NOT_FOUND")));
+        assert_eq!(
+            physical
+                .tables(&["accounts", "users", "sessions"])
+                .await
+                .unwrap(),
+            before
+        );
+        assert_eq!(
+            sequence.lock().unwrap().len(),
+            1,
+            "foreign owner must not refresh"
+        );
         set_session_and_account_cookies(&mut req, &session_token, &account_cookie);
-
-        let result = oauth_plugin.on_request(&req, &ctx).await;
-        let resp = match result {
-            Ok(Some(resp)) => resp,
-            other => panic!("get-access-token should succeed, got {other:?}"),
-        };
-
-        assert_eq!(resp.status, 200);
-        let body: serde_json::Value = serde_json::from_slice(&resp.body).unwrap();
+        let response = Box::pin(auth.handle_request(req)).await.unwrap();
         assert_eq!(
-            (*(body)
-                .get("accessToken")
-                .unwrap_or(&serde_json::Value::Null)),
-            "rotated-access-token"
+            response.status,
+            200,
+            "{path}: {}",
+            String::from_utf8_lossy(&response.body)
         );
-
-        let updated_account = db
-            .get_user_accounts(&user_id)
-            .await
-            .unwrap()
-            .into_iter()
-            .find(|candidate| candidate.id() == account.id())
-            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
         assert_eq!(
-            updated_account.refresh_token(),
-            Some("rotated-refresh-token"),
-            "get-access-token refresh path should persist rotated refresh tokens back to the DB"
+            body.get("accessToken"),
+            Some(&json!("rotated-access-token"))
         );
+        if path == "/refresh-token" {
+            assert_eq!(
+                body.get("refreshToken"),
+                Some(&json!("rotated-refresh-token"))
+            );
+        }
         assert!(
-            resp.headers
-                .get_all("Set-Cookie")
-                .any(|value| value.starts_with("better-auth.account_data=")),
-            "get-access-token refresh path should refresh the account_data cookie when it is the source of truth"
+            sequence.lock().unwrap().is_empty(),
+            "owner refresh uses the old grant exactly once"
         );
+        // Read physical SQL independently of the production store's getters.
+        for (column, expected) in [
+            ("access_token", "rotated-access-token"),
+            ("refresh_token", "rotated-refresh-token"),
+            ("user_id", user_id.as_str()),
+        ] {
+            assert_eq!(
+                physical
+                    .text(
+                        &format!("SELECT {column} FROM accounts WHERE id = $1"),
+                        &[account.id().as_ref()]
+                    )
+                    .await
+                    .unwrap()
+                    .as_deref(),
+                Some(expected)
+            );
+        }
+        let original_accounts: Vec<serde_json::Value> =
+            serde_json::from_str(before.first().expect("physical snapshot includes accounts"))
+                .unwrap();
+        let updated_accounts: Vec<serde_json::Value> =
+            serde_json::from_str(&physical.table("accounts").await.unwrap()).unwrap();
+        assert_eq!(updated_accounts.len(), original_accounts.len());
+        let foreign_id = json!(foreign_account.id());
+        assert_eq!(
+            updated_accounts
+                .iter()
+                .find(|row| row.get("id") == Some(&foreign_id)),
+            original_accounts
+                .iter()
+                .find(|row| row.get("id") == Some(&foreign_id)),
+            "owner refresh must preserve the entire foreign account row"
+        );
+        assert_eq!(
+            physical.tables(&["users", "sessions"]).await.unwrap(),
+            before.into_iter().skip(1).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            physical
+                .text(
+                    "SELECT refresh_token FROM accounts WHERE id = $1",
+                    &[foreign_account.id().as_ref()]
+                )
+                .await
+                .unwrap()
+                .as_deref(),
+            Some("foreign-refresh-token")
+        );
+        let renewed = response
+            .headers
+            .get_all("Set-Cookie")
+            .find_map(|value| {
+                value
+                    .split(';')
+                    .next()?
+                    .strip_prefix("better-auth.account_data=")
+            })
+            .expect("refresh must renew the account cookie");
+        let renewed =
+            better_auth_core::utils::jwe::decode(TEST_SECRET, "better-auth-account", renewed)
+                .unwrap();
+        assert_eq!(renewed.get("id"), Some(&json!(account.id())));
+        assert_eq!(renewed.get("userId"), Some(&json!(user_id)));
+        assert_eq!(
+            renewed.get("accessToken"),
+            Some(&json!("rotated-access-token"))
+        );
+        assert_eq!(
+            renewed.get("refreshToken"),
+            Some(&json!("rotated-refresh-token"))
+        );
+        drop(auth);
+        drop(db);
+        B::close(connection).await.unwrap();
     }
 
     // Upstream reference: packages/better-auth/src/api/routes/account.ts :: accountInfo resolves

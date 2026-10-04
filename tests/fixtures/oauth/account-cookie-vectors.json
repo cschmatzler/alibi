@@ -21,5 +21,41 @@
   "expired": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIiwia2lkIjoiS2lIYzd0ZHJKUlc3M1d4YmRqMmlPMWJQMDBNR1UwWFRSejYzRkhBbGJtNCJ9..oLuWLZJIu2dNT1Da9Y6upg.LQvwL7vrFRB8IyEQFu2gLEHnGyq2SrGYvPmkCSKKgSRaU2w0Eww2HHH481wwf3JmiaUSj_2i50kgtgDdnEPfhIJpQDGCelAnHkDKQQLlRQiSo1yj_pBml1KUadxsntUBNesZHM-Q2uIuTidTyuBkrqMw6uN2VczbxxM51ceU2WCeSqFcCcErJNIatdRPXzWDM8lKUbXZEEOkkRUvWkMFLKxM7MxMvjr6Z8MvC1kb5uBp0dgrm3A49Gl5EheSIM8_-NtdXt9tViTXoOrxfkVGRAm6XGJ-hIbj32WVJZ40XP-dgtyXKCckx8C-GlVFHjgryXjvhSGlq9uAJ80o9JBaZdh_HwurgbCyGjZ2Tqn0WTdwcTvGbhfQojYPBKUnbEBu2BDoukIdBRJjrIudrGRtICKUbkoDeHYtCcOL1HExX0gqkWIi215N0Vt7ljCulRqi4DkZUAJ5qDB7s373mO_TLDqokFZlNf2gFveS2oyPPKPE2ixjNgvUde03dmyzKQ_N1YczFKgl7q3qLGDmACSvJGaFtv0lxVfev7-A-jyCr6iI9Putqc2CFR4sbr98W5koHdrYDcb6VMHbPnx_BgWscNPOMtkfvCXdqM8WnqgjZ6ug9Q5KPgygQnOo43m5f7RJe2I5MKuYJFHnt8xzgPxSjw.sWwkpflG5u4nGwA45jzWuNxkwnJOQpKsyuR44BtZYpg",
   "noKid": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2Q0JDLUhTNTEyIn0..PmhPv3oVCGtuQR3amycJrA.dq5I-oZBckvCvYwOtTDM4Y4z4zDsw4VRFpfTYXd8TvzSuiR0QJi_nOldTHqHs49W_RnDlRTZFslQBGKMSjcFxZ-Vut_6Mp2qA_CGP0J7qTmMrPr3pjEYlvnVLj8m4DyX4lUPPcb6_h33ESzweZcrG7y9xUTZyirtkqtiRbYVbtS4trWs3ryy2UjK5wvuCXIOVfg8WBCqI33XCrc2sc1GsmjQPU8tQgZJ-wqr8ROZR8fQcunPtKW3vCP0ylK-PoO8YZc_ESDNkUJr79hGeSqqXDi_qty3UEnIPb-ehCQIx_aJSuOBlT89stRQvOi9SIxl4tb0RjZsLx5lRnG4MTcEptUfuPfWgFPyqtoTawRrWfnMb2YFuPBKRgRTWo3SZmtFKhUesB-52sMLJcaJwwqG901wkQu-sRvy_ewmqw34rvitLBfEGpiOp-devZ9ADf930On_bce2O9jgyF811O2SC0ZtjM7BuZcSODsOH7VOc-baDymIiOVnW3K6H0cCHzvwNtA6oluRHO6R0F1V9KXaMWxmO2U_lUwa10ZltvqNuVSJQ6UEpkGhMnOZF5HFrd_t.7wZWMR30As2F6Dt0uFoqtrjpwJ0O0-HwwGo43-3JrZM",
   "gcm": "eyJhbGciOiJkaXIiLCJlbmMiOiJBMjU2R0NNIn0..ELTrLi5q-YnbN66x.G6rRI_I1thpQ9AyymUNkmheMZSpE2TV8wsrJNZ0Yh0ZE5-LwCCY2ZH7uuwsejWuwa3as08ScA9C9zFdaoir7N3DLdtDUt6l5IpgjYW0IS8llmJiba-PRFgA-2Ic3HEonxMDgmu9Xv4evBPcdwDYoFOkHZZ3kkpFgUe5WyshBfsv0ZBSXqxrTtVxakioS-nRzT6qRlK6eDlXYBR2dshLU7xG2MMK10M01HK_PPJmxqHfX0qlJDusm-ly6uqKEvw066YBHY7K_K7nNaMRmFE_kYwsTwYN0hEjztJuU3bv462j9udtOtQ-mQaKdUbSFnN5UrSYJRjI6H2K2Gg_ivkB6X5EzeW-nxAQXFoWFcq03nZSPjAY2ZadJf0I5GgnQC96W5iCDkGu39P0QYHC539qyTasLhFr7iDShWikWGke1HqvI6gs7R1M8Iv02qMda0QnRrIJyPyoacI4hUUUqmVsdVP7nQowbWZYyCluFU7CzGySwYHSsPvPOO7zW1Z1TMm8af0AVrTxlklmxyHyBmvxps10kzNaaRre0KBnm8ZyELb_XXRiYdj0dyltfGA.NN4r11_y5m6r0SAK4wTc7A",
-  "jws": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6ImFjY291bnQtdmVjdG9yIiwidXNlcklkIjoib3duZXItdmVjdG9yIiwicHJvdmlkZXJJZCI6Imdvb2dsZSIsImFjY291bnRJZCI6InN1YmplY3QtdmVjdG9yIiwiYWNjZXNzVG9rZW4iOiJwcml2YXRlLXByb3ZpZGVyLWFjY2VzcyIsInJlZnJlc2hUb2tlbiI6InByaXZhdGUtcHJvdmlkZXItcmVmcmVzaCIsImlkVG9rZW4iOiJwcml2YXRlLXByb3ZpZGVyLWlkIiwiYWNjZXNzVG9rZW5FeHBpcmVzQXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJyZWZyZXNoVG9rZW5FeHBpcmVzQXQiOm51bGwsInNjb3BlIjoiY2FsZW5kYXIsZHJpdmUiLCJwYXNzd29yZCI6bnVsbCwiY3JlYXRlZEF0IjoiMjAyNi0xMC0wMVQwMDowMDowMC4wMDBaIiwidXBkYXRlZEF0IjoiMjAyNi0xMC0wMVQwMDowMDowMC4wMDBaIiwiZXhwIjoyOTAwMDAwMDAwfQ.05V_jZ2ghvP4-3opp2B03UFVBkf5P5kFj7rmHh1BFBY"
+  "jws": "eyJhbGciOiJIUzI1NiJ9.eyJpZCI6ImFjY291bnQtdmVjdG9yIiwidXNlcklkIjoib3duZXItdmVjdG9yIiwicHJvdmlkZXJJZCI6Imdvb2dsZSIsImFjY291bnRJZCI6InN1YmplY3QtdmVjdG9yIiwiYWNjZXNzVG9rZW4iOiJwcml2YXRlLXByb3ZpZGVyLWFjY2VzcyIsInJlZnJlc2hUb2tlbiI6InByaXZhdGUtcHJvdmlkZXItcmVmcmVzaCIsImlkVG9rZW4iOiJwcml2YXRlLXByb3ZpZGVyLWlkIiwiYWNjZXNzVG9rZW5FeHBpcmVzQXQiOiIyMDk5LTAxLTAxVDAwOjAwOjAwLjAwMFoiLCJyZWZyZXNoVG9rZW5FeHBpcmVzQXQiOm51bGwsInNjb3BlIjoiY2FsZW5kYXIsZHJpdmUiLCJwYXNzd29yZCI6bnVsbCwiY3JlYXRlZEF0IjoiMjAyNi0xMC0wMVQwMDowMDowMC4wMDBaIiwidXBkYXRlZEF0IjoiMjAyNi0xMC0wMVQwMDowMDowMC4wMDBaIiwiZXhwIjoyOTAwMDAwMDAwfQ.05V_jZ2ghvP4-3opp2B03UFVBkf5P5kFj7rmHh1BFBY",
+  "decoded": {
+    "valid": {
+      "id": "account-vector",
+      "userId": "owner-vector",
+      "providerId": "google",
+      "accountId": "subject-vector",
+      "accessToken": "private-provider-access",
+      "refreshToken": "private-provider-refresh",
+      "idToken": "private-provider-id",
+      "accessTokenExpiresAt": "2099-01-01T00:00:00.000Z",
+      "refreshTokenExpiresAt": null,
+      "scope": "calendar,drive",
+      "password": null,
+      "createdAt": "2026-10-01T00:00:00.000Z",
+      "updatedAt": "2026-10-01T00:00:00.000Z",
+      "iat": 1790817656,
+      "exp": 2790817656,
+      "jti": "0232b5c9-f039-4837-924d-aeb131749395"
+    },
+    "noKid": {
+      "id": "account-vector",
+      "userId": "owner-vector",
+      "providerId": "google",
+      "accountId": "subject-vector",
+      "accessToken": "private-provider-access",
+      "refreshToken": "private-provider-refresh",
+      "idToken": "private-provider-id",
+      "accessTokenExpiresAt": "2099-01-01T00:00:00.000Z",
+      "refreshTokenExpiresAt": null,
+      "scope": "calendar,drive",
+      "password": null,
+      "createdAt": "2026-10-01T00:00:00.000Z",
+      "updatedAt": "2026-10-01T00:00:00.000Z",
+      "exp": 2900000000
+    }
+  }
 }

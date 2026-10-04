@@ -1,0 +1,132 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 13.5ms
+• Running devenv:files
+✓ Running devenv:files in 20.3ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 11.2ms
+   Compiling serde_core v1.0.228
+   Compiling httpdate v1.0.3
+   Compiling hyper v1.8.1
+   Compiling hyper-util v0.1.20
+   Compiling serde v1.0.228
+   Compiling indexmap v2.13.0
+   Compiling deranged v0.5.8
+   Compiling serde_json v1.0.149
+   Compiling time v0.3.47
+   Compiling url v2.5.8
+   Compiling uuid v1.21.0
+   Compiling chrono v0.4.44
+   Compiling rust_decimal v1.40.0
+   Compiling tower v0.5.3
+   Compiling sqlx-core v0.9.0
+   Compiling asn1-rs v0.6.2
+   Compiling sqlx-sqlite v0.9.0
+   Compiling sqlx-postgres v0.9.0
+   Compiling serde_urlencoded v0.7.1
+   Compiling base64urlsafedata v0.5.4
+   Compiling sqlx v0.9.0
+   Compiling sea-query v1.0.2
+   Compiling axum-core v0.5.6
+   Compiling serde_path_to_error v0.1.20
+   Compiling matchit v0.8.4
+   Compiling der-parser v9.0.0
+   Compiling axum v0.8.8
+   Compiling jsonwebtoken v11.1.0
+   Compiling sea-query-sqlx v0.9.1
+   Compiling validator v0.21.0
+   Compiling cookie v0.18.1
+   Compiling oid-registry v0.7.1
+   Compiling better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-final-verification-20261004/account-contract-repair/crates/core)
+   Compiling x509-parser v0.16.0
+   Compiling serde_cbor_2 v0.13.0
+   Compiling sea-schema v0.18.1
+   Compiling webauthn-attestation-ca v0.5.4
+   Compiling webauthn-rs-proto v0.5.4
+   Compiling sea-orm-cli v2.0.4
+   Compiling sea-orm v2.0.4
+   Compiling tower-http v0.6.8
+   Compiling hyper-tls v0.6.0
+   Compiling better-auth-webauthn-core v1.0.0-alpha.3 (/tmp/better-auth-final-verification-20261004/account-contract-repair/vendor/webauthn-rs-core)
+   Compiling totp-rs v5.7.0
+   Compiling reqwest v0.12.28
+   Compiling serde_with v3.18.0
+   Compiling better-auth-webauthn-rs v1.0.0-alpha.3 (/tmp/better-auth-final-verification-20261004/account-contract-repair/vendor/webauthn-rs)
+   Compiling sea-orm-migration v2.0.4
+   Compiling serde_yaml v0.9.34+deprecated
+   Compiling oas3 v0.20.1
+   Compiling better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-final-verification-20261004/account-contract-repair/crates/seaorm)
+   Compiling better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-final-verification-20261004/account-contract-repair/crates/api)
+   Compiling better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-final-verification-20261004/account-contract-repair/crates/sqlx)
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-final-verification-20261004/account-contract-repair)
+    Finished `test` profile [unoptimized] target(s) in 1m 49s
+────────────
+ Nextest run ID 65500962-e94a-40f3-974e-f961cf626a29 with nextest profile: default
+    Starting 3 tests across 7 binaries (880 tests skipped)
+        FAIL [   0.005s] (1/3) better-auth-api plugins::oauth::account_cookie::tests::account_cookie_accepts_pinned_encrypted_vectors_and_rejects_unauthenticated_values
+  stdout ───
+
+    running 1 test
+    test plugins::oauth::account_cookie::tests::account_cookie_accepts_pinned_encrypted_vectors_and_rejects_unauthenticated_values ... FAILED
+
+    failures:
+
+    failures:
+        plugins::oauth::account_cookie::tests::account_cookie_accepts_pinned_encrypted_vectors_and_rejects_unauthenticated_values
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 333 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'plugins::oauth::account_cookie::tests::account_cookie_accepts_pinned_encrypted_vectors_and_rejects_unauthenticated_values' (4184701) panicked at crates/api/src/plugins/oauth/account_cookie/mod.rs:56:13:
+    assertion `left == right` failed
+      left: Object {"id": String("account-vector"), "userId": String("owner-vector"), "providerId": String("google"), "accountId": String("subject-vector"), "accessToken": String("private-provider-access"), "refreshToken": String("private-provider-refresh"), "idToken": String("private-provider-id"), "accessTokenExpiresAt": String("2099-01-01T00:00:00.000Z"), "refreshTokenExpiresAt": Null, "scope": String("calendar,drive"), "password": Null, "createdAt": String("2026-10-01T00:00:00.000Z"), "updatedAt": String("2026-10-01T00:00:00.000Z"), "iat": Number(1790817656), "exp": Number(2790817656), "jti": String("0232b5c9-f039-4837-924d-aeb131749395")}
+     right: Object {"id": String("account-vector"), "userId": String("owner-vector"), "providerId": String("google"), "accountId": String("subject-vector"), "accessToken": String("private-provider-access"), "refreshToken": String("private-provider-refresh"), "idToken": String("private-provider-id"), "accessTokenExpiresAt": String("2099-01-01T00:00:00.000Z"), "refreshTokenExpiresAt": Null, "scope": String("calendar,drive"), "password": Null, "createdAt": String("2026-10-01T00:00:00.000Z"), "updatedAt": String("2026-10-01T00:00:00.000Z")}
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 2 tests still running
+        FAIL [   0.042s] (2/3) better-auth::integration core::account_oauth::tests::test_get_access_token_refresh_persists_rotated_tokens_for_cookie_matched_account
+  stdout ───
+
+    running 1 test
+    test core::account_oauth::tests::test_get_access_token_refresh_persists_rotated_tokens_for_cookie_matched_account ... FAILED
+
+    failures:
+
+    failures:
+        core::account_oauth::tests::test_get_access_token_refresh_persists_rotated_tokens_for_cookie_matched_account
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 441 filtered out; finished in 0.04s
+
+  stderr ───
+
+    thread 'core::account_oauth::tests::test_get_access_token_refresh_persists_rotated_tokens_for_cookie_matched_account' (4184702) panicked at tests/integration/core/account_oauth.rs:722:22:
+    get-access-token should succeed, got Err(BadRequest("Account not found"))
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+        FAIL [   0.042s] (3/3) better-auth::integration core::account_oauth::tests::test_refresh_token_persists_rotated_tokens_for_cookie_matched_account
+  stdout ───
+
+    running 1 test
+    test core::account_oauth::tests::test_refresh_token_persists_rotated_tokens_for_cookie_matched_account ... FAILED
+
+    failures:
+
+    failures:
+        core::account_oauth::tests::test_refresh_token_persists_rotated_tokens_for_cookie_matched_account
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 441 filtered out; finished in 0.03s
+
+  stderr ───
+
+    thread 'core::account_oauth::tests::test_refresh_token_persists_rotated_tokens_for_cookie_matched_account' (4184703) panicked at tests/integration/core/account_oauth.rs:636:22:
+    refresh-token should succeed, got Err(BadRequest("Account not found"))
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+────────────
+     Summary [   0.043s] 3 tests run: 0 passed, 3 failed, 880 skipped
+        FAIL [   0.005s] (1/3) better-auth-api plugins::oauth::account_cookie::tests::account_cookie_accepts_pinned_encrypted_vectors_and_rejects_unauthenticated_values
+        FAIL [   0.042s] (2/3) better-auth::integration core::account_oauth::tests::test_get_access_token_refresh_persists_rotated_tokens_for_cookie_matched_account
+        FAIL [   0.042s] (3/3) better-auth::integration core::account_oauth::tests::test_refresh_token_persists_rotated_tokens_for_cookie_matched_account
+error: test run failed
+mbx[cache]: 51 hits, 1 misses, 13 not looked up; 0 B downloaded, 0 B uploaded, 500.5 MiB stored locally
+mbx[savings]: 390388 compilations served. ask rustc how many it remembers doing.

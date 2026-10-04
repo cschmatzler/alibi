@@ -1,0 +1,9 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 12.8ms
+• Running devenv:files
+✓ Running devenv:files in 20.4ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 7.71ms
+bun install v1.4.2 (744846f84)
+
+Checked 51 installs across 52 packages (no changes) [1.00ms]

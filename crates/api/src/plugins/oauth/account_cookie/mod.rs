@@ -54,9 +54,10 @@ mod tests {
             )
             .unwrap();
             assert_eq!(
-                serde_json::to_value(decoded).unwrap(),
+                serde_json::to_value(&decoded).unwrap(),
                 (*(vectors)
-                    .get("payload")
+                    .get("decoded")
+                    .and_then(|expected| expected.get(name))
                     .expect("fixture contains the requested index"))
             );
         }
