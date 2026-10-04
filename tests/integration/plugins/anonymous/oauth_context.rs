@@ -82,10 +82,10 @@ async fn initiate(
     cookie: &str,
     foreign: &str,
 ) -> (String, String, Value) {
-    let response = auth.handle_request(request("/api/auth/sign-in/social", Some(json!({
+    let response = Box::pin(auth.handle_request(request("/api/auth/sign-in/social", Some(json!({
         "provider":"gitlab", "callbackURL":"/completed", "disableRedirect":true,
         "additionalData":{"serverContext":{"anonymousUserId":foreign},"_serverContextProof":"forged", "application":{"kept":true}},
-    })), Some(cookie))).await.unwrap();
+    })), Some(cookie)))).await.unwrap();
     assert_eq!(response.status, 200);
     let body: Value = serde_json::from_slice(&response.body).unwrap();
     let url = url::Url::parse(body.get("url").unwrap().as_str().unwrap()).unwrap();
@@ -116,7 +116,7 @@ async fn callback(auth: &BetterAuth<Schema>, state: &str, cookie: &str) -> AuthR
             .insert("code".into(), "actual-local-code".into()),
     );
     drop(request.query.insert("state".into(), state.into()));
-    auth.handle_request(request).await.unwrap()
+    Box::pin(auth.handle_request(request)).await.unwrap()
 }
 
 #[cfg(test)]
@@ -179,14 +179,13 @@ mod tests {
                 .build()
                 .await
                 .unwrap();
-            let anonymous = auth
-                .handle_request(request(
-                    "/api/auth/sign-in/anonymous",
-                    Some(json!({})),
-                    None,
-                ))
-                .await
-                .unwrap();
+            let anonymous = Box::pin(auth.handle_request(request(
+                "/api/auth/sign-in/anonymous",
+                Some(json!({})),
+                None,
+            )))
+            .await
+            .unwrap();
             assert_eq!(anonymous.status, 200, "{mode}");
             let old: Value = serde_json::from_slice(&anonymous.body).unwrap();
             let old_id = old
@@ -196,14 +195,13 @@ mod tests {
                 .unwrap()
                 .as_str()
                 .unwrap();
-            let foreign = auth
-                .handle_request(request(
-                    "/api/auth/sign-in/anonymous",
-                    Some(json!({})),
-                    None,
-                ))
-                .await
-                .unwrap();
+            let foreign = Box::pin(auth.handle_request(request(
+                "/api/auth/sign-in/anonymous",
+                Some(json!({})),
+                None,
+            )))
+            .await
+            .unwrap();
             let foreign_body: Value = serde_json::from_slice(&foreign.body).unwrap();
             let foreign_id = foreign_body
                 .get("user")

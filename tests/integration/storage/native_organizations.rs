@@ -77,7 +77,7 @@ async fn call<S: AuthSchema>(
         drop(req.query.insert((*key).into(), (*value).into()));
     }
     req.body = input.map(|v| serde_json::to_vec(&v).unwrap());
-    let response = auth.handle_request(req).await?;
+    let response = Box::pin(auth.handle_request(req)).await?;
     trace.push(json!({"path":path,"status":response.status,"body":String::from_utf8(response.body.clone())?}));
     assert_eq!(
         response.status,
@@ -100,7 +100,7 @@ async fn signup<S: AuthSchema>(
     req.body = Some(serde_json::to_vec(
         &json!({"email":email,"password":"Password123!","name":email}),
     )?);
-    let response = auth.handle_request(req).await?;
+    let response = Box::pin(auth.handle_request(req)).await?;
     assert_eq!(response.status, 200, "{}", body(&response));
     Ok((
         cookies(&response),

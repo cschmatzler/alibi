@@ -203,7 +203,7 @@ async fn request(
     if let Some(cookie) = cookie {
         drop(req.headers.insert("cookie".into(), cookie.into()));
     }
-    auth.handle_request(req).await.unwrap()
+    Box::pin(auth.handle_request(req)).await.unwrap()
 }
 
 fn cookies(response: &AuthResponse) -> String {

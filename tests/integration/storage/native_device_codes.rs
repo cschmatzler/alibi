@@ -46,7 +46,7 @@ async fn call<S: AuthSchema>(
     if let Some(code) = code {
         drop(req.query.insert("user_code".into(), code.into()));
     }
-    let response = auth.handle_request(req).await?;
+    let response = Box::pin(auth.handle_request(req)).await?;
     trace.push(json!({"path":path,"status":response.status,"body":String::from_utf8(response.body.clone())?}));
     Ok(response)
 }

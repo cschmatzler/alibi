@@ -263,30 +263,33 @@ async fn without_database_optional_record_workflow() -> TestResult {
 }
 async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResult {
     let mut trace = Vec::new();
-    let signup = auth.handle_request(request("/sign-up/email", Some(json!({"name":"Owner", "email":"optional172@fixture.test", "password":"Password123!"})), "")).await?;
+    let signup = Box::pin(auth.handle_request(request(
+        "/sign-up/email",
+        Some(
+            json!({"name":"Owner", "email":"optional172@fixture.test", "password":"Password123!"}),
+        ),
+        "",
+    )))
+    .await?;
     observe(&mut trace, "/sign-up/email", &signup);
     assert_eq!(signup.status, 200, "{}", body(&signup));
     let user_id = body(&signup)["user"]["id"].as_str().unwrap().to_owned();
     let cookie = cookies(&signup);
-    let other = auth
-        .handle_request(request(
-            "/sign-up/email",
-            Some(
-                json!({"name":"Other", "email":"other172@fixture.test", "password":"Password456!"}),
-            ),
-            "",
-        ))
-        .await?;
+    let other = Box::pin(auth.handle_request(request(
+        "/sign-up/email",
+        Some(json!({"name":"Other", "email":"other172@fixture.test", "password":"Password456!"})),
+        "",
+    )))
+    .await?;
     observe(&mut trace, "/sign-up/email", &other);
     assert_eq!(other.status, 200);
     let other_cookie = cookies(&other);
-    let enable = auth
-        .handle_request(request(
-            "/two-factor/enable",
-            Some(json!({"password":"Password123!"})),
-            &cookie,
-        ))
-        .await?;
+    let enable = Box::pin(auth.handle_request(request(
+        "/two-factor/enable",
+        Some(json!({"password":"Password123!"})),
+        &cookie,
+    )))
+    .await?;
     observe(&mut trace, "/two-factor/enable", &enable);
     if let Ok(directory) = std::env::var("PLUGIN_172_EVIDENCE") {
         std::fs::write(
@@ -309,13 +312,12 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
         !factor.backup_codes.contains(&code),
         "default storage must encrypt backup codes"
     );
-    let verify = auth
-        .handle_request(request(
-            "/two-factor/verify-backup-code",
-            Some(json!({"code":code})),
-            &enabled_cookie,
-        ))
-        .await?;
+    let verify = Box::pin(auth.handle_request(request(
+        "/two-factor/verify-backup-code",
+        Some(json!({"code":code})),
+        &enabled_cookie,
+    )))
+    .await?;
     assert_eq!(verify.status, 200, "{}", body(&verify));
     observe(&mut trace, "/two-factor/verify-backup-code", &verify);
     assert_ne!(
@@ -326,35 +328,32 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             .backup_codes,
         factor.backup_codes
     );
-    let replay = auth
-        .handle_request(request(
-            "/two-factor/verify-backup-code",
-            Some(json!({"code":code})),
-            &enabled_cookie,
-        ))
-        .await?;
+    let replay = Box::pin(auth.handle_request(request(
+        "/two-factor/verify-backup-code",
+        Some(json!({"code":code})),
+        &enabled_cookie,
+    )))
+    .await?;
     observe(&mut trace, "/two-factor/verify-backup-code", &replay);
     assert_eq!(replay.status, 401, "{}", body(&replay));
     let passkey = auth.store().create_passkey(passkey_input(&user_id)).await?;
-    let list = auth
-        .handle_request(request(
-            "/passkey/list-user-passkeys",
-            None,
-            &enabled_cookie,
-        ))
-        .await?;
+    let list = Box::pin(auth.handle_request(request(
+        "/passkey/list-user-passkeys",
+        None,
+        &enabled_cookie,
+    )))
+    .await?;
     observe(&mut trace, "/passkey/list-user-passkeys", &list);
     assert_eq!(list.status, 200, "{}", body(&list));
     assert_eq!(body(&list)[0]["id"], passkey.id);
     assert!(!String::from_utf8_lossy(&list.body).contains("private-credential"));
     for path in ["/passkey/update-passkey", "/passkey/delete-passkey"] {
-        let denied = auth
-            .handle_request(request(
-                path,
-                Some(json!({"id":passkey.id,"name":"Stolen"})),
-                &other_cookie,
-            ))
-            .await?;
+        let denied = Box::pin(auth.handle_request(request(
+            path,
+            Some(json!({"id":passkey.id,"name":"Stolen"})),
+            &other_cookie,
+        )))
+        .await?;
         observe(&mut trace, path, &denied);
         assert_eq!(denied.status, 401);
     }
@@ -367,13 +366,12 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             .as_deref(),
         Some("Original")
     );
-    let rename = auth
-        .handle_request(request(
-            "/passkey/update-passkey",
-            Some(json!({"id":passkey.id,"name":"Renamed"})),
-            &enabled_cookie,
-        ))
-        .await?;
+    let rename = Box::pin(auth.handle_request(request(
+        "/passkey/update-passkey",
+        Some(json!({"id":passkey.id,"name":"Renamed"})),
+        &enabled_cookie,
+    )))
+    .await?;
     observe(&mut trace, "/passkey/update-passkey", &rename);
     assert_eq!(rename.status, 200, "{}", body(&rename));
     assert_eq!(
@@ -385,13 +383,12 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             .as_deref(),
         Some("Renamed")
     );
-    let remove = auth
-        .handle_request(request(
-            "/passkey/delete-passkey",
-            Some(json!({"id":passkey.id})),
-            &enabled_cookie,
-        ))
-        .await?;
+    let remove = Box::pin(auth.handle_request(request(
+        "/passkey/delete-passkey",
+        Some(json!({"id":passkey.id})),
+        &enabled_cookie,
+    )))
+    .await?;
     observe(&mut trace, "/passkey/delete-passkey", &remove);
     assert_eq!(remove.status, 200);
     assert!(auth.store().get_passkey_by_id(&passkey.id).await?.is_none());
@@ -405,7 +402,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
             .query
             .insert("disableCookieCache".into(), "true".into()),
     );
-    let disable = auth.handle_request(disable_request).await?;
+    let disable = Box::pin(auth.handle_request(disable_request)).await?;
     observe(&mut trace, "/two-factor/disable", &disable);
     assert_eq!(disable.status, 200, "{}", body(&disable));
     assert!(
