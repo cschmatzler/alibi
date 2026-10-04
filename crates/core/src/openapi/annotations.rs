@@ -165,7 +165,6 @@ pub fn instance_plugin_metadata<S: crate::AuthSchema>(
 #[must_use]
 pub fn core_routes() -> Vec<AuthRoute> {
     vec![
-        AuthRoute::get(crate::core_paths::OPENAPI_SPEC, "openapi_spec"),
         AuthRoute::get("/ok", "ok"),
         AuthRoute::get("/error", "error"),
         AuthRoute::post("/update-user", "update_user"),
@@ -175,12 +174,6 @@ fn response(description: &str, schema: &Value) -> Value {
     json!({"description":description,"content":{"application/json":{"schema":schema}}})
 }
 fn endpoint(path: &str) -> Option<OpenApiEndpoint> {
-    if path == crate::core_paths::OPENAPI_SPEC {
-        return Some(OpenApiEndpoint {
-            native_extension: true,
-            ..Default::default()
-        });
-    }
     if let Some(metadata) = super::sign_in_annotations::endpoint(path)
         .or_else(|| super::oauth_annotations::endpoint(path))
     {

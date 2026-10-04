@@ -232,19 +232,6 @@ mod tests {
             &evaluated_body_14,
         );
 
-        // --- GET /__test/openapi.json ---
-        let (evaluated_status_15, evaluated_body_15) =
-            send_request(&auth, get_request("/__test/openapi.json")).await;
-        assert_eq!(
-            evaluated_status_15, 200,
-            "OpenAPI endpoint should return 200"
-        );
-        assert!(
-            evaluated_body_15["openapi"].is_string(),
-            "Should have openapi version"
-        );
-        assert!(evaluated_body_15["paths"].is_object(), "Should have paths");
-
         // Print report
         let report = validator.report();
         drop(writeln!(std::io::stderr().lock(), "\n{report}\n"));

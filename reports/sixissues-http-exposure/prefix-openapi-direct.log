@@ -1,0 +1,17 @@
+running 1 test
+
+thread 'plugins::open_api::tests::application_schema_and_plugin_annotations_reach_the_public_document_without_changing_routes' (535367) panicked at tests/integration/plugins/open_api.rs:163:9:
+assertion `left == right` failed
+  left: 200
+ right: 404
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test plugins::open_api::tests::application_schema_and_plugin_annotations_reach_the_public_document_without_changing_routes ... FAILED
+
+failures:
+
+failures:
+    plugins::open_api::tests::application_schema_and_plugin_annotations_reach_the_public_document_without_changing_routes
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 442 filtered out; finished in 0.02s
+
+error: test failed, to rerun pass `--test integration`

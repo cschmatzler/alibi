@@ -123,7 +123,7 @@ fn proxied(secret: &str) -> Result<TurnstileConfig, url::ParseError> {
 
 ## Notes
 
-- **CORS preflight.** The CAPTCHA check runs as a plugin HTTP hook, *before* the built-in CORS middleware answers `OPTIONS` preflight requests. A browser's preflight carries no `x-captcha-response` header, so with `AuthBuilder::cors(...)` a cross-origin preflight to a protected endpoint is answered `400 MISSING_RESPONSE`. For cross-origin browser apps that use CAPTCHA, handle CORS in your framework layer instead (for example `tower-http`'s `CorsLayer` around the nested router, which answers preflight itself) — see [Axum](/integrations/axum/#cors-tracing-and-other-layers).
+- **CORS preflight.** CAPTCHA skips `OPTIONS` requests so `AuthBuilder::cors(...)` can answer browser preflights. Protected POST requests still require a provider-verified token. Configure the allowed origin and add `x-captcha-response` to `CorsConfig::allowed_headers` when the browser sends that header. CORS grants headers only to allowed origins; a skipped CAPTCHA check does not authorize a cross-origin request.
 - A CAPTCHA complements, not replaces, [rate limiting](/concepts/rate-limit/).
 - The check is stateless; a token valid at the provider can be reused until the provider expires it. Providers make tokens single use — rely on that.
 - Combine with [Have I Been Pwned](/plugins/have-i-been-pwned/) and the [anonymous plugin](/plugins/anonymous/) rate limits for layered abuse protection.

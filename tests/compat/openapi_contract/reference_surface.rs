@@ -742,22 +742,6 @@ mod tests {
         );
     }
 
-    /// GET /__test/openapi.json should return valid `OpenAPI` spec
-    #[tokio::test]
-    async fn test_contract_openapi_endpoint() {
-        let auth = create_full_auth().await;
-        let (status, body) =
-            send_json_request(&auth, HttpMethod::Get, "/__test/openapi.json", None).await;
-
-        assert_eq!(status, 200);
-        assert!(
-            body["openapi"].is_string(),
-            "Must have 'openapi' version field"
-        );
-        assert!(body["info"]["title"].is_string(), "Must have info.title");
-        assert!(body["paths"].is_object(), "Must have 'paths' object");
-    }
-
     /// The pinned router leaves unknown routes empty and skips endpoint hooks.
     #[tokio::test]
     async fn test_contract_not_found_response() {

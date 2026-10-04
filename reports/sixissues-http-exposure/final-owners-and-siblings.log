@@ -1,0 +1,64 @@
+• Running devenv:files:cleanup
+✓ Running devenv:files:cleanup in 11.8ms
+• Running devenv:files
+✓ Running devenv:files in 17.7ms
+• Running devenv:enterShell
+✓ Running devenv:enterShell in 6.46ms
+    Blocking waiting for file lock on build directory
+   Compiling better-auth-core v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure/crates/core)
+   Compiling better-auth-seaorm v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure/crates/seaorm)
+   Compiling better-auth-sqlx v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure/crates/sqlx)
+   Compiling better-auth-api v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure/crates/api)
+   Compiling better-auth v1.0.0-alpha.3 (/tmp/better-auth-sixissues-http-exposure)
+    Finished `test` profile [unoptimized] target(s) in 1m 24s
+────────────
+ Nextest run ID 2a5667ff-0306-46ff-9086-9063d8805d1d with nextest profile: default
+    Starting 45 tests across 1 binary (398 tests skipped)
+        PASS [   0.026s] ( 1/45) better-auth::integration axum_integration::router::tests::test_axum_invalid_json
+        PASS [   0.026s] ( 2/45) better-auth::integration axum_integration::router::tests::test_axum_delete_user_unauthorized
+        PASS [   0.030s] ( 3/45) better-auth::integration axum_integration::router::tests::test_axum_404_routes
+        PASS [   0.030s] ( 4/45) better-auth::integration axum_integration::router::tests::test_axum_missing_fields
+        PASS [   0.032s] ( 5/45) better-auth::integration axum_integration::router::tests::test_axum_optional_session_extractor_without_auth_with_app_state
+        PASS [   0.032s] ( 6/45) better-auth::integration axum_integration::router::tests::test_axum_optional_session_extractor_without_auth
+        PASS [   0.052s] ( 7/45) better-auth::integration axum_integration::router::openapi_embedding_requires_plugin_in_axum
+        PASS [   0.026s] ( 8/45) better-auth::integration axum_integration::router::tests::test_axum_password_validation
+        PASS [   0.026s] ( 9/45) better-auth::integration axum_integration::router::tests::test_axum_router_respects_disabled_paths
+        PASS [   0.033s] (10/45) better-auth::integration axum_integration::router::tests::test_axum_oversize_body_is_rejected
+        PASS [   0.032s] (11/45) better-auth::integration axum_integration::router::tests::test_axum_router_does_not_mount_health
+        PASS [   0.071s] (12/45) better-auth::integration axum_integration::router::tests::test_axum_current_session_extractor
+        PASS [   0.074s] (13/45) better-auth::integration axum_integration::router::tests::test_axum_get_session
+        PASS [   0.079s] (14/45) better-auth::integration axum_integration::router::tests::test_axum_list_sessions
+        PASS [   0.079s] (15/45) better-auth::integration axum_integration::router::tests::test_axum_extractor_rejects_forged_unsigned_and_expired_sessions
+        PASS [   0.082s] (16/45) better-auth::integration axum_integration::router::tests::test_axum_invalid_signin
+        PASS [   0.082s] (17/45) better-auth::integration axum_integration::router::tests::test_axum_delete_user
+        PASS [   0.082s] (18/45) better-auth::integration axum_integration::router::tests::test_axum_duplicate_email
+        PASS [   0.022s] (19/45) better-auth::integration axum_integration::router::tests::test_axum_unauthorized_access
+        PASS [   0.086s] (20/45) better-auth::integration axum_integration::router::tests::test_axum_forget_password
+        PASS [   0.086s] (21/45) better-auth::integration axum_integration::router::tests::test_axum_delete_user_invalidates_sessions
+        PASS [   0.092s] (22/45) better-auth::integration axum_integration::router::tests::test_axum_current_session_extractor_with_app_state
+        PASS [   0.019s] (23/45) better-auth::integration axum_integration::router::tests::test_axum_update_user_unauthorized
+        PASS [   0.017s] (24/45) better-auth::integration core::rust_surface_auth::tests::test_disabled_path_blocks_direct_dispatch
+        PASS [   0.021s] (25/45) better-auth::integration core::rust_surface_auth::tests::test_builder_rejects_invalid_config
+        PASS [   0.019s] (26/45) better-auth::integration core::rust_surface_auth::tests::test_plugin_registry_accessors
+        PASS [   0.017s] (27/45) better-auth::integration core::rust_surface_auth::tests::test_routes_lists_plugin_routes_only
+        PASS [   0.028s] (28/45) better-auth::integration core::rust_surface_auth::tests::test_openapi_spec_includes_core_and_plugin_routes
+        PASS [   0.095s] (29/45) better-auth::integration axum_integration::router::tests::test_axum_revoke_all_sessions
+        PASS [   0.076s] (30/45) better-auth::integration axum_integration::router::tests::test_axum_sign_out
+        PASS [   0.071s] (31/45) better-auth::integration axum_integration::router::tests::test_axum_signup_sets_cookie
+        PASS [   0.073s] (32/45) better-auth::integration axum_integration::router::tests::test_axum_signout_clears_cookie
+        PASS [   0.069s] (33/45) better-auth::integration axum_integration::router::tests::test_axum_update_user_invalid_json
+        PASS [   0.074s] (34/45) better-auth::integration axum_integration::router::tests::test_axum_update_user
+        PASS [   0.116s] (35/45) better-auth::integration axum_integration::router::tests::test_axum_session_revocation_flow
+        PASS [   0.081s] (36/45) better-auth::integration axum_integration::router::tests::test_axum_user_signup
+        PASS [   0.164s] (37/45) better-auth::integration axum_integration::router::tests::test_axum_change_password_with_revocation
+        PASS [   0.168s] (38/45) better-auth::integration axum_integration::router::tests::test_axum_change_password
+        PASS [   0.117s] (39/45) better-auth::integration axum_integration::router::tests::test_axum_signin_sets_cookie
+        PASS [   0.090s] (40/45) better-auth::integration axum_integration::router::tests::test_axum_user_profile_workflow
+        PASS [   0.091s] (41/45) better-auth::integration plugins::open_api::tests::application_schema_and_plugin_annotations_reach_the_public_document_without_changing_routes
+        PASS [   0.118s] (42/45) better-auth::integration axum_integration::router::tests::test_axum_user_signin
+        PASS [   0.211s] (43/45) better-auth::integration axum_integration::router::tests::test_axum_complete_workflow
+        PASS [   0.319s] (44/45) better-auth::integration storage::http_composition::on_seaorm::physical_http_composition_preserves_principals_and_committed_rows
+        PASS [   0.324s] (45/45) better-auth::integration storage::http_composition::on_sqlx::physical_http_composition_preserves_principals_and_committed_rows
+────────────
+     Summary [   0.429s] 45 tests run: 45 passed, 398 skipped
+mbx[cache]: 0 hits, 8 misses; 0 B downloaded, 0 B uploaded, 343.4 MiB stored locally

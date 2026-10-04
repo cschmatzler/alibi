@@ -692,10 +692,8 @@ impl<S: AuthSchema> BetterAuth<S> {
         // An unknown path or method cannot trigger authentication side effects.
         let core_route = matches!(
             (internal_req.method(), internal_req.path()),
-            (
-                HttpMethod::Get,
-                core_paths::OK | core_paths::ERROR | core_paths::OPENAPI_SPEC
-            ) | (HttpMethod::Post, core_paths::UPDATE_USER)
+            (HttpMethod::Get, core_paths::OK | core_paths::ERROR)
+                | (HttpMethod::Post, core_paths::UPDATE_USER)
         );
         let plugin_route = self.plugins.iter().find_map(|plugin| {
             plugin
@@ -753,7 +751,6 @@ impl<S: AuthSchema> BetterAuth<S> {
                     match internal_req.path() {
                         core_paths::OK => "ok",
                         core_paths::ERROR => "error",
-                        core_paths::OPENAPI_SPEC => "generateOpenAPISchema",
                         _ => "updateUser",
                     },
                 )
@@ -920,7 +917,7 @@ impl<S: AuthSchema> BetterAuth<S> {
     }
 
     /// Snapshot of actual registered routes, independent of documentation filters.
-    /// The native embedding endpoint `/__test/openapi.json` is a Rust extension.
+    /// The native embedding endpoint `/__test/openapi.json` is owned by `OpenApiPlugin`.
     #[must_use]
     pub fn registered_routes(&self) -> Vec<AuthRoute> {
         self.openapi.registered_routes()
@@ -991,10 +988,6 @@ impl<S: AuthSchema> BetterAuth<S> {
                 Ok(Some(
                     AuthResponse::html(200, html).with_header("content-type", "text/html"),
                 ))
-            }
-            (HttpMethod::Get, core_paths::OPENAPI_SPEC) => {
-                let spec = self.openapi_spec();
-                Ok(Some(AuthResponse::json(200, &spec)?))
             }
             (HttpMethod::Post, core_paths::UPDATE_USER) => {
                 Ok(Some(self.handle_update_user(req, context).await?))

@@ -84,6 +84,8 @@ fn open_api() -> OpenApiPlugin {
 }
 ```
 
+The native `GET /__test/openapi.json` embedding endpoint is available only when `OpenApiPlugin` is installed. It returns the configured schema without native extensions. Without the plugin, direct HTTP and framework adapters return 404; the Rust `openapi_spec()` methods remain available for in-process use.
+
 ## Production
 
 The reference lists every route and its parameters. Disable the plugin or the HTML page in production if you do not want to publish your API surface, or protect the paths at your proxy.

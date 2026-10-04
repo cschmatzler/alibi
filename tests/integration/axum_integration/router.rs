@@ -1670,3 +1670,56 @@ mod tests {
         assert_eq!(response_7.status(), StatusCode::OK);
     }
 }
+
+// Axum mounting and fallback must enforce the same opt-in as direct dispatch.
+#[tokio::test]
+async fn openapi_embedding_requires_plugin_in_axum() {
+    for enabled in [false, true] {
+        let config = AuthConfig::new("test-secret-key-that-is-at-least-32-characters-long");
+        let store = SeaOrmStore::<TestSchema>::new(config.clone(), test_database().await);
+        let builder = AuthBuilder::<TestSchema>::new(config).store(store);
+        let builder = if enabled {
+            builder.plugin(better_auth::plugins::OpenApiPlugin::new())
+        } else {
+            builder
+        };
+        let auth = Arc::new(builder.build().await.unwrap());
+        let response = create_test_router(auth)
+            .oneshot(
+                Request::builder()
+                    .uri("/auth/__test/openapi.json")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            if enabled {
+                StatusCode::OK
+            } else {
+                StatusCode::NOT_FOUND
+            }
+        );
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        if enabled {
+            let document: Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(document.get("openapi"), Some(&json!("3.1.1")));
+            assert!(
+                document
+                    .get("paths")
+                    .and_then(|paths| paths.get("/ok"))
+                    .is_some()
+            );
+            assert!(
+                document
+                    .pointer("/components/schemas/User/properties/email")
+                    .is_some()
+            );
+        } else {
+            assert!(body.is_empty());
+        }
+    }
+}

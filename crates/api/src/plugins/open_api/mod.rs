@@ -2,7 +2,8 @@
 use async_trait::async_trait;
 use better_auth_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
-    AuthRoute, AuthSchema, HttpMethod, OpenApiBuilder, OpenApiRegistry, PluginOpenApiMetadata,
+    AuthRoute, AuthSchema, HttpMethod, OpenApiBuilder, OpenApiEndpoint, OpenApiRegistry,
+    PluginOpenApiMetadata, core_paths,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -65,12 +66,20 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
+            AuthRoute::get(core_paths::OPENAPI_SPEC, "openapi_spec"),
             AuthRoute::get("/open-api/generate-schema", "generate_open_api_schema"),
             AuthRoute::get(self.path(), "open_api_reference"),
         ]
     }
     fn openapi_metadata(&self, _ctx: &AuthInitContext<S>) -> PluginOpenApiMetadata {
-        PluginOpenApiMetadata::default()
+        PluginOpenApiMetadata::default().endpoint(
+            HttpMethod::Get,
+            core_paths::OPENAPI_SPEC,
+            OpenApiEndpoint {
+                native_extension: true,
+                ..Default::default()
+            },
+        )
     }
     async fn on_request(
         &self,
@@ -78,11 +87,16 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
         if req.method() != &HttpMethod::Get
-            || (req.path() != "/open-api/generate-schema" && req.path() != self.path())
+            || (req.path() != "/open-api/generate-schema"
+                && req.path() != core_paths::OPENAPI_SPEC
+                && req.path() != self.path())
         {
             return Ok(None);
         }
-        if req.path() != "/open-api/generate-schema" && self.config.disable_default_reference {
+        if req.path() != "/open-api/generate-schema"
+            && req.path() != core_paths::OPENAPI_SPEC
+            && self.config.disable_default_reference
+        {
             return Ok(Some(
                 AuthResponse::new(404).with_header("content-type", "application/json"),
             ));
@@ -94,10 +108,10 @@ impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
         let spec = OpenApiBuilder::registered_with_native_extensions(
             &ctx.config,
             &registry,
-            self.config.include_native_extensions,
+            req.path() != core_paths::OPENAPI_SPEC && self.config.include_native_extensions,
         )
         .build();
-        if req.path() == "/open-api/generate-schema" {
+        if req.path() == "/open-api/generate-schema" || req.path() == core_paths::OPENAPI_SPEC {
             return Ok(Some(AuthResponse::json(200, &spec)?));
         }
         let schema = serde_json::to_string(&spec)?;
