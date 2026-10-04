@@ -361,107 +361,149 @@ compatScenario(
   },
   ["POST /refresh-token"],
 );
-for (const mode of [
-  "expiry-positive",
-  "expiry-zero",
-  "expiry-negative",
-  "custom-token",
-  "custom-token-error",
-] as const) {
-  const name = `oauth generic ${mode} applies configured expiry only after real or custom grant`;
-  compatScenario(
-    name,
-    async (ctx) => {
-      const fixture = `generic-token-${mode}` as const;
-      const actor = ctx.actor("owner", fixture);
-      await ctx.rawRequest({
-        path: "/__test/generic-token/control",
-        method: "POST",
-        json: {
-          profile: {
-            id: "stable-subject",
-            email: ctx.uniqueEmail("owner"),
-            name: "Owner",
-            email_verified: true,
+for (const family of ["generic-token", "generic-discovery", "provider-batch-notion"] as const) {
+  for (const mode of [
+    "expiry-positive",
+    "expiry-zero",
+    "expiry-negative",
+    "custom-token",
+    "custom-token-error",
+  ] as const) {
+    const name = `oauth ${family} ${mode} applies configured expiry only after real or custom grant`;
+    compatScenario(
+      name,
+      async (ctx) => {
+        const fixture = `${family}-${mode}` as const;
+        const provider =
+          family === "generic-token"
+            ? "generic"
+            : family === "generic-discovery"
+              ? "discovery"
+              : "notion";
+        const controls = family === "provider-batch-notion" ? "provider-batch" : family;
+        const receiptsPath =
+          family === "provider-batch-notion" && mode.startsWith("custom-token")
+            ? "callbacks"
+            : "receipts";
+        const actor = ctx.actor("owner", fixture);
+        await ctx.rawRequest({
+          path: `/__test/${controls}/control`,
+          method: "POST",
+          json: {
+            ...(family === "provider-batch-notion" ? { provider } : {}),
+            profile:
+              family === "provider-batch-notion"
+                ? {
+                    bot: {
+                      owner: {
+                        user: {
+                          id: "stable-subject",
+                          name: "Owner",
+                          person: { email: ctx.uniqueEmail("owner") },
+                          avatar_url: null,
+                        },
+                      },
+                    },
+                  }
+                : {
+                    id: "stable-subject",
+                    email: ctx.uniqueEmail("owner"),
+                    name: "Owner",
+                    email_verified: true,
+                  },
+            tokenResponse: { access_token: "access", refresh_token: "refresh", scope: "profile" },
           },
-          tokenResponse: { access_token: "access", refresh_token: "refresh", scope: "profile" },
-        },
-      });
-      const before = await state(ctx);
-      const start = await actor.client.signIn.social({
-        provider: "generic",
-        callbackURL: "/dashboard",
-      });
-      expect(start.error).toBeNull();
-      const u = new URL(start.data!.url!);
-      const began = Date.now();
-      const r = await actor.fetch(
-        ctx.baseURL +
-          authProfilePath(fixture) +
-          `/callback/generic?code=real-code&state=${encodeURIComponent(u.searchParams.get("state")!)}`,
-        { redirect: "manual" },
-      );
-      const after = await state(ctx);
-      const seen: any[] = await (
-        await fetch(ctx.baseURL + "/__test/generic-token/receipts")
-      ).json();
-      if (mode === "custom-token-error") {
-        expect(new URL(r.headers.get("location")!, ctx.baseURL).searchParams.get("error")).toBe(
-          "invalid_code",
+        });
+        const before = await state(ctx);
+        const start = await actor.client.signIn.social({
+          provider,
+          callbackURL: "/dashboard",
+        });
+        expect(start.error).toBeNull();
+        const u = new URL(start.data!.url!);
+        const began = Date.now();
+        const r = await actor.fetch(
+          ctx.baseURL +
+            authProfilePath(fixture) +
+            `/callback/${provider}?code=real-code&state=${encodeURIComponent(u.searchParams.get("state")!)}`,
+          { redirect: "manual" },
         );
-        expect(after).toEqual(before);
-        expect(seen).toHaveLength(1);
-      } else {
-        expect(r.headers.get("location")).toBe("/dashboard");
-        const account = after.accounts.find((a: any) => a.providerId === "generic");
-        expect(account.accessToken).toBe(mode === "custom-token" ? "custom-access" : "access");
-        if (mode === "expiry-zero") expect(account.accessTokenExpiresAt).toBeNull();
-        else {
+        const after = await state(ctx);
+        const allSeen: any[] = await (
+          await fetch(ctx.baseURL + `/__test/${controls}/${receiptsPath}`)
+        ).json();
+        const seen = allSeen.filter((receipt) => receipt.path !== "/metadata");
+        if (mode === "custom-token-error") {
+          expect(new URL(r.headers.get("location")!, ctx.baseURL).searchParams.get("error")).toBe(
+            "invalid_code",
+          );
+          expect(after).toEqual(before);
+          expect(seen).toHaveLength(1);
+        } else {
+          expect(r.headers.get("location")).toBe("/dashboard");
+          const account = after.accounts.find((a: any) => a.providerId === provider);
+          expect(account.accessToken).toBe(mode === "custom-token" ? "custom-access" : "access");
+          if (mode === "expiry-zero") expect(account.accessTokenExpiresAt).toBeNull();
+          else {
+            expect(
+              Math.abs(
+                Date.parse(account.accessTokenExpiresAt) -
+                  began -
+                  (mode === "expiry-negative" ? -60000 : 17000),
+              ),
+            ).toBeLessThan(2000);
+          }
+          if (mode === "custom-token") {
+            expect(seen).toHaveLength(family === "generic-discovery" ? 2 : 1);
+            if (family === "generic-discovery") {
+              expect(seen[1]).toMatchObject({
+                path: "/user/discovered",
+                authorization: "Bearer custom-access",
+              });
+            }
+            expect(seen[0]).toMatchObject({ kind: "custom-token", code: "real-code" });
+            expect(seen[0].codeVerifier.length).toBeGreaterThan(40);
+            expect(new URL(seen[0].redirectURI).pathname).toBe(
+              authProfilePath(fixture) + `/callback/${provider}`,
+            );
+          }
+          // Refresh uses the same fallback; an actual expires_in takes precedence.
+          await ctx.rawRequest({
+            path: `/__test/${controls}/control`,
+            method: "POST",
+            json: {
+              ...(family === "provider-batch-notion" ? { provider } : {}),
+              tokenResponse: {
+                access_token: "rotated",
+                refresh_token: "rotated-refresh",
+                expires_in: 3600,
+              },
+            },
+          });
+          const refresh = await actor.client.refreshToken({ accountId: account.id });
+          expect(refresh.error).toBeNull();
           expect(
             Math.abs(
-              Date.parse(account.accessTokenExpiresAt) -
-                began -
-                (mode === "expiry-negative" ? -60000 : 17000),
+              new Date(refresh.data!.accessTokenExpiresAt!).getTime() - Date.now() - 3600000,
             ),
           ).toBeLessThan(2000);
         }
-        if (mode === "custom-token") {
-          expect(seen).toHaveLength(1);
-          expect(seen[0]).toMatchObject({ kind: "custom-token", code: "real-code" });
-          expect(seen[0].codeVerifier.length).toBeGreaterThan(40);
-          expect(new URL(seen[0].redirectURI).pathname).toBe(
-            authProfilePath(fixture) + "/callback/generic",
-          );
-        }
-        // Refresh uses the same fallback; an actual expires_in takes precedence.
-        await ctx.rawRequest({
-          path: "/__test/generic-token/control",
-          method: "POST",
-          json: {
-            tokenResponse: {
-              access_token: "rotated",
-              refresh_token: "rotated-refresh",
-              expires_in: 3600,
-            },
-          },
+        await save(ctx, name, {
+          before,
+          after,
+          receipts: seen,
+          status: r.status,
+          location: r.headers.get("location"),
         });
-        const refresh = await actor.client.refreshToken({ accountId: account.id });
-        expect(refresh.error).toBeNull();
-        expect(
-          Math.abs(new Date(refresh.data!.accessTokenExpiresAt!).getTime() - Date.now() - 3600000),
-        ).toBeLessThan(2000);
-      }
-      await save(ctx, name, {
-        before,
-        after,
-        receipts: seen,
-        status: r.status,
-        location: r.headers.get("location"),
-      });
-      return { before, after, callback: { status: r.status, location: r.headers.get("location") } };
-    },
-    ["POST /sign-in/social", "GET /callback/{}", "POST /refresh-token"],
-  );
+        return {
+          before,
+          after,
+          callback: { status: r.status, location: r.headers.get("location") },
+        };
+      },
+      ["POST /sign-in/social", "GET /callback/{}", "POST /refresh-token"],
+    );
+  }
 }
 
 // Account-key callbacks need the original claims and grant, even after the public

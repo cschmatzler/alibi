@@ -1,12 +1,18 @@
 import type { Database } from "bun:sqlite";
 import { appendFileSync } from "node:fs";
 
+import { applyDefaultAccessTokenExpiry } from "@better-auth/core/oauth2";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
 import inputs from "../../fixtures/provider-batch-profiles.json";
 
 export const providerBatchModes = [
   "default",
+  "expiry-positive",
+  "expiry-zero",
+  "expiry-negative",
+  "custom-token",
+  "custom-token-error",
   "configured",
   "disabled-configured",
   "mapped-async",
@@ -251,7 +257,53 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
       const settings: BetterAuthOptions = {
         ...base,
         basePath: path,
-        plugins: [],
+        // Public BetterAuthPlugin.init application policy: keep factory grant/refresh
+        // handlers; these are not built-in factory getToken/expiry options.
+        plugins:
+          mode.startsWith("expiry-") || mode.startsWith("custom-token")
+            ? [
+                {
+                  id: "provider-batch-grant-policy",
+                  init(context) {
+                    const configured = context.socialProviders.find(
+                      (entry) => entry.id === provider,
+                    )!;
+                    const lifetime =
+                      mode === "expiry-zero" ? 0 : mode === "expiry-negative" ? -60 : 17;
+                    const grant = configured.validateAuthorizationCode.bind(configured);
+                    configured.validateAuthorizationCode = async (data) => {
+                      if (!mode.startsWith("custom-token")) {
+                        return applyDefaultAccessTokenExpiry(await grant(data), lifetime);
+                      }
+                      await Promise.resolve();
+                      callbacks.push({
+                        kind: "custom-token",
+                        provider,
+                        code: data.code,
+                        redirectURI: data.redirectURI,
+                        codeVerifier: data.codeVerifier,
+                      });
+                      if (mode === "custom-token-error") {
+                        throw new Error("custom token callback denied");
+                      }
+                      return applyDefaultAccessTokenExpiry(
+                        {
+                          accessToken: "custom-access",
+                          refreshToken: "custom-refresh",
+                          scopes: ["custom-scope"],
+                        },
+                        lifetime,
+                      );
+                    };
+                    if (configured.refreshAccessToken) {
+                      const refresh = configured.refreshAccessToken.bind(configured);
+                      configured.refreshAccessToken = async (token, context) =>
+                        applyDefaultAccessTokenExpiry(await refresh(token, context), lifetime);
+                    }
+                  },
+                },
+              ]
+            : [],
         account: { ...base.account, encryptOAuthTokens: mode === "encrypted" },
         socialProviders: { [provider]: providerOptions } as BetterAuthOptions["socialProviders"],
       };

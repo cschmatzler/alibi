@@ -19,6 +19,11 @@ use tokio::sync::Mutex;
 const INPUTS: &str = include_str!("../../../fixtures/provider-batch-profiles.json");
 const MODES: &[&str] = &[
     "default",
+    "expiry-positive",
+    "expiry-zero",
+    "expiry-negative",
+    "custom-token",
+    "custom-token-error",
     "configured",
     "disabled-configured",
     "mapped-async",
@@ -268,6 +273,32 @@ pub(crate) async fn router(
                     fixture: fixture.clone(),
                     provider: provider_id.to_string(),
                 }));
+            }
+            if mode.starts_with("expiry-") || mode.starts_with("custom-token") {
+                let policy = provider
+                    .authorization
+                    .as_mut()
+                    .expect("real provider authorization policy");
+                policy.default_access_token_expires_in = Some(if mode == &"expiry-zero" {
+                    0.0
+                } else if mode == &"expiry-negative" {
+                    -60.0
+                } else {
+                    17.0
+                });
+                if mode.starts_with("custom-token") {
+                    // Application grant callbacks receive the actual stored verifier,
+                    // including factories whose default HTTP exchange ignores PKCE.
+                    policy.authorization_code_pkce = Some(true);
+                    policy.authorization_code =
+                        Some(better_auth::plugins::oauth::OAuthAuthorizationCodeCallback(
+                            Arc::new(CustomCode {
+                                fixture: fixture.clone(),
+                                denied: mode == &"custom-token-error",
+                                provider: provider_id.to_string(),
+                            }),
+                        ));
+                }
             }
             let auth = Arc::new(
                 AuthBuilder::<TestSchema>::new(settings.clone())
@@ -540,4 +571,33 @@ async fn raw_sql_state(
         state.insert(table.into(), Value::Array(rows));
     }
     Ok(Value::Object(state))
+}
+
+struct CustomCode {
+    fixture: Fixture,
+    denied: bool,
+    provider: String,
+}
+#[async_trait::async_trait]
+impl better_auth::plugins::oauth::OAuthAuthorizationCodeHandler for CustomCode {
+    async fn validate_authorization_code(
+        &self,
+        data: better_auth::plugins::oauth::OAuthAuthorizationCodeContext,
+    ) -> Result<better_auth::plugins::oauth::OAuthTokenSet, String> {
+        tokio::task::yield_now().await;
+        let mut receipt = json!({"kind":"custom-token","provider":self.provider,"code":data.code,"redirectURI":data.redirect_uri});
+        if let Some(verifier) = data.code_verifier {
+            receipt["codeVerifier"] = json!(verifier);
+        }
+        self.fixture.callbacks.lock().await.push(receipt);
+        if self.denied {
+            return Err("custom token callback denied".into());
+        }
+        Ok(better_auth::plugins::oauth::OAuthTokenSet {
+            access_token: Some("custom-access".into()),
+            refresh_token: Some("custom-refresh".into()),
+            scopes: vec!["custom-scope".into()],
+            ..Default::default()
+        })
+    }
 }

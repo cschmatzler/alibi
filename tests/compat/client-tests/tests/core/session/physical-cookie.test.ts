@@ -139,12 +139,15 @@ for (const mode of [
       const signupCookies = cookieBytes(issuedHeaders!, first.token);
       expect(signupCookies).toHaveLength(1);
 
+      // The canonical SDK runner initializes both fixture servers in production.
+      // Dynamic auto therefore inherits production security; development is qualified separately.
       const prefixed = [
         "secure-prefix",
         "https-default",
         "secure-custom",
         "secure-alias",
         "dynamic-https",
+        "dynamic-auto",
       ].includes(mode);
       const expectedTokenName =
         mode === "secure-alias"

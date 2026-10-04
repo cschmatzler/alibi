@@ -314,6 +314,8 @@ pub(crate) async fn router(
     let mut router = Router::new();
     for mode in [
         "standard",
+        "defaults",
+        "attributes",
         "disabled",
         "link-error",
         "user-cancel",
@@ -334,6 +336,10 @@ pub(crate) async fn router(
     ] {
         let path = format!("/__test/profiles/anonymous-{mode}/api/auth");
         let mut settings = config.clone().base_path(&path);
+        if mode == "attributes" {
+            settings.advanced.ip_address.headers =
+                vec!["x-anonymous-ip".into(), "x-forwarded-for".into()];
+        }
         if mode.starts_with("custom") || mode.starts_with("recovery") {
             use better_auth::field_policy::FieldConfig;
             settings.user.additional_fields.insert(
@@ -380,7 +386,8 @@ pub(crate) async fn router(
             .plugin(SessionManagementPlugin::new())
             .plugin(OAuthPlugin::new().add_provider("gitlab", provider))
             .plugin(AnonymousPlugin::with_config(AnonymousConfig {
-                identity: Some(application.clone()),
+                identity: (mode != "defaults")
+                    .then(|| application.clone() as Arc<dyn AnonymousIdentity>),
                 on_link_account: Some(application.clone()),
                 disable_delete_anonymous_user: mode == "disabled" || mode == "recovery-disabled",
                 ..Default::default()
