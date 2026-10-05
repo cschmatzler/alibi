@@ -15,7 +15,6 @@ You normally depend on **one** crate, `better-auth`, which re-exports the others
 | [`better-auth-cli`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/cli) | The `better-auth-rs` binary (`generate`) | Install it as a tool; see the [CLI reference](/reference/cli/) |
 | `better-auth-macros` | `#[derive(AuthSchema)]`, `PluginConfig` | Re-exported by core |
 | `better-auth-schema-registry`, `better-auth-entity-codegen` | Plugin schema definitions and shared derive code used by the CLI and macros | Never |
-| `better-auth-webauthn-rs`, `better-auth-webauthn-rs-core` | Vendored WebAuthn verification for [passkeys](/plugins/passkey/) | Never |
 
 When you add `better-auth-core` (or the CLI), use the **same Git revision** as `better-auth` so every crate resolves to one copy:
 

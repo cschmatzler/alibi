@@ -1,0 +1,261 @@
+{
+  "status": "passed",
+  "generatedAtUtc": "2026-10-05T14:25:07.406582+00:00",
+  "gitBase": "8a18c9e2544ed452364fcf310deed0de76886f34",
+  "worktree": "Uncommitted implementation and tests; no commit, push or PR performed",
+  "sourceFingerprint": {
+    "sha256": "8034e06dde93cda12dde4769b5a7fb501d8a797dc535d9d642b71294c40834f7",
+    "fileCount": 1893,
+    "algorithm": "SHA256 of sorted unique git ls-files --cached --others --exclude-standard existing files, excluding reports/: UTF-8 relative path + NUL + lowercase content SHA256 hex + NUL"
+  },
+  "surfaceCounts": {
+    "http": 144,
+    "serverEndpoints": 18,
+    "providers": 37,
+    "coreAndIntegrations": 18,
+    "publicPolicyCallbacks": 23
+  },
+  "discovery": {
+    "total": 1379,
+    "runs": 1074,
+    "ignored": {
+      "compat SDK": 42,
+      "PostgreSQL": 260,
+      "exact-clock proofs": 3
+    },
+    "redisFeatureAdds": 2,
+    "unclassifiedIgnored": 0
+  },
+  "defaultIncludesExistingInProcessCompatChecks": 62,
+  "distinctNextestCasesExecuted": 1339,
+  "doctests": {
+    "passed": 6,
+    "ignoredPartialExamples": 3
+  },
+  "coverage": {
+    "coveredLines": 49503,
+    "instrumentedLines": 58902,
+    "lineCoveragePercent": 84.04
+  },
+  "runs": [
+    {
+      "id": "default",
+      "command": "cargo nextest run",
+      "status": "passed",
+      "passed": 1074,
+      "summary": "Summary [   7.116s] 1074 tests run: 1074 passed, 305 skipped",
+      "localLog": "/tmp/native-bare-complete.log",
+      "logSha256": "f3e570f71f8641a27c2e78cf7949369fdf71343f3b8cca1ca648d9520212ac2f"
+    },
+    {
+      "id": "postgres",
+      "command": "BETTER_AUTH_TEST_POSTGRES_URL=postgres://... cargo nextest run --locked --profile postgres --run-ignored only -E 'test(postgres)'",
+      "status": "passed",
+      "passed": 260,
+      "summary": "Summary [   9.320s] 260 tests run: 260 passed, 1119 skipped",
+      "localLog": "/tmp/native-postgres-complete.log",
+      "logSha256": "4f1c3c22aa8bd980952d23fa2e91b555920a32c3c4c5a1142af186a94847e667"
+    },
+    {
+      "id": "redis",
+      "command": "BETTER_AUTH_TEST_REDIS_URL=redis://... TEST_RATE_LIMIT_REDIS_URL=redis://... cargo nextest run --locked --features redis-cache --profile redis --run-ignored only -E 'test(redis)'",
+      "status": "passed",
+      "passed": 2,
+      "summary": "Summary [   1.596s] 2 tests run: 2 passed, 1379 skipped",
+      "localLog": "/tmp/native-redis-complete.log",
+      "logSha256": "29686bf60368406469632a0ff2cc96e80e4dbb22dcb99aed4514bf6d8b080de8"
+    },
+    {
+      "id": "clock",
+      "command": "BETTER_AUTH_PROOF_CLOCK_MS=1893456000000 LD_PRELOAD=/path/to/native-clock.so cargo nextest run --locked --profile clock --run-ignored only -E 'test(strict_expiry)'",
+      "status": "passed",
+      "passed": 3,
+      "summary": "Summary [   0.206s] 3 tests run: 3 passed, 1376 skipped",
+      "localLog": "/tmp/native-clock-complete.log",
+      "logSha256": "f086c294eef852f7f5f90de7569edd55eb678c9f473dc1c37f5302e2d022c246"
+    },
+    {
+      "id": "coverage-postgres",
+      "command": "cargo llvm-cov nextest --locked --no-report --profile postgres --run-ignored only -E 'test(postgres)'",
+      "status": "passed",
+      "passed": 260,
+      "summary": "Summary [   9.106s] 260 tests run: 260 passed, 1119 skipped",
+      "localLog": "/tmp/native-coverage-postgres-complete.log",
+      "logSha256": "780b1dfe353ca408d92755cf7560799cdd6f6d02b8b21c8161c04863b79a889d"
+    },
+    {
+      "id": "coverage-default",
+      "command": "cargo llvm-cov nextest --locked --no-clean --summary-only",
+      "status": "passed",
+      "passed": 1074,
+      "summary": "Summary [   7.432s] 1074 tests run: 1074 passed, 305 skipped",
+      "localLog": "/tmp/native-coverage-default-complete.log",
+      "logSha256": "95c924631ff8fbe895190c51979e621e6186ca736f641f32e8646a6375e15857"
+    },
+    {
+      "id": "clippy",
+      "command": "cargo clippy --locked --workspace --all-targets --features redis-cache -- -D warnings",
+      "status": "passed",
+      "localLog": "/tmp/native-clippy-complete.log",
+      "logSha256": "e41445f063b73cc1a03956d31bd66543f15fc8423894d93a98e7800fd8e1583b"
+    },
+    {
+      "id": "format",
+      "command": "cargo fmt --all --check",
+      "status": "passed",
+      "localLog": "/tmp/native-format-complete.log",
+      "logSha256": "8b145e5b1a56eb63b5d9c258f30a2153fcc4080d6e5c0b3cd5a275e9ce165955"
+    },
+    {
+      "id": "doctests",
+      "command": "cargo test --locked --workspace --doc",
+      "status": "passed",
+      "localLog": "/tmp/native-docs-final.log",
+      "logSha256": "62bf56c699cf0e2a84cb33bccd7a10e331bf0a7a635cbc26c9cfbb417ddfd6c5"
+    },
+    {
+      "id": "sqlite",
+      "command": "cargo check --locked -p better-auth --lib --no-default-features --features rustls,axum,sqlx-sqlite",
+      "status": "passed",
+      "localLog": "/tmp/native-feature-sqlite-final.log",
+      "logSha256": "3890aaec9b9bca501904c1cf3e7e7d452e8165f63be412e335d2ff141ff68f6c"
+    },
+    {
+      "id": "postgres",
+      "command": "cargo check --locked -p better-auth --lib --no-default-features --features rustls,axum,sqlx-postgres",
+      "status": "passed",
+      "localLog": "/tmp/native-feature-postgres-final.log",
+      "logSha256": "28a11bb92538fbe5b52e7c89b0a2ce5849140e6d7dc18d9079c70ea76203e3ca"
+    },
+    {
+      "id": "seaorm",
+      "command": "cargo check --locked -p better-auth --lib --no-default-features --features rustls,seaorm,poem",
+      "status": "passed",
+      "localLog": "/tmp/native-feature-seaorm-final.log",
+      "logSha256": "25fed5b01158e6c1915c2aaa5248bf74998a8f78b7fc25083916a6ab687912bb"
+    },
+    {
+      "id": "direct",
+      "command": "cargo check --locked -p better-auth --lib --no-default-features --features native-tls,sqlx",
+      "status": "passed",
+      "localLog": "/tmp/native-feature-direct-final.log",
+      "logSha256": "d6ff091abec8ff7830e6ec2e2637022061321b96ecb9c49e12ec8241a4af9725"
+    }
+  ],
+  "reportArtifacts": {
+    "contracts": "matrix.json",
+    "productionExecution": "current.json",
+    "historicalDiscoveryOnly": "baseline.json"
+  },
+  "review": {
+    "skill": "test-audit",
+    "mode": "Owner-boundary authoring gate plus read-only core/plugin/provider reviews",
+    "result": "Confirmed omissions closed. Review corrections recorded in matrix.json. No known unowned implemented capability in the reviewed inventory. This is finite contract evidence, not exhaustive input/branch/configuration proof.",
+    "autoreview": "Requested follow-on skill unavailable in this environment; manual independent read-only review used."
+  },
+  "compatHarness": {
+    "implementationChanged": false,
+    "fixtureLockfileUpdated": true,
+    "reason": "Resolve registry WebAuthn dependencies after eliminating vendored crates; no compat scenarios, comparator, servers or scripts edited"
+  },
+  "changeSize": {
+    "scope": "Full worktree versus HEAD, excluding audit JSON. Inline LCOV test regions counted with tests; counts before final report-only/config documentation polishing.",
+    "lines": {
+      "productionRust": {
+        "added": 1782,
+        "removed": 12445
+      },
+      "testsAndFixtures": {
+        "added": 17345,
+        "removed": 1565
+      },
+      "buildAndTooling": {
+        "added": 262,
+        "removed": 110
+      },
+      "documentationAndReports": {
+        "added": 588,
+        "removed": 5
+      },
+      "vendoredOther": {
+        "added": 0,
+        "removed": 1157
+      }
+    }
+  },
+  "remoteCI": "Workflow added; no remote CI run claimed",
+  "limitations": [
+    {
+      "surface": "AuthPlugin on_user_created/on_session_created/on_user_deleted/on_session_deleted declarations",
+      "classification": "Dormant default declarations; no production dispatch promises automatic delivery. No fabricated direct-call tests counted as lifecycle evidence."
+    },
+    {
+      "surface": "Optional handwritten store/model capability defaults",
+      "classification": "Unsupported default methods returning NotImplemented and model accessors are not asserted individually. Generated SQLx/SeaORM consumers, missing manual additional-field bindings, and authoritative missing-record behavior have executable owners."
+    },
+    {
+      "surface": "FieldConfig output validator and async validator",
+      "classification": "Output validator is declared metadata and intentionally not invoked. Async input validators invoke the callback but reject futures as ASYNC_VALIDATION_NOT_SUPPORTED; they do not support asynchronous admission."
+    },
+    {
+      "surface": "Third-party live providers",
+      "classification": "Native tests use real HTTP/TLS-independent local protocol servers and independent signatures. They do not prove external provider availability, credentials, or future protocol changes."
+    },
+    {
+      "surface": "Input/state space",
+      "classification": "Contract coverage is not exhaustive execution of every input, arbitrary application callback, or Cartesian product of configuration switches. Test count and line execution alone do not establish contract completeness."
+    },
+    {
+      "surface": "Ignored doctests",
+      "classification": "Three partial application-schema examples in src/lib.rs, crates/seaorm-macros/src/lib.rs and crates/sqlx-macros/src/lib.rs need user-owned model modules. Six executable/compile-fail doctests pass; real generated consumer integration owners compile and migrate both adapters on SQLite/PostgreSQL."
+    },
+    {
+      "surface": "Unexecuted source lines",
+      "classification": "Remaining line gaps include default no-op callback methods, unsupported optional trait capabilities, derive declarations/Debug formatting/accessors, defensive infrastructure failures, and alternate input/configuration branches within owned contracts. See current.json for exact line locations. Reviewed contract ownership does not imply 100% branch or line execution."
+    }
+  ],
+  "reproduceCoverage": "tests/README.md#Audited surface and verification",
+  "junit": {
+    "default": {
+      "name": "nextest-run",
+      "tests": "1074",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "uuid": "3f818da1-6365-4689-912d-6e9d78f7358b",
+      "timestamp": "2026-10-05T14:22:44.075+00:00",
+      "time": "7.116"
+    },
+    "postgres": {
+      "name": "nextest-run",
+      "tests": "260",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "uuid": "7db02d25-c69a-45d5-9906-ff60e2c0779f",
+      "timestamp": "2026-10-05T14:18:10.517+00:00",
+      "time": "9.106"
+    },
+    "redis": {
+      "name": "nextest-run",
+      "tests": "2",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "uuid": "afdee03a-fb8e-4a7f-b38a-69965a450c40",
+      "timestamp": "2026-10-05T14:21:49.781+00:00",
+      "time": "1.596"
+    },
+    "clock": {
+      "name": "nextest-run",
+      "tests": "3",
+      "skipped": "0",
+      "failures": "0",
+      "errors": "0",
+      "uuid": "2bfe23b1-9ea5-4056-a4b6-fd6241d89053",
+      "timestamp": "2030-01-01T00:00:00.000+00:00",
+      "time": "0.206",
+      "timestampNote": "Deliberately fixed realtime clock; not the actual verification date."
+    }
+  }
+}

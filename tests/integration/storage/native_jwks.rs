@@ -1,4 +1,5 @@
 //! Managed keyring lifecycle through real handlers, with independent physical SQL checks.
+use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use base64::Engine as _;
 use better_auth::plugins::EmailPasswordPlugin;
@@ -13,6 +14,7 @@ use std::sync::Arc;
 const SECRET: &str = "native-jwk-172-secret-at-least-32-characters";
 const ORIGIN: &str = "http://localhost:43177";
 backend_tests!(native_jwk_workflow);
+postgres_tests!(native_jwk_workflow);
 
 fn plugins<S: AuthSchema>(builder: AuthBuilder<S>, grace: i64) -> AuthBuilder<S> {
     builder

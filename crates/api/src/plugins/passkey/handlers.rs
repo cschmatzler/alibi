@@ -393,13 +393,13 @@ pub(super) async fn verify_registration_core<S: better_auth_core::AuthSchema>(
             super::raw_none::raw_credential_id(&raw),
         )
     } else {
-        let verified_passkey = match &stored_state.state {
+        let verified_passkey: super::source::credential::Passkey = match &stored_state.state {
             StoredRegistrationVerifier::Legacy(state) => {
                 let Ok(webauthn) = build_webauthn(config, &ctx.config, &origin) else {
                     return passkey_registration_failure();
                 };
                 match webauthn.finish_passkey_registration(&registration, state) {
-                    Ok(passkey) => passkey,
+                    Ok(passkey) => passkey.into(),
                     Err(_) => return passkey_registration_failure(),
                 }
             }
@@ -770,13 +770,13 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
                 let Ok((key, _)) = super::raw_none::decode_first(&public_key) else {
                     return passkey_authentication_failure();
                 };
-                let Ok(key) = webauthn_rs_core::proto::COSEKey::try_from(&key) else {
+                let Ok(key) = super::source::crypto::COSEKey::try_from(&key) else {
                     return passkey_authentication_failure();
                 };
-                let mut current = webauthn_rs_core::proto::Credential::from(saved.clone());
+                let mut current = saved.cred.clone();
                 current.cred = key;
                 current.cred_id = decode_credential_id(passkey.credential_id())?;
-                *saved = current.into();
+                saved.cred = current;
             }
         }
     }
@@ -802,10 +802,9 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
             let result = match state {
                 StoredAuthenticationState::Core { state }
                 | StoredAuthenticationState::CoreRaw { state, .. } => {
-                    let mut current =
-                        webauthn_rs_core::proto::Credential::from(stored_passkey.clone());
+                    let mut current = stored_passkey.cred.clone();
                     current.counter = counter;
-                    *stored_passkey = current.into();
+                    stored_passkey.cred = current;
                     let Ok(core) = build_verification_core(config, &ctx.config, &origin) else {
                         return passkey_authentication_failure();
                     };
@@ -822,7 +821,10 @@ pub(super) async fn verify_authentication_core<S: better_auth_core::AuthSchema>(
                     webauthn.finish_passkey_authentication(&authentication, &state)
                 }
                 StoredAuthenticationState::Discoverable { state } => {
-                    let discoverable_key = DiscoverableKey::from(stored_passkey.clone());
+                    let Ok(legacy) = stored_passkey.to_registry() else {
+                        return passkey_authentication_failure();
+                    };
+                    let discoverable_key = DiscoverableKey::from(legacy);
                     webauthn.finish_discoverable_authentication(
                         &authentication,
                         state,

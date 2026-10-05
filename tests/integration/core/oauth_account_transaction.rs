@@ -1,5 +1,6 @@
 //! OAuth registration commits its user and account together before issuing a session.
 
+use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use async_trait::async_trait;
 use better_auth::plugins::OAuthPlugin;
 use better_auth::plugins::oauth::{
@@ -9,12 +10,8 @@ use better_auth::plugins::oauth::{
 use better_auth::{AuthBuilder, AuthConfig};
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
 use better_auth_core::{AuthRequest, HttpMethod};
-use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-use better_auth_seaorm::{Database, SeaOrmStore};
 use serde_json::json;
 use std::sync::Arc;
-
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 struct Profile;
 
@@ -66,24 +63,32 @@ fn request() -> AuthRequest {
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn rejected_account_insert_rolls_back_new_oauth_user_and_retry_commits_binding() {
+    backend_tests!(rejected_account_insert_rolls_back_new_oauth_user_and_retry_commits_binding);
+    postgres_tests!(rejected_account_insert_rolls_back_new_oauth_user_and_retry_commits_binding);
+
+    async fn rejected_account_insert_rolls_back_new_oauth_user_and_retry_commits_binding<
+        B: Backend,
+    >(
+        db: Db,
+    ) -> TestResult {
         let config = AuthConfig::new("oauth-atomic-fixture-secret-at-least-32-characters");
-        let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
-            .await
-            .unwrap();
+        let (connection, _) = db.migrated::<B>(&config.secret).await?;
         let mut provider = OAuthProvider::google("local-client", "local-secret");
         provider.verify_id_token = Some(Arc::new(Profile));
         provider.get_user_info = Some(Arc::new(Profile));
         let auth = AuthBuilder::new(config.clone())
-            .store(SeaOrmStore::<Schema>::new(config, database.clone()))
+            .store(B::store(Arc::new(config), &connection))
             .plugin(OAuthPlugin::new().add_provider("google", provider))
             .build()
             .await
             .unwrap();
-        _ = database.execute_raw(Statement::from_string(DbBackend::Sqlite, "CREATE TRIGGER reject_oauth_account BEFORE INSERT ON accounts WHEN NEW.provider_id = 'google' BEGIN SELECT RAISE(FAIL, 'account insert veto'); END".to_owned())).await.unwrap();
-        let rejected = auth.handle_request(request()).await.unwrap();
+        if db.is_postgres() {
+            _=db.execute("CREATE FUNCTION reject_oauth_account_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'account insert veto'; END $$",&[]).await?;
+            _=db.execute("CREATE TRIGGER reject_oauth_account BEFORE INSERT ON accounts FOR EACH ROW WHEN (NEW.provider_id='google') EXECUTE FUNCTION reject_oauth_account_insert()",&[]).await?;
+        } else {
+            _ = db.execute("CREATE TRIGGER reject_oauth_account BEFORE INSERT ON accounts WHEN NEW.provider_id = 'google' BEGIN SELECT RAISE(FAIL, 'account insert veto'); END", &[]).await?;
+        }
+        let rejected = Box::pin(auth.handle_request(request())).await?;
         assert_eq!(rejected.status, 401);
         let failure: serde_json::Value = serde_json::from_slice(&rejected.body).unwrap();
         assert_eq!(
@@ -111,14 +116,20 @@ mod tests {
                 .is_none(),
             "a failed account insert must roll back its newly created user"
         );
-        _ = database
-            .execute_raw(Statement::from_string(
-                DbBackend::Sqlite,
-                "DROP TRIGGER reject_oauth_account".to_owned(),
-            ))
-            .await
-            .unwrap();
-        let accepted = auth.handle_request(request()).await.unwrap();
+        assert_eq!(db.count("users").await?, 0);
+        assert_eq!(db.count("accounts").await?, 0);
+        assert_eq!(db.count("sessions").await?, 0);
+        _ = db
+            .execute(
+                if db.is_postgres() {
+                    "DROP TRIGGER reject_oauth_account ON accounts"
+                } else {
+                    "DROP TRIGGER reject_oauth_account"
+                },
+                &[],
+            )
+            .await?;
+        let accepted = Box::pin(auth.handle_request(request())).await?;
         assert_eq!(accepted.status, 200);
         let body: serde_json::Value = serde_json::from_slice(&accepted.body).unwrap();
         let token = (*(body).get("token").unwrap_or(&serde_json::Value::Null))
@@ -151,5 +162,6 @@ mod tests {
                 .iter()
                 .any(|(key, _)| key.eq_ignore_ascii_case("set-cookie"))
         );
+        B::close(connection).await
     }
 }

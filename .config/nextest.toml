@@ -1,6 +1,7 @@
 # Test tiers (see tests/README.md):
 #   unit         inline `#[cfg(test)]` modules in each crate
 #   integration  `tests/integration/main.rs`: the Rust API on its own terms
+#   e2e          `tests/e2e/main.rs`: real HTTP with a cookie client and SQLite
 #   compat       `tests/compat/main.rs`: comparisons against the pinned upstream
 #   repo         `tests/repo/main.rs`: repository invariants
 
@@ -13,3 +14,30 @@ compat-servers = { max-threads = 1 }
 filter = 'binary_id(better-auth::compat) & test(/^sdk::tests::\w+_client_compat$/)'
 test-group = 'compat-servers'
 slow-timeout = { period = "300s" }
+
+# Cargo's default members and development features select the complete local
+# suite. External-service tests remain explicitly ignored at their owners.
+[profile.default]
+fail-fast = false
+retries = 0
+slow-timeout = { period = "30s", terminate-after = 4 }
+
+[profile.default.junit]
+path = "junit.xml"
+
+# Service proofs use ordinary nextest selection in CI and locally. A bounded
+# PostgreSQL pool avoids exceeding the server connection budget; Redis owners
+# clear their isolated service database and therefore run sequentially.
+[profile.postgres]
+test-threads = 8
+[profile.postgres.junit]
+path = "junit.xml"
+
+[profile.redis]
+test-threads = 1
+[profile.redis.junit]
+path = "junit.xml"
+
+# Keep the clock proof report separate from the full default suite.
+[profile.clock.junit]
+path = "junit.xml"

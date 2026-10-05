@@ -456,17 +456,30 @@ impl DeviceAuthorizationPlugin {
             }
         }
 
-        drop(
-            ctx.database
-                .update_device_code(
-                    &device_code.id,
-                    UpdateDeviceCode {
-                        last_polled_at: Some(Some(now)),
-                        ..Default::default()
-                    },
-                )
-                .await?,
-        );
+        if let Err(error) = ctx
+            .database
+            .update_device_code(
+                &device_code.id,
+                UpdateDeviceCode {
+                    last_polled_at: Some(Some(now)),
+                    ..Default::default()
+                },
+            )
+            .await
+        {
+            // Another redemption can consume the code between lookup and this
+            // polling update. Preserve the OAuth error contract for that loser,
+            // while retaining real storage failures when the code still exists.
+            if matches!(
+                ctx.database
+                    .get_device_code_by_device_code(&body.device_code)
+                    .await,
+                Ok(None)
+            ) {
+                return device_error_response(400, "invalid_grant", INVALID_DEVICE_CODE);
+            }
+            return Err(error);
+        }
 
         if device_code.expires_at < now {
             ctx.database.delete_device_code(&device_code.id).await?;
@@ -2027,78 +2040,6 @@ mod tests {
             (*(body).get("error_description").unwrap_or(&Value::Null)),
             CLIENT_ID_MISMATCH
         );
-    }
-
-    // Upstream 1.7.6 uses consumeOne to permit exactly one successful redemption.
-    #[tokio::test]
-    async fn test_device_token_allows_only_one_concurrent_redemption() {
-        let plugin = DeviceAuthorizationPlugin::new();
-        let (ctx, _user, session) = create_context_with_user("concurrent@example.com").await;
-
-        let create_request = test_helpers::create_auth_json_request_no_query(
-            HttpMethod::Post,
-            "/device/code",
-            None,
-            Some(serde_json::json!({ "client_id": "test-client" })),
-        );
-        let create_response = plugin
-            .handle_device_code(&create_request, &ctx)
-            .await
-            .unwrap();
-        let create_body = json_body(&create_response);
-        let device_code = (*(create_body).get("device_code").unwrap_or(&Value::Null))
-            .as_str()
-            .unwrap()
-            .to_owned();
-        let user_code = (*(create_body).get("user_code").unwrap_or(&Value::Null))
-            .as_str()
-            .unwrap()
-            .to_owned();
-
-        plugin
-            .handle_device_verify(&device_claim_request(&user_code, &session.token), &ctx)
-            .await
-            .unwrap();
-
-        let approve_request = test_helpers::create_auth_json_request_no_query(
-            HttpMethod::Post,
-            "/device/approve",
-            Some(&session.token),
-            Some(serde_json::json!({ "userCode": user_code })),
-        );
-        let approve_response = plugin
-            .handle_device_approve(&approve_request, &ctx)
-            .await
-            .unwrap();
-        assert_eq!(
-            (*(json_body(&approve_response))
-                .get("success")
-                .unwrap_or(&Value::Null)),
-            true
-        );
-
-        let first_request = device_token_request(&device_code, "test-client");
-        let second_request = device_token_request(&device_code, "test-client");
-
-        let (first_response, second_response) = tokio::join!(
-            plugin.handle_device_token(&first_request, &ctx),
-            plugin.handle_device_token(&second_request, &ctx),
-        );
-
-        let first_response = first_response.unwrap();
-        let second_response = second_response.unwrap();
-
-        let success_count = [first_response.status, second_response.status]
-            .into_iter()
-            .filter(|status| *status == 200)
-            .count();
-        assert_eq!(success_count, 1);
-
-        let invalid_grant_count = [json_body(&first_response), json_body(&second_response)]
-            .into_iter()
-            .filter(|body| body["error"] == "invalid_grant")
-            .count();
-        assert_eq!(invalid_grant_count, 1);
     }
 }
 // LCOV_EXCL_STOP

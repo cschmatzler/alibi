@@ -4,6 +4,7 @@
     reason = "public lifecycle regression setup is fatal"
 )]
 
+use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
@@ -12,20 +13,16 @@ use axum::{
 use better_auth::plugins::anonymous::{AnonymousConfig, AnonymousLink, LinkAnonymousAccount};
 use better_auth::plugins::oauth::OAuthProvider;
 use better_auth::plugins::{AnonymousPlugin, EmailPasswordPlugin, OAuthPlugin};
-use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
+use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
 use better_auth_core::{
     AuthRequest, AuthResponse, AuthResult, AuthSession, AuthUser, AuthVerification, HttpMethod,
 };
-use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
-use better_auth_seaorm::{Database, SeaOrmStore};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
 };
-
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 struct Linker(Arc<Mutex<Vec<Value>>>);
 
@@ -77,8 +74,8 @@ fn cookies(response: &AuthResponse) -> String {
         .join("; ")
 }
 
-async fn initiate(
-    auth: &BetterAuth<Schema>,
+async fn initiate<S: AuthSchema>(
+    auth: &BetterAuth<S>,
     cookie: &str,
     foreign: &str,
 ) -> (String, String, Value) {
@@ -97,7 +94,7 @@ async fn initiate(
         .into_owned();
     let row = auth
         .store()
-        .get_verification_by_identifier(&state)
+        .get_verification_by_identifier(&format!("auth-state:{state}"))
         .await
         .unwrap()
         .unwrap();
@@ -108,7 +105,7 @@ async fn initiate(
     )
 }
 
-async fn callback(auth: &BetterAuth<Schema>, state: &str, cookie: &str) -> AuthResponse {
+async fn callback<S: AuthSchema>(auth: &BetterAuth<S>, state: &str, cookie: &str) -> AuthResponse {
     let mut request = request("/api/auth/callback/gitlab", None, Some(cookie));
     drop(
         request
@@ -123,13 +120,21 @@ async fn callback(auth: &BetterAuth<Schema>, state: &str, cookie: &str) -> AuthR
 mod tests {
     use super::*;
 
-    #[tokio::test]
+    backend_tests!(
+        consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the_issued_state
+    );
+    postgres_tests!(
+        consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the_issued_state
+    );
     #[expect(
         clippy::too_many_lines,
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
-    async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the_issued_state()
-    {
+    async fn consumed_oauth_context_requires_actual_capture_and_a_proof_bound_to_the_issued_state<
+        B: Backend,
+    >(
+        db: Db,
+    ) -> TestResult {
         for mode in [
             "captured",
             "modified-owner",
@@ -158,15 +163,15 @@ mod tests {
             let server = tokio::spawn(async move {
                 axum::serve(listener, provider).await.unwrap();
             });
-            let database = Database::connect("sqlite::memory:").await.unwrap();
-            better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
-                .await
-                .unwrap();
+            let db = db.fresh().await?;
+            let (connection, _) = db
+                .migrated::<B>("native-anonymous-context-authentication-secret-32")
+                .await?;
             let config = AuthConfig::new("native-anonymous-context-authentication-secret-32")
                 .base_url("http://localhost:42615");
             let events = Arc::new(Mutex::new(Vec::new()));
-            let auth = AuthBuilder::<Schema>::new(config.clone())
-                .store(SeaOrmStore::<Schema>::new(config, database.clone()))
+            let auth = AuthBuilder::new(config.clone())
+                .store(B::store(Arc::new(config), &connection))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(OAuthPlugin::new().add_provider(
                     "gitlab",
@@ -240,7 +245,7 @@ mod tests {
             );
             let row = auth
                 .store()
-                .get_verification_by_identifier(&state)
+                .get_verification_by_identifier(&format!("auth-state:{state}"))
                 .await
                 .unwrap()
                 .unwrap();
@@ -295,15 +300,13 @@ mod tests {
                 }
                 _ => {}
             }
-            let edited = database
-                .execute_raw(Statement::from_sql_and_values(
-                    database.get_database_backend(),
-                    "UPDATE verifications SET value=? WHERE id=?",
-                    [payload.to_string().into(), row.id().into_owned().into()],
-                ))
-                .await
-                .unwrap();
-            assert_eq!(edited.rows_affected(), 1);
+            let edited = db
+                .execute(
+                    "UPDATE verifications SET value=$1 WHERE id=$2",
+                    &[&payload.to_string(), row.id().as_ref()],
+                )
+                .await?;
+            assert_eq!(edited, 1);
             let response = callback(&auth, &state, &selected_cookie).await;
             assert_eq!(response.status, 302, "{mode}");
             let denied = matches!(mode, "wrong-cookie" | "expired");
@@ -377,17 +380,13 @@ mod tests {
                 "{mode}"
             );
             assert_eq!(
-                auth.store()
-                    .get_user_by_id(foreign_id)
-                    .await
-                    .unwrap()
-                    .unwrap(),
-                foreign_user_before,
+                serde_json::to_value(auth.store().get_user_by_id(foreign_id).await?.unwrap())?,
+                serde_json::to_value(&foreign_user_before)?,
                 "{mode}"
             );
             assert_eq!(
-                auth.store().get_user_sessions(foreign_id).await.unwrap(),
-                foreign_sessions_before,
+                serde_json::to_value(auth.store().get_user_sessions(foreign_id).await?)?,
+                serde_json::to_value(&foreign_sessions_before)?,
                 "{mode}"
             );
             assert!(
@@ -400,7 +399,7 @@ mod tests {
             );
             assert_eq!(
                 auth.store()
-                    .get_verification_by_identifier(&state)
+                    .get_verification_by_identifier(&format!("auth-state:{state}"))
                     .await
                     .unwrap()
                     .is_some(),
@@ -419,6 +418,8 @@ mod tests {
                 assert_eq!(events.lock().unwrap().len(), usize::from(transferred));
             }
             server.abort();
+            B::close(connection).await?;
         }
+        Ok(())
     }
 }

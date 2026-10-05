@@ -35,6 +35,19 @@ impl TrustedOriginsResolver for ClientOrigin {
     async fn resolve(&self, request: &AuthRequest) -> AuthResult<Vec<String>> {
         assert!(request.path().starts_with("/api/auth/"));
         assert!(request.url().is_some());
+        match request.header("x-origin-error").map(String::as_str) {
+            Some("ordinary") => {
+                return Err(better_auth_core::AuthError::internal(
+                    "private origin resolver failure",
+                ));
+            }
+            Some("api") => {
+                return Err(better_auth_core::AuthError::forbidden(
+                    "origin policy unavailable",
+                ));
+            }
+            _ => {}
+        }
         Ok(
             if request.header("x-client").map(String::as_str) == Some("mobile") {
                 vec!["myapp://client/cb".into()]
@@ -76,6 +89,10 @@ fn assert_effective<S: AuthSchema>(req: &AuthRequest, ctx: &AuthContext<S>) {
         format!("https://{}", req.header("host").unwrap())
     );
     assert!(!ctx.config.is_origin_trusted("https://evil.test"));
+    assert!(
+        req.header("x-origin-error").is_none(),
+        "resolver failures must precede plugin callbacks"
+    );
 }
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OriginContextProbe {
@@ -132,6 +149,22 @@ async fn dynamic_origin_dispatch<B: Backend>(db: Db) -> TestResult {
         .plugin(EmailPasswordPlugin::new())
         .build()
         .await?;
+    for (mode, status) in [("ordinary", 500), ("api", 403)] {
+        let mut req = request(
+            HttpMethod::Post,
+            "/sign-up/email",
+            "a.example.test",
+            Some("https://a.example.test"),
+            json!({"email":"resolver-blocked@fixture.test","password":"password123","name":"Blocked"}),
+        );
+        drop(req.headers.insert("x-origin-error".into(), mode.into()));
+        let response = auth.handle_request(req).await?;
+        assert_eq!(response.status, status);
+        assert!(response.headers.get("set-cookie").is_none());
+        for table in ["users", "accounts", "sessions"] {
+            assert_eq!(db.count(table).await?, 0);
+        }
+    }
     for origin in [
         "https://evil.test",
         "https://a.example.test.evil.test",

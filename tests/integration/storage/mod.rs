@@ -22,9 +22,11 @@
 
 mod access_control;
 mod accounts;
+mod adapter_callbacks;
 mod api_keys;
 #[cfg(all(feature = "sqlx", feature = "seaorm"))]
 mod character_ids;
+mod database_callbacks;
 mod http_composition;
 mod invitations;
 mod jwks;
@@ -37,6 +39,7 @@ mod native_jwks;
 mod native_organizations;
 mod optional_records;
 mod organizations;
+mod plugin_flows;
 mod rate_limit;
 mod sessions;
 mod stateless;
@@ -167,11 +170,13 @@ impl Raw {
         })
     }
 
-    /// Every physical column of every row, in rowid order, as JSON text.
-    /// SQLite only.
+    /// Every physical column of every row as deterministically ordered JSON text.
     pub(crate) async fn table(&self, table: &str) -> TestResult<String> {
         let Self::Sqlite(pool) = self else {
-            return Err("physical table snapshots use SQLite rowids".into());
+            return Ok(self.text(
+                &format!("SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text), '[]'::jsonb)::text FROM \"{table}\" t"),
+                &[],
+            ).await?.unwrap_or_default());
         };
         let columns: Vec<String> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             "SELECT name FROM pragma_table_xinfo('{table}')"

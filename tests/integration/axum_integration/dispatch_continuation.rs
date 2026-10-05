@@ -132,16 +132,36 @@ impl Middleware for OrderedMiddleware {
     fn name(&self) -> &'static str {
         self.before
     }
-    async fn before_request(&self, _req: &AuthRequest) -> AuthResult<Option<AuthResponse>> {
+    async fn before_request(&self, req: &AuthRequest) -> AuthResult<Option<AuthResponse>> {
         self.observations.phases.lock().unwrap().push(self.before);
+        if self.before == "first-before" {
+            match req.header("x-middleware-policy").map(String::as_str) {
+                Some("stop") => {
+                    return Ok(Some(
+                        AuthResponse::new(418).with_header("x-policy", "stopped"),
+                    ));
+                }
+                Some("before-error") => {
+                    return Err(better_auth_core::AuthError::forbidden("middleware denied"));
+                }
+                _ => {}
+            }
+        }
         Ok(None)
     }
     async fn after_request(
         &self,
-        _req: &AuthRequest,
+        req: &AuthRequest,
         mut response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
         self.observations.phases.lock().unwrap().push(self.after);
+        if self.after == "second-after"
+            && req.header("x-middleware-policy").map(String::as_str) == Some("after-error")
+        {
+            return Err(better_auth_core::AuthError::forbidden(
+                "middleware after failed",
+            ));
+        }
         response.headers.append("x-middleware", self.after);
         Ok(response)
     }
@@ -662,6 +682,65 @@ mod tests {
                 let context = observations.contexts.lock().unwrap();
                 assert_eq!(context.first().unwrap().0, "/auth/transport");
                 assert_eq!(context.first().unwrap().1, "actual-native-agent");
+            }
+        }
+    }
+}
+
+#[tokio::test]
+async fn application_middleware_short_circuits_and_errors_preserve_dispatch_effects() {
+    for (mode, expected, written) in [
+        ("stop", 418, false),
+        ("before-error", 403, false),
+        ("after-error", 403, true),
+    ] {
+        let observations = Arc::new(Observations::default());
+        let (auth, store) = auth(observations.clone()).await;
+        let router = Router::new()
+            .nest("/auth", auth.clone().axum_router())
+            .with_state(auth);
+        let mut input = request("/auth/transport", "middleware@example.test");
+        drop(
+            input
+                .headers_mut()
+                .insert("x-middleware-policy", mode.parse().unwrap()),
+        );
+        let response = router.oneshot(input).await.unwrap();
+        assert_eq!(response.status().as_u16(), expected);
+        let stored = store
+            .get_user_by_email("middleware@example.test")
+            .await
+            .unwrap();
+        assert_eq!(stored.is_some(), written);
+        if written {
+            assert_eq!(stored.unwrap().name.as_deref(), Some("completed"));
+            assert_eq!(
+                *observations.phases.lock().unwrap(),
+                [
+                    "first-before",
+                    "second-before",
+                    "handler",
+                    "plugin-after",
+                    "second-after"
+                ]
+            );
+            assert!(response.headers().get("set-cookie").is_none());
+        } else {
+            assert_eq!(
+                *observations.phases.lock().unwrap(),
+                ["first-before", "second-after", "first-after"]
+            );
+            assert_eq!(
+                response
+                    .headers()
+                    .get_all("x-middleware")
+                    .iter()
+                    .map(|value| value.to_str().unwrap())
+                    .collect::<Vec<_>>(),
+                ["second-after", "first-after"]
+            );
+            if mode == "stop" {
+                assert_eq!(response.headers()["x-policy"], "stopped");
             }
         }
     }

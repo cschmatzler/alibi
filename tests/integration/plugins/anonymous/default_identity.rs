@@ -1,31 +1,36 @@
 //! The random default has a public native shape contract, not a nonce exemption.
 #![allow(clippy::unwrap_used, reason = "native lifecycle setup must succeed")]
 
+use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use better_auth::plugins::AnonymousPlugin;
 use better_auth::plugins::anonymous::AnonymousConfig;
 use better_auth::{AuthBuilder, AuthConfig};
 use better_auth_core::{AuthRequest, AuthSession, AuthUser, HttpMethod};
-use better_auth_seaorm::{Database, SeaOrmStore};
 use serde_json::{Value, json};
-
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+use std::sync::Arc;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[tokio::test]
-    async fn default_anonymous_identity_is_lowercase_32_characters_and_retires_its_actual_session()
-    {
+    backend_tests!(
+        default_anonymous_identity_is_lowercase_32_characters_and_retires_its_actual_session
+    );
+    postgres_tests!(
+        default_anonymous_identity_is_lowercase_32_characters_and_retires_its_actual_session
+    );
+    async fn default_anonymous_identity_is_lowercase_32_characters_and_retires_its_actual_session<
+        B: Backend,
+    >(
+        db: Db,
+    ) -> TestResult {
         for domain in [None, Some("anonymous.fixture.test"), Some("")] {
             let config = AuthConfig::new("native-anonymous-default-shape-secret-32")
                 .base_url("http://localhost:42617");
-            let database = Database::connect("sqlite::memory:").await.unwrap();
-            better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
-                .await
-                .unwrap();
-            let auth = AuthBuilder::<Schema>::new(config.clone())
-                .store(SeaOrmStore::<Schema>::new(config, database))
+            let db = db.fresh().await?;
+            let (connection, _) = db.migrated::<B>(&config.secret).await?;
+            let auth = AuthBuilder::<B::Schema>::new(config.clone())
+                .store(B::store(Arc::new(config), &connection))
                 .plugin(AnonymousPlugin::with_config(AnonymousConfig {
                     email_domain_name: domain.map(str::to_owned),
                     ..Default::default()
@@ -45,7 +50,7 @@ mod tests {
                     .headers
                     .insert("origin".into(), "http://localhost:42617".into()),
             );
-            let issued = auth.handle_request(request.clone()).await.unwrap();
+            let issued = Box::pin(auth.handle_request(request.clone())).await?;
             assert_eq!(issued.status, 200);
             let body: Value = serde_json::from_slice(&issued.body).unwrap();
             let user = body.get("user").unwrap();
@@ -91,23 +96,22 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join("; ");
             drop(request.headers.insert("cookie".into(), cookie.clone()));
-            let rejected = auth.handle_request(request.clone()).await.unwrap();
+            let before = db.tables(&["users", "sessions"]).await?;
+            let rejected = Box::pin(auth.handle_request(request.clone())).await?;
             assert_eq!(rejected.status, 400);
-            assert_eq!(
-                auth.store().get_user_by_id(id).await.unwrap().unwrap(),
-                stored
-            );
-            assert_eq!(auth.store().get_user_sessions(id).await.unwrap(), sessions);
+            assert_eq!(db.tables(&["users", "sessions"]).await?, before);
             request.path = "/api/auth/delete-anonymous-user".into();
-            let deleted = auth.handle_request(request.clone()).await.unwrap();
+            let deleted = Box::pin(auth.handle_request(request.clone())).await?;
             assert_eq!(deleted.status, 200);
             assert_eq!(
                 serde_json::from_slice::<Value>(&deleted.body).unwrap(),
                 json!({"success":true})
             );
             assert!(auth.store().get_user_by_id(id).await.unwrap().is_none());
+            assert_eq!(db.count("users").await?, 0);
+            assert_eq!(db.count("sessions").await?, 0);
             assert_eq!(auth.store().get_user_sessions(id).await.unwrap().len(), 0);
-            let replay = auth.handle_request(request).await.unwrap();
+            let replay = Box::pin(auth.handle_request(request)).await?;
             assert_eq!(replay.status, 401);
             assert_eq!(
                 serde_json::from_slice::<Value>(&replay.body)
@@ -116,6 +120,8 @@ mod tests {
                     .unwrap(),
                 "UNAUTHORIZED"
             );
+            B::close(connection).await?;
         }
+        Ok(())
     }
 }

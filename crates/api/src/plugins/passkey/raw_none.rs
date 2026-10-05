@@ -1,11 +1,12 @@
 //! Bounded Source COSE cases that Core cannot represent retain raw identity.
 //! None validates a ceremony; packed and authentication verify original proofs.
+use super::source::credential::Passkey;
 use super::webauthn::PasskeySnapshot;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use better_auth_core::utils::json::{JsValue, from_slice};
 use serde::{Deserialize, Serialize};
 use serde_cbor_2::Value as Cbor;
-use webauthn_rs::prelude::{Passkey, RegisterPublicKeyCredential};
+use webauthn_rs::prelude::RegisterPublicKeyCredential;
 use webauthn_rs_core::{crypto::compute_sha256, error::WebauthnError};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -465,7 +466,7 @@ pub(super) fn register_raw_key(
         return Err(malformed());
     }
     let mismatch = mismatched_ed25519(&key);
-    let representable = webauthn_rs_core::proto::COSEKey::try_from(&key).is_ok();
+    let representable = super::source::crypto::COSEKey::try_from(&key).is_ok();
     let mut raw_eligible = (none && (curve_eight(&key) || !representable)) || mismatch;
     if packed
         && let Some(Cbor::Map(statement)) = text(&object, "attStmt")
@@ -658,7 +659,7 @@ pub(super) fn authenticate_raw(
     }
     let bytes = authentication.response.authenticator_data.as_ref();
     validate_assertion_data(bytes)?;
-    let data = webauthn_rs_core::internals::AuthenticatorData::<
+    let data = super::source::data::AuthenticatorData::<
         webauthn_rs_core::proto::Authentication,
     >::from_source(bytes)?;
     if bytes.get(..32) != Some(compute_sha256(rp_id.as_bytes()).as_slice()) {
@@ -689,7 +690,7 @@ pub(super) fn authenticate_raw(
             &signed,
         )?
     } else {
-        webauthn_rs_core::proto::COSEKey::try_from(&key)?
+        super::source::crypto::COSEKey::try_from(&key)?
             .verify_signature(authentication.response.signature.as_ref(), &signed)?
     };
     if !verified {

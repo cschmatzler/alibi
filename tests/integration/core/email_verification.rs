@@ -1,5 +1,10 @@
 //! Awaited notification policy and direct delivery at the HTTP boundary.
+#![allow(
+    clippy::panic_in_result_fn,
+    reason = "shared integration owners propagate fixture failures and assert wire contracts"
+)]
 
+use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use async_trait::async_trait;
 use better_auth::plugins::user_management::{SendChangeEmailConfirmation, UserInfo};
 use better_auth::plugins::{
@@ -11,12 +16,9 @@ use better_auth_core::wire::UserView;
 use better_auth_core::{
     AuthAccount, AuthError, AuthRequest, AuthResponse, AuthResult, AuthUser, HttpMethod,
 };
-use better_auth_seaorm::{Database, SeaOrmStore};
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 const ORIGIN: &str = "http://verification.fixture.test";
 
@@ -67,19 +69,20 @@ impl SendChangeEmailConfirmation for ChangeProofSender {
     }
 }
 
-async fn auth(
+async fn auth<B: Backend>(
+    db: Db,
     required: bool,
     send_on_signup: Option<bool>,
     fail: bool,
     policy: better_auth::AwaitedNotificationErrorPolicy,
-) -> (BetterAuth<Schema>, Arc<Sender>) {
+) -> (BetterAuth<B::Schema>, Arc<Sender>, Db) {
     let mut config =
         AuthConfig::new("verification-fixture-secret-minimum-32-characters").base_url(ORIGIN);
     if policy == better_auth::AwaitedNotificationErrorPolicy::LogAndContinue {
         config = config.awaited_notification_errors(policy);
     }
-    let db = Database::connect("sqlite::memory:").await.unwrap();
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+    let (connection, _) = db
+        .migrated::<B>("verification-fixture-secret-minimum-32-characters")
         .await
         .unwrap();
     let sender = Arc::new(Sender {
@@ -87,7 +90,7 @@ async fn auth(
         ..Default::default()
     });
     let auth = AuthBuilder::new(config.clone())
-        .store(SeaOrmStore::<Schema>::new(config, db))
+        .store(B::store(Arc::new(config), &connection))
         .plugin(
             EmailPasswordPlugin::new()
                 .enable_username(false)
@@ -105,15 +108,19 @@ async fn auth(
         .build()
         .await
         .unwrap();
-    (auth, sender)
+    (auth, sender, db)
 }
 
-async fn post(auth: &BetterAuth<Schema>, path: &str, body: Value) -> (AuthResponse, Value) {
-    post_with_cookie(auth, path, body, None).await
+async fn post<S: better_auth::AuthSchema>(
+    auth: &BetterAuth<S>,
+    path: &str,
+    body: Value,
+) -> (AuthResponse, Value) {
+    Box::pin(post_with_cookie(auth, path, body, None)).await
 }
 
-async fn post_with_cookie(
-    auth: &BetterAuth<Schema>,
+async fn post_with_cookie<S: better_auth::AuthSchema>(
+    auth: &BetterAuth<S>,
     path: &str,
     body: Value,
     cookie: Option<&str>,
@@ -131,7 +138,7 @@ async fn post_with_cookie(
         drop(req.headers.insert("cookie".into(), cookie.into()));
     }
     req.body = Some(serde_json::to_vec(&body).unwrap());
-    let response = auth.handle_request(req).await.unwrap();
+    let response = Box::pin(auth.handle_request(req)).await.unwrap();
     let payload = serde_json::from_slice(&response.body).unwrap();
     (response, payload)
 }
@@ -143,12 +150,28 @@ fn signup() -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    backend_tests!(
+        authenticated_verification_delivery_compares_normalized_mailboxes,
+        username_disabled_signup_ignores_additional_input_and_excludes_username_routes,
+        signup_configuration_controls_delivery_without_bypassing_required_verification,
+        notification_error_policy_controls_signup_commit_and_preserves_direct_delivery_errors,
+        change_email_delivery_uses_configured_verification_expiry_and_base_path
+    );
+    postgres_tests!(
+        authenticated_verification_delivery_compares_normalized_mailboxes,
+        username_disabled_signup_ignores_additional_input_and_excludes_username_routes,
+        signup_configuration_controls_delivery_without_bypassing_required_verification,
+        notification_error_policy_controls_signup_commit_and_preserves_direct_delivery_errors,
+        change_email_delivery_uses_configured_verification_expiry_and_base_path
+    );
 
     // The session's normalized mailbox matches a case-varied delivery request,
     // while a genuinely different mailbox must not receive its proof.
-    #[tokio::test]
-    async fn authenticated_verification_delivery_compares_normalized_mailboxes() {
-        let (auth, sender) = auth(
+    async fn authenticated_verification_delivery_compares_normalized_mailboxes<B: Backend>(
+        db: Db,
+    ) -> TestResult {
+        let (auth, sender, _db) = auth::<B>(
+            db.fresh().await?,
             false,
             Some(false),
             false,
@@ -190,13 +213,18 @@ mod tests {
             body.pointer("/user/id").and_then(Value::as_str),
             Some(calls.first().unwrap().0.id.as_str())
         );
+        Ok(())
     }
 
     // Disabled username registration ignores additional username inputs as the
     // pinned core schema does, and cannot dispatch either username endpoint.
-    #[tokio::test]
-    async fn username_disabled_signup_ignores_additional_input_and_excludes_username_routes() {
-        let (auth, sender) = auth(
+    async fn username_disabled_signup_ignores_additional_input_and_excludes_username_routes<
+        B: Backend,
+    >(
+        db: Db,
+    ) -> TestResult {
+        let (auth, sender, _db) = auth::<B>(
+            db.fresh().await?,
             false,
             Some(false),
             false,
@@ -251,22 +279,27 @@ mod tests {
                     .any(|(registered, _)| registered == path)
             );
             let req = AuthRequest::new(HttpMethod::Post, format!("/api/auth{path}"));
-            let response = auth.handle_request(req).await.unwrap();
+            let response = Box::pin(auth.handle_request(req)).await.unwrap();
             assert_eq!(response.status, 404);
             assert_eq!(response.body.len(), 0);
         }
+        Ok(())
     }
 
     // Pinned sign-up uses sendOnSignUp ?? requireEmailVerification. This must
     // govern real delivery and session issuance, even with independently installed plugins.
-    #[tokio::test]
-    async fn signup_configuration_controls_delivery_without_bypassing_required_verification() {
+    async fn signup_configuration_controls_delivery_without_bypassing_required_verification<
+        B: Backend,
+    >(
+        db: Db,
+    ) -> TestResult {
         for (required, send_on_signup, delivered, signed_in) in [
             (true, None, true, false),
             (true, Some(false), false, false),
             (false, Some(true), true, true),
         ] {
-            let (auth, sender) = auth(
+            let (auth, sender, _db) = auth::<B>(
+                db.fresh().await?,
                 required,
                 send_on_signup,
                 false,
@@ -304,19 +337,22 @@ mod tests {
                 assert_eq!(recipient.email.as_deref(), Some(EMAIL));
             }
         }
+        Ok(())
     }
 
     // An awaited default failure rolls back uncommitted signup writes. Opt-in logging
     // completes signup and retains its proof. Both policies retain committed users
     // after sign-in notification errors and report direct delivery failure.
-    #[tokio::test]
-    async fn notification_error_policy_controls_signup_commit_and_preserves_direct_delivery_errors()
-    {
+    async fn notification_error_policy_controls_signup_commit_and_preserves_direct_delivery_errors<
+        B: Backend,
+    >(
+        db: Db,
+    ) -> TestResult {
         for policy in [
             better_auth::AwaitedNotificationErrorPolicy::Propagate,
             better_auth::AwaitedNotificationErrorPolicy::LogAndContinue,
         ] {
-            let (auth, sender) = auth(true, None, true, policy).await;
+            let (auth, sender, _db) = auth::<B>(db.fresh().await?, true, None, true, policy).await;
             let (registered, signup_body) = post(&auth, "/sign-up/email", signup()).await;
             if policy == better_auth::AwaitedNotificationErrorPolicy::Propagate {
                 assert_eq!(registered.status, 400, "{signup_body}");
@@ -445,7 +481,7 @@ mod tests {
 
             let mut proof = AuthRequest::new(HttpMethod::Get, "/api/auth/verify-email");
             drop(proof.query.insert("token".into(), token));
-            let verified = auth.handle_request(proof).await.unwrap();
+            let verified = Box::pin(auth.handle_request(proof)).await.unwrap();
             assert_eq!(verified.status, 200);
             let verified_body: Value = serde_json::from_slice(&verified.body).unwrap();
             assert_eq!(verified_body.get("user"), Some(&Value::Null));
@@ -473,16 +509,18 @@ mod tests {
             );
             assert_eq!(sender.calls.lock().unwrap().len(), signup_deliveries + 2);
         }
+        Ok(())
     }
 
     // Modern email-change proofs use initialized email-verification expiry in both
     // delivery stages, including when the auth instance has a custom base path.
-    #[tokio::test]
     #[expect(
         clippy::too_many_lines,
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
-    async fn change_email_delivery_uses_configured_verification_expiry_and_base_path() {
+    async fn change_email_delivery_uses_configured_verification_expiry_and_base_path<B: Backend>(
+        db: Db,
+    ) -> TestResult {
         for (expiry, path, expected_seconds) in [
             (chrono::Duration::hours(1), "/api/auth", 3600),
             (chrono::Duration::seconds(90), "/nested/auth", 90),
@@ -491,14 +529,14 @@ mod tests {
                 AuthConfig::new("verification-change-fixture-secret-minimum-32-characters")
                     .base_url(ORIGIN)
                     .base_path(path);
-            let database = Database::connect("sqlite::memory:").await.unwrap();
-            better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
-                .await
-                .unwrap();
+            let case_db = db.fresh().await?;
+            let (connection, _) = case_db
+                .migrated::<B>("verification-change-fixture-secret-minimum-32-characters")
+                .await?;
             let confirmation = Arc::new(ChangeProofSender::default());
             let follow_up = Arc::new(Sender::default());
             let auth = AuthBuilder::new(config.clone())
-                .store(SeaOrmStore::<Schema>::new(config, database))
+                .store(B::store(Arc::new(config), &connection))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(EmailVerificationPlugin::with_config(
                     EmailVerificationConfig {
@@ -590,7 +628,7 @@ mod tests {
             let mut verify = AuthRequest::new(HttpMethod::Get, delivered.path());
             verify.query = query;
             drop(verify.headers.insert("cookie".into(), cookie.into()));
-            let confirmed = auth.handle_request(verify).await.unwrap();
+            let confirmed = Box::pin(auth.handle_request(verify)).await.unwrap();
             assert_eq!(confirmed.status, 302);
             let calls = follow_up.calls.lock().unwrap().clone();
             assert_eq!(calls.len(), 1);
@@ -612,12 +650,16 @@ mod tests {
             let mut finish = AuthRequest::new(HttpMethod::Get, format!("{path}/verify-email"));
             drop(finish.query.insert("token".into(), follow_up_token.clone()));
             drop(finish.headers.insert("cookie".into(), cookie.into()));
-            assert_eq!(auth.handle_request(finish).await.unwrap().status, 200);
+            assert_eq!(
+                Box::pin(auth.handle_request(finish)).await.unwrap().status,
+                200
+            );
             let persisted = auth.store().get_user_by_id(id).await.unwrap().unwrap();
             assert_eq!(persisted.email(), Some(target));
             assert!(persisted.email_verified());
             assert_eq!(auth.store().get_user_accounts(id).await.unwrap().len(), 1);
             assert_eq!(auth.store().get_user_sessions(id).await.unwrap().len(), 1);
         }
+        Ok(())
     }
 }

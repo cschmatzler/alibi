@@ -1,4 +1,5 @@
 //! Device authorization through real handlers and all three native stores.
+use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use better_auth::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
@@ -9,7 +10,15 @@ use std::sync::Arc;
 
 const SECRET: &str = "native-device-172-secret-at-least-32-characters";
 const ORIGIN: &str = "http://localhost:43176";
-backend_tests!(native_device_workflow, delayed_device_decisions);
+backend_tests!(
+    native_device_workflow,
+    delayed_device_decisions,
+    concurrent_device_redemption_issues_exactly_one_owned_session
+);
+postgres_tests!(
+    native_device_workflow,
+    concurrent_device_redemption_issues_exactly_one_owned_session
+);
 
 fn plugins<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthBuilder<S> {
     builder
@@ -631,5 +640,212 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
             serde_json::to_vec_pretty(&json!({"trace":trace,"effects":effects}))?,
         )?;
     }
+    B::close(connection).await
+}
+
+#[tokio::test]
+async fn device_form_admission_and_error_cache_headers_follow_handler_entry() -> TestResult {
+    let auth = plugins(AuthBuilder::without_database(
+        AuthConfig::new(SECRET).base_url(ORIGIN),
+    ))
+    .build()
+    .await?;
+    for (content_type, input, status, cache_header) in [
+        (
+            "application/x-www-form-urlencoded",
+            "client_id=console&scope=profile+email",
+            200,
+            true,
+        ),
+        (
+            "application/x-www-form-urlencoded",
+            "client_id=console&client_id=",
+            200,
+            true,
+        ),
+        (
+            "application/x-www-form-urlencoded",
+            "client_id=console&client_id=other",
+            400,
+            true,
+        ),
+        (
+            "application/x-www-form-urlencoded",
+            "scope=profile",
+            400,
+            false,
+        ),
+        ("application/json", r#"{"client_id":17}"#, 400, false),
+        ("text/plain", "client_id=console", 415, false),
+        ("application/json", r#"{"client_id":""}"#, 400, true),
+    ] {
+        let mut req = AuthRequest::new(HttpMethod::Post, "/device/code");
+        drop(
+            req.headers
+                .insert("content-type".into(), content_type.into()),
+        );
+        req.body = Some(input.as_bytes().to_vec());
+        let response = Box::pin(auth.handle_request(req)).await?;
+        assert_eq!(response.status, status, "{input}: {}", body(&response));
+        assert_eq!(
+            response.headers.get("cache-control").map(String::as_str),
+            cache_header.then_some("no-store"),
+            "{input}"
+        );
+        assert_eq!(
+            response.headers.get("pragma").map(String::as_str),
+            cache_header.then_some("no-cache"),
+            "{input}"
+        );
+        if status == 200 {
+            let result = body(&response);
+            let code = result["device_code"].as_str().unwrap();
+            let stored = auth
+                .store()
+                .get_device_code_by_device_code(code)
+                .await?
+                .unwrap();
+            assert_eq!(stored.client_id.as_deref(), Some("console"));
+            assert_eq!(
+                stored.scope.as_deref(),
+                input.contains("scope=").then_some("profile email")
+            );
+            assert_eq!(stored.user_code, result["user_code"]);
+        }
+    }
+    for (content_type, input, header) in [
+        (
+            "application/json",
+            token("unissued", "console").to_string(),
+            true,
+        ),
+        (
+            "application/json",
+            json!({"grant_type":"wrong","device_code":"unissued","client_id":"console"})
+                .to_string(),
+            false,
+        ),
+        (
+            "application/x-www-form-urlencoded",
+            "grant_type=wrong&device_code=unissued&client_id=console".into(),
+            false,
+        ),
+    ] {
+        let mut req = AuthRequest::new(HttpMethod::Post, "/device/token");
+        drop(
+            req.headers
+                .insert("content-type".into(), content_type.into()),
+        );
+        req.body = Some(input.into_bytes());
+        let response = Box::pin(auth.handle_request(req)).await?;
+        assert_eq!(
+            response.status,
+            if content_type == "application/json" {
+                400
+            } else {
+                415
+            }
+        );
+        assert_eq!(
+            response.headers.get("cache-control").map(String::as_str),
+            header.then_some("no-store")
+        );
+        assert_eq!(
+            response.headers.get("pragma").map(String::as_str),
+            header.then_some("no-cache")
+        );
+        if header {
+            assert_eq!(body(&response)["error"], "invalid_grant");
+        }
+    }
+    Ok(())
+}
+
+async fn concurrent_device_redemption_issues_exactly_one_owned_session<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth =
+        plugins(AuthBuilder::new(config.clone()).store(B::store(Arc::new(config), &connection)))
+            .build()
+            .await?;
+    let mut trace = Vec::new();
+    let owner=call(&auth,&mut trace,"/sign-up/email",Some(json!({"email":"device-race@example.test","name":"Device owner","password":"Password123!"})),"",None).await?;
+    assert_eq!(owner.status, 200);
+    let cookie = owner
+        .headers
+        .get_all("set-cookie")
+        .map(|cookie| cookie.split(';').next().unwrap())
+        .collect::<Vec<_>>()
+        .join("; ");
+    let user = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let issued = call(
+        &auth,
+        &mut trace,
+        "/device/code",
+        Some(json!({"client_id":"console"})),
+        "",
+        None,
+    )
+    .await?;
+    let issued = body(&issued);
+    let user_code = issued["user_code"].as_str().unwrap();
+    let device_code = issued["device_code"].as_str().unwrap();
+    let claimed = call(&auth, &mut trace, "/device", None, &cookie, Some(user_code)).await?;
+    assert_eq!(claimed.status, 200);
+    let approved = call(
+        &auth,
+        &mut trace,
+        "/device/approve",
+        Some(json!({"userCode":user_code})),
+        &cookie,
+        None,
+    )
+    .await?;
+    assert_eq!(body(&approved)["success"], true);
+    let mut req = AuthRequest::new(HttpMethod::Post, "/device/token");
+    drop(
+        req.headers
+            .insert("content-type".into(), "application/json".into()),
+    );
+    req.body = Some(serde_json::to_vec(&token(device_code, "console"))?);
+    let (left, right) = tokio::join!(
+        Box::pin(auth.handle_request(req.clone())),
+        Box::pin(auth.handle_request(req.clone()))
+    );
+    let responses = [left?, right?];
+    assert_eq!(
+        responses
+            .iter()
+            .filter(|response| response.status == 200)
+            .count(),
+        1
+    );
+    let denied = responses
+        .iter()
+        .find(|response| response.status != 200)
+        .unwrap();
+    assert_eq!(denied.status, 400);
+    assert_eq!(body(denied)["error"], "invalid_grant");
+    let issued = responses
+        .iter()
+        .find(|response| response.status == 200)
+        .unwrap();
+    let access = body(issued)["access_token"].as_str().unwrap().to_owned();
+    assert_eq!(
+        auth.store().get_session(&access).await?.unwrap().user_id(),
+        user
+    );
+    assert_eq!(
+        db.count("sessions").await?,
+        2,
+        "signup plus exactly one redeemed session"
+    );
+    assert_eq!(db.count("device_code").await?, 0);
+    let persisted = db.table("sessions").await?;
+    let replay = Box::pin(auth.handle_request(req)).await?;
+    assert_eq!(body(&replay)["error"], "invalid_grant");
+    assert_eq!(db.table("sessions").await?, persisted);
     B::close(connection).await
 }

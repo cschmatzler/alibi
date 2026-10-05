@@ -1396,9 +1396,9 @@ mod tests {
     #[tokio::test]
     async fn test_axum_delete_user_invalidates_sessions() {
         let auth = create_test_auth().await;
-        let router = create_test_router(auth);
+        let router = create_test_router(auth.clone());
 
-        let (_user_data, token) = create_test_user(router.clone()).await;
+        let (user_data, token) = create_test_user(router.clone()).await;
 
         // Delete the user
         let delete_request = Request::builder()
@@ -1413,7 +1413,7 @@ mod tests {
         let delete_response = router.clone().oneshot(delete_request).await.unwrap();
         assert_eq!(delete_response.status(), StatusCode::OK);
 
-        // Try to use the same token - should be unauthorized
+        // The null response and physical absence establish invalidation; 200 alone does not.
         let session_request = Request::builder()
             .method(Method::GET)
             .uri("/auth/get-session")
@@ -1424,6 +1424,29 @@ mod tests {
 
         let session_response = router.oneshot(session_request).await.unwrap();
         assert_eq!(session_response.status(), StatusCode::OK);
+        let session_body = axum::body::to_bytes(session_response.into_body(), 16_384)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<Value>(&session_body).unwrap(),
+            Value::Null
+        );
+        assert!(auth.store().get_session(&token).await.unwrap().is_none());
+        assert!(
+            auth.store()
+                .get_user_by_id(
+                    user_data
+                        .get("user")
+                        .unwrap()
+                        .get("id")
+                        .unwrap()
+                        .as_str()
+                        .unwrap()
+                )
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 
     /// Test user profile management workflow

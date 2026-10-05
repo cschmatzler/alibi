@@ -15,7 +15,15 @@ mod sqlx_schema {
 
     #[tokio::test]
     async fn generated_sqlx_schema_migrates_and_serves_the_store() -> super::TestResult {
-        let pool = SqlxPool::connect("sqlite::memory:").await?;
+        all_tables(crate::storage::Db::sqlite().await?).await
+    }
+    #[tokio::test]
+    #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+    async fn generated_sqlx_schema_migrates_and_serves_postgres() -> super::TestResult {
+        all_tables(crate::storage::Db::postgres().await?).await
+    }
+    async fn all_tables(db: crate::storage::Db) -> super::TestResult {
+        let pool = SqlxPool::connect(&db.url).await?;
         run_app_migrations(&pool).await?;
         // Migrations are idempotent.
         run_app_migrations(&pool).await?;
@@ -38,7 +46,15 @@ mod seaorm_schema {
 
     #[tokio::test]
     async fn generated_seaorm_schema_migrates_and_serves_the_store() -> super::TestResult {
-        let database = better_auth::seaorm::Database::connect("sqlite::memory:").await?;
+        all_tables(crate::storage::Db::sqlite().await?).await
+    }
+    #[tokio::test]
+    #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+    async fn generated_seaorm_schema_migrates_and_serves_postgres() -> super::TestResult {
+        all_tables(crate::storage::Db::postgres().await?).await
+    }
+    async fn all_tables(db: crate::storage::Db) -> super::TestResult {
+        let database = better_auth::seaorm::Database::connect(&db.url).await?;
         run_app_migrations(&database).await?;
         run_app_migrations(&database).await?;
         let store = better_auth::seaorm::SeaOrmStore::<AppAuthSchema>::new(
@@ -140,26 +156,24 @@ mod sqlx_core {
 
     #[tokio::test]
     async fn generated_core_self_deletion() -> super::TestResult {
-        deletion(false).await
+        deletion(crate::storage::Db::sqlite().await?, false).await
     }
     #[tokio::test]
     async fn generated_core_admin_deletion() -> super::TestResult {
-        deletion(true).await
+        deletion(crate::storage::Db::sqlite().await?, true).await
     }
-    async fn deletion(admin: bool) -> super::TestResult {
-        let pool: SqlxPool = sqlx::sqlite::SqlitePoolOptions::new()
-            .max_connections(1)
-            .connect("sqlite::memory:")
-            .await?
-            .into();
+    #[tokio::test]
+    #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+    async fn generated_core_deletion_postgres() -> super::TestResult {
+        for admin in [false, true] {
+            deletion(crate::storage::Db::postgres().await?, admin).await?;
+        }
+        Ok(())
+    }
+    async fn deletion(db: crate::storage::Db, admin: bool) -> super::TestResult {
+        let pool = SqlxPool::connect(&db.url).await?;
         run_app_migrations(&pool).await?;
-        let raw = pool.as_sqlite().ok_or("expected SQLite")?.clone();
-        let absent: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(
-            "SELECT COUNT(*) FROM sqlite_master WHERE name = 'api_keys'".to_owned(),
-        ))
-        .fetch_one(&raw)
-        .await?;
-        assert_eq!(absent, 0);
+        super::assert_core_only(&db).await?;
         let store = better_auth::sqlx::SqlxStore::<AppAuthSchema>::new(
             crate::storage::users::deletion_config(),
             pool,
@@ -171,11 +185,11 @@ mod sqlx_core {
         ))
         .await?;
         for table in ["users", "accounts", "sessions"] {
-            let count: i64 =
-                sqlx::query_scalar(sqlx::AssertSqlSafe(format!("SELECT COUNT(*) FROM {table}")))
-                    .fetch_one(&raw)
-                    .await?;
-            assert_eq!(count, 1, "{table}: only the administrator survives");
+            assert_eq!(
+                db.count(table).await?,
+                1,
+                "{table}: only the administrator survives"
+            );
         }
         Ok(())
     }
@@ -192,28 +206,24 @@ mod seaorm_core {
 
     #[tokio::test]
     async fn generated_core_self_deletion() -> super::TestResult {
-        deletion(false).await
+        deletion(crate::storage::Db::sqlite().await?, false).await
     }
     #[tokio::test]
     async fn generated_core_admin_deletion() -> super::TestResult {
-        deletion(true).await
+        deletion(crate::storage::Db::sqlite().await?, true).await
     }
-    async fn deletion(admin: bool) -> super::TestResult {
-        use better_auth::seaorm::sea_orm::{ConnectionTrait, Statement};
-        let mut options = better_auth::seaorm::sea_orm::ConnectOptions::new("sqlite::memory:");
-        _ = options.max_connections(1);
-        let database = better_auth::seaorm::Database::connect(options).await?;
+    #[tokio::test]
+    #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+    async fn generated_core_deletion_postgres() -> super::TestResult {
+        for admin in [false, true] {
+            deletion(crate::storage::Db::postgres().await?, admin).await?;
+        }
+        Ok(())
+    }
+    async fn deletion(db: crate::storage::Db, admin: bool) -> super::TestResult {
+        let database = better_auth::seaorm::Database::connect(&db.url).await?;
         run_app_migrations(&database).await?;
-        let raw = database.clone();
-        let query = |sql: String| Statement::from_string(raw.get_database_backend(), sql);
-        let absent = raw
-            .query_one_raw(query(
-                "SELECT COUNT(*) AS count FROM sqlite_master WHERE name = 'api_keys'".into(),
-            ))
-            .await?
-            .ok_or("missing table inventory")?
-            .try_get::<i64>("", "count")?;
-        assert_eq!(absent, 0);
+        super::assert_core_only(&db).await?;
         let store = better_auth::seaorm::SeaOrmStore::<AppAuthSchema>::new(
             crate::storage::users::deletion_config(),
             database,
@@ -225,13 +235,22 @@ mod seaorm_core {
         ))
         .await?;
         for table in ["users", "accounts", "sessions"] {
-            let count = raw
-                .query_one_raw(query(format!("SELECT COUNT(*) AS count FROM {table}")))
-                .await?
-                .ok_or("missing count")?
-                .try_get::<i64>("", "count")?;
-            assert_eq!(count, 1, "{table}: only the administrator survives");
+            assert_eq!(
+                db.count(table).await?,
+                1,
+                "{table}: only the administrator survives"
+            );
         }
         Ok(())
     }
+}
+
+async fn assert_core_only(db: &crate::storage::Db) -> TestResult {
+    let query = if db.raw.is_postgres() {
+        "SELECT COUNT(*) FROM pg_tables WHERE schemaname = current_schema() AND tablename = 'api_keys'"
+    } else {
+        "SELECT COUNT(*) FROM sqlite_master WHERE name = 'api_keys'"
+    };
+    assert_eq!(db.count_where(query, &[]).await?, 0);
+    Ok(())
 }

@@ -197,3 +197,81 @@ impl Network {
         true
     }
 }
+
+// LCOV_EXCL_START
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn forwarded_chains_select_the_first_untrusted_hop_from_the_right() {
+        for (proxies, chain, expected) in [
+            (vec![], "198.51.100.7", Some("198.51.100.7")),
+            (vec![], "198.51.100.7, 10.0.0.1", None),
+            (vec!["invalid"], "198.51.100.7, 10.0.0.1", None),
+            (
+                vec!["10.0.0.0/8"],
+                "203.0.113.99, 198.51.100.7, 10.0.0.1",
+                Some("198.51.100.7"),
+            ),
+            (vec!["10.0.0.0/8"], "10.0.0.2, 10.0.0.1", None),
+            (
+                vec!["10.0.0.0/8"],
+                "198.51.100.7, malformed, 10.0.0.1",
+                None,
+            ),
+        ] {
+            let config = IpAddressConfig {
+                trusted_proxies: proxies.into_iter().map(str::to_owned).collect(),
+                localhost_fallback: false,
+                ..Default::default()
+            };
+            let headers = HashMap::from([("X-Forwarded-For".into(), chain.into())]);
+            assert_eq!(config.resolve_ip(&headers).as_deref(), expected, "{chain}");
+        }
+    }
+
+    #[test]
+    fn malformed_header_falls_back_but_tracking_opt_out_never_does() {
+        let mut config = IpAddressConfig {
+            headers: vec!["x-forwarded-for".into(), "x-real-ip".into()],
+            trusted_proxies: vec!["10.0.0.0/8".into()],
+            localhost_fallback: true,
+            ..Default::default()
+        };
+        let headers = HashMap::from([
+            (
+                "x-forwarded-for".into(),
+                "198.51.100.7, bad-hop, 10.0.0.1".into(),
+            ),
+            ("x-real-ip".into(), "203.0.113.8".into()),
+        ]);
+        assert_eq!(config.resolve_ip(&headers).as_deref(), Some("203.0.113.8"));
+        assert_eq!(
+            config.resolve_ip(&HashMap::new()).as_deref(),
+            Some("127.0.0.1")
+        );
+        config.disable_ip_tracking = true;
+        assert_eq!(config.resolve_ip(&headers), None);
+        assert_eq!(config.resolve_ip(&HashMap::new()), None);
+    }
+
+    #[test]
+    fn ipv6_proxy_trust_is_checked_before_grouping_the_client_address() {
+        let config = IpAddressConfig {
+            trusted_proxies: vec!["2001:db8:abcd:12::1/128".into()],
+            ipv6_subnet: 64.0,
+            localhost_fallback: false,
+            ..Default::default()
+        };
+        let headers = HashMap::from([(
+            "x-forwarded-for".into(),
+            "203.0.113.99, 2001:db8:abcd:12::2, 2001:db8:abcd:12::1".into(),
+        )]);
+        assert_eq!(
+            config.resolve_ip(&headers).as_deref(),
+            Some("2001:0db8:abcd:0012:0000:0000:0000:0000")
+        );
+    }
+}
+// LCOV_EXCL_STOP

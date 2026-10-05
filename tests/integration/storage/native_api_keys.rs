@@ -1,8 +1,9 @@
 //! API-key handlers over real SQL adapters and native no-database records.
+use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use better_auth::plugins::EmailPasswordPlugin;
 use better_auth::plugins::api_key::{
-    ApiKeyConfig, ApiKeyPlugin, ApiKeyVerificationInput, CreateKeyRequest,
+    ApiKeyConfig, ApiKeyPlugin, ApiKeyVerificationInput, CreateKeyRequest, UpdateKeyRequest,
 };
 use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
 use better_auth_core::endpoint::EndpointOptions;
@@ -17,6 +18,7 @@ use tokio::task::JoinSet;
 const SECRET: &str = "native-apikey-172-secret-at-least-32-characters";
 const ORIGIN: &str = "http://localhost:43175";
 backend_tests!(native_api_key_workflow);
+postgres_tests!(native_api_key_workflow);
 
 fn plugins<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthBuilder<S> {
     builder.plugin(EmailPasswordPlugin::new()).plugin(
@@ -403,6 +405,62 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestRes
             .as_deref(),
         Some("Renamed")
     );
+    // Trusted updates can change quota; supplying another user never transfers
+    // ownership. HTTP reads expose the resulting record without its secret.
+    let update = UpdateKeyRequest {
+        key_id: id.clone(),
+        user_id: Some(owner.clone()),
+        remaining: Some(5.0),
+        ..Default::default()
+    };
+    let updated = auth
+        .dispatch_endpoint(
+            ApiKeyPlugin::update_endpoint(&update)?,
+            EndpointOptions::default(),
+        )
+        .await?
+        .decode()?;
+    assert_eq!(updated.remaining, Some(5.0));
+    assert_eq!(
+        auth.store()
+            .get_api_key_by_id(&id)
+            .await?
+            .unwrap()
+            .remaining,
+        Some(5.0)
+    );
+    let unchanged_key = serde_json::to_value(auth.store().get_api_key_by_id(&id).await?.unwrap())?;
+    let forged = UpdateKeyRequest {
+        user_id: Some(body(&other)["user"]["id"].as_str().unwrap().to_owned()),
+        remaining: Some(999.0),
+        name: Some("Foreign overwrite".into()),
+        ..update
+    };
+    assert!(
+        auth.dispatch_endpoint(
+            ApiKeyPlugin::update_endpoint(&forged)?,
+            EndpointOptions::default()
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        serde_json::to_value(auth.store().get_api_key_by_id(&id).await?.unwrap())?,
+        unchanged_key
+    );
+    let read = call(
+        auth,
+        &mut trace,
+        "/api-key/get",
+        None,
+        &cookie,
+        &[("id", &id)],
+    )
+    .await?;
+    assert_eq!(read.status, 200);
+    assert_eq!(body(&read)["id"], id);
+    assert_eq!(body(&read)["remaining"], 5);
+    assert!(body(&read).get("key").is_none());
     // Trusted endpoint exercises the actual plugin's permission, quota and rate consumers.
     let limited = auth
         .dispatch_endpoint(
@@ -485,7 +543,15 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestRes
             },
         )
         .await?;
-    assert_eq!(auth.store().delete_expired_api_keys().await?, 1);
+    let cleaned = auth
+        .dispatch_endpoint(
+            ApiKeyPlugin::delete_all_expired_endpoint(),
+            EndpointOptions::default(),
+        )
+        .await?
+        .decode()?;
+    assert!(cleaned.success);
+    assert!(cleaned.error.is_none());
     assert!(auth.store().get_api_key_by_id(&expired.id).await?.is_none());
     assert_eq!(
         serde_json::to_value(auth.store().get_api_key_by_id(&foreign_id).await?)?,

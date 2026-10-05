@@ -127,7 +127,11 @@ fn select(plugins: &[String]) -> Selection {
         session: Vec::new(),
         extra: Vec::new(),
     };
+    let mut selected = std::collections::HashSet::new();
     for plugin_name in plugins {
+        if !selected.insert(plugin_name.as_str()) {
+            continue;
+        }
         if let Some(schema) = registry::plugin_schemas()
             .iter()
             .find(|p| p.name == plugin_name.as_str())
@@ -558,10 +562,6 @@ fn gen_extra_entity(entity: &ExtraEntitySchema) -> TokenStream {
 mod tests {
     use super::{Backend, generate_schema, list_plugins};
 
-    fn all() -> Vec<String> {
-        list_plugins().into_iter().map(String::from).collect()
-    }
-
     #[test]
     fn list_plugins_includes_passkey() {
         assert!(list_plugins().contains(&"passkey"));
@@ -613,29 +613,6 @@ mod tests {
         assert!(schema.contains("pub created_at: chrono::DateTime<chrono::Utc>"));
         assert!(schema.contains("CREATE TABLE IF NOT EXISTS \\\"passkeys\\\""));
         assert!(schema.contains("\\\"created_at\\\" TIMESTAMPTZ NOT NULL"));
-    }
-
-    // The checked-in fixtures are compiled and exercised by the integration
-    // tests; regenerate with `better-auth-rs generate`, adding `--plugins all`
-    // for the all-plugin fixtures and selecting the matching backend.
-    #[test]
-    fn generated_schemas_match_compiled_fixtures() {
-        assert_eq!(
-            generate_schema(&[], Backend::Sqlx),
-            include_str!("../../../tests/fixtures/cli/sqlx_core.rs")
-        );
-        assert_eq!(
-            generate_schema(&[], Backend::Seaorm),
-            include_str!("../../../tests/fixtures/cli/seaorm_core.rs")
-        );
-        assert_eq!(
-            generate_schema(&all(), Backend::Sqlx),
-            include_str!("../../../tests/fixtures/cli/sqlx_all.rs")
-        );
-        assert_eq!(
-            generate_schema(&all(), Backend::Seaorm),
-            include_str!("../../../tests/fixtures/cli/seaorm_all.rs")
-        );
     }
 }
 // LCOV_EXCL_STOP

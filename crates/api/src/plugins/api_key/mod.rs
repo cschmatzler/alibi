@@ -439,7 +439,8 @@ impl Default for ApiKeyConfig {
 /// Builder for [`ApiKeyPlugin`] powered by the `bon` crate.
 ///
 /// Usage:
-/// ```ignore
+/// ```
+/// use better_auth_api::plugins::api_key::{ApiKeyPlugin, RateLimitDefaults};
 /// let plugin = ApiKeyPlugin::builder()
 ///     .key_length(48)
 ///     .prefix("ba_".to_string())
@@ -3852,6 +3853,63 @@ mod crud_tests {
                     .is_empty()
             );
         }
+        // Numeric metadata has an independent total ordering. Exercise a list
+        // larger than 64 entries, then assert a page in both directions.
+        for _ in 64..96 {
+            let created = server_key(&plugin, &ctx, &owner, "default").await;
+            let id = format!("api-key:by-id:{}", created.api_key.id);
+            let hash = format!("api-key:{}", ApiKeyPlugin::hash_key(&created.key));
+            let value = cache.get(&id).await.unwrap().unwrap();
+            rows.push((id, value.clone()));
+            rows.push((hash, value));
+        }
+        let mut ordered = std::collections::BTreeMap::new();
+        for (index, pair) in rows.as_chunks_mut::<2>().0.iter_mut().enumerate() {
+            let rank = (index * 37) % 96;
+            let mut row: serde_json::Value =
+                serde_json::from_str(&pair.first().unwrap().1).unwrap();
+            drop(ordered.insert(rank, row.get("id").unwrap().clone()));
+            *row.get_mut("metadata").unwrap() = json!(rank);
+            let serialized = serde_json::to_string(&row).unwrap();
+            for (key, value) in pair {
+                cache.set_without_expiry(key, &serialized).await.unwrap();
+                *value = serialized.clone();
+            }
+        }
+        let reference_before = cache.get(&reference).await.unwrap();
+        for direction in ["asc", "desc"] {
+            let mut req = request(&token, "/api-key/list", &json!(null));
+            req.method = HttpMethod::Get;
+            req.body = None;
+            req.query = HashMap::from([
+                ("sortBy".into(), "metadata".into()),
+                ("sortDirection".into(), direction.into()),
+                ("offset".into(), "11".into()),
+                ("limit".into(), "9".into()),
+            ]);
+            let response = plugin.handle_list(&req, &ctx).await.unwrap();
+            assert_eq!(response.status, 200);
+            let body: serde_json::Value = serde_json::from_slice(&response.body).unwrap();
+            assert_eq!(body.get("total").unwrap(), 96);
+            let page = body.get("apiKeys").unwrap().as_array().unwrap();
+            assert_eq!(page.len(), 9);
+            for (offset, row) in page.iter().enumerate() {
+                let rank = if direction == "asc" {
+                    11 + offset
+                } else {
+                    84 - offset
+                };
+                assert_eq!(row.get("id").unwrap(), ordered.get(&rank).unwrap());
+                assert_eq!(row.get("metadata").unwrap(), &json!(rank));
+            }
+            for (key, value) in &rows {
+                assert_eq!(
+                    cache.get(key).await.unwrap().as_deref(),
+                    Some(value.as_str())
+                );
+            }
+            assert_eq!(cache.get(&reference).await.unwrap(), reference_before);
+        }
     }
 
     #[tokio::test]
@@ -4072,6 +4130,78 @@ mod crud_tests {
                 assert_eq!(row.remaining, retried.remaining);
             }
         }
+        // Secondary-only rate limiting owns its own update path. A denied
+        // request must not spend quota, and an elapsed window must refill once.
+        let (ctx, owner, _) = context().await;
+        let cache = Arc::new(MemoryCacheAdapter::new());
+        let plugin = ApiKeyPlugin::with_config(ApiKeyConfig {
+            storage: ApiKeyStorageMode::SecondaryStorage,
+            secondary_storage: Some(cache.clone()),
+            ..Default::default()
+        });
+        let created = plugin
+            .create_key(
+                &ctx,
+                &CreateKeyRequest {
+                    user_id: Some(owner.clone()),
+                    remaining: Some(2.0),
+                    rate_limit_enabled: Some(true),
+                    rate_limit_time_window: Some(60_000.0),
+                    rate_limit_max: Some(1.0),
+                    refill_interval: Some(60_000.0),
+                    refill_amount: Some(5.0),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        let by_id = format!("api-key:by-id:{}", created.api_key.id);
+        let by_hash = format!("api-key:{}", ApiKeyPlugin::hash_key(&created.key));
+        let input = VerifyApiKey {
+            key: &created.key,
+            config_id: None,
+            permissions: None,
+        };
+        let first = plugin.verify_api_key(&input, &ctx).await.unwrap();
+        assert_eq!(first.remaining, Some(1.0));
+        assert_eq!(first.request_count, Some(1.0));
+        let before = cache.get(&by_id).await.unwrap();
+        assert_eq!(cache.get(&by_hash).await.unwrap(), before);
+        let denied = plugin.verify_api_key(&input, &ctx).await.unwrap_err();
+        let ApiKeyVerificationError::Validation(denied) = denied else {
+            panic!("Expected rate-limit validation");
+        };
+        assert_eq!(denied.code, ApiKeyErrorCode::RateLimited);
+        assert!(denied.details.unwrap().try_again_in > 0.0);
+        assert_eq!(cache.get(&by_id).await.unwrap(), before);
+        assert_eq!(cache.get(&by_hash).await.unwrap(), before);
+        let mut elapsed: better_auth_core::ApiKey =
+            serde_json::from_str(before.as_deref().unwrap()).unwrap();
+        let previous = (chrono::Utc::now() - chrono::Duration::minutes(2)).to_rfc3339();
+        elapsed.last_request = Some(previous.clone());
+        elapsed.last_refill_at = Some(previous.clone());
+        let seeded = serde_json::to_string(&elapsed).unwrap();
+        cache.set_without_expiry(&by_id, &seeded).await.unwrap();
+        cache.set_without_expiry(&by_hash, &seeded).await.unwrap();
+        let refilled = plugin.verify_api_key(&input, &ctx).await.unwrap();
+        assert_eq!(refilled.remaining, Some(4.0));
+        assert_eq!(refilled.request_count, Some(1.0));
+        assert_ne!(refilled.last_refill_at.as_deref(), Some(previous.as_str()));
+        let observed: better_auth_core::ApiKey =
+            serde_json::from_str(&cache.get(&by_id).await.unwrap().unwrap()).unwrap();
+        assert_eq!(observed.remaining, Some(4.0));
+        assert_eq!(observed.request_count, Some(1.0));
+        assert_eq!(
+            cache.get(&by_id).await.unwrap(),
+            cache.get(&by_hash).await.unwrap()
+        );
+        assert!(
+            ctx.database
+                .list_api_keys_by_reference(&owner)
+                .await
+                .unwrap()
+                .is_empty()
+        );
     }
 }
 // LCOV_EXCL_STOP

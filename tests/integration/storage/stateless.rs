@@ -1,5 +1,5 @@
 //! Stateless lifecycle owner: actual adapters protect cookie-only and durable modes.
-use super::{Backend, Db, TestResult, backend_tests};
+use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use better_auth::config::CookieRefreshCache;
 use better_auth::plugins::EmailPasswordPlugin;
 use better_auth::{AuthBuilder, AuthConfig};
@@ -10,6 +10,11 @@ use std::sync::Arc;
 const SECRET: &str = "stateless-172-secret-minimum-32-characters";
 const ORIGIN: &str = "http://localhost:43172";
 backend_tests!(
+    stateless_session_lifecycle,
+    stateless_policy_boundaries,
+    stateless_ephemeral_mutation_and_deferred_refresh
+);
+postgres_tests!(
     stateless_session_lifecycle,
     stateless_policy_boundaries,
     stateless_ephemeral_mutation_and_deferred_refresh
@@ -320,6 +325,19 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
     .await?;
     assert_eq!(login.status, 200, "{}", body(&login));
     assert_ne!(body(&signup)["token"], body(&login)["token"]);
+    assert_eq!(body(&login)["user"]["name"], "Updated locally");
+    let changed = Box::pin(auth.handle_request(request("/change-password", Some(json!({"currentPassword":"Password123!","newPassword":"Replacement123!","revokeOtherSessions":false})), &cookies(&login)))).await?;
+    assert_eq!(changed.status, 200, "{}", body(&changed));
+    for (password, expected) in [("Password123!", 401), ("Replacement123!", 200)] {
+        let response = Box::pin(auth.handle_request(request(
+            "/sign-in/email",
+            Some(json!({"email":"no-db172@fixture.test","password":password})),
+            "",
+        )))
+        .await?;
+        assert_eq!(response.status, expected, "{}", body(&response));
+    }
+
     config.session = config.session.stateless();
     config.session.cookie_refresh_cache = CookieRefreshCache::Disabled;
     let restarted = AuthBuilder::without_database(config)
@@ -343,7 +361,7 @@ async fn without_database_credential_issuance_and_restart() -> TestResult {
     );
     let failed_login = Box::pin(restarted.handle_request(request(
         "/sign-in/email",
-        Some(json!({"email":"no-db172@fixture.test","password":"Password123!"})),
+        Some(json!({"email":"no-db172@fixture.test","password":"Replacement123!"})),
         "",
     )))
     .await?;
@@ -610,5 +628,312 @@ async fn stateless_ephemeral_mutation_and_deferred_refresh<B: Backend>(db: Db) -
     );
     assert_eq!(db.count("sessions").await?, 0);
     B::close(connection).await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn without_database_account_authority_and_verification_generations() -> TestResult {
+    use better_auth_core::{
+        AuthError, CreateAccount, CreateVerification, DatabaseError, UpdateAccount,
+    };
+    let auth = AuthBuilder::without_database(AuthConfig::new(SECRET))
+        .build()
+        .await?;
+    let store = auth.store();
+    let input = |owner: &str| CreateAccount {
+        user_id: owner.into(),
+        provider_id: "oidc".into(),
+        account_id: "shared".into(),
+        access_token: Some("old-access".into()),
+        refresh_token: Some("old-refresh".into()),
+        id_token: None,
+        access_token_expires_at: None,
+        refresh_token_expires_at: None,
+        scope: None,
+        password: None,
+        additional_fields: Default::default(),
+    };
+    let left = store.create_account(input("owner")).await?;
+    let right = store.create_account(input("foreign")).await?;
+    assert_ne!(left.id, right.id);
+    assert!(matches!(
+        store.get_account("oidc", "shared").await,
+        Err(AuthError::Database(DatabaseError::AmbiguousAccount { .. }))
+    ));
+    assert_eq!(store.get_user_accounts("owner").await?.len(), 1);
+    let expiry = chrono::Utc::now() + chrono::Duration::hours(1);
+    let updated = store
+        .update_account(
+            &left.id,
+            UpdateAccount {
+                access_token: Some("new-access".into()),
+                refresh_token: Some("new-refresh".into()),
+                id_token: Some("new-id".into()),
+                access_token_expires_at: Some(expiry),
+                refresh_token_expires_at: Some(expiry),
+                scope: Some("read".into()),
+                password: Some("new-password".into()),
+                ..Default::default()
+            },
+        )
+        .await?;
+    assert_eq!(updated.access_token.as_deref(), Some("new-access"));
+    assert_eq!(updated.refresh_token.as_deref(), Some("new-refresh"));
+    assert_eq!(updated.id_token.as_deref(), Some("new-id"));
+    assert_eq!(updated.password.as_deref(), Some("new-password"));
+    assert_eq!(updated.scope.as_deref(), Some("read"));
+    assert_eq!(updated.access_token_expires_at, Some(expiry));
+    assert_eq!(updated.refresh_token_expires_at, Some(expiry));
+    assert_eq!(
+        serde_json::to_value(store.get_user_accounts("foreign").await?)?,
+        json!([right])
+    );
+    store.delete_account(&right.id).await?;
+    assert_eq!(
+        store.get_account("oidc", "shared").await?.unwrap().id,
+        left.id
+    );
+    assert_eq!(
+        serde_json::to_value(store.get_account("oidc", "shared").await?.unwrap())?,
+        serde_json::to_value(&updated)?
+    );
+    assert!(store.get_user_accounts("foreign").await?.is_empty());
+    assert!(matches!(
+        store
+            .update_account(&right.id, UpdateAccount::default())
+            .await,
+        Err(AuthError::NotFound(_))
+    ));
+
+    let proof = |identifier: &str, value: &str| CreateVerification {
+        identifier: identifier.into(),
+        value: value.into(),
+        expires_at: expiry,
+    };
+    let old = store
+        .create_verification(proof("generation", "old"))
+        .await?;
+    let latest = store
+        .create_verification(proof("generation", "new"))
+        .await?;
+    let foreign = store.create_verification(proof("foreign", "new")).await?;
+    assert!(
+        store
+            .consume_verification("generation", "wrong")
+            .await?
+            .is_none()
+    );
+    assert!(
+        store
+            .consume_verification("generation", "old")
+            .await?
+            .is_none()
+    );
+    assert_eq!(
+        store
+            .get_verification("generation", "old")
+            .await?
+            .unwrap()
+            .id,
+        old.id
+    );
+    assert_eq!(
+        store
+            .get_latest_verification_by_identifier("generation")
+            .await?
+            .unwrap()
+            .id,
+        latest.id
+    );
+    assert_eq!(
+        store
+            .consume_verification("generation", "new")
+            .await?
+            .unwrap()
+            .id,
+        latest.id
+    );
+    assert!(
+        store
+            .get_verification_by_identifier("generation")
+            .await?
+            .is_none()
+    );
+    assert_eq!(
+        store
+            .get_verification_by_identifier("foreign")
+            .await?
+            .unwrap()
+            .id,
+        foreign.id
+    );
+    let reserved = proof("reservation", "first");
+    let (left, right) = tokio::join!(
+        store.reserve_verification(reserved.clone()),
+        store.reserve_verification(reserved)
+    );
+    assert_ne!(left?, right?);
+    let reserved = store
+        .get_verification_by_identifier("reservation")
+        .await?
+        .unwrap();
+    assert!(
+        !store
+            .compare_and_swap_verification(&reserved.id, "wrong", "bad", expiry)
+            .await?
+    );
+    let (left, right) = tokio::join!(
+        store.compare_and_swap_verification(&reserved.id, "first", "left", expiry),
+        store.compare_and_swap_verification(&reserved.id, "first", "right", expiry)
+    );
+    assert_ne!(left?, right?);
+    let winner = store
+        .get_verification_by_identifier("reservation")
+        .await?
+        .unwrap();
+    assert!(matches!(winner.value.as_str(), "left" | "right"));
+    assert_eq!(
+        store
+            .consume_verification_by_identifier("reservation")
+            .await?
+            .unwrap()
+            .id,
+        reserved.id
+    );
+    assert!(
+        store
+            .reserve_verification(proof("reservation", "reused"))
+            .await?
+    );
+    assert!(
+        !store
+            .compare_and_swap_verification("missing", "first", "next", expiry)
+            .await?
+    );
+    use better_auth_core::{CreateUser, ListUsersParams, UpdateUser, UserFilterValue};
+    for (email, banned) in [
+        ("alpha@query.test", false),
+        ("beta@query.test", true),
+        ("gamma@query.test", true),
+    ] {
+        let user = store
+            .create_user(CreateUser::new().with_email(email).with_name(email))
+            .await?;
+        let _ = store
+            .update_user(
+                &user.id,
+                UpdateUser {
+                    banned: Some(banned),
+                    ban_expires: if banned { Some(Some(expiry)) } else { None },
+                    ..Default::default()
+                },
+            )
+            .await?;
+    }
+    for (field, operator, value, expected) in [
+        (
+            "banned",
+            "eq",
+            UserFilterValue::Scalar("true".into()),
+            vec!["beta@query.test", "gamma@query.test"],
+        ),
+        (
+            "banned",
+            "ne",
+            UserFilterValue::Scalar("true".into()),
+            vec!["alpha@query.test"],
+        ),
+        (
+            "banned",
+            "eq",
+            UserFilterValue::Scalar("invalid".into()),
+            vec![],
+        ),
+        (
+            "banExpires",
+            "gte",
+            UserFilterValue::Scalar(expiry.to_rfc3339()),
+            vec!["beta@query.test", "gamma@query.test"],
+        ),
+        (
+            "banExpires",
+            "lt",
+            UserFilterValue::Scalar(expiry.to_rfc3339()),
+            vec![],
+        ),
+        (
+            "email",
+            "in",
+            UserFilterValue::Multiple(vec!["alpha@query.test".into(), "gamma@query.test".into()]),
+            vec!["alpha@query.test", "gamma@query.test"],
+        ),
+        (
+            "email",
+            "not_in",
+            UserFilterValue::Multiple(vec!["alpha@query.test".into()]),
+            vec!["beta@query.test", "gamma@query.test"],
+        ),
+    ] {
+        let (users, total) = store
+            .list_users(ListUsersParams {
+                filter_field: Some(field.into()),
+                filter_operator: Some(operator.into()),
+                filter_value: Some(value),
+                sort_by: Some("email".into()),
+                ..Default::default()
+            })
+            .await?;
+        assert_eq!(total, expected.len());
+        assert_eq!(
+            users
+                .iter()
+                .map(|u| u.email.as_deref().unwrap())
+                .collect::<Vec<_>>(),
+            expected
+        );
+    }
+    for (operator, search, expected) in [
+        ("starts_with", "alp", "alpha@query.test"),
+        ("contains", "bet", "beta@query.test"),
+        ("ends_with", "gamma@query.test", "gamma@query.test"),
+    ] {
+        let (users, total) = store
+            .list_users(ListUsersParams {
+                search_value: Some(search.into()),
+                search_operator: Some(operator.into()),
+                ..Default::default()
+            })
+            .await?;
+        assert_eq!(total, 1);
+        assert_eq!(users[0].email.as_deref(), Some(expected));
+    }
+    let (page, total) = store
+        .list_users(ListUsersParams {
+            sort_by: Some("banned".into()),
+            sort_direction: Some("desc".into()),
+            offset: Some(2),
+            limit: Some(1),
+            ..Default::default()
+        })
+        .await?;
+    assert_eq!(total, 3);
+    assert_eq!(page[0].email.as_deref(), Some("alpha@query.test"));
+    let restarted = AuthBuilder::without_database(AuthConfig::new(SECRET))
+        .build()
+        .await?;
+    assert!(
+        restarted
+            .store()
+            .get_user_accounts("owner")
+            .await?
+            .is_empty()
+    );
+    assert!(
+        restarted
+            .store()
+            .get_verification_by_identifier("foreign")
+            .await?
+            .is_none()
+    );
     Ok(())
 }

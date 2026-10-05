@@ -1,0 +1,257 @@
+//! Request-scoped refresh configuration must not replace grant authority or leak
+//! into another request; application refresh handlers own their own transport.
+use super::*;
+use async_trait::async_trait;
+use better_auth::plugins::OAuthPlugin;
+use better_auth::plugins::oauth::*;
+use std::collections::BTreeMap;
+
+backend_tests!(dynamic_refresh_preserves_grant_authority_and_callback_precedence);
+postgres_tests!(dynamic_refresh_preserves_grant_authority_and_callback_precedence);
+
+struct Params(Arc<Mutex<Vec<String>>>);
+#[async_trait]
+impl OAuthRefreshTokenParamsResolver for Params {
+    async fn resolve(
+        &self,
+        context: Option<OAuthRefreshContext<'_>>,
+    ) -> Result<Option<BTreeMap<String, String>>, String> {
+        let request = context.ok_or("missing refresh context")?.request;
+        let mode = request
+            .headers
+            .get("x-refresh-mode")
+            .ok_or("missing mode")?;
+        self.0.lock().unwrap().push(mode.clone());
+        match mode.as_str() {
+            "none" => Ok(None),
+            "error" => Err("private resolver failure".into()),
+            "approved-a" | "approved-b" => Ok(Some(
+                [
+                    ("audience", mode.as_str()),
+                    ("scope", "approved-scope"),
+                    ("grant_type", "authorization_code"),
+                    ("refresh_token", "wrong-token"),
+                    ("client_id", "wrong-client"),
+                    ("__proto__", "blocked"),
+                    ("constructor", "blocked"),
+                    ("prototype", "blocked"),
+                ]
+                .into_iter()
+                .map(|(key, value)| (key.into(), value.into()))
+                .collect(),
+            )),
+            _ => Err("unapproved application input".into()),
+        }
+    }
+}
+struct CustomRefresh;
+#[async_trait]
+impl OAuthRefreshTokenHandler for CustomRefresh {
+    async fn refresh_access_token(&self, token: &str) -> Result<OAuthTokenSet, String> {
+        assert_eq!(token, "refresh-none");
+        Ok(OAuthTokenSet {
+            access_token: Some("custom-access".into()),
+            refresh_token: Some("custom-refresh".into()),
+            ..Default::default()
+        })
+    }
+}
+
+async fn dynamic_refresh_preserves_grant_authority_and_callback_precedence<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let remote = Provider::start("application/json", "{}").await;
+    remote.respond_at("/token",200,json!({"access_token":"initial-access","refresh_token":"initial-refresh","expires_in":3600,"token_type":"Bearer"}));
+    remote.respond_at("/profile",200,json!({"id":"refresh-subject","email":"refresh@example.test","name":"Refresh User","email_verified":true}));
+    let mut config = GenericOAuthConfig::new("native-client", "native-secret");
+    config.authorization_url = Some(remote.url.join("authorize")?.into());
+    config.token_url = Some(remote.url.join("token")?.into());
+    config.user_info_url = Some(remote.url.join("profile")?.into());
+    let calls = Arc::new(Mutex::new(Vec::new()));
+    let policy = config.provider.authorization.as_mut().unwrap();
+    policy.token_endpoint_auth = Some(OAuthTokenEndpointAuth::ClientSecretPost);
+    policy.pkce = true;
+    policy.authorization_code_params = [
+        ("code", "wrong-code"),
+        ("grant_type", "refresh_token"),
+        ("redirect_uri", "https://wrong.example"),
+        ("code_verifier", "wrong-verifier"),
+        ("client_id", "wrong-client"),
+        ("client_secret", "wrong-secret"),
+        ("audience", "approved-code-audience"),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key.into(), value.into()))
+    .collect();
+    policy.authorization_code_headers = vec![("x-code-policy".into(), "operator-value".into())];
+    policy.refresh_scope = Some("base-scope".into());
+    policy.refresh_token_params = [
+        ("audience".into(), "static-only".into()),
+        ("staticOnly".into(), "must-disappear".into()),
+    ]
+    .into_iter()
+    .collect();
+    policy.refresh_token_params_resolver =
+        Some(OAuthRefreshTokenParams(Arc::new(Params(calls.clone()))));
+    let provider = config.resolve().await?.unwrap().provider;
+    let auth = builder::<B>(&connection)
+        .plugin(OAuthPlugin::new().add_provider("generic", provider.clone()))
+        .build()
+        .await?;
+    let (authorization, cookie) = super::oauth_profiles::begin(&auth, "generic").await;
+    let signed_in =
+        super::oauth_profiles::complete(&auth, "generic", &authorization, &cookie).await;
+    authenticated(&auth, &cookies(&signed_in), "refresh@example.test").await;
+    assert!(calls.lock().unwrap().is_empty());
+    let exchanges = remote.take();
+    let grant = exchanges
+        .iter()
+        .find(|exchange| exchange.path == "/token")
+        .unwrap();
+    let pairs = url::form_urlencoded::parse(&grant.body)
+        .into_owned()
+        .collect::<Vec<_>>();
+    for (key, expected) in [
+        ("code", "one-use-grant"),
+        ("grant_type", "authorization_code"),
+        (
+            "redirect_uri",
+            "http://localhost:43219/api/auth/callback/generic",
+        ),
+        ("client_id", "native-client"),
+        ("client_secret", "native-secret"),
+        ("audience", "approved-code-audience"),
+    ] {
+        assert_eq!(
+            pairs
+                .iter()
+                .filter(|(name, _)| name == key)
+                .map(|(_, value)| value.as_str())
+                .collect::<Vec<_>>(),
+            vec![expected]
+        );
+    }
+    let verifier = pairs
+        .iter()
+        .find(|(key, _)| key == "code_verifier")
+        .unwrap()
+        .1
+        .as_bytes();
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    assert_eq!(
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier)),
+        authorization["code_challenge"]
+    );
+    assert_eq!(grant.headers["x-code-policy"], "operator-value");
+    let account = db.text("SELECT id FROM accounts", &[]).await?.unwrap();
+    let make_request = |path: &str, mode: &str| {
+        let mut req = request(
+            path,
+            Some(json!({"accountId":account})),
+            &cookies(&signed_in),
+        );
+        drop(req.headers.insert("x-refresh-mode".into(), mode.into()));
+        req
+    };
+    let mut prior_refresh = "initial-refresh".to_owned();
+    for mode in ["approved-a", "approved-b", "none"] {
+        let access = format!("access-{mode}");
+        let refresh = format!("refresh-{mode}");
+        remote.respond_at("/token",200,json!({"access_token":access,"refresh_token":refresh,"expires_in":3600,"token_type":"Bearer"}));
+        let response = call(&auth, make_request("/refresh-token", mode), 200).await;
+        assert_eq!(body(&response)["accessToken"], access);
+        let delivered = remote.take();
+        assert_eq!(delivered.len(), 1);
+        assert_eq!(delivered[0].path, "/token");
+        assert_eq!(delivered[0].method, "POST");
+        assert!(!delivered[0].headers.contains_key("x-code-policy"));
+        let pairs = url::form_urlencoded::parse(&delivered[0].body)
+            .into_owned()
+            .collect::<Vec<_>>();
+        for (key, value) in [
+            ("grant_type", "refresh_token"),
+            ("refresh_token", prior_refresh.as_str()),
+            ("client_id", "native-client"),
+            ("client_secret", "native-secret"),
+        ] {
+            assert_eq!(
+                pairs
+                    .iter()
+                    .filter(|(name, _)| name == key)
+                    .map(|(_, value)| value.as_str())
+                    .collect::<Vec<_>>(),
+                vec![value]
+            );
+        }
+        let fields: BTreeMap<_, _> = pairs.into_iter().collect();
+        for key in ["staticOnly", "__proto__", "constructor", "prototype"] {
+            assert!(!fields.contains_key(key));
+        }
+        assert_eq!(
+            fields["scope"],
+            if mode == "none" {
+                "base-scope"
+            } else {
+                "approved-scope"
+            }
+        );
+        assert_eq!(
+            fields.get("audience").map(String::as_str),
+            if mode == "none" { None } else { Some(mode) }
+        );
+        assert_eq!(
+            db.text("SELECT access_token FROM accounts", &[])
+                .await?
+                .as_deref(),
+            Some(access.as_str())
+        );
+        assert_eq!(
+            db.text("SELECT refresh_token FROM accounts", &[])
+                .await?
+                .as_deref(),
+            Some(refresh.as_str())
+        );
+        prior_refresh = refresh;
+    }
+    let unchanged = db.table("accounts").await?;
+    let rejected = call(&auth, make_request("/refresh-token", "error"), 400).await;
+    assert_eq!(body(&rejected)["code"], "FAILED_TO_REFRESH_ACCESS_TOKEN");
+    assert!(remote.take().is_empty());
+    assert_eq!(db.table("accounts").await?, unchanged);
+    db.set_timestamp(
+        "accounts",
+        "access_token_expires_at",
+        ("id", &account),
+        chrono::Utc::now() - chrono::Duration::hours(1),
+    )
+    .await?;
+    let unchanged = db.table("accounts").await?;
+    let rejected = call(&auth, make_request("/get-access-token", "error"), 400).await;
+    assert_eq!(body(&rejected)["code"], "FAILED_TO_GET_ACCESS_TOKEN");
+    assert!(remote.take().is_empty());
+    assert_eq!(db.table("accounts").await?, unchanged);
+    let observed = calls.lock().unwrap().clone();
+    assert_eq!(
+        observed,
+        vec!["approved-a", "approved-b", "none", "error", "error"]
+    );
+    let mut custom = provider;
+    custom.refresh_access_token = Some(Arc::new(CustomRefresh));
+    let custom_auth = builder::<B>(&connection)
+        .plugin(OAuthPlugin::new().add_provider("generic", custom))
+        .build()
+        .await?;
+    let response = call(&custom_auth, make_request("/refresh-token", "error"), 200).await;
+    assert_eq!(body(&response)["accessToken"], "custom-access");
+    assert_eq!(
+        db.text("SELECT refresh_token FROM accounts", &[])
+            .await?
+            .as_deref(),
+        Some("custom-refresh")
+    );
+    assert_eq!(*calls.lock().unwrap(), observed);
+    assert!(remote.take().is_empty());
+    B::close(connection).await
+}
