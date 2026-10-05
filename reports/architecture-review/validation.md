@@ -9,7 +9,12 @@ The architecture refactor starts at commit `70eca8ea`; its assessment and baseli
 - Process-environment compatibility: passed across all four configurations on SQLx.
 - Documentation check and production build: passed (67 pages).
 - Client formatting, lint and type checking: passed.
-- Full `scripts/check.sh`, including both SDK backends and coverage: running.
+- Complete format/lint/type checks, native default and Axum/SeaORM/Redis runs, compatibility-server tests, and doctests: passed. Native runs each passed 1,075 tests.
+- Comparator negative controls and SQLx Chromium: passed.
+- Full SQLx SDK: 2,849 passed; two timestamp-comparator failures in `core/request/origin-contract.test.ts`; 191 files in 2,593.68 seconds. The original 30 failures all pass.
+- The full gate stopped at those two failures; full SeaORM SDK, the final rustdoc stage, and combined coverage were not completed in this run.
+
+The timestamp failures occur after username sign-in. Its session issuance was not recognized by the comparator's email-only request-clock binding, leaving it to compare scenario-relative clocks. A real upstream username-sign-in regression reproduces this harness defect with delayed requests. Repair and runtime investigation are continuing separately from this architecture PR. Issues #466 and #468 are also still open; this PR does not claim to resolve them.
 
 The CAPTCHA HTTP hook now checks protected `OPTIONS` requests before CORS/router dispatch, matching upstream. Microsoft factory configuration retains `disableSignUp` in its authorization policy; ID-token admission therefore rejects new identities even with `requestSignUp: true`.
 
