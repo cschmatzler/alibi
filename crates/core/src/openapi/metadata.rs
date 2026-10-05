@@ -96,6 +96,10 @@ impl OpenApiModel {
 /// Rich metadata for one route; dispatch still comes exclusively from `AuthRoute`.
 #[derive(Debug, Clone, Default)]
 pub struct OpenApiEndpoint {
+    /// Optional documentation owner for a route contributed by another plugin.
+    pub owner: Option<String>,
+    /// Override the plugin-level core documentation classification.
+    pub core: Option<bool>,
     /// Canonical document template when dispatch uses equivalent parameter names.
     pub document_path: Option<String>,
     pub operation_id: Option<String>,
@@ -112,6 +116,8 @@ pub struct OpenApiEndpoint {
 /// A plugin's endpoint annotations and schema additions.
 #[derive(Debug, Clone, Default)]
 pub struct PluginOpenApiMetadata {
+    /// Use the core API documentation policy for this plugin.
+    pub core: bool,
     pub endpoints: Vec<(HttpMethod, String, OpenApiEndpoint)>,
     pub models: Vec<OpenApiModel>,
 }
@@ -240,18 +246,9 @@ impl OpenApiRegistry {
                 .find(|(method, path, _)| *method == route.method && *path == route.path)
                 .map(|(_, _, value)| value.clone())
                 .unwrap_or_default();
-            let owner = if plugin == "email-password"
-                && matches!(
-                    route.path.as_str(),
-                    "/sign-in/username" | "/is-username-available"
-                ) {
-                "username"
-            } else {
-                plugin
-            };
             self.endpoints.push(RegisteredEndpoint {
-                core: super::annotations::is_core(owner),
-                plugin: owner.into(),
+                core: annotation.core.unwrap_or(metadata.core),
+                plugin: annotation.owner.as_deref().unwrap_or(plugin).into(),
                 route,
                 metadata: annotation,
             });

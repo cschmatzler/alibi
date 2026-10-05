@@ -330,6 +330,16 @@ better_auth_core::impl_auth_plugin! {
         post "/passkey/delete-passkey"                 => handle_delete_passkey,                 "passkey_delete_passkey";
         post "/passkey/update-passkey"                 => handle_update_passkey,                 "passkey_update_passkey";
     }
+
+ extra {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    }
+
+    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    }
+ }
 }
 
 impl std::fmt::Debug for PasskeyPlugin {

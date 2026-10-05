@@ -130,7 +130,7 @@ fn plugin() -> PasskeyPlugin {
 }
 ```
 
-Without a session, an unusable resolver result fails with `400 RESOLVED_USER_INVALID`; a missing resolver with `400 RESOLVE_USER_REQUIRED`. The optional `PasskeyRegistrationAfterVerification` callback runs after the credential verifies; it can return a `PasskeyRegistrationOverride` to reassign the passkey to another `user_id` or rename it — this is where you create the real user for a passkey-first sign-up. `PasskeyAuthenticationAfterVerification` runs after a successful assertion, before the counter and session are written. These traits take decoded client data as a `JsValue` from `better_auth_core::utils::json`.
+Without a session, an unusable resolver result fails with `400 RESOLVED_USER_INVALID`; a missing resolver with `400 RESOLVE_USER_REQUIRED`. The optional `PasskeyRegistrationAfterVerification` callback runs after the credential verifies; it can return a `PasskeyRegistrationOverride` to reassign the passkey to another `user_id` or rename it — this is where you create the real user for a passkey-first sign-up. `PasskeyAuthenticationAfterVerification` runs after a successful assertion, before the counter and session are written. These traits take decoded client data as a `JsValue` from `better_auth::utils::json`.
 
 ## Security notes
 

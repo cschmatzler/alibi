@@ -685,7 +685,7 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
             Value::Null
         );
     }
-    // Native CORS preflights must reach CORS without supplying a CAPTCHA token.
+    // Upstream CAPTCHA admission precedes CORS, including protected preflights.
     let config = AuthConfig::new(secret).base_url("http://original.test");
     let mut captcha_cors =
         better_auth_core::middleware::CorsConfig::new().allowed_origin("http://original.test");
@@ -706,8 +706,8 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
         .build()
         .await?;
     for (method, origin, expected_status) in [
-        (HttpMethod::Options, "http://original.test", 204),
-        (HttpMethod::Options, "http://untrusted.test", 404),
+        (HttpMethod::Options, "http://original.test", 400),
+        (HttpMethod::Options, "http://untrusted.test", 400),
         (HttpMethod::Post, "http://original.test", 400),
     ] {
         let mut request = AuthRequest::new(method.clone(), "/api/auth/sign-in/email");
@@ -737,36 +737,11 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
             "{method:?} {origin}: {}",
             String::from_utf8_lossy(&response.body)
         );
-        if method == HttpMethod::Options && expected_status == 204 {
-            assert_eq!(
-                response
-                    .headers
-                    .get("access-control-allow-origin")
-                    .map(String::as_str),
-                Some(origin)
-            );
-            assert!(
-                response
-                    .headers
-                    .get("access-control-allow-methods")
-                    .expect("allowed methods")
-                    .contains("POST")
-            );
-            assert!(
-                response
-                    .headers
-                    .get("access-control-allow-headers")
-                    .expect("allowed headers")
-                    .contains("x-captcha-response")
-            );
-        } else if method == HttpMethod::Options {
-            assert!(!response.headers.contains_key("access-control-allow-origin"));
-        } else {
-            assert_eq!(
-                serde_json::from_slice::<Value>(&response.body)?["code"],
-                "MISSING_RESPONSE"
-            );
-        }
+        assert!(!response.headers.contains_key("access-control-allow-origin"));
+        assert_eq!(
+            serde_json::from_slice::<Value>(&response.body)?,
+            json!({"message": "Missing CAPTCHA response", "code": "MISSING_RESPONSE"})
+        );
     }
     B::close(connection).await
 }

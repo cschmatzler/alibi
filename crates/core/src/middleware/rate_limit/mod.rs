@@ -150,7 +150,7 @@ impl RateLimitStorage for MemoryRateLimitStorage {
 /// Shared fixed-window counter backed by the application's existing cache.
 /// Every attempt increments, including blocked attempts; retries report the full window.
 pub struct CacheRateLimitStorage {
-    cache: Arc<dyn crate::store::cache::CacheAdapter>,
+    cache: Arc<dyn crate::store::secondary_storage::CacheAdapter>,
 }
 
 impl std::fmt::Debug for CacheRateLimitStorage {
@@ -163,7 +163,7 @@ impl std::fmt::Debug for CacheRateLimitStorage {
 
 impl CacheRateLimitStorage {
     #[must_use]
-    pub fn new(cache: Arc<dyn crate::store::cache::CacheAdapter>) -> Self {
+    pub fn new(cache: Arc<dyn crate::store::secondary_storage::CacheAdapter>) -> Self {
         Self { cache }
     }
 }
@@ -784,7 +784,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires an isolated Redis server"]
     async fn independent_redis_instances_share_fixed_ttl_and_backend_errors_fail_closed() {
-        use crate::store::cache::{CacheAdapter, RedisAdapter};
+        use crate::store::secondary_storage::{CacheAdapter, RedisAdapter};
         let url = std::env::var("TEST_RATE_LIMIT_REDIS_URL").unwrap();
         let first = Arc::new(RedisAdapter::new(&url).await.unwrap());
         let second = Arc::new(RedisAdapter::new(&url).await.unwrap());

@@ -265,6 +265,14 @@ better_auth_core::impl_auth_plugin! {
         post "/email-otp/change-email" => change_email, "changeEmailWithEmailOTP";
     }
     extra {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    }
+
+    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    }
+
         fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
             vec![better_auth_core::PluginRateLimit { matches: |path| matches!(path, "/email-otp/send-verification-otp" | "/email-otp/check-verification-otp" | "/email-otp/verify-email" | "/sign-in/email-otp" | "/email-otp/request-password-reset" | "/email-otp/reset-password" | "/forget-password/email-otp" | "/email-otp/request-email-change" | "/email-otp/change-email"), limit: better_auth_core::EndpointRateLimit {
                 window_seconds: if self.config.rate_limit.window_seconds == 0.0 || self.config.rate_limit.window_seconds.is_nan() { 60.0 } else { self.config.rate_limit.window_seconds },

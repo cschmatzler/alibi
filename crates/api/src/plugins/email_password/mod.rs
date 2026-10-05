@@ -1,3 +1,21 @@
+mod config;
+mod http;
+mod signin;
+mod types;
+
+pub use config::EmailPasswordConfig;
+pub(in crate::plugins) use signin::sign_in_core;
+pub(in crate::plugins) use signin::sign_in_username_core;
+use types::IsUsernameAvailableRequest;
+use types::IsUsernameAvailableResponse;
+pub(in crate::plugins) use types::SignInCoreResult;
+pub(in crate::plugins) use types::SignInRequest;
+pub(in crate::plugins) use types::SignInResponse;
+pub(in crate::plugins) use types::SignInUsernameFailure;
+pub(in crate::plugins) use types::SignInUsernameRequest;
+pub(in crate::plugins) use types::SignInUsernameResponse;
+pub(in crate::plugins) use types::SignUpRequest;
+pub(in crate::plugins) use types::SignUpResponse;
 mod signup;
 use super::{email_verification::EmailVerificationPlugin, two_factor};
 use crate::plugins::authentication_helpers::{
@@ -41,212 +59,6 @@ pub struct EmailPasswordPlugin {
     /// Optional reference to the email-verification plugin so that
     /// `send_on_sign_in` can be triggered during the sign-in flow.
     email_verification: Option<Arc<EmailVerificationPlugin>>,
-}
-
-#[derive(Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
-)]
-pub struct EmailPasswordConfig {
-    /// Whether email/password authentication is enabled. Routes remain registered.
-    pub enabled: bool,
-    pub enable_signup: bool,
-    /// Whether to enable the username schema, signup hooks, and endpoints.
-    pub enable_username: bool,
-    pub username: UsernameConfig,
-    pub require_email_verification: bool,
-    /// Minimum UTF-16 password length. Zero uses the default of 8.
-    pub password_min_length: usize,
-    /// Maximum UTF-16 password length. Zero uses the default of 128.
-    pub password_max_length: usize,
-    /// Whether to automatically sign in the user after sign-up (default: true).
-    /// When false, sign-up returns the user but doesn't create a session.
-    pub auto_sign_in: bool,
-    /// Custom password hasher. When `None`, the default scrypt hasher is used.
-    pub password_hasher: Option<Arc<dyn PasswordHasher>>,
-    pub on_existing_user_signup: Option<Arc<ExistingUserSignupCallback>>,
-    pub custom_synthetic_user: Option<Arc<CustomSyntheticUserCallback>>,
-}
-
-impl EmailPasswordConfig {
-    const fn effective_min_length(&self) -> usize {
-        if self.password_min_length == 0 {
-            8
-        } else {
-            self.password_min_length
-        }
-    }
-
-    const fn effective_max_length(&self) -> usize {
-        if self.password_max_length == 0 {
-            128
-        } else {
-            self.password_max_length
-        }
-    }
-}
-
-impl std::fmt::Debug for EmailPasswordConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EmailPasswordConfig")
-            .field("enabled", &self.enabled)
-            .field("enable_signup", &self.enable_signup)
-            .field("enable_username", &self.enable_username)
-            .field("username", &self.username)
-            .field(
-                "require_email_verification",
-                &self.require_email_verification,
-            )
-            .field("password_min_length", &self.password_min_length)
-            .field("password_max_length", &self.password_max_length)
-            .field("auto_sign_in", &self.auto_sign_in)
-            .field(
-                "password_hasher",
-                &self.password_hasher.as_ref().map(|_| "custom"),
-            )
-            .field(
-                "on_existing_user_signup",
-                &self.on_existing_user_signup.as_ref().map(|_| "custom"),
-            )
-            .field(
-                "custom_synthetic_user",
-                &self.custom_synthetic_user.as_ref().map(|_| "custom"),
-            )
-            .finish()
-    }
-}
-
-#[derive(Clone, Debug, Deserialize, Validate)]
-pub(in crate::plugins) struct SignUpRequest {
-    #[serde(flatten, default)]
-    additional_fields: indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>,
-    #[serde(rename = "lastLoginMethod")]
-    last_login_method: Option<better_auth_core::utils::json::JsValue>,
-    #[validate(length(min = 1, message = "Name is required"))]
-    name: String,
-    #[validate(email(message = "Invalid email address"))]
-    email: String,
-    #[validate(length(min = 1, message = "Password is required"))]
-    password: String,
-    username: Option<String>,
-    #[serde(rename = "displayUsername")]
-    display_username: Option<String>,
-    #[serde(rename = "callbackURL")]
-    callback_url: Option<String>,
-    image: Option<String>,
-    #[serde(rename = "rememberMe")]
-    remember_me: Option<bool>,
-    #[serde(rename = "phoneNumber")]
-    phone_number: Option<better_auth_core::utils::json::JsValue>,
-    #[serde(rename = "phoneNumberVerified")]
-    phone_number_verified: Option<better_auth_core::utils::json::JsValue>,
-}
-
-impl RequestBody for SignUpRequest {
-    const FIELDS: &'static [JsonField] = &[
-        JsonField::string("name", true),
-        JsonField {
-            name: "email",
-            kind: JsonFieldKind::Email,
-            required: true,
-        },
-        JsonField {
-            name: "password",
-            kind: JsonFieldKind::NonEmptyString,
-            required: true,
-        },
-        JsonField::string("image", false),
-        JsonField::string("callbackURL", false),
-        JsonField {
-            name: "rememberMe",
-            kind: JsonFieldKind::Boolean,
-            required: false,
-        },
-    ];
-}
-
-#[derive(Debug, Deserialize, Validate)]
-pub(in crate::plugins) struct SignInRequest {
-    #[validate(email(message = "Invalid email address"))]
-    email: String,
-    #[validate(length(min = 1, message = "Password is required"))]
-    password: String,
-    #[serde(rename = "callbackURL")]
-    callback_url: Option<String>,
-    #[serde(rename = "rememberMe")]
-    remember_me: Option<bool>,
-}
-
-impl RequestBody for SignInRequest {
-    const FIELDS: &'static [JsonField] = &[
-        JsonField::string("email", true),
-        JsonField::string("password", true),
-        JsonField::string("callbackURL", false),
-        JsonField {
-            name: "rememberMe",
-            kind: JsonFieldKind::Boolean,
-            required: false,
-        },
-    ];
-}
-
-#[derive(Debug, Deserialize, Validate)]
-pub(in crate::plugins) struct SignInUsernameRequest {
-    username: String,
-    password: String,
-    #[serde(rename = "rememberMe")]
-    remember_me: Option<bool>,
-    #[serde(rename = "callbackURL")]
-    callback_url: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Validate)]
-struct IsUsernameAvailableRequest {
-    username: String,
-}
-
-#[derive(Debug, Serialize)]
-struct IsUsernameAvailableResponse {
-    available: bool,
-}
-
-#[derive(Debug, Serialize)]
-pub(in crate::plugins) struct SignUpResponse<U> {
-    token: Option<String>,
-    user: U,
-}
-
-#[derive(Debug, Serialize)]
-pub(in crate::plugins) struct SignInResponse<U> {
-    redirect: bool,
-    token: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    url: Option<String>,
-    user: U,
-}
-
-#[derive(Debug, Serialize)]
-pub(in crate::plugins) struct SignInUsernameResponse<U> {
-    /// Upstream returns the same redirect envelope as `/sign-in/email`.
-    redirect: bool,
-    token: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    url: Option<String>,
-    user: U,
-}
-
-/// Result of sign-in: either a successful session or a 2FA redirect.
-pub(in crate::plugins) enum SignInCoreResult<U: Serialize> {
-    Success {
-        response: SignInResponse<U>,
-        token: String,
-        set_cookie_headers: Vec<String>,
-    },
-    TwoFactorRedirect {
-        response: two_factor::TwoFactorRedirectResponse,
-        set_cookie_headers: Vec<String>,
-    },
 }
 
 impl EmailPasswordPlugin {
@@ -344,340 +156,28 @@ impl EmailPasswordPlugin {
         self.config.password_hasher = Some(hasher);
         self
     }
-
-    async fn handle_sign_up(
-        &self,
-        req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    ) -> AuthResult<AuthResponse> {
-        let ignored = if self.config.enable_username {
-            &[][..]
-        } else {
-            &["username", "displayUsername"][..]
-        };
-        let mut signup_req: SignUpRequest =
-            match super::authentication_helpers::parse_body_with_ignored_fields(req, ignored) {
-                Ok(value) => value,
-                Err(response) => return Ok(response),
-            };
-
-        better_auth_core::middleware::CsrfMiddleware::new(
-            better_auth_core::middleware::CsrfConfig::new(),
-            Arc::clone(&ctx.config),
-        )
-        .check_form_origin(req)?;
-        signup_req.email = signup_req.email.to_lowercase();
-        if self.config.enable_username {
-            let policy = &self.config.username;
-            if signup_req.username.is_none()
-                && let Some(display) = &signup_req.display_username
-                && policy.value_error(display).await?.is_none()
-            {
-                signup_req.username = Some(display.clone());
-            }
-            if let Some(username) = &signup_req.username {
-                policy.validate_hook_value(username).await?;
-                if ctx
-                    .database
-                    .get_user_by_username(&policy.normalize(username)?)
-                    .await?
-                    .is_some()
-                {
-                    return username_error_response(
-                        400,
-                        "USERNAME_IS_ALREADY_TAKEN",
-                        MESSAGE_USERNAME_IS_ALREADY_TAKEN,
-                    );
-                }
-            }
-            if let Some(display) = &signup_req.display_username {
-                policy.validate_display(display).await?;
-            }
-            if policy.include_display_username
-                && signup_req
-                    .display_username
-                    .as_ref()
-                    .is_none_or(String::is_empty)
-            {
-                signup_req.display_username.clone_from(&signup_req.username);
-            }
-            if !policy.include_display_username {
-                signup_req.display_username = None;
-            }
-            let mut callback_body = req.body_as_json::<better_auth_core::utils::json::JsValue>()?;
-            if let better_auth_core::utils::json::JsValue::Object(body) = &mut callback_body {
-                if let Some(value) = &signup_req.username {
-                    drop(body.insert(
-                        "username".into(),
-                        better_auth_core::utils::json::JsValue::String(value.clone()),
-                    ));
-                }
-                if let Some(value) = &signup_req.display_username {
-                    drop(body.insert(
-                        "displayUsername".into(),
-                        better_auth_core::utils::json::JsValue::String(value.clone()),
-                    ));
-                }
-            }
-            req.extensions()
-                .insert(better_auth_core::hooks::TransformedRequestBody(
-                    callback_body,
-                ));
-        }
-
-        better_auth_core::cache::runtime::set_issuance_preference(
-            req,
-            signup_req.remember_me == Some(false),
-        );
-        let meta = RequestMeta::from_request(req);
-        let (response, cookies) = sign_up_core(req, &signup_req, &self.config, &meta, ctx).await?;
-        let mut response = AuthResponse::json(200, &response)?;
-        for cookie in cookies.into_iter().flatten() {
-            response.headers.append("Set-Cookie", cookie);
-        }
-        Ok(response)
-    }
-
-    async fn handle_sign_in(
-        &self,
-        req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    ) -> AuthResult<AuthResponse> {
-        let signin_req: SignInRequest = match parse_body(req) {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
-
-        let mut callback_body: better_auth_core::utils::json::JsValue = req.body_as_json()?;
-        if let better_auth_core::utils::json::JsValue::Object(body) = &mut callback_body {
-            let _remember = body
-                .entry("rememberMe".into())
-                .or_insert(better_auth_core::utils::json::JsValue::Bool(true));
-        }
-        req.extensions()
-            .insert(better_auth_core::hooks::ValidatedRequestBody(callback_body));
-        better_auth_core::middleware::CsrfMiddleware::new(
-            better_auth_core::middleware::CsrfConfig::new(),
-            Arc::clone(&ctx.config),
-        )
-        .check_form_origin(req)?;
-
-        better_auth_core::cache::runtime::set_issuance_preference(
-            req,
-            signin_req.remember_me == Some(false),
-        );
-        let meta = RequestMeta::from_request(req);
-        match sign_in_core(
-            req,
-            &signin_req,
-            &self.config,
-            self.email_verification.as_deref(),
-            &meta,
-            ctx,
-        )
-        .await?
-        {
-            SignInCoreResult::Success {
-                response,
-                token,
-                set_cookie_headers,
-            } => {
-                let mut auth_response = AuthResponse::json(200, &response)?.with_appended_header(
-                    "Set-Cookie",
-                    create_session_cookie_for_remember_me(
-                        &token,
-                        signin_req.remember_me,
-                        &ctx.config,
-                    )?,
-                );
-                if let Some(url) = signin_req
-                    .callback_url
-                    .as_deref()
-                    .filter(|url| !url.is_empty())
-                {
-                    auth_response = auth_response.with_header("Location", url);
-                }
-                for cookie in set_cookie_headers {
-                    auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
-                }
-                Ok(append_dont_remember_cookie(
-                    auth_response,
-                    signin_req.remember_me,
-                    &ctx.config,
-                )?)
-            }
-            SignInCoreResult::TwoFactorRedirect {
-                response,
-                set_cookie_headers,
-            } => {
-                let mut auth_response = AuthResponse::json(200, &response)?;
-                for cookie in set_cookie_headers {
-                    auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
-                }
-                Ok(auth_response)
-            }
-        }
-    }
-
-    async fn handle_sign_in_username(
-        &self,
-        req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    ) -> AuthResult<AuthResponse> {
-        let signin_req: SignInUsernameRequest = match better_auth_core::validate_request_body(req) {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
-
-        if signin_req.username.is_empty() || signin_req.password.is_empty() {
-            return username_error_response(
-                401,
-                "INVALID_USERNAME_OR_PASSWORD",
-                MESSAGE_INVALID_USERNAME_OR_PASSWORD,
-            );
-        }
-
-        let policy = &self.config.username;
-        let validation_input =
-            if policy.validation_order == Some(UsernameValidationOrder::PreNormalization) {
-                policy.normalize(&signin_req.username)?
-            } else {
-                signin_req.username.clone()
-            };
-        if let Err(error) = policy.validate_value(&validation_input, 422).await {
-            return Ok(error.to_auth_response());
-        }
-        let username = policy.normalize(&validation_input)?;
-
-        let meta = RequestMeta::from_request(req);
-        match sign_in_username_core(
-            req,
-            &signin_req,
-            &username,
-            &self.config,
-            self.email_verification.as_deref(),
-            &meta,
-            ctx,
-        )
-        .await
-        {
-            Ok(SignInCoreResult::Success {
-                response,
-                token,
-                set_cookie_headers,
-            }) => {
-                let username_response = SignInUsernameResponse {
-                    redirect: response.redirect,
-                    token: response.token,
-                    url: response.url,
-                    user: response.user,
-                };
-                let mut auth_response = AuthResponse::json(200, &username_response)?
-                    .with_appended_header(
-                        "Set-Cookie",
-                        create_session_cookie_for_remember_me(
-                            &token,
-                            signin_req.remember_me,
-                            &ctx.config,
-                        )?,
-                    );
-                if let Some(url) = signin_req
-                    .callback_url
-                    .as_deref()
-                    .filter(|url| !url.is_empty())
-                {
-                    auth_response = auth_response.with_header("Location", url);
-                }
-                for cookie in set_cookie_headers {
-                    auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
-                }
-                Ok(append_dont_remember_cookie(
-                    auth_response,
-                    signin_req.remember_me,
-                    &ctx.config,
-                )?)
-            }
-            Ok(SignInCoreResult::TwoFactorRedirect {
-                response,
-                set_cookie_headers,
-            }) => {
-                let mut auth_response = AuthResponse::json(200, &response)?;
-                for cookie in set_cookie_headers {
-                    auth_response = auth_response.with_appended_header("Set-Cookie", cookie);
-                }
-                Ok(auth_response)
-            }
-            Err(SignInUsernameFailure::InvalidUsernameOrPassword) => username_error_response(
-                401,
-                "INVALID_USERNAME_OR_PASSWORD",
-                MESSAGE_INVALID_USERNAME_OR_PASSWORD,
-            ),
-            Err(SignInUsernameFailure::EmailNotVerified) => {
-                username_error_response(403, "EMAIL_NOT_VERIFIED", MESSAGE_EMAIL_NOT_VERIFIED)
-            }
-            Err(SignInUsernameFailure::Auth(error)) => Err(error),
-        }
-    }
-
-    async fn handle_is_username_available(
-        &self,
-        req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    ) -> AuthResult<AuthResponse> {
-        let body: IsUsernameAvailableRequest = match better_auth_core::validate_request_body(req) {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
-
-        if body.username.is_empty() {
-            return username_error_response(422, "INVALID_USERNAME", "Username is invalid");
-        }
-
-        if let Err(error) = self
-            .config
-            .username
-            .validate_value(&body.username, 422)
-            .await
-        {
-            return Ok(error.to_auth_response());
-        }
-        let normalized = self.config.username.normalize(&body.username)?;
-        let user = ctx.database.get_user_by_username(&normalized).await?;
-        let available = user.is_none();
-
-        Ok(AuthResponse::json(
-            200,
-            &IsUsernameAvailableResponse { available },
-        )?)
-    }
-}
-
-pub(in crate::plugins) enum SignInUsernameFailure {
-    InvalidUsernameOrPassword,
-    EmailNotVerified,
-    Auth(AuthError),
-}
-
-impl Default for EmailPasswordConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            enable_signup: true,
-            enable_username: true,
-            username: UsernameConfig::default(),
-            require_email_verification: false,
-            password_min_length: 8,
-            password_max_length: 128,
-            auto_sign_in: true,
-            password_hasher: None,
-            on_existing_user_signup: None,
-            custom_synthetic_user: None,
-        }
-    }
 }
 
 #[async_trait]
 impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
+    fn openapi_metadata(
+        &self,
+        ctx: &better_auth_core::AuthInitContext<S>,
+    ) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            ctx,
+        )
+    }
+
     fn name(&self) -> &'static str {
         "email-password"
     }
@@ -1072,7 +572,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
                         &signup_context.config,
                     )?);
                 }
-                better_auth_core::cache::runtime::emit_issuance_in_transaction(
+                better_auth_core::session::cookie_cache::runtime::emit_issuance_in_transaction(
                     &signup_context,
                     &user,
                     &session,
@@ -1159,7 +659,7 @@ async fn finalize_sign_in_with_user_core<S: better_auth_core::AuthSchema>(
             set_cookie_headers.extend(trusted_device.set_cookie_headers);
         } else {
             ctx.database.delete_session(issued.session.token()).await?;
-            better_auth_core::cache::runtime::discard_issuance(req);
+            better_auth_core::session::cookie_cache::runtime::discard_issuance(req);
             let redirect = two_factor::begin_sign_in_challenge(&user, remember_me, ctx).await?;
             let mut redirect_headers = trusted_device.set_cookie_headers;
             redirect_headers.extend(redirect.set_cookie_headers);
@@ -1207,189 +707,6 @@ async fn send_required_sign_in_verification(
             .await?;
     }
     Ok(())
-}
-
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub(in crate::plugins) async fn sign_in_core(
-    req: &AuthRequest,
-    body: &SignInRequest,
-    config: &EmailPasswordConfig,
-    email_verification: Option<&EmailVerificationPlugin>,
-    meta: &RequestMeta,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> AuthResult<SignInCoreResult<UserView>> {
-    if !config.enabled {
-        return Err(AuthError::Upstream {
-            status: 400,
-            code: "EMAIL_PASSWORD_DISABLED",
-            message: "Email and password is not enabled",
-        });
-    }
-    if !is_valid_email(&body.email) {
-        return Err(AuthError::Upstream {
-            status: 400,
-            code: "INVALID_EMAIL",
-            message: "Invalid email",
-        });
-    }
-    if body.password.encode_utf16().count() > config.effective_max_length() {
-        return Err(AuthError::bad_request("Password too long"));
-    }
-    let user = ctx
-        .database
-        .get_user_by_email_record(&body.email.to_lowercase())
-        .await?;
-    let Some(user) = user else {
-        drop(
-            ctx.hash_password(config.password_hasher.as_ref(), &body.password)
-                .await?,
-        );
-        return Err(AuthError::InvalidCredentials);
-    };
-    let credential = ctx
-        .database
-        .get_user_accounts_record(&user.id())
-        .await?
-        .into_iter()
-        .find(|account| {
-            account.provider_id() == "credential" && account.account_id() == user.id().as_ref()
-        });
-    let Some(current_password) = credential
-        .as_ref()
-        .and_then(AuthAccount::password)
-        .filter(|password| !password.is_empty())
-    else {
-        drop(
-            ctx.hash_password(config.password_hasher.as_ref(), &body.password)
-                .await?,
-        );
-        return Err(AuthError::InvalidCredentials);
-    };
-    password_utils::verify_password(
-        config.password_hasher.as_ref(),
-        &body.password,
-        current_password,
-    )
-    .await?;
-
-    if config.require_email_verification && !user.email_verified() {
-        send_required_sign_in_verification(
-            &user,
-            body.callback_url.as_deref(),
-            email_verification,
-            ctx,
-        )
-        .await?;
-        return Err(AuthError::Upstream {
-            status: 403,
-            code: "EMAIL_NOT_VERIFIED",
-            message: "Email not verified",
-        });
-    }
-
-    finalize_sign_in_with_user_core(
-        req,
-        user,
-        body.remember_me,
-        email_verification,
-        body.callback_url.as_deref(),
-        meta,
-        ctx,
-    )
-    .await
-}
-
-/// Core sign-in by username.
-///
-/// # Errors
-/// Returns an error when validation, storage, or an application callback fails.
-pub(in crate::plugins) async fn sign_in_username_core(
-    req: &AuthRequest,
-    body: &SignInUsernameRequest,
-    normalized_username: &str,
-    config: &EmailPasswordConfig,
-    email_verification: Option<&EmailVerificationPlugin>,
-    meta: &RequestMeta,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> Result<SignInCoreResult<UserView>, SignInUsernameFailure> {
-    let Some(user) = ctx
-        .database
-        .get_user_by_username_record(normalized_username)
-        .await
-        .map_err(SignInUsernameFailure::Auth)?
-    else {
-        drop(
-            ctx.hash_password(config.password_hasher.as_ref(), &body.password)
-                .await
-                .map_err(SignInUsernameFailure::Auth)?,
-        );
-        return Err(SignInUsernameFailure::InvalidUsernameOrPassword);
-    };
-
-    verify_user_password(&user, &body.password, config, ctx)
-        .await
-        .map_err(|error| match error {
-            AuthError::InvalidCredentials => SignInUsernameFailure::InvalidUsernameOrPassword,
-            other @ (AuthError::Api { .. }
-            | AuthError::Upstream { .. }
-            | AuthError::BadRequest(_)
-            | AuthError::InvalidRequest(_)
-            | AuthError::Validation(_)
-            | AuthError::Unauthenticated
-            | AuthError::AuthenticationFailed(_)
-            | AuthError::SessionNotFound
-            | AuthError::Forbidden(_)
-            | AuthError::UserCreationCancelled
-            | AuthError::SessionCreationCancelled
-            | AuthError::BannedUser(_)
-            | AuthError::Unauthorized
-            | AuthError::UserNotFound
-            | AuthError::NotFound(_)
-            | AuthError::Conflict(_)
-            | AuthError::MethodNotAllowed(_)
-            | AuthError::PayloadTooLarge(_)
-            | AuthError::UnprocessableEntity(_)
-            | AuthError::RateLimited
-            | AuthError::NotImplemented(_)
-            | AuthError::Config(_)
-            | AuthError::Database(_)
-            | AuthError::Serialization(_)
-            | AuthError::Plugin { .. }
-            | AuthError::CallbackFailure(_)
-            | AuthError::Internal(_)
-            | AuthError::Encryption(_)
-            | AuthError::PasswordHash(_)
-            | AuthError::Jwt(_)) => SignInUsernameFailure::Auth(other),
-        })?;
-
-    if !user.email_verified()
-        && (config.require_email_verification
-            || email_verification.is_some_and(EmailVerificationPlugin::is_verification_required))
-    {
-        send_required_sign_in_verification(
-            &user,
-            body.callback_url.as_deref(),
-            email_verification,
-            ctx,
-        )
-        .await
-        .map_err(SignInUsernameFailure::Auth)?;
-        return Err(SignInUsernameFailure::EmailNotVerified);
-    }
-
-    finalize_sign_in_with_user_core(
-        req,
-        user,
-        body.remember_me,
-        email_verification,
-        body.callback_url.as_deref(),
-        meta,
-        ctx,
-    )
-    .await
-    .map_err(SignInUsernameFailure::Auth)
 }
 
 // LCOV_EXCL_START

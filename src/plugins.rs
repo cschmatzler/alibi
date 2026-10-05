@@ -27,7 +27,7 @@ pub use better_auth_api::plugins::multi_session::{self, MultiSessionConfig, Mult
 pub use better_auth_api::plugins::oauth_popup::{self, OAuthPopupPlugin};
 pub use better_auth_api::plugins::oauth_token_conversion;
 pub use better_auth_api::plugins::one_tap::{
-    self, GoogleJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin,
+    self, OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin,
 };
 pub use better_auth_api::plugins::open_api::{self, OpenApiConfig, OpenApiPlugin};
 pub use better_auth_api::plugins::passkey::{

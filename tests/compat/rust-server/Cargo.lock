@@ -582,6 +582,7 @@ dependencies = [
  "base64 0.23.1",
  "base64urlsafedata",
  "better-auth-core",
+ "better-auth-schema-registry",
  "bon",
  "chacha20poly1305",
  "chrono",

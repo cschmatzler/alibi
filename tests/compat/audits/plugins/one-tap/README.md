@@ -5,7 +5,7 @@
 Pinned `plugins/one-tap/index.mjs` directly uses the core Google verifier, then
 `oauth2/link-account.mjs` for identity/account creation and session issuance.
 The Rust `OneTapPlugin` exposes POST `/one-tap/callback` and public immutable
-`OneTapConfig`/`OneTapClientId`. Optional `GoogleJwksSource` is an application
+`OneTapConfig`/`OneTapClientId`. Optional `OAuthJwksSource` is an application
 transport/cache API: signature and claim validation remain in the plugin. The
 default transport fetches Google's exact `/oauth2/v3/certs` URL on each valid
 RS256 attempt, matching the pinned helper's timing and lack of built-in caching.

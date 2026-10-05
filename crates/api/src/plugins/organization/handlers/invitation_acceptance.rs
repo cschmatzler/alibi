@@ -128,7 +128,7 @@ pub(super) async fn accept<S: AuthSchema>(
         .ok_or_else(|| acceptance_error(400, "ORGANIZATION_NOT_FOUND"))?;
     let original_user = ctx.user_view(user);
     let original_organization = OrganizationResponse::from_stored_organization(&organization)?;
-    let limit = crate::plugins::organization::membership_policy::admission_limit(
+    let limit = crate::plugins::organization::policy::admission_limit(
         config.membership_limit.as_ref(),
         &original_user,
         &original_organization,

@@ -46,6 +46,24 @@ struct GetSessionResponse<S, U> {
 
 #[async_trait]
 impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
+    fn openapi_metadata(
+        &self,
+        ctx: &better_auth_core::AuthInitContext<S>,
+    ) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            ctx,
+        )
+    }
+
     fn name(&self) -> &'static str {
         "session-management"
     }
@@ -218,7 +236,8 @@ impl SessionManagementPlugin {
             return Ok(response);
         };
 
-        better_auth_core::cache::runtime::emit_issuance(ctx, &user, &updated).await?;
+        better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, &user, &updated)
+            .await?;
 
         let preference = related_cookie_name(&ctx.config, "dont_remember");
         let dont_remember = req.header("cookie").is_some_and(|header| {
@@ -294,7 +313,8 @@ impl SessionManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl better_auth_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let Some(read) = better_auth_core::cache::runtime::authenticated(ctx, req, true).await?
+        let Some(read) =
+            better_auth_core::session::cookie_cache::runtime::authenticated(ctx, req, true).await?
         else {
             return Ok(AuthResponse::json(200, &serde_json::Value::Null)?);
         };
@@ -355,7 +375,7 @@ impl SessionManagementPlugin {
             }
             let base =
                 better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, logical);
-            for header in better_auth_core::cache::runtime::chunked_cookie_headers(
+            for header in better_auth_core::session::cookie_cache::runtime::chunked_cookie_headers(
                 &base,
                 "",
                 Some(0.0),

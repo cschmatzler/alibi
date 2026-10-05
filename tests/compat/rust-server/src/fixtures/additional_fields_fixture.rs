@@ -380,7 +380,10 @@ impl AuthPlugin<ApplicationSchema> for Application {
         response: better_auth_core::AuthResponse,
     ) -> AuthResult<better_auth_core::AuthResponse> {
         if self.mode == "cached" {
-            let snapshot = better_auth_core::cache::runtime::published_session_snapshot(request);
+            let snapshot =
+                better_auth_core::session::cookie_cache::runtime::published_session_snapshot(
+                    request,
+                );
             let record = snapshot
                 .as_ref()
                 .map(|snapshot| json!({"user":snapshot.user(),"session":snapshot.session()}));

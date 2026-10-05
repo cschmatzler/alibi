@@ -105,7 +105,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 
 Trade-offs to understand before enabling:
 
-- **Revocation lag.** A revoked or deleted session keeps authenticating from its cache until `max_age` elapses. Set `max_age` to the staleness you can tolerate, or invalidate everything by changing the cache **version** (`CookieCacheConfig::version`, a `better_auth_core::cache::CookieCacheVersion` literal or async resolver).
+- **Revocation lag.** A revoked or deleted session keeps authenticating from its cache until `max_age` elapses. Set `max_age` to the staleness you can tolerate, or invalidate everything by changing the cache **version** (`CookieCacheConfig::version`, a `better_auth::session::cookie_cache::CookieCacheVersion` literal or async resolver).
 - **Key rotation.** The session-token cookie is signed with the *current* secret only; rotating it invalidates existing cookies even when you retain old encryption keys. JWE caches can still be read with retained keys. See [Secrets](/reference/secrets/).
 - **Bypass.** `GET /get-session?disableCookieCache=true` forces a database read.
 

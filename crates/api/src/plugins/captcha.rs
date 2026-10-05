@@ -2,7 +2,6 @@
 use async_trait::async_trait;
 use better_auth_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
-    HttpMethod,
     utils::json::{JsValue, parse_value},
 };
 use serde::{Deserialize, Serialize};
@@ -419,6 +418,24 @@ fn path_matches(pattern: &str, path: &str) -> Result<bool, regex::Error> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for CaptchaPlugin {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
+    fn openapi_metadata(
+        &self,
+        ctx: &better_auth_core::AuthInitContext<S>,
+    ) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            ctx,
+        )
+    }
+
     fn name(&self) -> &'static str {
         "captcha"
     }
@@ -430,10 +447,6 @@ impl<S: AuthSchema> AuthPlugin<S> for CaptchaPlugin {
         request: &AuthRequest,
         context: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
-        // Native CORS owns preflight admission; browsers send no CAPTCHA token here.
-        if request.method() == &HttpMethod::Options {
-            return Ok(None);
-        }
         let path = normalized_path(
             request.url().map_or(request.path(), url::Url::path),
             &context.config.base_path,

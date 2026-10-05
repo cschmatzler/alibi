@@ -1,3 +1,8 @@
+//! Fallible JavaScriptCore array ordering for cached metadata. Its relational
+//! comparator can be cyclic, so comparison order is observable. Binary
+//! insertion, natural runs, Powersort and galloping follow JSC's StableSort.h:
+//! <https://github.com/WebKit/WebKit/blob/main/Source/JavaScriptCore/runtime/StableSort.h>
+//! The behavior is verified against the installed, pinned Bun runtime.
 // Copyright (C) 2024-2026 Apple Inc. All rights reserved.
 // Copyright (C) 2018-2026 the V8 project authors. All rights reserved.
 //
@@ -24,12 +29,6 @@
 //
 // Copyright (c) 2001-2018 Python Software Foundation; All Rights Reserved.
 // Part of JavaScriptCore's galloping merge comes from Python's TimSort.
-
-//! Fallible JavaScriptCore array ordering for cached metadata. Its relational
-//! comparator can be cyclic, so comparison order is observable. Binary
-//! insertion, natural runs, Powersort and galloping follow JSC's StableSort.h:
-//! <https://github.com/WebKit/WebKit/blob/main/Source/JavaScriptCore/runtime/StableSort.h>
-//! The behavior is verified against the installed, pinned Bun runtime.
 
 use better_auth_core::{ApiKey, AuthError, AuthResult};
 use std::slice::SliceIndex;

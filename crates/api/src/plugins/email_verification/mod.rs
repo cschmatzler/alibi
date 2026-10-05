@@ -112,6 +112,14 @@ better_auth_core::impl_auth_plugin! {
         get "/verify-email" => handle_verify_email, "verify_email";
     }
     extra {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    }
+
+    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    }
+
         async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
             ctx.extensions.insert(self.config.clone());
             Ok(())
@@ -147,11 +155,12 @@ impl EmailVerificationPlugin {
                 Ok(v) => v,
                 Err(resp) => return Ok(resp),
             };
-        let current_user = better_auth_core::cache::runtime::authenticated(ctx, req, false)
-            .await
-            .ok()
-            .flatten()
-            .map(|read| read.user);
+        let current_user =
+            better_auth_core::session::cookie_cache::runtime::authenticated(ctx, req, false)
+                .await
+                .ok()
+                .flatten()
+                .map(|read| read.user);
         let response =
             send_verification_email_core(&body, current_user.as_ref(), &self.config, ctx).await?;
         Ok(AuthResponse::json(200, &response)?)

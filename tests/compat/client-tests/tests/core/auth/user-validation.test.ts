@@ -84,8 +84,15 @@ function observed(value: State) {
           },
         };
       }
-      if (typeof row.value === "string" && row.value.startsWith('{"email":')) {
-        return { ...row, identifier: { token: row.identifier, length: row.identifier.length } };
+      if (typeof row.value === "string" && row.identifier.startsWith("magic-link:")) {
+        return {
+          ...row,
+          identifier: {
+            token: row.identifier.slice("magic-link:".length),
+            namespace: "magic-link:",
+            length: row.identifier.length,
+          },
+        };
       }
       return row;
     }),

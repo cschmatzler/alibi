@@ -1,7 +1,7 @@
 use super::page::OrganizationPageError;
 use super::{require_session, resolve_organization_id};
 use crate::plugins::organization::OrganizationConfig;
-use crate::plugins::organization::membership_policy::{read_page_limit, truthy_number};
+use crate::plugins::organization::policy::{read_page_limit, truthy_number};
 use crate::plugins::organization::types::{
     BasicMemberResponse, GetActiveMemberRoleQuery, GetActiveMemberRoleResponse, ListMembersQuery,
     ListMembersResponse, MemberResponse, OrganizationMemberRemovalSnapshot, RemoveMemberRequest,

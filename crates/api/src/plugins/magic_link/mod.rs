@@ -339,6 +339,14 @@ better_auth_core::impl_auth_plugin! {
         get "/magic-link/verify" => verify, "verifyMagicLink";
     }
     extra {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    }
+
+    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    }
+
         fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
             vec![better_auth_core::PluginRateLimit { matches: |path| path.starts_with("/sign-in/magic-link") || path.starts_with("/magic-link/verify"), limit: better_auth_core::EndpointRateLimit {
                 window_seconds: if self.config.rate_limit.window_seconds == 0.0 || self.config.rate_limit.window_seconds.is_nan() { 60.0 } else { self.config.rate_limit.window_seconds },

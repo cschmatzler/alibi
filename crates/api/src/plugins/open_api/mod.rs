@@ -61,6 +61,13 @@ impl OpenApiPlugin {
 }
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
     fn name(&self) -> &'static str {
         "open-api"
     }

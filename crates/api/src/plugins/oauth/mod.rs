@@ -85,6 +85,24 @@ impl Default for OAuthPlugin {
 
 #[async_trait]
 impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
+    fn openapi_metadata(
+        &self,
+        ctx: &better_auth_core::AuthInitContext<S>,
+    ) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            ctx,
+        )
+    }
+
     fn name(&self) -> &'static str {
         "oauth"
     }
@@ -178,8 +196,9 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         {
             return Ok(response);
         }
-        let Some((user, _)) = better_auth_core::cache::runtime::published_session(req)
-            .or_else(|| req.session_hook_snapshot())
+        let Some((user, _)) =
+            better_auth_core::session::cookie_cache::runtime::published_session(req)
+                .or_else(|| req.session_hook_snapshot())
         else {
             return Ok(response);
         };
@@ -189,7 +208,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         let headers = if account.user_id == user.id {
             handlers::create_account_cookie_headers(&ctx.config, &account, req)?
         } else {
-            better_auth_core::cache::runtime::chunked_cookie_headers(
+            better_auth_core::session::cookie_cache::runtime::chunked_cookie_headers(
                 &account_name,
                 "",
                 Some(0.0),

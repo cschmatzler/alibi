@@ -25,6 +25,8 @@ compile_error!(
      enable either the `native-tls` (default) or `rustls` feature."
 );
 
+pub mod metadata;
+
 pub mod plugins;
 
 pub use plugins::account_management::AccountManagementPlugin;

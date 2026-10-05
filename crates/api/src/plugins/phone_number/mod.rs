@@ -139,6 +139,14 @@ better_auth_core::impl_auth_plugin! {
         post "/phone-number/reset-password" => reset_password,"resetPasswordPhoneNumber";
     }
     extra {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    }
+
+    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    }
+
         fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
             vec![better_auth_core::PluginRateLimit { matches: |path| path.starts_with("/phone-number"), limit: better_auth_core::EndpointRateLimit { window_seconds: 60.0, max_requests: 10.0 } }]
         }

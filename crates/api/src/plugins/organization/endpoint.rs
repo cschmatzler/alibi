@@ -1,4 +1,4 @@
-use super::{OrganizationPlugin, handlers, lifecycle, types};
+use super::{OrganizationPlugin, handlers, hooks, types};
 use crate::plugins::authentication_helpers::JsonField;
 use crate::plugins::endpoint::{definition, error_response, validate_fields, validation};
 use better_auth_core::endpoint::{
@@ -236,7 +236,7 @@ impl OrganizationPlugin {
                         &body,
                         &user,
                         &session,
-                        lifecycle::DeleteInvocation {
+                        hooks::organization::DeleteInvocation {
                             headers: call.session_headers(),
                             request: call.request(),
                         },

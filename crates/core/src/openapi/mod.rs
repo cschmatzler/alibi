@@ -1,47 +1,8 @@
-//! `OpenAPI` 3.1.1 documents built from each auth instance's registered metadata.
-mod account_annotations;
-
 pub mod annotations;
-
-mod email_annotations;
 
 mod input_annotations;
 
 mod metadata;
-
-mod model_annotations;
-
-mod oauth_annotations;
-
-mod password_annotations;
-
-mod session_annotations;
-
-mod sign_in_annotations;
-
-#[rustfmt::skip]
-#[allow(
-    warnings,
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    clippy::restriction,
-    reason = "Generated API declarations retain the upstream generator output"
-)]
-mod source_endpoints;
-
-#[rustfmt::skip]
-#[allow(
-    warnings,
-    clippy::all,
-    clippy::pedantic,
-    clippy::nursery,
-    clippy::restriction,
-    reason = "Generated API declarations retain the upstream generator output"
-)]
-mod source_models;
-
-mod user_annotations;
 
 use crate::{AuthConfig, AuthPlugin, AuthSchema, HttpMethod};
 pub use metadata::{
@@ -357,7 +318,7 @@ impl OpenApiBuilder {
     #[must_use]
     pub fn plugin<S: AuthSchema>(mut self, plugin: &dyn AuthPlugin<S>) -> Self {
         let routes = plugin.routes();
-        let metadata = annotations::plugin_metadata(plugin.name(), &routes);
+        let metadata = plugin.static_openapi_metadata();
         for route in routes {
             let annotation = metadata
                 .endpoints
@@ -369,7 +330,7 @@ impl OpenApiBuilder {
                 &route.method,
                 &route.path,
                 plugin.name(),
-                annotations::is_core(plugin.name()),
+                metadata.core,
                 &annotation,
             );
         }

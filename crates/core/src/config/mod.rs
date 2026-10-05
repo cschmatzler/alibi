@@ -1,3 +1,26 @@
+mod account;
+mod advanced;
+mod identity;
+mod session;
+
+pub use account::AccountConfig;
+pub use account::AccountLinkingConfig;
+pub use account::OAuthStateStrategy;
+pub use advanced::AdvancedConfig;
+pub use advanced::AdvancedDatabaseConfig;
+pub use advanced::CookieAttributes;
+pub use advanced::CookieOverride;
+pub use advanced::CrossSubDomainConfig;
+pub use advanced::IpAddressConfig;
+pub use advanced::SameSite;
+pub use identity::PasswordConfig;
+pub use identity::UserConfig;
+pub use identity::VerificationConfig;
+pub use session::CookieCacheConfig;
+pub use session::CookieCacheStrategy;
+pub use session::CookieRefreshCache;
+pub use session::JwtConfig;
+pub use session::SessionConfig;
 mod client_ip;
 mod secrets;
 pub use secrets::ManagedSecrets;
@@ -8,6 +31,7 @@ pub use secrets::ManagedSecrets;
 /// the core request dispatcher (`handle_core_request`) and framework-specific
 /// routers (e.g. Axum) so that path strings are never duplicated.
 pub mod core_paths {
+
     pub const OK: &str = "/ok";
     pub const ERROR: &str = "/error";
     pub const HEALTH: &str = "/health";
@@ -16,109 +40,6 @@ pub mod core_paths {
     pub const DELETE_USER: &str = "/delete-user";
     pub const CHANGE_EMAIL: &str = "/change-email";
     pub const DELETE_USER_CALLBACK: &str = "/delete-user/callback";
-
-    fn safe_error_code(input: &str) -> &str {
-        if !input.is_empty()
-            && input
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-' || c == '\'')
-        {
-            input
-        } else {
-            "UNKNOWN"
-        }
-    }
-
-    fn is_preserved_entity(input: &str) -> bool {
-        input.starts_with("amp;")
-            || input.starts_with("lt;")
-            || input.starts_with("gt;")
-            || input.starts_with("quot;")
-            || input.starts_with("#39;")
-            || input.strip_prefix("#x").is_some_and(|hex| {
-                let Some(hex) = hex.strip_suffix(';') else {
-                    return false;
-                };
-                !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit())
-            })
-            || input.strip_prefix('#').is_some_and(|digits| {
-                let Some(digits) = digits.strip_suffix(';') else {
-                    return false;
-                };
-                !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())
-            })
-    }
-
-    fn sanitize_html(input: &str) -> String {
-        let mut out = String::with_capacity(input.len());
-
-        for (idx, ch) in input.char_indices() {
-            match ch {
-                '<' => out.push_str("&lt;"),
-                '>' => out.push_str("&gt;"),
-                '"' => out.push_str("&quot;"),
-                '\'' => out.push_str("&#39;"),
-                '&' => {
-                    let rest = input.get(idx + ch.len_utf8()..).unwrap_or_default();
-                    if is_preserved_entity(rest) {
-                        out.push('&');
-                    } else {
-                        out.push_str("&amp;");
-                    }
-                }
-                _ => out.push(ch),
-            }
-        }
-
-        out
-    }
-
-    fn default_error_description(code: &str) -> String {
-        format!(
-            "We encountered an unexpected error. Please try again or return to the home page. If you're a developer, you can find <a href='https://better-auth.com/docs/reference/errors/{code}' target='_blank' rel=\"noopener noreferrer\" style='color: var(--foreground); text-decoration: underline;'>more information about the error</a>."
-        )
-    }
-
-    /// Build the HTML error page returned by `GET /error`.
-    ///
-    /// Matches the current TS better-auth error page renderer.
-    #[must_use]
-    pub fn error_page_html(error_code: &str) -> String {
-        error_page_html_with_description(error_code, None)
-    }
-
-    /// Build the HTML error page returned by `GET /error`, optionally
-    /// overriding the default description text.
-    pub fn error_page_html_with_description(
-        error_code: &str,
-        error_description: Option<&str>,
-    ) -> String {
-        let safe_code = safe_error_code(error_code);
-        let description =
-            error_description.map_or_else(|| default_error_description(safe_code), sanitize_html);
-        let ask_ai_query = format!("What%20does%20the%20error%20code%20{safe_code}%20mean%3F");
-
-        format!(
-            include_str!("error-page.html"),
-            safe_code = safe_code,
-            description = description,
-            ask_ai_query = ask_ai_query,
-        )
-    }
-
-    /// Build the production error redirect with sanitized code and encoded description.
-    #[must_use]
-    pub fn error_page_redirect_location(
-        error_code: &str,
-        error_description: Option<&str>,
-    ) -> String {
-        let mut query = url::form_urlencoded::Serializer::new(String::new());
-        let _ = query.append_pair("error", safe_error_code(error_code));
-        if let Some(description) = error_description.filter(|value| !value.is_empty()) {
-            let _ = query.append_pair("error_description", description);
-        }
-        format!("/?{}", query.finish())
-    }
 }
 
 use crate::email::EmailProvider;
@@ -233,490 +154,6 @@ pub struct AuthConfig {
     pub advanced: AdvancedConfig,
 }
 
-/// Account-level configuration: linking, token encryption, sign-in behavior.
-#[derive(Debug, Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
-)]
-pub struct AccountConfig {
-    pub additional_fields: crate::field_policy::FieldConfigs,
-    /// Update OAuth tokens on every sign-in (default: true)
-    pub update_account_on_sign_in: bool,
-    /// Account linking settings
-    pub account_linking: AccountLinkingConfig,
-    /// Encrypt OAuth tokens at rest (default: false)
-    pub encrypt_oauth_tokens: bool,
-    /// Store account data in an account cookie for OAuth-backed access token flows.
-    pub store_account_cookie: bool,
-    /// Override the account cookie lifetime in seconds, including fractional
-    /// and nonfinite values. Equivalent to the published account_data cookie's
-    /// maxAge attribute; takes precedence over the integer advanced override.
-    /// None inherits the session cache lifetime (or 300 seconds).
-    pub cookie_max_age: Option<f64>,
-    /// Where to persist OAuth state during the authorization flow. Automatic
-    /// selects database state with a server store, cookie state without one.
-    pub store_state_strategy: OAuthStateStrategy,
-    /// Skip state-cookie verification during callback processing.
-    ///
-    /// This is security-sensitive and should stay disabled in normal use.
-    pub skip_state_cookie_check: bool,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct UserConfig {
-    pub additional_fields: crate::field_policy::FieldConfigs,
-}
-
-/// Settings that control how OAuth accounts are linked to existing users.
-#[derive(Debug, Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
-)]
-pub struct AccountLinkingConfig {
-    /// Enable account linking (default: true)
-    pub enabled: bool,
-    /// Providers trusted for linking even when their email is unverified.
-    /// Empty does not bypass the provider email-verification requirement.
-    pub trusted_providers: Vec<String>,
-    /// Optional async policy replacing the static list at init and per request.
-    pub trusted_providers_resolver: Option<std::sync::Arc<dyn TrustedProvidersResolver>>,
-    /// Allow linking accounts with different emails (default: false) - SECURITY WARNING
-    pub allow_different_emails: bool,
-    /// Allow unlinking all accounts (default: false)
-    pub allow_unlinking_all: bool,
-    /// Disable implicit linking during sign-in; only explicit link-social may link.
-    pub disable_implicit_linking: bool,
-    /// Require the *existing local* account's email to be verified before a
-    /// social account may be linked to it implicitly (default: true).
-    pub require_local_email_verified: bool,
-    /// Update user info when a new account is linked (default: false)
-    pub update_user_info_on_link: bool,
-}
-
-/// Strategy for persisting OAuth state between the sign-in and callback steps.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum OAuthStateStrategy {
-    /// Select the deployment default during builder initialization. Initialized
-    /// contexts never retain this variant. Low-level uninitialized contexts
-    /// keep the historical database fallback for compatibility.
-    #[default]
-    Automatic,
-    /// Persist state in an encrypted cookie.
-    Cookie,
-    /// Persist state in the verification store plus a signed state cookie.
-    Database,
-}
-
-/// Session-specific configuration
-#[derive(Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
-)]
-pub struct SessionConfig {
-    /// No durable server session authority. Session records are instance-local
-    /// in memory; no SQL session rows are read or written. Captured caches remain
-    /// replayable until their embedded expiry or cache version/secret invalidation.
-    pub stateless: bool,
-    /// Stateless envelope renewal. Stateful deployments ignore this policy.
-    pub cookie_refresh_cache: CookieRefreshCache,
-    /// Shared secondary session backend for stateful deployments.
-    pub secondary_storage: Option<Arc<dyn crate::store::CacheAdapter>>,
-    /// Also persist session rows when a secondary backend is configured.
-    pub store_in_database: bool,
-    /// Retain ended database sessions for auditing; cache misses never fall back to them.
-    pub preserve_in_database: bool,
-    /// Additional fields accepted by session input and output policies.
-    pub additional_fields: indexmap::IndexMap<String, crate::field_policy::FieldConfig>,
-    /// Session expiration duration
-    pub expires_in: Duration,
-
-    /// How often to refresh the session expiry (as a Duration).
-    ///
-    /// A read refreshes when `expires_at - expires_in + update_age` is due.
-    /// This uses the stored expiry, including application overrides, rather
-    /// than the row's last update timestamp. `None` refreshes on every read
-    /// unless refresh is disabled or deferred.
-    pub update_age: Option<Duration>,
-
-    /// If `true`, sessions are never automatically refreshed on access.
-    pub disable_session_refresh: bool,
-
-    /// Defer refresh and expired-row deletion during `GET` session reads.
-    /// `POST /get-session` performs these writes when enabled; otherwise that
-    /// method is rejected with 405. Expired browser cookies are still cleared.
-    pub defer_session_refresh: bool,
-
-    /// Session freshness window, defaulting to one day. `None` or zero skips
-    /// the freshness restriction; a positive window checks creation time.
-    pub fresh_age: Option<Duration>,
-
-    /// Cookie name for session token
-    pub cookie_name: String,
-
-    /// Cookie settings
-    pub cookie_secure: bool,
-    pub cookie_http_only: bool,
-    pub cookie_same_site: SameSite,
-
-    /// Optional cookie-based session cache to avoid DB lookups.
-    ///
-    /// When enabled, session data is cached in a signed/encrypted cookie.
-    /// `SessionManager` checks the cookie cache before hitting the database.
-    pub cookie_cache: Option<CookieCacheConfig>,
-}
-
-impl std::fmt::Debug for SessionConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("SessionConfig")
-            .field("secondary_storage", &self.secondary_storage.is_some())
-            .field("store_in_database", &self.store_in_database)
-            .field("preserve_in_database", &self.preserve_in_database)
-            .field("expires_in", &self.expires_in)
-            .finish_non_exhaustive()
-    }
-}
-
-/// JWT configuration
-#[derive(Debug, Clone)]
-pub struct JwtConfig {
-    /// JWT expiration duration
-    pub expires_in: Duration,
-
-    /// JWT algorithm
-    pub algorithm: String,
-
-    /// Issuer claim
-    pub issuer: Option<String>,
-
-    /// Audience claim
-    pub audience: Option<String>,
-}
-
-/// Initialized identifier, persistence and cleanup policy for verification values.
-#[derive(Clone, Default)]
-pub struct VerificationConfig {
-    /// Keep globally expired verification rows during lookup. Default: false.
-    /// An atomic consume still invalidates an expired proof it selects.
-    pub disable_cleanup: bool,
-    /// Persist verification values alongside secondary storage. Without a
-    /// secondary backend, verification values always use the database.
-    pub store_in_database: bool,
-    /// Global identifier policy, applied after a plugin's own value codec.
-    pub store_identifier: crate::verification::VerificationIdentifierPolicy,
-    /// Optional shared secondary backend. Single-use values require its atomic
-    /// `get_and_delete` operation. This config does not change session storage.
-    pub secondary_storage: Option<Arc<dyn crate::store::CacheAdapter>>,
-}
-
-impl std::fmt::Debug for VerificationConfig {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("VerificationConfig")
-            .field("disable_cleanup", &self.disable_cleanup)
-            .field("store_in_database", &self.store_in_database)
-            .field("store_identifier", &self.store_identifier)
-            .field("secondary_storage", &self.secondary_storage.is_some())
-            .finish()
-    }
-}
-
-/// Password validation configuration. Built-in hashing uses pinned scrypt parameters.
-#[derive(Debug, Clone)]
-#[expect(
-    clippy::struct_excessive_bools,
-    reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
-)]
-pub struct PasswordConfig {
-    /// Minimum password length
-    pub min_length: usize,
-
-    /// Require uppercase letters
-    pub require_uppercase: bool,
-
-    /// Require lowercase letters
-    pub require_lowercase: bool,
-
-    /// Require numbers
-    pub require_numbers: bool,
-
-    /// Require special characters
-    pub require_special: bool,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SameSite {
-    Strict,
-    Lax,
-    None,
-}
-
-/// Configuration for cookie-based session caching.
-///
-/// When enabled, session data is stored in a signed or encrypted cookie so that
-/// subsequent requests can skip the database lookup.
-#[derive(Debug, Clone)]
-pub struct CookieCacheConfig {
-    /// Whether the cookie cache is active.
-    pub enabled: bool,
-
-    /// Maximum age in seconds before a fresh DB lookup is required.
-    ///
-    /// JavaScript falsy zero/NaN selects 300; other IEEE754 values are retained.
-    ///
-    /// Default: 5 minutes.
-    pub max_age: f64,
-
-    /// Strategy used to protect the cached cookie value.
-    ///
-    /// JWT uses the auth secret unless a locally managed JWT plugin signer is installed.
-    pub strategy: CookieCacheStrategy,
-
-    /// Literal or asynchronous application-owned version policy.
-    pub version: Option<crate::cache::CookieCacheVersion>,
-}
-
-/// Stateless cache renewal policy, corresponding to `cookieCache.refreshCache`.
-#[derive(Debug, Clone, Copy, Default)]
-pub enum CookieRefreshCache {
-    /// No cache renewal.
-    #[default]
-    Disabled,
-    /// Renew when remaining envelope lifetime is below floor(maxAge * 0.2).
-    Automatic,
-    /// Renew below this remaining lifetime in seconds (JavaScript Number).
-    UpdateAge(f64),
-}
-
-impl SessionConfig {
-    /// Select cookie-only sessions, installing the pinned no-store defaults.
-    /// Configure `cookie_cache` afterwards to override strategy, lifetime,
-    /// version, or renewal. Existing database defaults are unchanged.
-    #[must_use]
-    pub fn stateless(mut self) -> Self {
-        if !self.stateless {
-            self.cookie_refresh_cache = CookieRefreshCache::Automatic;
-        }
-        self.stateless = true;
-        if self.cookie_cache.is_none() {
-            self.cookie_cache = Some(CookieCacheConfig {
-                enabled: true,
-                strategy: CookieCacheStrategy::Jwe,
-                max_age: self.expires_in.num_seconds() as f64,
-                ..CookieCacheConfig::default()
-            });
-        }
-        self
-    }
-
-    /// Whether deployment has durable server session storage.
-    #[must_use]
-    pub fn has_server_session_store(&self) -> bool {
-        !self.stateless
-    }
-}
-
-/// Strategy for signing / encrypting the cookie cache.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CookieCacheStrategy {
-    /// Base64url-encoded payload + HMAC-SHA256 signature.
-    Compact,
-    /// Standard JWT with HMAC signing.
-    Jwt,
-    /// JWE with direct-key AES-256-CBC/HMAC-SHA512 authenticated encryption.
-    Jwe,
-}
-
-impl Default for CookieCacheConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            max_age: 300.0,
-            strategy: CookieCacheStrategy::Compact,
-            version: None,
-        }
-    }
-}
-
-impl Default for AccountConfig {
-    fn default() -> Self {
-        Self {
-            additional_fields: crate::field_policy::FieldConfigs::new(),
-            update_account_on_sign_in: true,
-            account_linking: AccountLinkingConfig::default(),
-            encrypt_oauth_tokens: false,
-            store_account_cookie: false,
-            cookie_max_age: None,
-            store_state_strategy: OAuthStateStrategy::Automatic,
-            skip_state_cookie_check: false,
-        }
-    }
-}
-
-impl Default for AccountLinkingConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            trusted_providers: Vec::new(),
-            trusted_providers_resolver: None,
-            allow_different_emails: false,
-            allow_unlinking_all: false,
-            disable_implicit_linking: false,
-            require_local_email_verified: true,
-            update_user_info_on_link: false,
-        }
-    }
-}
-
-impl std::fmt::Display for SameSite {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Strict => f.write_str("Strict"),
-            Self::Lax => f.write_str("Lax"),
-            Self::None => f.write_str("None"),
-        }
-    }
-}
-
-// ── Advanced configuration ──────────────────────────────────────────────
-
-/// Advanced configuration options (mirrors TS `advanced` block).
-#[derive(Debug, Clone, Default)]
-pub struct AdvancedConfig {
-    /// Trust forwarded host/protocol for URL resolution. Enable only behind a
-    /// proxy that replaces client-supplied forwarding headers. Defaults to false.
-    pub trust_forwarded_host: bool,
-
-    /// IP address extraction configuration.
-    pub ip_address: IpAddressConfig,
-
-    /// Explicit CSRF override. `None` preserves the pinned compatibility behavior
-    /// where disabling all origin checks also disables first-login CSRF checks.
-    pub disable_csrf_check: Option<bool>,
-
-    /// If `true`, callback / redirect target origin validation is skipped.
-    ///
-    /// This mirrors Better Auth TS `advanced.disableOriginCheck`.
-    /// Request-origin validation is also skipped. First-login Fetch Metadata
-    /// checks remain enabled when `disable_csrf_check` is explicitly `Some(false)`.
-    pub disable_origin_check: bool,
-
-    /// Skip origin validation for a literal path and its descendants. This does
-    /// not disable first-login cross-site navigation protection.
-    pub disable_origin_check_paths: Vec<String>,
-
-    /// Admit trailing slashes while resolving the original registered endpoint.
-    pub skip_trailing_slashes: bool,
-
-    /// Select the secure cookie name prefix and initial Secure attribute.
-    /// None uses the configured base URL protocol. Attribute overrides do not
-    /// change this choice; the serializer enforces Secure for reserved prefixes.
-    pub use_secure_cookies: Option<bool>,
-
-    /// Cross-subdomain cookie sharing configuration.
-    pub cross_sub_domain_cookies: Option<CrossSubDomainConfig>,
-
-    /// Per-cookie-name overrides (name, attributes, prefix).
-    ///
-    /// Keys are the *logical* cookie names (e.g. `"session_token"`,
-    /// `"csrf_token"`). Values specify the attributes to override.
-    pub cookies: HashMap<String, CookieOverride>,
-
-    /// Default cookie attributes applied to *every* cookie the library sets
-    /// (individual overrides in `cookies` take precedence).
-    pub default_cookie_attributes: CookieAttributes,
-
-    /// Optional prefix prepended to every cookie name (e.g. `"myapp"` →
-    /// `"myapp.session_token"`).
-    pub cookie_prefix: Option<String>,
-
-    /// Database-related advanced options.
-    pub database: AdvancedDatabaseConfig,
-
-    /// List of header names the framework trusts for extracting the
-    /// client's real IP when behind a proxy (e.g. `X-Forwarded-For`).
-    pub trusted_proxy_headers: Vec<String>,
-}
-
-/// IP-address extraction configuration.
-#[derive(Debug, Clone)]
-pub struct IpAddressConfig {
-    /// Ordered list of headers to check for the client IP.
-    /// Defaults to `["x-forwarded-for"]`. Header names are case insensitive.
-    pub headers: Vec<String>,
-
-    /// IP addresses or CIDRs removed from the right of a forwarded chain.
-    /// Invalid entries are ignored. Without valid entries, only a single
-    /// address is admitted. Deployments must prevent clients bypassing the
-    /// proxy and supplying their own trusted forwarding headers.
-    pub trusted_proxies: Vec<String>,
-
-    /// IPv6 grouping prefix; defaults to 64. Fractional values are floored,
-    /// negative values become zero, and values at least 128 or NaN preserve
-    /// the full address. IPv4-mapped addresses use IPv4 grouping.
-    pub ipv6_subnet: f64,
-
-    /// Fall back to localhost when no configured header resolves an address.
-    /// Defaults to true for NODE_ENV dev/development/test or a truthy TEST
-    /// environment flag. Applications may configure this explicitly.
-    pub localhost_fallback: bool,
-
-    /// If `true`, IP tracking is entirely disabled (no IP stored in sessions).
-    pub disable_ip_tracking: bool,
-}
-
-/// Configuration for sharing cookies across sub-domains.
-#[derive(Debug, Clone, Default)]
-pub struct CrossSubDomainConfig {
-    /// Explicit cookie domain (e.g. `".example.com"`). An empty value infers
-    /// the hostname of the configured or request-resolved base URL, without a port.
-    pub domain: String,
-}
-
-/// Overridable cookie attributes.
-#[derive(Debug, Clone, Default)]
-pub struct CookieAttributes {
-    /// Override `Secure` flag.
-    pub secure: Option<bool>,
-    /// Override `HttpOnly` flag.
-    pub http_only: Option<bool>,
-    /// Override `SameSite` policy.
-    pub same_site: Option<SameSite>,
-    /// Override `Path`.
-    pub path: Option<String>,
-    /// Override `Max-Age` (seconds).
-    pub max_age: Option<f64>,
-    /// Explicit expiry, checked at emission against the published 400-day limit.
-    pub expires: Option<chrono::DateTime<chrono::Utc>>,
-    /// Emit the published `Partitioned` attribute after SameSite.
-    pub partitioned: Option<bool>,
-    /// Override cookie `Domain`.
-    pub domain: Option<String>,
-}
-
-/// Per-cookie override entry.
-#[derive(Debug, Clone, Default)]
-pub struct CookieOverride {
-    /// Custom name to use instead of the logical name.
-    pub name: Option<String>,
-    /// Attribute overrides for this cookie.
-    pub attributes: CookieAttributes,
-}
-
-/// Database-related advanced options.
-#[derive(Debug, Clone)]
-pub struct AdvancedDatabaseConfig {
-    /// Default `LIMIT` for "find many" queries.
-    pub default_find_many_limit: usize,
-
-    /// Declares that the database uses numeric IDs, as upstream's
-    /// `useNumberId`. IDs are always generated as strings; this only makes
-    /// invitation email verification required by default, because numeric
-    /// invitation IDs are guessable.
-    pub use_number_id: bool,
-}
-
 impl Default for AuthConfig {
     fn default() -> Self {
         Self {
@@ -742,79 +179,6 @@ impl Default for AuthConfig {
             awaited_notification_errors: AwaitedNotificationErrorPolicy::default(),
             user_validation: None,
             advanced: AdvancedConfig::default(),
-        }
-    }
-}
-
-impl Default for SessionConfig {
-    fn default() -> Self {
-        Self {
-            stateless: false,
-            cookie_refresh_cache: CookieRefreshCache::Disabled,
-            secondary_storage: None,
-            store_in_database: false,
-            preserve_in_database: false,
-            additional_fields: indexmap::IndexMap::default(),
-            expires_in: Duration::hours(24 * 7),   // 7 days
-            update_age: Some(Duration::hours(24)), // refresh once per day
-            disable_session_refresh: false,
-            defer_session_refresh: false,
-            fresh_age: Some(Duration::days(1)),
-            cookie_name: "better-auth.session_token".to_owned(),
-            // Secure flag is derived from base_url scheme (HTTPS → true).
-            // Default base_url is http://localhost:3000, so default is false.
-            cookie_secure: false,
-            cookie_http_only: true,
-            cookie_same_site: SameSite::Lax,
-            cookie_cache: None,
-        }
-    }
-}
-
-impl Default for IpAddressConfig {
-    fn default() -> Self {
-        Self {
-            headers: vec!["x-forwarded-for".to_owned()],
-            trusted_proxies: Vec::new(),
-            ipv6_subnet: 64.0,
-            localhost_fallback: matches!(
-                std::env::var("NODE_ENV").as_deref(),
-                Ok("dev" | "development" | "test")
-            ) || std::env::var("TEST")
-                .is_ok_and(|value| !matches!(value.as_str(), "" | "false")),
-            disable_ip_tracking: false,
-        }
-    }
-}
-
-impl Default for AdvancedDatabaseConfig {
-    fn default() -> Self {
-        Self {
-            default_find_many_limit: 100,
-            use_number_id: false,
-        }
-    }
-}
-
-impl Default for JwtConfig {
-    fn default() -> Self {
-        Self {
-            expires_in: Duration::hours(24), // 1 day
-            algorithm: "HS256".to_owned(),
-            issuer: None,
-            audience: None,
-        }
-    }
-}
-
-impl Default for PasswordConfig {
-    fn default() -> Self {
-        Self {
-            min_length: 8,
-            require_uppercase: false,
-            require_lowercase: false,
-            require_numbers: false,
-            require_special: false,
         }
     }
 }
@@ -1519,7 +883,7 @@ mod tests {
     // Rust-specific surface: `AuthConfig`, related configuration builders, and `core_paths` are public Rust APIs with no direct TS analogue.
     #[test]
     fn core_paths_error_page() {
-        let html = core_paths::error_page_html("TEST_ERROR");
+        let html = crate::error::page::error_page_html("TEST_ERROR");
         assert!(html.contains("TEST_ERROR"));
         assert!(html.contains("Ask AI"));
         assert!(html.contains("<title>Error</title>"));
@@ -1528,7 +892,7 @@ mod tests {
     // Upstream reference: packages/better-auth/src/api/routes/error.ts :: sanitize function and /^[A-Za-z0-9_'-]+$/ whitelist.
     #[test]
     fn error_page_sanitizes_script_tag() {
-        let html = core_paths::error_page_html("<script>alert(1)</script>");
+        let html = crate::error::page::error_page_html("<script>alert(1)</script>");
         assert!(html.contains("UNKNOWN"));
         assert!(!html.contains("<script>"));
     }
@@ -1536,8 +900,8 @@ mod tests {
     // Upstream reference: packages/better-auth/src/api/routes/error.ts :: sanitize function and /^[A-Za-z0-9_'-]+$/ whitelist.
     #[test]
     fn error_page_allows_valid_codes() {
-        assert!(core_paths::error_page_html("SOME_ERROR-CODE").contains("SOME_ERROR-CODE"));
-        assert!(core_paths::error_page_html("it's").contains("it's"));
+        assert!(crate::error::page::error_page_html("SOME_ERROR-CODE").contains("SOME_ERROR-CODE"));
+        assert!(crate::error::page::error_page_html("it's").contains("it's"));
     }
 
     // ── session builder methods ─────────────────────────────────────────

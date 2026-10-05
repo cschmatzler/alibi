@@ -81,7 +81,7 @@ pub(super) async fn authoritative_session<S: better_auth_core::AuthSchema>(
             .is_some_and(|config| config.enabled)
         && let Some(stored) = ctx.database.get_session(&session.token).await?
     {
-        for header in better_auth_core::cache::runtime::stored_headers(
+        for header in better_auth_core::session::cookie_cache::runtime::stored_headers(
             ctx,
             &user,
             &stored,
@@ -243,7 +243,7 @@ pub(in crate::plugins) async fn renew_session_snapshot<S: better_auth_core::Auth
 ) -> AuthResult<()> {
     // Source renews the chosen session/user projection. It does not replace
     // callback inputs with adapter rows reread after the authenticated stage.
-    better_auth_core::cache::runtime::emit_issuance_snapshot(
+    better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(
         ctx,
         better_auth_core::CacheVersionContext::created(
             user.clone(),

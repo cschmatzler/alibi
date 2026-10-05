@@ -2,6 +2,7 @@ import { expect } from "bun:test";
 
 import { symmetricDecrypt } from "better-auth/crypto";
 
+import { oauthPurposeSecret } from "../support/oauth-encryption";
 import { compatScenario } from "../support/scenario";
 const secret = "local-fixture-dedicated-oauth-proxy-secret-32";
 const path = "/__test/profiles/oauth-proxy/api/auth";
@@ -55,10 +56,16 @@ compatScenario(
     const vendorBody = await vendorStart.json();
     const vendorURL = new URL(vendorBody.url);
     const vendorPack = JSON.parse(
-      await symmetricDecrypt({ key: secret, data: vendorURL.searchParams.get("state")! }),
+      await symmetricDecrypt({
+        key: oauthPurposeSecret(secret, "oauth-proxy-package"),
+        data: vendorURL.searchParams.get("state")!,
+      }),
     );
     const vendorState = JSON.parse(
-      await symmetricDecrypt({ key: secret, data: vendorPack.stateCookie }),
+      await symmetricDecrypt({
+        key: oauthPurposeSecret(secret, "oauth-proxy-state"),
+        data: vendorPack.stateCookie,
+      }),
     );
     if (process.env.COMPAT_OBSERVATIONS_DIR) {
       await Bun.write(
@@ -83,7 +90,12 @@ compatScenario(
     );
     const vendorBridge = new URL(vendorTransfer.location!);
     const vendorToken = vendorBridge.searchParams.get("profile")!;
-    const vendorPayload = JSON.parse(await symmetricDecrypt({ key: secret, data: vendorToken }));
+    const vendorPayload = JSON.parse(
+      await symmetricDecrypt({
+        key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
+        data: vendorToken,
+      }),
+    );
     const vendorCompleted = await response(await owner.fetch(vendorBridge, { redirect: "manual" }));
     expect(vendorCompleted.location).toBe(`${ctx.baseURL}/vendor-done`);
     const skipEnvironment = await ctx.rawRequest({
@@ -108,11 +120,17 @@ compatScenario(
     const started = await start.json();
     const authURL = new URL(started.url);
     const packed = JSON.parse(
-      await symmetricDecrypt({ key: secret, data: authURL.searchParams.get("state")! }),
+      await symmetricDecrypt({
+        key: oauthPurposeSecret(secret, "oauth-proxy-package"),
+        data: authURL.searchParams.get("state")!,
+      }),
     );
     expect(packed.isOAuthProxy).toBe(true);
     expect(authURL.searchParams.get("redirect_uri")).toBe(`${ctx.baseURL}${path}/callback/gitlab`);
-    const stateBytes = await symmetricDecrypt({ key: secret, data: packed.stateCookie });
+    const stateBytes = await symmetricDecrypt({
+      key: oauthPurposeSecret(secret, "oauth-proxy-state"),
+      data: packed.stateCookie,
+    });
     const saved = JSON.parse(stateBytes);
     expect(saved.oauthState).toBe(packed.state);
     const retained = {
@@ -127,7 +145,12 @@ compatScenario(
     );
     const bridge = new URL(transfer.location!);
     const token = bridge.searchParams.get("profile")!;
-    const payload = JSON.parse(await symmetricDecrypt({ key: secret, data: token }));
+    const payload = JSON.parse(
+      await symmetricDecrypt({
+        key: oauthPurposeSecret(secret, "oauth-proxy-profile"),
+        data: token,
+      }),
+    );
     const completed = await response(await owner.fetch(bridge, { redirect: "manual" }));
     expect(completed.location).toBe(`${ctx.baseURL}/environment-done`);
     // The actual production transport matches BETTER_AUTH_URL and skips the
@@ -183,5 +206,5 @@ compatScenario(
   },
   ["POST /sign-in/social", "GET /callback/{id}/oauth-proxy"],
   undefined,
-  { oauthProxyProfileSecret: secret },
+  { oauthProxyProfileSecret: oauthPurposeSecret(secret, "oauth-proxy-profile") },
 );

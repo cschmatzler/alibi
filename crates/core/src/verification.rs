@@ -230,9 +230,9 @@ impl VerificationSnapshot {
         let expiry = data
             .get("expiresAt")
             .and_then(JsValue::as_str)
-            .and_then(crate::cache::date::parse)
+            .and_then(crate::session::cookie_cache::date::parse)
             .map(|date| date.timestamp_millis());
-        crate::cache::date::revive(&mut data);
+        crate::session::cookie_cache::date::revive(&mut data);
         Some(Self {
             data,
             expiry,

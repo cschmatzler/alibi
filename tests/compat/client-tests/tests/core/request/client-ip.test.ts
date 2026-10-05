@@ -396,7 +396,7 @@ for (const row of buckets) {
 
         if (response.status === 429) {
           expect(response.body).toBe('{"message":"Too many requests. Please try again later."}');
-          expect(response.headers["content-type"]).toBe("text/plain;charset=utf-8");
+          expect(response.headers["content-type"]).toBe("application/json");
           expect(response.headers["x-retry-after"]).toBe("60");
         } else {
           expect(JSON.parse(response.body)).toEqual({ ok: true });
