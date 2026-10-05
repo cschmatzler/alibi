@@ -13,7 +13,6 @@ You normally depend on **one** crate, `better-auth`, which re-exports the others
 | [`better-auth-sqlx`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/sqlx) | SQLx store, `AuthEntity` and `SqlxModel` derives, rate-limit storage, bundled migrations | Never — use `better_auth::sqlx` |
 | [`better-auth-seaorm`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/seaorm) | SeaORM store, entities, `AuthEntity` derive, rate-limit storage | Never — use `better_auth::seaorm` |
 | [`better-auth-cli`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/cli) | The `better-auth-rs` binary (`generate`) | Install it as a tool; see the [CLI reference](/reference/cli/) |
-| `better-auth-sqlx-macros`, `better-auth-seaorm-macros` | Backend-specific `AuthEntity` derives | Re-exported by the matching adapter |
 | `better-auth-macros` | `#[derive(AuthSchema)]`, `PluginConfig` | Re-exported by core |
 | `better-auth-sqlx-macros`, `better-auth-seaorm-macros` | Derive implementations behind the SQLx and SeaORM stores | Never — re-exported by the store crates |
 | `better-auth-schema-registry`, `better-auth-entity-codegen` | Plugin schema definitions and shared derive code used by the CLI and macros | Never |
