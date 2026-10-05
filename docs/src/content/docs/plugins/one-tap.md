@@ -58,7 +58,7 @@ The server verifies signature, issuer, expiry and audience, requires an email cl
 | --- | --- | --- |
 | `client_id` | the Google provider's id(s) | `OneTapClientId::Single(…)` or `Multiple(Vec<…>)` accepted as the token audience. Set it when the browser uses a different Google client than the server flow |
 | `disable_signup` | `false` | Do not create new users from One Tap |
-| `jwks_source` | Google's `https://www.googleapis.com/oauth2/v3/certs` | `GoogleJwksSource` — supply your own key source or cache |
+| `jwks_source` | Google's `https://www.googleapis.com/oauth2/v3/certs` | `OAuthJwksSource` — supply your own key source or cache |
 
 ```rust
 use better_auth::plugins::{OneTapConfig, OneTapPlugin};

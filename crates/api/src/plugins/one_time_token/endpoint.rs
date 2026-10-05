@@ -150,7 +150,7 @@ impl OneTimeTokenPlugin {
                         .then(|| ctx.config.session.expires_in.num_seconds() as f64);
                     call.queue_response_header(
                         "set-cookie",
-                        better_auth_core::cache::cookie_header(
+                        better_auth_core::session::cookie_cache::cookie_header(
                             &ctx.config.session.cookie_name,
                             &urlencoding::decode(&sign_cookie_value(
                                 &session.session.token,
@@ -164,7 +164,7 @@ impl OneTimeTokenPlugin {
                     if dont_remember {
                         call.queue_response_header(
                             "set-cookie",
-                            better_auth_core::cache::cookie_header(
+                            better_auth_core::session::cookie_cache::cookie_header(
                                 &related_cookie_name(&ctx.config, "dont_remember"),
                                 &urlencoding::decode(&sign_cookie_value(
                                     "true",
@@ -177,8 +177,12 @@ impl OneTimeTokenPlugin {
                         );
                     }
                 }
-                better_auth_core::cache::runtime::emit_issuance(ctx, &user, &stored_session)
-                    .await?;
+                better_auth_core::session::cookie_cache::runtime::emit_issuance(
+                    ctx,
+                    &user,
+                    &stored_session,
+                )
+                .await?;
             }
             if session.session.expires_at < Utc::now() {
                 return Err(AuthError::Api {

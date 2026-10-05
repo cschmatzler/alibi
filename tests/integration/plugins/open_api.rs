@@ -6,8 +6,8 @@
 
 use async_trait::async_trait;
 use better_auth::plugin::{
-    AuthContext, AuthInitContext, AuthPlugin, AuthRoute, OpenApiEndpoint, OpenApiField,
-    OpenApiModel, PluginOpenApiMetadata,
+    AuthContext, AuthPlugin, AuthRoute, OpenApiEndpoint, OpenApiField, OpenApiModel,
+    PluginOpenApiMetadata,
 };
 use better_auth::plugins::{OpenApiConfig, OpenApiPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthResult, AuthSchema, BetterAuth};
@@ -53,7 +53,7 @@ impl AuthPlugin<AppSchema> for AppPlugin {
             AuthRoute::get("/get-session", "application_session"),
         ]
     }
-    fn openapi_metadata(&self, _ctx: &AuthInitContext<AppSchema>) -> PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> PluginOpenApiMetadata {
         let get = OpenApiEndpoint {
             document_path: Some("/items/:itemId".into()),
             operation_id: Some("items".into()),
@@ -416,4 +416,24 @@ mod tests {
             }
         }
     }
+}
+
+#[test]
+fn embedded_builder_uses_plugin_owned_metadata_without_initialization() {
+    let document = better_auth_core::openapi::OpenApiBuilder::new("Application", "1")
+        .plugin(&AppPlugin)
+        .build()
+        .to_value()
+        .unwrap();
+    assert_eq!(
+        document["paths"]["/items/{itemId}"]["get"]["operationId"],
+        "items"
+    );
+    assert_eq!(
+        document["paths"]["/items/{itemId}"]["get"]["description"],
+        "Read an application item"
+    );
+    assert!(document["paths"].get("/items/{id}").is_none());
+    assert!(document["paths"].get("/internal").is_none());
+    assert!(document["paths"].get("/list-sessions").is_none());
 }

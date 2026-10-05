@@ -14,75 +14,10 @@ use axum::{
 use better_auth_core::middleware::BodyLimitConfig;
 use better_auth_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod, core_paths};
 #[cfg(feature = "axum")]
-use std::sync::{Arc, Mutex};
-#[cfg(feature = "axum")]
-use tokio::{
-    sync::{mpsc, oneshot},
-    task::{Id, JoinSet},
-};
-#[cfg(feature = "axum")]
-use tracing::{Instrument, instrument::WithSubscriber};
+use std::sync::Arc;
 
 #[cfg(feature = "axum")]
 type AxumAuthHandlerFuture = std::pin::Pin<Box<dyn Future<Output = Response> + Send>>;
-
-// The HTTP service future owns only its reply receiver. Once a complete body
-// has been accepted, one router-owned supervisor owns the entire dispatch.
-// Router construction stays valid outside a runtime; startup is lazy.
-#[cfg(feature = "axum")]
-type DispatchFuture =
-    std::pin::Pin<Box<dyn Future<Output = Result<AuthResponse, AuthError>> + Send>>;
-
-#[cfg(feature = "axum")]
-struct DispatchJob {
-    future: DispatchFuture,
-    reply: oneshot::Sender<Response>,
-}
-
-#[cfg(feature = "axum")]
-#[derive(Clone, Default)]
-struct AxumDispatchSupervisor(Arc<Mutex<Option<mpsc::UnboundedSender<DispatchJob>>>>);
-
-#[cfg(feature = "axum")]
-impl AxumDispatchSupervisor {
-    async fn dispatch<S: AuthSchema>(
-        &self,
-        auth: Arc<BetterAuth<S>>,
-        request: AuthRequest,
-    ) -> Response {
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-            return dispatch_failure();
-        };
-        let (reply, receive) = oneshot::channel();
-        let future = Box::pin(
-            async move { auth.handle_request(request).await }
-                .instrument(tracing::Span::current())
-                .with_current_subscriber(),
-        );
-        let submitted = self.0.lock().is_ok_and(|mut sender| {
-            // A router can outlive its first runtime. Only a definitively
-            // closed receiver may be replaced; accepted jobs are never retried.
-            if sender
-                .as_ref()
-                .is_some_and(mpsc::UnboundedSender::is_closed)
-            {
-                *sender = None;
-            }
-            let sender = sender.get_or_insert_with(|| {
-                let (send, receive_2) = mpsc::unbounded_channel();
-                // The actor holds no sender or auth reference. Closing the
-                // router channel drains accepted jobs and then exits.
-                let _supervisor = runtime.spawn(supervise_dispatches(receive_2));
-                send
-            });
-            sender.send(DispatchJob { future, reply }).is_ok()
-        });
-        if !submitted {
-            return dispatch_failure();
-        }
-        receive.await.unwrap_or_else(|_| dispatch_failure())
-    }
-}
 
 /// Integration trait for Axum web framework
 #[cfg(feature = "axum")]
@@ -122,7 +57,7 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
         // Dispatch owns literal disabled paths, method matching and trailing-slash
         // policy. Axum's method router otherwise adds Allow/HEAD behavior that
         // the pinned auth router does not expose.
-        let supervisor = AxumDispatchSupervisor::default();
+        let supervisor = AxumDispatchSupervisor::new(render_dispatch);
         let mut paths = std::collections::HashSet::from([
             core_paths::OK.to_owned(),
             core_paths::ERROR.to_owned(),
@@ -250,45 +185,6 @@ where
                 .await
                 .ok(),
         ))
-    }
-}
-
-#[cfg(feature = "axum")]
-fn dispatch_failure() -> Response {
-    AuthError::internal("Authentication request failed").into_response()
-}
-
-#[cfg(feature = "axum")]
-async fn supervise_dispatches(mut receive: mpsc::UnboundedReceiver<DispatchJob>) {
-    let mut workers = JoinSet::new();
-    let mut replies = std::collections::HashMap::<Id, oneshot::Sender<Response>>::new();
-    let mut accepting = true;
-    while accepting || !workers.is_empty() {
-        tokio::select! {
-            job = receive.recv(), if accepting => match job {
-                Some(job) => {
-                    let id = workers.spawn(job.future).id();
-                    drop(replies.insert(id, job.reply));
-                }
-                None => accepting = false,
-            },
-            completed = workers.join_next_with_id(), if !workers.is_empty() => {
-                if let Some(completed) = completed {
-                    let (id, response) = match completed {
-                        Ok((id, Ok(response))) => (id, convert_auth_response(response)),
-                        Ok((id, Err(error))) => (id, error.into_response()),
-                        Err(error) => {
-                            tracing::error!(panic = error.is_panic(), cancelled = error.is_cancelled(), "Authentication dispatch task failed");
-                            (error.id(), dispatch_failure())
-                        }
-                    };
-                    if let Some(reply) = replies.remove(&id) {
-                        // A disconnected receiver cannot cancel completed work.
-                        drop(reply.send(response));
-                    }
-                }
-            },
-        }
     }
 }
 
@@ -490,4 +386,14 @@ fn convert_auth_response(auth_response: AuthResponse) -> Response {
             parts.status = StatusCode::INTERNAL_SERVER_ERROR;
             Response::from_parts(parts, axum::body::Body::from("Internal server error"))
         })
+}
+#[cfg(feature = "axum")]
+type AxumDispatchSupervisor = crate::integrations::dispatch::DispatchSupervisor<Response>;
+
+#[cfg(feature = "axum")]
+fn render_dispatch(result: Result<AuthResponse, AuthError>) -> Response {
+    match result {
+        Ok(response) => convert_auth_response(response),
+        Err(error) => error.into_response(),
+    }
 }

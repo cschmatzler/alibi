@@ -419,6 +419,24 @@ fn path_matches(pattern: &str, path: &str) -> Result<bool, regex::Error> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for CaptchaPlugin {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
+    fn openapi_metadata(
+        &self,
+        ctx: &better_auth_core::AuthInitContext<S>,
+    ) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            ctx,
+        )
+    }
+
     fn name(&self) -> &'static str {
         "captcha"
     }

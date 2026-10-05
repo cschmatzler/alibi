@@ -219,13 +219,13 @@ pub(in crate::plugins) async fn invite_member_core(
                 .database
                 .update_invitation_expiry(
                     &existing.id,
-                    crate::plugins::organization::invitation_lifecycle::expiry(
+                    crate::plugins::organization::hooks::invitation::expiry(
                         config.invitation_expires_in,
                     )?,
                 )
                 .await?;
             let invitation = ctx.invitation_view(&updated);
-            crate::plugins::organization::invitation_lifecycle::deliver(
+            crate::plugins::organization::hooks::invitation::deliver(
                 config,
                 OrganizationInvitationDelivery {
                     invitation: invitation.clone(),
@@ -362,7 +362,7 @@ pub(in crate::plugins) async fn invite_member_core(
         inviter_id: draft.inviter_id,
         expires_at: match draft.expires_at {
             Some(value) => value,
-            None => crate::plugins::organization::invitation_lifecycle::expiry(
+            None => crate::plugins::organization::hooks::invitation::expiry(
                 config.invitation_expires_in,
             )?,
         },
@@ -372,7 +372,7 @@ pub(in crate::plugins) async fn invite_member_core(
         .create_invitation_with_options(invitation_data, draft.options)
         .await?;
     let invitation = ctx.invitation_view(&invitation);
-    crate::plugins::organization::invitation_lifecycle::deliver(
+    crate::plugins::organization::hooks::invitation::deliver(
         config,
         OrganizationInvitationDelivery {
             invitation: invitation.clone(),

@@ -20,8 +20,6 @@ pub mod adapter_record;
 
 pub mod background_tasks;
 
-pub mod cache;
-
 pub mod config;
 
 pub mod email;
@@ -59,10 +57,6 @@ pub mod user_validation;
 
 pub mod verification;
 
-mod types_org;
-
-mod types_plugin;
-
 #[doc(hidden)]
 pub mod user_query;
 
@@ -81,9 +75,6 @@ pub use background_tasks::{
 };
 // Re-export commonly used items
 pub use better_auth_macros::{AuthSchema, PluginConfig};
-pub use cache::{
-    CacheVersionContext, CacheVersionSource, CookieCacheVersion, CookieCacheVersionResolver,
-};
 pub use config::{
     AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, AuthConfig,
     AwaitedNotificationErrorPolicy, CookieAttributes, CookieCacheConfig, CookieCacheStrategy,
@@ -119,6 +110,9 @@ pub use plugin::{
 };
 pub use schema::AuthSchema;
 pub use session::SessionManager;
+pub use session::cookie_cache::{
+    CacheVersionContext, CacheVersionSource, CookieCacheVersion, CookieCacheVersionResolver,
+};
 pub use store::{
     AuthStore, AuthTransaction, CacheAdapter, ConsumeApiKeyResult, MemoryCacheAdapter,
     WalletAddressStore, transaction,

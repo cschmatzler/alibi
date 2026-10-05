@@ -52,6 +52,13 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
     fn name(&self) -> &'static str {
         "custom-session"
     }
@@ -66,11 +73,10 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
         &self,
         ctx: &better_auth_core::AuthInitContext<S>,
     ) -> better_auth_core::openapi::PluginOpenApiMetadata {
-        let mut metadata = better_auth_core::openapi::annotations::instance_plugin_metadata(
-            "session-management",
-            &self.routes(),
-            ctx,
-        );
+        let mut metadata =
+            crate::metadata::instance_plugin_metadata("session-management", &self.routes(), ctx);
+        // Reuse the base schemas without treating this replacement as a core plugin.
+        metadata.core = false;
         // Pinned documentation retains the base endpoint and excludes the
         // replacement that shares its logical API key, despite GET-only HTTP.
         for (_, _, endpoint) in &mut metadata.endpoints {
@@ -110,7 +116,8 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
         for (name, value) in prior_headers {
             req.queue_response_header(name, value);
         }
-        let (issued_cookies, _) = better_auth_core::cache::runtime::take_issuance(req.extensions());
+        let (issued_cookies, _) =
+            better_auth_core::session::cookie_cache::runtime::take_issuance(req.extensions());
         if session.is_null() {
             // The replaced endpoint does not forward headers from a missing or
             // failed core response. Preserve headers emitted before that read.

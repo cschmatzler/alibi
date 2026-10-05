@@ -607,6 +607,7 @@ dependencies = [
  "base64 0.23.1",
  "base64urlsafedata",
  "better-auth-core",
+ "better-auth-schema-registry",
  "better-auth-seaorm",
  "bon",
  "chacha20poly1305",

@@ -3,7 +3,7 @@ name = "better-auth-api"
 version = { workspace = true }
 edition = { workspace = true }
 license = "MIT AND MPL-2.0"
-description = "Plugin implementations for better-auth"
+description = "Built-in authentication plugins and API metadata for better-auth"
 repository = { workspace = true }
 
 readme = { workspace = true }
@@ -17,6 +17,7 @@ workspace = true
 rand_core = { version = "0.6", features = ["getrandom"] }
 signature = "3"
 better-auth-core = { workspace = true }
+better-auth-schema-registry = { workspace = true }
 
 # Asynchronous runtime
 async-trait = { workspace = true }

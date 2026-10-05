@@ -287,7 +287,8 @@ pub(in crate::plugins) async fn change_password_core<S: better_auth_core::AuthSc
             .create_session_record(user, meta.ip_address.clone(), meta.user_agent.clone())
             .await?;
         let user = ctx.filter_user_record(user.clone());
-        better_auth_core::cache::runtime::emit_issuance(ctx, &user, &session).await?;
+        better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, &user, &session)
+            .await?;
         crate::plugins::helpers::record_completed_session_record::<S>(&user, &session);
         Some(session.token().to_owned())
     } else {

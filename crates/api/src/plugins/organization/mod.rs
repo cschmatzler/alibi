@@ -1,71 +1,56 @@
 mod endpoint;
+pub mod hooks;
 
-pub mod creation_policy;
+pub mod policy;
 
 pub mod extensions;
 
 pub mod handlers;
 
-pub mod lifecycle;
-
-pub mod invitation_acceptance_lifecycle;
-pub mod invitation_lifecycle;
-pub use invitation_lifecycle::{
+pub use hooks::invitation::{
     InvitationLimit, OrganizationInvitationContext, OrganizationInvitationCreatePatch,
     OrganizationInvitationCreationContext, OrganizationInvitationDelivery,
     OrganizationInvitationDraft, OrganizationInvitationEmailSender, OrganizationInvitationHooks,
     OrganizationInvitationLimitContext, OrganizationInvitationLimitResolver,
 };
 
-pub mod membership_policy;
-
-pub mod member_addition_lifecycle;
-
-pub mod member_removal_lifecycle;
-
-pub mod member_role_lifecycle;
-
 pub mod rbac;
 
 pub mod types;
-
-pub mod update_lifecycle;
 
 use async_trait::async_trait;
 use better_auth_core::error::AuthResult;
 use better_auth_core::plugin::{AuthContext, AuthPlugin, AuthRoute};
 use better_auth_core::types::{AuthRequest, AuthResponse, HttpMethod};
-pub use creation_policy::OrganizationCreationPolicy;
 pub use extensions::{
     DefaultTeamContext, DefaultTeamFactory, DynamicAccessControlConfig, OrganizationLimitResolver,
     OrganizationTeamHooks, TeamsConfig, default_organization_statements,
 };
-pub use invitation_acceptance_lifecycle::{
+pub use hooks::invitation::{
     OrganizationInvitationAcceptanceContext, OrganizationInvitationAcceptanceHooks,
     OrganizationInvitationAcceptedContext,
 };
-pub use lifecycle::{
+pub use hooks::member::{
+    OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
+    OrganizationMemberAdditionDraft, OrganizationMemberAdditionHooks,
+};
+pub use hooks::member::{OrganizationMemberRemovalContext, OrganizationMemberRemovalHooks};
+pub use hooks::member::{
+    OrganizationMemberRoleContext, OrganizationMemberRoleHooks, OrganizationMemberRolePatch,
+    OrganizationMemberRoleUpdatedContext,
+};
+pub use hooks::organization::{
     OrganizationCreatePatch, OrganizationCreatedContext, OrganizationCreationHooks,
     OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationDraftContext,
     OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
-pub use member_addition_lifecycle::{
-    OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
-    OrganizationMemberAdditionDraft, OrganizationMemberAdditionHooks,
-};
-pub use member_removal_lifecycle::{
-    OrganizationMemberRemovalContext, OrganizationMemberRemovalHooks,
-};
-pub use member_role_lifecycle::{
-    OrganizationMemberRoleContext, OrganizationMemberRoleHooks, OrganizationMemberRolePatch,
-    OrganizationMemberRoleUpdatedContext,
-};
-pub use membership_policy::{MembershipLimit, OrganizationMembershipLimitResolver};
-use std::collections::HashMap;
-pub use update_lifecycle::{
+pub use hooks::organization::{
     OrganizationUpdateContext, OrganizationUpdateHooks, OrganizationUpdateInput,
     OrganizationUpdatePatch, OrganizationUpdatedContext,
 };
+pub use policy::OrganizationCreationPolicy;
+pub use policy::{MembershipLimit, OrganizationMembershipLimitResolver};
+use std::collections::HashMap;
 
 /// Permission definitions for a role
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -251,7 +236,7 @@ impl OrganizationPlugin {
             body,
             &user,
             &session,
-            lifecycle::DeleteInvocation {
+            hooks::organization::DeleteInvocation {
                 headers,
                 request: None,
             },
@@ -302,6 +287,24 @@ pub(in crate::plugins) const METADATA_CREATOR_ROLE: &str = "organization.creator
 
 #[async_trait]
 impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
+    fn openapi_metadata(
+        &self,
+        ctx: &better_auth_core::AuthInitContext<S>,
+    ) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            ctx,
+        )
+    }
+
     fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> {
         endpoint::definitions()
     }

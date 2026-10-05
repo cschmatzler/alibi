@@ -215,7 +215,7 @@ impl MultiSessionPlugin {
                             .ok_or(AuthError::UserNotFound)?;
                         let user_view = ctx.user_view(&user);
                         let session_view = ctx.session_view(&session);
-                        better_auth_core::cache::runtime::emit_issuance_snapshot(
+                        better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(
                             ctx,
                             better_auth_core::CacheVersionContext::created(
                                 user_view.clone(),
@@ -256,7 +256,7 @@ impl MultiSessionPlugin {
         )?;
         let user_view = ctx.user_view(&user);
         let session_view = ctx.session_view(&session);
-        better_auth_core::cache::runtime::emit_issuance_snapshot(
+        better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(
             ctx,
             better_auth_core::CacheVersionContext::created(
                 user_view.clone(),
@@ -284,6 +284,24 @@ impl RequestBody for SessionTokenRequest {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
+    fn openapi_metadata(
+        &self,
+        ctx: &better_auth_core::AuthInitContext<S>,
+    ) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            ctx,
+        )
+    }
+
     fn name(&self) -> &'static str {
         "multi-session"
     }
@@ -344,7 +362,9 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
         if response.headers.get_all("set-cookie").next().is_none() {
             return Ok(response);
         }
-        let Some((user, session)) = better_auth_core::cache::runtime::published_session(req) else {
+        let Some((user, session)) =
+            better_auth_core::session::cookie_cache::runtime::published_session(req)
+        else {
             return Ok(response);
         };
         let name = Self::cookie_name(session.token(), ctx);

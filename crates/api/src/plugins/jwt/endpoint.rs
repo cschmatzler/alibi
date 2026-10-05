@@ -119,10 +119,12 @@ impl JwtPlugin {
     ) -> AuthResult<EndpointResponse> {
         match call.operation_id() {
             "getJSONWebToken" => {
-                let read = better_auth_core::cache::runtime::authenticated(ctx, call, false)
-                    .await
-                    .map_err(|_| super::unauthorized())?
-                    .ok_or_else(super::unauthorized)?;
+                let read = better_auth_core::session::cookie_cache::runtime::authenticated(
+                    ctx, call, false,
+                )
+                .await
+                .map_err(|_| super::unauthorized())?
+                .ok_or_else(super::unauthorized)?;
                 let user = match &read.user {
                     better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
                     better_auth_core::AuthenticatedUser::Cached(user) => (**user).clone(),

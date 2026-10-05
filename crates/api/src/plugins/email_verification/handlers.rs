@@ -454,7 +454,7 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
                 // verification flag changed, even though the stored row is newer.
                 let mut original_view = ctx.trusted_user_view(&user);
                 original_view.email_verified = true;
-                better_auth_core::cache::runtime::emit_issuance_snapshot(
+                better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(
                     ctx,
                     better_auth_core::CacheVersionContext::created(
                         issued.user.clone(),
@@ -490,7 +490,7 @@ async fn verification_session<S: better_auth_core::AuthSchema>(
     request: &better_auth_core::AuthRequest,
     ctx: &AuthContext<S>,
 ) -> Option<(UserView, SessionView)> {
-    better_auth_core::cache::runtime::authenticated(ctx, request, false)
+    better_auth_core::session::cookie_cache::runtime::authenticated(ctx, request, false)
         .await
         .ok()
         .flatten()

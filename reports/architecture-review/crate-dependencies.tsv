@@ -1,0 +1,12 @@
+crate	path	rust_source_files	rust_source_lines	normal_workspace_dependencies
+better-auth	.	23	3056	better-auth-core, better-auth-api, better-auth-seaorm, better-auth-sqlx
+better-auth-api	crates/api	164	81517	better-auth-core
+better-auth-cli	crates/cli	1	618	better-auth-schema-registry
+better-auth-core	crates/core	83	31487	better-auth-macros, better-auth-schema-registry
+better-auth-macros	crates/derive	1	282	-
+better-auth-entity-codegen	crates/entity-codegen	1	736	better-auth-schema-registry
+better-auth-schema-registry	crates/schema-registry	1	454	-
+better-auth-seaorm	crates/seaorm	45	8207	better-auth-core, better-auth-seaorm-macros
+better-auth-seaorm-macros	crates/seaorm-macros	1	600	better-auth-entity-codegen
+better-auth-sqlx	crates/sqlx	49	8717	better-auth-core, better-auth-sqlx-macros
+better-auth-sqlx-macros	crates/sqlx-macros	1	862	better-auth-entity-codegen

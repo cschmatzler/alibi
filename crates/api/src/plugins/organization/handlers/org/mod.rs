@@ -1,7 +1,7 @@
 use super::page::OrganizationPageError;
 use super::require_session;
 use crate::plugins::organization::OrganizationConfig;
-use crate::plugins::organization::membership_policy::{read_page_limit, truthy_number};
+use crate::plugins::organization::policy::{read_page_limit, truthy_number};
 use crate::plugins::organization::types::{
     BasicMemberResponse, CheckSlugRequest, CheckSlugResponse, CreateOrganizationRequest,
     CreateOrganizationResponse, CreatedOrganizationResponse, DeleteOrganizationRequest,
@@ -104,7 +104,7 @@ pub(in crate::plugins) async fn create_organization_core(
         metadata: body.metadata.clone(),
     };
     if let Some(hooks) = &config.creation_hooks {
-        let context = super::super::lifecycle::OrganizationDraftContext {
+        let context = super::super::hooks::organization::OrganizationDraftContext {
             organization: org_data.clone(),
             user: callback_user.clone(),
         };
@@ -121,7 +121,7 @@ pub(in crate::plugins) async fn create_organization_core(
         role: config.effective_creator_role().to_owned(),
     };
     if let Some(hooks) = &config.creation_hooks {
-        let context = super::super::lifecycle::OrganizationMemberDraftContext {
+        let context = super::super::hooks::organization::OrganizationMemberDraftContext {
             organization: organization.clone(),
             member: member_data.clone(),
             user: callback_user.clone(),
@@ -132,7 +132,7 @@ pub(in crate::plugins) async fn create_organization_core(
     }
 
     let member = ctx.database.create_member(member_data).await?;
-    let created_context = super::super::lifecycle::OrganizationCreatedContext {
+    let created_context = super::super::hooks::organization::OrganizationCreatedContext {
         organization: organization.clone(),
         member: member.clone(),
         user: callback_user,
@@ -309,7 +309,7 @@ pub(in crate::plugins) async fn delete_organization_core(
     body: &DeleteOrganizationRequest,
     user: &impl AuthUser,
     session: &impl AuthSession,
-    invocation: crate::plugins::organization::lifecycle::DeleteInvocation<'_>,
+    invocation: crate::plugins::organization::hooks::organization::DeleteInvocation<'_>,
     config: &OrganizationConfig,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Option<OrganizationResponse>> {
@@ -793,7 +793,7 @@ pub async fn handle_delete_organization(
         &body,
         &user,
         &session,
-        crate::plugins::organization::lifecycle::DeleteInvocation {
+        crate::plugins::organization::hooks::organization::DeleteInvocation {
             headers: &req.headers,
             request: Some(req),
         },

@@ -1,3 +1,4 @@
+pub mod cookie_cache;
 mod request;
 use crate::config::AuthConfig;
 use crate::entity::{AuthSession, AuthUser};

@@ -1,6 +1,6 @@
 //! Optional organization team and persisted-role storage contracts.
 use crate::error::{AuthError, AuthResult};
-use crate::types_org::{
+use crate::types::{
     AddTeamMemberResult, CreateOrganizationRole, CreateTeam, OrganizationRole,
     OrganizationRoleSelector, Team, TeamMember, UpdateOrganizationRole, UpdateTeam,
 };

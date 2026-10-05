@@ -132,6 +132,14 @@ better_auth_core::impl_auth_plugin! {
         post "/admin/has-permission" => handle_has_permission, "admin_has_permission";
     }
     extra {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    }
+
+    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    }
+
         fn session_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
             std::iter::once(("impersonatedBy".into(), better_auth_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})).read_only())).collect()
         }

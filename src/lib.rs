@@ -40,7 +40,7 @@
 
 extern crate self as better_auth;
 
-mod core;
+mod runtime;
 
 pub mod config;
 pub mod email;
@@ -70,4 +70,4 @@ pub use better_auth_core::{
     verify_password,
 };
 pub use better_auth_core::{endpoint, field_policy};
-pub use core::{AuthBuilder, BetterAuth};
+pub use runtime::{AuthBuilder, BetterAuth};

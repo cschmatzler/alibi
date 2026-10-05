@@ -2,63 +2,7 @@
 use crate::BetterAuth;
 use better_auth_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod};
 use poem::{Endpoint, FromRequest, Request, RequestBody, Response, http::StatusCode};
-use std::sync::{Arc, Mutex};
-use tokio::{
-    sync::{mpsc, oneshot},
-    task::{Id, JoinSet},
-};
-use tracing::{Instrument, instrument::WithSubscriber};
-
-type DispatchFuture =
-    std::pin::Pin<Box<dyn Future<Output = Result<AuthResponse, AuthError>> + Send>>;
-
-struct DispatchJob {
-    future: DispatchFuture,
-    reply: oneshot::Sender<Response>,
-}
-
-#[derive(Clone, Default)]
-struct PoemDispatchSupervisor(Arc<Mutex<Option<mpsc::UnboundedSender<DispatchJob>>>>);
-
-impl PoemDispatchSupervisor {
-    async fn dispatch<S: AuthSchema>(
-        &self,
-        auth: Arc<BetterAuth<S>>,
-        request: AuthRequest,
-    ) -> Response {
-        let Ok(runtime) = tokio::runtime::Handle::try_current() else {
-            return dispatch_failure();
-        };
-        let (reply, receive) = oneshot::channel();
-        let future = Box::pin(
-            async move { auth.handle_request(request).await }
-                .instrument(tracing::Span::current())
-                .with_current_subscriber(),
-        );
-        let submitted = self.0.lock().is_ok_and(|mut sender| {
-            // A router can outlive its first runtime. Only a definitively
-            // closed receiver may be replaced; accepted jobs are never retried.
-            if sender
-                .as_ref()
-                .is_some_and(mpsc::UnboundedSender::is_closed)
-            {
-                *sender = None;
-            }
-            let sender = sender.get_or_insert_with(|| {
-                let (send, receive_2) = mpsc::unbounded_channel();
-                // The actor holds no sender or auth reference. Closing the
-                // router channel drains accepted jobs and then exits.
-                let _supervisor = runtime.spawn(supervise_dispatches(receive_2));
-                send
-            });
-            sender.send(DispatchJob { future, reply }).is_ok()
-        });
-        if !submitted {
-            return dispatch_failure();
-        }
-        receive.await.unwrap_or_else(|_| dispatch_failure())
-    }
-}
+use std::sync::Arc;
 
 /// Integration for an initialized auth instance.
 pub trait PoemIntegration {
@@ -75,7 +19,7 @@ impl<S: AuthSchema> PoemIntegration for Arc<BetterAuth<S>> {
     fn poem_endpoint(self) -> PoemAuthEndpoint<S> {
         PoemAuthEndpoint {
             auth: self,
-            supervisor: PoemDispatchSupervisor::default(),
+            supervisor: PoemDispatchSupervisor::new(render_dispatch),
         }
     }
 }
@@ -108,43 +52,6 @@ impl<S: AuthSchema> Endpoint for PoemAuthEndpoint<S> {
                 Err(error) => convert_auth_response(error.to_auth_response()),
             },
         )
-    }
-}
-
-fn dispatch_failure() -> Response {
-    convert_auth_response(AuthError::internal("Authentication request failed").to_auth_response())
-}
-
-async fn supervise_dispatches(mut receive: mpsc::UnboundedReceiver<DispatchJob>) {
-    let mut workers = JoinSet::new();
-    let mut replies = std::collections::HashMap::<Id, oneshot::Sender<Response>>::new();
-    let mut accepting = true;
-    while accepting || !workers.is_empty() {
-        tokio::select! {
-            job = receive.recv(), if accepting => match job {
-                Some(job) => {
-                    let id = workers.spawn(job.future).id();
-                    drop(replies.insert(id, job.reply));
-                }
-                None => accepting = false,
-            },
-            completed = workers.join_next_with_id(), if !workers.is_empty() => {
-                if let Some(completed) = completed {
-                    let (id, response) = match completed {
-                        Ok((id, Ok(response))) => (id, convert_auth_response(response)),
-                        Ok((id, Err(error))) => (id, convert_auth_response(error.to_auth_response())),
-                        Err(error) => {
-                            tracing::error!(panic = error.is_panic(), cancelled = error.is_cancelled(), "Authentication dispatch task failed");
-                            (error.id(), dispatch_failure())
-                        }
-                    };
-                    if let Some(reply) = replies.remove(&id) {
-                        // A disconnected receiver cannot cancel completed work.
-                        drop(reply.send(response));
-                    }
-                }
-            },
-        }
     }
 }
 
@@ -320,5 +227,13 @@ impl<'a, S: AuthSchema> FromRequest<'a> for OptionalSession<S> {
         Ok(Self(
             CurrentSession::<S>::from_request(req, body).await.ok(),
         ))
+    }
+}
+type PoemDispatchSupervisor = crate::integrations::dispatch::DispatchSupervisor<Response>;
+
+fn render_dispatch(result: Result<AuthResponse, AuthError>) -> Response {
+    match result {
+        Ok(response) => convert_auth_response(response),
+        Err(error) => convert_auth_response(error.to_auth_response()),
     }
 }

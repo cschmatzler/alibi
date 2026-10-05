@@ -5,7 +5,7 @@ use axum::{Json, Router, routing::get};
 use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::oauth::{OAuthIdTokenVerifier, OAuthProvider};
-use better_auth::plugins::one_tap::{GoogleJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};
+use better_auth::plugins::one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};
 use better_auth::plugins::{
     AdminPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin,
     SessionManagementPlugin, TwoFactorPlugin,
@@ -24,11 +24,11 @@ use std::{
 use tokio::sync::Mutex;
 const JWKS: &str = include_str!("../../../../fixtures/one-tap/jwks.json");
 struct LocalKeys(String);
-pub(crate) fn local_keys(base_url: &str) -> Arc<dyn GoogleJwksSource> {
+pub(crate) fn local_keys(base_url: &str) -> Arc<dyn OAuthJwksSource> {
     Arc::new(LocalKeys(format!("{base_url}/__test/one-tap/jwks")))
 }
 #[async_trait]
-impl GoogleJwksSource for LocalKeys {
+impl OAuthJwksSource for LocalKeys {
     async fn fetch_keys(&self) -> Result<Vec<Value>, String> {
         let value: Value = reqwest::Client::new()
             .get(&self.0)

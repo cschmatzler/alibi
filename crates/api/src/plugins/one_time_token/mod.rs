@@ -326,7 +326,7 @@ impl OneTimeTokenPlugin {
         if !self.config.disable_set_session_cookie {
             // Source republishes the existing adapter session's parsed views;
             // verification does not create a replacement session.
-            better_auth_core::cache::runtime::emit_issuance_snapshot(
+            better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(
                 ctx,
                 better_auth_core::CacheVersionContext::created(
                     session.user.clone(),
@@ -383,6 +383,24 @@ impl RequestBody for VerifyRequest {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
+    fn openapi_metadata(
+        &self,
+        ctx: &better_auth_core::AuthInitContext<S>,
+    ) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            ctx,
+        )
+    }
+
     fn name(&self) -> &'static str {
         "one-time-token"
     }

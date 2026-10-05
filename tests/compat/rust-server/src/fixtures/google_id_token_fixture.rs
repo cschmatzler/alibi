@@ -32,8 +32,8 @@ pub(crate) async fn router(
         "google-id-domain-any",
         "google-id-disabled",
         "google-id-override",
-    "google-id-no-signup",
-    "google-id-no-implicit-signup",
+        "google-id-no-signup",
+        "google-id-no-implicit-signup",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let configured = config.clone().base_path(&path);

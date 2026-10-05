@@ -42,7 +42,7 @@ impl From<Vec<String>> for OneTapClientId {
     }
 }
 
-pub use crate::plugins::oauth::OAuthJwksSource as GoogleJwksSource;
+pub use crate::plugins::oauth::OAuthJwksSource;
 
 #[derive(Clone, Default)]
 pub struct OneTapConfig {
@@ -50,7 +50,7 @@ pub struct OneTapConfig {
     pub client_id: Option<OneTapClientId>,
     pub disable_signup: bool,
     /// Optional application transport/cache; defaults to Google's official JWKS endpoint.
-    pub jwks_source: Option<Arc<dyn GoogleJwksSource>>,
+    pub jwks_source: Option<Arc<dyn OAuthJwksSource>>,
 }
 
 impl std::fmt::Debug for OneTapConfig {
@@ -61,7 +61,7 @@ impl std::fmt::Debug for OneTapConfig {
 
 pub struct OneTapPlugin {
     config: OneTapConfig,
-    keys: Arc<dyn GoogleJwksSource>,
+    keys: Arc<dyn OAuthJwksSource>,
 }
 
 impl std::fmt::Debug for OneTapPlugin {
@@ -325,6 +325,24 @@ impl RequestBody for CallbackBody {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OneTapPlugin {
+    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+        )
+    }
+
+    fn openapi_metadata(
+        &self,
+        ctx: &better_auth_core::AuthInitContext<S>,
+    ) -> better_auth_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(
+            <Self as better_auth_core::AuthPlugin<S>>::name(self),
+            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            ctx,
+        )
+    }
+
     fn name(&self) -> &'static str {
         "one-tap"
     }

@@ -17,19 +17,28 @@ Or enter the shell manually with `devenv shell`. Rust tooling and lint rules com
 ## Repository map
 
 ```text
-crates/core            runtime: config, sessions, middleware, stores, plugin traits
-crates/api             all plugin implementations
+crates/core            shared contracts and services: config, sessions, stores, middleware
+crates/api             built-in plugins and their endpoint/model metadata
 crates/sqlx            SQLx store, AuthEntity derive, rate-limit storage
 crates/seaorm          SeaORM store and entities
 crates/cli             `better-auth-rs generate`
 crates/schema-registry plugin schemas shared by the CLI and macros
-src/                   the `better-auth` facade crate and Axum/Poem integrations
+src/runtime/           instance assembly, HTTP/server dispatch and default plugins
+src/integrations/      shared dispatch supervision and Axum/Poem adapters
+src/                   public facade and feature exports
 tests/                 unit/integration/compat tiers (see below)
 docs/                  this Astro Starlight site
 alchemy/               docs deployment (Railway) with Alchemy
 ```
 
 See [Workspace crates](/reference/crates/) for what each crate publishes.
+
+Inside core, `store/contracts` owns backend interfaces and `store/decorated` owns initialized policy and hook application. The no-database implementation is split by domain under `store/stateless`. Secondary storage adapters live under `store/secondary_storage`; authenticated cookie snapshots and their issuance/read services live under `session/cookie_cache`.
+
+The API crate owns built-in OpenAPI declarations under `metadata`. Core owns the generic metadata types, registry and document builder. Custom plugins declare reusable route metadata with `AuthPlugin::static_openapi_metadata` and can apply initialization-dependent overlays with `openapi_metadata`.
+
+Keep module roots focused on the shared state, contracts and dispatch that tie their children together. Split feature implementations by flow or domain, rather than giving every helper a file. Organization callback contracts are grouped under `organization/hooks/{organization,member,invitation}.rs`; admission settings and resolvers share `organization/policy.rs`. Code generation separates attribute/field interpretation, accessors, secondary codecs and writes, while each backend macro crate keeps its own model/entity generation.
+
 
 The [release policy](/guides/releases/) defines Rust versioning, upstream compatibility requirements, and the checks required before publication.
 

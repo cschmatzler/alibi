@@ -3,7 +3,7 @@ name = "better-auth-core"
 version = { workspace = true }
 edition = { workspace = true }
 license = { workspace = true }
-description = "Core abstractions for better-auth: traits, types, config, error handling"
+description = "Shared authentication contracts and backend-independent services for better-auth"
 repository = { workspace = true }
 
 readme = { workspace = true }

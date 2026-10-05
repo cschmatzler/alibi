@@ -1,0 +1,83 @@
+use super::*;
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins::passkey) async fn list_user_passkeys_core(
+    user: &impl AuthUser,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<Vec<Value>> {
+    let passkeys = ctx.database.list_passkeys_by_user(&user.id()).await?;
+    passkeys
+        .iter()
+        .map(|passkey| {
+            let mut value = registration_value(passkey)?;
+            // Source lists adapter rows, retaining an own SQL NULL property.
+            if passkey.transports.is_none()
+                && let Some(object) = value.as_object_mut()
+            {
+                drop(object.insert("transports".into(), Value::Null));
+            }
+            Ok(value)
+        })
+        .collect()
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins::passkey) async fn delete_passkey_core(
+    body: &DeletePasskeyRequest,
+    user: &impl AuthUser,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> PasskeyHandlerResult<StatusResponse> {
+    let passkey = ctx
+        .database
+        .get_passkey_by_id(&body.id)
+        .await?
+        .ok_or_else(|| AuthError::not_found("Passkey not found"))?;
+
+    if passkey.user_id() != user.id() {
+        return Ok(PasskeyHandlerOutcome::Response(
+            better_auth_core::AuthResponse::new(401)
+                .with_header("content-type", "application/json"),
+        ));
+    }
+
+    ctx.database.delete_passkey(&body.id).await?;
+    Ok(PasskeyHandlerOutcome::Success(StatusResponse {
+        status: true,
+    }))
+}
+
+///
+/// # Errors
+/// Returns an error when validation, storage, or an application callback fails.
+pub(in crate::plugins::passkey) async fn update_passkey_core(
+    body: &UpdatePasskeyRequest,
+    user: &impl AuthUser,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> PasskeyHandlerResult<PasskeyResponse> {
+    let passkey = ctx
+        .database
+        .get_passkey_by_id(&body.id)
+        .await?
+        .ok_or_else(|| AuthError::not_found("Passkey not found"))?;
+
+    if passkey.user_id() != user.id() {
+        return Ok(PasskeyHandlerOutcome::Response(
+            better_auth_core::AuthResponse::json(
+                401,
+                &json!({ "code": "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY", "message": "You are not allowed to register this passkey" }),
+            )?,
+        ));
+    }
+
+    let updated = ctx
+        .database
+        .update_passkey_name(&body.id, super::super::registration::trim_name(&body.name))
+        .await?;
+
+    Ok(PasskeyHandlerOutcome::Success(PasskeyResponse {
+        passkey: PasskeyView::from(&updated),
+    }))
+}
