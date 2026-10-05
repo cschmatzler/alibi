@@ -195,9 +195,9 @@ Endpoint hooks see the logical call; the original HTTP request stays separate in
 
 | I want to… | Use |
 | --- | --- |
-| Reject sign-ups by email domain | Endpoint `before` (HTTP-level input) or a `user_validation` policy ([Users & accounts](/concepts/users-accounts/#validate-new-identities)) |
+| Reject sign-ups by email domain | Endpoint `before` (HTTP-level input) or a `user_validation` policy ([Users and accounts](/concepts/users-accounts/#validate-new-identities)) |
 | Set a default on every created user, including OAuth users | Database `before_create_user` |
 | Write an audit row for every new session | Database `after_create_session` |
 | Add a header or log after every response | Endpoint `after`, or a plugin `after_request` ([writing a plugin](/guides/writing-a-plugin/)) |
-| Block deletion of special accounts | `UserManagementPlugin::before_delete` ([Users & accounts](/concepts/users-accounts/#delete-an-account)) |
+| Block deletion of special accounts | `UserManagementPlugin::before_delete` ([Users and accounts](/concepts/users-accounts/#delete-an-account)) |
 | Observe org or API-key lifecycle | The plugin's own hooks ([Organization](/plugins/organization/#lifecycle-hooks), [API key](/plugins/api-key/)) |

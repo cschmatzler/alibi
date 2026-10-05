@@ -89,7 +89,6 @@ The core plugins are installed on every instance. `POST /sign-up/email` and `POS
 
 | Method | Path | Description |
 | --- | --- | --- |
-| `GET` | `/__test/openapi.json` | Native extension: the OpenAPI document (served by every instance) |
 | `GET` | `/error` | Error page (or redirect) for OAuth failures |
 | `GET` | `/ok` | Check if the API is working |
 
@@ -295,9 +294,9 @@ The core plugins are installed on every instance. `POST /sign-up/email` and `POS
 | `POST` | `/is-username-available` | Check whether a username is free |
 | `POST` | `/sign-in/username` | Sign in with username |
 
-### Plugins without routes
+### Other plugins
 
-[Bearer](/plugins/bearer/), [CAPTCHA](/plugins/captcha/), [Have I Been Pwned](/plugins/have-i-been-pwned/), [Last login method](/plugins/last-login-method/) and [Custom session](/plugins/custom-session/) add behavior to existing routes (headers, checks, response shaping) rather than their own paths. [OpenAPI](/plugins/open-api/) serves `GET /open-api/generate-schema` and the HTML reference (`GET /reference` by default). [JWT](/plugins/jwt/)'s key set path is configurable (`/jwks` by default).
+[Bearer](/plugins/bearer/), [CAPTCHA](/plugins/captcha/), [Have I Been Pwned](/plugins/have-i-been-pwned/), [Last login method](/plugins/last-login-method/) and [Custom session](/plugins/custom-session/) add behavior to existing routes (headers, checks, response shaping) rather than their own paths. [OpenAPI](/plugins/open-api/) serves `GET /open-api/generate-schema`, the HTML reference (`GET /reference` by default) and the native `GET /__test/openapi.json` document. [JWT](/plugins/jwt/)'s key set path is configurable (`/jwks` by default).
 
 ## Frontend
 

@@ -13,8 +13,9 @@ better-auth-rs generate --plugins api-key -o src/auth_schema.rs
 
 The `api_keys` table stores the key **hash** (never the plaintext), a short `start` fragment for display, the owner (`reference_id`), the configuration it belongs to (`config_id`), limits and counters, `permissions` and `metadata` (as JSON text), and timestamps.
 
-:::caution[Check the generated columns — and create the table even if you skip the plugin]
-The store reads and writes the owner in **`reference_id`** and the configuration name in **`config_id`** (`TEXT NOT NULL DEFAULT 'default'`). At the time of writing, `generate --plugins api-key` still emits a `user_id` column and no `config_id`, so key creation against that table fails with an empty `500`. User deletion also queries this table, so it must exist even when the plugin is not registered. Rename the column and add `config_id`, or install the library's bundled schema (`SchemaMigrator::migrate`, see [Database](/concepts/database/#migrations)), whose `api_keys` DDL is:
+The generated schema matches what the store reads and writes: the owner lives in **`reference_id`** and the configuration name in **`config_id`** (`TEXT NOT NULL DEFAULT 'default'`). The table is optional for core-only installs: user deletion removes a user's keys when `api_keys` exists and skips it otherwise.
+
+`run_app_migrations` creates bare tables. For production, add a unique constraint on `key` and an index on `reference_id`, as the library's bundled schema (`SchemaMigrator::migrate`, see [Database](/concepts/database/#migrations)) does:
 
 ```sql
 CREATE TABLE api_keys (
@@ -31,7 +32,6 @@ CREATE TABLE api_keys (
 );
 CREATE INDEX idx_api_keys_reference_id ON api_keys (reference_id);
 ```
-:::
 
 ## Setup
 
@@ -236,7 +236,7 @@ API-key storage is independent of [session storage](/concepts/secondary-storage/
 ## Security notes
 
 - Keys are bearer credentials: serve them over HTTPS only, never log them, and show the plaintext once at creation.
-- Prefer `Hashed` (default) storage; the `start` fragment lets users recognize a key without exposing it.
+- Keep key hashing on (the default, see `disable_key_hashing`); the `start` fragment lets users recognize a key without exposing it.
 - Give keys the **least** permissions and short expiries; rotate by creating a new key and deleting the old.
 - Combine with [rate limiting](/concepts/rate-limit/) on your own API for protection beyond per-key limits.
 

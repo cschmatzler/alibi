@@ -62,7 +62,7 @@ For OAuth token encryption in your own tooling, use the helpers that understand 
 
 ## Operational advice
 
-- Store secrets in your platform's secret manager (the repository's own deployment uses SOPS and Varlock — see `alchemy/README.md`), not in images or git.
+- Store secrets in your platform's secret manager, not in images or git.
 - Use a **different secret per environment**; a staging secret must not open production cookies.
 - Treat a leaked secret as a full compromise of signed state: rotate it immediately and expect everyone to sign in again.
 - With the [OAuth proxy](/plugins/oauth-proxy/), hosts must agree on a shared `secret`.

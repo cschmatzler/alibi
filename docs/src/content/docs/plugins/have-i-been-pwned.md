@@ -90,7 +90,7 @@ If the range service cannot be reached or answers with something unusable, the r
 ## Notes
 
 - The check sees the original UTF-8 password, before normalization and hashing.
-- Pair it with a sensible minimum length ([Email & password](/authentication/email-password/#options)) — long unique passwords matter more than composition rules.
+- Pair it with a sensible minimum length ([Email and password](/authentication/email-password/#options)) — long unique passwords matter more than composition rules.
 - Existing passwords are only checked when they are next set.
 
 ## Frontend

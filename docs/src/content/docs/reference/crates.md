@@ -14,6 +14,7 @@ You normally depend on **one** crate, `better-auth`, which re-exports the others
 | [`better-auth-seaorm`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/seaorm) | SeaORM store, entities, `AuthEntity` derive, rate-limit storage | Never — use `better_auth::seaorm` |
 | [`better-auth-cli`](https://github.com/cschmatzler/better-auth-rs/tree/main/crates/cli) | The `better-auth-rs` binary (`generate`) | Install it as a tool; see the [CLI reference](/reference/cli/) |
 | `better-auth-macros` | `#[derive(AuthSchema)]`, `PluginConfig` | Re-exported by core |
+| `better-auth-sqlx-macros`, `better-auth-seaorm-macros` | Derive implementations behind the SQLx and SeaORM stores | Never — re-exported by the store crates |
 | `better-auth-schema-registry`, `better-auth-entity-codegen` | Plugin schema definitions and shared derive code used by the CLI and macros | Never |
 
 When you add `better-auth-core` (or the CLI), use the **same Git revision** as `better-auth` so every crate resolves to one copy:

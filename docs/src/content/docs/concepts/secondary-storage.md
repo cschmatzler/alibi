@@ -41,7 +41,7 @@ async fn auth_config(secret: &str, redis_url: &str) -> Result<AuthConfig, redis:
 }
 ```
 
-(`redis::RedisError` comes from the `redis` crate; add `redis = "0.27"` or box the error.)
+(`redis::RedisError` comes from the `redis` crate; add `redis = "1"` or box the error.)
 
 Application models that are cached must implement `serde::Deserialize`, and the user and session models need `secondary_storage` on their `AuthEntity` attribute so they can be snapshotted:
 
