@@ -144,6 +144,8 @@ pub trait SqlxModel: SqlxRow + Clone + Send + Sync + 'static {
     const COLUMNS: &'static [ColumnDef];
     /// The names of [`COLUMNS`](Self::COLUMNS), for select and returning lists.
     const COLUMN_NAMES: &'static [&'static str];
+    /// Rust field names paired with their physical columns.
+    const FIELD_COLUMNS: &'static [(&'static str, &'static str)] = &[];
     /// Physical primary-key column.
     const PRIMARY_KEY: &'static str;
     /// Provider verification column whose SQLite storage may retain raw scalars.

@@ -17,7 +17,7 @@ impl InvitationStore for StatelessStore {
                 .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
             organization_id: data.organization_id,
             email: data.email,
-            role: data.role,
+            role: Some(data.role),
             team_id: data.team_id,
             status: options.status.unwrap_or_default(),
             inviter_id: data.inviter_id,

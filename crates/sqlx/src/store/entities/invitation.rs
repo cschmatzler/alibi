@@ -20,7 +20,7 @@ impl From<&Model> for better_auth_core::Invitation {
             id: model.id.clone(),
             organization_id: model.organization_id.clone(),
             email: model.email.clone(),
-            role: model.role.clone(),
+            role: Some(model.role.clone()),
             team_id: model.team_id.clone(),
             status: better_auth_core::InvitationStatus::from(model.status.clone()),
             inviter_id: model.inviter_id.clone(),

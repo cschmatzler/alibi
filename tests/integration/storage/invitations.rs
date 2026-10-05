@@ -344,6 +344,7 @@ async fn pending_invitation_count_excludes_expired_and_non_pending_rows<B: Backe
     drop(
         store
             .create_organization(CreateOrganization {
+                additional_fields: Default::default(),
                 id: Some(org_id.to_owned()),
                 name: "Org".to_owned(),
                 slug: "org".to_owned(),
@@ -412,6 +413,7 @@ async fn get_pending_invitation_ignores_expired_rows<B: Backend>(db: Db) -> Test
     drop(
         store
             .create_organization(CreateOrganization {
+                additional_fields: Default::default(),
                 id: Some(org_id.to_owned()),
                 name: "Org".to_owned(),
                 slug: "org-second".to_owned(),

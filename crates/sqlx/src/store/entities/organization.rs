@@ -16,6 +16,7 @@ pub struct Model {
 impl From<&Model> for better_auth_core::Organization {
     fn from(model: &Model) -> Self {
         Self {
+            additional_fields: Default::default(),
             id: model.id.clone(),
             name: model.name.clone(),
             slug: model.slug.clone(),

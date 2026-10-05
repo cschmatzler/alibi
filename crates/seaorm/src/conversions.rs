@@ -7,6 +7,7 @@ use chrono::{DateTime, Utc};
 impl From<&entities::organization::Model> for Organization {
     fn from(model: &entities::organization::Model) -> Self {
         Self {
+            additional_fields: Default::default(),
             id: model.id.clone(),
             name: model.name.clone(),
             slug: model.slug.clone(),
@@ -36,7 +37,7 @@ impl From<&entities::invitation::Model> for Invitation {
             id: model.id.clone(),
             organization_id: model.organization_id.clone(),
             email: model.email.clone(),
-            role: model.role.clone(),
+            role: Some(model.role.clone()),
             team_id: model.team_id.clone(),
             status: InvitationStatus::from(model.status.clone()),
             inviter_id: model.inviter_id.clone(),

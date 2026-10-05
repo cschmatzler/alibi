@@ -195,6 +195,9 @@ pub trait AuthAccount: Clone + Send + Sync + Serialize + std::fmt::Debug + 'stat
 
 /// Trait representing an organization entity.
 pub trait AuthOrganization: Clone + Send + Sync + Serialize + std::fmt::Debug + 'static {
+    fn additional_fields(&self) -> std::collections::BTreeMap<String, serde_json::Value> {
+        Default::default()
+    }
     fn id(&self) -> Cow<'_, str>;
     fn name(&self) -> &str;
     fn slug(&self) -> &str;
@@ -219,6 +222,9 @@ pub trait AuthInvitation: Clone + Send + Sync + Serialize + std::fmt::Debug + 's
     fn organization_id(&self) -> Cow<'_, str>;
     fn email(&self) -> &str;
     fn role(&self) -> &str;
+    fn optional_role(&self) -> Option<&str> {
+        Some(self.role())
+    }
     fn team_id(&self) -> Option<&str> {
         None
     }

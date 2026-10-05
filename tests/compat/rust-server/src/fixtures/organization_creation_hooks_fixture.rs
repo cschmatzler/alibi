@@ -333,6 +333,7 @@ pub(crate) async fn router(
                     );
                 };
                 let data = better_auth::plugins::organization::types::CreateOrganizationRequest {
+                    additional_fields: Default::default(),
                     name: body["name"].as_str().unwrap_or_default().into(),
                     slug: body["slug"].as_str().unwrap_or_default().into(),
                     logo: body["logo"].as_str().map(str::to_owned),

@@ -1,4 +1,4 @@
-use super::entities::{invitation, team, team_member};
+use super::entities::{team, team_member};
 use super::{SqlxStore, lock_exclusive};
 use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow, SqlxModel};
@@ -238,19 +238,34 @@ where
                 team_id.as_str(),
             );
             _ = exec.execute(members).await?;
-            let mut pending = model::select_model::<invitation::Model>(exec);
+            let mut pending = self.organization_models.invitation.select(exec);
             pending.push(" WHERE ");
-            pending.compare(
-                invitation::Model::TABLE,
+            self.organization_models.invitation.compare(
+                &mut pending,
                 "organization_id",
                 " = ",
                 organization_id.as_str(),
-            );
+            )?;
             pending.push(" AND ");
-            pending.compare(invitation::Model::TABLE, "status", " = ", "pending");
+            self.organization_models.invitation.compare(
+                &mut pending,
+                "status",
+                " = ",
+                "pending",
+            )?;
             pending.push(" AND ");
-            pending.compare(invitation::Model::TABLE, "expires_at", " > ", Utc::now());
-            for invite in exec.fetch_all::<invitation::Model>(pending).await? {
+            self.organization_models.invitation.compare(
+                &mut pending,
+                "expires_at",
+                " > ",
+                Utc::now(),
+            )?;
+            for invite in self
+                .organization_models
+                .invitation
+                .fetch_all(exec, pending)
+                .await?
+            {
                 let Some(ids) = invite.team_id.as_deref() else {
                     continue;
                 };
@@ -265,7 +280,9 @@ where
                 let mut active = invite.into_active();
                 active.set("team_id", (!remaining.is_empty()).then_some(remaining));
                 drop(
-                    model::update::<invitation::Model>(exec, &active)
+                    self.organization_models
+                        .invitation
+                        .update(exec, &active)
                         .await?
                         .ok_or_else(record_not_updated)?,
                 );

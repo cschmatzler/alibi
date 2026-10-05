@@ -2,6 +2,8 @@ use super::*;
 /// Public organization response shape.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct OrganizationView {
+    #[serde(default, flatten)]
+    pub additional_fields: std::collections::BTreeMap<String, serde_json::Value>,
     pub id: String,
     pub name: String,
     pub slug: String,
@@ -26,6 +28,7 @@ pub struct OrganizationView {
 impl<T: AuthOrganization> From<&T> for OrganizationView {
     fn from(org: &T) -> Self {
         Self {
+            additional_fields: org.additional_fields(),
             id: org.id().into_owned(),
             name: org.name().to_owned(),
             slug: org.slug().to_owned(),
@@ -44,7 +47,7 @@ pub struct InvitationView {
     #[serde(rename = "organizationId")]
     pub organization_id: String,
     pub email: String,
-    pub role: String,
+    pub role: Option<String>,
     pub status: InvitationStatus,
     #[serde(rename = "inviterId")]
     pub inviter_id: String,
@@ -70,7 +73,7 @@ impl<T: AuthInvitation> From<&T> for InvitationView {
             id: inv.id().into_owned(),
             organization_id: inv.organization_id().into_owned(),
             email: inv.email().to_owned(),
-            role: inv.role().to_owned(),
+            role: inv.optional_role().map(str::to_owned),
             status: inv.status().clone(),
             inviter_id: inv.inviter_id().into_owned(),
             expires_at: inv.expires_at(),

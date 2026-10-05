@@ -684,6 +684,7 @@ async fn query_organization_members_applies_filter_sort_and_pagination<B: Backen
     drop(
         store
             .create_organization(CreateOrganization {
+                additional_fields: Default::default(),
                 id: Some(org_id.clone()),
                 name: "Org".to_owned(),
                 slug: "org".to_owned(),

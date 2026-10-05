@@ -97,6 +97,10 @@ pub(in crate::plugins) async fn create_organization_core(
     }
 
     let mut org_data = CreateOrganization {
+        additional_fields: config
+            .organization_fields
+            .parse_create(&body.additional_fields)
+            .map_err(organization_field_error)?,
         id: None,
         name: body.name.clone(),
         slug: body.slug.clone(),
@@ -257,6 +261,10 @@ pub(in crate::plugins) async fn update_organization_core(
     }
 
     let mut update_data = UpdateOrganization {
+        additional_fields: config
+            .organization_fields
+            .parse_update(&body.data.additional_fields)
+            .map_err(organization_field_error)?,
         name: body.data.name.clone(),
         slug: body.data.slug.clone(),
         logo: body.data.logo.clone(),
@@ -1013,7 +1021,23 @@ fn parse_query<T: Default + serde::de::DeserializeOwned>(query: &HashMap<String,
     serde_json::from_value(json_value).unwrap_or_default()
 }
 
+fn organization_field_error(
+    error: better_auth_core::field_policy::FieldInputError,
+) -> better_auth_core::AuthError {
+    match error {
+        better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
+            better_auth_core::AuthError::Api {
+                status: 400,
+                code: Some(code.to_owned()),
+                message,
+            }
+        }
+        better_auth_core::field_policy::FieldInputError::Transform(error) => error,
+    }
+}
+
 // LCOV_EXCL_START
+
 #[cfg(test)]
 mod tests {
     use super::{get_full_organization_core, handle_create_organization};
@@ -1029,6 +1053,7 @@ mod tests {
 
     fn test_config() -> OrganizationConfig {
         OrganizationConfig {
+            organization_fields: Default::default(),
             allow_user_to_create_organization: true,
             organization_limit: None,
             creation_policy: None,
@@ -1076,6 +1101,7 @@ mod tests {
         let existing = ctx
             .database
             .create_organization(CreateOrganization {
+                additional_fields: Default::default(),
                 id: None,
                 name: "Existing".to_owned(),
                 slug: "existing".to_owned(),
@@ -1169,6 +1195,7 @@ mod tests {
         let organization = ctx
             .database
             .create_organization(CreateOrganization {
+                additional_fields: Default::default(),
                 id: None,
                 name: "Team".to_owned(),
                 slug: "team".to_owned(),

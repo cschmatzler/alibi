@@ -1,5 +1,4 @@
 use super::SqlxStore;
-use super::entities::member;
 use super::entities::organization_role::Model;
 use crate::model::{self, ActiveRow, SqlxModel};
 use crate::schema::AuthSchema;
@@ -93,19 +92,25 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
         organization_id: &str,
         role: &str,
     ) -> AuthResult<bool> {
-        let mut sql = model::select_model::<member::Model>(self.exec());
+        let mut sql = self.organization_models.member.select(self.exec());
         sql.push(" WHERE ");
-        sql.compare(
-            member::Model::TABLE,
+        self.organization_models.member.compare(
+            &mut sql,
             "organization_id",
             " = ",
             organization_id,
-        );
+        )?;
         sql.push(" AND ");
-        sql.compare(member::Model::TABLE, "role", " LIKE ", format!("%{role}%"));
+        self.organization_models
+            .member
+            .compare(&mut sql, "role", " LIKE ", format!("%{role}%"))?;
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
-        let members: Vec<member::Model> = self.exec().fetch_all(sql).await?;
+        let members = self
+            .organization_models
+            .member
+            .fetch_all(self.exec(), sql)
+            .await?;
         Ok(members.iter().any(|member| {
             member
                 .role

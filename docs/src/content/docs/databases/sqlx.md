@@ -66,6 +66,8 @@ async fn shared_pool(url: &str) -> Result<(SqlxPool, sqlx::PgPool), sqlx::Error>
 
 Auth writes that must be atomic (sign-up, session issuance, organization changes) run in transactions on this pool.
 
+For organization plugin tables, bind three application models with `OrganizationModels`; see [application-owned organization tables](/plugins/organization/#application-owned-sqlx-tables).
+
 ## Use your own models
 
 Derive `sqlx::FromRow` and `better_auth::sqlx::AuthEntity` on structs that contain the required fields for their role (user, session, account, verification). Extra columns are allowed:

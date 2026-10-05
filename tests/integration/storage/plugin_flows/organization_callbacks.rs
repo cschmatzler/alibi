@@ -347,7 +347,7 @@ impl OrganizationInvitationHooks for Lifecycle {
         }))
     }
     async fn after_create_invitation(&self, ctx: &OrganizationInvitationContext) -> AuthResult<()> {
-        assert_eq!(ctx.invitation.role, "admin");
+        assert_eq!(ctx.invitation.role.as_deref(), Some("admin"));
         assert_eq!(ctx.user.id, *self.actor.lock().unwrap());
         assert!(!ctx.invitation.id.is_empty());
         self.phase("after-invite")

@@ -172,6 +172,10 @@ pub(in crate::plugins::organization) fn create_value(
     });
     validate(&(issues))?;
     Ok(CreateOrganizationRequest {
+        additional_fields: input
+            .and_then(JsValue::as_object)
+            .cloned()
+            .unwrap_or_default(),
         name: name.unwrap_or_default(),
         slug: slug.unwrap_or_default(),
         logo,
@@ -210,6 +214,10 @@ pub(super) fn update(
         }
     };
     let mut fields = UpdateOrganizationData {
+        additional_fields: data
+            .and_then(JsValue::as_object)
+            .cloned()
+            .unwrap_or_default(),
         name: None,
         slug: None,
         logo: None,

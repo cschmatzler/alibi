@@ -21,6 +21,46 @@ better-auth-rs generate --plugins organization,organization-dynamic-roles -o src
 | `organization-teams` | tables `team`, `team_member`; `sessions.active_team_id`; `invitation.team_id` is part of `organization` |
 | `organization-dynamic-roles` | table `organization_role` |
 
+## Application-owned SQLx tables
+
+Bind existing organization, member, and invitation tables with `OrganizationModels`. Each application row derives `sqlx::FromRow` and `better_auth::sqlx::SqlxModel`. Use the plugin's Rust field names and `#[sqlx(rename = "…")]` for physical columns; the organization table can have any name.
+
+```rust nocheck
+use better_auth::sqlx::{OrganizationModels, SqlxStore};
+use better_auth::plugins::organization::OrganizationConfig;
+use better_auth::field_policy::{FieldConfig, SessionFields};
+use crate::auth_schema::{AppAuthSchema, Event, Membership, Invite};
+use crate::ids::{event_id, member_id, invitation_id};
+
+let store = SqlxStore::<AppAuthSchema>::new(config.clone(), pool)
+    .with_organization_models(OrganizationModels::new::<Event, Membership, Invite>(
+        event_id, member_id, invitation_id,
+    ));
+let mut organization_fields = SessionFields::default();
+organization_fields.0.insert(
+    "language".into(),
+    FieldConfig::new(serde_json::json!({"type":"string"})),
+);
+let plugin_config = OrganizationConfig {
+    organization_fields,
+    ..Default::default()
+};
+```
+
+The three ID factories return `String` IDs. Explicit organization or invitation IDs from trusted creation input are retained. Ordinary creation and invitation acceptance use the corresponding factories.
+
+| Model | Rust fields |
+| --- | --- |
+| Organization | `id`, `name`, `slug`, `logo`, `metadata`, `created_at`; optional `updated_at`; application fields such as `language` |
+| Member | `id`, `organization_id`, `user_id`, `role`, `created_at` |
+| Invitation | `id`, `organization_id`, `email`, `role`, `status`, `inviter_id`, `expires_at`, `created_at`; optional `team_id` |
+
+For example, map `organization_id` to `event_id` on both member and invitation. Annotate String IDs and foreign keys backed by PostgreSQL `CHAR(n)` with `#[auth(column_type = "bpchar")]`. Use `chrono::NaiveDateTime` for UTC `timestamp without time zone` columns. Metadata can be nullable JSON or JSON text (`Option<String>`). Imported invitations may have `Option<String>` roles; their null role remains null in output and does not grant a membership role.
+
+An organization model without `updated_at` uses its creation timestamp for that canonical getter and omits the column from writes. An invitation model without `team_id` works with teams disabled. Configure the session model's `active_organization_id` with its own physical rename, such as `active_event_id`.
+
+`organization_fields` applies configured input policies, creation defaults, and adapter transforms to additional fields. They persist through create/update and appear in organization output. Updates retain unrequested application columns. Existing creation policies, role permissions, billing/cleanup hooks, and invitation email callbacks continue to use the native plugin. Application migrations own these tables; the bundled migrator continues to install the bundled schema.
+
 ## Setup
 
 ```rust
@@ -416,6 +456,7 @@ async fn create_for(
     user_id: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     let body = CreateOrganizationRequest {
+        additional_fields: Default::default(),
         name: "Acme".into(),
         slug: "acme".into(),
         logo: None,
