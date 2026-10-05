@@ -58,6 +58,8 @@ pub struct MicrosoftOptions {
     pub authority: Option<String>,
     pub scope: Vec<String>,
     pub disable_default_scope: bool,
+    /// Reject new identities, including an explicit signup request.
+    pub disable_sign_up: bool,
     pub prompt: Option<String>,
     pub authorization_endpoint: Option<String>,
     pub redirect_uri: Option<String>,
@@ -83,6 +85,7 @@ impl MicrosoftOptions {
             authority: None,
             scope: Vec::new(),
             disable_default_scope: false,
+            disable_sign_up: false,
             prompt: None,
             authorization_endpoint: None,
             redirect_uri: None,
@@ -102,6 +105,7 @@ impl std::fmt::Debug for MicrosoftOptions {
             .field("authority", &self.authority)
             .field("scope", &self.scope)
             .field("disable_default_scope", &self.disable_default_scope)
+            .field("disable_sign_up", &self.disable_sign_up)
             .field("disable_profile_photo", &self.disable_profile_photo)
             .field("profile_photo_size", &self.profile_photo_size)
             .finish_non_exhaustive()
@@ -197,6 +201,7 @@ impl OAuthProvider {
                 configured_scopes: options.scope,
                 scope_encoding: OAuthScopeEncoding::UriComponent,
                 disable_default_scopes: options.disable_default_scope,
+                disable_sign_up_option: options.disable_sign_up.then_some(true),
                 require_client_id: true,
                 token_endpoint_auth: Some(token_endpoint_auth),
                 authorization_code_client_key: options.client_key,

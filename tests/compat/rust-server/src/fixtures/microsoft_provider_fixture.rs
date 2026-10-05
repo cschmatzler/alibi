@@ -141,6 +141,7 @@ pub(crate) async fn router(
             options.prompt = Some("login".into());
         }
         options.disable_default_scope = mode.starts_with("disabled-");
+        options.disable_sign_up = mode == "signup-disabled";
         if mode == "client-key" {
             options.client_key = Some("fixture-microsoft-client-key".into());
         }
@@ -179,7 +180,6 @@ pub(crate) async fn router(
         provider.token_url = format!("{}/{tenant}/oauth2/v2.0/token", config.base_url);
         provider.disable_id_token_sign_in = mode == "disabled-idtoken";
         provider.disable_implicit_sign_up = mode == "implicit-disabled";
-        // The pinned Microsoft factory does not forward disableSignUp.
         let auth = Arc::new(
             AuthBuilder::<TestSchema>::new(settings.clone())
                 .store(crate::backend::store::<TestSchema>(

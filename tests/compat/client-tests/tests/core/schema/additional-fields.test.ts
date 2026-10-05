@@ -414,7 +414,7 @@ compatScenario(
     const magicProof = z
       .object({
         id: z.string(),
-        identifier: z.literal(delivery.token),
+        identifier: z.literal(`magic-link:${delivery.token}`),
         value: z.string(),
         expiresAt: z.string(),
         createdAt: z.string(),
@@ -422,8 +422,12 @@ compatScenario(
       })
       .passthrough()
       .parse(deliveryState.verifications[0]);
-    expect(magicProof.identifier).toHaveLength(32);
-    expect(JSON.parse(magicProof.value)).toEqual({ email: issuerEmail, name: "Magic field owner" });
+    expect(magicProof.identifier).toHaveLength("magic-link:".length + 32);
+    expect(JSON.parse(magicProof.value)).toEqual({
+      type: "magic-link",
+      email: issuerEmail,
+      name: "Magic field owner",
+    });
 
     const verified = await issuer.client.$fetch("/magic-link/verify", {
       method: "GET",

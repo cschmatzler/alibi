@@ -1118,8 +1118,8 @@ for (const mode of ["hashed", "custom", "cache", "mixed"] as const) {
         token: `magic-proof:${sha(email)}`,
         metadata: { reason: "verification storage" },
       });
-      expect(issued(initial, mode, delivery.token).value).toBe(
-        JSON.stringify({ email, name: "Global Magic Owner" }),
+      expect(issued(initial, mode, `magic-link:${delivery.token}`).value).toBe(
+        JSON.stringify({ type: "magic-link", email, name: "Global Magic Owner" }),
       );
 
       const before = sql(initial);
@@ -1158,7 +1158,7 @@ for (const mode of ["hashed", "custom", "cache", "mixed"] as const) {
       const expiry = await call(ctx, {
         operation: "update",
         profile: selected,
-        identifier: delivery.token,
+        identifier: `magic-link:${delivery.token}`,
         data: { expiresAt: "2000-01-01T00:00:00.000Z" },
       });
       expect(expiry.status).toBe(200);
@@ -1166,9 +1166,9 @@ for (const mode of ["hashed", "custom", "cache", "mixed"] as const) {
       if (mode === "cache") {
         await call(ctx, {
           operation: "cache-seed",
-          key: `verification:${transformed(mode, delivery.token)}`,
+          key: `verification:${transformed(mode, `magic-link:${delivery.token}`)}`,
           value: JSON.stringify({
-            ...issued(initial, mode, delivery.token),
+            ...issued(initial, mode, `magic-link:${delivery.token}`),
             expiresAt: "2000-01-01T00:00:00.000Z",
           }),
         });
@@ -1186,11 +1186,13 @@ for (const mode of ["hashed", "custom", "cache", "mixed"] as const) {
       const after = await state(ctx);
       unchanged(other, after);
       expect(
-        after.verifications.filter((row) => row.identifier === transformed(mode, delivery.token)),
+        after.verifications.filter(
+          (row) => row.identifier === transformed(mode, `magic-link:${delivery.token}`),
+        ),
       ).toEqual([]);
       expect(
         after.cache.filter(
-          (row) => row.key === `verification:${transformed(mode, delivery.token)}`,
+          (row) => row.key === `verification:${transformed(mode, `magic-link:${delivery.token}`)}`,
         ),
       ).toEqual([]);
 
@@ -1375,13 +1377,13 @@ for (const mode of ["hashed", "custom", "cache", "mixed"] as const) {
       const oauthState = new URL(initiated.data!.url!).searchParams.get("state")!;
       expect(oauthState).toMatch(/^[a-zA-Z0-9_-]{32}$/);
 
-      const stored = transformed(mode, oauthState);
+      const stored = transformed(mode, `auth-state:${oauthState}`);
       const identifiers = new Map([
         [stored, { algorithm: mode, logical: { state: oauthState } }],
-        [oauthState, { algorithm: "legacy-plain", logical: { state: oauthState } }],
+        [`auth-state:${oauthState}`, { algorithm: "legacy-plain", logical: { state: oauthState } }],
       ]);
       const initial = await state(ctx);
-      const proof = issued(initial, mode, oauthState);
+      const proof = issued(initial, mode, `auth-state:${oauthState}`);
       const payload = JSON.parse(proof.value);
       expect(payload.oauthState).toBe(oauthState);
       expect(payload.callbackURL).toBe("/verification-complete");
@@ -1513,14 +1515,14 @@ for (const mode of ["hashed", "custom", "cache", "mixed"] as const) {
       expect(expiring.error).toBeNull();
 
       const expiredState = new URL(expiring.data!.url!).searchParams.get("state")!;
-      const expiredStored = transformed(mode, expiredState);
+      const expiredStored = transformed(mode, `auth-state:${expiredState}`);
       identifiers.set(expiredStored, { algorithm: mode, logical: { state: expiredState } });
-      identifiers.set(expiredState, {
+      identifiers.set(`auth-state:${expiredState}`, {
         algorithm: "legacy-plain",
         logical: { state: expiredState },
       });
       const expiryIssued = await state(ctx);
-      const live = issued(expiryIssued, mode, expiredState);
+      const live = issued(expiryIssued, mode, `auth-state:${expiredState}`);
       const expiredPayload = {
         ...JSON.parse(live.value),
         expiresAt: Date.parse("2000-01-01T00:00:00.000Z"),
@@ -1530,7 +1532,7 @@ for (const mode of ["hashed", "custom", "cache", "mixed"] as const) {
       const editedExpired = await call(ctx, {
         operation: "update",
         profile: selected,
-        identifier: expiredState,
+        identifier: `auth-state:${expiredState}`,
         data: { value: JSON.stringify(expiredPayload) },
       });
       expect(editedExpired.status).toBe(200);
@@ -1614,10 +1616,10 @@ compatScenario(
     expect(initiated.error).toBeNull();
 
     const oauthState = new URL(initiated.data!.url!).searchParams.get("state")!;
-    const stored = sha(oauthState);
+    const stored = sha(`auth-state:${oauthState}`);
     const identifiers = new Map([
       [stored, { algorithm: "hashed", logical: { state: oauthState } }],
-      [oauthState, { algorithm: "legacy-plain", logical: { state: oauthState } }],
+      [`auth-state:${oauthState}`, { algorithm: "legacy-plain", logical: { state: oauthState } }],
     ]);
     const before = await state(ctx);
     await configure(ctx, {}, { get: true });

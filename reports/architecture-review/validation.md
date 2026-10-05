@@ -1,6 +1,23 @@
-# Refactor validation
+# Refactor and upstream-parity validation
 
-The Rust source changes are in commit `70eca8ea`; subsequent commits merge main's documentation/tooling updates and remove a duplicated documentation row. The workspace contains the same refactored Rust source after that merge. The architecture assessment and baseline inventories refer to commit `14eaeb28`.
+The architecture refactor starts at commit `70eca8ea`; its assessment and baseline inventories refer to commit `14eaeb28`. Follow-up work repairs the previously reported upstream compatibility failures and completes the public facade.
+
+## Follow-up validation
+
+- The nine previously failing SDK files: 245/246 passed after the initial repairs.
+- The remaining Microsoft signup-ban repair and user-validation owner replay: 91/91 passed. Together these runs cover all 246 scenarios in the nine files.
+- Process-environment compatibility: passed across all four configurations on SQLx.
+- Documentation check and production build: passed (67 pages).
+- Client formatting, lint and type checking: passed.
+- Full `scripts/check.sh`, including both SDK backends and coverage: running.
+
+The CAPTCHA HTTP hook now checks protected `OPTIONS` requests before CORS/router dispatch, matching upstream. Microsoft factory configuration retains `disableSignUp` in its authorization policy; ID-token admission therefore rejects new identities even with `requestSignUp: true`.
+
+The compatibility fixtures now query the upstream `magic-link:` and `auth-state:` namespaces, assert the typed magic-link record and JSON rate-limit media type, and decrypt OAuth proxy state/packages/profiles with their distinct purpose-derived keys. These changes retain physical persistence, expiry, replay, origin, foreign-owner and cryptographic assertions. The Microsoft explicit-signup scenario now asserts the actual upstream rejection contract.
+
+All documented application imports use the `better_auth` facade. It now exports user validation, verification policy, callback utilities, cookie-cache types, refresh suppression and `PluginConfig`; consumers do not need a core/API/store-crate dependency.
+
+## Initial architecture validation (before the repairs)
 
 | Check | Result |
 | --- | --- |
@@ -25,7 +42,7 @@ The Rust source changes are in commit `70eca8ea`; subsequent commits merge main'
 
 Every failing SDK case was replayed against **pre-refactor commit `14eaeb28` in an isolated worktree**, using the same pinned upstream/client dependencies. The sets of failed scenario names are identical: 30 in each run, with no additional refactor-only failure. The separate OAuth-proxy environment failure was also reproduced on that baseline. This does not claim that the entire pre-refactor differential suite was rerun, or that the complete gate is green.
 
-Most SDK failures happen inside TypeScript reference assertions before a Rust scenario is attempted. They include namespaced proof identifiers, proof-existence assumptions, signup-option admission and rate-limit content-type expectations. Other existing differences include CAPTCHA method/body handling and magic-link physical-identifier observations. Changing those authentication semantics is outside this behavior-preserving architecture pass.
+Most SDK failures happen inside TypeScript reference assertions before a Rust scenario is attempted. They include namespaced proof identifiers, proof-existence assumptions, signup-option admission and rate-limit content-type expectations. Other existing differences include CAPTCHA method/body handling and magic-link physical-identifier observations. The follow-up repairs above address those contracts under the expanded upstream-parity requirement.
 
 | Client scenario file | Existing failures |
 | --- | ---: |

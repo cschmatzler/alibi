@@ -333,7 +333,7 @@ const magicPlugin = () =>
       const identifier = ctx.context.options.basePath?.includes("magic-link-hashed")
         ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
         : token;
-      const context = await callbackSnapshot(ctx, identifier);
+      const context = await callbackSnapshot(ctx, `magic-link:${identifier}`);
       magicLinkOutbox.set(email, {
         url,
         token,
@@ -1016,7 +1016,7 @@ for (const name of [
             const identifier = ctx.context.options.basePath?.includes("magic-link-hashed")
               ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
               : token;
-            const context = await callbackSnapshot(ctx, identifier);
+            const context = await callbackSnapshot(ctx, `magic-link:${identifier}`);
             magicLinkOutbox.set(email, {
               url,
               token,

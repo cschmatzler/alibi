@@ -350,7 +350,9 @@ for (const variant of [
   "signup-option",
 ] as const) {
   compatScenario(
-    `microsoft signed ${variant} admission persists raw oid using configured authority`,
+    variant === "signup-option"
+      ? "microsoft explicit signup cannot override the configured signup ban"
+      : `microsoft signed ${variant} admission persists raw oid using configured authority`,
     async (ctx) => {
       const other = await foreign(ctx);
       const consumer = variant === "consumers";
@@ -387,9 +389,21 @@ for (const variant of [
       const actor = ctx.actor("microsoft", `social-microsoft-${mode}` as FixtureProfile);
       const result = await actor.client.signIn.social({
         provider: "microsoft",
-        requestSignUp: variant === "explicit-signup",
+        requestSignUp: variant === "explicit-signup" || variant === "signup-option",
         idToken: { token, ...(variant === "exact-nonce" ? { nonce: "matching-nonce" } : {}) },
       });
+      if (variant === "signup-option") {
+        expect(result.error?.code).toBe("OAUTH_LINK_ERROR");
+        expect(result.error?.message).toBe("signup disabled");
+        const stored = await state(ctx);
+        expect(stored).toEqual(other.before);
+        return {
+          result: ctx.snapshot(result),
+          before: other.before,
+          stored,
+          receipts: await receipts(ctx),
+        };
+      }
       expect(result.error).toBeNull();
       const stored = await state(ctx);
       unchangedForeign(other.before, stored);

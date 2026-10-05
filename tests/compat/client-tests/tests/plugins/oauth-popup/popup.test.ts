@@ -174,7 +174,7 @@ compatScenario(
       const row = issuedState.verification[0];
       const stored = JSON.parse(row.value);
       const providerURL = new URL(issued.headers.location!);
-      expect(row.identifier).toBe(providerURL.searchParams.get("state"));
+      expect(row.identifier).toBe(`auth-state:${providerURL.searchParams.get("state")}`);
       expect(stored.callbackURL).toBe("/finished");
       expect(stored.custom).toBe("kept");
       expect(stored.idTokenNonce).toBeUndefined();

@@ -281,7 +281,7 @@ for (const variant of [
       expect(nonce).toBeTruthy();
       expect(nonce).not.toBe("attacker-nonce");
       const stateRows = (await ctx.readVerificationState({
-        identifier: url.searchParams.get("state")!,
+        identifier: `auth-state:${url.searchParams.get("state")!}`,
       })) as { value: string }[];
       expect(stateRows).toHaveLength(1);
       const payload = JSON.parse(stateRows[0]!.value);

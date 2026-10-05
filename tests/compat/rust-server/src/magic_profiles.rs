@@ -36,8 +36,11 @@ impl SendMagicLink for Sender {
         } else {
             delivery.token.clone()
         };
-        let context =
-            crate::fixtures::passwordless_context::snapshot(_context, &identifier).await?;
+        let context = crate::fixtures::passwordless_context::snapshot(
+            _context,
+            &format!("magic-link:{identifier}"),
+        )
+        .await?;
         let serialized = serde_json::to_value(delivery)?;
         let mut value = json!({"url": serialized["url"], "token": serialized["token"], "metadata": serialized["metadata"]});
         if let Some(context) = context {
