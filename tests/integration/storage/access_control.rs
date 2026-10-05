@@ -1,4 +1,5 @@
 //! Public operator decisions guard real writes after dynamic-role loading.
+use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use better_auth::plugins::access::{
     ActionRequest, AuthorizeRequest, AuthorizeResponse, Connector, create_access_control, role,
@@ -14,6 +15,7 @@ use serde_json::{Value, json};
 use std::sync::Arc;
 
 backend_tests!(public_role_operators_guard_persisted_grants_and_physical_writes);
+postgres_tests!(public_role_operators_guard_persisted_grants_and_physical_writes);
 
 fn connector(value: &str) -> Connector {
     match value {
@@ -184,15 +186,22 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
         );
     }
     assert_eq!(json!(effects), fixture["effects"]);
-    let physical_effects: Value = serde_json::from_str(
-        &db.text(
-            "SELECT json_group_array(name) FROM (SELECT name FROM team ORDER BY rowid)",
-            &[],
-        )
-        .await?
-        .ok_or("missing physical effects")?,
-    )?;
-    assert_eq!(physical_effects, fixture["effects"]);
+    let physical_rows: Value = serde_json::from_str(&db.table("team").await?)?;
+    let mut physical_effects = physical_rows
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|row| row["name"].as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    let mut expected_effects = fixture["effects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|name| name.as_str().unwrap().to_owned())
+        .collect::<Vec<_>>();
+    physical_effects.sort();
+    expected_effects.sort();
+    assert_eq!(physical_effects, expected_effects);
     let physical = json!({
         "permissionBefore": permission_before,
         "permissionAfter": db.text("SELECT permission FROM organization_role WHERE id = $1", &[&stored.id]).await?,
@@ -204,7 +213,7 @@ async fn public_role_operators_guard_persisted_grants_and_physical_writes<B: Bac
         "{} physical={} effects={}",
         std::any::type_name::<B>(),
         physical,
-        physical_effects
+        json!(physical_effects)
     );
     assert_eq!(
         db.count_where(

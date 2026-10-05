@@ -1,4 +1,5 @@
 //! Real HTTP plugin composition over both stores, with independent physical observers.
+use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use async_trait::async_trait;
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
@@ -364,6 +365,7 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for StorageObserver {
     }
 }
 backend_tests!(physical_http_composition_preserves_principals_and_committed_rows);
+postgres_tests!(physical_http_composition_preserves_principals_and_committed_rows);
 async fn physical_http_composition_preserves_principals_and_committed_rows<B: Backend>(
     db: Db,
 ) -> TestResult {

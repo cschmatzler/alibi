@@ -5,7 +5,7 @@
     clippy::indexing_slicing,
     reason = "boundary assertions use known fixture values"
 )]
-use crate::storage::{Backend, Db, TestResult, backend_tests};
+use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use async_trait::async_trait;
 use better_auth::integrations::poem::{CurrentSession, OptionalSession, PoemIntegration};
 use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
@@ -295,9 +295,45 @@ async fn sessions<B: Backend>(db: Db) -> TestResult {
         .update_session_expiry(token, chrono::Utc::now() - chrono::Duration::seconds(60))
         .await?;
     denied_session(&auth, &cookie).await?;
+    // Sign out a newly issued, unexpired session. Reusing the expired session
+    // above would make this denial pass even if signout never revoked anything.
+    let signed_in = app
+        .get_response(request(
+            Method::POST,
+            "/auth/sign-in/email",
+            json!({"email":"poem@example.com","password":"password123"}).to_string(),
+        ))
+        .await;
+    assert_eq!(signed_in.status(), StatusCode::OK);
+    let cookie = signed_in
+        .headers()
+        .get_all("set-cookie")
+        .iter()
+        .filter_map(|header| header.to_str().ok())
+        .find(|header| header.starts_with("__Secure-better-auth.session_token="))
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+    let fresh: serde_json::Value = signed_in.into_body().into_json().await?;
+    let fresh_token = fresh["token"].as_str().unwrap();
+    assert!(auth.store().get_session(fresh_token).await?.is_some());
+    let mut req = request(Method::GET, "/profile", ());
+    let _ = req.headers_mut().insert("cookie", cookie.parse()?);
+    req.set_data(auth.clone());
+    let (req, mut body) = req.split();
+    assert_eq!(
+        CurrentSession::<B::Schema>::from_request(&req, &mut body)
+            .await?
+            .user
+            .id(),
+        user_id
+    );
     let mut req = request(Method::POST, "/auth/sign-out", "{}");
     let _ = req.headers_mut().insert("cookie", cookie.parse()?);
     assert_eq!(app.get_response(req).await.status(), StatusCode::OK);
+    assert!(auth.store().get_session(fresh_token).await?.is_none());
     let mut req = request(Method::GET, "/profile", ());
     let _ = req.headers_mut().insert("cookie", cookie.parse()?);
     req.set_data(auth.clone());
@@ -360,6 +396,12 @@ async fn disconnect_continues_persistence<B: Backend>(db: Db) -> TestResult {
     B::close(connection).await
 }
 backend_tests!(
+    wire_and_authority,
+    sessions,
+    disconnect_continues_persistence
+);
+
+postgres_tests!(
     wire_and_authority,
     sessions,
     disconnect_continues_persistence

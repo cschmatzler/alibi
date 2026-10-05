@@ -592,6 +592,64 @@ async fn exercise<S: AuthSchema>(
             serde_json::json!({"actor":actor,"selector":target,"status":response.status,"response":serde_json::from_slice::<serde_json::Value>(&response.body)?,"before":{"users":before_users,"accounts":before_accounts,"sessions":before_sessions},"after":{"users":after_users,"accounts":after_accounts,"sessions":after_sessions}})
         );
     }
+    // This handwritten model intentionally supplies no additional-field
+    // binding. Reject the complete update before even its supported name writes.
+    let auth = AuthBuilder::<S>::new(config())
+        .store_arc(Arc::clone(&store))
+        .plugin(better_auth::plugins::EmailPasswordPlugin::new())
+        .build()
+        .await?;
+    let session = store
+        .create_session(CreateSession {
+            user_id: "43".into(),
+            expires_at: Utc::now() + chrono::Duration::hours(1),
+            token: None,
+            ip_address: None,
+            user_agent: None,
+            impersonated_by: None,
+            active_organization_id: None,
+            active_team_id: None,
+            additional_fields: Default::default(),
+        })
+        .await?;
+    let cookie = better_auth_core::utils::cookie_utils::sign_cookie_value(
+        session.token(),
+        config().current_secret(),
+    );
+    for (input, status) in [
+        (
+            serde_json::json!({"name":"must-not-persist","score":99}),
+            500,
+        ),
+        (serde_json::json!({"name":"Supported mutation"}), 200),
+    ] {
+        let before = rows(raw, "users").await?;
+        let mut request = AuthRequest::new(better_auth_core::HttpMethod::Post, "/update-user");
+        request.headers.extend([
+            ("origin".into(), config().base_url.clone()),
+            (
+                "cookie".into(),
+                format!("better-auth.session_token={cookie}"),
+            ),
+            ("content-type".into(), "application/json".into()),
+        ]);
+        request.body = Some(serde_json::to_vec(&input)?);
+        let response = Box::pin(auth.handle_request(request)).await?;
+        assert_eq!(
+            response.status,
+            status,
+            "{}",
+            String::from_utf8_lossy(&response.body)
+        );
+        if status == 500 {
+            assert_eq!(rows(raw, "users").await?, before);
+        } else {
+            assert_eq!(
+                store.get_user_by_id("43").await?.unwrap().name(),
+                Some("Supported mutation")
+            );
+        }
+    }
     Ok(())
 }
 

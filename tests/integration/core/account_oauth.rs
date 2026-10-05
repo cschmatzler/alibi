@@ -250,7 +250,7 @@ async fn issue_account_cookie<S: better_auth_core::AuthSchema>(
         .unwrap();
     let state = uuid::Uuid::new_v4().to_string();
     db.create_verification(CreateVerification {
-        identifier:state.clone(),
+        identifier:format!("auth-state:{state}"),
         value:json!({"callbackURL":"http://localhost:3000", "codeVerifier":"native-cookie-verifier", "oauthState":state, "expiresAt":(Utc::now()+Duration::minutes(10)).timestamp_millis()}).to_string(),
         expires_at:Utc::now()+Duration::minutes(10),
     }).await.unwrap();
@@ -1424,7 +1424,7 @@ mod tests {
         });
 
         db.create_verification(CreateVerification {
-            identifier: state.to_owned(),
+            identifier: format!("auth-state:{state}"),
             value: payload.to_string(),
             expires_at: Utc::now() + Duration::minutes(10),
         })
@@ -1440,31 +1440,30 @@ mod tests {
         );
         req.query.insert("code".to_owned(), "test-code".to_owned());
         req.query.insert("state".to_owned(), state.to_owned());
+        req.headers.insert(
+            "cookie".into(),
+            format!(
+                "better-auth.state={}",
+                better_auth_core::utils::cookie_utils::sign_cookie_value(state, TEST_SECRET)
+            ),
+        );
 
         let oauth_plugin = OAuthPlugin::with_config(oauth_config);
-        let result = oauth_plugin.on_request(&req, &ctx).await;
-
-        // Should fail because account_linking.enabled is false and a user with
-        // "existing@example.com" already exists with a different provider
-        match result {
-            Err(e) => {
-                let msg = format!("{e:?}");
-                assert!(
-                    msg.contains("Account linking is disabled")
-                        || msg.contains("linking is disabled"),
-                    "Expected account linking disabled error, got: {msg}"
-                );
-            }
-            Ok(Some(resp)) => {
-                assert_ne!(
-                    resp.status,
-                    200,
-                    "Should not succeed when linking is disabled. Body: {}",
-                    String::from_utf8_lossy(&resp.body),
-                );
-            }
-            Ok(None) => panic!("Expected a response from callback"),
-        }
+        let response = oauth_plugin.on_request(&req, &ctx).await.unwrap().unwrap();
+        assert_eq!(response.status, 302);
+        let location = url::Url::parse(response.headers.get("location").unwrap()).unwrap();
+        assert_eq!(
+            location
+                .query_pairs()
+                .find(|(key, _)| key == "error")
+                .map(|(_, value)| value.into_owned()),
+            Some("account_not_linked".into()),
+            "the callback must reach linking policy, not fail OAuth state validation"
+        );
+        let accounts = db.get_user_accounts(&user.id()).await.unwrap();
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts.first().unwrap().provider_id(), "github");
+        assert!(db.get_user_sessions(&user.id()).await.unwrap().is_empty());
     }
 
     // ─────────────────────────────────────────────────────────────────────────────
@@ -1586,7 +1585,7 @@ mod tests {
         });
 
         db.create_verification(CreateVerification {
-            identifier: state.to_owned(),
+            identifier: format!("auth-state:{state}"),
             value: payload.to_string(),
             expires_at: Utc::now() + Duration::minutes(10),
         })

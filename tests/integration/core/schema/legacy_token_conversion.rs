@@ -121,6 +121,21 @@ async fn exercise<S: AuthSchema>(
     store: &(impl AuthStore<S> + OAuthTokenConversionStore<S>),
     db: &Db,
 ) -> TestResult {
+    use better_auth::plugins::oauth::encryption::{
+        decrypt_token_with_config, encrypt_token, encrypt_token_with_config,
+    };
+    let bare = encrypt_token("legacy-reader-token", ORIGINAL)?;
+    assert!(decrypt_token_with_config(&bare, &config()).is_err());
+    let reader = config().managed_secrets(ManagedSecrets::new(7, CURRENT).legacy(ORIGINAL));
+    assert_eq!(
+        decrypt_token_with_config(&bare, &reader)?,
+        "legacy-reader-token"
+    );
+    let wrong =
+        config().managed_secrets(ManagedSecrets::new(7, CURRENT).legacy("wrong-legacy-reader"));
+    assert!(decrypt_token_with_config(&bare, &wrong).is_err());
+    let written = encrypt_token_with_config("current-writer-token", &reader)?;
+    assert_eq!(source_plain(&written)?, "current-writer-token");
     // Application-defined collations must not weaken snapshot CAS. Recreate
     // only this empty owned fixture table with NOCASE token/identity columns.
     let schema = db

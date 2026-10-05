@@ -444,6 +444,20 @@ mod tests {
         assert_eq!(cache.get("expired").await?.as_deref(), Some("renewed"));
         cache.expire("expired", Duration::seconds(-1)).await?;
         assert!(cache.get_and_delete("expired").await?.is_none());
+        let ttl = std::time::Duration::from_secs(60);
+        assert_eq!(cache.increment("counter", ttl).await?, 1.0);
+        assert_eq!(
+            cache
+                .increment("counter", std::time::Duration::ZERO)
+                .await?,
+            2.0
+        );
+        assert_eq!(cache.get("counter").await?.as_deref(), Some("2"));
+        cache.set_without_expiry("corrupt", "not-a-number").await?;
+        assert!(cache.increment("corrupt", ttl).await.is_err());
+        assert_eq!(cache.get("corrupt").await?.as_deref(), Some("not-a-number"));
+        cache.expire("counter", Duration::seconds(-1)).await?;
+        assert_eq!(cache.increment("counter", ttl).await?, 1.0);
         Ok(())
     }
 }

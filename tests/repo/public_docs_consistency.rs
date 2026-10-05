@@ -14,40 +14,23 @@ fn read_repo_file(path: &str) -> String {
     fs::read_to_string(repo_file(path)).expect("repo documentation file should be readable")
 }
 
-fn crate_minor_version() -> String {
-    let version = env!("CARGO_PKG_VERSION");
-    let mut parts = version.split('.');
-    let major = parts.next().expect("major version should exist");
-    let minor = parts.next().expect("minor version should exist");
-    format!("{major}.{minor}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    // Rust-specific surface: the README is part of the Rust crate interface and
-    // must stay aligned with the published crate version and canonical module paths.
+    // The package is unreleased: installation must use the same Git repository
+    // for the library and generator, not an unavailable crates.io release.
     #[test]
-    fn readme_uses_current_minor_version_and_canonical_paths() {
-        let expected_minor = crate_minor_version();
-        let expected_full = env!("CARGO_PKG_VERSION");
-
+    fn readme_installation_matches_the_unreleased_package() {
         let readme = read_repo_file("README.md");
+        let repository = env!("CARGO_PKG_REPOSITORY");
         assert!(
-            readme.contains(&format!("better-auth = \"{expected_minor}\""))
-                || readme.contains(&format!("better-auth = \"{expected_full}\""))
-                || readme.contains(&format!("version = \"{expected_minor}\""))
-                || readme.contains(&format!("version = \"{expected_full}\"")),
-            "README should use the current minor or full crate version",
+            readme.contains(&format!("better-auth = {{ git = \"{repository}\"")),
+            "the install example must use the canonical Git repository"
         );
-        assert!(!readme.contains("better_auth::handlers"));
-        assert!(!readme.contains("better_auth::types"));
-        assert!(readme.contains("better_auth::seaorm"));
-        assert!(readme.contains("Database"));
-        assert!(readme.contains("SeaOrmStore"));
-        assert!(readme.contains("better_auth::sqlx"));
-        assert!(readme.contains("SqlxStore"));
-        assert!(!readme.contains("better_auth::store::sea_orm::Database"));
+        assert!(readme.contains(&format!(
+            "cargo install --git {repository} --locked better-auth-cli"
+        )));
+        assert!(readme.contains(&format!("`{}`", env!("CARGO_PKG_VERSION"))));
     }
 }

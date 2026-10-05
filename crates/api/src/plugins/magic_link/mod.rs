@@ -547,7 +547,7 @@ mod tests {
         );
         let stored = ctx
             .database
-            .get_latest_verification_by_identifier(&delivery.token)
+            .get_latest_verification_by_identifier(&format!("magic-link:{}", delivery.token))
             .await
             .unwrap()
             .unwrap();
@@ -581,7 +581,7 @@ mod tests {
         assert!(payload.get("session").is_some());
         assert!(
             ctx.database
-                .get_latest_verification_by_identifier(&delivery.token)
+                .get_latest_verification_by_identifier(&format!("magic-link:{}", delivery.token))
                 .await
                 .unwrap()
                 .is_none()
@@ -627,7 +627,7 @@ mod tests {
         );
         assert!(
             ctx.database
-                .get_latest_verification_by_identifier(&delivery.token)
+                .get_latest_verification_by_identifier(&format!("magic-link:{}", delivery.token))
                 .await
                 .unwrap()
                 .is_some()
@@ -684,7 +684,7 @@ mod tests {
         );
         assert!(
             ctx.database
-                .get_latest_verification_by_identifier(&delivery.token)
+                .get_latest_verification_by_identifier(&format!("magic-link:{}", delivery.token))
                 .await
                 .unwrap()
                 .is_none()
@@ -709,14 +709,17 @@ mod tests {
         let delivery = outbox.0.lock().unwrap().last().unwrap().clone();
         assert!(
             ctx.database
-                .get_latest_verification_by_identifier(&delivery.token)
+                .get_latest_verification_by_identifier(&format!("magic-link:{}", delivery.token))
                 .await
                 .unwrap()
                 .is_none()
         );
         assert!(
             ctx.database
-                .get_latest_verification_by_identifier(&hash_token(&delivery.token))
+                .get_latest_verification_by_identifier(&format!(
+                    "magic-link:{}",
+                    hash_token(&delivery.token)
+                ))
                 .await
                 .unwrap()
                 .is_some()
@@ -743,7 +746,10 @@ mod tests {
         );
         assert!(
             ctx.database
-                .get_latest_verification_by_identifier(&hash_token(&delivery.token))
+                .get_latest_verification_by_identifier(&format!(
+                    "magic-link:{}",
+                    hash_token(&delivery.token)
+                ))
                 .await
                 .unwrap()
                 .is_none()
@@ -818,7 +824,7 @@ mod tests {
         assert_eq!(token, "application-issued-link-token");
         assert!(
             ctx.database
-                .get_latest_verification_by_identifier(&token)
+                .get_latest_verification_by_identifier(&format!("magic-link:{token}"))
                 .await
                 .unwrap()
                 .is_none()
@@ -826,7 +832,7 @@ mod tests {
         assert!(
             ctx.database
                 .get_latest_verification_by_identifier(&format!(
-                    "application-hash:{}",
+                    "magic-link:application-hash:{}",
                     hash_token(&token)
                 ))
                 .await
@@ -901,7 +907,7 @@ mod tests {
             assert_eq!(message, "Invalid callbackURL");
             assert!(
                 ctx.database
-                    .get_latest_verification_by_identifier(&token)
+                    .get_latest_verification_by_identifier(&format!("magic-link:{token}"))
                     .await
                     .unwrap()
                     .is_some()
@@ -944,7 +950,7 @@ mod tests {
         );
         assert!(
             ctx.database
-                .get_latest_verification_by_identifier("application-issued-link-token")
+                .get_latest_verification_by_identifier("magic-link:application-issued-link-token")
                 .await
                 .unwrap()
                 .is_some()

@@ -1,4 +1,7 @@
 use super::PasskeyConfig;
+use super::source::{
+    Verifier, credential::Passkey as WebauthnPasskey, crypto::COSEKeyType, data::AuthenticatorData,
+};
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD};
 use better_auth_core::{AuthConfig, AuthError, AuthRequest, AuthResult};
@@ -12,16 +15,15 @@ use url::Url;
 use uuid::Uuid;
 use webauthn_rs::prelude::{
     Base64UrlSafeData, CreationChallengeResponse, CredentialID, DiscoverableAuthentication,
-    Passkey as WebauthnPasskey, PublicKeyCredential, RegisterPublicKeyCredential,
-    RequestChallengeResponse, Webauthn, WebauthnBuilder,
+    PublicKeyCredential, RegisterPublicKeyCredential, RequestChallengeResponse, Webauthn,
+    WebauthnBuilder,
 };
 use webauthn_rs_core::{
     WebauthnCore,
     error::WebauthnError,
-    internals::AuthenticatorData,
     proto::{
-        Authentication, AuthenticationResult, AuthenticationState, COSEKeyType, Credential,
-        EDDSACurve, Registration, RegistrationState, UserVerificationPolicy,
+        Authentication, AuthenticationResult, AuthenticationState, EDDSACurve, Registration,
+        RegistrationState, UserVerificationPolicy,
     },
 };
 
@@ -165,25 +167,25 @@ pub(super) fn build_verification_core(
     config: &PasskeyConfig,
     auth_config: &AuthConfig,
     origin: &str,
-) -> AuthResult<WebauthnCore> {
+) -> AuthResult<Verifier> {
     // Retain the high-level builder's RP/origin configuration validation.
     drop(build_webauthn(config, auth_config, origin)?);
     let rp_id = resolve_rp_id(config, auth_config)?;
     let parsed_origin = Url::parse(origin)
         .map_err(|error| AuthError::bad_request(format!("Invalid passkey origin: {error}")))?;
-    let mut policy = webauthn_rs_core::source_policy::SourcePolicy::default();
+    let mut policy = super::source::policy::SourcePolicy::default();
     if let Some(roots) = &config.attestation_root_certificates {
         policy.roots.extend(roots.clone());
     }
-    Ok(WebauthnCore::new_unsafe_experts_only(
+    let core = WebauthnCore::new_unsafe_experts_only(
         &config.rp_name,
         &rp_id,
-        vec![parsed_origin],
+        vec![parsed_origin.clone()],
         Duration::from_millis(OPTIONS_TIMEOUT_MS),
         Some(false),
         Some(false),
-    )
-    .with_source_policy(policy))
+    );
+    Ok(Verifier::new(core, &rp_id, parsed_origin, policy))
 }
 
 /// Keep certificate URL fetching in the API's configured HTTP/TLS stack.
@@ -192,8 +194,8 @@ pub(super) async fn build_registration_core(
     auth_config: &AuthConfig,
     origin: &str,
     registration: &RegisterPublicKeyCredential,
-) -> AuthResult<WebauthnCore> {
-    let mut policy = webauthn_rs_core::source_policy::SourcePolicy::default();
+) -> AuthResult<Verifier> {
+    let mut policy = super::source::policy::SourcePolicy::default();
     if let Some(roots) = &config.attestation_root_certificates {
         policy.roots.extend(roots.clone());
     }
@@ -250,7 +252,7 @@ fn validate_token_binding(
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn finish_core_registration(
-    core: &WebauthnCore,
+    core: &Verifier,
     registration: &RegisterPublicKeyCredential,
     state: &RegistrationState,
     origin: &str,
@@ -290,17 +292,16 @@ pub(super) fn finish_core_registration(
         }
     }
     // The original attestation bytes are verified once, without weaker retries.
-    core.register_credential(registration, state, None)
-        .map(WebauthnPasskey::from)
+    core.register_credential(registration, state)
 }
 
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
 pub(super) fn finish_core_authentication(
-    core: &WebauthnCore,
+    core: &Verifier,
     authentication: &PublicKeyCredential,
-    mut state: AuthenticationState,
+    state: AuthenticationState,
     stored_passkey: &WebauthnPasskey,
     current_counter: u32,
     origin: &str,
@@ -326,7 +327,7 @@ pub(super) fn finish_core_authentication(
     if data.backup_state && !data.backup_eligible {
         return Err(WebauthnError::CredentialMayNotBeHardwareBound);
     }
-    let mut credential = Credential::from(stored_passkey.clone());
+    let mut credential = stored_passkey.cred.clone();
     // Source rejects unsupported stored OKP curves before its signature check.
     if matches!(&credential.cred.key, COSEKeyType::EC_OKP(key) if key.curve != EDDSACurve::ED25519)
     {
@@ -338,9 +339,8 @@ pub(super) fn finish_core_authentication(
     credential.user_verified = false;
     credential.backup_eligible = data.backup_eligible;
     credential.counter = current_counter;
-    state.set_allowed_credentials(vec![credential]);
     // Verify the original signed bytes once. Parsing flags never grants authority.
-    core.authenticate_credential(authentication, &state)
+    core.authenticate_credential(authentication, &state, &credential)
 }
 
 ///
@@ -575,7 +575,7 @@ pub(super) fn extract_passkey_snapshot_fields(value: &Value) -> AuthResult<(u64,
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(super) fn snapshot_passkey(passkey: &WebauthnPasskey) -> AuthResult<PasskeySnapshot> {
+pub(super) fn snapshot_passkey(passkey: &impl Serialize) -> AuthResult<PasskeySnapshot> {
     let serialized = serde_json::to_string(passkey)?;
     let value: Value = serde_json::from_str(&serialized)?;
     let (counter, backed_up, backup_eligible) = extract_passkey_snapshot_fields(&value)?;

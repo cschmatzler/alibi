@@ -5,7 +5,7 @@
     clippy::too_many_lines,
     reason = "endpoint regression setup and independent storage receipts fail fast"
 )]
-use crate::storage::{Backend, Db, Raw, TestResult, backend_tests};
+use crate::storage::{Backend, Db, Raw, TestResult, backend_tests, postgres_tests};
 use async_trait::async_trait;
 use better_auth::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedProvidersResolver};
 use better_auth::plugins::{OAuthPlugin, oauth::OAuthProvider};
@@ -19,6 +19,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 const SECRET: &str = "request-provider-fixture-secret-at-least-32";
 backend_tests!(dynamic_provider_callbacks);
+postgres_tests!(dynamic_provider_callbacks);
 
 #[derive(Clone)]
 struct TrustPolicy {

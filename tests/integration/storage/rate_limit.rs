@@ -8,10 +8,35 @@ use better_auth_core::{
     RateLimitStorage,
 };
 use better_auth_sqlx::sqlx;
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc};
 
 backend_tests!(independent_sqlite_instances_preserve_quota_expiry_and_fail_closed);
 postgres_tests!(independent_sqlite_instances_preserve_quota_expiry_and_fail_closed,);
+
+#[derive(Debug)]
+struct ApplicationRule;
+#[async_trait::async_trait]
+impl better_auth_core::middleware::rate_limit::RateLimitResolver for ApplicationRule {
+    async fn resolve(
+        &self,
+        request: &AuthRequest,
+        inherited: &EndpointRateLimit,
+    ) -> better_auth_core::AuthResult<Option<EndpointRateLimit>> {
+        assert_eq!(request.path, "/api/auth/dynamic-rule");
+        assert_eq!(inherited.max_requests, 3.0, "first matching plugin wins");
+        assert_eq!(inherited.window_seconds, 180.0);
+        match request.headers.get("x-policy").map(String::as_str) {
+            Some("disabled") => Ok(None),
+            Some("error") => Err(better_auth_core::AuthError::forbidden(
+                "application rate policy veto",
+            )),
+            _ => Ok(Some(EndpointRateLimit {
+                max_requests: 1.0,
+                window_seconds: 120.0,
+            })),
+        }
+    }
+}
 
 type Row = (String, f64, i64, Option<i64>);
 
@@ -62,17 +87,59 @@ async fn independent_sqlite_instances_preserve_quota_expiry_and_fail_closed<B: B
     stores[1].migrate().await?;
     let key = format!("198.51.100.1|/proof-{}-'", uuid::Uuid::new_v4());
     let rule = EndpointRateLimit {
-        window_seconds: 0.35,
+        window_seconds: 120.0,
         max_requests: 3.0,
     };
-    _ = RateLimitMiddleware::new(RateLimitConfig::new().storage(Arc::new(stores[0].clone())))
-        .with_plugin_rules(vec![PluginRateLimit {
-            matches: |path| path == "/long-lived",
+    let dynamic = RateLimitMiddleware::new(
+        RateLimitConfig::new()
+            .storage(Arc::new(stores[0].clone()))
+            .rule(
+                "/dynamic-rule",
+                better_auth_core::middleware::rate_limit::RateLimitRule::Dynamic(Arc::new(
+                    ApplicationRule,
+                )),
+            ),
+    )
+    .with_base_path("/api/auth")
+    .with_plugin_rules(vec![
+        PluginRateLimit {
+            matches: |path| path == "/dynamic-rule",
             limit: EndpointRateLimit {
                 window_seconds: 180.0,
                 max_requests: 3.0,
             },
-        }]);
+        },
+        PluginRateLimit {
+            matches: |_| true,
+            limit: EndpointRateLimit {
+                window_seconds: 60.0,
+                max_requests: 99.0,
+            },
+        },
+    ]);
+    let mut dynamic_request = AuthRequest::new(HttpMethod::Get, "/api/auth/dynamic-rule");
+    let dynamic_key = "no-trusted-ip|/dynamic-rule";
+    for mode in ["disabled", "error"] {
+        drop(
+            dynamic_request
+                .headers
+                .insert("x-policy".into(), mode.into()),
+        );
+        let result = dynamic.before_request(&dynamic_request).await;
+        if mode == "disabled" {
+            assert!(result?.is_none());
+        } else {
+            assert_eq!(result.unwrap_err().status_code(), 403);
+        }
+        assert!(row(&db, dynamic_key).await?.is_none());
+    }
+    drop(dynamic_request.headers.remove("x-policy"));
+    assert!(dynamic.before_request(&dynamic_request).await?.is_none());
+    let consumed = row(&db, dynamic_key).await?.unwrap();
+    assert_eq!(consumed.1, 1.0);
+    let blocked = dynamic.before_request(&dynamic_request).await?.unwrap();
+    assert_eq!(blocked.status, 429);
+    assert_eq!(row(&db, dynamic_key).await?, Some(consumed));
     let now = chrono::Utc::now().timestamp_millis();
     let old_key = format!("stale-{key}");
     let protected_key = format!("protected-{key}");
@@ -139,14 +206,16 @@ async fn independent_sqlite_instances_preserve_quota_expiry_and_fail_closed<B: B
         RateLimitDecision::Blocked { .. }
     ));
     assert_eq!(row(&db, &key).await?, Some(before.clone()));
-    tokio::time::sleep(Duration::from_millis(400)).await;
+    // Concurrency must not race a short wall-clock window. Age the actual
+    // ledger after asserting quota, then let a separate adapter reset it.
+    set_last_request(&db, &key, chrono::Utc::now().timestamp_millis() - 121_000).await?;
     assert!(matches!(
         stores[0].consume(&key, &rule).await?,
         RateLimitDecision::Allowed
     ));
     let reset = row(&db, &key).await?.ok_or("missing reset row")?;
     assert_eq!(reset.1.to_string(), "1");
-    assert!(reset.2 > before.2);
+    assert!(reset.2 >= before.2);
     // An absent/misconfigured backend fails closed before endpoint dispatch.
     _ = db.execute("DROP TABLE rate_limit", &[]).await?;
     let middleware =

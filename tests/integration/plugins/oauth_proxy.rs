@@ -4,6 +4,7 @@
     reason = "local fixture setup and contract assertions must succeed"
 )]
 
+use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
 use axum::{
     Json, Router,
     extract::{Form, State},
@@ -13,17 +14,13 @@ use better_auth::plugins::oauth::OAuthProvider;
 use better_auth::plugins::{
     EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
+use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
 use better_auth_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, HttpMethod};
-use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
-use better_auth_seaorm::{Database, SeaOrmStore};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex},
 };
-
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 const PREVIEW: &str = "http://localhost:42681";
 
@@ -41,17 +38,18 @@ struct Provider {
     receipts: Vec<Value>,
 }
 
-struct Fixture {
-    preview: BetterAuth<Schema>,
-    production: BetterAuth<Schema>,
-    preview_db: better_auth_seaorm::DatabaseConnection,
-    production_db: better_auth_seaorm::DatabaseConnection,
+struct Fixture<B: Backend> {
+    preview: BetterAuth<B::Schema>,
+    production: BetterAuth<B::Schema>,
+    preview_db: Db,
+    production_db: Db,
+    _connections: (B::Connection, B::Connection),
     provider: Arc<Mutex<Provider>>,
     task: tokio::task::JoinHandle<()>,
 }
 
-impl Fixture {
-    async fn new() -> Self {
+impl<B: Backend> Fixture<B> {
+    async fn new(preview_db: Db) -> Self {
         let provider = Arc::new(Mutex::new(Provider::default()));
         let router = Router::new().route("/oauth/token", post(|State(state): State<Arc<Mutex<Provider>>>, Form(form): Form<HashMap<String, String>>| async move {
             let mut provider_2 = state.lock().unwrap(); provider_2.receipts.push(json!({"stage":"token", "form":form}));
@@ -70,21 +68,18 @@ impl Fixture {
         let task = tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
         });
-        let preview_db = Database::connect("sqlite::memory:").await.unwrap();
-        let production_db = Database::connect("sqlite::memory:").await.unwrap();
-        for db in [&preview_db, &production_db] {
-            better_auth_seaorm::store::__private_test_support::migrator::run_migrations(db)
-                .await
-                .unwrap();
-        }
+        let production_db = preview_db.fresh().await.unwrap();
+        let (preview_connection, _) = preview_db.migrated::<B>(SECRET).await.unwrap();
+        let (production_connection, _) = production_db.migrated::<B>(SECRET).await.unwrap();
         let enabled = std::env::var_os("OAUTH_PROXY_BASELINE").is_none();
-        let preview = build(PREVIEW, &issuer, preview_db.clone(), enabled).await;
-        let production = build(PRODUCTION, &issuer, production_db.clone(), enabled).await;
+        let preview = build::<B>(PREVIEW, &issuer, &preview_connection, enabled).await;
+        let production = build::<B>(PRODUCTION, &issuer, &production_connection, enabled).await;
         Self {
             preview,
             production,
             preview_db,
             production_db,
+            _connections: (preview_connection, production_connection),
             provider,
             task,
         }
@@ -110,15 +105,11 @@ impl Fixture {
         );
         let raw = self
             .preview_db
-            .query_one_raw(Statement::from_string(
-                self.preview_db.get_database_backend(),
-                "SELECT value FROM verifications".to_owned(),
-            ))
+            .text("SELECT value FROM verifications", &[])
             .await
             .unwrap()
             .unwrap();
-        let state: Value =
-            serde_json::from_str(&raw.try_get::<String>("", "value").unwrap()).unwrap();
+        let state: Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(
             state
                 .get("application")
@@ -167,14 +158,14 @@ impl Fixture {
     }
 }
 
-impl Drop for Fixture {
+impl<B: Backend> Drop for Fixture<B> {
     fn drop(&mut self) {
         self.task.abort();
     }
 }
 
-async fn request(
-    auth: &BetterAuth<Schema>,
+async fn request<S: AuthSchema>(
+    auth: &BetterAuth<S>,
     path: &str,
     body: Option<Value>,
     cookie: Option<&str>,
@@ -229,55 +220,29 @@ fn target(url: &url::Url) -> String {
     format!("{}?{}", url.path(), url.query().unwrap_or_default())
 }
 
-async fn rows(database: &better_auth_seaorm::DatabaseConnection) -> Value {
+async fn rows(database: &Db) -> Value {
     let mut value = serde_json::Map::new();
     for table in ["users", "accounts", "sessions", "verifications"] {
-        let columns = database
-            .query_all_raw(Statement::from_string(
-                database.get_database_backend(),
-                format!("PRAGMA table_info({table})"),
-            ))
-            .await
-            .unwrap();
-        let pairs = columns
-            .iter()
-            .map(|row| {
-                let name = row.try_get::<String>("", "name").unwrap();
-                format!("'{name}',\"{name}\"")
-            })
-            .collect::<Vec<_>>()
-            .join(",");
-        let rows = database
-            .query_all_raw(Statement::from_string(
-                database.get_database_backend(),
-                format!("SELECT json_object({pairs}) AS row_json FROM {table} ORDER BY rowid"),
-            ))
-            .await
-            .unwrap();
-        let serialized = rows
-            .into_iter()
-            .map(|row| {
-                serde_json::from_str::<Value>(&row.try_get::<String>("", "row_json").unwrap())
-                    .unwrap()
-            })
-            .collect::<Vec<_>>();
-        drop(value.insert(table.into(), json!(serialized)));
+        drop(value.insert(
+            table.into(),
+            serde_json::from_str(&database.table(table).await.unwrap()).unwrap(),
+        ));
     }
     Value::Object(value)
 }
 
-async fn build(
+async fn build<B: Backend>(
     origin: &str,
     issuer: &str,
-    database: better_auth_seaorm::DatabaseConnection,
+    database: &B::Connection,
     proxy: bool,
-) -> BetterAuth<Schema> {
+) -> BetterAuth<B::Schema> {
     let config = AuthConfig::new(SECRET)
         .base_url(origin)
         .trusted_origin(PREVIEW)
         .trusted_origin(PRODUCTION);
-    let builder = AuthBuilder::<Schema>::new(config.clone())
-        .store(SeaOrmStore::<Schema>::new(config, database))
+    let builder = AuthBuilder::<B::Schema>::new(config.clone())
+        .store(B::store(Arc::new(config), database))
         .plugin(EmailPasswordPlugin::new().enable_username(false))
         .plugin(SessionManagementPlugin::new())
         .plugin(OAuthPlugin::new().add_provider(
@@ -304,16 +269,22 @@ async fn build(
 mod tests {
     use super::*;
     use std::io::Write;
+    backend_tests!(production_exchange_preserves_rows_then_preview_consumes_state_and_issues_only_the_actual_owner,completion_rejects_foreign_origin_provider_tampering_and_expired_state_before_any_principal_write);
+    postgres_tests!(production_exchange_preserves_rows_then_preview_consumes_state_and_issues_only_the_actual_owner,completion_rejects_foreign_origin_provider_tampering_and_expired_state_before_any_principal_write);
 
-    #[tokio::test]
     #[expect(
         clippy::too_many_lines,
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
-    async fn production_exchange_preserves_rows_then_preview_consumes_state_and_issues_only_the_actual_owner()
-     {
-        let fixture = Fixture::new().await;
-        let foreign = request(
+    async fn production_exchange_preserves_rows_then_preview_consumes_state_and_issues_only_the_actual_owner<
+        B: Backend,
+    >(
+        db: Db,
+    ) -> TestResult {
+        for legacy in [false, true] {
+            let db = db.fresh().await?;
+            let fixture = Fixture::<B>::new(db).await;
+            let foreign = request(
         &fixture.preview,
         "/api/auth/sign-up/email",
         Some(
@@ -322,131 +293,138 @@ mod tests {
         None,
     )
     .await;
-        assert_eq!(foreign.status, 200);
-        let foreign_body: Value = serde_json::from_slice(&foreign.body).unwrap();
-        let foreign_id = foreign_body
-            .get("user")
-            .unwrap()
-            .get("id")
-            .unwrap()
-            .as_str()
-            .unwrap();
-        let before = rows(&fixture.preview_db).await;
-        let prod_before = rows(&fixture.production_db).await;
-        let (authorization, state) = fixture.issue("/api/auth/sign-in/social", None).await;
-        let original_state = state
-            .get("oauthState")
-            .expect("provider fixture contains this parameter")
-            .as_str()
-            .unwrap();
-        let issued = rows(&fixture.preview_db).await;
-        let (_, bridge) = fixture.forward(&authorization).await;
-        assert_eq!(rows(&fixture.production_db).await, prod_before);
-        assert_eq!(rows(&fixture.preview_db).await, issued);
-        let completed = request(&fixture.preview, &target(&bridge), None, None).await;
-        assert_eq!(completed.status, 302);
-        assert_eq!(
-            location(&completed).as_str(),
-            &format!("{PREVIEW}/new-owner")
-        );
-        assert!(
-            fixture
-                .preview
-                .store()
-                .get_verification_by_identifier(&format!("auth-state:{original_state}"))
-                .await
-                .unwrap()
-                .is_none()
-        );
-        let owner = fixture
-            .preview
-            .store()
-            .get_user_by_email("proxy-owner@fixture.test")
-            .await
-            .unwrap()
-            .unwrap();
-        let sessions = fixture
-            .preview
-            .store()
-            .get_user_sessions(&owner.id())
-            .await
-            .unwrap();
-        assert_eq!(sessions.len(), 1);
-        let current = request(
-            &fixture.preview,
-            "/api/auth/get-session",
-            None,
-            Some(&cookies(&completed)),
-        )
-        .await;
-        let current: Value = serde_json::from_slice(&current.body).unwrap();
-        assert_eq!(
-            current
+            assert_eq!(foreign.status, 200);
+            let foreign_body: Value = serde_json::from_slice(&foreign.body).unwrap();
+            let foreign_id = foreign_body
                 .get("user")
-                .expect("provider fixture contains this parameter")
+                .unwrap()
                 .get("id")
-                .expect("provider fixture contains this parameter"),
-            owner.id().as_ref()
-        );
-        assert_eq!(
-            current
-                .get("session")
+                .unwrap()
+                .as_str()
+                .unwrap();
+            let before = rows(&fixture.preview_db).await;
+            let prod_before = rows(&fixture.production_db).await;
+            let (authorization, state) = fixture.issue("/api/auth/sign-in/social", None).await;
+            let original_state = state
+                .get("oauthState")
                 .expect("provider fixture contains this parameter")
-                .get("token")
-                .expect("provider fixture contains this parameter"),
-            sessions.first().unwrap().token()
-        );
-        assert_eq!(
-            fixture
+                .as_str()
+                .unwrap();
+            let issued = rows(&fixture.preview_db).await;
+            let (_, mut bridge) = fixture.forward(&authorization).await;
+            if legacy {
+                bridge.set_path("/api/auth/oauth-proxy-callback");
+            }
+            assert_eq!(rows(&fixture.production_db).await, prod_before);
+            assert_eq!(rows(&fixture.preview_db).await, issued);
+            let completed = request(&fixture.preview, &target(&bridge), None, None).await;
+            assert_eq!(completed.status, 302);
+            assert_eq!(
+                location(&completed).as_str(),
+                &format!("{PREVIEW}/new-owner")
+            );
+            assert!(
+                fixture
+                    .preview
+                    .store()
+                    .get_verification_by_identifier(&format!("auth-state:{original_state}"))
+                    .await
+                    .unwrap()
+                    .is_none()
+            );
+            let owner = fixture
                 .preview
                 .store()
-                .get_user_sessions(foreign_id)
+                .get_user_by_email("proxy-owner@fixture.test")
                 .await
                 .unwrap()
-                .len(),
-            1
-        );
-        let accounts = fixture
-            .preview
-            .store()
-            .get_user_accounts(&owner.id())
-            .await
-            .unwrap();
-        assert_eq!(accounts.len(), 1);
-        let after = rows(&fixture.preview_db).await;
-        let replay = request(&fixture.preview, &target(&bridge), None, None).await;
-        assert!(location(&replay).as_str().contains("error=state_mismatch"));
-        assert_eq!(rows(&fixture.preview_db).await, after);
-        let query: HashMap<_, _> = authorization.query_pairs().into_owned().collect();
-        let mut callback = url::Url::parse(
-            query
-                .get("redirect_uri")
-                .expect("provider fixture contains this parameter"),
-        )
-        .unwrap();
-        _ = callback
-            .query_pairs_mut()
-            .append_pair(
-                "state",
+                .unwrap();
+            let sessions = fixture
+                .preview
+                .store()
+                .get_user_sessions(&owner.id())
+                .await
+                .unwrap();
+            assert_eq!(sessions.len(), 1);
+            let current = request(
+                &fixture.preview,
+                "/api/auth/get-session",
+                None,
+                Some(&cookies(&completed)),
+            )
+            .await;
+            let current: Value = serde_json::from_slice(&current.body).unwrap();
+            assert_eq!(
+                current
+                    .get("user")
+                    .expect("provider fixture contains this parameter")
+                    .get("id")
+                    .expect("provider fixture contains this parameter"),
+                owner.id().as_ref()
+            );
+            assert_eq!(
+                current
+                    .get("session")
+                    .expect("provider fixture contains this parameter")
+                    .get("token")
+                    .expect("provider fixture contains this parameter"),
+                sessions.first().unwrap().token()
+            );
+            assert_eq!(
+                fixture
+                    .preview
+                    .store()
+                    .get_user_sessions(foreign_id)
+                    .await
+                    .unwrap()
+                    .len(),
+                1
+            );
+            let accounts = fixture
+                .preview
+                .store()
+                .get_user_accounts(&owner.id())
+                .await
+                .unwrap();
+            assert_eq!(accounts.len(), 1);
+            let after = rows(&fixture.preview_db).await;
+            let replay = request(&fixture.preview, &target(&bridge), None, None).await;
+            assert!(location(&replay).as_str().contains("error=state_mismatch"));
+            assert_eq!(rows(&fixture.preview_db).await, after);
+            let query: HashMap<_, _> = authorization.query_pairs().into_owned().collect();
+            let mut callback = url::Url::parse(
                 query
-                    .get("state")
+                    .get("redirect_uri")
                     .expect("provider fixture contains this parameter"),
             )
-            .append_pair("code", "real-code-1");
-        let retry = request(&fixture.production, &target(&callback), None, None).await;
-        assert!(location(&retry).as_str().contains("error=invalid_code"));
-        assert_eq!(rows(&fixture.preview_db).await, after);
-        assert_eq!(rows(&fixture.production_db).await, prod_before);
-        writeln!(std::io::stderr(),
+            .unwrap();
+            _ = callback
+                .query_pairs_mut()
+                .append_pair(
+                    "state",
+                    query
+                        .get("state")
+                        .expect("provider fixture contains this parameter"),
+                )
+                .append_pair("code", "real-code-1");
+            let retry = request(&fixture.production, &target(&callback), None, None).await;
+            assert!(location(&retry).as_str().contains("error=invalid_code"));
+            assert_eq!(rows(&fixture.preview_db).await, after);
+            assert_eq!(rows(&fixture.production_db).await, prod_before);
+            writeln!(std::io::stderr(),
         "PROXY_NATIVE_LIFECYCLE {}",
         json!({"before":before,"issued":issued,"authorization":authorization.as_str(),"bridge":bridge.as_str(),"completed":{"status":completed.status,"headers":completed.headers.iter().collect::<Vec<_>>()},"current":current,"after":after,"production":prod_before,"receipts":fixture.provider.lock().unwrap().receipts})
     ).expect("write native lifecycle observation");
+        }
+        Ok(())
     }
 
-    #[tokio::test]
-    async fn completion_rejects_foreign_origin_provider_tampering_and_expired_state_before_any_principal_write()
-     {
-        let fixture = Fixture::new().await;
+    async fn completion_rejects_foreign_origin_provider_tampering_and_expired_state_before_any_principal_write<
+        B: Backend,
+    >(
+        db: Db,
+    ) -> TestResult {
+        let fixture = Fixture::<B>::new(db).await;
         let (authorization, state) = fixture.issue("/api/auth/sign-in/social", None).await;
         let (_, bridge) = fixture.forward(&authorization).await;
         let issued = rows(&fixture.preview_db).await;
@@ -491,13 +469,8 @@ mod tests {
         *expired.get_mut("expiresAt").unwrap() = json!(chrono::Utc::now().timestamp_millis() - 1);
         _ = fixture
             .preview_db
-            .execute_raw(Statement::from_sql_and_values(
-                fixture.preview_db.get_database_backend(),
-                "UPDATE verifications SET value=?",
-                [expired.to_string().into()],
-            ))
-            .await
-            .unwrap();
+            .execute("UPDATE verifications SET value=$1", &[&expired.to_string()])
+            .await?;
         let denied_4 = request(&fixture.preview, &target(&bridge), None, None).await;
         assert!(
             location(&denied_4)
@@ -535,5 +508,6 @@ mod tests {
                 .expect("provider fixture contains this parameter"),
             &json!([])
         );
+        Ok(())
     }
 }

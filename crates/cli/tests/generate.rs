@@ -70,3 +70,58 @@ fn unknown_plugins_fail_without_output_or_filesystem_changes() -> TestResult {
     std::fs::remove_dir_all(directory)?;
     Ok(())
 }
+
+/// The executable's backend selection and filesystem output must deliver the
+/// same application schemas compiled and exercised by the store integrations.
+#[test]
+fn generated_output_files_match_working_application_schemas() -> TestResult {
+    let directory =
+        std::env::temp_dir().join(format!("better-auth-cli-output-{}", std::process::id()));
+    let repeated = better_auth_schema_registry::plugin_schemas()
+        .iter()
+        .flat_map(|plugin| [plugin.name, plugin.name])
+        .collect::<Vec<_>>()
+        .join(",");
+    for (backend, core, all) in [
+        (
+            "sqlx",
+            include_str!("../../../tests/fixtures/cli/sqlx_core.rs"),
+            include_str!("../../../tests/fixtures/cli/sqlx_all.rs"),
+        ),
+        (
+            "seaorm",
+            include_str!("../../../tests/fixtures/cli/seaorm_core.rs"),
+            include_str!("../../../tests/fixtures/cli/seaorm_all.rs"),
+        ),
+    ] {
+        for (plugins, expected) in [
+            (None, core),
+            (Some("all"), all),
+            (Some(repeated.as_str()), all),
+        ] {
+            let path = directory.join(backend).join("nested/schema.rs");
+            let mut command = Command::new(env!("CARGO_BIN_EXE_better-auth-rs"));
+            let _ = command
+                .args(["generate", "--backend", backend, "--output"])
+                .arg(&path);
+            if let Some(plugins) = plugins {
+                let _ = command.args(["--plugins", plugins]);
+            }
+            let output = command.output()?;
+            if !output.status.success() {
+                return Err(format!(
+                    "generation failed: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                )
+                .into());
+            }
+            if std::fs::read_to_string(&path)? != expected {
+                return Err(
+                    format!("schema differs: backend={backend}, plugins={plugins:?}").into(),
+                );
+            }
+        }
+    }
+    std::fs::remove_dir_all(directory)?;
+    Ok(())
+}

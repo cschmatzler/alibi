@@ -1,4 +1,5 @@
 //! Optional native records through real handlers: SQLx, SeaORM and no database.
+use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use better_auth::plugins::{EmailPasswordPlugin, PasskeyPlugin, TwoFactorConfig, TwoFactorPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
@@ -13,6 +14,7 @@ use std::sync::Arc;
 const SECRET: &str = "optional-record-172-secret-at-least-32-characters";
 const ORIGIN: &str = "http://localhost:43173";
 backend_tests!(optional_record_workflow);
+postgres_tests!(optional_record_workflow);
 
 fn request(path: &str, body: Option<Value>, cookie: &str) -> AuthRequest {
     let mut req = AuthRequest::new(

@@ -3,6 +3,7 @@ mod authentication;
 pub(super) mod handlers;
 
 mod raw_none;
+mod source;
 
 mod registration;
 
@@ -340,6 +341,7 @@ impl std::fmt::Debug for PasskeyPlugin {
 // LCOV_EXCL_START
 #[cfg(test)]
 mod tests {
+    mod revocation;
     use super::*;
     use crate::plugins::test_helpers;
     use base64::Engine;
@@ -826,13 +828,13 @@ mod tests {
     }
 
     /// Previously persisted ceremonies keep both their codec and original Required policy.
-    #[test]
+    #[tokio::test]
     #[expect(
         clippy::panic_in_result_fn,
         clippy::too_many_lines,
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
-    fn pending_registration_challenges_keep_original_verification_policy()
+    async fn pending_registration_challenges_keep_original_verification_policy()
     -> Result<(), Box<dyn std::error::Error>> {
         use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         use p256::elliptic_curve::{Generate as _, sec1::ToSec1Point as _};
@@ -953,12 +955,166 @@ mod tests {
             assert_eq!(decoded_credential.cred_id(), restored_core.cred_id());
             let result = webauthn.finish_passkey_registration(&response, &state);
             if verified {
-                assert_eq!(result?.cred_id().as_ref(), credential_id);
+                let legacy_key = result?;
+                assert_eq!(legacy_key.cred_id().as_ref(), credential_id);
+                complete_historical_authentication(&config, &secret, &key, legacy_key).await?;
             } else {
                 assert!(matches!(
                     result,
                     Err(webauthn_rs_core::error::WebauthnError::UserNotVerified)
                 ));
+            }
+        }
+        Ok(())
+    }
+
+    async fn complete_historical_authentication(
+        config: &PasskeyConfig,
+        secret: &p256::SecretKey,
+        cose: &serde_cbor_2::Value,
+        mut key: webauthn_rs::prelude::Passkey,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        use p256::pkcs8::EncodePrivateKey;
+        use sha2::{Digest, Sha256};
+        let (ctx, user, _) = test_helpers::create_test_context_with_user(
+            CreateUser::new().with_email("legacy-auth@example.test"),
+            Duration::hours(1),
+        )
+        .await;
+        let plugin = PasskeyPlugin {
+            config: config.clone(),
+        };
+        let webauthn = webauthn::build_webauthn(config, &ctx.config, &config.origin)?;
+        let credential_id = URL_SAFE_NO_PAD.encode(key.cred_id().as_ref());
+        let persisted = ctx
+            .database
+            .create_passkey(CreatePasskey {
+                user_id: user.id.clone(),
+                name: Some("Historical".into()),
+                credential_id: credential_id.clone(),
+                public_key: base64::engine::general_purpose::STANDARD
+                    .encode(serde_cbor_2::to_vec(cose)?),
+                credential: serde_json::to_string(&key)?,
+                counter: 0,
+                device_type: "singleDevice".into(),
+                backed_up: false,
+                transports: None,
+                aaguid: None,
+            })
+            .await?;
+        let signing = openssl::pkey::PKey::private_key_from_der(secret.to_pkcs8_der()?.as_bytes())?;
+        for (kind, counter, backup) in [
+            ("passkey", 1_u32, 0x08_u8),
+            ("discoverable", 2, 0x18),
+            ("discoverable", 3, 0x08),
+        ] {
+            for verified in [false, true] {
+                let (challenge, state) = if kind == "passkey" {
+                    let (options, state) = webauthn.start_passkey_authentication(&[key.clone()])?;
+                    (
+                        options.public_key.challenge,
+                        serde_json::json!({"kind":"passkey","state":state}),
+                    )
+                } else {
+                    let (options, state) = webauthn.start_discoverable_authentication()?;
+                    (
+                        options.public_key.challenge,
+                        serde_json::json!({"kind":"discoverable","state":state}),
+                    )
+                };
+                let token = uuid::Uuid::new_v4().to_string();
+                drop(
+                    ctx.verifications()
+                        .create(better_auth_core::CreateVerification {
+                            identifier: token.clone(),
+                            value: serde_json::to_string(&state)?,
+                            expires_at: chrono::Utc::now() + Duration::minutes(5),
+                        })
+                        .await?,
+                );
+                let cookie = webauthn::create_challenge_cookie(&ctx.config, 300, &token, config)?;
+                let client = serde_json::to_vec(
+                    &serde_json::json!({"type":"webauthn.get","challenge":challenge,"origin":config.origin}),
+                )?;
+                let mut data = Sha256::digest(config.rp_id.as_bytes()).to_vec();
+                data.push(backup | if verified { 0x05 } else { 0x01 });
+                data.extend_from_slice(&counter.to_be_bytes());
+                let mut signer =
+                    openssl::sign::Signer::new(openssl::hash::MessageDigest::sha256(), &signing)?;
+                signer.update(&data)?;
+                signer.update(&Sha256::digest(&client))?;
+                let body = serde_json::json!({"response":{"id":credential_id,"rawId":credential_id,"type":"public-key","clientExtensionResults":{},"response":{"clientDataJSON":URL_SAFE_NO_PAD.encode(client),"authenticatorData":URL_SAFE_NO_PAD.encode(data),"signature":URL_SAFE_NO_PAD.encode(signer.sign_to_vec()?)}}});
+                let mut request = test_helpers::create_auth_request(
+                    HttpMethod::Post,
+                    "/passkey/verify-authentication",
+                    None,
+                    Some(serde_json::to_vec(&body)?),
+                    HashMap::new(),
+                );
+                drop(
+                    request
+                        .headers
+                        .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
+                );
+                drop(
+                    request
+                        .headers
+                        .insert("origin".into(), config.origin.clone()),
+                );
+                let before = ctx
+                    .database
+                    .get_passkey_by_id(&persisted.id)
+                    .await?
+                    .unwrap();
+                let sessions = ctx.database.get_user_sessions(&user.id).await?.len();
+                let result = plugin.handle_verify_authentication(&request, &ctx).await?;
+                assert_eq!(
+                    result.status,
+                    if verified { 200 } else { 400 },
+                    "{kind}: {}",
+                    String::from_utf8_lossy(&result.body)
+                );
+                let after = ctx
+                    .database
+                    .get_passkey_by_id(&persisted.id)
+                    .await?
+                    .unwrap();
+                if verified {
+                    assert_eq!(
+                        ctx.database.get_user_sessions(&user.id).await?.len(),
+                        sessions + 1
+                    );
+                    assert_eq!(after.counter, u64::from(counter));
+                    let opaque: serde_json::Value = serde_json::from_str(&after.credential)?;
+                    assert_eq!(
+                        opaque.get("cred").and_then(|c| c.get("backup_eligible")),
+                        Some(&serde_json::json!(true))
+                    );
+                    assert_eq!(
+                        opaque.get("cred").and_then(|c| c.get("backup_state")),
+                        Some(&serde_json::json!(backup == 0x18))
+                    );
+                    assert!(!after.backed_up);
+                    assert_eq!(after.device_type, "singleDevice");
+                    key = serde_json::from_str(&after.credential)?;
+                    assert_eq!(
+                        plugin
+                            .handle_verify_authentication(&request, &ctx)
+                            .await?
+                            .status,
+                        400
+                    );
+                } else {
+                    assert_eq!(
+                        serde_json::to_value(&after)?,
+                        serde_json::to_value(&before)?
+                    );
+                    assert_eq!(
+                        ctx.database.get_user_sessions(&user.id).await?.len(),
+                        sessions
+                    );
+                }
+                assert!(ctx.verifications().find(&token).await?.is_none());
             }
         }
         Ok(())
@@ -1068,75 +1224,135 @@ mod tests {
             );
             if curve == 6 {
                 use ed25519_dalek::Signer;
-                let request = test_helpers::create_auth_request(
-                    HttpMethod::Get,
-                    "/passkey/generate-authenticate-options",
-                    None,
-                    None,
-                    HashMap::new(),
-                );
-                let options = plugin
-                    .handle_generate_authenticate_options(&request, &ctx)
-                    .await?;
-                let issued: serde_json::Value = serde_json::from_slice(&options.body)?;
-                let challenge = issued
-                    .get("challenge")
-                    .expect("issued authentication challenge");
-                let client = serde_json::to_vec(
-                    &serde_json::json!({"type":"webauthn.get", "challenge":challenge,"origin":"http://localhost:3000"}),
-                )?;
-                let mut data = Sha256::digest(b"localhost").to_vec();
-                data.push(1);
-                data.extend_from_slice(&26_u32.to_be_bytes());
-                let mut signed = data.clone();
-                signed.extend_from_slice(&Sha256::digest(&client));
-                let response = serde_json::json!({"id":URL_SAFE_NO_PAD.encode(id),"rawId":URL_SAFE_NO_PAD.encode(id),"type":"public-key","clientExtensionResults":{},"response":{
-                    "clientDataJSON":URL_SAFE_NO_PAD.encode(client),"authenticatorData":URL_SAFE_NO_PAD.encode(data),"signature":URL_SAFE_NO_PAD.encode(signing.sign(&signed).to_bytes())
-                }});
-                let mut request = test_helpers::create_auth_request(
-                    HttpMethod::Post,
-                    "/passkey/verify-authentication",
-                    None,
-                    Some(serde_json::to_vec(
-                        &serde_json::json!({"response":response}),
-                    )?),
-                    HashMap::new(),
-                );
-                request.headers.insert(
-                    "cookie".into(),
-                    cookie_header(&options)
-                        .split(';')
-                        .next()
-                        .ok_or("issued authentication cookie required")?
-                        .into(),
-                );
-                let result = plugin.handle_verify_authentication(&request, &ctx).await?;
-                assert_eq!(result.status, 200);
-                let updated = ctx
-                    .database
-                    .get_passkey_by_credential_id(&URL_SAFE_NO_PAD.encode(id))
-                    .await?
-                    .ok_or("updated raw row required")?;
-                assert_eq!(updated.public_key, row.public_key);
-                assert_eq!(updated.credential_id, row.credential_id);
-                assert_eq!(updated.user_id, row.user_id);
-                assert_eq!(updated.counter, 26);
-                let raw_none::StoredCredential::Raw(raw) =
-                    serde_json::from_str(&updated.credential)?
-                else {
-                    panic!("authentication must retain raw codec")
-                };
-                assert_eq!(raw.public_key(), key);
-                assert_eq!(raw.credential_id(), id);
-                assert_eq!(raw.snapshot()?.counter, 26);
-                assert!(
-                    serde_json::from_str::<webauthn_rs::prelude::Passkey>(&updated.credential)
-                        .is_err()
-                );
+                let mut persisted = serde_json::to_value(&row)?;
+                for control in [
+                    "first",
+                    "signature",
+                    "counter",
+                    "origin",
+                    "challenge",
+                    "rp",
+                    "presence",
+                    "backup",
+                    "last",
+                ] {
+                    let successful = matches!(control, "first" | "last");
+                    let counter = if matches!(control, "first" | "counter") {
+                        26_u32
+                    } else {
+                        27_u32
+                    };
+                    let request = test_helpers::create_auth_request(
+                        HttpMethod::Get,
+                        "/passkey/generate-authenticate-options",
+                        None,
+                        None,
+                        HashMap::new(),
+                    );
+                    let options = plugin
+                        .handle_generate_authenticate_options(&request, &ctx)
+                        .await?;
+                    let issued: serde_json::Value = serde_json::from_slice(&options.body)?;
+                    let challenge = issued
+                        .get("challenge")
+                        .expect("issued authentication challenge");
+                    let client = serde_json::to_vec(
+                        &serde_json::json!({"type":"webauthn.get", "challenge":if control == "challenge" { serde_json::Value::String("Zm9yZWlnbg".into()) } else { challenge.clone() },"origin":if control == "origin" { "http://foreign.test" } else { "http://localhost:3000" }}),
+                    )?;
+                    let mut data = Sha256::digest(if control == "rp" {
+                        b"foreign.test".as_slice()
+                    } else {
+                        b"localhost".as_slice()
+                    })
+                    .to_vec();
+                    data.push(match control {
+                        "presence" => 0,
+                        "backup" => 0x11,
+                        _ => 1,
+                    });
+                    data.extend_from_slice(&counter.to_be_bytes());
+                    let mut signed = data.clone();
+                    signed.extend_from_slice(&Sha256::digest(&client));
+                    let mut signature = signing.sign(&signed).to_bytes();
+                    if control == "signature" {
+                        signature[0] ^= 1;
+                    }
+                    let response = serde_json::json!({"id":URL_SAFE_NO_PAD.encode(id),"rawId":URL_SAFE_NO_PAD.encode(id),"type":"public-key","clientExtensionResults":{},"response":{
+                        "clientDataJSON":URL_SAFE_NO_PAD.encode(client),"authenticatorData":URL_SAFE_NO_PAD.encode(data),"signature":URL_SAFE_NO_PAD.encode(signature)
+                    }});
+                    let mut request = test_helpers::create_auth_request(
+                        HttpMethod::Post,
+                        "/passkey/verify-authentication",
+                        None,
+                        Some(serde_json::to_vec(
+                            &serde_json::json!({"response":response}),
+                        )?),
+                        HashMap::new(),
+                    );
+                    request.headers.insert(
+                        "cookie".into(),
+                        cookie_header(&options)
+                            .split(';')
+                            .next()
+                            .ok_or("issued authentication cookie required")?
+                            .into(),
+                    );
+                    let result = plugin.handle_verify_authentication(&request, &ctx).await?;
+                    assert_eq!(
+                        result.status,
+                        if successful {
+                            200
+                        } else if control == "signature" {
+                            401
+                        } else {
+                            400
+                        },
+                        "{control}"
+                    );
+                    let updated = ctx
+                        .database
+                        .get_passkey_by_credential_id(&URL_SAFE_NO_PAD.encode(id))
+                        .await?
+                        .ok_or("updated raw row required")?;
+                    if !successful {
+                        let wire: serde_json::Value = serde_json::from_slice(&result.body)?;
+                        assert_eq!(
+                            wire.get("code"),
+                            Some(&serde_json::json!("AUTHENTICATION_FAILED")),
+                            "{control}"
+                        );
+                        assert!(
+                            result
+                                .headers
+                                .get_all("set-cookie")
+                                .all(|cookie| !cookie.contains("session_token="))
+                        );
+                        assert_eq!(serde_json::to_value(&updated)?, persisted, "{control}");
+                        assert_eq!(ctx.database.get_user_sessions(&user.id).await?.len(), 2);
+                        continue;
+                    }
+                    persisted = serde_json::to_value(&updated)?;
+                    assert_eq!(updated.public_key, row.public_key);
+                    assert_eq!(updated.credential_id, row.credential_id);
+                    assert_eq!(updated.user_id, row.user_id);
+                    assert_eq!(updated.counter, u64::from(counter));
+                    let raw_none::StoredCredential::Raw(raw) =
+                        serde_json::from_str(&updated.credential)?
+                    else {
+                        panic!("authentication must retain raw codec")
+                    };
+                    assert_eq!(raw.public_key(), key);
+                    assert_eq!(raw.credential_id(), id);
+                    assert_eq!(raw.snapshot()?.counter, u64::from(counter));
+                    assert!(
+                        serde_json::from_str::<webauthn_rs::prelude::Passkey>(&updated.credential)
+                            .is_err()
+                    );
+                }
             }
             assert_eq!(
                 ctx.database.get_user_sessions(&user.id).await?.len(),
-                if curve == 6 { 2 } else { 1 }
+                if curve == 6 { 3 } else { 1 }
             );
         }
         Ok(())

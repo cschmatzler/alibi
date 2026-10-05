@@ -2,7 +2,7 @@
 name = "better-auth-api"
 version = { workspace = true }
 edition = { workspace = true }
-license = { workspace = true }
+license = "MIT AND MPL-2.0"
 description = "Plugin implementations for better-auth"
 repository = { workspace = true }
 
@@ -73,8 +73,12 @@ urlencoding = "2"
 bon = "3.3"
 jsonwebtoken.workspace = true
 serde_with = "3.18.0"
-webauthn-rs = { package = "better-auth-webauthn-rs", path = "../../vendor/webauthn-rs", version = "1.0.0-alpha.3", features = ["conditional-ui", "danger-allow-state-serialisation", "danger-credential-internals"] }
-webauthn-rs-core = { package = "better-auth-webauthn-core", path = "../../vendor/webauthn-rs-core", version = "1.0.0-alpha.3" }
+webauthn-rs = { version = "=0.5.4", features = ["conditional-ui", "danger-allow-state-serialisation", "danger-credential-internals"] }
+webauthn-rs-core = "=0.5.4"
+base64urlsafedata = "=0.5.4"
+openssl = "0.10.75"
+x509-parser = "0.16"
+der-parser = "9"
 serde_cbor_2 = "0.13.0"
 serde_path_to_error = "0.1.20"
 

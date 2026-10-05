@@ -152,10 +152,12 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
+/// use better_auth::{AuthSchema, prelude::AuthUser};
 /// use better_auth::integrations::axum::CurrentSession;
+/// use axum::response::IntoResponse;
 ///
-/// async fn profile(session: CurrentSession<AppAuthSchema>) -> impl IntoResponse {
+/// async fn profile<S: AuthSchema>(session: CurrentSession<S>) -> impl IntoResponse {
 ///     let user = &session.user;
 ///     let session = &session.session;
 ///     axum::Json(serde_json::json!({ "id": user.id() }))
@@ -176,8 +178,12 @@ pub struct CurrentSession<T: AuthSchema> {
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// async fn home(session: OptionalSession<AppAuthSchema>) -> impl IntoResponse {
+/// ```rust,no_run
+/// use better_auth::{AuthSchema, prelude::AuthUser};
+/// use better_auth::integrations::axum::OptionalSession;
+/// use axum::response::IntoResponse;
+///
+/// async fn home<S: AuthSchema>(session: OptionalSession<S>) -> impl IntoResponse {
 ///     if let Some(session) = session.0 {
 ///         axum::Json(serde_json::json!({ "user": session.user.id() }))
 ///     } else {

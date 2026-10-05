@@ -128,10 +128,11 @@ Development uses [devenv](https://devenv.sh/getting-started/) and direnv:
 
 ```bash
 direnv allow
+cargo nextest run
 devenv shell -- ./scripts/check.sh
 ```
 
-The check script runs the complete project gate. Read [contributing](docs/src/content/docs/guides/development.md) for environment requirements, [tests](tests/README.md) for test tiers, and [compatibility testing](tests/compat/README.md) for the differential harness.
+`cargo nextest run` runs workspace unit, integration, and HTTP end-to-end tests, with SQLx, SeaORM, Axum and Poem enabled for development. It needs no upstream runtime or external database. `check.sh` remains the complete project gate, including compatibility. Read [contributing](docs/src/content/docs/guides/development.md) for environment requirements, [tests](tests/README.md) for test tiers and focused commands, and [compatibility testing](tests/compat/README.md) for the differential harness.
 
 To work on the Astro Starlight documentation site:
 

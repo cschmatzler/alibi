@@ -23,7 +23,15 @@ mod sqlx_schema {
 
     #[tokio::test]
     async fn generated_sqlx_schema_supports_api_key_creation() -> super::TestResult {
-        let pool = SqlxPool::connect("sqlite::memory:").await?;
+        exercise_schema(crate::storage::Db::sqlite().await?).await
+    }
+    #[tokio::test]
+    #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+    async fn generated_sqlx_schema_supports_api_key_creation_postgres() -> super::TestResult {
+        exercise_schema(crate::storage::Db::postgres().await?).await
+    }
+    async fn exercise_schema(db: crate::storage::Db) -> super::TestResult {
+        let pool = SqlxPool::connect(&db.url).await?;
         run_app_migrations(&pool).await?;
         let store = std::sync::Arc::new(better_auth::sqlx::SqlxStore::<AppAuthSchema>::new(
             super::config(),
@@ -46,7 +54,15 @@ mod seaorm_schema {
 
     #[tokio::test]
     async fn generated_seaorm_schema_supports_api_key_creation() -> super::TestResult {
-        let database = better_auth::seaorm::Database::connect("sqlite::memory:").await?;
+        exercise_schema(crate::storage::Db::sqlite().await?).await
+    }
+    #[tokio::test]
+    #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
+    async fn generated_seaorm_schema_supports_api_key_creation_postgres() -> super::TestResult {
+        exercise_schema(crate::storage::Db::postgres().await?).await
+    }
+    async fn exercise_schema(db: crate::storage::Db) -> super::TestResult {
+        let database = better_auth::seaorm::Database::connect(&db.url).await?;
         run_app_migrations(&database).await?;
         let store = std::sync::Arc::new(better_auth::seaorm::SeaOrmStore::<AppAuthSchema>::new(
             super::config(),

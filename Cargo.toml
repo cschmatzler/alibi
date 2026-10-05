@@ -12,6 +12,7 @@ categories = { workspace = true }
 workspace = true
 [workspace]
 resolver = "2"
+default-members = [".", "crates/*"]
 members = [
     "crates/core",
     "crates/api",
@@ -23,8 +24,6 @@ members = [
     "crates/sqlx-macros",
     "crates/schema-registry",
     "crates/cli",
-    "vendor/webauthn-rs-core",
-    "vendor/webauthn-rs",
 ]
 exclude = ["tests/compat/rust-server"]
 [workspace.package]
@@ -135,6 +134,16 @@ url = { workspace = true }
 tracing.workspace = true
 http-body-util = { version = "0.1", optional = true }
 [dev-dependencies]
+rsa = { workspace = true }
+# Enable adapters for repository tests without changing downstream defaults.
+better-auth = { path = ".", features = ["axum", "poem", "seaorm"] }
+jsonwebtoken = { workspace = true, features = ["use_pem"] }
+ed25519-dalek = { workspace = true }
+k256 = { workspace = true }
+sha3 = { workspace = true }
+totp-rs = { workspace = true }
+p521 = { workspace = true }
+serde_cbor_2 = "0.13.0"
 axum = { workspace = true }
 aes-gcm = { workspace = true }
 chacha20poly1305 = { workspace = true }
@@ -150,7 +159,11 @@ tower-http = { version = "0.7", features = ["cors"] }
 tracing-subscriber = { workspace = true }
 oas3 = { version = "0.22.0", features = ["yaml-spec"] }
 proptest = "1.10.0"
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["cookies"] }
+[[test]]
+name = "e2e"
+path = "tests/e2e/main.rs"
+required-features = ["axum"]
 [[bin]]
 name = "sync_better_auth_openapi"
 path = "scripts/sync_better_auth_openapi.rs"

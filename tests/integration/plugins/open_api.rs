@@ -10,7 +10,7 @@ use better_auth::plugin::{
     OpenApiModel, PluginOpenApiMetadata,
 };
 use better_auth::plugins::{OpenApiConfig, OpenApiPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
+use better_auth::{AuthBuilder, AuthConfig, AuthResult, AuthSchema, BetterAuth};
 use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 use better_auth_seaorm::store::entities::{account, session, user, verification};
 use better_auth_seaorm::{Database, SeaOrmStore};
@@ -140,6 +140,10 @@ impl AuthPlugin<AppSchema> for AppPlugin {
     }
 }
 
+async fn handle(auth: &BetterAuth<AppSchema>, request: AuthRequest) -> AuthResult<AuthResponse> {
+    Box::pin(auth.handle_request(request)).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,13 +163,12 @@ mod tests {
             .build()
             .await
             .unwrap();
-        let absent = default_auth
-            .handle_request(AuthRequest::new(
-                HttpMethod::Get,
-                "/identity/__test/openapi.json",
-            ))
-            .await
-            .unwrap();
+        let absent = handle(
+            &default_auth,
+            AuthRequest::new(HttpMethod::Get, "/identity/__test/openapi.json"),
+        )
+        .await
+        .unwrap();
         assert_eq!(absent.status, 404);
         assert!(absent.body.is_empty());
         assert!(
@@ -193,13 +196,12 @@ mod tests {
                     .await
                     .unwrap(),
             );
-            let item = auth
-                .handle_request(AuthRequest::new(
-                    HttpMethod::Get,
-                    "/identity/items/fixture-id",
-                ))
-                .await
-                .unwrap();
+            let item = handle(
+                &auth,
+                AuthRequest::new(HttpMethod::Get, "/identity/items/fixture-id"),
+            )
+            .await
+            .unwrap();
             assert_eq!(
                 serde_json::from_slice::<Value>(&item.body).unwrap(),
                 json!({"id":"fixture-id"})
@@ -212,24 +214,28 @@ mod tests {
                     .headers
                     .insert("content-type".into(), "application/json".into()),
             );
-            let updated = auth.handle_request(update_request).await.unwrap();
+            let updated = handle(&auth, update_request).await.unwrap();
             assert_eq!(updated.status, 200);
             assert_eq!(
                 serde_json::from_slice::<Value>(&updated.body).unwrap(),
                 json!({"id":"fixture-id","labels":[7,"approved"]})
             );
-            let private = auth
-                .handle_request(AuthRequest::new(HttpMethod::Get, "/identity/list-sessions"))
-                .await
-                .unwrap();
+            let private = handle(
+                &auth,
+                AuthRequest::new(HttpMethod::Get, "/identity/list-sessions"),
+            )
+            .await
+            .unwrap();
             assert_eq!(
                 private.status, 401,
                 "the HTTP core route must not dispatch the application's server-only handler"
             );
-            let session = auth
-                .handle_request(AuthRequest::new(HttpMethod::Get, "/identity/get-session"))
-                .await
-                .unwrap();
+            let session = handle(
+                &auth,
+                AuthRequest::new(HttpMethod::Get, "/identity/get-session"),
+            )
+            .await
+            .unwrap();
             assert_eq!(
                 serde_json::from_slice::<Value>(&session.body).unwrap(),
                 json!({"source":"application"})
@@ -248,25 +254,23 @@ mod tests {
                     "actual registration must retain {path}"
                 );
             }
-            let embedded = auth
-                .handle_request(AuthRequest::new(
-                    HttpMethod::Get,
-                    "/identity/__test/openapi.json",
-                ))
-                .await
-                .unwrap();
+            let embedded = handle(
+                &auth,
+                AuthRequest::new(HttpMethod::Get, "/identity/__test/openapi.json"),
+            )
+            .await
+            .unwrap();
             assert_eq!(embedded.status, 200);
             assert_eq!(
                 serde_json::from_slice::<Value>(&embedded.body).unwrap(),
                 auth.openapi_spec().to_value().unwrap()
             );
-            let response = auth
-                .handle_request(AuthRequest::new(
-                    HttpMethod::Get,
-                    "/identity/open-api/generate-schema",
-                ))
-                .await
-                .unwrap();
+            let response = handle(
+                &auth,
+                AuthRequest::new(HttpMethod::Get, "/identity/open-api/generate-schema"),
+            )
+            .await
+            .unwrap();
             assert_eq!(response.status, 200);
             let document: Value = serde_json::from_slice(&response.body).unwrap();
             assert_eq!(
@@ -325,6 +329,91 @@ mod tests {
                 document["components"]["schemas"]["Item"]["properties"]["secret"],
                 json!({"type":"string"})
             );
+        }
+        for (path, disabled, theme, nonce) in [
+            ("/reference", false, "default", None),
+            ("/docs", false, "purple", Some("application-csp-nonce")),
+            ("/reference", true, "default", None),
+        ] {
+            let config = AuthConfig::new("native-open-api-fixture-secret-at-least-32-chars")
+                .base_url("https://app.fixture.test")
+                .base_path("/identity");
+            let database = Database::connect("sqlite::memory:").await.unwrap();
+            let mut options = OpenApiConfig::default()
+                .path(path)
+                .theme(theme)
+                .disable_default_reference(disabled);
+            options.nonce = nonce.map(str::to_owned);
+            let auth = AuthBuilder::<AppSchema>::new(config.clone())
+                .store(SeaOrmStore::new(config, database))
+                .plugin(AppPlugin)
+                .plugin(OpenApiPlugin::with_config(options))
+                .build()
+                .await
+                .unwrap();
+            let response = handle(
+                &auth,
+                AuthRequest::new(HttpMethod::Get, format!("/identity{path}")),
+            )
+            .await
+            .unwrap();
+            assert_eq!(response.status, if disabled { 404 } else { 200 });
+            if disabled {
+                assert!(response.body.is_empty());
+            } else {
+                assert_eq!(
+                    response.headers.get("content-type").map(String::as_str),
+                    Some("text/html")
+                );
+                let html = String::from_utf8(response.body).unwrap();
+                let embedded = html
+                    .split_once("type=\"application/json\">")
+                    .unwrap()
+                    .1
+                    .split_once("</script>")
+                    .unwrap()
+                    .0;
+                let document: Value = serde_json::from_str(embedded).unwrap();
+                assert_eq!(
+                    document["servers"],
+                    json!([{"url":"https://app.fixture.test/identity"}])
+                );
+                assert_eq!(
+                    document["paths"]["/items/{itemId}"]["get"]["operationId"],
+                    "items"
+                );
+                assert!(document["paths"].get("/internal").is_none());
+                assert!(html.contains(&format!("theme: \"{theme}\"")));
+                assert_eq!(
+                    html.matches("nonce=\"application-csp-nonce\"").count(),
+                    if nonce.is_some() { 2 } else { 0 }
+                );
+                assert!(html.contains("https://cdn.jsdelivr.net/npm/@scalar/api-reference"));
+            }
+            // Disabling the reference page leaves the JSON document available.
+            let schema = handle(
+                &auth,
+                AuthRequest::new(HttpMethod::Get, "/identity/open-api/generate-schema"),
+            )
+            .await
+            .unwrap();
+            assert_eq!(schema.status, 200);
+            assert!(
+                serde_json::from_slice::<Value>(&schema.body).unwrap()["paths"]["/items/{itemId}"]
+                    .is_object()
+            );
+            if path != "/reference" {
+                assert_eq!(
+                    handle(
+                        &auth,
+                        AuthRequest::new(HttpMethod::Get, "/identity/reference")
+                    )
+                    .await
+                    .unwrap()
+                    .status,
+                    404
+                );
+            }
         }
     }
 }

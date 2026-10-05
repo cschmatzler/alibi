@@ -1,4 +1,5 @@
 //! Native organization authority and lifetime through the public router.
+use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
 use better_auth::plugins::{
     EmailPasswordPlugin,
@@ -15,6 +16,7 @@ use std::sync::Arc;
 const SECRET: &str = "native-organization-172-secret-at-least-32";
 const ORIGIN: &str = "http://localhost:43178";
 backend_tests!(native_organization_workflow);
+postgres_tests!(native_organization_workflow);
 fn config() -> AuthConfig {
     AuthConfig::new(SECRET).base_url(ORIGIN)
 }
