@@ -58,8 +58,8 @@ macro_rules! auth_model {
 macro_rules! auth_models {
     ($backend:ident, $date:ty) => {
         auth_model!($backend, user, "user", "users", [linked_id: Option<String>], {
-            pub email: Option<String>,
-            pub name: Option<String>,
+            pub email: String,
+            pub name: String,
             pub email_verified: bool,
             pub image: Option<String>,
             pub created_at: $date,
@@ -143,6 +143,17 @@ mod sqlx_char {
 mod seaorm_char {
     use super::*;
     auth_models!(seaorm, NaiveDateTime);
+    #[tokio::test]
+    async fn sqlite_native_char_ids() -> TestResult {
+        let db = Db::sqlite().await?;
+        install(&db).await?;
+        let connection = super::super::SeaOrm::connect(&db.url, Some(1)).await?;
+        let store = better_auth::seaorm::SeaOrmStore::<Schema>::new(
+            AuthConfig::new("char-schema-test-secret-at-least-32"),
+            connection,
+        );
+        exercise(&db.raw, &store).await
+    }
     #[tokio::test]
     #[ignore = "requires BETTER_AUTH_TEST_POSTGRES_URL"]
     async fn postgres_native_char_ids() -> TestResult {
@@ -260,12 +271,19 @@ async fn typed_null(pool: &sqlx::PgPool, wire_type: &str) -> TestResult {
 }
 
 async fn install(db: &Db) -> TestResult {
-    install_as(db, if db.is_postgres() { "CHAR(30)" } else { "TEXT" }, true).await
+    install_as(
+        db,
+        if db.is_postgres() { "CHAR(30)" } else { "TEXT" },
+        true,
+        true,
+    )
+    .await
 }
-async fn install_as(db: &Db, char_type: &str, seed: bool) -> TestResult {
+async fn install_as(db: &Db, char_type: &str, seed: bool, required_text: bool) -> TestResult {
+    let nullable_text = if required_text { "NOT NULL" } else { "" };
     for statement in [
         format!(
-            "CREATE TABLE users (id {char_type} PRIMARY KEY, linked_id {char_type}, email TEXT, name TEXT, email_verified BOOLEAN NOT NULL, image TEXT, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL)"
+            "CREATE TABLE users (id {char_type} PRIMARY KEY, linked_id {char_type}, email TEXT {nullable_text}, name TEXT {nullable_text}, email_verified BOOLEAN NOT NULL, image TEXT, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL)"
         ),
         format!(
             "CREATE TABLE sessions (id {char_type} PRIMARY KEY, user_id {char_type} NOT NULL REFERENCES users(id), token TEXT NOT NULL, expires_at TIMESTAMP NOT NULL, created_at TIMESTAMP NOT NULL, updated_at TIMESTAMP NOT NULL, ip_address TEXT, user_agent TEXT, active BOOLEAN NOT NULL)"
@@ -297,13 +315,18 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
     let foreign = "owner_000000000000000000000002";
     let absent = "owner_000000000000000000000003";
     for id in [id, foreign] {
-        let mut create = CreateUser::new().with_email(format!("{id}@example.invalid"));
+        let mut create = CreateUser::new()
+            .with_email(format!("{id}@example.invalid"))
+            .with_name("Created");
         create.id = Some(id.into());
         _ = create.additional_fields.insert(
             "linkedId".into(),
             better_auth_core::utils::json::JsValue::Null,
         );
-        assert_eq!(store.create_user(create).await?.id(), id);
+        let user = store.create_user(create).await?;
+        assert_eq!(user.id(), id);
+        assert_eq!(user.name(), Some("Created"));
+        assert_eq!(user.email(), Some(format!("{id}@example.invalid").as_str()));
     }
     assert!(store.get_user_by_id(absent).await?.is_none());
     let actual: String = on_raw!(raw, |pool| sqlx::query_scalar(
@@ -361,12 +384,14 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
             id,
             UpdateUser {
                 name: Some("updated".into()),
+                email: Some("updated@example.invalid".into()),
                 ..Default::default()
             },
         )
         .await?;
     assert_eq!(user.id(), id);
     assert_eq!(user.name(), Some("updated"));
+    assert_eq!(user.email(), Some("updated@example.invalid"));
     assert!(
         store
             .update_user(absent, UpdateUser::default())
@@ -596,7 +621,7 @@ mod seaorm_text {
 async fn postgres_text_and_varchar_ids_retain_significant_spaces() -> TestResult {
     for column in ["TEXT", "VARCHAR(60)"] {
         let db = Db::postgres().await?;
-        install_as(&db, column, false).await?;
+        install_as(&db, column, false, false).await?;
         let connection = super::Sqlx::connect(&db.url, Some(1)).await?;
         let store = better_auth::sqlx::SqlxStore::<baseline_model::Schema>::new(
             AuthConfig::new("ordinary-string-column-test-secret"),
