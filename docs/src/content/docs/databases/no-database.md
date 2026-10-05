@@ -115,7 +115,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 }
 ```
 
-`disable_session_refresh`, deferred refresh and `?disableRefresh` do **not** stop cache-hit renewal. A trusted request hook can insert `better_auth_core::session::SessionRefreshSuppressed` to suppress it for one request. The no-database builder keeps a stateless renewal policy you already selected.
+`disable_session_refresh`, deferred refresh and `?disableRefresh` do **not** stop cache-hit renewal. A trusted request hook can insert `better_auth::session::SessionRefreshSuppressed` to suppress it for one request. The no-database builder keeps a stateless renewal policy you already selected.
 
 ## Revocation and replay
 

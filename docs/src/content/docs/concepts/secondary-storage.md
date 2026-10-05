@@ -71,7 +71,7 @@ Cached credentials and user snapshots are authoritative. A SQL fallback for a *m
 | `secondary_storage` | none | Cache backend for verification values. Single-use values need atomic `get_and_delete` |
 | `store_in_database` | `false` | Persist in SQL as well. Without a secondary backend, SQL is always used |
 | `disable_cleanup` | `false` | Keep expired rows during lookup instead of removing them. An atomic consume still invalidates an expired proof it selects |
-| `store_identifier` | plain | Transform stored identifiers: store them `Hashed`, or hash only selected prefixes (for example `email-otp`) with a `VerificationIdentifierPolicy` from `better-auth-core` |
+| `store_identifier` | plain | Transform stored identifiers: store them `Hashed`, or hash only selected prefixes (for example `email-otp`) with a `better_auth::verification::VerificationIdentifierPolicy` |
 
 ## Writing a backend
 

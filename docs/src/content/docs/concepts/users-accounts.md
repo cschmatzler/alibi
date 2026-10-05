@@ -239,13 +239,13 @@ fn auth_config(secret: &str) -> AuthConfig {
 
 ## Validate new identities
 
-`AuthConfig::user_validation` runs before a user is created, before a provider account is written, and before a provider account is linked. It sees the candidate user and where it came from (`password`, OAuth provider, SSO, anonymous, …) and can mutate or reject it. A rejection becomes a `403` with your error code. The trait lives in `better-auth-core`:
+`AuthConfig::user_validation` runs before a user is created, before a provider account is written, and before a provider account is linked. It sees the candidate user and where it came from (`password`, OAuth provider, SSO, anonymous, …) and can mutate or reject it. A rejection becomes a `403` with your error code. Implement `better_auth::user_validation::UserInfoValidator`:
 
 ```rust
 use async_trait::async_trait;
 use better_auth::{AuthConfig, AuthResult};
-use better_auth_core::hooks::RequestHookContext;
-use better_auth_core::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
+use better_auth::hooks::RequestHookContext;
+use better_auth::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
 use std::sync::Arc;
 
 struct CompanyAddressesOnly;
@@ -276,7 +276,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 }
 ```
 
-Add `better-auth-core` from the same Git revision as `better-auth`. Returning `Ok(None)` admits the identity. For side effects on the database write itself, use [database hooks](/concepts/hooks/).
+Returning `Ok(None)` admits the identity. For side effects on the database write itself, use [database hooks](/concepts/hooks/).
 
 ## Frontend
 

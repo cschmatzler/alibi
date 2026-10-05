@@ -33,4 +33,5 @@
 //! lifetime and cookie attributes.
 
 pub use better_auth_api::plugins::helpers::{IssuedSession, SessionIssueError, issue_user_session};
+pub use better_auth_core::session::{SessionRefreshSuppressed, cookie_cache};
 pub use better_auth_core::utils::cookie_utils::create_session_cookie;

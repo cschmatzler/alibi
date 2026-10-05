@@ -145,4 +145,4 @@ Use `bun run docs:check` for diagnostics and `bun run docs:build` for the static
 
 ## License and origins
 
-[MIT](LICENSE), except the passkey verification routines in `better-auth-api`, which derive from [webauthn-rs](https://github.com/kanidm/webauthn-rs) and remain MPL-2.0 (see [`LICENSE.md`](crates/api/src/plugins/passkey/source/LICENSE.md)). This project continues the work of [better-auth-rs/better-auth-rs](https://github.com/better-auth-rs/better-auth-rs) by AprilNEA. Original copyright notices and contribution history are preserved.
+[MIT](LICENSE), except the passkey verification routines in `better_auth::plugins::passkey`, which derive from [webauthn-rs](https://github.com/kanidm/webauthn-rs) and remain MPL-2.0 (see [`LICENSE.md`](crates/api/src/plugins/passkey/source/LICENSE.md)). This project continues the work of [better-auth-rs/better-auth-rs](https://github.com/better-auth-rs/better-auth-rs) by AprilNEA. Original copyright notices and contribution history are preserved.
