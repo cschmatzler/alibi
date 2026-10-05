@@ -286,6 +286,16 @@ pub fn auth_user_impl(
         quote! {}
     };
     let additional_output = additional_output(EntityRole::User, entity_fields, core_root);
+    let string_getter = |name: &str| {
+        let field = Ident::new(name, Span::call_site());
+        if optional(name) {
+            quote! { fn #field(&self) -> Option<&str> { self.#field.as_deref() } }
+        } else {
+            quote! { fn #field(&self) -> Option<&str> { Some(&self.#field) } }
+        }
+    };
+    let email_impl = string_getter("email");
+    let name_impl = string_getter("name");
     let username_impl = if has("username") {
         quote! { fn username(&self) -> Option<&str> { self.username.as_deref() } }
     } else {
@@ -369,8 +379,8 @@ pub fn auth_user_impl(
             #secondary_codec
             #additional_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
-            fn email(&self) -> Option<&str> { self.email.as_deref() }
-            fn name(&self) -> Option<&str> { self.name.as_deref() }
+            #email_impl
+            #name_impl
             fn email_verified(&self) -> bool { self.email_verified }
             fn image(&self) -> Option<&str> { self.image.as_deref() }
             fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.created_at) }
@@ -505,8 +515,17 @@ pub fn insert_values(role: EntityRole, fields: &FieldsNamed) -> Vec<(Ident, Inse
         |name: &'static str, expr: TokenStream| values.push((name, Insert::Value(expr)));
     match role {
         EntityRole::User => {
-            value("email", quote! { create_user.email });
-            value("name", quote! { create_user.name });
+            for name in ["email", "name"] {
+                let field = Ident::new(name, Span::call_site());
+                value(
+                    name,
+                    if optional(name) {
+                        quote! { create_user.#field }
+                    } else {
+                        quote! { create_user.#field.unwrap_or_default() }
+                    },
+                );
+            }
             value("image", quote! { create_user.image });
             value(
                 "email_verified",
@@ -634,7 +653,14 @@ pub fn update_statements(role: EntityRole, fields: &FieldsNamed, set: SetField<'
     match role {
         EntityRole::User => {
             for name in ["email", "name", "image"] {
-                statements.push(some(name, wrapped));
+                statements.push(some(
+                    name,
+                    if optional_field(fields, name) {
+                        wrapped
+                    } else {
+                        direct
+                    },
+                ));
             }
             statements.push(some("email_verified", direct));
             for name in ["username", "display_username", "role"] {
