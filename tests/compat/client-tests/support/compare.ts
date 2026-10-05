@@ -472,7 +472,7 @@ export function compareValues(
         other.responseStatus === 200
       ) {
         const issuancePath =
-          /^(\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth))\/sign-(?:in|up)\/email$/.exec(
+          /^(\/(?:api\/auth|__test\/profiles\/[^/]+\/api\/auth))\/sign-(?:in\/(?:email|username)|up\/email)$/.exec(
             trace.path,
           );
         const a = trace.responseBody;
@@ -1853,8 +1853,11 @@ export function compareValues(
         // narrow observer omits creation dates; subtract the configured lifetime
         // and require the independent issuance windows on both runtimes.
         if (
-          receipt.authPath === "/__test/profiles/org-member-addition/api/auth" ||
-          receipt.authPath === "/__test/profiles/dispatch-default/api/auth"
+          !isDate(a.createdAt) &&
+          !isDate(b.createdAt) &&
+          (receipt.authPath === "/api/auth" ||
+            receipt.authPath === "/__test/profiles/org-member-addition/api/auth" ||
+            receipt.authPath === "/__test/profiles/dispatch-default/api/auth")
         ) {
           if (
             inWindows(

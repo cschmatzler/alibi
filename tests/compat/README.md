@@ -73,8 +73,14 @@ with `TEST=0`, checking the dependency's process-initialization behavior. Run it
 alone with `tests/compat/client-tests/run-against-both.sh environment` inside the
 development shell.
 
-SDK scenarios run against both servers sequentially and default to a 30-second
-test deadline, including real password hashing and multi-step tables. Scenarios
+Each SDK scenario runs against TypeScript and then Rust and defaults to a
+30-second test deadline, including real password hashing and multi-step tables.
+The Rust orchestrator partitions scenario files among up to four independent
+server pairs (limited by available CPU parallelism). Each pair owns its own
+fixture databases and process-global state; files and their scenarios remain
+serial within a worker. Set `BETTER_AUTH_COMPAT_JOBS=1` for a serial run or choose
+1–16 workers explicitly. Full-suite evidence is cleared once, collected from
+all workers, and checked only after every worker finishes. Scenarios
 can override that deadline; assertions about protocol timeouts and lifetimes
 remain independent. CI allows two hours for cold builds, the full SDK suite,
 browser checks, and the instrumented coverage pass.
@@ -90,7 +96,8 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
 ## What the tests establish
 
 - Rust tests cover storage, plugin logic, integration routes and feature builds.
-- SDK scenarios run sequentially against fresh TS and Rust fixture state.
+- SDK scenarios run sequentially within isolated TS/Rust worker pairs against
+  fresh fixture state.
   Their values, response shapes, status codes, redirects and cookie attributes
   are compared. The full runner discovers `tests/`, so new directories join
   the gate automatically.

@@ -193,25 +193,23 @@ fn start_rust_compat_server(
     ManagedChild::new("rust-compat", child)
 }
 
-fn run_bun_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
-    if paths == ["tests"] {
-        for evidence in ["evidence", "oracle"] {
-            let directory = project_root()
-                .join("tests/compat/client-tests/artifacts")
-                .join(evidence);
-            if directory.exists() {
-                std::fs::remove_dir_all(directory)
-                    .unwrap_or_else(|error| panic!("failed to reset {evidence} receipts: {error}"));
-            }
+fn reset_compat_evidence() {
+    for evidence in ["evidence", "oracle"] {
+        let directory = project_root()
+            .join("tests/compat/client-tests/artifacts")
+            .join(evidence);
+        if directory.exists() {
+            std::fs::remove_dir_all(directory)
+                .unwrap_or_else(|error| panic!("failed to reset {evidence} receipts: {error}"));
         }
     }
+}
+
+fn run_bun_suite(paths: &[&str], ts_port: u16, rust_port: u16, coverage: bool) {
     let output = Command::new("bun")
         .arg("test")
         .args(paths)
-        .env(
-            "COMPAT_COVERAGE",
-            if paths == ["tests"] { "1" } else { "0" },
-        )
+        .env("COMPAT_COVERAGE", if coverage { "1" } else { "0" })
         .current_dir(project_root().join("tests/compat/client-tests"))
         .env("AUTH_BASE_URL_TS", format!("http://localhost:{ts_port}"))
         .env(
@@ -234,24 +232,137 @@ fn run_bun_suite(paths: &[&str], ts_port: u16, rust_port: u16) {
         String::from_utf8_lossy(&output.stderr)
     ));
     if !output.status.success() {
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        panic!("Bun compatibility suite failed.\nstdout:\n{stdout}\n\nstderr:\n{stderr}");
+        panic!("Bun compatibility suite failed for {paths:?}; diagnostics printed above");
     }
-    if paths == ["tests"] {
-        let status = Command::new("bun")
-            .args(["run", "support/check-coverage.ts"])
-            .current_dir(project_root().join("tests/compat/client-tests"))
-            .status()
-            .unwrap_or_else(|error| panic!("failed to check capability evidence: {error}"));
-        assert!(status.success(), "capability evidence check failed");
+}
+
+fn check_compat_evidence() {
+    let status = Command::new("bun")
+        .args(["run", "support/check-coverage.ts"])
+        .current_dir(project_root().join("tests/compat/client-tests"))
+        .status()
+        .unwrap_or_else(|error| panic!("failed to check capability evidence: {error}"));
+    assert!(status.success(), "capability evidence check failed");
+}
+
+fn scenario_shards(paths: &[&str]) -> Vec<Vec<String>> {
+    fn collect(path: &std::path::Path, files: &mut Vec<(u64, String)>) {
+        if path.is_dir() {
+            for entry in std::fs::read_dir(path)
+                .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()))
+            {
+                collect(&entry.expect("scenario directory entry").path(), files);
+            }
+        } else if path.to_string_lossy().ends_with(".test.ts") {
+            let root = project_root().join("tests/compat/client-tests");
+            files.push((
+                path.metadata().expect("scenario file metadata").len(),
+                path.strip_prefix(root)
+                    .expect("scenario path in client project")
+                    .to_string_lossy()
+                    .into_owned(),
+            ));
+        }
     }
+    let jobs = std::env::var("BETTER_AUTH_COMPAT_JOBS").map_or_else(
+        |_| {
+            std::thread::available_parallelism()
+                .map_or(1, |count| count.get())
+                .min(4)
+        },
+        |value| {
+            value
+                .parse::<usize>()
+                .ok()
+                .filter(|jobs| (1..=16).contains(jobs))
+                .unwrap_or_else(|| panic!("BETTER_AUTH_COMPAT_JOBS must be between 1 and 16"))
+        },
+    );
+    let mut files = Vec::new();
+    for path in paths {
+        collect(
+            &project_root().join("tests/compat/client-tests").join(path),
+            &mut files,
+        );
+    }
+    files.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
+    files.dedup_by(|left, right| left.1 == right.1);
+    assert!(
+        !files.is_empty(),
+        "no compatibility scenario files matched {paths:?}"
+    );
+    let mut shards = vec![(0_u64, Vec::new()); jobs.min(files.len())];
+    for (size, path) in files {
+        let shard = shards
+            .iter_mut()
+            .min_by_key(|shard| shard.0)
+            .expect("nonempty shards");
+        shard.0 += size;
+        shard.1.push(path);
+    }
+    shards
+        .into_iter()
+        .map(|(_, mut files)| {
+            files.sort();
+            files
+        })
+        .collect()
 }
 
 async fn run_client_compat(paths: &[&str]) {
     let executable = build_rust_compat_server();
     if paths != ["environment"] {
-        run_client_compat_in_environment(paths, &executable, "production", "false").await;
+        if paths.iter().all(|path| path.starts_with("tests")) {
+            let coverage = paths == ["tests"];
+            if coverage {
+                reset_compat_evidence();
+            }
+            let shards = scenario_shards(paths);
+            drop(writeln!(
+                std::io::stderr().lock(),
+                "Compatibility: {} isolated server pairs",
+                shards.len()
+            ));
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = shards
+                    .iter()
+                    .map(|shard| {
+                        let executable = &executable;
+                        scope.spawn(move || {
+                            let runtime = tokio::runtime::Builder::new_current_thread()
+                                .enable_all()
+                                .build()
+                                .expect("compatibility worker runtime");
+                            let paths: Vec<_> = shard.iter().map(String::as_str).collect();
+                            runtime.block_on(run_client_compat_in_environment(
+                                &paths,
+                                executable,
+                                "production",
+                                "false",
+                                coverage,
+                            ));
+                        })
+                    })
+                    .collect();
+                // Join every worker before propagating failures, allowing process
+                // owners to clean up and coverage counters to flush on all shards.
+                let mut failure = None;
+                for handle in handles {
+                    if let Err(error) = handle.join() {
+                        failure = failure.or(Some(error));
+                    }
+                }
+                if let Some(error) = failure {
+                    std::panic::resume_unwind(error);
+                }
+            });
+            if coverage {
+                check_compat_evidence();
+            }
+        } else {
+            run_client_compat_in_environment(paths, &executable, "production", "false", false)
+                .await;
+        }
     }
     if paths == ["tests"] || paths == ["environment"] {
         // The published runtime caches NODE_ENV on import. Each mode needs
@@ -262,8 +373,14 @@ async fn run_client_compat(paths: &[&str]) {
             ("test", "false"),
             ("production", "0"),
         ] {
-            run_client_compat_in_environment(&["environment"], &executable, node_env, test_flag)
-                .await;
+            run_client_compat_in_environment(
+                &["environment"],
+                &executable,
+                node_env,
+                test_flag,
+                false,
+            )
+            .await;
         }
     }
 }
@@ -273,6 +390,7 @@ async fn run_client_compat_in_environment(
     executable: &std::path::Path,
     node_env: &str,
     test_flag: &str,
+    coverage: bool,
 ) {
     drop(writeln!(
         std::io::stderr().lock(),
@@ -294,7 +412,7 @@ async fn run_client_compat_in_environment(
     wait_for_health(ts_port, &mut ts_server, Duration::from_secs(20)).await;
     wait_for_health(rust_port, &mut rust_server, Duration::from_secs(90)).await;
 
-    run_bun_suite(paths, ts_port, rust_port);
+    run_bun_suite(paths, ts_port, rust_port, coverage);
 }
 
 #[cfg(test)]

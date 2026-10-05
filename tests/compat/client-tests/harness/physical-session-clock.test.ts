@@ -14,13 +14,14 @@ import { normalizeClientValue } from "../support/normalize";
 import { createTracingFetch, requestWindow, type TraceEntry } from "../support/trace";
 
 const secret = "compat-test-only-key-not-real-minimum-32chars";
-const authPath = "/__test/profiles/dispatch-default/api/auth";
+
 type State = {
   user: { id: string };
   sessions: { id: string; token: string; userId: string; expiresAt: string }[];
 };
 
-async function capture(role: string, delay: number) {
+async function capture(role: string, delay: number, method: "email" | "username") {
+  const authPath = method === "email" ? "/__test/profiles/dispatch-default/api/auth" : "/api/auth";
   const fixture = await startFixture({
     directory: `/tmp/better-auth-physical-clock-${crypto.randomUUID()}`,
     runId: crypto.randomUUID(),
@@ -37,6 +38,7 @@ async function capture(role: string, delay: number) {
     const startedAt = Date.now();
     const signup = await client.signUp.email({
       name: "Owner",
+      ...(method === "username" ? { username: "clock_owner" } : {}),
       email: "owner@physical-clock.local",
       password: "password123",
     });
@@ -58,20 +60,26 @@ async function capture(role: string, delay: number) {
     await observe();
     // Delay the genuine request, rather than changing its clock or SQL values.
     await Bun.sleep(delay);
-    for (const [contentType, body] of [
-      [
-        "multipart/form-dataapplication/json; boundary=clock-boundary",
-        '--clock-boundary\r\nContent-Disposition: form-data; name="email"\r\n\r\nowner@physical-clock.local\r\n--clock-boundary\r\nContent-Disposition: form-data; name="password"\r\n\r\npassword123\r\n--clock-boundary--\r\n',
-      ],
-      [
-        "application/x-www-form-urlencoded",
-        new URLSearchParams({
-          email: "owner@physical-clock.local",
-          password: "password123",
-        }).toString(),
-      ],
-    ]) {
-      const response = await transport(`${fixture.url}${authPath}/sign-in/email`, {
+    const loginField = method === "email" ? "email" : "username";
+    const loginValue = method === "email" ? "owner@physical-clock.local" : "clock_owner";
+    const formats =
+      method === "username"
+        ? [["application/json", JSON.stringify({ username: loginValue, password: "password123" })]]
+        : [
+            [
+              "multipart/form-dataapplication/json; boundary=clock-boundary",
+              `--clock-boundary\r\nContent-Disposition: form-data; name="${loginField}"\r\n\r\n${loginValue}\r\n--clock-boundary\r\nContent-Disposition: form-data; name="password"\r\n\r\npassword123\r\n--clock-boundary--\r\n`,
+            ],
+            [
+              "application/x-www-form-urlencoded",
+              new URLSearchParams({
+                [loginField]: loginValue,
+                password: "password123",
+              }).toString(),
+            ],
+          ];
+    for (const [contentType, body] of formats) {
+      const response = await transport(`${fixture.url}${authPath}/sign-in/${method}`, {
         method: "POST",
         headers: { "content-type": contentType! },
         body,
@@ -103,98 +111,109 @@ async function capture(role: string, delay: number) {
       finishedAt: Date.now(),
       observations,
       windows: traces.map((trace) => trace[requestWindow]),
-      value: { observation: { states, session: normalizeClientValue(session) }, traces },
+      // Exclude the later public read from the username comparison so issuer
+      // negative controls cannot borrow a separate, valid read-clock receipt.
+      value: {
+        observation: {
+          states,
+          ...(method === "email" ? { session: normalizeClientValue(session) } : {}),
+        },
+        traces: method === "email" ? traces : traces.slice(0, -1),
+      },
     };
   } finally {
     await fixture.stop();
   }
 }
 
-test("actual Source dispatch physical expiry requires its signed seven-day issuer and immutable SQL observations", async () => {
-  const left = await capture("source-left", 0);
-  const leftIssueOffset =
-    Date.parse(left.value.observation.states.at(-1)!.sessions[1]!.expiresAt) -
-    604800000 -
-    left.startedAt;
-  const right = await capture("source-right", 2200 + Math.max(0, leftIssueOffset));
-  const context = {
-    leftBaseURL: left.baseURL,
-    rightBaseURL: right.baseURL,
-    leftStartedAt: left.startedAt,
-    rightStartedAt: right.startedAt,
-    leftFinishedAt: left.finishedAt,
-    rightFinishedAt: right.finishedAt,
-    leftRequestWindows: left.windows,
-    rightRequestWindows: right.windows,
-    leftPhysicalObservations: left.observations,
-    rightPhysicalObservations: right.observations,
-    sessionCookieSecret: secret,
-  } satisfies ComparisonContext;
-  const relativeExpiry = (captured: Awaited<ReturnType<typeof capture>>) =>
-    Date.parse(captured.value.observation.states.at(-1)!.sessions[1]!.expiresAt) -
-    captured.startedAt;
-  expect(Math.abs(relativeExpiry(right) - relativeExpiry(left))).toBeGreaterThan(1500);
-  expect(compareValues(left.value, right.value, context)).toEqual([]);
+for (const method of ["email", "username"] as const) {
+  test(`actual Source ${method} physical expiry requires its signed seven-day issuer and immutable SQL observations`, async () => {
+    const left = await capture("source-left", 0, method);
+    const leftIssueOffset =
+      Date.parse(left.value.observation.states.at(-1)!.sessions[1]!.expiresAt) -
+      604800000 -
+      left.startedAt;
+    const right = await capture("source-right", 2200 + Math.max(0, leftIssueOffset), method);
+    const context = {
+      leftBaseURL: left.baseURL,
+      rightBaseURL: right.baseURL,
+      leftStartedAt: left.startedAt,
+      rightStartedAt: right.startedAt,
+      leftFinishedAt: left.finishedAt,
+      rightFinishedAt: right.finishedAt,
+      leftRequestWindows: left.windows,
+      rightRequestWindows: right.windows,
+      leftPhysicalObservations: left.observations,
+      rightPhysicalObservations: right.observations,
+      sessionCookieSecret: secret,
+    } satisfies ComparisonContext;
+    const relativeExpiry = (captured: Awaited<ReturnType<typeof capture>>) =>
+      Date.parse(captured.value.observation.states.at(-1)!.sessions[1]!.expiresAt) -
+      captured.startedAt;
+    expect(Math.abs(relativeExpiry(right) - relativeExpiry(left))).toBeGreaterThan(1500);
+    expect(compareValues(left.value, right.value, context)).toEqual([]);
 
-  for (const change of [
-    "wrong-lifetime",
-    "foreign-token",
-    "foreign-owner",
-    "invalid-signature",
-    "foreign-profile",
-    "missing-observation",
-    "tampered-observation",
-  ]) {
-    const altered = structuredClone(right.value);
-    const clocks = {
-      ...structuredClone(context),
-      rightPhysicalObservations: context.rightPhysicalObservations.map((observation) => ({
-        ...structuredClone(observation),
-      })),
-    };
-    const row = altered.observation.states.at(-1)!.sessions[1]!;
-    if (change === "wrong-lifetime") {
-      row.expiresAt = new Date(Date.parse(row.expiresAt) + 60000).toISOString();
-    }
-    if (change === "foreign-token") {
-      row.token = "unissued-token";
-    }
-    if (change === "foreign-owner") {
-      row.userId = "foreign-owner";
-    }
-    if (change === "invalid-signature") {
-      clocks.rightRequestWindows![1]!.issuedSessionCookie += "invalid";
-    }
-    if (change === "foreign-profile") {
-      altered.traces[1]!.path = "/__test/profiles/foreign/api/auth/sign-in/email";
-    }
-    if (change === "missing-observation") {
-      clocks.rightPhysicalObservations = [];
-    }
-    if (change === "tampered-observation") {
-      for (const observation of clocks.rightPhysicalObservations!) {
-        observation.digest = "invalid";
+    for (const change of [
+      "wrong-lifetime",
+      "foreign-token",
+      "foreign-owner",
+      "invalid-signature",
+      "foreign-profile",
+      "missing-observation",
+      "tampered-observation",
+    ]) {
+      const altered = structuredClone(right.value);
+      const clocks = {
+        ...structuredClone(context),
+        rightPhysicalObservations: context.rightPhysicalObservations.map((observation) => ({
+          ...structuredClone(observation),
+        })),
+      };
+      const row = altered.observation.states.at(-1)!.sessions[1]!;
+      if (change === "wrong-lifetime") {
+        row.expiresAt = new Date(Date.parse(row.expiresAt) + 60000).toISOString();
       }
+      if (change === "foreign-token") {
+        row.token = "unissued-token";
+      }
+      if (change === "foreign-owner") {
+        row.userId = "foreign-owner";
+      }
+      if (change === "invalid-signature") {
+        clocks.rightRequestWindows![1]!.issuedSessionCookie += "invalid";
+      }
+      if (change === "foreign-profile") {
+        altered.traces[1]!.path = "/__test/profiles/foreign/api/auth/sign-in/email";
+      }
+      if (change === "missing-observation") {
+        clocks.rightPhysicalObservations = [];
+      }
+      if (change === "tampered-observation") {
+        for (const observation of clocks.rightPhysicalObservations!) {
+          observation.digest = "invalid";
+        }
+      }
+      // Coherent SQL counterfactuals still need the genuine issuer, owner and lifetime.
+      if (["wrong-lifetime", "foreign-token", "foreign-owner"].includes(change)) {
+        const body = structuredClone(altered.observation.states.at(-1)!);
+        clocks.rightPhysicalObservations = [
+          {
+            kind: "session",
+            owner: body.user.id,
+            body,
+            digest: createHash("sha256").update(JSON.stringify(body)).digest("hex"),
+          },
+        ];
+      }
+      expect(
+        compareValues(left.value, altered, clocks).some(
+          (diff) =>
+            diff.path === `observation.states.${method === "email" ? 2 : 1}.sessions.1.expiresAt`,
+        ),
+      ).toBe(true);
     }
-    // Coherent SQL counterfactuals still need the genuine issuer, owner and lifetime.
-    if (["wrong-lifetime", "foreign-token", "foreign-owner"].includes(change)) {
-      const body = structuredClone(altered.observation.states.at(-1)!);
-      clocks.rightPhysicalObservations = [
-        {
-          kind: "session",
-          owner: body.user.id,
-          body,
-          digest: createHash("sha256").update(JSON.stringify(body)).digest("hex"),
-        },
-      ];
-    }
-    expect(
-      compareValues(left.value, altered, clocks).some(
-        (diff) => diff.path === "observation.states.2.sessions.1.expiresAt",
-      ),
-    ).toBe(true);
-  }
-}, 30_000);
+  }, 30_000);
+}
 
 const discordPath = "/__test/profiles/social-discord-default/api/auth";
 type SocialState = {
