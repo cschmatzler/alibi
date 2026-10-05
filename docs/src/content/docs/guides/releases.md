@@ -33,7 +33,7 @@ The [compatibility guide](/reference/compatibility/) defines supported behavior 
 
 ## Workspace versions
 
-Keep all first-party published crates on the same Rust release version and update their dependency requirements together. Vendored third-party crates retain their own versions.
+Keep all first-party published crates on the same Rust release version and update their dependency requirements together.
 
 The upstream compatibility target is separate release information. Do not encode a Rust fix counter using a hyphen suffix or build metadata: hyphen suffixes identify prereleases, and SemVer ignores build metadata when ordering versions.
 
@@ -43,5 +43,5 @@ The upstream compatibility target is separate release information. Do not encode
 2. Update the workspace package version, first-party dependency requirements, lockfiles, and installation examples together. Keep compatibility badges and documented upstream pins aligned with the verified target.
 3. Record release notes with the upstream target, Rust changes, security fixes, known compatibility exceptions, and any migration steps.
 4. Run `devenv shell -- ./scripts/check.sh`, `bun run docs:check`, and `bun run docs:build`. Require the complete CI gate to pass on the release commit, including differential compatibility checks.
-5. Verify publishable crate packages with `cargo publish --dry-run` in dependency order, accounting for dependencies that must be published before dependent crates can be verified against the registry. Exclude vendored crates from our publication.
+5. Verify publishable crate packages with `cargo publish --dry-run` in dependency order, accounting for dependencies that must be published before dependent crates can be verified against the registry.
 6. Publish first-party crates in dependency order from the reviewed release commit, then create its immutable `v{rust-version}` tag and release notes. If publication is interrupted, resume with the same commit and version for unpublished crates; never overwrite an already published crate.

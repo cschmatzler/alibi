@@ -75,7 +75,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 }
 ```
 
-Use this only when every subdomain is trusted, since any of them can then read the (HttpOnly-protected, but still sent) cookies and set cookies for the parent. `cross_sub_domain_cookies_from_base_url()` uses the hostname of the base URL (without port) as the domain; it does **not** compute a registrable parent domain — pass the parent explicitly when you need one. Browsers on a different *site* (not just a subdomain) need `SameSite=None; Secure` and credentialed CORS; see [Cross-origin applications](/guides/cross-origin/).
+Use this only when every subdomain is trusted, since every subdomain then receives these cookies (`HttpOnly` hides them from scripts, not from other servers) and can set cookies for the parent domain. `cross_sub_domain_cookies_from_base_url()` uses the hostname of the base URL (without port) as the domain; it does **not** compute a registrable parent domain — pass the parent explicitly when you need one. Browsers on a different *site* (not just a subdomain) need `SameSite=None; Secure` and credentialed CORS; see [Cross-origin applications](/guides/cross-origin/).
 
 ## Cache the session in a cookie
 

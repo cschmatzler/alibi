@@ -30,8 +30,8 @@ Common codes (the full set per plugin is on its page and in the [OpenAPI documen
 | 403 | `SESSION_NOT_FRESH` | [Freshness](/concepts/session-management/#session-freshness) |
 | 404 | `PROVIDER_NOT_FOUND` | Unknown [OAuth provider](/authentication/social-sign-on/) |
 | 422 | `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` | Duplicate sign-up |
-| 429 | — | [Rate limited](/concepts/rate-limit/) (see `X-Retry-After`) |
 | 413 | — | Body over `BodyLimitConfig::max_bytes` |
+| 429 | — | [Rate limited](/concepts/rate-limit/) (see `X-Retry-After`) |
 
 ## `AuthError`
 

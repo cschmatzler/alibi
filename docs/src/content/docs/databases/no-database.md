@@ -10,7 +10,7 @@ Two related modes avoid storing sessions on the server:
 | **No database** — `AuthBuilder::without_database` | In memory, lost on restart | The cookie only | Prototypes, tests, demos, edge workers fronting an external identity provider |
 | **Stateless sessions** — `config.session.stateless()` | Your SQL store | The cookie only | Scaling reads without a session table, when delayed revocation is acceptable |
 
-In both, the session lives in an encrypted cookie. Think carefully before using this for anything that needs immediate sign-out (see [Revocation](#revocation-and-replay)).
+In both modes the session lives in an encrypted cookie, so neither can revoke a session immediately. If you need immediate sign-out, read [Revocation and replay](#revocation-and-replay) before choosing either.
 
 ## Start without a database
 

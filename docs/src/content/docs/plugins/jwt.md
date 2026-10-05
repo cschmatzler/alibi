@@ -173,7 +173,7 @@ async fn check(
 - Rotate keys (`rotation_interval`) and keep `grace_period` at least as long as your longest-lived token.
 - Keep tokens short-lived; JWTs cannot be revoked before `exp`. Use the session for anything that needs immediate logout.
 - Put only the claims consumers need into the token — the default payload is the whole user object.
-- With `no database`, JWKS rows live in memory and keys change on restart ([No database](/databases/no-database/)).
+- Without a database ([No database](/databases/no-database/)), JWKS rows live in memory and keys change on restart.
 
 ## Frontend
 

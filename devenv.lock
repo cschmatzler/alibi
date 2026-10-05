@@ -39,6 +39,27 @@
         "type": "github"
       }
     },
+    "mr-boxington": {
+      "inputs": {
+        "nixpkgs": [
+          "rust-style",
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1791159569,
+        "narHash": "sha256-3vhcXb63YTF8NRg2/oPWYblkWka4rYOJNx4ednYzTLM=",
+        "owner": "jdx",
+        "repo": "mr-boxington",
+        "rev": "27bc6a265560dfce39dea7fe235a235d1efdf889",
+        "type": "github"
+      },
+      "original": {
+        "owner": "jdx",
+        "repo": "mr-boxington",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "inputs": {
         "nixpkgs-src": "nixpkgs-src"
@@ -126,15 +147,16 @@
     "rust-style": {
       "inputs": {
         "fenix": "fenix",
+        "mr-boxington": "mr-boxington",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"
       },
       "locked": {
-        "lastModified": 1790874268,
-        "narHash": "sha256-n/Pz9JVK/iJzWoIsIpetyk91Z8x9yT3KUJBFONp9tGw=",
+        "lastModified": 1791189191,
+        "narHash": "sha256-eld/nNULqOG4eGsoMwAVYro2Wxb67bZac6v26icz28U=",
         "owner": "cschmatzler",
         "repo": "rust",
-        "rev": "3ed7d4c03987dd958f4626449b933ae80a755268",
+        "rev": "82bf2b0d89cc26de5f277e0f0a9076c0376df2c0",
         "type": "github"
       },
       "original": {

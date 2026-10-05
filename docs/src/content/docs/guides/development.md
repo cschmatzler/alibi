@@ -9,6 +9,7 @@ The repository uses [devenv](https://devenv.sh/getting-started/) (Nix) and [dire
 
 ```bash
 direnv allow
+cargo nextest run                       # fast native feedback
 devenv shell -- ./scripts/check.sh      # the complete gate
 ```
 
@@ -46,11 +47,12 @@ The [release policy](/guides/releases/) defines Rust versioning, upstream compat
 
 | Tier | Where | Establishes | Run |
 | --- | --- | --- | --- |
-| Unit | inline `#[cfg(test)]` modules | Private logic of a module | `cargo nextest run --workspace` |
+| Unit | inline `#[cfg(test)]` modules | Private logic of a module | `cargo nextest run --lib` |
 | Integration | `tests/integration/` | Public builder, router, stores and adapters together; both stores run every storage test | `cargo nextest run --test integration` |
+| End-to-end | `tests/e2e/` | Real HTTP, cookies, authentication and reset delivery against SQLite | `cargo nextest run --test e2e` |
 | Compat | `tests/compat/` | Behavior matches the pinned `better-auth@1.7.7` | `./scripts/compat.sh` |
 
-`./scripts/check.sh` runs formatting, strict Clippy, every tier, feature builds, TypeScript checks, doctests, rustdoc and the coverage floor. Read the tier guides before adding a test: [Tests](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/README.md) explains where a new test belongs, and [Compatibility testing](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/compat/README.md) describes the differential harness and the compatibility contract.
+A bare `cargo nextest run` runs the unit, integration and end-to-end tiers with SQLx, SeaORM, Axum and Poem enabled; it needs no Bun, upstream install or external database. Cases that need PostgreSQL, Redis or the upstream fixture servers are marked `#[ignore]` and run in CI or through the compat harness. `./scripts/check.sh` runs formatting, strict Clippy, every tier, feature builds, TypeScript checks, doctests, rustdoc and the coverage floor. Read the tier guides before adding a test: [Tests](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/README.md) explains where a new test belongs, and [Compatibility testing](https://github.com/cschmatzler/better-auth-rs/blob/main/tests/compat/README.md) describes the differential harness and the compatibility contract.
 
 ## Work on the docs
 

@@ -125,8 +125,8 @@ fn proxied(secret: &str) -> Result<TurnstileConfig, url::ParseError> {
 
 - **CORS preflight.** CAPTCHA skips `OPTIONS` requests so `AuthBuilder::cors(...)` can answer browser preflights. Protected POST requests still require a provider-verified token. Configure the allowed origin and add `x-captcha-response` to `CorsConfig::allowed_headers` when the browser sends that header. CORS grants headers only to allowed origins; a skipped CAPTCHA check does not authorize a cross-origin request.
 - A CAPTCHA complements, not replaces, [rate limiting](/concepts/rate-limit/).
-- The check is stateless; a token valid at the provider can be reused until the provider expires it. Providers make tokens single use — rely on that.
-- Combine with [Have I Been Pwned](/plugins/have-i-been-pwned/) and the [anonymous plugin](/plugins/anonymous/) rate limits for layered abuse protection.
+- The plugin keeps no record of used tokens. Providers make tokens single use, so rely on the provider's verification to reject a replay.
+- Layer it with [Have I Been Pwned](/plugins/have-i-been-pwned/) and with rate limits on [anonymous sign-in](/plugins/anonymous/#security-notes).
 
 ## Frontend
 

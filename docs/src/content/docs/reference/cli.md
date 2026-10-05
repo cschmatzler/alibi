@@ -53,7 +53,7 @@ Regenerate after adding a plugin that needs storage, **review the diff**, and wr
 | `phone-number` | `users.phone_number`, `users.phone_number_verified` |
 | `last-login-method` | `users.last_login_method` |
 | `device-authorization` | table `device_code` |
-| `api-key` | table `api_keys` (*see the column note on the [API key](/plugins/api-key/#schema) page*) |
+| `api-key` | table `api_keys` ([schema](/plugins/api-key/#schema)) |
 | `passkey` | table `passkeys` |
 | `jwt` | table `jwks` |
 | `siwe` | table `wallet_address` |
@@ -61,12 +61,10 @@ Regenerate after adding a plugin that needs storage, **review the diff**, and wr
 | `organization-teams` | tables `team`, `team_member`; session `active_team_id` |
 | `organization-dynamic-roles` | table `organization_role` |
 
-:::caution
-Unknown plugin names are **ignored silently**, and the `--help` text lists only a subset of the names above. If a column you expect is missing, check the spelling against this table.
-:::
+An unknown name is rejected, and the error lists the valid ones. `--help` shows the same list.
 
 Plugins that need no storage (bearer, CAPTCHA, magic link, email OTP, one-time token, multi-session, OpenAPI, …) have no generator name.
 
 ## Exit status
 
-`0` on success; non-zero when the output file or its directory cannot be written.
+`0` on success; non-zero for invalid arguments (such as an unknown plugin name) or when the output file or its directory cannot be written.

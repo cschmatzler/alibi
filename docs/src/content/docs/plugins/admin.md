@@ -193,7 +193,7 @@ fn admin() -> AdminPlugin {
 - Hiding an admin page is not authorization — enforce the plugin's permission policy (or yours) on the server.
 - `admin_user_ids` bypasses every check; keep it to break-glass accounts and prefer roles.
 - Log impersonation: sessions carry `impersonatedBy`, so audit middleware can record who acted as whom.
-- `remove-user` deletes the user's sessions and accounts and cannot be undone. It also needs the `api_keys` table to exist ([note](/concepts/users-accounts/#delete-an-account)).
+- `remove-user` deletes the user's sessions and accounts and cannot be undone. It also removes the user's [API keys](/plugins/api-key/) when the `api_keys` table exists.
 
 ## Frontend
 

@@ -1,5 +1,5 @@
 ---
-title: "Users & accounts"
+title: "Users and accounts"
 description: "Identity, linked credentials, profile updates, email changes, account deletion and linking policy."
 ---
 
@@ -153,11 +153,7 @@ fn users() -> UserManagementPlugin {
 }
 ```
 
-`POST /delete-user` accepts a `password`, a `token` and a `callbackURL`. Without a verification sender (and without `require_delete_verification(true)`), the call deletes the account immediately, but only when the session is [fresh](/concepts/session-management/#session-freshness) or the password is supplied. With a sender, the first call stores a one-time proof and sends a link to `GET /delete-user/callback?token=…`; following it — or posting the `token` back — completes the deletion. A `before_delete` error aborts the operation. The user, sessions and accounts are removed and the response clears the auth cookies. Until you opt in, `/delete-user` answers `404`.
-
-:::caution[Deletion reads the `api_keys` table]
-Deleting a user also removes the user's API keys, and the current store queries `api_keys` (by `reference_id`) unconditionally. If that table does not exist, `/delete-user` (and admin `remove-user`) fails with an empty `500`. Create the table even if you do not use the [API key plugin](/plugins/api-key/#schema) — the generated core-only schema does not include it, so add it from the bundled DDL until this is addressed.
-:::
+`POST /delete-user` accepts a `password`, a `token` and a `callbackURL`. Without a verification sender (and without `require_delete_verification(true)`), the call deletes the account immediately, but only when the session is [fresh](/concepts/session-management/#session-freshness) or the password is supplied. With a sender, the first call stores a one-time proof and sends a link to `GET /delete-user/callback?token=…`; following it — or posting the `token` back — completes the deletion. A `before_delete` error aborts the operation. The user, sessions, accounts and any [API keys](/plugins/api-key/) are removed and the response clears the auth cookies. Until you opt in, `/delete-user` answers `404`.
 
 ## Linked accounts
 

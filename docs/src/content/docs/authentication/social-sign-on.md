@@ -38,7 +38,7 @@ The first argument of `add_provider` is the **provider id**. Clients send it as 
 
 ### Register the callback URL
 
-Each provider's developer console needs the redirect URI
+Each provider's developer console needs this redirect URI:
 
 ```text
 {BETTER_AUTH_URL}{base_path}/callback/{provider id}
