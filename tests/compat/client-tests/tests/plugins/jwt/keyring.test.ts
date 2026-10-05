@@ -393,7 +393,9 @@ compatScenario(
     expect(other.error).toBeNull();
 
     const foreignBefore = await ctx.readUserState({ userId: other.data!.user.id });
+    const publicationStarted = Date.now();
     const jwks = await guest.jwks();
+    const publicationFinished = Date.now();
     expect(jwks.error).toBeNull();
 
     const original = await state(ctx, mode);
@@ -404,9 +406,14 @@ compatScenario(
     const firstPublic = original.keys[0]!.publicKey as JWK;
     expect(firstPublic.kty).toBe("RSA");
     expect(Buffer.from(firstPublic.n!, "base64url")).toHaveLength(384);
-    expect(Date.parse(original.keys[0]!.expiresAt!) - Date.parse(original.keys[0]!.createdAt)).toBe(
-      3600000,
-    );
+    // Source reads creation and expiry separately after key generation.
+    for (const clock of [
+      Date.parse(original.keys[0]!.createdAt),
+      Date.parse(original.keys[0]!.expiresAt!) - 3600000,
+    ]) {
+      expect(clock).toBeGreaterThanOrEqual(publicationStarted);
+      expect(clock).toBeLessThanOrEqual(publicationFinished);
+    }
 
     const payload = {
       sub: "installed-key-owner",

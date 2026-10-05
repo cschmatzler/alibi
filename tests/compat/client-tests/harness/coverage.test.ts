@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 
 import { collectCoverage } from "../support/coverage";
 import type { TraceEntry } from "../support/trace";
+import { requestWindow } from "../support/trace";
 
 function trace(path: string, status: number): TraceEntry {
   return {
@@ -67,6 +68,50 @@ test("Source default OAuth error redirects record admission denial without count
   expect(collectCoverage(scenario, rejected, ["GET /callback/{}"], baseURL)).toEqual({
     "GET /callback/{}": { rejection: [scenario], authorization: [scenario], state: [scenario] },
   });
+
+  const proxyDenied = {
+    ...trace("/__test/profiles/oauth-proxy-cookie/api/auth/callback/gitlab/oauth-proxy", 302),
+    responseHeaders: {
+      location: `${baseURL}/__test/profiles/oauth-proxy-cookie/api/auth/error?error=state_mismatch`,
+    },
+  };
+  expect(collectCoverage(scenario, [proxyDenied], [], baseURL)).toEqual({
+    "GET /callback/{}/oauth-proxy": { rejection: [scenario], authorization: [scenario] },
+  });
+
+  const issued = {
+    ...trace("/__test/profiles/oauth-proxy-cookie/api/auth/link-social", 200),
+    method: "POST",
+    responseBody: { url: "https://provider.example/authorize?state=issued" },
+    [requestWindow]: {
+      startedAt: 100,
+      finishedAt: 110,
+      inputDates: {},
+      oauthErrorCallbackURL: `${baseURL}/proxy-error?application=kept`,
+    },
+  };
+  const configuredDenial = {
+    ...proxyDenied,
+    responseHeaders: { location: `${baseURL}/proxy-error?application=kept&error=state_mismatch` },
+  };
+  expect(
+    collectCoverage(scenario, [issued, configuredDenial], [], baseURL)[
+      "GET /callback/{}/oauth-proxy"
+    ],
+  ).toEqual({ rejection: [scenario], authorization: [scenario] });
+  for (const unbound of [
+    [],
+    [{ ...issued, responseStatus: 403 }],
+    [{ ...issued, path: "/__test/profiles/foreign/api/auth/link-social" }],
+    [{ ...issued, responseBody: {} }],
+    [{ ...issued, [requestWindow]: undefined }],
+  ]) {
+    expect(
+      collectCoverage(scenario, [...unbound, configuredDenial], [], baseURL)[
+        "GET /callback/{}/oauth-proxy"
+      ],
+    ).toEqual({ success: [scenario] });
+  }
 
   const defaultCallback = {
     ...trace("/api/auth/callback/google", 302),

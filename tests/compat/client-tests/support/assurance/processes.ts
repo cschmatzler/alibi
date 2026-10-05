@@ -24,15 +24,25 @@ export type ManagedFixture = {
   stop(): Promise<void>;
 };
 
-function freePort(): number {
-  const server = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
-    fetch: () => new Response(),
-  });
-  const port = server.port!;
-  server.stop(true);
-  return port;
+const assignedPorts = new Set<number>();
+
+async function freePort(): Promise<number> {
+  // Keep fixture assignments out of the standard outgoing ephemeral range:
+  // health requests must not acquire a child's port before it binds.
+  for (;;) {
+    const port = 10_000 + Math.floor(Math.random() * 20_000);
+    if (assignedPorts.has(port)) continue;
+    let server: ReturnType<typeof Bun.serve>;
+    try {
+      server = Bun.serve({ hostname: "127.0.0.1", port, fetch: () => new Response() });
+    } catch (error) {
+      if ((error as { code?: string }).code === "EADDRINUSE") continue;
+      throw error;
+    }
+    assignedPorts.add(port);
+    await server.stop(true);
+    return port;
+  }
 }
 
 async function waitUntil(check: () => Promise<boolean>, exited: () => boolean, label: string) {
@@ -59,7 +69,7 @@ export async function startFixture(options: {
   rustExecutable?: string;
 }): Promise<ManagedFixture> {
   await mkdir(options.directory, { recursive: true });
-  const port = freePort();
+  const port = await freePort();
   const url = `http://localhost:${port}`;
   const bridge = options.instrument
     ? join(options.directory, `${options.role}-bridge.json`)

@@ -9,6 +9,7 @@ import { deviceAuthorizationClient } from "better-auth/client/plugins";
 import { Authenticator } from "../../../support/authenticator";
 import { authProfilePath, type FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
+import { createTracingFetch, type TraceEntry } from "../../../support/trace";
 
 type Row = {
   id: string;
@@ -589,9 +590,21 @@ compatScenario(
     const first = await ctx.rawRequest({ path, headers });
     expect(first.status).toBe(200);
 
+    const entries: TraceEntry[] = [];
+    const transport = createTracingFetch(ctx.baseURL, "primary", entries);
     const responses = await Promise.all(
-      Array.from({ length: 3 }, () => ctx.rawRequest({ path, headers })),
+      Array.from({ length: 3 }, async () => {
+        const response = await transport(path, { headers });
+        return {
+          status: response.status,
+          location: response.headers.get("location"),
+          body: await response.json(),
+        };
+      }),
     );
+    // Identical requests have no promised winner; retain all three complete
+    // responses while comparing their admission/rejection counts and headers.
+    ctx.recordTransport(entries.sort((left, right) => left.responseStatus - right.responseStatus));
     expect(responses.map((row) => row.status).sort()).toEqual([200, 429, 429]);
     expect(await sessions(ctx)).toEqual([]);
 

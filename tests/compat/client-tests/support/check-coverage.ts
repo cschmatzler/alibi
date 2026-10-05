@@ -2,6 +2,7 @@ import { readdir } from "node:fs/promises";
 
 import { z } from "zod";
 
+import { ARTIFACT_ROOT } from "./artifacts";
 import { inventorySchema, type Requirement, requiredScenarios } from "./coverage";
 import { ORACLE_RECEIPTS } from "./oracle";
 
@@ -19,6 +20,17 @@ for (const project of ["client-tests", "reference-server"]) {
     ).json();
     z.object({ version: z.literal(inventory.upstreamVersion) }).parse(metadata);
   }
+}
+
+const declared = new Set(inventory.capabilities.map((entry) => entry.route));
+if (declared.size !== inventory.capabilities.length) {
+  throw new Error("Duplicate committed capability routes");
+}
+if (process.argv.includes("--inventory-only")) {
+  console.log(
+    `Validated ${declared.size} capability routes against upstream ${inventory.upstreamVersion}`,
+  );
+  process.exit(0);
 }
 
 // A declared oracle expectation must still be needed by its passing scenario;
@@ -57,7 +69,7 @@ const evidenceSchema = z.record(
   z.partialRecord(z.enum(["success", "rejection", "authorization", "state"]), z.array(z.string())),
 );
 
-const directory = new URL("../artifacts/evidence/", import.meta.url);
+const directory = new URL("evidence/", ARTIFACT_ROOT);
 const evidence = new Map<string, Map<string, Set<string>>>();
 
 for (const file of await readdir(directory)) {
@@ -79,7 +91,7 @@ for (const file of await readdir(directory)) {
 }
 
 await Bun.write(
-  new URL("../artifacts/capability-evidence.json", import.meta.url),
+  new URL("capability-evidence.json", ARTIFACT_ROOT),
   JSON.stringify(
     Object.fromEntries(
       [...evidence]
@@ -96,11 +108,6 @@ await Bun.write(
 
 const kinds = ["success", "rejection", "authorization", "state"] as const;
 const actual = new Set([...upstream, ...runtime]);
-const declared = new Set(inventory.capabilities.map((entry) => entry.route));
-
-if (declared.size !== inventory.capabilities.length) {
-  throw new Error("Duplicate committed capability routes");
-}
 
 const missing: string[] = [];
 

@@ -4,49 +4,8 @@ import { Cookie, CookieJar } from "tough-cookie";
 
 import { mutateTransport } from "./assurance/wire";
 import { jsonShape } from "./normalize";
-
-export const requestWindow = Symbol("compat-request-window");
-
-export type RequestWindow = {
-  startedAt: number;
-  finishedAt: number;
-  inputDates: Record<string, string>;
-  inputOwner?: { field: "id" | "token"; value: string };
-  sessionCookie?: string;
-  issuedSessionCookie?: string;
-  /** Exact account JWE observed from the real issuing response. */
-  issuedAccountCookie?: string;
-  /** Complete multi-session Set-Cookie headers observed from the real response. */
-  issuedMultiSessionCookies?: string[];
-  /** Exact email and signed challenge returned by the real password sign-in. */
-  signInEmail?: string;
-  issuedTwoFactorCookie?: string;
-  /** Actual outer-signed, user-bound trust proof returned by factor verification. */
-  issuedTrustCookie?: string;
-  /** Actual signed database-state cookie from the default OAuth issuing response. */
-  issuedVerificationStateCookie?: string;
-  /** Exact input of verification producers, provider profile and explicit expiry controls. */
-  verificationInput?: unknown;
-  /** Integrity of the original complete parsed observer response, separate from compared output. */
-  verificationObserverDigest?: string;
-  /** Original remote signer input and signed response, before any client projection. */
-  remoteJwtSigning?: { input: unknown; response: unknown; digest: string };
-  /** Complete callback receipt from the real signer observer. */
-  remoteJwtObserver?: { body: unknown; digest: string };
-  /** Original narrow physical controls; their values are not transport output. */
-  controlObservation?: {
-    kind:
-      | "member-addition"
-      | "social-provider"
-      | "user-validation"
-      | "managed-secrets"
-      | "jwt-keyring";
-    body: unknown;
-    digest: string;
-  };
-  memberAdditionOwner?: { organizationId: string; userId: string };
-  jwtKeyringInput?: { profile: string; operation: string };
-};
+import { requestWindow, type RequestWindow } from "./trace-window";
+export { requestWindow, type RequestWindow } from "./trace-window";
 
 /** Complete response observations, kept in memory; reports contain paths rather than secrets. */
 export type TraceEntry = {
@@ -165,6 +124,12 @@ function sessionReceipt(request: Headers, response: Headers) {
   };
 }
 
+// A scenario shares traces across actors. Completion order is a scheduling
+// artifact; compare corresponding dispatched requests while retaining every
+// response and its original request window.
+const nextTraceOrder = new WeakMap<TraceEntry[], number>();
+const traceOrder = new WeakMap<TraceEntry, number>();
+
 /** Fetch with an isolated standards-aware cookie jar and complete redirect traces. */
 export function createTracingFetch(
   baseURL: string,
@@ -194,6 +159,8 @@ export function createTracingFetch(
       "same-origin";
 
     for (let redirects = 0; redirects <= 10; redirects++) {
+      const order = nextTraceOrder.get(traces) ?? 0;
+      nextTraceOrder.set(traces, order + 1);
       const url = new URL(request.url);
       const headers = new Headers(request.headers);
       const credentials =
@@ -368,6 +335,15 @@ export function createTracingFetch(
           ...(remoteJwtObserver ? { remoteJwtObserver } : {}),
           ...(controlObservation ? { controlObservation } : {}),
           ...(request.method === "POST" &&
+          /\/api\/auth\/(?:sign-in\/social|link-social)$/.test(url.pathname) &&
+          typeof (verificationInput as { errorCallbackURL?: unknown })?.errorCallbackURL ===
+            "string"
+            ? {
+                oauthErrorCallbackURL: (verificationInput as { errorCallbackURL: string })
+                  .errorCallbackURL,
+              }
+            : {}),
+          ...(request.method === "POST" &&
           url.pathname === "/__test/jwt-keyring" &&
           typeof keyringInput?.profile === "string" &&
           typeof keyringInput.operation === "string"
@@ -471,7 +447,9 @@ export function createTracingFetch(
         entry.responseErrorBody = rejected;
       }
 
-      traces.push(entry);
+      traceOrder.set(entry, order);
+      const position = traces.findIndex((previous) => (traceOrder.get(previous) ?? -1) > order);
+      traces.splice(position < 0 ? traces.length : position, 0, entry);
       const location = response.headers.get("location");
 
       if (

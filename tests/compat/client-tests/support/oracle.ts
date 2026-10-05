@@ -1,3 +1,4 @@
+import { ARTIFACT_ROOT } from "./artifacts";
 import type { TraceEntry } from "./trace";
 
 /**
@@ -19,7 +20,7 @@ export type OracleExpectations = {
 };
 
 /** Passing scenarios record here whether each declared expectation was needed. */
-export const ORACLE_RECEIPTS = new URL("../artifacts/oracle/", import.meta.url);
+export const ORACLE_RECEIPTS = new URL("oracle/", ARTIFACT_ROOT);
 
 const authRoute = /^(?:\/__test\/profiles\/[a-z0-9-]+)?\/api\/auth(?:\/|$)/;
 

@@ -734,7 +734,7 @@ fn mock_oauth_plugin_at(
         )
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     backend::init_tracing();
 
@@ -2195,7 +2195,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("READY");
 
     let listener = TcpListener::bind(&addr).await?;
-    axum::serve(listener, app)
+    // Resolve the complete profile router once. Passing Router directly to
+    // serve repeats with_state(()) and clones its route tables per connection.
+    axum::serve(listener, app.into_make_service())
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 
