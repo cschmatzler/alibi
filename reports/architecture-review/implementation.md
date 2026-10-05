@@ -26,3 +26,5 @@ OpenAPI classification and documentation ownership now travel with plugin metada
 Inline behavior tests remain with their existing owners. A public embedded-builder test covers plugin-owned metadata before initialization; the initialized registry tests exercise the same metadata through the live instance.
 
 The broader proposals to redesign optional storage capabilities, gate every plugin, extract a published runtime crate, and generate all bundled migrations remain separate architectural changes, as recommended in the review. Backend query implementations and protocol verifier extensions retain their existing owners.
+
+See [validation results](validation.md) for completed checks and the compatibility failures reproduced on the pre-refactor baseline.
