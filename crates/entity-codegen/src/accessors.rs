@@ -20,6 +20,16 @@ pub fn auth_user_impl(
         quote! {}
     };
     let additional_output = additional_output(EntityRole::User, entity_fields, core_root);
+    let text_getter = |name: &str| {
+        let field = Ident::new(name, Span::call_site());
+        if optional(name) {
+            quote! { fn #field(&self) -> Option<&str> { self.#field.as_deref() } }
+        } else {
+            quote! { fn #field(&self) -> Option<&str> { Some(self.#field.as_str()) } }
+        }
+    };
+    let email_impl = text_getter("email");
+    let name_impl = text_getter("name");
     let username_impl = if has("username") {
         quote! { fn username(&self) -> Option<&str> { self.username.as_deref() } }
     } else {
@@ -103,8 +113,8 @@ pub fn auth_user_impl(
             #secondary_codec
             #additional_output
             fn id(&self) -> ::std::borrow::Cow<'_, str> { ::std::borrow::Cow::Borrowed(&self.id) }
-            fn email(&self) -> Option<&str> { self.email.as_deref() }
-            fn name(&self) -> Option<&str> { self.name.as_deref() }
+            #email_impl
+            #name_impl
             fn email_verified(&self) -> bool { self.email_verified }
             fn image(&self) -> Option<&str> { self.image.as_deref() }
             fn created_at(&self) -> ::chrono::DateTime<::chrono::Utc> { #core_root::entity::AuthTimestamp::into_utc(self.created_at) }

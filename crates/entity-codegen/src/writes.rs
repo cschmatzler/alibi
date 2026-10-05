@@ -22,8 +22,15 @@ pub fn insert_values(role: EntityRole, fields: &FieldsNamed) -> Vec<(Ident, Inse
         |name: &'static str, expr: TokenStream| values.push((name, Insert::Value(expr)));
     match role {
         EntityRole::User => {
-            value("email", quote! { create_user.email });
-            value("name", quote! { create_user.name });
+            for name in ["email", "name"] {
+                let field = Ident::new(name, Span::call_site());
+                let expression = if optional(name) {
+                    quote! { create_user.#field }
+                } else {
+                    quote! { create_user.#field.unwrap_or_default() }
+                };
+                value(name, expression);
+            }
             value("image", quote! { create_user.image });
             value(
                 "email_verified",
@@ -151,7 +158,12 @@ pub fn update_statements(role: EntityRole, fields: &FieldsNamed, set: SetField<'
     match role {
         EntityRole::User => {
             for name in ["email", "name", "image"] {
-                statements.push(some(name, wrapped));
+                let wrap = if optional_field(fields, name) {
+                    wrapped
+                } else {
+                    direct
+                };
+                statements.push(some(name, wrap));
             }
             statements.push(some("email_verified", direct));
             for name in ["username", "display_username", "role"] {
