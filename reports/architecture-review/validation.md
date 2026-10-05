@@ -39,6 +39,6 @@ Most SDK failures happen inside TypeScript reference assertions before a Rust sc
 | `tests/plugins/email-otp/callback-context.test.ts` | 1 |
 | `tests/plugins/oauth-popup/popup.test.ts` | 1 |
 
-The replay used the existing `sdk::tests::selected_client_compat` runner with `BETTER_AUTH_COMPAT_PATHS` set to these files; the environment replay used `sdk::tests::environment_client_compat` with `BETTER_AUTH_COMPAT_BACKEND=seaorm`. No tests were skipped, assertions weakened, or production behavior changed to hide these failures.
+The replay used the existing `sdk::tests::selected_client_compat` runner with `BETTER_AUTH_COMPAT_PATHS` set to these files; the environment replay used `sdk::tests::environment_client_compat` with `BETTER_AUTH_COMPAT_BACKEND=seaorm`. No new skips were added, and no assertions were weakened or production behavior changed to hide these failures.
 
 The only new behavior test checks that the embedded OpenAPI builder uses a custom plugin's declared metadata before instance initialization. Existing initialized-instance tests now declare their reusable annotations through that same static hook, exercising its default configured delegation.
