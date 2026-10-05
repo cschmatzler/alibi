@@ -67,6 +67,8 @@ pub struct AddOrganizationMemberRequest {
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct CreateOrganizationRequest {
+    #[serde(default, flatten)]
+    pub additional_fields: indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>,
     #[validate(length(min = 1, message = "Name is required"))]
     pub name: String,
     #[validate(length(min = 1, message = "Slug is required"))]
@@ -83,6 +85,8 @@ pub struct CreateOrganizationRequest {
 
 #[derive(Debug, Deserialize, Validate)]
 pub struct UpdateOrganizationData {
+    #[serde(default, flatten)]
+    pub additional_fields: indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>,
     pub name: Option<String>,
     pub slug: Option<String>,
     #[serde(default, with = "serde_with::rust::double_option")]
@@ -385,6 +389,8 @@ pub struct UserInvitationResponse<I> {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreatedOrganizationResponse {
+    #[serde(default, flatten)]
+    pub additional_fields: std::collections::BTreeMap<String, serde_json::Value>,
     pub id: String,
     pub name: String,
     pub slug: String,
@@ -398,6 +404,8 @@ pub struct CreatedOrganizationResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizationResponse {
+    #[serde(default, flatten)]
+    pub additional_fields: std::collections::BTreeMap<String, serde_json::Value>,
     pub id: String,
     pub name: String,
     pub slug: String,
@@ -412,6 +420,7 @@ impl CreatedOrganizationResponse {
     #[must_use]
     pub fn from_organization(organization: &impl AuthOrganization) -> Self {
         Self {
+            additional_fields: organization.additional_fields(),
             id: organization.id().to_string(),
             name: organization.name().to_owned(),
             slug: organization.slug().to_owned(),
@@ -449,6 +458,7 @@ impl OrganizationResponse {
     #[must_use]
     pub fn from_organization(organization: &impl AuthOrganization) -> Self {
         Self {
+            additional_fields: organization.additional_fields(),
             id: organization.id().to_string(),
             name: organization.name().to_owned(),
             slug: organization.slug().to_owned(),

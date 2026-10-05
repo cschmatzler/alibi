@@ -14,6 +14,9 @@ pub mod json_metadata;
 
 pub mod model;
 
+pub mod organization_models;
+pub use organization_models::OrganizationModels;
+
 pub mod pool;
 
 pub mod rate_limit;

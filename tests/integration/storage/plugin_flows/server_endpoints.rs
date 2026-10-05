@@ -588,6 +588,7 @@ async fn server_organization_authority_and_member_lifecycle<B: Backend>(db: Db) 
     let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
     let member_id = body(&member)["user"]["id"].as_str().unwrap().to_owned();
     let create = CreateOrganizationRequest {
+        additional_fields: Default::default(),
         name: "Server organization".into(),
         slug: "server-org".into(),
         logo: None,

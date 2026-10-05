@@ -323,6 +323,7 @@ pub(crate) async fn router(
                     return failure(AuthError::bad_request("Unknown fixture profile"));
                 };
                 let data = better_auth::plugins::organization::types::CreateOrganizationRequest {
+                    additional_fields: Default::default(),
                     name: request.name,
                     slug: request.slug,
                     logo: None,

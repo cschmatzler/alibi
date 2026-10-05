@@ -736,7 +736,7 @@ mod tests {
                 .await
                 .expect("invitation lookup should succeed")
                 .expect("admitted invitation should be persisted");
-            assert_eq!(stored.role, "");
+            assert_eq!(stored.role.as_deref(), Some(""));
             assert_eq!(stored.email, email);
             assert_eq!(stored.organization_id, org_id);
             assert_eq!(stored.inviter_id, owner_id);

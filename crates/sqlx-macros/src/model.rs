@@ -24,6 +24,11 @@ pub(crate) fn model_impl(
         );
         quote! { #sqlx_root::model::ColumnDef { name: #name, kind: #kind } }
     });
+    let field_columns = columns.iter().map(|column| {
+        let field = column.ident.to_string();
+        let physical = &column.physical;
+        quote! { (#field, #physical) }
+    });
     let names = columns.iter().map(|column| &column.physical);
     let unchanged = columns.iter().map(|column| {
         let name = &column.physical;
@@ -55,6 +60,7 @@ pub(crate) fn model_impl(
             const TABLE: &'static str = #table;
             const COLUMNS: &'static [#sqlx_root::model::ColumnDef] = &[#(#definitions),*];
             const COLUMN_NAMES: &'static [&'static str] = &[#(#names),*];
+            const FIELD_COLUMNS: &'static [(&'static str, &'static str)] = &[#(#field_columns),*];
             const PRIMARY_KEY: &'static str = #primary_key;
             const PROVIDER_VERIFICATION_COLUMN: ::std::option::Option<&'static str> = #verification_column;
 

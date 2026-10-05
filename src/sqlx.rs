@@ -7,8 +7,8 @@ pub use better_auth_sqlx::schema::{
 };
 pub use better_auth_sqlx::{
     ActiveRow, ActiveValue, AuthEntity, ColumnDef, ColumnKind, DatabaseHooks, Engine, HookControl,
-    JsonMetadata, SqlValue, SqlxBackend, SqlxHookContext, SqlxModel, SqlxPool,
+    JsonMetadata, OrganizationModels, SqlValue, SqlxBackend, SqlxHookContext, SqlxModel, SqlxPool,
     SqlxRateLimitStorage, SqlxRow, SqlxStore, SqlxTransaction, SqlxTransactionGuard, SqlxValue,
     current_request_hook_context, sqlx,
 };
-pub use better_auth_sqlx::{json_metadata, model, pool, value};
+pub use better_auth_sqlx::{json_metadata, model, organization_models, pool, value};

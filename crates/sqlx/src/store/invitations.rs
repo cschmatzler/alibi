@@ -1,5 +1,5 @@
 use super::entities::invitation::Model;
-use super::entities::{member, organization, team};
+use super::entities::team;
 use super::{SqlxStore, lock_exclusive};
 use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow, SqlxModel};
@@ -12,13 +12,18 @@ use better_auth_core::error::{AuthError, AuthResult};
 use better_auth_core::store::InvitationStore;
 use better_auth_core::{CreateInvitation, Invitation, InvitationStatus};
 use chrono::Utc;
-use uuid::Uuid;
 
 impl<S: AuthSchema> SqlxStore<S> {
-    async fn find_invitation(&self, id: &str) -> AuthResult<Option<Model>> {
-        let mut sql = model::by_id::<Model>(self.exec(), id);
+    async fn find_invitation(
+        &self,
+        id: &str,
+    ) -> AuthResult<Option<crate::organization_models::Row<Model>>> {
+        let mut sql = self.organization_models.invitation.by_id(self.exec(), id)?;
         model::limit_one(&mut sql);
-        self.exec().fetch_optional(sql).await
+        self.organization_models
+            .invitation
+            .fetch_optional(self.exec(), sql)
+            .await
     }
 
     async fn count_invitation_rows(&self, sql: Sql) -> AuthResult<i64> {
@@ -52,7 +57,9 @@ where
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            options.id.unwrap_or_else(|| Uuid::new_v4().to_string()),
+            options
+                .id
+                .unwrap_or_else(|| self.organization_models.invitation.new_id()),
         );
         active.set("organization_id", invitation.organization_id);
         active.set("email", invitation.email);
@@ -62,7 +69,9 @@ where
         active.set("inviter_id", invitation.inviter_id);
         active.set("expires_at", invitation.expires_at);
         active.set("created_at", options.created_at.unwrap_or_else(Utc::now));
-        model::insert::<Model>(self.exec(), &active)
+        self.organization_models
+            .invitation
+            .insert(self.exec(), &active)
             .await
             .map(|model| Invitation::from(&model))
     }
@@ -85,7 +94,9 @@ where
             .ok_or_else(|| AuthError::not_found("Invitation not found"))?;
         let mut active = row.into_active();
         active.set("team_id", team_ids);
-        model::update::<Model>(self.exec(), &active)
+        self.organization_models
+            .invitation
+            .update(self.exec(), &active)
             .await?
             .map(|row_2| Invitation::from(&row_2))
             .ok_or_else(record_not_updated)
@@ -107,10 +118,18 @@ where
         let outcome = async {
             let tx = &transaction;
             let exec = Exec::Tx(tx);
-            let mut select = model::by_id::<Model>(exec, invitation_id);
+            let mut select = self
+                .organization_models
+                .invitation
+                .by_id(exec, invitation_id)?;
             model::limit_one(&mut select);
             lock_exclusive(&mut select);
-            let Some(invitation) = exec.fetch_optional::<Model>(select).await? else {
+            let Some(invitation) = self
+                .organization_models
+                .invitation
+                .fetch_optional(exec, select)
+                .await?
+            else {
                 return Ok(None);
             };
             if invitation.status != "pending" || invitation.expires_at < Utc::now() {
@@ -153,25 +172,29 @@ where
             if better_auth_core::AuthSession::expires_at(&session) < Utc::now() {
                 return Err(AuthError::SessionNotFound);
             }
-            let mut owner =
-                model::by_id::<organization::Model>(exec, invitation.organization_id.as_str());
+            let mut owner = self
+                .organization_models
+                .organization
+                .by_id(exec, invitation.organization_id.as_str())?;
             model::limit_one(&mut owner);
             lock_exclusive(&mut owner);
             drop(
-                exec.fetch_optional::<organization::Model>(owner)
+                self.organization_models
+                    .organization
+                    .fetch_optional(exec, owner)
                     .await?
                     .ok_or_else(|| AuthError::bad_request("Organization not found"))?,
             );
             if let Some(limit) = membership_limit {
                 let mut count = Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
-                count.ident(member::Model::TABLE);
+                count.ident(self.organization_models.member.table());
                 count.push(" WHERE ");
-                count.compare(
-                    member::Model::TABLE,
+                self.organization_models.member.compare(
+                    &mut count,
                     "organization_id",
                     " = ",
                     invitation.organization_id.as_str(),
-                );
+                )?;
                 let members = exec.fetch_scalar::<i64>(count).await?.unwrap_or_default();
                 if u64::try_from(members).unwrap_or_default()
                     >= u64::try_from(limit)
@@ -218,12 +241,16 @@ where
                 }
             }
             let mut created = ActiveRow::new();
-            created.set("id", Uuid::new_v4().to_string());
+            created.set("id", self.organization_models.member.new_id());
             created.set("organization_id", invitation.organization_id.clone());
             created.set("user_id", user_id);
-            created.set("role", invitation.role.clone());
+            created.set("role", invitation.active_role());
             created.set("created_at", Utc::now());
-            let created = model::insert::<member::Model>(exec, &created).await?;
+            let created = self
+                .organization_models
+                .member
+                .insert(exec, &created)
+                .await?;
             let mut active = session.into_active();
             S::Session::set_active_organization_id(
                 &mut active,
@@ -242,13 +269,25 @@ where
                     .ok_or_else(record_not_updated)?,
             );
             let mut changed = Sql::with(exec.engine(), "UPDATE ");
-            changed.ident(Model::TABLE);
+            changed.ident(self.organization_models.invitation.table());
             changed.push(" SET ");
-            changed.assign("status", "accepted");
+            self.organization_models
+                .invitation
+                .assign(&mut changed, "status", "accepted")?;
             changed.push(" WHERE ");
-            changed.compare(Model::TABLE, "id", " = ", invitation_id);
+            self.organization_models.invitation.compare(
+                &mut changed,
+                "id",
+                " = ",
+                invitation_id,
+            )?;
             changed.push(" AND ");
-            changed.compare(Model::TABLE, "status", " = ", "pending");
+            self.organization_models.invitation.compare(
+                &mut changed,
+                "status",
+                " = ",
+                "pending",
+            )?;
             if exec.execute(changed).await? != 1 {
                 return Err(AuthError::bad_request("Invitation not found"));
             }
@@ -280,17 +319,27 @@ where
     ) -> AuthResult<Option<Invitation>> {
         // Returning the actual changed row is part of this atomic public contract.
         let mut sql = Sql::with(self.exec().engine(), "UPDATE ");
-        sql.ident(Model::TABLE);
+        sql.ident(self.organization_models.invitation.table());
         sql.push(" SET ");
-        sql.assign("status", status.to_string());
+        self.organization_models
+            .invitation
+            .assign(&mut sql, "status", status.to_string())?;
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "id", " = ", id);
+        self.organization_models
+            .invitation
+            .compare(&mut sql, "id", " = ", id)?;
         sql.push(" AND ");
-        sql.compare(Model::TABLE, "status", " = ", expected.to_string());
-        model::returning::<Model>(&mut sql);
+        self.organization_models.invitation.compare(
+            &mut sql,
+            "status",
+            " = ",
+            expected.to_string(),
+        )?;
+        self.organization_models.invitation.returning(&mut sql);
         Ok(self
-            .exec()
-            .fetch_all::<Model>(sql)
+            .organization_models
+            .invitation
+            .fetch_all(self.exec(), sql)
             .await?
             .first()
             .map(Invitation::from))
@@ -301,25 +350,33 @@ where
         org_id: &str,
         email: Option<&str>,
     ) -> AuthResult<Vec<Invitation>> {
-        let mut sql = model::select_model::<Model>(self.exec());
+        let mut sql = self.organization_models.invitation.select(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "organization_id", " = ", org_id);
+        self.organization_models
+            .invitation
+            .compare(&mut sql, "organization_id", " = ", org_id)?;
         sql.push(" AND ");
-        sql.compare(
-            Model::TABLE,
+        self.organization_models.invitation.compare(
+            &mut sql,
             "status",
             " = ",
             InvitationStatus::Pending.to_string(),
-        );
+        )?;
         if let Some(email) = email {
             sql.push(" AND ");
-            sql.compare(Model::TABLE, "email", " = ", email.to_lowercase());
+            self.organization_models.invitation.compare(
+                &mut sql,
+                "email",
+                " = ",
+                email.to_lowercase(),
+            )?;
         }
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         Ok(self
-            .exec()
-            .fetch_all::<Model>(sql)
+            .organization_models
+            .invitation
+            .fetch_all(self.exec(), sql)
             .await?
             .iter()
             .map(Invitation::from)
@@ -336,7 +393,9 @@ where
             .ok_or_else(|| AuthError::not_found("Invitation not found"))?;
         let mut active = model.into_active();
         active.set("expires_at", expires_at);
-        model::update::<Model>(self.exec(), &active)
+        self.organization_models
+            .invitation
+            .update(self.exec(), &active)
             .await?
             .map(|model| Invitation::from(&model))
             .ok_or_else(record_not_updated)
@@ -346,24 +405,34 @@ where
         org_id: &str,
         email: &str,
     ) -> AuthResult<Option<Invitation>> {
-        let mut sql = model::select_model::<Model>(self.exec());
+        let mut sql = self.organization_models.invitation.select(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "organization_id", " = ", org_id);
+        self.organization_models
+            .invitation
+            .compare(&mut sql, "organization_id", " = ", org_id)?;
         sql.push(" AND ");
-        sql.compare(Model::TABLE, "email", " = ", email.to_lowercase());
+        self.organization_models.invitation.compare(
+            &mut sql,
+            "email",
+            " = ",
+            email.to_lowercase(),
+        )?;
         sql.push(" AND ");
-        sql.compare(
-            Model::TABLE,
+        self.organization_models.invitation.compare(
+            &mut sql,
             "status",
             " = ",
             InvitationStatus::Pending.to_string(),
-        );
+        )?;
         sql.push(" AND ");
-        sql.compare(Model::TABLE, "expires_at", " > ", Utc::now());
+        self.organization_models
+            .invitation
+            .compare(&mut sql, "expires_at", " > ", Utc::now())?;
         model::limit_one(&mut sql);
         Ok(self
-            .exec()
-            .fetch_optional::<Model>(sql)
+            .organization_models
+            .invitation
+            .fetch_optional(self.exec(), sql)
             .await?
             .map(|model| Invitation::from(&model)))
     }
@@ -379,21 +448,26 @@ where
 
         let mut active = model.into_active();
         active.set("status", status.to_string());
-        model::update::<Model>(self.exec(), &active)
+        self.organization_models
+            .invitation
+            .update(self.exec(), &active)
             .await?
             .map(|model_2| Invitation::from(&model_2))
             .ok_or_else(record_not_updated)
     }
 
     async fn list_organization_invitations(&self, org_id: &str) -> AuthResult<Vec<Invitation>> {
-        let mut sql = model::select_model::<Model>(self.exec());
+        let mut sql = self.organization_models.invitation.select(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "organization_id", " = ", org_id);
+        self.organization_models
+            .invitation
+            .compare(&mut sql, "organization_id", " = ", org_id)?;
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         Ok(self
-            .exec()
-            .fetch_all::<Model>(sql)
+            .organization_models
+            .invitation
+            .fetch_all(self.exec(), sql)
             .await?
             .iter()
             .map(Invitation::from)
@@ -402,30 +476,40 @@ where
 
     async fn count_pending_organization_invitations(&self, org_id: &str) -> AuthResult<i64> {
         let mut sql = Sql::with(self.exec().engine(), "SELECT COUNT(*) FROM ");
-        sql.ident(Model::TABLE);
+        sql.ident(self.organization_models.invitation.table());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "organization_id", " = ", org_id);
+        self.organization_models
+            .invitation
+            .compare(&mut sql, "organization_id", " = ", org_id)?;
         sql.push(" AND ");
-        sql.compare(
-            Model::TABLE,
+        self.organization_models.invitation.compare(
+            &mut sql,
             "status",
             " = ",
             InvitationStatus::Pending.to_string(),
-        );
+        )?;
         sql.push(" AND ");
-        sql.compare(Model::TABLE, "expires_at", " > ", Utc::now());
+        self.organization_models
+            .invitation
+            .compare(&mut sql, "expires_at", " > ", Utc::now())?;
         self.count_invitation_rows(sql).await
     }
 
     async fn list_user_invitations(&self, email: &str) -> AuthResult<Vec<Invitation>> {
-        let mut sql = model::select_model::<Model>(self.exec());
+        let mut sql = self.organization_models.invitation.select(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "email", " = ", email.to_lowercase());
+        self.organization_models.invitation.compare(
+            &mut sql,
+            "email",
+            " = ",
+            email.to_lowercase(),
+        )?;
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
         Ok(self
-            .exec()
-            .fetch_all::<Model>(sql)
+            .organization_models
+            .invitation
+            .fetch_all(self.exec(), sql)
             .await?
             .iter()
             .map(Invitation::from)

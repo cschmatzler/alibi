@@ -10,3 +10,5 @@ pub use better_auth_core::store::{
 pub use better_auth_core::store::{
     DatabaseHookContext, DatabaseHooks, HookBackend, HookControl, SchemaMigrator,
 };
+// Direct adapter operations use the same contracts as the plugin runtime.
+pub use better_auth_core::store::{InvitationStore, MemberStore, OrganizationStore, SessionStore};

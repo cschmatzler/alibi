@@ -104,6 +104,8 @@ macro_rules! auth_models {
     };
 }
 
+mod mapped_organizations;
+
 mod sqlx_char {
     use super::*;
     auth_models!(sqlx, NaiveDateTime);

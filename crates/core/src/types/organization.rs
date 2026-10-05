@@ -2,11 +2,12 @@ use crate::entity::{AuthInvitation, AuthMember, AuthOrganization};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::borrow::Cow;
-use uuid::Uuid;
 
 /// Organization entity - matches `OpenAPI` schema
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Organization {
+    #[serde(default, flatten)]
+    pub additional_fields: std::collections::BTreeMap<String, serde_json::Value>,
     pub id: String,
     pub name: String,
     pub slug: String,
@@ -79,7 +80,7 @@ pub struct Invitation {
     #[serde(rename = "organizationId")]
     pub organization_id: String,
     pub email: String,
-    pub role: String,
+    pub role: Option<String>,
     #[serde(rename = "teamId")]
     pub team_id: Option<String>,
     pub status: InvitationStatus,
@@ -118,6 +119,7 @@ impl Invitation {
 /// Organization creation data
 #[derive(Debug, Clone)]
 pub struct CreateOrganization {
+    pub additional_fields: crate::field_policy::FieldValues,
     pub id: Option<String>,
     pub name: String,
     pub slug: String,
@@ -129,7 +131,8 @@ impl CreateOrganization {
     #[must_use]
     pub fn new(name: impl Into<String>, slug: impl Into<String>) -> Self {
         Self {
-            id: Some(Uuid::new_v4().to_string()),
+            id: None,
+            additional_fields: Default::default(),
             name: name.into(),
             slug: slug.into(),
             logo: None,
@@ -153,6 +156,7 @@ impl CreateOrganization {
 /// Organization update data
 #[derive(Debug, Clone, Default)]
 pub struct UpdateOrganization {
+    pub additional_fields: crate::field_policy::FieldValues,
     pub name: Option<String>,
     pub slug: Option<String>,
     /// None retains the stored logo; Some(None) clears it; Some(Some) sets it.
@@ -218,6 +222,7 @@ impl CreateInvitation {
 impl<T: AuthOrganization> From<&T> for Organization {
     fn from(organization: &T) -> Self {
         Self {
+            additional_fields: organization.additional_fields(),
             id: organization.id().into_owned(),
             name: organization.name().to_owned(),
             slug: organization.slug().to_owned(),
@@ -230,6 +235,9 @@ impl<T: AuthOrganization> From<&T> for Organization {
 }
 
 impl AuthOrganization for Organization {
+    fn additional_fields(&self) -> std::collections::BTreeMap<String, serde_json::Value> {
+        self.additional_fields.clone()
+    }
     fn id(&self) -> Cow<'_, str> {
         Cow::Borrowed(&self.id)
     }
@@ -294,7 +302,10 @@ impl AuthInvitation for Invitation {
         &self.email
     }
     fn role(&self) -> &str {
-        &self.role
+        self.role.as_deref().unwrap_or_default()
+    }
+    fn optional_role(&self) -> Option<&str> {
+        self.role.as_deref()
     }
     fn team_id(&self) -> Option<&str> {
         self.team_id.as_deref()
@@ -319,7 +330,7 @@ impl<T: AuthInvitation> From<&T> for Invitation {
             id: invitation.id().into_owned(),
             organization_id: invitation.organization_id().into_owned(),
             email: invitation.email().to_owned(),
-            role: invitation.role().to_owned(),
+            role: invitation.optional_role().map(str::to_owned),
             team_id: invitation.team_id().map(str::to_owned),
             status: invitation.status().clone(),
             inviter_id: invitation.inviter_id().into_owned(),

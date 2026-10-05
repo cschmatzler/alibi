@@ -74,6 +74,9 @@ pub struct RolePermissions {
 #[derive(Debug, Clone, better_auth_core::PluginConfig)]
 #[plugin(name = "OrganizationPlugin")]
 pub struct OrganizationConfig {
+    /// Input policies for additional organization model fields.
+    #[config(default = Default::default(), skip)]
+    pub organization_fields: better_auth_core::field_policy::SessionFields,
     /// Allow users to create organizations (default: true)
     #[config(default = true)]
     pub allow_user_to_create_organization: bool,
@@ -2178,7 +2181,7 @@ mod extension_tests {
             .await?
             .ok_or_else(|| std::io::Error::other("Owner-role invitation was not persisted"))?;
         assert_eq!(saved.organization_id, founder_org);
-        assert_eq!(saved.role, "owner");
+        assert_eq!(saved.role.as_deref(), Some("owner"));
         assert_eq!(
             saved.status,
             better_auth_core::types::InvitationStatus::Pending

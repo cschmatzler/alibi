@@ -67,6 +67,7 @@ mod tests {
             .await?;
         let organization = store
             .create_organization(CreateOrganization {
+                additional_fields: Default::default(),
                 name: "Admission".into(),
                 slug: "admission-native".into(),
                 id: None,
@@ -76,6 +77,7 @@ mod tests {
             .await?;
         let other = store
             .create_organization(CreateOrganization {
+                additional_fields: Default::default(),
                 name: "Foreign".into(),
                 slug: "foreign-native".into(),
                 id: None,

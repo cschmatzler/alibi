@@ -1,8 +1,7 @@
 use super::SqlxStore;
-use super::entities::member;
 use super::entities::organization::{JsonMetadata, Model};
 use crate::error::record_not_updated;
-use crate::model::{self, ActiveRow, SqlxModel};
+use crate::model::{self, ActiveRow};
 use crate::pool::{Engine, Exec};
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
@@ -13,14 +12,13 @@ use better_auth_core::store::OrganizationStore;
 use better_auth_core::{CreateOrganization, Organization, UpdateOrganization};
 use chrono::Utc;
 use std::collections::HashMap;
-use uuid::Uuid;
 
 #[async_trait]
 impl<S> OrganizationStore for SqlxStore<S>
 where
     S: AuthSchema + Send + Sync,
 {
-    async fn create_organization(&self, org: CreateOrganization) -> AuthResult<Organization> {
+    async fn create_organization(&self, mut org: CreateOrganization) -> AuthResult<Organization> {
         let now = Utc::now();
         let metadata = org
             .metadata
@@ -32,36 +30,53 @@ where
             })
             .transpose()?;
         let mut active = ActiveRow::new();
-        active.set("id", org.id.unwrap_or_else(|| Uuid::new_v4().to_string()));
+        active.set(
+            "id",
+            org.id
+                .unwrap_or_else(|| self.organization_models.organization.new_id()),
+        );
         active.set("name", org.name);
         active.set("slug", org.slug);
         active.set("logo", org.logo);
         active.set("metadata", metadata.into_sql_value());
         active.set("created_at", now);
         active.set("updated_at", now);
-        model::insert::<Model>(self.exec(), &active)
+        self.organization_models
+            .organization
+            .set_fields(self.exec(), &mut active, &mut org.additional_fields)
+            .await?;
+        self.organization_models
+            .organization
+            .insert(self.exec(), &active)
             .await
             .map(|model| Organization::from(&model))
     }
 
     async fn get_organization_by_id(&self, id: &str) -> AuthResult<Option<Organization>> {
-        let mut sql = model::by_id::<Model>(self.exec(), id);
+        let mut sql = self
+            .organization_models
+            .organization
+            .by_id(self.exec(), id)?;
         model::limit_one(&mut sql);
         Ok(self
-            .exec()
-            .fetch_optional::<Model>(sql)
+            .organization_models
+            .organization
+            .fetch_optional(self.exec(), sql)
             .await?
             .map(|model| Organization::from(&model)))
     }
 
     async fn get_organization_by_slug(&self, slug: &str) -> AuthResult<Option<Organization>> {
-        let mut sql = model::select_model::<Model>(self.exec());
+        let mut sql = self.organization_models.organization.select(self.exec());
         sql.push(" WHERE ");
-        sql.compare(Model::TABLE, "slug", " = ", slug);
+        self.organization_models
+            .organization
+            .compare(&mut sql, "slug", " = ", slug)?;
         model::limit_one(&mut sql);
         Ok(self
-            .exec()
-            .fetch_optional::<Model>(sql)
+            .organization_models
+            .organization
+            .fetch_optional(self.exec(), sql)
             .await?
             .map(|model| Organization::from(&model)))
     }
@@ -70,14 +85,19 @@ where
         if ids.is_empty() {
             return Ok(Vec::new());
         }
-        let mut sql = model::select_model::<Model>(self.exec());
+        let mut sql = self.organization_models.organization.select(self.exec());
         sql.push(" WHERE ");
-        sql.column(Model::TABLE, "id");
+        self.organization_models
+            .organization
+            .column(&mut sql, "id")?;
         sql.push(" IN ");
-        sql.bind_list(ids.iter().cloned());
+        self.organization_models
+            .organization
+            .bind_list(&mut sql, "id", ids.iter().cloned())?;
         Ok(self
-            .exec()
-            .fetch_all::<Model>(sql)
+            .organization_models
+            .organization
+            .fetch_all(self.exec(), sql)
             .await?
             .iter()
             .map(Organization::from)
@@ -89,15 +109,30 @@ where
         id: &str,
         update: UpdateOrganization,
     ) -> AuthResult<Organization> {
-        let mut sql = model::by_id::<Model>(self.exec(), id);
+        let mut sql = self
+            .organization_models
+            .organization
+            .by_id(self.exec(), id)?;
         model::limit_one(&mut sql);
-        let Some(model) = self.exec().fetch_optional::<Model>(sql).await? else {
+        let Some(model) = self
+            .organization_models
+            .organization
+            .fetch_optional(self.exec(), sql)
+            .await?
+        else {
             return Err(better_auth_core::error::AuthError::not_found(
                 "Organization not found",
             ));
         };
-        let active = apply_organization_update(model, update, self.exec().engine())?;
-        model::update::<Model>(self.exec(), &active)
+        let mut fields = update.additional_fields.clone();
+        let mut active = apply_organization_update(model, update, self.exec().engine())?;
+        self.organization_models
+            .organization
+            .set_fields(self.exec(), &mut active, &mut fields)
+            .await?;
+        self.organization_models
+            .organization
+            .update(self.exec(), &active)
             .await?
             .map(|model_2| Organization::from(&model_2))
             .ok_or_else(record_not_updated)
@@ -106,7 +141,7 @@ where
     async fn patch_organization_if_present(
         &self,
         id: &str,
-        update: UpdateOrganization,
+        mut update: UpdateOrganization,
     ) -> AuthResult<Option<Organization>> {
         let backend = self.exec().engine();
         let mut assignments: Vec<(&str, crate::SqlValue)> = Vec::new();
@@ -126,22 +161,37 @@ where
             )?;
             assignments.push(("metadata", metadata.into_sql_value()));
         }
+        let mut additional = ActiveRow::new();
+        self.organization_models
+            .organization
+            .set_fields(self.exec(), &mut additional, &mut update.additional_fields)
+            .await?;
+        assignments.extend(
+            additional
+                .changed()
+                .map(|(name, value)| (name, value.clone())),
+        );
         // An empty patch is sent to the database unchanged, which rejects it.
         let mut sql = Sql::with(backend, "UPDATE ");
-        sql.ident(Model::TABLE);
+        sql.ident(self.organization_models.organization.table());
         sql.push(" SET ");
         for (index, (column, value)) in assignments.into_iter().enumerate() {
             if index > 0 {
                 sql.push(", ");
             }
-            sql.assign(column, value);
+            self.organization_models
+                .organization
+                .assign(&mut sql, column, value)?;
         }
         sql.push(" WHERE ");
-        sql.assign("id", id);
-        model::returning::<Model>(&mut sql);
+        self.organization_models
+            .organization
+            .assign(&mut sql, "id", id)?;
+        self.organization_models.organization.returning(&mut sql);
         Ok(self
-            .exec()
-            .fetch_optional::<Model>(sql)
+            .organization_models
+            .organization
+            .fetch_optional(self.exec(), sql)
             .await?
             .as_ref()
             .map(Organization::from))
@@ -152,13 +202,29 @@ where
         id: &str,
         update: UpdateOrganization,
     ) -> AuthResult<Option<Organization>> {
-        let mut sql = model::by_id::<Model>(self.exec(), id);
+        let mut sql = self
+            .organization_models
+            .organization
+            .by_id(self.exec(), id)?;
         model::limit_one(&mut sql);
-        let Some(model) = self.exec().fetch_optional::<Model>(sql).await? else {
+        let Some(model) = self
+            .organization_models
+            .organization
+            .fetch_optional(self.exec(), sql)
+            .await?
+        else {
             return Ok(None);
         };
-        let active = apply_organization_update(model, update, self.exec().engine())?;
-        Ok(model::update::<Model>(self.exec(), &active)
+        let mut fields = update.additional_fields.clone();
+        let mut active = apply_organization_update(model, update, self.exec().engine())?;
+        self.organization_models
+            .organization
+            .set_fields(self.exec(), &mut active, &mut fields)
+            .await?;
+        Ok(self
+            .organization_models
+            .organization
+            .update(self.exec(), &active)
             .await?
             .map(|model_2| Organization::from(&model_2)))
     }
@@ -167,43 +233,63 @@ where
         let id = id.to_owned();
         self.in_transaction(false, async move |tx| {
             let exec = Exec::Tx(tx);
-            for table in ["member", "invitation"] {
-                let mut sql = Sql::with(exec.engine(), "DELETE FROM ");
-                sql.ident(table);
-                sql.push(" WHERE ");
-                sql.compare(table, "organization_id", " = ", id.as_str());
-                _ = exec.execute(sql).await?;
+            for query in [
+                self.organization_models
+                    .member
+                    .delete_for_organization(exec, &id)?,
+                self.organization_models
+                    .invitation
+                    .delete_for_organization(exec, &id)?,
+            ] {
+                _ = exec.execute(query).await?;
             }
-            _ = exec.execute(model::delete_by_id::<Model>(exec, id)).await?;
+            _ = exec
+                .execute(
+                    self.organization_models
+                        .organization
+                        .delete_by_id(exec, id)?,
+                )
+                .await?;
             Ok(())
         })
         .await
     }
 
     async fn list_user_organizations(&self, user_id: &str) -> AuthResult<Vec<Organization>> {
-        let mut members = model::select_model::<member::Model>(self.exec());
+        let mut members = self.organization_models.member.select(self.exec());
         members.push(" WHERE ");
-        members.compare(member::Model::TABLE, "user_id", " = ", user_id);
+        self.organization_models
+            .member
+            .compare(&mut members, "user_id", " = ", user_id)?;
         members.push(" LIMIT ");
         members.bind(self.find_many_limit());
-        let member_models: Vec<member::Model> = self.exec().fetch_all(members).await?;
+        let member_models = self
+            .organization_models
+            .member
+            .fetch_all(self.exec(), members)
+            .await?;
 
         if member_models.is_empty() {
             return Ok(Vec::new());
         }
 
-        let mut sql = model::select_model::<Model>(self.exec());
+        let mut sql = self.organization_models.organization.select(self.exec());
         sql.push(" WHERE ");
-        sql.column(Model::TABLE, "id");
+        self.organization_models
+            .organization
+            .column(&mut sql, "id")?;
         sql.push(" IN ");
-        sql.bind_list(
+        self.organization_models.organization.bind_list(
+            &mut sql,
+            "id",
             member_models
                 .iter()
                 .map(|member| member.organization_id.clone()),
-        );
+        )?;
         let organizations: HashMap<String, Organization> = self
-            .exec()
-            .fetch_all::<Model>(sql)
+            .organization_models
+            .organization
+            .fetch_all(self.exec(), sql)
             .await?
             .into_iter()
             .map(|model| (model.id.clone(), Organization::from(&model)))
@@ -220,7 +306,7 @@ where
 }
 
 fn apply_organization_update(
-    model: Model,
+    model: crate::organization_models::Row<Model>,
     update: UpdateOrganization,
     backend: Engine,
 ) -> AuthResult<ActiveRow> {

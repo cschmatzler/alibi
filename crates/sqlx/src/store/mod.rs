@@ -53,6 +53,7 @@ pub struct SqlxStore<S: AuthSchema> {
     config: Arc<AuthConfig>,
     pool: SqlxPool,
     hooks: Vec<Arc<dyn DatabaseHooks<S, SqlxBackend>>>,
+    organization_models: crate::OrganizationModels,
     _schema: PhantomData<S>,
 }
 
@@ -69,8 +70,16 @@ impl<S: AuthSchema> SqlxStore<S> {
             config: config.into(),
             pool: pool.into(),
             hooks: Vec::new(),
+            organization_models: crate::OrganizationModels::default(),
             _schema: PhantomData,
         }
+    }
+
+    /// Bind the organization plugin to application-owned tables.
+    #[must_use]
+    pub fn with_organization_models(mut self, models: crate::OrganizationModels) -> Self {
+        self.organization_models = models;
+        self
     }
 
     #[must_use]
