@@ -1,8 +1,6 @@
 # Tests
 
-Four tiers, each with one job. Native tests check the Rust
-implementation on its own terms; only the compat tier makes claims about parity
-with upstream `better-auth`.
+Four tiers, each with one job. Native tests check the Rust implementation on its own terms; only the compat tier makes claims about parity with upstream `better-auth`.
 
 | Tier | Where | What it establishes | Run |
 | --- | --- | --- | --- |
@@ -38,58 +36,29 @@ HTTP servers. The first run compiles the workspace; subsequent runs reuse Cargo
 artifacts. The default nextest profile runs cases concurrently, collects all
 failures and does not retry. The JUnit report is
 `target/nextest/default/junit.xml`. The **Native tests** CI workflow runs the same
-command. The existing full project gate and compat scripts remain unchanged.
+command. `./scripts/check.sh` and `./scripts/compat.sh` remain the full gate.
 
 ### What is skipped
 
-A bare run keeps Rust's explicit `#[ignore]` decisions. They are not hidden by a
-nextest default filter. With the workspace and development features enabled:
+A bare run keeps Rust's explicit `#[ignore]` decisions; no nextest default filter hides them. The ignored cases fall into three groups:
 
 | Ignored cases | Why |
 | --- | --- |
-| 42 compat SDK runners | Require the upstream/Rust fixture servers and Bun; run through the unchanged compat harness |
-| 260 PostgreSQL matrix cases | Require `BETTER_AUTH_TEST_POSTGRES_URL`; SQLite variants run by default for both stores |
-| 3 admin clock proofs | Require a controlled `CLOCK_REALTIME` fixed at the documented proof timestamp |
+| Compat SDK runners | Require the upstream and Rust fixture servers and Bun; run through `./scripts/compat.sh` |
+| PostgreSQL matrix cases | Require `BETTER_AUTH_TEST_POSTGRES_URL`; the SQLite variants run by default for both stores |
+| Admin clock proofs | Require a controlled `CLOCK_REALTIME` fixed at the documented proof timestamp |
 
-The earlier root-package-only command reported 116 skips: 42 compat, 72
-PostgreSQL and 2 clock cases. The broader workspace discovers additional tests,
-including their explicit ignores. The 62 fast, in-process compat contract checks
-also run by default; they launch no upstream services. Excluding their entire
-binary with a default filter would also silently exclude explicitly selected SDK
-runners in the existing compat script.
+The fast, in-process compat contract checks run by default and launch no upstream services. Excluding their binary with a default filter would also exclude explicitly selected SDK runners in the compat script.
 
-The native CI workflow explicitly runs PostgreSQL, Redis, and the exact-clock proofs. The clock profile preserves a separate JUnit report so it cannot overwrite the full default-suite report. PostgreSQL and Redis use separate service-backed profiles (see below). A filtered
-nextest invocation also labels nonmatching tests as skipped; those are different
-from `#[ignore]` cases.
+The **Native tests** CI workflow also runs the PostgreSQL, Redis and exact-clock cases in service-backed profiles (see [Store backends](#store-backends)). The clock profile writes a separate JUnit report so it cannot overwrite the default-suite report. A filtered nextest invocation also labels nonmatching tests as skipped; those are different from `#[ignore]` cases.
 
-### Audited surface and verification
+### Audited surface and coverage
 
-The reviewed inventory is [the native surface ledger](../reports/native-surface/matrix.json):
-144 HTTP routes, 18 server-only operations, 37 OAuth/provider implementations,
-23 callback/policy groups, and the core, storage, framework and generated-schema
-contracts. Each entry names its native assertion owner; registered integration
-cases record their actual backend variants. This is a review artifact, not a test
-that passes by comparing copied lists.
+The [native surface ledger](../reports/native-surface/matrix.json) inventories the HTTP routes, server-only operations, OAuth providers, callback and policy groups, and the core, storage, framework and generated-schema contracts. Each entry names the native test that owns it, and registered integration cases record their backend variants. It is a review artifact, not a test that compares copied lists. The [verification receipt](../reports/native-surface/verification.json) records the commands, results and source fingerprint of the latest audit.
 
-The latest [verification receipt](../reports/native-surface/verification.json)
-records the commands, results and source fingerprint. A bare `cargo nextest run`
-runs **1,074 passing tests**, including 62 existing in-process compat checks that
-need no upstream server. Its **305 ignored cases** are exactly 260 PostgreSQL
-cases, 42 upstream SDK runners, and 3 fixed-clock proofs. The PostgreSQL cases,
-3 clock proofs, and 2 feature-gated Redis cases also passed in their respective
-service runs. Six doctests and four lean feature builds passed. No claim is made
-that the GitHub workflow has already run remotely.
+[Production line execution](../reports/native-surface/current.json) is measured from the combined default and PostgreSQL runs. It is a diagnostic alongside reviewed assertions, not proof of every input, branch or configuration combination. The ledger records dormant declarations, unsupported model defaults, documentation-only examples and external provider limitations. Redis and fixed-clock checks are validated separately and are not part of that percentage.
 
-[Production line execution](../reports/native-surface/current.json) is **84.04%**
-(49,503 / 58,902 instrumented lines), measured from the combined default and
-PostgreSQL runs. It is a diagnostic alongside reviewed assertions, not proof of
-every input, branch, or configuration combination. The ledger explicitly records
-dormant declarations, unsupported model defaults, documentation-only examples,
-and external provider limitations. Redis and fixed-clock checks are validated
-separately and are not included in this percentage.
-
-To reproduce combined coverage in the development shell, with disposable
-PostgreSQL configured in `BETTER_AUTH_TEST_POSTGRES_URL`:
+To reproduce combined coverage in the development shell, with a disposable PostgreSQL configured in `BETTER_AUTH_TEST_POSTGRES_URL`:
 
 ```bash
 export CARGO_LLVM_COV_TARGET_DIR="$PWD/coverage/native-audit/target"
@@ -100,20 +69,13 @@ cargo llvm-cov report --locked --package '*' --ignore-filename-regex '(tests/|sc
 lcov --add-tracefile coverage/native-audit/raw.info --filter region --rc c_file_extensions=rs --rc function_coverage=0 --rc derive_function_end_line=0 --output-file coverage/native-audit/lcov.info
 ```
 
-Start with a clean instrumented workspace to exclude obsolete test binaries, and
-retain profiles explicitly for the second run. The recorded JSON retains only
-workspace production paths (`src/` and `crates/`). The earlier baseline is a
-historical discovery snapshot; it is not a controlled before/after comparison.
+Start from a clean instrumented workspace so obsolete test binaries are excluded, and retain profiles explicitly for the second run. The recorded JSON keeps only workspace production paths (`src/` and `crates/`).
 
-### Coverage ownership (test-audit authoring gate)
+### Contract owners
 
-Reuse existing native tests instead of translating the compat scenarios again.
-The hundreds of core/plugin unit cases and the integration storage contracts
-already own input validation, transaction boundaries, atomic operations, session
-expiry/revocation, key rotation and plugin behavior. Compat remains the upstream
-oracle. Native cases protect the implementation between compatibility runs.
+Reuse existing native tests instead of translating compat scenarios again. The unit cases and integration storage contracts already own input validation, transaction boundaries, atomic operations, session expiry and revocation, key rotation and plugin behavior. Compat remains the upstream oracle; native tests protect the implementation between compatibility runs.
 
-The new cases have distinct owners and failure modes:
+These tests own the cross-cutting contracts below, each at the layer where its failure is visible:
 
 | Owner | Contract and credible regression | Why this layer |
 | --- | --- | --- |
@@ -127,20 +89,9 @@ The new cases have distinct owners and failure modes:
 | `e2e` cookie journey | Delivered cookies authenticate separate clients; rejected cross-origin signout preserves authority; successful signout expires the cookie and invalidates replay | Existing in-process adapter tests synthesize signed cookie headers; this owns real HTTP/client cookie interoperability |
 | `e2e` reset journey | A delivered reset URL redirects to a usable token, resets credentials once, and revokes existing sessions | Exercises the application callback, redirect, client and handler composition without seeding a token |
 
-The native gate also retains the existing OAuth account-encryption, anonymous
-OAuth-context and magic-link lifecycle tests. Their direct storage fixtures and
-lookups now use the `auth-state:` and `magic-link:` namespaces introduced by the
-1.7.7 security update (`f45534b0`). Before this correction, eleven cases failed at
-setup/lookup; some absence assertions queried keys the handlers no longer wrote.
-The corrected checks inspect the records the real paths actually persist.
+The OAuth account-encryption, anonymous OAuth-context and magic-link lifecycle tests look up their records under the `auth-state:` and `magic-link:` verification namespaces that the handlers write, so they inspect what the real paths persist.
 
-No production exports, flags, wrappers or injection hooks were added. E2E uses
-the existing public builder, store migration API, framework adapter and delivery
-callback. The mailbox only captures a real notification; it does not generate
-tokens or implement authentication. Each journey gets a fresh database, server
-and cookie jars. HTTP and mailbox waits are bounded, and server tasks are cleaned
-up on both success and assertion failure. These tests use a real HTTP client,
-not a browser engine or the TypeScript SDK; those remain compat responsibilities.
+The end-to-end tier adds no production exports, flags, wrappers or injection hooks. It uses the public builder, the store migration API, the framework adapter and the delivery callback. The mailbox only captures a real notification; it never generates tokens or implements authentication. Each journey gets a fresh database, server and cookie jars, HTTP and mailbox waits are bounded, and server tasks are cleaned up on success and on assertion failure. These tests use a real HTTP client, not a browser engine or the TypeScript SDK; those remain compat responsibilities.
 
 ## Layout
 

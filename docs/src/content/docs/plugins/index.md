@@ -14,7 +14,7 @@ How registration works — and which core plugins are always installed — is co
 
 | Plugin | Purpose | Schema |
 | --- | --- | --- |
-| [Email & password](/authentication/email-password/) | Credentials, password reset, custom hashing | none |
+| [Email and password](/authentication/email-password/) | Credentials, password reset, custom hashing | none |
 | [Username](/plugins/username/) | Sign in with a username, with validation and normalization policy | `username` |
 | [Anonymous](/plugins/anonymous/) | Temporary guest identities that upgrade to real accounts | `anonymous` |
 | [Magic link](/plugins/magic-link/) | Single-use sign-in links by email | none |

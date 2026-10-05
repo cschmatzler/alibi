@@ -61,7 +61,7 @@ These upstream packages are explicitly **not** implemented and have no planned w
 | `@better-auth/i18n` | Translated error messages |
 | `@better-auth/expo`, `@better-auth/electron` | Mobile and desktop client integrations |
 
-Better Auth RS can *consume* OAuth/OIDC providers (including enterprise IdPs through [Generic OAuth](/authentication/generic-oauth/)); it does not *be* one. Redis storage and native framework integrations are covered separately from the upstream profiles.
+Better Auth RS can *consume* OAuth/OIDC providers (including enterprise IdPs through [Generic OAuth](/authentication/generic-oauth/)); it does not act as one. Redis storage and native framework integrations are covered separately from the upstream profiles.
 
 ## Known boundaries
 
@@ -70,6 +70,10 @@ Better Auth RS can *consume* OAuth/OIDC providers (including enterprise IdPs thr
 - **Concurrent device decisions** and a few other races retain the behavior measured on 1.7.6, unchanged by the 1.7.7 delta, including its edge cases.
 - The TypeScript generic-OAuth client helper `signIn.oauth2` is not served; use `signIn.social` ([Generic OAuth](/authentication/generic-oauth/#frontend)).
 
+## Upgrading from 1.7.6
+
+1.7.7 separates OAuth state, proxy state, proxy packages, and proxy profiles by encryption purpose. Upgrade servers sharing the verification store and OAuth proxy participants together. Request new Magic Links and restart pending OAuth flows: old verification identifiers and ciphertexts are deliberately rejected. Existing account credentials, password hashes and session records need no migration for this release change.
+
 ## Checking a deployment
 
 `GET /api/auth/open-api/generate-schema` (with the [OpenAPI plugin](/plugins/open-api/)) or the [HTTP API reference](/reference/http-api/) lists exactly the routes your instance serves. Run the differential suite locally with `./scripts/compat.sh` ([Contributing](/guides/development/)).
@@ -77,9 +81,3 @@ Better Auth RS can *consume* OAuth/OIDC providers (including enterprise IdPs thr
 ## Frontend
 
 Use the official [Better Auth client and frontend documentation](https://www.better-auth.com/docs/concepts/client).
-
-## Upgrading from 1.7.6
-
-1.7.7 separates OAuth state, proxy state, proxy packages, and proxy profiles by encryption purpose. Upgrade servers sharing the verification store and OAuth proxy participants together. Request new Magic Links and restart pending OAuth flows: old verification identifiers and ciphertexts are deliberately rejected. Existing account credentials, password hashes, and session records need no migration for this release change.
-
-The upgrade is qualified against the upstream commit delta and focused affected owners. Historical audit receipts remain evidence for their recorded versions; this is not a new full compatibility or coverage campaign.

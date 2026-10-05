@@ -1,5 +1,5 @@
 ---
-title: "Email & password"
+title: "Email and password"
 description: "Password sign-up and sign-in, password policy, reset and change flows, and custom hashing."
 ---
 

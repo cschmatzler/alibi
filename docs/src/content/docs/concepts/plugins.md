@@ -96,7 +96,7 @@ Every route in the instance, with request and response schemas, is also availabl
 
 | I need to… | Plugin |
 | --- | --- |
-| Sign in with email and password, usernames | [Email & password](/authentication/email-password/), [Username](/plugins/username/) |
+| Sign in with email and password, usernames | [Email and password](/authentication/email-password/), [Username](/plugins/username/) |
 | Sign in without a password | [Magic link](/plugins/magic-link/), [Email OTP](/plugins/email-otp/), [Passkey](/plugins/passkey/), [Phone number](/plugins/phone-number/), [SIWE](/plugins/siwe/) |
 | Sign in with Google, GitHub, … | [Social sign-on](/authentication/social-sign-on/), [Generic OAuth](/authentication/generic-oauth/), [One Tap](/plugins/one-tap/) |
 | Require a second factor | [Two-factor](/plugins/two-factor/) |

@@ -57,7 +57,7 @@ async fn build_auth(
 Checklist:
 
 1. Register **only the production callback** (`https://auth.example.com/api/auth/callback/google`) with the provider.
-2. Add the preview origin to `trusted_origin`s of the production server (and the preview host's own origin on the preview server), so redirects are accepted.
+2. Add the preview origin to `trusted_origins` on the production server (and the preview host's own origin on the preview server), so redirects are accepted.
 3. Share a `secret` between hosts if their ordinary `BETTER_AUTH_SECRET`s differ. The payload is encrypted with it; without `secret`, each host's auth secret is used and must match.
 4. Use database-backed OAuth state (the default when a store is configured); the proxy cooperates with cookie-state deployments too, restoring the saved error callback on mismatch.
 

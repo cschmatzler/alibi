@@ -1,6 +1,6 @@
 ---
 title: "Options"
-description: "Complete reference for AuthConfig, the builder, and where each option is explained."
+description: "Reference for AuthConfig and AuthBuilder, with links to the guide that explains each option."
 ---
 
 `AuthConfig` is created explicitly and passed to **both** the store and the builder, so they share session, field and account policy. Builder-style methods cover the common options; the rest are public fields.
@@ -37,12 +37,12 @@ Instance-level middleware and features are registered on `AuthBuilder` ([below](
 | `email_provider` | none (set via `AuthBuilder::email_provider`) | Default mail transport | [Email](/concepts/notifications/) |
 | `awaited_notification_errors(…)` | `Propagate` | Fail or log when awaited delivery fails | [Email](/concepts/notifications/#delivery-failures) |
 | `background_tasks(handler)` | none | Run delivery in the background | [Email](/concepts/notifications/#deliver-in-the-background) |
-| `user_validation` | none | Admit or reject new identities | [Users & accounts](/concepts/users-accounts/#validate-new-identities) |
+| `user_validation` | none | Admit or reject new identities | [Users and accounts](/concepts/users-accounts/#validate-new-identities) |
 | `cookie_prefix(…)` | none | Prefix for every cookie name | [Cookies](/concepts/cookies/) |
 | `cross_sub_domain_cookies(domain)`, `cross_sub_domain_cookies_from_base_url()` | off | Share cookies across subdomains | [Cookies](/concepts/cookies/#share-cookies-across-subdomains) |
 | `session_cookie_cache(CookieCacheConfig)` | none | Cookie-based session cache | [Cookies](/concepts/cookies/#cache-the-session-in-a-cookie) |
 | `session_expires_in`, `session_update_age`, `session_fresh_age`, `disable_session_refresh` | see Session | Shortcuts for common session settings | [Sessions](/concepts/session-management/) |
-| `password_min_length(n)` | `8` | Fallback minimum password length | [Email & password](/authentication/email-password/) |
+| `password_min_length(n)` | `8` | Fallback minimum password length | [Email and password](/authentication/email-password/) |
 | `jwt_expires_in(…)` | 24 hours | Lifetime for core-signed JWT values | [JWT](/plugins/jwt/) |
 | `advanced(AdvancedConfig)`, `disable_csrf_check`, `disable_origin_check` | see Advanced | Advanced options | [Security](/concepts/security/) |
 
@@ -75,7 +75,7 @@ Instance-level middleware and features are registered on `AuthBuilder` ([below](
 | `account.store_account_cookie`, `account.cookie_max_age` | `false`, session cache age | Keep account data in a cookie |
 | `account.store_state_strategy` | `Automatic` | OAuth state in `Cookie` or `Database` |
 | `account.skip_state_cookie_check` | `false` | Skip state-cookie comparison (**insecure**) |
-| `account.account_linking` | see [Users & accounts](/concepts/users-accounts/#linking-policy) | `enabled`, `trusted_providers`, `allow_different_emails`, … |
+| `account.account_linking` | see [Users and accounts](/concepts/users-accounts/#linking-policy) | `enabled`, `trusted_providers`, `allow_different_emails`, … |
 | `verification.secondary_storage`, `store_in_database` | none, `false` | [Verification storage](/concepts/secondary-storage/#verification-values) |
 | `verification.store_identifier` | plain | Hash or transform stored identifiers |
 | `verification.disable_cleanup` | `false` | Keep expired rows during lookup |

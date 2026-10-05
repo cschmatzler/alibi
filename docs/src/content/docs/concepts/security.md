@@ -96,7 +96,13 @@ async fn build_auth(
 | `allow_credentials` | `true` |
 | `max_age` | 86400 seconds |
 
-`allowed_origins: ["*"]` is accepted but cannot be combined with credentials by browsers. Requests from origins that are not allowed simply receive no `Access-Control-Allow-*` headers. Plugin HTTP hooks run before the built-in preflight handling, so a plugin that rejects header-less requests — notably [CAPTCHA](/plugins/captcha/#notes) — also rejects preflights; use your framework's CORS layer in that case. CORS only tells the browser what it may read; it is **not** an authorization mechanism, and it does not replace `trusted_origins`. Both lists must include the app origin. If you prefer your framework's CORS layer (`tower-http`'s `CorsLayer`, for example), leave `CorsConfig` unset and add the layer around the nested auth router. A complete walkthrough is in [Cross-origin applications](/guides/cross-origin/).
+`allowed_origins: ["*"]` is accepted, but browsers refuse it together with credentials. Requests from origins that are not allowed receive no `Access-Control-Allow-*` headers.
+
+CORS only tells the browser what it may read. It is **not** an authorization mechanism and does not replace `trusted_origins`, so the app origin must appear in both lists.
+
+Plugin HTTP hooks run before the built-in preflight handling. [CAPTCHA](/plugins/captcha/#notes) skips `OPTIONS` requests so preflights still succeed. A custom plugin that rejects requests without its own header must do the same, or you should use your framework's CORS layer instead.
+
+To use a framework CORS layer such as `tower-http`'s `CorsLayer`, leave `CorsConfig` unset and add the layer around the nested auth router. [Cross-origin applications](/guides/cross-origin/) has a complete walkthrough.
 
 ## Request size and disabled paths
 

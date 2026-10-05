@@ -77,7 +77,7 @@ async fn home(session: OptionalSession<AppAuthSchema>) -> String {
 
 ## Behavior to know
 
-- The endpoint preserves the original URL when nested, query parameters, request bytes and repeated response headers, including every `Set-Cookie`.
+- The endpoint preserves the original URL (even when nested), query parameters, request bytes and repeated response headers, including every `Set-Cookie`.
 - Auth dispatch owns method matching, request protection and plugin hooks; Poem only forwards.
 - Request bodies are buffered within the configured `BodyLimitConfig` before dispatch.
 - A fully buffered request continues after the client disconnects. Dropping the endpoint drains accepted work while its Tokio runtime remains alive — keep the runtime running during shutdown, because stopping the runtime or process can cancel pending work.

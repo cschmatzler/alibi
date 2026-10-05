@@ -140,7 +140,7 @@ fn config() -> PhoneNumberConfig {
 
 ### Password reset by phone
 
-`POST /phone-number/request-password-reset` sends a code through `send_password_reset_otp` (or `send_otp`), and `POST /phone-number/reset-password` with `{"phoneNumber","otp","newPassword"}` stores the new password. It inherits the password hasher and length limits of the [email & password](/authentication/email-password/) plugin and revokes sessions when `PasswordManagementPlugin::revoke_sessions_on_password_reset` is on.
+`POST /phone-number/request-password-reset` sends a code through `send_password_reset_otp` (or `send_otp`), and `POST /phone-number/reset-password` with `{"phoneNumber","otp","newPassword"}` stores the new password. It inherits the password hasher and length limits of the [email and password](/authentication/email-password/) plugin and revokes sessions when `PasswordManagementPlugin::revoke_sessions_on_password_reset` is on.
 
 ## Server-only helper
 

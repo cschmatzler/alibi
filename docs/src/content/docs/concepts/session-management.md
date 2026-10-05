@@ -119,10 +119,7 @@ Some operations require a *fresh* session — one created within `fresh_age`: li
 
 ## Custom sign-in flows
 
-After your application verifies its own sign-in proof and resolves the user ID,
-use `better_auth::session` to issue a session through the initialized instance.
-The existing session hooks and admin-plugin ban policy still apply. This API
-needs only the top-level `better-auth` dependency.
+After your application verifies its own sign-in proof and resolves the user ID, use `better_auth::session` to issue a session through the initialized instance. The existing session hooks and admin-plugin ban policy still apply. This API needs only the top-level `better-auth` dependency.
 
 ```rust
 use better_auth::prelude::{AuthResponse, AuthSession};
@@ -141,12 +138,7 @@ async fn sign_in_verified_user<S: AuthSchema>(
 }
 ```
 
-`issue_user_session` returns `IssuedSession<S>` with the user and session in your
-schema's types. Match `SessionIssueError::Banned { message }` separately from
-`SessionIssueError::Auth(error)` when your flow needs a distinct banned-user
-response, or use `into_auth_error` as above. `create_session_cookie` signs the
-token and uses the configured cookie name, lifetime and attributes; it can fail
-if those attributes are invalid.
+`issue_user_session` returns `IssuedSession<S>` with the user and session in your schema's types. Match `SessionIssueError::Banned { message }` separately from `SessionIssueError::Auth(error)` when your flow needs a distinct banned-user response, or use `into_auth_error` as above. `create_session_cookie` signs the token and uses the configured cookie name, lifetime and attributes; it can fail if those attributes are invalid.
 
 ## Session metadata
 
