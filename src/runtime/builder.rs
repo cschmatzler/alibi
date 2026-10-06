@@ -124,6 +124,11 @@ impl<S: AuthSchema> AuthBuilder<S> {
         // name; related-cookie overrides remain independently configured.
         // Retain the unprefixed legacy name before storing the resolved name.
         // This keeps name resolution stable across producers and request clones.
+        // The secure prefix follows the cookie policy, so a configured one is
+        // dropped rather than applied twice.
+        if let Some(name) = self.config.session.cookie_name.strip_prefix("__Secure-") {
+            self.config.session.cookie_name = name.to_owned();
+        }
         if !self
             .config
             .advanced

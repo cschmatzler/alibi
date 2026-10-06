@@ -29,7 +29,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 | `disable_session_refresh` | `false` | Never extend sessions on read |
 | `defer_session_refresh` | `false` | Report `needsRefresh` on `GET` and perform writes only on `POST /get-session` |
 | `fresh_age` | 1 day | Window in which a session counts as fresh; `None` or zero disables the check |
-| `cookie_name` | `better-auth.session_token` | Session cookie name (prefixed with `__Secure-` over HTTPS) |
+| `cookie_name` | `better-auth.session_token` | Session cookie name (prefixed with `__Secure-` over HTTPS; a configured `__Secure-` prefix is dropped rather than doubled) |
 | `cookie_secure`, `cookie_http_only`, `cookie_same_site` | derived from `base_url`, `true`, `Lax` | Cookie attributes; see [Cookies](/concepts/cookies/) |
 | `cookie_cache` | none | Cache session data in a cookie to skip database reads |
 | `secondary_storage`, `store_in_database`, `preserve_in_database` | none | Keep sessions in Redis or memory; see [Secondary storage](/concepts/secondary-storage/) |
