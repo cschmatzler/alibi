@@ -1058,6 +1058,36 @@ fn organization_field_error(
 
 // LCOV_EXCL_START
 
+// LCOV_EXCL_STOP
+
+struct CreationStore<'a, S: better_auth_core::AuthSchema>(
+    &'a dyn better_auth_core::store::AuthTransaction<S>,
+);
+#[async_trait::async_trait]
+impl<S: better_auth_core::AuthSchema> crate::plugins::organization::OrganizationCreationStore
+    for CreationStore<'_, S>
+{
+    fn teams(&self) -> AuthResult<&dyn better_auth_core::store::TeamStore> {
+        self.0.team_store()
+    }
+    async fn create_organization(
+        &self,
+        data: CreateOrganization,
+    ) -> AuthResult<better_auth_core::Organization> {
+        self.0.create_organization(data).await
+    }
+    async fn create_member(&self, data: CreateMember) -> AuthResult<better_auth_core::Member> {
+        self.0.create_member(data).await
+    }
+    async fn update_member_role(
+        &self,
+        member_id: &str,
+        role: &str,
+    ) -> AuthResult<better_auth_core::Member> {
+        self.0.update_member_role(member_id, role).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{get_full_organization_core, handle_create_organization};
@@ -1259,34 +1289,5 @@ mod tests {
         .expect("organization should exist");
 
         assert_eq!(response.members.len(), 1);
-    }
-}
-// LCOV_EXCL_STOP
-
-struct CreationStore<'a, S: better_auth_core::AuthSchema>(
-    &'a dyn better_auth_core::store::AuthTransaction<S>,
-);
-#[async_trait::async_trait]
-impl<S: better_auth_core::AuthSchema> crate::plugins::organization::OrganizationCreationStore
-    for CreationStore<'_, S>
-{
-    fn teams(&self) -> AuthResult<&dyn better_auth_core::store::TeamStore> {
-        self.0.team_store()
-    }
-    async fn create_organization(
-        &self,
-        data: CreateOrganization,
-    ) -> AuthResult<better_auth_core::Organization> {
-        self.0.create_organization(data).await
-    }
-    async fn create_member(&self, data: CreateMember) -> AuthResult<better_auth_core::Member> {
-        self.0.create_member(data).await
-    }
-    async fn update_member_role(
-        &self,
-        member_id: &str,
-        role: &str,
-    ) -> AuthResult<better_auth_core::Member> {
-        self.0.update_member_role(member_id, role).await
     }
 }

@@ -317,8 +317,7 @@ where
         );
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
-        Ok(self
-            .exec()
+        Ok(exec
             .fetch_all::<team::Model>(sql)
             .await?
             .into_iter()
@@ -341,8 +340,7 @@ where
             organization_id,
         );
         model::limit_one(&mut sql);
-        let model = self
-            .exec()
+        let model = exec
             .fetch_optional::<team::Model>(sql)
             .await?
             .ok_or_else(|| AuthError::bad_request("Team not found"))?;
@@ -362,8 +360,7 @@ where
         team_id: &str,
         user_id: &str,
     ) -> AuthResult<Option<TeamMember>> {
-        Ok(self
-            .exec()
+        Ok(exec
             .fetch_optional::<team_member::Model>(team_member_lookup(exec, team_id, user_id))
             .await?
             .map(Into::into))
@@ -378,8 +375,7 @@ where
         sql.compare(team_member::Model::TABLE, "team_id", " = ", team_id);
         sql.push(" LIMIT ");
         sql.bind(self.find_many_limit());
-        Ok(self
-            .exec()
+        Ok(exec
             .fetch_all::<team_member::Model>(sql)
             .await?
             .into_iter()
@@ -405,8 +401,7 @@ where
         rooms.column(team::Model::TABLE, "id");
         rooms.push(" IN ");
         rooms.bind_list(memberships.iter().map(|row| row.team_id.clone()));
-        let rooms = self
-            .exec()
+        let rooms = exec
             .fetch_all::<team::Model>(rooms)
             .await?
             .into_iter()

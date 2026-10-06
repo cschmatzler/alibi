@@ -783,13 +783,31 @@ impl DefaultTeamFactory for Lifecycle {
         _: &DefaultTeamContext,
         store: &dyn better_auth_core::store::TeamStore,
     ) -> AuthResult<Option<better_auth_core::types::Team>> {
-        store
+        let team = store
             .create_team(better_auth_core::types::CreateTeam {
                 name: "Factory default".into(),
                 organization_id: organization.id.clone(),
                 updated_at: None,
             })
-            .await
-            .map(Some)
+            .await?;
+        // Reads through the transactional store must see the uncommitted team.
+        let team = store
+            .update_team(
+                &organization.id,
+                &team.id,
+                better_auth_core::types::UpdateTeam {
+                    name: Some("Factory renamed".into()),
+                },
+            )
+            .await?;
+        let teams = store.list_teams(&organization.id).await?;
+        assert_eq!(
+            teams
+                .iter()
+                .map(|team| team.name.as_str())
+                .collect::<Vec<_>>(),
+            ["Factory renamed"]
+        );
+        Ok(Some(team))
     }
 }
