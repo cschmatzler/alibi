@@ -639,15 +639,10 @@ const fn invalid_credentials() -> AuthError {
 fn password_settings(ctx: &AuthContext<impl AuthSchema>) -> PasswordSettings {
     let passwords = ctx.extensions.get::<EmailPasswordConfig>();
     let resets = ctx.extensions.get::<PasswordManagementConfig>();
+    let (minimum, maximum) = crate::plugins::email_password::password_length_limits(ctx);
     PasswordSettings {
-        minimum: passwords
-            .as_ref()
-            .map_or(ctx.config.password.min_length, |config| {
-                config.password_min_length
-            }),
-        maximum: passwords
-            .as_ref()
-            .map_or(128, |config| config.password_max_length),
+        minimum,
+        maximum,
         hasher: resets
             .as_ref()
             .and_then(|config| config.password_hasher.clone())

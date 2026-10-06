@@ -112,9 +112,7 @@ impl TestHarness {
     /// `tests/integration/core/http_flow.rs` conventions (`EmailPassword`, `SessionManagement`,
     /// `PasswordManagement`, `AccountManagement`, `ApiKey`).
     pub async fn minimal() -> Self {
-        let config = test_config()
-            .base_url("http://localhost:3000")
-            .password_min_length(6);
+        let config = test_config().base_url("http://localhost:3000");
         Self::minimal_with_config(config).await
     }
 
@@ -187,9 +185,7 @@ pub fn test_secret() -> String {
 }
 
 pub fn test_config() -> AuthConfig {
-    AuthConfig::new(test_secret())
-        .base_url("http://localhost:3000")
-        .password_min_length(8)
+    AuthConfig::new(test_secret()).base_url("http://localhost:3000")
 }
 
 fn mock_oauth_plugin() -> OAuthPlugin {

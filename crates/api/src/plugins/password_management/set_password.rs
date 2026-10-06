@@ -37,14 +37,7 @@ pub async fn set_password<S: AuthSchema>(
             }
         })?;
     let policy = context.extensions.get::<EmailPasswordConfig>();
-    let minimum = policy
-        .as_ref()
-        .map_or(context.config.password.min_length, |policy| {
-            policy.password_min_length
-        });
-    let maximum = policy
-        .as_ref()
-        .map_or(128, |policy| policy.password_max_length);
+    let (minimum, maximum) = crate::plugins::email_password::password_length_limits(context);
     let length = new_password.encode_utf16().count();
     if length < minimum {
         return Err(AuthError::Upstream {

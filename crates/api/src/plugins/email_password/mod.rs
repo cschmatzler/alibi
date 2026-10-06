@@ -4,6 +4,7 @@ mod signin;
 mod types;
 
 pub use config::EmailPasswordConfig;
+pub(in crate::plugins) use config::password_length_limits;
 pub(in crate::plugins) use signin::sign_in_core;
 pub(in crate::plugins) use signin::sign_in_username_core;
 use types::IsUsernameAvailableRequest;

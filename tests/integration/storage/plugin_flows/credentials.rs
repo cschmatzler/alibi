@@ -9,13 +9,15 @@ backend_tests!(
     username_signup_lookup_and_denials_share_normalized_identity,
     profile_update_publishes_accepted_fields_and_preserves_rejected_identity,
     password_change_verification_and_session_revocation_are_owner_scoped,
-    email_otp_verification_reset_and_email_change_bind_owner_and_scope
+    email_otp_verification_reset_and_email_change_bind_owner_and_scope,
+    password_length_limits_apply_to_every_new_password_endpoint
 );
 postgres_tests!(
     username_signup_lookup_and_denials_share_normalized_identity,
     profile_update_publishes_accepted_fields_and_preserves_rejected_identity,
     password_change_verification_and_session_revocation_are_owner_scoped,
-    email_otp_verification_reset_and_email_change_bind_owner_and_scope
+    email_otp_verification_reset_and_email_change_bind_owner_and_scope,
+    password_length_limits_apply_to_every_new_password_endpoint
 );
 
 async fn username_signup_lookup_and_denials_share_normalized_identity<B: Backend>(
@@ -654,4 +656,93 @@ async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
         B::close(connection).await?;
     }
     Ok(())
+}
+
+// The email/password plugin's limits, in UTF-16 units, govern every endpoint
+// that accepts a new password.
+async fn password_length_limits_apply_to_every_new_password_endpoint<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    let auth = AuthBuilder::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(
+            EmailPasswordPlugin::new()
+                .password_min_length(10)
+                .password_max_length(24),
+        )
+        .plugin(SessionManagementPlugin::new())
+        .plugin(better_auth::plugins::AdminPlugin::new())
+        .build()
+        .await?;
+    let owner = signup(&auth, "limits@example.test").await;
+    let owner_id = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    drop(
+        auth.store()
+            .update_user(
+                &owner_id,
+                better_auth_core::UpdateUser {
+                    role: Some("admin".into()),
+                    ..Default::default()
+                },
+            )
+            .await?,
+    );
+    let cookie = cookies(&owner);
+    let snapshot = db.tables(&["users", "accounts"]).await?;
+    // 9 and 25 UTF-16 units; their byte and character counts lie inside the limits.
+    let too_short = "😀😀😀😀a";
+    let too_long = format!("{}a", "😀".repeat(12));
+    for (password, code) in [
+        (too_short, "PASSWORD_TOO_SHORT"),
+        (too_long.as_str(), "PASSWORD_TOO_LONG"),
+    ] {
+        for (path, input, credentials) in [
+            (
+                "/sign-up/email",
+                json!({"email":"limits-other@example.test","password":password,"name":"Other"}),
+                "",
+            ),
+            (
+                "/change-password",
+                json!({"currentPassword":PASSWORD,"newPassword":password}),
+                cookie.as_str(),
+            ),
+            (
+                "/admin/set-user-password",
+                json!({"userId":owner_id,"newPassword":password}),
+                cookie.as_str(),
+            ),
+        ] {
+            let rejected = call(&auth, request(path, Some(input), credentials), 400).await;
+            assert_eq!(body(&rejected)["code"], code, "{path}");
+            assert_eq!(db.tables(&["users", "accounts"]).await?, snapshot, "{path}");
+        }
+    }
+    // Ten UTF-16 units in five characters meets the minimum.
+    let minimum = "😀😀😀😀😀";
+    let _ = call(
+        &auth,
+        request(
+            "/admin/set-user-password",
+            Some(json!({"userId":owner_id,"newPassword":minimum})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    let _ = call(
+        &auth,
+        request(
+            "/change-password",
+            Some(json!({"currentPassword":minimum,"newPassword":PASSWORD})),
+            &cookie,
+        ),
+        200,
+    )
+    .await;
+    drop(auth);
+    B::close(connection).await
 }

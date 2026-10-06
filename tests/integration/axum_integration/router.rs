@@ -53,8 +53,7 @@ async fn test_database() -> DatabaseConnection {
 async fn create_test_auth() -> Arc<BetterAuth<TestSchema>> {
     create_test_auth_with_config(
         AuthConfig::new("test-secret-key-that-is-at-least-32-characters-long")
-            .base_url("http://localhost:3000")
-            .password_min_length(6),
+            .base_url("http://localhost:3000"),
     )
     .await
 }
@@ -484,7 +483,6 @@ mod tests {
         let auth = create_test_auth_with_config(
             AuthConfig::new("test-secret-key-that-is-at-least-32-characters-long")
                 .base_url("http://localhost:3000")
-                .password_min_length(6)
                 .disabled_path("/ok"),
         )
         .await;

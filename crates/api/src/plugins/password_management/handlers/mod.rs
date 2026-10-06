@@ -100,19 +100,9 @@ pub(in crate::plugins) async fn reset_password_core(
         return Err(AuthError::bad_request("Invalid token"));
     }
 
+    let (minimum, maximum) = crate::plugins::email_password::password_length_limits(ctx);
+    password_utils::validate_password(&body.new_password, minimum, maximum, ctx)?;
     let policy = ctx.extensions.get::<crate::plugins::EmailPasswordConfig>();
-    password_utils::validate_password(
-        &body.new_password,
-        policy
-            .as_ref()
-            .map_or(ctx.config.password.min_length, |policy| {
-                policy.password_min_length
-            }),
-        policy
-            .as_ref()
-            .map_or(128, |policy| policy.password_max_length),
-        ctx,
-    )?;
 
     let verification = ctx
         .verifications()
@@ -247,12 +237,8 @@ pub(in crate::plugins) async fn change_password_core<S: better_auth_core::AuthSc
         None
     };
 
-    password_utils::validate_password(
-        &body.new_password,
-        ctx.config.password.min_length,
-        usize::MAX,
-        ctx,
-    )?;
+    let (minimum, maximum) = crate::plugins::email_password::password_length_limits(ctx);
+    password_utils::validate_password(&body.new_password, minimum, maximum, ctx)?;
 
     let password_hash = ctx
         .hash_password(config.password_hasher.as_ref(), &body.new_password)

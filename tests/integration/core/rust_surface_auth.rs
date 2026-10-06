@@ -40,7 +40,6 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for RouteTestPlugin {
 fn test_config() -> AuthConfig {
     AuthConfig::new("test-secret-key-that-is-at-least-32-characters-long")
         .base_url("http://localhost:3000")
-        .password_min_length(8)
 }
 
 async fn test_database() -> DatabaseConnection {
