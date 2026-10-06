@@ -1,7 +1,7 @@
 //! Admin authority comes from the acting session; target mutations stay scoped.
 use super::*;
 use better_auth::plugins::AdminPlugin;
-use better_auth_core::UpdateUser;
+use better_auth_core::{AuthUser, UpdateUser};
 
 backend_tests!(admin_provisioning_permissions_passwords_and_session_moderation);
 postgres_tests!(admin_provisioning_permissions_passwords_and_session_moderation);
@@ -48,6 +48,34 @@ async fn admin_provisioning_permissions_passwords_and_session_moderation<B: Back
     let admin = cookies(&administrator);
     let foreign = signup(&auth, "foreign@example.test").await;
     let unprivileged = cookies(&foreign);
+    let foreign_id = body(&foreign)["user"]["id"].as_str().unwrap().to_owned();
+    // Public profile updates must never grant administrative authority.
+    for role in [json!("admin"), json!(["admin"]), json!({"role":"admin"})] {
+        let denied = call(
+            &auth,
+            request(
+                "/update-user",
+                Some(json!({"name":"Updated profile","role":role})),
+                &unprivileged,
+            ),
+            400,
+        )
+        .await;
+        assert_eq!(body(&denied)["code"], "FIELD_NOT_ALLOWED");
+        let stored = auth.store().get_user_by_id(&foreign_id).await?.unwrap();
+        assert_eq!(stored.name(), body(&foreign)["user"]["name"].as_str());
+        assert_eq!(
+            stored.role(),
+            Some("user"),
+            "profile input must not change role"
+        );
+    }
+    let _ = call(
+        &auth,
+        request("/update-user", Some(json!({"role":"admin"})), &unprivileged),
+        400,
+    )
+    .await;
     let created = call(&auth, request("/admin/create-user", Some(json!({"email":"managed@example.test","name":"Managed","password":PASSWORD,"role":"user"})), &admin), 200).await;
     let target = body(&created)["user"]["id"].as_str().unwrap().to_owned();
     let first = login(&auth, PASSWORD, 200).await;
