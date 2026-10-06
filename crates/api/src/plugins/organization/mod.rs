@@ -41,8 +41,8 @@ pub use hooks::member::{
 };
 pub use hooks::organization::{
     OrganizationCreatePatch, OrganizationCreatedContext, OrganizationCreationHooks,
-    OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationDraftContext,
-    OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
+    OrganizationCreationStore, OrganizationDeleteContext, OrganizationDeletionHooks,
+    OrganizationDraftContext, OrganizationMemberCreatePatch, OrganizationMemberDraftContext,
 };
 pub use hooks::organization::{
     OrganizationUpdateContext, OrganizationUpdateHooks, OrganizationUpdateInput,

@@ -11,6 +11,48 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    /// Access team operations on this transaction's connection (for default-team factories).
+    fn team_store(&self) -> AuthResult<&dyn super::super::TeamStore> {
+        Err(AuthError::NotImplemented(
+            "Transactional team store unsupported".into(),
+        ))
+    }
+    /// Serialize organization admissions until this transaction commits or rolls back.
+    async fn lock_organization(&self, _organization_id: &str) -> AuthResult<()> {
+        Err(AuthError::NotImplemented(
+            "Transactional organization operation unsupported".into(),
+        ))
+    }
+    async fn count_organization_members(&self, _organization_id: &str) -> AuthResult<i64> {
+        Err(AuthError::NotImplemented(
+            "Transactional organization operation unsupported".into(),
+        ))
+    }
+    async fn count_pending_invitations(&self, _organization_id: &str) -> AuthResult<i64> {
+        Err(AuthError::NotImplemented(
+            "Transactional organization operation unsupported".into(),
+        ))
+    }
+    async fn create_organization(&self, _data: CreateOrganization) -> AuthResult<Organization> {
+        Err(AuthError::NotImplemented(
+            "Transactional organization operation unsupported".into(),
+        ))
+    }
+    async fn create_invitation_with_options(
+        &self,
+        _data: CreateInvitation,
+        _options: super::InvitationCreateOptions,
+    ) -> AuthResult<Invitation> {
+        Err(AuthError::NotImplemented(
+            "Transactional organization operation unsupported".into(),
+        ))
+    }
+    async fn create_team(&self, _data: CreateTeam) -> AuthResult<Team> {
+        Err(AuthError::NotImplemented(
+            "Transactional organization operation unsupported".into(),
+        ))
+    }
+
     /// Read the provider verification column using the adapter's physical scalar
     /// rules. This is retained output, not authorization input; typed models
     /// continue to supply the canonical boolean accessor.
@@ -182,6 +224,11 @@ pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
     ) -> AuthResult<AddTeamMemberResult> {
         Err(AuthError::NotImplemented(
             "Team admission in a transaction is not supported by this store".into(),
+        ))
+    }
+    async fn update_member_role(&self, _member_id: &str, _role: &str) -> AuthResult<Member> {
+        Err(AuthError::NotImplemented(
+            "Transactional member role update unsupported".into(),
         ))
     }
     async fn create_member(&self, _member: CreateMember) -> AuthResult<Member> {

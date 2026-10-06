@@ -1,4 +1,4 @@
-//! Organization callbacks surround real writes, with intentionally partial effects.
+//! Organization creation callbacks roll back together; other lifecycles retain their committed phases.
 use super::*;
 use async_trait::async_trait;
 use better_auth::plugins::organization::*;
@@ -66,9 +66,18 @@ impl OrganizationCreationHooks for Lifecycle {
             ..Default::default()
         }))
     }
-    async fn after_add_member(&self, ctx: &OrganizationCreatedContext) -> AuthResult<()> {
+    async fn after_add_member_in_transaction(
+        &self,
+        ctx: &OrganizationCreatedContext,
+        store: &dyn OrganizationCreationStore,
+    ) -> AuthResult<()> {
         assert_eq!(ctx.member.role, "owner,admin");
         assert_eq!(ctx.member.organization_id, ctx.organization.id);
+        drop(
+            store
+                .update_member_role(&ctx.member.id, "owner,admin,editor")
+                .await?,
+        );
         self.phase("after-member")
     }
     async fn after_create(&self, ctx: &OrganizationCreatedContext) -> AuthResult<()> {
@@ -141,6 +150,12 @@ async fn organization_lifecycle_callbacks_preserve_patch_authority_and_committed
         callbacks.reset(failure);
         let auth = builder::<B>(&connection)
             .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+                teams: TeamsConfig {
+                    enabled: true,
+                    create_default_team: true,
+                    default_team_factory: Some(callbacks.clone()),
+                    ..Default::default()
+                },
                 creation_hooks: Some(callbacks.clone()),
                 update_hooks: Some(callbacks.clone()),
                 deletion_hooks: Some(callbacks.clone()),
@@ -164,11 +179,13 @@ async fn organization_lifecycle_callbacks_preserve_patch_authority_and_committed
         assert_eq!(*callbacks.events.lock().unwrap(), stages[..executed]);
         assert_eq!(
             db.count("organization").await?,
-            i64::from(failure != "before-create")
+            i64::from(failure.is_empty())
         );
+        assert_eq!(db.count("member").await?, i64::from(failure.is_empty()));
+        assert_eq!(db.count("team").await?, i64::from(failure.is_empty()));
         assert_eq!(
-            db.count("member").await?,
-            i64::from(!matches!(failure, "before-create" | "before-member"))
+            db.count("team_member").await?,
+            i64::from(failure.is_empty())
         );
         let token = body(&owner)["token"].as_str().unwrap().to_owned();
         let active = db
@@ -182,6 +199,10 @@ async fn organization_lifecycle_callbacks_preserve_patch_authority_and_committed
             B::close(connection).await?;
             continue;
         }
+        assert_eq!(
+            db.text("SELECT role FROM member", &[]).await?.as_deref(),
+            Some("owner,admin,editor")
+        );
         assert_eq!(active.as_deref(), Some("hook-organization"));
         assert_eq!(body(&result)["id"], "hook-organization");
         assert_eq!(body(&result)["name"], "Patched organization");
@@ -752,4 +773,23 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
         B::close(connection).await?;
     }
     Ok(())
+}
+
+#[async_trait]
+impl DefaultTeamFactory for Lifecycle {
+    async fn create(
+        &self,
+        organization: &better_auth_core::Organization,
+        _: &DefaultTeamContext,
+        store: &dyn better_auth_core::store::TeamStore,
+    ) -> AuthResult<Option<better_auth_core::types::Team>> {
+        store
+            .create_team(better_auth_core::types::CreateTeam {
+                name: "Factory default".into(),
+                organization_id: organization.id.clone(),
+                updated_at: None,
+            })
+            .await
+            .map(Some)
+    }
 }

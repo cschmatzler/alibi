@@ -54,26 +54,8 @@ where
         invitation: CreateInvitation,
         options: better_auth_core::store::InvitationCreateOptions,
     ) -> AuthResult<Invitation> {
-        let mut active = ActiveRow::new();
-        active.set(
-            "id",
-            options
-                .id
-                .unwrap_or_else(|| self.organization_models.invitation.new_id()),
-        );
-        active.set("organization_id", invitation.organization_id);
-        active.set("email", invitation.email);
-        active.set("role", invitation.role);
-        active.set("team_id", invitation.team_id);
-        active.set("status", options.status.unwrap_or_default().to_string());
-        active.set("inviter_id", invitation.inviter_id);
-        active.set("expires_at", invitation.expires_at);
-        active.set("created_at", options.created_at.unwrap_or_else(Utc::now));
-        self.organization_models
-            .invitation
-            .insert(self.exec(), &active)
+        self.create_invitation_with_options_with_connection(self.exec(), invitation, options)
             .await
-            .map(|model| Invitation::from(&model))
     }
 
     async fn get_invitation_by_id(&self, id: &str) -> AuthResult<Option<Invitation>> {
@@ -514,5 +496,35 @@ where
             .iter()
             .map(Invitation::from)
             .collect())
+    }
+}
+
+impl<S: AuthSchema> SqlxStore<S> {
+    pub(super) async fn create_invitation_with_options_with_connection(
+        &self,
+        exec: Exec<'_>,
+        invitation: CreateInvitation,
+        options: better_auth_core::store::InvitationCreateOptions,
+    ) -> AuthResult<Invitation> {
+        let mut active = ActiveRow::new();
+        active.set(
+            "id",
+            options
+                .id
+                .unwrap_or_else(|| self.organization_models.invitation.new_id()),
+        );
+        active.set("organization_id", invitation.organization_id);
+        active.set("email", invitation.email);
+        active.set("role", invitation.role);
+        active.set("team_id", invitation.team_id);
+        active.set("status", options.status.unwrap_or_default().to_string());
+        active.set("inviter_id", invitation.inviter_id);
+        active.set("expires_at", invitation.expires_at);
+        active.set("created_at", options.created_at.unwrap_or_else(Utc::now));
+        self.organization_models
+            .invitation
+            .insert(exec, &active)
+            .await
+            .map(|model| Invitation::from(&model))
     }
 }
