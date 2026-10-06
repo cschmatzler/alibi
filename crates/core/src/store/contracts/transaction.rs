@@ -11,6 +11,13 @@ pub type TransactionWork<S> =
 
 #[async_trait]
 pub trait AuthTransaction<S: AuthSchema>: Send + Sync {
+    /// The adapter's own transaction handle, for application statements that
+    /// must commit or roll back with this transaction: `SqlxTransaction` for
+    /// SQLx and `sea_orm::DatabaseTransaction` for SeaORM. Stores without a
+    /// database transaction return `None`.
+    fn native_transaction(&self) -> Option<&(dyn Any + Send + Sync)> {
+        None
+    }
     /// Access team operations on this transaction's connection (for default-team factories).
     fn team_store(&self) -> AuthResult<&dyn super::super::TeamStore>;
     /// Serialize organization admissions until this transaction commits or rolls back.

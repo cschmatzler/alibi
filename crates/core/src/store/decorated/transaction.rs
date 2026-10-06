@@ -114,6 +114,10 @@ impl<S: AuthSchema> PluginTransaction<'_, S> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
+    fn native_transaction(&self) -> Option<&(dyn std::any::Any + Send + Sync)> {
+        self.inner.native_transaction()
+    }
+
     async fn provider_verification_output(
         &self,
         id: &str,

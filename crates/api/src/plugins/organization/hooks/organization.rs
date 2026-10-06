@@ -279,8 +279,23 @@ pub trait OrganizationUpdateHooks: std::fmt::Debug + Send + Sync {
 /// Organization writes and team access inside the creation lifecycle's transaction.
 #[async_trait]
 pub trait OrganizationCreationStore: Send + Sync {
+    /// The adapter transaction running this creation; prefer the typed `transaction::<T>()`.
+    fn native_transaction(&self) -> Option<&(dyn std::any::Any + Send + Sync)>;
     fn teams(&self) -> AuthResult<&dyn better_auth_core::store::TeamStore>;
     async fn create_organization(&self, data: CreateOrganization) -> AuthResult<Organization>;
     async fn create_member(&self, data: CreateMember) -> AuthResult<Member>;
     async fn update_member_role(&self, member_id: &str, role: &str) -> AuthResult<Member>;
+}
+
+impl dyn OrganizationCreationStore + '_ {
+    /// The adapter transaction running this creation, such as
+    /// `better_auth::sqlx::SqlxTransaction` or `sea_orm::DatabaseTransaction`.
+    ///
+    /// Application statements run on it commit or roll back with the
+    /// organization, and see its uncommitted rows. Returns `None` for another
+    /// type or a store without a database transaction.
+    #[must_use]
+    pub fn transaction<T: std::any::Any>(&self) -> Option<&T> {
+        self.native_transaction()?.downcast_ref()
+    }
 }

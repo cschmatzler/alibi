@@ -1067,6 +1067,9 @@ struct CreationStore<'a, S: better_auth_core::AuthSchema>(
 impl<S: better_auth_core::AuthSchema> crate::plugins::organization::OrganizationCreationStore
     for CreationStore<'_, S>
 {
+    fn native_transaction(&self) -> Option<&(dyn std::any::Any + Send + Sync)> {
+        self.0.native_transaction()
+    }
     fn teams(&self) -> AuthResult<&dyn better_auth_core::store::TeamStore> {
         self.0.team_store()
     }

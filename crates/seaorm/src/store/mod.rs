@@ -133,6 +133,9 @@ where
     S::Session: SeaOrmSessionModel,
     S::Verification: SeaOrmVerificationModel,
 {
+    fn native_transaction(&self) -> Option<&(dyn std::any::Any + Send + Sync)> {
+        Some(self.tx)
+    }
     async fn list_jwks(&self) -> AuthResult<Vec<better_auth_core::types::Jwk>> {
         self.store.list_jwks_with_connection(self.tx).await
     }

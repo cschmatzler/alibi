@@ -6,11 +6,13 @@ use better_auth_core::{AuthError, AuthResult};
 
 backend_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
-    organization_invitation_and_member_callbacks_preserve_actor_and_commit_order
+    organization_invitation_and_member_callbacks_preserve_actor_and_commit_order,
+    organization_creation_hooks_write_application_rows_in_the_creation_transaction
 );
 postgres_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
-    organization_invitation_and_member_callbacks_preserve_actor_and_commit_order
+    organization_invitation_and_member_callbacks_preserve_actor_and_commit_order,
+    organization_creation_hooks_write_application_rows_in_the_creation_transaction
 );
 
 #[derive(Debug, Default)]
@@ -810,4 +812,96 @@ impl DefaultTeamFactory for Lifecycle {
         );
         Ok(Some(team))
     }
+}
+
+/// Writes an application row that references the uncommitted organization.
+#[derive(Debug)]
+struct Billing {
+    veto: bool,
+}
+#[async_trait]
+impl OrganizationCreationHooks for Billing {
+    async fn after_create_in_transaction(
+        &self,
+        ctx: &OrganizationCreatedContext,
+        store: &dyn OrganizationCreationStore,
+    ) -> AuthResult<()> {
+        // The SELECT only inserts when the uncommitted organization row is visible.
+        let sql = format!(
+            "INSERT INTO billing_state (organization_id) SELECT id FROM organization WHERE id = '{}'",
+            ctx.organization.id
+        );
+        let inserted = if let Some(tx) = store.transaction::<better_auth::sqlx::SqlxTransaction>() {
+            let mut guard = tx.lock().await;
+            let query = sqlx::AssertSqlSafe(sql);
+            if let Some(connection) = guard.sqlite() {
+                sqlx::query(query)
+                    .execute(connection)
+                    .await
+                    .unwrap()
+                    .rows_affected()
+            } else {
+                let connection = guard.postgres().unwrap();
+                sqlx::query(query)
+                    .execute(connection)
+                    .await
+                    .unwrap()
+                    .rows_affected()
+            }
+        } else {
+            use better_auth::seaorm::sea_orm::{ConnectionTrait, DatabaseTransaction};
+            store
+                .transaction::<DatabaseTransaction>()
+                .unwrap()
+                .execute_unprepared(&sql)
+                .await
+                .unwrap()
+                .rows_affected()
+        };
+        assert_eq!(inserted, 1);
+        if self.veto {
+            return Err(AuthError::bad_request("billing veto"));
+        }
+        Ok(())
+    }
+}
+
+async fn organization_creation_hooks_write_application_rows_in_the_creation_transaction<
+    B: Backend,
+>(
+    db: Db,
+) -> TestResult {
+    for veto in [true, false] {
+        let db = db.fresh().await?;
+        let (connection, _) = db.migrated::<B>(SECRET).await?;
+        let _ = db
+            .execute(
+                "CREATE TABLE billing_state (organization_id TEXT NOT NULL REFERENCES organization(id))",
+                &[],
+            )
+            .await?;
+        let auth = builder::<B>(&connection)
+            .plugin(OrganizationPlugin::with_config(OrganizationConfig {
+                creation_hooks: Some(Arc::new(Billing { veto })),
+                ..Default::default()
+            }))
+            .build()
+            .await?;
+        let owner = signup(&auth, "billing@example.test").await;
+        let _ = call(
+            &auth,
+            request(
+                "/organization/create",
+                Some(json!({"name":"Billed","slug":"billed"})),
+                &cookies(&owner),
+            ),
+            if veto { 400 } else { 200 },
+        )
+        .await;
+        let committed = i64::from(!veto);
+        assert_eq!(db.count("organization").await?, committed);
+        assert_eq!(db.count("billing_state").await?, committed);
+        B::close(connection).await?;
+    }
+    Ok(())
 }

@@ -444,7 +444,44 @@ Organization admission retains early quota rejection before lifecycle callbacks,
 
 Organization creation, its creator membership, default team and awaited creation hooks commit together. Any creation hook failure rolls these rows back. This deliberately differs from Better Auth TypeScript, which retains earlier creation writes after a hook fails. Creation callbacks observe row snapshots before commit; reads on an independent connection see the previously committed state.
 
-For callback writes that belong to creation, override `before_create_in_transaction`, `before_add_member_in_transaction`, `after_add_member_in_transaction` or `after_create_in_transaction`. Each receives an `&dyn OrganizationCreationStore`; use its organization/member methods or `store.teams()?` for transaction-local writes. Existing callback methods remain supported. A captured application connection uses an independent transaction: its writes cannot roll back with creation and may wait for the creation lock (particularly on SQLite). Network effects also cannot be rolled back.
+For callback writes that belong to creation, override `before_create_in_transaction`, `before_add_member_in_transaction`, `after_add_member_in_transaction` or `after_create_in_transaction`. Each receives an `&dyn OrganizationCreationStore`; use its organization/member methods or `store.teams()?` for transaction-local writes. For application rows, `store.transaction::<T>()` returns the adapter's transaction (`better_auth::sqlx::SqlxTransaction` or SeaORM's `DatabaseTransaction`). Statements on it see the uncommitted organization and commit or roll back with it:
+
+```rust
+use async_trait::async_trait;
+use better_auth::plugins::organization::{
+    OrganizationCreatedContext, OrganizationCreationHooks, OrganizationCreationStore,
+};
+use better_auth::sqlx::SqlxTransaction;
+use better_auth::{AuthError, AuthResult};
+
+#[derive(Debug)]
+struct Billing;
+
+#[async_trait]
+impl OrganizationCreationHooks for Billing {
+    async fn after_create_in_transaction(
+        &self,
+        context: &OrganizationCreatedContext,
+        store: &dyn OrganizationCreationStore,
+    ) -> AuthResult<()> {
+        let tx = store
+            .transaction::<SqlxTransaction>()
+            .ok_or_else(|| AuthError::internal("expected a SQLx transaction"))?;
+        let mut tx = tx.lock().await;
+        let connection = tx
+            .postgres()
+            .ok_or_else(|| AuthError::internal("expected PostgreSQL"))?;
+        sqlx::query("INSERT INTO billing_state (organization_id) VALUES ($1)")
+            .bind(&context.organization.id)
+            .execute(connection)
+            .await
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        Ok(())
+    }
+}
+```
+
+Release the lock before returning; the creation's next statement waits for it. Existing callback methods remain supported. A captured application connection uses an independent transaction: its writes cannot roll back with creation, cannot see the uncommitted organization, and may wait for the creation lock (particularly on SQLite). Network effects also cannot be rolled back.
 
 ## Server-side operations
 
