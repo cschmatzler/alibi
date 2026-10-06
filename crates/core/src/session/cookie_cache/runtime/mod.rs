@@ -28,6 +28,7 @@ pub use issuance::take_issuance;
 pub use read::authenticated;
 pub use read::read;
 pub(crate) use read::renew_cache;
+pub(crate) use read::{CacheDecoding, authenticated_with};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
