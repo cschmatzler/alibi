@@ -274,24 +274,13 @@ impl OrganizationPlugin {
                     )
                     .await?;
                     if !body.keep_current_active_organization.unwrap_or(false) {
-                        drop(
-                            ctx.database
-                                .update_session_active_organization_record(
-                                    &session.token,
-                                    Some(response.organization.id.as_str()),
-                                )
-                                .await?,
-                        );
-                        if let Some(team_id) = &response.default_team_id {
-                            drop(
-                                ctx.database
-                                    .update_session_active_team_record(
-                                        &session.token,
-                                        Some(team_id),
-                                    )
-                                    .await?,
-                            );
-                        }
+                        handlers::org::activate_created_organization(
+                            &response,
+                            &user,
+                            &session.token,
+                            ctx,
+                        )
+                        .await?;
                     }
                     EndpointResponse::json(&response)
                 } else {
