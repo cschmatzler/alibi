@@ -235,6 +235,71 @@ pub async fn issue_user_session_record<S: better_auth_core::AuthSchema>(
     issue_user_session_inner(ctx, user_id, ip_address, user_agent, None, true, None).await
 }
 
+/// Issue a session with trusted fields applied during its initial insert.
+///
+/// Configured field policies and creation hooks receive the supplied fields;
+/// issuance publishes the resulting row through the normal cache and completion
+/// path. No follow-up session update is performed. Admin ban policy still applies.
+///
+/// # Errors
+/// Returns an error if hooks reject issuance, the user is banned, or storage fails.
+pub async fn issue_user_session_with_fields<S: better_auth_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    user_id: &str,
+    ip_address: Option<String>,
+    user_agent: Option<String>,
+    fields: SessionOverrides,
+) -> Result<IssuedSession<S>, SessionIssueError> {
+    issue_user_session_with_fields_record(ctx, user_id, ip_address, user_agent, fields)
+        .await
+        .map(IssuedSessionRecord::into_stored)
+}
+
+/// Issue a session with trusted initial fields and retain its adapter output.
+///
+/// This is the retained-record counterpart to [`issue_user_session_with_fields`].
+///
+/// # Errors
+/// Propagates validation, storage, ban policy, and configured callback errors.
+pub async fn issue_user_session_with_fields_record<S: better_auth_core::AuthSchema>(
+    ctx: &AuthContext<S>,
+    user_id: &str,
+    ip_address: Option<String>,
+    user_agent: Option<String>,
+    fields: SessionOverrides,
+) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
+    // Additional fields use schema bindings, so reject names that could replace
+    // issuance-owned columns rather than trusting the caller's map shape.
+    for name in fields.additional_fields.keys() {
+        if matches!(
+            name.as_str(),
+            "id" | "token"
+                | "userId"
+                | "user_id"
+                | "expiresAt"
+                | "expires_at"
+                | "createdAt"
+                | "created_at"
+                | "updatedAt"
+                | "updated_at"
+        ) {
+            return Err(
+                AuthError::bad_request(format!("Session issuance owns the {name} field")).into(),
+            );
+        }
+    }
+    issue_user_session_inner(
+        ctx,
+        user_id,
+        ip_address,
+        user_agent,
+        Some(fields),
+        true,
+        None,
+    )
+    .await
+}
+
 /// Create a genuine session for an endpoint that publishes it after later
 /// persistence and application callbacks have completed.
 pub(in crate::plugins) async fn create_user_session_record<S: better_auth_core::AuthSchema>(

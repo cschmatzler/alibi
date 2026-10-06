@@ -63,6 +63,71 @@ impl DatabaseHooks<ApplicationSchema, SeaOrmBackend> for ApplicationHook {
     }
 }
 
+struct InitialSessionFieldsHook;
+
+#[async_trait]
+impl DatabaseHooks<ApplicationSchema, SeaOrmBackend> for InitialSessionFieldsHook {
+    async fn before_create_session(
+        &self,
+        data: &mut CreateSession,
+        _ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<HookControl> {
+        assert_eq!(
+            data.active_organization_id.as_deref(),
+            Some("guest-organization")
+        );
+        assert_eq!(data.active_team_id.as_deref(), Some("guest-team"));
+        assert_eq!(
+            data.additional_fields
+                .get("label")
+                .and_then(JsValue::as_str),
+            Some("guest-link")
+        );
+        // Hook transformations must also reach the initial insert and returned row.
+        drop(
+            data.additional_fields
+                .insert("label".into(), JsValue::String("hook-label".into())),
+        );
+        Ok(HookControl::Continue)
+    }
+
+    async fn after_create_session(
+        &self,
+        session: &<ApplicationSchema as better_auth::AuthSchema>::Session,
+        _ctx: &SeaOrmHookContext<'_>,
+    ) -> AuthResult<()> {
+        assert_eq!(
+            session.active_organization_id.as_deref(),
+            Some("guest-organization")
+        );
+        assert_eq!(session.active_team_id.as_deref(), Some("guest-team"));
+        assert_eq!(session.label.as_deref(), Some("hook-label"));
+        Ok(())
+    }
+}
+
+async fn session_fields_database() -> better_auth_seaorm::DatabaseConnection {
+    let db = Database::connect("sqlite::memory:").await.unwrap();
+    run_migrations(&db).await.unwrap();
+    for sql in [
+        "ALTER TABLE sessions ADD COLUMN label TEXT",
+        "ALTER TABLE sessions ADD COLUMN hidden TEXT",
+        "ALTER TABLE sessions ADD COLUMN number REAL",
+        "ALTER TABLE sessions ADD COLUMN server_only TEXT",
+        "ALTER TABLE sessions ADD COLUMN transformed TEXT",
+        "ALTER TABLE sessions ADD COLUMN validated TEXT",
+        "ALTER TABLE sessions ADD COLUMN callback TEXT",
+        "ALTER TABLE sessions ADD COLUMN payload JSON NOT NULL DEFAULT '{}'",
+        "CREATE TABLE session_model_events (phase TEXT, label TEXT, is_insert BOOLEAN)",
+    ] {
+        _ = db
+            .execute_raw(Statement::from_string(db.get_database_backend(), sql))
+            .await
+            .unwrap();
+    }
+    db
+}
+
 fn request(path: &str, body: Value, cookie: Option<&str>) -> AuthRequest {
     let mut req = AuthRequest::new(HttpMethod::Post, path);
     req.body = Some(serde_json::to_vec(&body).unwrap());
@@ -86,30 +151,146 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    #[expect(
-        clippy::too_many_lines,
-        reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
-    )]
-    async fn real_custom_session_columns_preserve_affinity_json_defaults_owner_and_model_hook_overrides()
-     {
-        let db = Database::connect("sqlite::memory:").await.unwrap();
-        run_migrations(&db).await.unwrap();
+    async fn public_issuance_inserts_explicit_session_fields_before_creation_hooks() {
+        use better_auth::prelude::{AuthSession, AuthUser};
+        use better_auth::session::{
+            SessionOverrides, issue_user_session_with_fields, issue_user_session_with_fields_record,
+        };
+        use better_auth_core::CreateUser;
+
+        let db = session_fields_database().await;
         for sql in [
-            "ALTER TABLE sessions ADD COLUMN label TEXT",
-            "ALTER TABLE sessions ADD COLUMN hidden TEXT",
-            "ALTER TABLE sessions ADD COLUMN number REAL",
-            "ALTER TABLE sessions ADD COLUMN server_only TEXT",
-            "ALTER TABLE sessions ADD COLUMN transformed TEXT",
-            "ALTER TABLE sessions ADD COLUMN validated TEXT",
-            "ALTER TABLE sessions ADD COLUMN callback TEXT",
-            "ALTER TABLE sessions ADD COLUMN payload JSON NOT NULL DEFAULT '{}'",
-            "CREATE TABLE session_model_events (phase TEXT, label TEXT, is_insert BOOLEAN)",
+            "CREATE TABLE initial_session_fields (organization TEXT, team TEXT, label TEXT)",
+            "CREATE TRIGGER capture_initial_session AFTER INSERT ON sessions BEGIN INSERT INTO initial_session_fields VALUES (NEW.active_organization_id, NEW.active_team_id, NEW.label); END",
+            "CREATE TRIGGER reject_session_update BEFORE UPDATE ON sessions BEGIN SELECT RAISE(ABORT, 'issuance must use one insert'); END",
         ] {
             _ = db
                 .execute_raw(Statement::from_string(db.get_database_backend(), sql))
                 .await
                 .unwrap();
         }
+        let mut config = AuthConfig::new("initial-session-fields-secret-at-least-32");
+        drop(
+            config
+                .session
+                .additional_fields
+                .insert("label".into(), FieldConfig::new(json!({"type":"string"}))),
+        );
+        let auth = AuthBuilder::<ApplicationSchema>::new(config.clone())
+            .store(
+                SeaOrmStore::<ApplicationSchema>::new(config, db.clone())
+                    .hook(InitialSessionFieldsHook),
+            )
+            .build()
+            .await
+            .unwrap();
+        let user = auth
+            .store()
+            .create_user(CreateUser::new().with_email("guest@session.fixture"))
+            .await
+            .unwrap();
+        let fields = SessionOverrides {
+            active_organization_id: Some("guest-organization".into()),
+            active_team_id: Some("guest-team".into()),
+            additional_fields: [("label".into(), JsValue::String("guest-link".into()))]
+                .into_iter()
+                .collect(),
+            ..Default::default()
+        };
+        // Exercise both public return shapes against the same insert contract.
+        let stored = issue_user_session_with_fields(
+            auth.context(),
+            user.id().as_ref(),
+            Some("192.0.2.1".into()),
+            Some("guest-agent".into()),
+            fields.clone(),
+        )
+        .await
+        .unwrap();
+        let retained = issue_user_session_with_fields_record(
+            auth.context(),
+            user.id().as_ref(),
+            None,
+            None,
+            fields,
+        )
+        .await
+        .unwrap();
+        assert_eq!(stored.session.ip_address(), Some("192.0.2.1"));
+        assert_eq!(stored.session.user_agent(), Some("guest-agent"));
+        for session in [&stored.session, retained.session.stored()] {
+            assert_eq!(session.active_organization_id(), Some("guest-organization"));
+            assert_eq!(session.active_team_id(), Some("guest-team"));
+            assert_eq!(session.label.as_deref(), Some("hook-label"));
+            let persisted = auth
+                .store()
+                .get_session(session.token())
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(persisted, *session);
+        }
+        // Extension fields cannot replace issuer-owned identity or lifetime.
+        for name in [
+            "id",
+            "token",
+            "userId",
+            "user_id",
+            "expiresAt",
+            "expires_at",
+            "createdAt",
+            "created_at",
+            "updatedAt",
+            "updated_at",
+        ] {
+            let forbidden = SessionOverrides {
+                additional_fields: [(name.into(), JsValue::String("forbidden".into()))]
+                    .into_iter()
+                    .collect(),
+                ..Default::default()
+            };
+            let error = issue_user_session_with_fields(
+                auth.context(),
+                user.id().as_ref(),
+                None,
+                None,
+                forbidden,
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(
+                error,
+                better_auth::session::SessionIssueError::Auth(better_auth::AuthError::BadRequest(
+                    _
+                ))
+            ));
+        }
+        let inserted = db
+            .query_all_raw(Statement::from_string(
+                db.get_database_backend(),
+                "SELECT organization, team, label FROM initial_session_fields",
+            ))
+            .await
+            .unwrap();
+        assert_eq!(inserted.len(), 2);
+        for row in inserted {
+            assert_eq!(
+                row.try_get::<String>("", "organization").unwrap(),
+                "guest-organization"
+            );
+            assert_eq!(row.try_get::<String>("", "team").unwrap(), "guest-team");
+            assert_eq!(row.try_get::<String>("", "label").unwrap(), "hook-label");
+        }
+    }
+
+    #[tokio::test]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
+    )]
+    async fn real_custom_session_columns_preserve_affinity_json_defaults_owner_and_model_hook_overrides()
+     {
+        let db = session_fields_database().await;
         let calls = Arc::new(AtomicUsize::new(0));
         let captured = Arc::clone(&calls);
         let mut config = AuthConfig::new("session-fields-native-secret-at-least-32")
