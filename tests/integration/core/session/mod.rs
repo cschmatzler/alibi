@@ -57,6 +57,7 @@ impl better_auth_seaorm::sea_orm::ActiveModelBehavior
 
 #[cfg(feature = "seaorm")]
 mod cookie_cache;
+mod cookie_name;
 #[cfg(feature = "seaorm")]
 mod fields;
 mod policy_error;
