@@ -612,6 +612,17 @@ pub async fn handle_update_member_role(
         }
         Err(error) => return Err(error),
     };
+    update_member_role_response(&body, &user, &session, config, ctx).await
+}
+
+/// Validate an authenticated role update with HTTP semantics and apply it.
+pub(in crate::plugins) async fn update_member_role_response(
+    body: &UpdateMemberRoleRequest,
+    user: &impl AuthUser,
+    session: &better_auth_core::wire::SessionView,
+    config: &OrganizationConfig,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<AuthResponse> {
     let empty = || {
         let mut response = AuthResponse::new(400);
         drop(response.headers.insert("content-type", "application/json"));
@@ -632,7 +643,7 @@ pub async fn handle_update_member_role(
     if normalized_update_roles(&body.role).is_empty() {
         return Ok(empty());
     }
-    let response = match update_member_role_core(&body, organization_id, &user, config, ctx).await {
+    let response = match update_member_role_core(body, organization_id, user, config, ctx).await {
         Err(AuthError::BadRequest(message)) if message.starts_with("ROLE_NOT_FOUND: ") => {
             return Ok(AuthResponse::json(
                 400,

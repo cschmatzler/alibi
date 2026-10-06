@@ -21,3 +21,14 @@ impl OrganizationPageError {
         }
     }
 }
+
+impl From<OrganizationPageError> for AuthError {
+    fn from(error: OrganizationPageError) -> Self {
+        match error {
+            OrganizationPageError::Auth(error) => error,
+            OrganizationPageError::MissingUser => {
+                AuthError::internal("Organization member user not found")
+            }
+        }
+    }
+}

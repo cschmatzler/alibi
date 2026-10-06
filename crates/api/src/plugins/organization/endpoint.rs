@@ -9,7 +9,7 @@ use better_auth_core::utils::json::JsValue;
 use better_auth_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
-    vec![
+    let mut endpoints = vec![
         definition("addMember", "addMember", None, HttpMethod::Post),
         definition(
             "removeMember",
@@ -29,7 +29,9 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
             Some("/organization/delete"),
             HttpMethod::Post,
         ),
-    ]
+    ];
+    endpoints.extend(super::native::definitions());
+    endpoints
 }
 
 pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
@@ -109,7 +111,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                 &[JsonField::string("organizationId", true)],
             )?);
         }
-        _ => {}
+        _ => return super::native::validate(call),
     }
     Ok(EndpointInput {
         body,
@@ -320,7 +322,8 @@ impl OrganizationPlugin {
                     )
                 }
             }
-            _ => Err(AuthError::not_found("Unregistered organization operation")),
+            // Keep the extended operation state out of every dispatcher caller's future.
+            _ => Box::pin(super::native::execute(self, call, ctx)).await,
         }
     }
 }
