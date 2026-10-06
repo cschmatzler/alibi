@@ -8,6 +8,23 @@ pub async fn read<S: AuthSchema>(
     ctx: &AuthContext<S>,
     request: &impl SessionRequest,
 ) -> AuthResult<Option<super::super::CompactCache>> {
+    read_cache(ctx, request, CacheDecoding::Http).await
+}
+
+/// How a compact envelope that is not valid base64 is treated.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CacheDecoding {
+    /// Raise the decoding error, which get-session answers with its 500.
+    Http,
+    /// Treat it as a cache miss; storage remains the authority.
+    MalformedIsMiss,
+}
+
+async fn read_cache<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    request: &impl SessionRequest,
+    decoding: CacheDecoding,
+) -> AuthResult<Option<super::super::CompactCache>> {
     let manager = ctx.session_manager();
     let enabled = ctx
         .config
@@ -43,9 +60,14 @@ pub async fn read<S: AuthSchema>(
     let config =
         enabled.ok_or_else(|| AuthError::internal("Missing enabled cache configuration"))?;
     let decoded = match config.strategy {
-        crate::CookieCacheStrategy::Compact => {
-            super::super::decode_compact_http(&value, ctx.config.current_secret())?
-        }
+        crate::CookieCacheStrategy::Compact => match decoding {
+            CacheDecoding::Http => {
+                super::super::decode_compact_http(&value, ctx.config.current_secret())?
+            }
+            CacheDecoding::MalformedIsMiss => {
+                super::super::decode_compact(&value, ctx.config.current_secret())
+            }
+        },
         crate::CookieCacheStrategy::Jwt => {
             if let Some(signer) = ctx
                 .extensions
@@ -152,15 +174,24 @@ pub async fn authenticated<S: AuthSchema>(
     request: &impl SessionRequest,
     direct: bool,
 ) -> AuthResult<Option<AuthenticatedRead<S>>> {
+    authenticated_with(ctx, request, direct, CacheDecoding::Http).await
+}
+
+pub(crate) async fn authenticated_with<S: AuthSchema>(
+    ctx: &AuthContext<S>,
+    request: &impl SessionRequest,
+    direct: bool,
+    decoding: CacheDecoding,
+) -> AuthResult<Option<AuthenticatedRead<S>>> {
     if !direct && let Some(call) = request.endpoint_call() {
         let nested = call.session_read_context();
         crate::endpoint::with_endpoint_call_context(
             nested.clone(),
-            Box::pin(authenticated_inner(ctx, &nested, false)),
+            Box::pin(authenticated_inner(ctx, &nested, false, decoding)),
         )
         .await
     } else {
-        Box::pin(authenticated_inner(ctx, request, direct)).await
+        Box::pin(authenticated_inner(ctx, request, direct, decoding)).await
     }
 }
 
@@ -173,6 +204,7 @@ pub(in crate::session::cookie_cache::runtime) async fn authenticated_inner<S: Au
     ctx: &AuthContext<S>,
     request: &impl SessionRequest,
     direct: bool,
+    decoding: CacheDecoding,
 ) -> AuthResult<Option<AuthenticatedRead<S>>> {
     if let Some(established) = request.extensions().get::<EstablishedSession<S>>()
         && let Some(established) = &established.0
@@ -209,7 +241,7 @@ pub(in crate::session::cookie_cache::runtime) async fn authenticated_inner<S: Au
             },
         )));
     }
-    if let Some(cache) = read(ctx, request).await? {
+    if let Some(cache) = read_cache(ctx, request, decoding).await? {
         renew_cache(ctx, request, &cache).await?;
         request
             .extensions()

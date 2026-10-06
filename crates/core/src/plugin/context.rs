@@ -542,6 +542,36 @@ impl<S: AuthSchema> AuthContext<S> {
         Ok((read.user, read.session))
     }
 
+    /// Read an ordinary HTTP session from the configured cache or storage for
+    /// an application route. Unlike [`Self::require_cached_session`], which
+    /// mirrors upstream's nested get-session and answers every failure with
+    /// `Unauthenticated`, only a missing or invalid session (including a
+    /// malformed cache cookie) is `Unauthenticated` here.
+    /// # Errors
+    /// Returns `Unauthenticated` without a valid session, and propagates
+    /// storage and callback errors.
+    pub async fn require_cached_session_strict(
+        &self,
+        req: &impl crate::session::SessionRequest,
+    ) -> AuthResult<(crate::AuthenticatedUser<S>, crate::wire::SessionView)> {
+        let read = crate::session::cookie_cache::runtime::authenticated_with(
+            self,
+            req,
+            false,
+            crate::session::cookie_cache::runtime::CacheDecoding::MalformedIsMiss,
+        )
+        .await
+        .map_err(|error| {
+            if error.status_code() == 401 {
+                AuthError::Unauthenticated
+            } else {
+                error
+            }
+        })?
+        .ok_or(AuthError::Unauthenticated)?;
+        Ok((read.user, read.session))
+    }
+
     /// Authorize once and retain the optional deferred-refresh response field.
     /// Payload callbacks can observe the same context as nested session middleware
     /// without issuing another session read or refresh.

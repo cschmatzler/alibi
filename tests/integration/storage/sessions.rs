@@ -13,11 +13,13 @@ use std::sync::{Arc, Mutex};
 
 backend_tests!(
     javascript_only_cache_values_fall_back_without_reconstructing_or_mutating_owners,
+    strict_cached_session_separates_invalid_sessions_from_storage_failures,
     session_cancel_preserves_default_wire_error_and_transaction_rollback,
     generates_default_tokens_before_hooks_and_persists_trusted_overrides,
     batch_session_lookup_returns_token_index_order_and_includes_expired_rows_once,
 );
 postgres_tests!(
+    strict_cached_session_separates_invalid_sessions_from_storage_failures,
     session_cancel_preserves_default_wire_error_and_transaction_rollback,
     generates_default_tokens_before_hooks_and_persists_trusted_overrides,
     // Token-index order is SQLite's plan for the unique token index. Both
@@ -380,6 +382,82 @@ async fn javascript_only_cache_values_fall_back_without_reconstructing_or_mutati
             snapshot
         );
     }
+    drop(auth);
+    B::close(connection).await
+}
+
+// Application routes must not report a storage outage as a signed-out user.
+async fn strict_cached_session_separates_invalid_sessions_from_storage_failures<B: Backend>(
+    db: Db,
+) -> TestResult {
+    use better_auth::plugins::SessionManagementPlugin;
+    use better_auth::{AuthBuilder, AuthenticatedUser};
+    use better_auth_core::{AuthRequest, CookieCacheConfig, HttpMethod};
+    const SECRET: &str = "strict-session-test-key-minimum-32-characters";
+    let (connection, _) = db.migrated::<B>(SECRET).await?;
+    let config = AuthConfig::new(SECRET)
+        .base_url("http://localhost:42594")
+        .session_cookie_cache(CookieCacheConfig {
+            enabled: true,
+            ..Default::default()
+        });
+    let auth = AuthBuilder::<B::Schema>::new(config.clone())
+        .store(B::store(Arc::new(config), &connection))
+        .plugin(SessionManagementPlugin::new())
+        .build()
+        .await?;
+    let owner = auth
+        .store()
+        .create_user(CreateUser::new().with_email("strict@example.test"))
+        .await?;
+    let session = auth
+        .store()
+        .create_session(input(
+            owner.id().as_ref(),
+            None,
+            Utc::now() + auth.config().session.expires_in,
+        ))
+        .await?;
+    let request = |token: &str, cache: &str| {
+        let signed = better_auth_core::utils::cookie_utils::sign_cookie_value(token, SECRET);
+        let mut request = AuthRequest::new(HttpMethod::Get, "/api/auth/get-session");
+        drop(request.headers.insert(
+            "cookie".into(),
+            format!("better-auth.session_token={signed}; {cache}"),
+        ));
+        request
+    };
+    let context = auth.context();
+
+    // A malformed cache cookie is a cache miss; storage remains the authority.
+    let (user, read) = context
+        .require_cached_session_strict(&request(
+            session.token(),
+            "better-auth.session_data=not!base64",
+        ))
+        .await?;
+    assert!(matches!(user, AuthenticatedUser::Stored(_)));
+    assert_eq!(read.token, session.token());
+    assert!(matches!(
+        context
+            .require_cached_session_strict(&request("unknown-token", ""))
+            .await,
+        Err(AuthError::Unauthenticated)
+    ));
+
+    let _ = db.raw.execute("DROP TABLE sessions", &[]).await?;
+    let outage = context
+        .require_cached_session_strict(&request(session.token(), ""))
+        .await
+        .unwrap_err();
+    assert_eq!(outage.status_code(), 500, "{outage:?}");
+    // The upstream-compatible plugin guard still answers every failure with 401.
+    assert!(matches!(
+        context
+            .require_cached_session(&request(session.token(), ""))
+            .await,
+        Err(AuthError::Unauthenticated)
+    ));
     drop(auth);
     B::close(connection).await
 }

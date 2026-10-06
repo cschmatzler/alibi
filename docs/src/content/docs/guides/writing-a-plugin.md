@@ -80,7 +80,8 @@ The plugin is generic over `S: AuthSchema`, so it works with any user model. To 
 | `ctx.config` | The effective `AuthConfig` (already resolved for dynamic base URLs) |
 | `ctx.database` | The `AuthStore<S>` — users, sessions, accounts, verifications and plugin records |
 | `ctx.email_provider()` | The configured `EmailProvider`, if any |
-| `ctx.require_cached_session(req)` | The authenticated user and session (cache-aware); errors when signed out |
+| `ctx.require_cached_session(req)` | The authenticated user (`AuthenticatedUser`) and session (cache-aware); any failure, including a storage error, is `Unauthenticated`, as upstream's nested get-session |
+| `ctx.require_cached_session_strict(req)` | Same, but only a missing or invalid session is `Unauthenticated`; storage and callback errors propagate |
 | `ctx.require_authoritative_session(req)` | Same, bypassing caches for sensitive actions |
 | `ctx.verifications()` | Create and atomically consume single-use proofs (tokens, codes) |
 | `ctx.user_view(&user)`, `ctx.session_view(&session)` | Public JSON projections honoring field policies |
