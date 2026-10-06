@@ -25,6 +25,20 @@ pub struct EmailPasswordConfig {
     pub custom_synthetic_user: Option<Arc<CustomSyntheticUserCallback>>,
 }
 
+/// Password length limits in UTF-16 units, shared by every endpoint that
+/// accepts a new password. The email/password plugin is always installed, so
+/// its configuration is the single source; the defaults only apply to contexts
+/// built without it.
+pub(in crate::plugins) fn password_length_limits(
+    ctx: &better_auth_core::AuthContext<impl better_auth_core::AuthSchema>,
+) -> (usize, usize) {
+    ctx.extensions
+        .get::<EmailPasswordConfig>()
+        .map_or((8, 128), |config| {
+            (config.effective_min_length(), config.effective_max_length())
+        })
+}
+
 impl EmailPasswordConfig {
     pub(in crate::plugins::email_password) const fn effective_min_length(&self) -> usize {
         if self.password_min_length == 0 {

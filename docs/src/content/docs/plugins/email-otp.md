@@ -99,7 +99,7 @@ Requesting a code always answers `{"success":true}` — whether or not the mailb
 | `verify_current_email` | `false` | Require the current address to be verified before changing it |
 | `auto_sign_in_after_verification` | `false` | Return a session from `/email-otp/verify-email` |
 | `before_email_verification`, `after_email_verification` | none | Hooks around marking the email verified |
-| `password_hasher`, `max_password_length` | scrypt, 128 | Used by `/email-otp/reset-password` |
+| `password_hasher` | scrypt | Used by `/email-otp/reset-password`; length limits come from the email/password plugin |
 | `revoke_sessions_on_password_reset`, `on_password_reset` | `false`, none | Same semantics as [password reset](/authentication/email-password/#reset-a-forgotten-password) |
 
 `otp_length`, `expires_in` and `allowed_attempts` use JavaScript-number semantics: fractions round, `NaN` or non-positive lengths fail code generation, and an `allowed_attempts` of `0` or `NaN` uses 3. Prefer `Hashed` storage: the code is never recoverable from the database (and `get_verification_otp` below will refuse to read it).

@@ -152,8 +152,7 @@ async fn test_database() -> DatabaseConnection {
 
 async fn create_full_auth() -> BetterAuth<TestSchema> {
     let config = AuthConfig::new("test-secret-key-that-is-at-least-32-characters-long")
-        .base_url("http://localhost:3000")
-        .password_min_length(8);
+        .base_url("http://localhost:3000");
 
     let store = SeaOrmStore::<TestSchema>::new(config.clone(), test_database().await);
 

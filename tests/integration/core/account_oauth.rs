@@ -70,15 +70,12 @@ impl OAuthUserInfoHandler for CookieIssuerProfile {
 }
 
 fn test_config() -> AuthConfig {
-    AuthConfig::new(TEST_SECRET)
-        .base_url("http://localhost:3000")
-        .password_min_length(6)
+    AuthConfig::new(TEST_SECRET).base_url("http://localhost:3000")
 }
 
 fn test_config_with_encryption() -> AuthConfig {
     AuthConfig::new(TEST_SECRET)
         .base_url("http://localhost:3000")
-        .password_min_length(6)
         .account(AccountConfig {
             encrypt_oauth_tokens: true,
             ..Default::default()
@@ -88,7 +85,6 @@ fn test_config_with_encryption() -> AuthConfig {
 fn test_config_with_encryption_skip_state_cookie_check() -> AuthConfig {
     AuthConfig::new(TEST_SECRET)
         .base_url("http://localhost:3000")
-        .password_min_length(6)
         .account(AccountConfig {
             encrypt_oauth_tokens: true,
             skip_state_cookie_check: true,
@@ -99,7 +95,6 @@ fn test_config_with_encryption_skip_state_cookie_check() -> AuthConfig {
 fn test_config_linking_disabled() -> AuthConfig {
     AuthConfig::new(TEST_SECRET)
         .base_url("http://localhost:3000")
-        .password_min_length(6)
         .account(AccountConfig {
             account_linking: AccountLinkingConfig {
                 enabled: false,
@@ -112,7 +107,6 @@ fn test_config_linking_disabled() -> AuthConfig {
 fn test_config_allow_unlinking_all() -> AuthConfig {
     AuthConfig::new(TEST_SECRET)
         .base_url("http://localhost:3000")
-        .password_min_length(6)
         .account(AccountConfig {
             account_linking: AccountLinkingConfig {
                 allow_unlinking_all: true,
@@ -125,7 +119,6 @@ fn test_config_allow_unlinking_all() -> AuthConfig {
 fn test_config_with_account_cookie() -> AuthConfig {
     AuthConfig::new(TEST_SECRET)
         .base_url("http://localhost:3000")
-        .password_min_length(6)
         .account(AccountConfig {
             store_account_cookie: true,
             ..Default::default()

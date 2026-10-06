@@ -74,7 +74,6 @@ pub struct EmailOtpConfig {
     pub before_email_verification: Option<super::email_verification::EmailVerificationHook>,
     pub after_email_verification: Option<super::email_verification::EmailVerificationHook>,
     pub password_hasher: Option<Arc<dyn better_auth_core::PasswordHasher>>,
-    pub max_password_length: usize,
     pub revoke_sessions_on_password_reset: bool,
     pub on_password_reset: Option<Arc<super::password_management::OnPasswordResetCallback>>,
 }
@@ -108,7 +107,6 @@ impl Default for EmailOtpConfig {
             before_email_verification: None,
             after_email_verification: None,
             password_hasher: None,
-            max_password_length: 128,
             revoke_sessions_on_password_reset: false,
             on_password_reset: None,
         }
@@ -165,17 +163,10 @@ impl EmailOtpPlugin {
         let resets = ctx
             .extensions
             .get::<super::password_management::PasswordManagementConfig>();
+        let (minimum, maximum) = super::email_password::password_length_limits(ctx);
         PasswordSettings {
-            minimum: passwords
-                .as_ref()
-                .map_or(ctx.config.password.min_length, |config| {
-                    config.password_min_length
-                }),
-            maximum: passwords
-                .as_ref()
-                .map_or(self.config.max_password_length, |config| {
-                    config.password_max_length
-                }),
+            minimum,
+            maximum,
             hasher: resets
                 .as_ref()
                 .and_then(|config| config.password_hasher.clone())

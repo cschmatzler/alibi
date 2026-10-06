@@ -341,7 +341,6 @@ mod tests {
     async fn test_password_validation() {
         let mut config = crate::AuthConfig::new("test-secret");
         config.password = crate::PasswordConfig {
-            min_length: 8,
             require_uppercase: true,
             require_lowercase: true,
             require_numbers: true,

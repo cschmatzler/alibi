@@ -42,7 +42,6 @@ Instance-level middleware and features are registered on `AuthBuilder` ([below](
 | `cross_sub_domain_cookies(domain)`, `cross_sub_domain_cookies_from_base_url()` | off | Share cookies across subdomains | [Cookies](/concepts/cookies/#share-cookies-across-subdomains) |
 | `session_cookie_cache(CookieCacheConfig)` | none | Cookie-based session cache | [Cookies](/concepts/cookies/#cache-the-session-in-a-cookie) |
 | `session_expires_in`, `session_update_age`, `session_fresh_age`, `disable_session_refresh` | see Session | Shortcuts for common session settings | [Sessions](/concepts/session-management/) |
-| `password_min_length(n)` | `8` | Fallback minimum password length | [Email and password](/authentication/email-password/) |
 | `jwt_expires_in(…)` | 24 hours | Lifetime for core-signed JWT values | [JWT](/plugins/jwt/) |
 | `advanced(AdvancedConfig)`, `disable_csrf_check`, `disable_origin_check` | see Advanced | Advanced options | [Security](/concepts/security/) |
 
@@ -79,7 +78,6 @@ Instance-level middleware and features are registered on `AuthBuilder` ([below](
 | `verification.secondary_storage`, `store_in_database` | none, `false` | [Verification storage](/concepts/secondary-storage/#verification-values) |
 | `verification.store_identifier` | plain | Hash or transform stored identifiers |
 | `verification.disable_cleanup` | `false` | Keep expired rows during lookup |
-| `password.min_length` | `8` | Fallback minimum |
 | `password.require_uppercase`, `require_lowercase`, `require_numbers`, `require_special` | `false` | [Composition rules](/authentication/email-password/#password-composition-rules) |
 
 ## `advanced` — `AdvancedConfig`

@@ -315,13 +315,6 @@ impl AuthConfig {
         self
     }
 
-    /// Set the minimum password length.
-    #[must_use]
-    pub const fn password_min_length(mut self, length: usize) -> Self {
-        self.password.min_length = length;
-        self
-    }
-
     #[must_use]
     pub fn advanced(mut self, advanced: AdvancedConfig) -> Self {
         self.advanced = advanced;
@@ -673,14 +666,12 @@ mod tests {
         let cfg = AuthConfig::new("test-secret-min-32-chars-1234567")
             .app_name("MyApp")
             .base_path("/auth")
-            .password_min_length(12)
             .disable_csrf_check(true)
             .disable_origin_check(true)
             .cookie_prefix("myapp");
 
         assert_eq!(cfg.app_name, "MyApp");
         assert_eq!(cfg.base_path, "/auth");
-        assert_eq!(cfg.password.min_length, 12);
         assert_eq!(cfg.advanced.disable_csrf_check, Some(true));
         assert!(cfg.advanced.disable_origin_check);
         assert_eq!(cfg.advanced.cookie_prefix, Some("myapp".to_owned()));
@@ -850,7 +841,6 @@ mod tests {
     #[test]
     fn password_config_defaults() {
         let p = PasswordConfig::default();
-        assert_eq!(p.min_length, 8);
         assert!(!p.require_uppercase);
     }
 

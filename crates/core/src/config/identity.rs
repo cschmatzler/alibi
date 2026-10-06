@@ -31,16 +31,15 @@ impl std::fmt::Debug for VerificationConfig {
     }
 }
 
-/// Password validation configuration. Built-in hashing uses pinned scrypt parameters.
-#[derive(Debug, Clone)]
+/// Password strength rules. Length limits belong to the email/password plugin
+/// (`password_min_length`, `password_max_length`). Built-in hashing uses
+/// pinned scrypt parameters.
+#[derive(Debug, Clone, Default)]
 #[expect(
     clippy::struct_excessive_bools,
     reason = "Independent configuration switches model distinct upstream behavior, rather than mutually exclusive states"
 )]
 pub struct PasswordConfig {
-    /// Minimum password length
-    pub min_length: usize,
-
     /// Require uppercase letters
     pub require_uppercase: bool,
 
@@ -52,16 +51,4 @@ pub struct PasswordConfig {
 
     /// Require special characters
     pub require_special: bool,
-}
-
-impl Default for PasswordConfig {
-    fn default() -> Self {
-        Self {
-            min_length: 8,
-            require_uppercase: false,
-            require_lowercase: false,
-            require_numbers: false,
-            require_special: false,
-        }
-    }
 }

@@ -385,7 +385,6 @@ mod tests {
     async fn create_test_context_with_user() -> (AuthContext<TestSchema>, UserView, SessionView) {
         let mut config = AuthConfig::new("test-secret-key-at-least-32-chars-long");
         config.password = PasswordConfig {
-            min_length: 8,
             require_uppercase: true,
             require_lowercase: true,
             require_numbers: true,

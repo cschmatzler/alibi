@@ -748,8 +748,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Default native propagation is independently owned by HTTP integration tests.
     let config = AuthConfig::new(secret)
         .awaited_notification_errors(better_auth::AwaitedNotificationErrorPolicy::LogAndContinue)
-        .base_url(format!("http://localhost:{port}"))
-        .password_min_length(8);
+        .base_url(format!("http://localhost:{port}"));
 
     let (database, invitation_status_observer) = sqlite_fixture::connect().await?;
     crate::backend::migrate(&database).await?;

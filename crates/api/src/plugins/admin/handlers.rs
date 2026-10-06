@@ -233,12 +233,12 @@ pub(in crate::plugins) async fn create_user_core(
         });
     }
     let password_policy = ctx.extensions.get::<crate::plugins::EmailPasswordConfig>();
-    if body.password.as_deref().is_some_and(|password| {
-        password.encode_utf16().count()
-            > password_policy
-                .as_ref()
-                .map_or(128, |policy| policy.password_max_length)
-    }) {
+    let (_, maximum) = crate::plugins::email_password::password_length_limits(ctx);
+    if body
+        .password
+        .as_deref()
+        .is_some_and(|password| password.encode_utf16().count() > maximum)
+    {
         return Err(AuthError::Api {
             status: 400,
             code: Some("PASSWORD_TOO_LONG".into()),
@@ -762,13 +762,13 @@ pub(in crate::plugins) async fn set_user_password_core(
     body: &SetUserPasswordRequest,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
-    if body.new_password.len() < ctx.config.password.min_length {
-        return Err(AuthError::bad_request("Password too short"));
-    }
-
-    if body.new_password.len() > 128 {
-        return Err(AuthError::bad_request("Password too long"));
-    }
+    let (minimum, maximum) = crate::plugins::email_password::password_length_limits(ctx);
+    better_auth_core::utils::password::validate_password(
+        &body.new_password,
+        minimum,
+        maximum,
+        ctx,
+    )?;
 
     let target = ctx
         .database

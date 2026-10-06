@@ -61,6 +61,8 @@ Both `/sign-up/email` and `/sign-in/email` also accept `application/x-www-form-u
 | `require_email_verification(bool)` | `false` | Refuse sign-in (and sign-up sessions) until the email is verified. See [Email verification](/authentication/email-verification/) |
 | `password_min_length(n)` | 8 | Minimum length, counted in UTF-16 units; `0` means the default |
 | `password_max_length(n)` | 128 | Maximum length; `0` means the default |
+
+These limits apply to every endpoint that accepts a new password: sign-up, reset, set and change password, admin `set-user-password`, and the email OTP and phone number resets. Admin `create-user` enforces the maximum.
 | `password_hasher(Arc<dyn PasswordHasher>)` | scrypt | See [custom hashing](#custom-password-hashing) |
 | `enable_username(bool)` / `username_config(…)` | off | [Username](/plugins/username/) sign-in |
 | `on_existing_user_signup(callback)` | none | Called when someone signs up with an address that already exists |
