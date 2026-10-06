@@ -317,7 +317,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
         call: &better_auth_core::endpoint::EndpointCall,
         _ctx: &AuthContext<S>,
     ) -> AuthResult<better_auth_core::endpoint::EndpointInput> {
-        endpoint::validate(call)
+        endpoint::validate(call, &self.config.organization_fields)
     }
     async fn on_endpoint(
         &self,

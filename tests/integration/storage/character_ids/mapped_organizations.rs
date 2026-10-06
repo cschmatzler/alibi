@@ -379,6 +379,20 @@ async fn exercise(db: Db) -> TestResult {
             .as_deref(),
         Some("existing-billing")
     );
+    let typed = typed_organization_calls(&auth, &cookie).await?;
+    assert_eq!(
+        db.text("SELECT language FROM event WHERE id = $1", &[&typed])
+            .await?
+            .as_deref(),
+        Some("it")
+    );
+    assert_eq!(
+        db.text("SELECT billing_key FROM event WHERE id = $1", &[&typed])
+            .await?
+            .as_deref(),
+        Some("existing-billing")
+    );
+    store.delete_organization(&typed).await?;
     _ = store
         .update_session_active_organization(guest_session.token(), None)
         .await?;
@@ -446,9 +460,61 @@ async fn exercise(db: Db) -> TestResult {
     assert!(store.get_organization_by_id(native_id).await?.is_none());
     assert_eq!(
         *callbacks.receipts.lock().unwrap(),
-        ["billing:de", "email:fr", "cleanup:fr"]
+        ["billing:de", "billing:nl", "email:fr", "cleanup:fr"]
     );
     Ok(())
+}
+
+/// Typed native create and update keep configured fields and drop unknown ones.
+async fn typed_organization_calls(
+    auth: &better_auth::BetterAuth<Schema>,
+    cookie: &str,
+) -> TestResult<String> {
+    use better_auth::plugins::organization::types::{
+        CreateOrganizationRequest, UpdateOrganizationData, UpdateOrganizationRequest,
+    };
+    let credentials = || better_auth_core::endpoint::EndpointOptions {
+        headers: Some([("cookie".into(), cookie.into())].into()),
+        ..Default::default()
+    };
+    let created = Box::pin(auth.dispatch_endpoint(
+        better_auth::plugins::OrganizationPlugin::create_endpoint(
+            &CreateOrganizationRequest {
+                additional_fields: serde_json::from_value(
+                    json!({"language":"nl", "billing_key":"forged"}),
+                )?,
+                name: "Typed".into(),
+                slug: "typed".into(),
+                logo: None,
+                metadata: None,
+                keep_current_active_organization: Some(true),
+            },
+            None,
+        )?,
+        credentials(),
+    ))
+    .await?
+    .decode()?;
+    assert_eq!(created.organization.additional_fields["language"], "nl");
+    let id = created.organization.id;
+    let updated = Box::pin(auth.dispatch_endpoint(
+        better_auth::plugins::OrganizationPlugin::update_endpoint(&UpdateOrganizationRequest {
+            organization_id: Some(id.clone()),
+            data: UpdateOrganizationData {
+                additional_fields: serde_json::from_value(json!({"language":"it"}))?,
+                name: None,
+                slug: None,
+                logo: None,
+                metadata: None,
+            },
+        })?,
+        credentials(),
+    ))
+    .await?
+    .decode()?
+    .unwrap();
+    assert_eq!(updated.additional_fields["language"], "it");
+    Ok(id)
 }
 
 async fn post(
