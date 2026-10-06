@@ -32,21 +32,8 @@ where
         invitation: CreateInvitation,
         options: better_auth_core::store::InvitationCreateOptions,
     ) -> AuthResult<Invitation> {
-        ActiveModel {
-            id: Set(options.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
-            organization_id: Set(invitation.organization_id),
-            email: Set(invitation.email),
-            role: Set(invitation.role),
-            team_id: Set(invitation.team_id),
-            status: Set(options.status.unwrap_or_default().to_string()),
-            inviter_id: Set(invitation.inviter_id),
-            expires_at: Set(invitation.expires_at),
-            created_at: Set(options.created_at.unwrap_or_else(Utc::now)),
-        }
-        .insert(self.connection())
-        .await
-        .map(|model| Invitation::from(&model))
-        .map_err(map_db_err)
+        self.create_invitation_with_options_with_connection(self.connection(), invitation, options)
+            .await
     }
 
     async fn get_invitation_by_id(&self, id: &str) -> AuthResult<Option<Invitation>> {
@@ -381,5 +368,32 @@ where
             .await
             .map(|models| models.iter().map(Invitation::from).collect())
             .map_err(map_db_err)
+    }
+}
+
+impl<S: AuthSchema> SeaOrmStore<S> {
+    pub(super) async fn create_invitation_with_options_with_connection<
+        C: sea_orm::ConnectionTrait,
+    >(
+        &self,
+        connection: &C,
+        invitation: CreateInvitation,
+        options: better_auth_core::store::InvitationCreateOptions,
+    ) -> AuthResult<Invitation> {
+        ActiveModel {
+            id: Set(options.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
+            organization_id: Set(invitation.organization_id),
+            email: Set(invitation.email),
+            role: Set(invitation.role),
+            team_id: Set(invitation.team_id),
+            status: Set(options.status.unwrap_or_default().to_string()),
+            inviter_id: Set(invitation.inviter_id),
+            expires_at: Set(invitation.expires_at),
+            created_at: Set(options.created_at.unwrap_or_else(Utc::now)),
+        }
+        .insert(connection)
+        .await
+        .map(|model| Invitation::from(&model))
+        .map_err(map_db_err)
     }
 }

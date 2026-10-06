@@ -2,9 +2,34 @@ import { expect } from "bun:test";
 
 import { z } from "zod";
 
+import { RUST_BASE_URL } from "../../../support/config";
 import type { FixtureProfile } from "../../../support/profiles";
 import { compatScenario, type ScenarioContext } from "../../../support/scenario";
 import { disconnectedRequest } from "./disconnect";
+
+// Rust intentionally makes this lifecycle atomic (#473). The original physical
+// snapshots remain in receipts/artifacts and are independently asserted per runtime.
+// Cross-runtime comparison retains callback data, results, errors and transport;
+// only the independently checked transaction visibility snapshots are projected.
+function projectCreationVisibility(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(projectCreationVisibility);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .filter(([key]) => key !== "snapshot")
+        .map(([key, entry]) => [key, projectCreationVisibility(entry)]),
+    );
+  }
+  return value;
+}
+const creationComparison = {
+  comparisonProjection: {
+    reason:
+      "Rust organization creation is atomic; pinned Source retains partial writes. Per-runtime state assertions cover visibility and rollback.",
+    project: projectCreationVisibility,
+  },
+};
+const isAtomic = (ctx: ScenarioContext) => ctx.baseURL === RUST_BASE_URL;
 
 const row = z.object({ id: z.string() }).passthrough();
 
@@ -71,7 +96,13 @@ async function state(ctx: ScenarioContext, waitFor?: string) {
     path: "/__test/organization-hooks-state" + (waitFor ? `?waitFor=${waitFor}` : ""),
   });
   expect(response.status).toBe(200);
-  return stateSchema.parse(response.body);
+  const parsed = stateSchema.parse(response.body);
+  if (isAtomic(ctx) && parsed.receipts.length) {
+    for (const receipt of parsed.receipts) {
+      expect(receipt.snapshot).toEqual(parsed.receipts[0]!.snapshot);
+    }
+  }
+  return parsed;
 }
 
 async function signup(
@@ -149,14 +180,18 @@ compatScenario(
         r.snapshot.teams.length,
         r.snapshot.teamMembers.length,
       ]),
-    ).toEqual([
-      [0, 0, 0, 0],
-      [1, 0, 0, 0],
-      [1, 1, 0, 0],
-      [1, 1, 0, 0],
-      [1, 1, 1, 1],
-      [1, 1, 1, 1],
-    ]);
+    ).toEqual(
+      isAtomic(ctx)
+        ? phases.map(() => [0, 0, 0, 0])
+        : [
+            [0, 0, 0, 0],
+            [1, 0, 0, 0],
+            [1, 1, 0, 0],
+            [1, 1, 0, 0],
+            [1, 1, 1, 1],
+            [1, 1, 1, 1],
+          ],
+    );
     expect(
       after.receipts.every(
         (r) => JSON.stringify(r.snapshot.sessions) === JSON.stringify(initial.snapshot.sessions),
@@ -184,6 +219,8 @@ compatScenario(
     return { result: ctx.snapshot(result), initial, after };
   },
   ["POST /organization/create"],
+  30_000,
+  creationComparison,
 );
 
 compatScenario(
@@ -251,6 +288,8 @@ compatScenario(
     return observations;
   },
   ["POST /organization/create"],
+  30_000,
+  creationComparison,
 );
 
 compatScenario(
@@ -293,7 +332,9 @@ compatScenario(
       for (const [index, key] of (
         ["organizations", "members", "teams", "teamMembers"] as const
       ).entries()) {
-        expect(after.snapshot[key].length - before.snapshot[key].length).toBe(counts[index]!);
+        expect(after.snapshot[key].length - before.snapshot[key].length).toBe(
+          isAtomic(ctx) ? 0 : counts[index]!,
+        );
         for (const old of before.snapshot[key]) {
           expect(after.snapshot[key].find((r) => r.id === old.id)).toEqual(old);
         }
@@ -308,6 +349,8 @@ compatScenario(
     return observations;
   },
   ["POST /organization/create"],
+  30_000,
+  creationComparison,
 );
 
 compatScenario(
@@ -391,6 +434,8 @@ compatScenario(
     };
   },
   ["POST /organization/create"],
+  30_000,
+  creationComparison,
 );
 
 compatScenario(
@@ -411,13 +456,15 @@ compatScenario(
     expect(
       after.receipts
         .find((r) => r.phase === "after-org")!
-        .snapshot.members.find((r) => r.id === member.id)!.role,
-    ).toBe("admin");
+        .snapshot.members.find((r) => r.id === member.id)?.role,
+    ).toBe(isAtomic(ctx) ? undefined : "admin");
     expect(after.snapshot.members.find((r) => r.id === member.id)!.role).toBe("admin");
 
     return { result: ctx.snapshot(result), after };
   },
   ["POST /organization/create"],
+  30_000,
+  creationComparison,
 );
 
 compatScenario(
@@ -445,8 +492,8 @@ compatScenario(
         "before-member",
         "after-member",
       ]);
-      expect(paused.snapshot.organizations).toHaveLength(1);
-      expect(paused.snapshot.members).toHaveLength(1);
+      expect(paused.snapshot.organizations).toHaveLength(isAtomic(ctx) ? 0 : 1);
+      expect(paused.snapshot.members).toHaveLength(isAtomic(ctx) ? 0 : 1);
       expect(paused.snapshot.teams).toEqual([]);
       expect(paused.snapshot.teamMembers).toEqual([]);
       expect(paused.snapshot.sessions).toEqual(before.snapshot.sessions);
@@ -513,6 +560,12 @@ compatScenario(
       expect(released.status).toBe(200);
     }
 
+    const completion = await ctx.rawRequest({
+      path: `/__test/organization-transport-completion?marker=${encodeURIComponent(marker)}`,
+    });
+    expect(completion.status).toBe(200);
+    expect(completion.body).toEqual({ marker, completed: true });
+
     const continued = await state(ctx, "after-org");
     expect(continued.receipts.map((r) => r.phase)).toEqual(phases);
 
@@ -535,12 +588,6 @@ compatScenario(
     });
 
     // after-org precedes selection; the genuine after-dispatch receipt precedes this single session read.
-    const completion = await ctx.rawRequest({
-      path: `/__test/organization-transport-completion?marker=${encodeURIComponent(marker)}`,
-    });
-    expect(completion.status).toBe(200);
-    expect(completion.body).toEqual({ marker, completed: true });
-
     const current = await owner.client.getSession();
     expect(current.data?.session).toMatchObject({
       userId: owner.userId,
@@ -563,6 +610,8 @@ compatScenario(
     };
   },
   ["POST /organization/create"],
+  30_000,
+  creationComparison,
 );
 
 compatScenario(
@@ -634,4 +683,6 @@ compatScenario(
     return { prior: ctx.snapshot(prior), before, result: ctx.snapshot(result), after };
   },
   ["POST /organization/create"],
+  30_000,
+  creationComparison,
 );

@@ -230,6 +230,36 @@ impl<S: AuthSchema> AuthTransaction<S> for PluginTransaction<'_, S> {
         self.inner.add_team_member(team_id, user_id, maximum).await
     }
 
+    fn team_store(&self) -> AuthResult<&dyn TeamStore> {
+        self.inner.team_store()
+    }
+    async fn lock_organization(&self, organization_id: &str) -> AuthResult<()> {
+        self.inner.lock_organization(organization_id).await
+    }
+    async fn count_organization_members(&self, organization_id: &str) -> AuthResult<i64> {
+        self.inner.count_organization_members(organization_id).await
+    }
+    async fn count_pending_invitations(&self, organization_id: &str) -> AuthResult<i64> {
+        self.inner.count_pending_invitations(organization_id).await
+    }
+    async fn create_organization(&self, data: CreateOrganization) -> AuthResult<Organization> {
+        self.inner.create_organization(data).await
+    }
+    async fn create_invitation_with_options(
+        &self,
+        data: CreateInvitation,
+        options: super::InvitationCreateOptions,
+    ) -> AuthResult<Invitation> {
+        self.inner
+            .create_invitation_with_options(data, options)
+            .await
+    }
+    async fn create_team(&self, data: CreateTeam) -> AuthResult<Team> {
+        self.inner.create_team(data).await
+    }
+    async fn update_member_role(&self, member_id: &str, role: &str) -> AuthResult<Member> {
+        self.inner.update_member_role(member_id, role).await
+    }
     async fn create_member(&self, member: CreateMember) -> AuthResult<Member> {
         self.inner.create_member(member).await
     }

@@ -107,104 +107,124 @@ pub(in crate::plugins) async fn create_organization_core(
         logo: body.logo.clone(),
         metadata: body.metadata.clone(),
     };
-    if let Some(hooks) = &config.creation_hooks {
-        let context = super::super::hooks::organization::OrganizationDraftContext {
-            organization: org_data.clone(),
-            user: callback_user.clone(),
-        };
-        if let Some(patch) = hooks.before_create(&context).await? {
-            patch.apply(&mut org_data);
-        }
-    }
-
-    let organization = ctx.database.create_organization(org_data).await?;
-
-    let mut member_data = CreateMember {
-        organization_id: organization.id().to_string(),
-        user_id: user.id().to_string(),
-        role: config.effective_creator_role().to_owned(),
-    };
-    if let Some(hooks) = &config.creation_hooks {
-        let context = super::super::hooks::organization::OrganizationMemberDraftContext {
-            organization: organization.clone(),
-            member: member_data.clone(),
-            user: callback_user.clone(),
-        };
-        if let Some(patch) = hooks.before_add_member(&context).await? {
-            patch.apply(&mut member_data);
-        }
-    }
-
-    let member = ctx.database.create_member(member_data).await?;
-    let created_context = super::super::hooks::organization::OrganizationCreatedContext {
-        organization: organization.clone(),
-        member: member.clone(),
-        user: callback_user,
-    };
-    if let Some(hooks) = &config.creation_hooks {
-        hooks.after_add_member(&created_context).await?;
-    }
-    let member_response = BasicMemberResponse::from_member(&member);
-    let default_team_id = if config.teams.enabled && config.teams.create_default_team {
-        let mut data = better_auth_core::types::CreateTeam {
-            name: organization.name().to_owned(),
-            organization_id: organization.id().into_owned(),
-            updated_at: None,
-        };
-        let hooks = crate::plugins::organization::extensions::TeamHookContext {
-            organization: organization.clone(),
-            user: Some(ctx.user_view(user)),
-        };
-        if let Some(callback) = &config.teams.hooks {
-            callback
-                .before_create(&mut data, &hooks)
-                .await
-                .map_err(crate::plugins::organization::extensions::team_callback_error)?;
-        }
-        let custom = match &config.teams.default_team_factory {
-            Some(factory) => {
-                let factory_context =
-                    crate::plugins::organization::extensions::DefaultTeamContext {
-                        request: request.cloned(),
-                        user: ctx.user_view(user),
-                        session: session.cloned(),
-                        config: std::sync::Arc::clone(&ctx.config),
-                    };
-                factory
-                    .create(&organization, &factory_context, ctx.database.as_ref())
-                    .await
-                    .map_err(crate::plugins::organization::extensions::team_callback_error)?
+    let config = config.clone();
+    let request = request.cloned();
+    let session = session.cloned();
+    let auth_config = std::sync::Arc::clone(&ctx.config);
+    better_auth_core::store::transaction(ctx.database.as_ref(), move |tx| {
+        Box::pin(async move {
+            let creation_store = CreationStore(tx);
+            if let Some(hooks) = &config.creation_hooks {
+                let context = super::super::hooks::organization::OrganizationDraftContext {
+                    organization: org_data.clone(),
+                    user: callback_user.clone(),
+                };
+                if let Some(patch) = hooks
+                    .before_create_in_transaction(&context, &creation_store)
+                    .await?
+                {
+                    patch.apply(&mut org_data);
+                }
             }
-            None => None,
-        };
-        let team = match custom {
-            Some(team) => team,
-            None => ctx.database.create_team(data).await?,
-        };
-        drop(
-            ctx.database
-                .add_team_member(&team.id, user.id().as_ref(), None)
-                .await?,
-        );
-        if let Some(callback) = &config.teams.hooks {
-            callback
-                .after_create(&team, &hooks)
-                .await
-                .map_err(crate::plugins::organization::extensions::team_callback_error)?;
-        }
-        Some(team.id)
-    } else {
-        None
-    };
 
-    if let Some(hooks) = &config.creation_hooks {
-        hooks.after_create(&created_context).await?;
-    }
-    Ok(CreateOrganizationResponse {
-        organization: CreatedOrganizationResponse::from_organization(&organization),
-        members: vec![member_response],
-        default_team_id,
+            let organization = tx.create_organization(org_data).await?;
+
+            let mut member_data = CreateMember {
+                organization_id: organization.id().to_string(),
+                user_id: callback_user.id.clone(),
+                role: config.effective_creator_role().to_owned(),
+            };
+            if let Some(hooks) = &config.creation_hooks {
+                let context = super::super::hooks::organization::OrganizationMemberDraftContext {
+                    organization: organization.clone(),
+                    member: member_data.clone(),
+                    user: callback_user.clone(),
+                };
+                if let Some(patch) = hooks
+                    .before_add_member_in_transaction(&context, &creation_store)
+                    .await?
+                {
+                    patch.apply(&mut member_data);
+                }
+            }
+
+            let member = tx.create_member(member_data).await?;
+            let created_context = super::super::hooks::organization::OrganizationCreatedContext {
+                organization: organization.clone(),
+                member: member.clone(),
+                user: callback_user.clone(),
+            };
+            if let Some(hooks) = &config.creation_hooks {
+                hooks
+                    .after_add_member_in_transaction(&created_context, &creation_store)
+                    .await?;
+            }
+            let member_response = BasicMemberResponse::from_member(&member);
+            let default_team_id =
+                if config.teams.enabled && config.teams.create_default_team {
+                    let mut data = better_auth_core::types::CreateTeam {
+                        name: organization.name().to_owned(),
+                        organization_id: organization.id().into_owned(),
+                        updated_at: None,
+                    };
+                    let hooks = crate::plugins::organization::extensions::TeamHookContext {
+                        organization: organization.clone(),
+                        user: Some(callback_user.clone()),
+                    };
+                    if let Some(callback) = &config.teams.hooks {
+                        callback.before_create(&mut data, &hooks).await.map_err(
+                            crate::plugins::organization::extensions::team_callback_error,
+                        )?;
+                    }
+                    let custom = match &config.teams.default_team_factory {
+                        Some(factory) => {
+                            let factory_context =
+                                crate::plugins::organization::extensions::DefaultTeamContext {
+                                    request: request.clone(),
+                                    user: callback_user.clone(),
+                                    session: session.clone(),
+                                    config: auth_config.clone(),
+                                };
+                            factory
+                                .create(&organization, &factory_context, tx.team_store()?)
+                                .await
+                                .map_err(
+                                    crate::plugins::organization::extensions::team_callback_error,
+                                )?
+                        }
+                        None => None,
+                    };
+                    let team = match custom {
+                        Some(team) => team,
+                        None => tx.create_team(data).await?,
+                    };
+                    drop(
+                        tx.add_team_member(&team.id, &callback_user.id, None)
+                            .await?,
+                    );
+                    if let Some(callback) = &config.teams.hooks {
+                        callback.after_create(&team, &hooks).await.map_err(
+                            crate::plugins::organization::extensions::team_callback_error,
+                        )?;
+                    }
+                    Some(team.id)
+                } else {
+                    None
+                };
+
+            if let Some(hooks) = &config.creation_hooks {
+                hooks
+                    .after_create_in_transaction(&created_context, &creation_store)
+                    .await?;
+            }
+            Ok(CreateOrganizationResponse {
+                organization: CreatedOrganizationResponse::from_organization(&organization),
+                members: vec![member_response],
+                default_team_id,
+            })
+        })
     })
+    .await
 }
 
 ///
@@ -1038,6 +1058,36 @@ fn organization_field_error(
 
 // LCOV_EXCL_START
 
+// LCOV_EXCL_STOP
+
+struct CreationStore<'a, S: better_auth_core::AuthSchema>(
+    &'a dyn better_auth_core::store::AuthTransaction<S>,
+);
+#[async_trait::async_trait]
+impl<S: better_auth_core::AuthSchema> crate::plugins::organization::OrganizationCreationStore
+    for CreationStore<'_, S>
+{
+    fn teams(&self) -> AuthResult<&dyn better_auth_core::store::TeamStore> {
+        self.0.team_store()
+    }
+    async fn create_organization(
+        &self,
+        data: CreateOrganization,
+    ) -> AuthResult<better_auth_core::Organization> {
+        self.0.create_organization(data).await
+    }
+    async fn create_member(&self, data: CreateMember) -> AuthResult<better_auth_core::Member> {
+        self.0.create_member(data).await
+    }
+    async fn update_member_role(
+        &self,
+        member_id: &str,
+        role: &str,
+    ) -> AuthResult<better_auth_core::Member> {
+        self.0.update_member_role(member_id, role).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{get_full_organization_core, handle_create_organization};
@@ -1241,4 +1291,3 @@ mod tests {
         assert_eq!(response.members.len(), 1);
     }
 }
-// LCOV_EXCL_STOP

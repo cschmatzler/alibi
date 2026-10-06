@@ -133,19 +133,8 @@ where
     S::User: SeaOrmUserModel,
 {
     async fn create_team(&self, data: CreateTeam) -> AuthResult<Team> {
-        let now = data.updated_at.unwrap_or_else(Utc::now);
-        team::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
-            name: Set(data.name),
-            organization_id: Set(data.organization_id),
-            member_count: Set(0),
-            created_at: Set(now),
-            updated_at: Set(data.updated_at),
-        }
-        .insert(self.connection())
-        .await
-        .map(Into::into)
-        .map_err(map_db_err)
+        self.create_team_with_connection(self.connection(), data)
+            .await
     }
     async fn get_team(
         &self,
@@ -156,13 +145,8 @@ where
             .await
     }
     async fn list_teams(&self, organization_id: &str) -> AuthResult<Vec<Team>> {
-        team::Entity::find()
-            .filter(team::Column::OrganizationId.eq(organization_id))
-            .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+        self.list_teams_with_connection(self.connection(), organization_id)
             .await
-            .map(|rows| rows.into_iter().map(Into::into).collect())
-            .map_err(map_db_err)
     }
     async fn update_team(
         &self,
@@ -170,22 +154,8 @@ where
         team_id: &str,
         update: UpdateTeam,
     ) -> AuthResult<Team> {
-        let model = team::Entity::find_by_id(team_id.to_owned())
-            .filter(team::Column::OrganizationId.eq(organization_id))
-            .one(self.connection())
+        self.update_team_with_connection(self.connection(), organization_id, team_id, update)
             .await
-            .map_err(map_db_err)?
-            .ok_or_else(|| AuthError::bad_request("Team not found"))?;
-        let mut active = model.into_active_model();
-        if let Some(name) = update.name {
-            active.name = Set(name);
-        }
-        active.updated_at = Set(Some(Utc::now()));
-        active
-            .update(self.connection())
-            .await
-            .map(Into::into)
-            .map_err(map_db_err)
     }
     async fn delete_team(&self, organization_id: &str, team_id: &str) -> AuthResult<bool> {
         let tx = self
@@ -196,59 +166,19 @@ where
             })
             .await
             .map_err(map_db_err)?;
-        let deleted = team::Entity::delete_many()
-            .filter(team::Column::Id.eq(team_id))
-            .filter(team::Column::OrganizationId.eq(organization_id))
-            .exec(&tx)
-            .await
-            .map_err(map_db_err)?;
-        if deleted.rows_affected == 0 {
-            tx.commit().await.map_err(map_db_err)?;
-            return Ok(false);
-        }
-        let _ignored_map_err = team_member::Entity::delete_many()
-            .filter(team_member::Column::TeamId.eq(team_id))
-            .exec(&tx)
-            .await
-            .map_err(map_db_err)?;
-        let pending = invitation::Entity::find()
-            .filter(invitation::Column::OrganizationId.eq(organization_id))
-            .filter(invitation::Column::Status.eq("pending"))
-            .filter(invitation::Column::ExpiresAt.gt(Utc::now()))
-            .all(&tx)
-            .await
-            .map_err(map_db_err)?;
-        for invite in pending {
-            let Some(ids) = invite.team_id.as_deref() else {
-                continue;
-            };
-            if !ids.split(',').any(|id| id == team_id) {
-                continue;
-            }
-            let remaining = ids
-                .split(',')
-                .filter(|id| *id != team_id)
-                .collect::<Vec<_>>()
-                .join(",");
-            let mut active = invite.into_active_model();
-            active.team_id = Set((!remaining.is_empty()).then_some(remaining));
-            drop(active.update(&tx).await.map_err(map_db_err)?);
-        }
+        let result = self
+            .delete_team_in_tx(&tx, organization_id, team_id)
+            .await?;
         tx.commit().await.map_err(map_db_err)?;
-        Ok(true)
+        Ok(result)
     }
     async fn get_team_member(
         &self,
         team_id: &str,
         user_id: &str,
     ) -> AuthResult<Option<TeamMember>> {
-        team_member::Entity::find()
-            .filter(team_member::Column::TeamId.eq(team_id))
-            .filter(team_member::Column::UserId.eq(user_id))
-            .one(self.connection())
+        self.get_team_member_with_connection(self.connection(), team_id, user_id)
             .await
-            .map(|row| row.map(Into::into))
-            .map_err(map_db_err)
     }
     async fn add_team_member(
         &self,
@@ -279,71 +209,17 @@ where
             })
             .await
             .map_err(map_db_err)?;
-        drop(
-            team::Entity::find_by_id(team_id.to_owned())
-                .lock_exclusive()
-                .one(&tx)
-                .await
-                .map_err(map_db_err)?,
-        );
-        let removed = team_member::Entity::delete_many()
-            .filter(team_member::Column::TeamId.eq(team_id))
-            .filter(team_member::Column::UserId.eq(user_id))
-            .exec(&tx)
-            .await
-            .map_err(map_db_err)?
-            .rows_affected;
-        let count = i64::try_from(removed)
-            .map_err(|_error| AuthError::internal("Team membership count overflow"))?;
-        if count > 0 {
-            let _ignored_map_err_2 = team::Entity::update_many()
-                .filter(team::Column::Id.eq(team_id))
-                .filter(team::Column::MemberCount.gte(count))
-                .col_expr(
-                    team::Column::MemberCount,
-                    sea_orm::sea_query::Expr::col(team::Column::MemberCount).sub(count),
-                )
-                .exec(&tx)
-                .await
-                .map_err(map_db_err)?;
-        }
+        let result = self.remove_team_member_in_tx(&tx, team_id, user_id).await?;
         tx.commit().await.map_err(map_db_err)?;
-        usize::try_from(removed)
-            .map_err(|_error| AuthError::internal("Team membership count overflow"))
+        Ok(result)
     }
     async fn list_team_members(&self, team_id: &str) -> AuthResult<Vec<TeamMember>> {
-        team_member::Entity::find()
-            .filter(team_member::Column::TeamId.eq(team_id))
-            .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+        self.list_team_members_with_connection(self.connection(), team_id)
             .await
-            .map(|rows| rows.into_iter().map(Into::into).collect())
-            .map_err(map_db_err)
     }
     async fn list_user_teams(&self, user_id: &str) -> AuthResult<Vec<Team>> {
-        let memberships = team_member::Entity::find()
-            .filter(team_member::Column::UserId.eq(user_id))
-            .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+        self.list_user_teams_with_connection(self.connection(), user_id)
             .await
-            .map_err(map_db_err)?;
-        if memberships.is_empty() {
-            return Ok(Vec::new());
-        }
-        let rooms = team::Entity::find()
-            .filter(team::Column::Id.is_in(memberships.iter().map(|row| row.team_id.clone())))
-            .all(self.connection())
-            .await
-            .map_err(map_db_err)?
-            .into_iter()
-            .map(|row| (row.id.clone(), row))
-            .collect::<std::collections::HashMap<_, _>>();
-        // The upstream join maps membership rows directly, preserving their
-        // adapter order. An IN query's team order must not replace that order.
-        Ok(memberships
-            .into_iter()
-            .filter_map(|membership| rooms.get(&membership.team_id).cloned().map(Into::into))
-            .collect())
     }
 }
 
@@ -403,4 +279,208 @@ pub(super) async fn release_owned_team_members(
         }
     }
     Ok(())
+}
+
+impl<S: AuthSchema> SeaOrmStore<S> {
+    pub(super) async fn create_team_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        data: CreateTeam,
+    ) -> AuthResult<Team> {
+        let now = data.updated_at.unwrap_or_else(Utc::now);
+        team::ActiveModel {
+            id: Set(Uuid::new_v4().to_string()),
+            name: Set(data.name),
+            organization_id: Set(data.organization_id),
+            member_count: Set(0),
+            created_at: Set(now),
+            updated_at: Set(data.updated_at),
+        }
+        .insert(connection)
+        .await
+        .map(Into::into)
+        .map_err(map_db_err)
+    }
+}
+
+impl<S> SeaOrmStore<S>
+where
+    S: AuthSchema,
+    S::User: SeaOrmUserModel,
+{
+    pub(super) async fn list_teams_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        organization_id: &str,
+    ) -> AuthResult<Vec<Team>> {
+        team::Entity::find()
+            .filter(team::Column::OrganizationId.eq(organization_id))
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
+            .all(connection)
+            .await
+            .map(|rows| rows.into_iter().map(Into::into).collect())
+            .map_err(map_db_err)
+    }
+    pub(super) async fn update_team_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        organization_id: &str,
+        team_id: &str,
+        update: UpdateTeam,
+    ) -> AuthResult<Team> {
+        let model = team::Entity::find_by_id(team_id.to_owned())
+            .filter(team::Column::OrganizationId.eq(organization_id))
+            .one(connection)
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(|| AuthError::bad_request("Team not found"))?;
+        let mut active = model.into_active_model();
+        if let Some(name) = update.name {
+            active.name = Set(name);
+        }
+        active.updated_at = Set(Some(Utc::now()));
+        active
+            .update(connection)
+            .await
+            .map(Into::into)
+            .map_err(map_db_err)
+    }
+    pub(super) async fn get_team_member_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        team_id: &str,
+        user_id: &str,
+    ) -> AuthResult<Option<TeamMember>> {
+        team_member::Entity::find()
+            .filter(team_member::Column::TeamId.eq(team_id))
+            .filter(team_member::Column::UserId.eq(user_id))
+            .one(connection)
+            .await
+            .map(|row| row.map(Into::into))
+            .map_err(map_db_err)
+    }
+    pub(super) async fn list_team_members_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        team_id: &str,
+    ) -> AuthResult<Vec<TeamMember>> {
+        team_member::Entity::find()
+            .filter(team_member::Column::TeamId.eq(team_id))
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
+            .all(connection)
+            .await
+            .map(|rows| rows.into_iter().map(Into::into).collect())
+            .map_err(map_db_err)
+    }
+    pub(super) async fn list_user_teams_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        user_id: &str,
+    ) -> AuthResult<Vec<Team>> {
+        let memberships = team_member::Entity::find()
+            .filter(team_member::Column::UserId.eq(user_id))
+            .limit(self.config().advanced.database.default_find_many_limit as u64)
+            .all(connection)
+            .await
+            .map_err(map_db_err)?;
+        if memberships.is_empty() {
+            return Ok(Vec::new());
+        }
+        let rooms = team::Entity::find()
+            .filter(team::Column::Id.is_in(memberships.iter().map(|row| row.team_id.clone())))
+            .all(connection)
+            .await
+            .map_err(map_db_err)?
+            .into_iter()
+            .map(|row| (row.id.clone(), row))
+            .collect::<std::collections::HashMap<_, _>>();
+        // The upstream join maps membership rows directly, preserving their
+        // adapter order. An IN query's team order must not replace that order.
+        Ok(memberships
+            .into_iter()
+            .filter_map(|membership| rooms.get(&membership.team_id).cloned().map(Into::into))
+            .collect())
+    }
+    pub(super) async fn delete_team_in_tx(
+        &self,
+        tx: &sea_orm::DatabaseTransaction,
+        organization_id: &str,
+        team_id: &str,
+    ) -> AuthResult<bool> {
+        let deleted = team::Entity::delete_many()
+            .filter(team::Column::Id.eq(team_id))
+            .filter(team::Column::OrganizationId.eq(organization_id))
+            .exec(tx)
+            .await
+            .map_err(map_db_err)?;
+        if deleted.rows_affected == 0 {
+            return Ok(false);
+        }
+        let _ignored_map_err = team_member::Entity::delete_many()
+            .filter(team_member::Column::TeamId.eq(team_id))
+            .exec(tx)
+            .await
+            .map_err(map_db_err)?;
+        let pending = invitation::Entity::find()
+            .filter(invitation::Column::OrganizationId.eq(organization_id))
+            .filter(invitation::Column::Status.eq("pending"))
+            .filter(invitation::Column::ExpiresAt.gt(Utc::now()))
+            .all(tx)
+            .await
+            .map_err(map_db_err)?;
+        for invite in pending {
+            let Some(ids) = invite.team_id.as_deref() else {
+                continue;
+            };
+            if !ids.split(',').any(|id| id == team_id) {
+                continue;
+            }
+            let remaining = ids
+                .split(',')
+                .filter(|id| *id != team_id)
+                .collect::<Vec<_>>()
+                .join(",");
+            let mut active = invite.into_active_model();
+            active.team_id = Set((!remaining.is_empty()).then_some(remaining));
+            drop(active.update(tx).await.map_err(map_db_err)?);
+        }
+        Ok(true)
+    }
+    pub(super) async fn remove_team_member_in_tx(
+        &self,
+        tx: &sea_orm::DatabaseTransaction,
+        team_id: &str,
+        user_id: &str,
+    ) -> AuthResult<usize> {
+        drop(
+            team::Entity::find_by_id(team_id.to_owned())
+                .lock_exclusive()
+                .one(tx)
+                .await
+                .map_err(map_db_err)?,
+        );
+        let removed = team_member::Entity::delete_many()
+            .filter(team_member::Column::TeamId.eq(team_id))
+            .filter(team_member::Column::UserId.eq(user_id))
+            .exec(tx)
+            .await
+            .map_err(map_db_err)?
+            .rows_affected;
+        let count = i64::try_from(removed)
+            .map_err(|_error| AuthError::internal("Team membership count overflow"))?;
+        if count > 0 {
+            let _ignored_map_err_2 = team::Entity::update_many()
+                .filter(team::Column::Id.eq(team_id))
+                .filter(team::Column::MemberCount.gte(count))
+                .col_expr(
+                    team::Column::MemberCount,
+                    sea_orm::sea_query::Expr::col(team::Column::MemberCount).sub(count),
+                )
+                .exec(tx)
+                .await
+                .map_err(map_db_err)?;
+        }
+        usize::try_from(removed)
+            .map_err(|_error| AuthError::internal("Team membership count overflow"))
+    }
 }

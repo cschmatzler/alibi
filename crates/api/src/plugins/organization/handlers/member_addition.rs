@@ -156,7 +156,24 @@ pub(in crate::plugins) async fn add_member_with_session<S: AuthSchema>(
             patch.apply(&mut draft);
         }
     }
-    let member = ctx.database.create_member(draft).await?;
+    let member = better_auth_core::store::transaction(ctx.database.as_ref(), move |tx| {
+        Box::pin(async move {
+            tx.lock_organization(&draft.organization_id).await?;
+            if tx
+                .count_organization_members(&draft.organization_id)
+                .await? as f64
+                >= limit
+            {
+                return Err(AuthError::Upstream {
+                    status: 403,
+                    code: "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
+                    message: "Organization membership limit reached",
+                });
+            }
+            tx.create_member(draft).await
+        })
+    })
+    .await?;
     if let Some(team_id) = team_id {
         let admission = async {
             let maximum = if let Some(resolver) = &config.teams.limit_resolver {

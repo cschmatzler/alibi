@@ -199,6 +199,90 @@ where
             .add_team_member_in_tx(self.tx, team_id, user_id, maximum)
             .await
     }
+
+    fn team_store(&self) -> AuthResult<&dyn better_auth_core::store::TeamStore> {
+        Ok(self)
+    }
+    async fn lock_organization(&self, organization_id: &str) -> AuthResult<()> {
+        let exec = Exec::Tx(self.tx);
+        let mut sql = self
+            .store
+            .organization_models
+            .organization
+            .by_id(exec, organization_id)?;
+        if exec.engine() == crate::pool::Engine::Postgres {
+            sql.push(" FOR NO KEY UPDATE");
+        }
+        drop(
+            self.store
+                .organization_models
+                .organization
+                .fetch_optional(exec, sql)
+                .await?
+                .ok_or_else(|| better_auth_core::AuthError::not_found("Organization not found"))?,
+        );
+        Ok(())
+    }
+    async fn count_organization_members(&self, organization_id: &str) -> AuthResult<i64> {
+        let exec = Exec::Tx(self.tx);
+        let mut sql = crate::sql::Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
+        sql.ident(self.store.organization_models.member.table());
+        sql.push(" WHERE ");
+        self.store.organization_models.member.compare(
+            &mut sql,
+            "organization_id",
+            " = ",
+            organization_id,
+        )?;
+        Ok(exec.fetch_scalar::<i64>(sql).await?.unwrap_or_default())
+    }
+    async fn count_pending_invitations(&self, organization_id: &str) -> AuthResult<i64> {
+        let exec = Exec::Tx(self.tx);
+        let model = &self.store.organization_models.invitation;
+        let mut sql = crate::sql::Sql::with(exec.engine(), "SELECT COUNT(*) FROM ");
+        sql.ident(model.table());
+        sql.push(" WHERE ");
+        model.compare(&mut sql, "organization_id", " = ", organization_id)?;
+        sql.push(" AND ");
+        model.compare(&mut sql, "status", " = ", "pending")?;
+        sql.push(" AND ");
+        model.compare(&mut sql, "expires_at", " >= ", chrono::Utc::now())?;
+        Ok(exec.fetch_scalar::<i64>(sql).await?.unwrap_or_default())
+    }
+    async fn create_organization(
+        &self,
+        data: better_auth_core::CreateOrganization,
+    ) -> AuthResult<better_auth_core::Organization> {
+        self.store
+            .create_organization_with_connection(Exec::Tx(self.tx), data)
+            .await
+    }
+    async fn create_invitation_with_options(
+        &self,
+        data: better_auth_core::CreateInvitation,
+        options: better_auth_core::store::InvitationCreateOptions,
+    ) -> AuthResult<better_auth_core::Invitation> {
+        self.store
+            .create_invitation_with_options_with_connection(Exec::Tx(self.tx), data, options)
+            .await
+    }
+    async fn create_team(
+        &self,
+        data: better_auth_core::types::CreateTeam,
+    ) -> AuthResult<better_auth_core::types::Team> {
+        self.store
+            .create_team_with_connection(Exec::Tx(self.tx), data)
+            .await
+    }
+    async fn update_member_role(
+        &self,
+        member_id: &str,
+        role: &str,
+    ) -> AuthResult<better_auth_core::Member> {
+        self.store
+            .update_member_role_with_connection(Exec::Tx(self.tx), member_id, role)
+            .await
+    }
     async fn create_member(
         &self,
         member: better_auth_core::CreateMember,
@@ -406,7 +490,7 @@ where
         &self,
         work: Box<TransactionWork<S>>,
     ) -> AuthResult<BoxedTransactionValue> {
-        let tx = self.pool.begin(false).await?;
+        let tx = self.pool.begin(true).await?;
         let tx_store = SqlxStoreTransaction {
             store: self,
             tx: &tx,
@@ -464,3 +548,94 @@ pub(crate) fn bind_page(sql: &mut crate::sql::Sql, limit: Option<f64>, offset: O
 }
 
 mod oauth_token_conversion;
+
+#[async_trait]
+impl<S> better_auth_core::store::TeamStore for SqlxStoreTransaction<'_, S>
+where
+    S: AuthSchema,
+    S::User: SqlxUserModel,
+    S::Account: SqlxAccountModel,
+    S::Session: SqlxSessionModel,
+    S::Verification: SqlxVerificationModel,
+{
+    async fn create_team(
+        &self,
+        data: better_auth_core::types::CreateTeam,
+    ) -> AuthResult<better_auth_core::types::Team> {
+        self.store
+            .create_team_with_connection(Exec::Tx(self.tx), data)
+            .await
+    }
+    async fn get_team(
+        &self,
+        organization_id: Option<&str>,
+        team_id: &str,
+    ) -> AuthResult<Option<better_auth_core::types::Team>> {
+        self.store
+            .get_team_with_connection(Exec::Tx(self.tx), organization_id, team_id)
+            .await
+    }
+    async fn add_team_member(
+        &self,
+        team_id: &str,
+        user_id: &str,
+        maximum: Option<f64>,
+    ) -> AuthResult<better_auth_core::types::AddTeamMemberResult> {
+        self.store
+            .add_team_member_in_tx(self.tx, team_id, user_id, maximum)
+            .await
+    }
+    async fn list_teams(
+        &self,
+        organization_id: &str,
+    ) -> AuthResult<Vec<better_auth_core::types::Team>> {
+        self.store
+            .list_teams_with_connection(Exec::Tx(self.tx), organization_id)
+            .await
+    }
+    async fn update_team(
+        &self,
+        organization_id: &str,
+        team_id: &str,
+        update: better_auth_core::types::UpdateTeam,
+    ) -> AuthResult<better_auth_core::types::Team> {
+        self.store
+            .update_team_with_connection(Exec::Tx(self.tx), organization_id, team_id, update)
+            .await
+    }
+    async fn get_team_member(
+        &self,
+        team_id: &str,
+        user_id: &str,
+    ) -> AuthResult<Option<better_auth_core::types::TeamMember>> {
+        self.store
+            .get_team_member_with_connection(Exec::Tx(self.tx), team_id, user_id)
+            .await
+    }
+    async fn list_team_members(
+        &self,
+        team_id: &str,
+    ) -> AuthResult<Vec<better_auth_core::types::TeamMember>> {
+        self.store
+            .list_team_members_with_connection(Exec::Tx(self.tx), team_id)
+            .await
+    }
+    async fn list_user_teams(
+        &self,
+        user_id: &str,
+    ) -> AuthResult<Vec<better_auth_core::types::Team>> {
+        self.store
+            .list_user_teams_with_connection(Exec::Tx(self.tx), user_id)
+            .await
+    }
+    async fn delete_team(&self, organization_id: &str, team_id: &str) -> AuthResult<bool> {
+        self.store
+            .delete_team_in_tx(self.tx, organization_id, team_id)
+            .await
+    }
+    async fn remove_team_member(&self, team_id: &str, user_id: &str) -> AuthResult<usize> {
+        self.store
+            .remove_team_member_in_tx(self.tx, team_id, user_id)
+            .await
+    }
+}

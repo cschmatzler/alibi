@@ -1,8 +1,8 @@
 use super::*;
 
 /// Reconcile only transaction-owned changes. Concurrent untouched rows survive;
-/// a changed row wins last, as in the published memory adapter. This is not
-/// serializable isolation across workflow awaits.
+/// a changed row wins last against independent ordinary writes. Organization
+/// transactions hold an async serialization lock across their workflow awaits.
 fn merge<T: Clone + PartialEq>(
     live: &mut indexmap::IndexMap<String, T>,
     base: &indexmap::IndexMap<String, T>,
@@ -32,6 +32,7 @@ impl TransactionStore<StatelessSchema> for StatelessStore {
         &self,
         work: Box<TransactionWork<StatelessSchema>>,
     ) -> AuthResult<BoxedTransactionValue> {
+        let _serialization = self.organization_transaction.lock().await;
         let base = self.organization_state()?.clone();
         let tx = OrganizationTransaction {
             live: self,
@@ -81,6 +82,51 @@ impl AuthTransaction<StatelessSchema> for OrganizationTransaction<'_> {
         maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         TeamStore::add_team_member(&self.snapshot, team, user, maximum).await
+    }
+    fn team_store(&self) -> AuthResult<&dyn TeamStore> {
+        Ok(&self.snapshot)
+    }
+    async fn lock_organization(&self, organization_id: &str) -> AuthResult<()> {
+        if self
+            .snapshot
+            .organization_state()?
+            .organizations
+            .contains_key(organization_id)
+        {
+            Ok(())
+        } else {
+            Err(AuthError::not_found("Organization not found"))
+        }
+    }
+    async fn count_organization_members(&self, organization_id: &str) -> AuthResult<i64> {
+        MemberStore::count_organization_members(&self.snapshot, organization_id).await
+    }
+    async fn count_pending_invitations(&self, organization_id: &str) -> AuthResult<i64> {
+        Ok(self
+            .snapshot
+            .organization_state()?
+            .invitations
+            .values()
+            .filter(|row| {
+                row.organization_id == organization_id && row.is_pending() && !row.is_expired()
+            })
+            .count() as i64)
+    }
+    async fn create_organization(&self, data: CreateOrganization) -> AuthResult<Organization> {
+        OrganizationStore::create_organization(&self.snapshot, data).await
+    }
+    async fn create_invitation_with_options(
+        &self,
+        data: CreateInvitation,
+        options: super::InvitationCreateOptions,
+    ) -> AuthResult<Invitation> {
+        InvitationStore::create_invitation_with_options(&self.snapshot, data, options).await
+    }
+    async fn create_team(&self, data: CreateTeam) -> AuthResult<Team> {
+        TeamStore::create_team(&self.snapshot, data).await
+    }
+    async fn update_member_role(&self, member_id: &str, role: &str) -> AuthResult<Member> {
+        MemberStore::update_member_role(&self.snapshot, member_id, role).await
     }
     async fn create_member(&self, data: CreateMember) -> AuthResult<Member> {
         MemberStore::create_member(&self.snapshot, data).await
