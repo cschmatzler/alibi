@@ -206,8 +206,17 @@ where
     }
 
     async fn update_member_role(&self, member_id: &str, role: &str) -> AuthResult<Member> {
-        self.update_member_role_with_connection(self.exec(), member_id, role)
-            .await
+        let Some(model) = self.find_member_by_id(member_id).await? else {
+            return Err(AuthError::not_found("Member not found"));
+        };
+        let mut active = model.into_active();
+        active.set("role", role);
+        self.organization_models
+            .member
+            .update(self.exec(), &active)
+            .await?
+            .map(|model_2| Member::from(&model_2))
+            .ok_or_else(crate::error::record_not_updated)
     }
 
     async fn update_member_role_if_present(
@@ -448,34 +457,5 @@ where
             value: "owner".into(),
         };
         self.count_members(org_id, Some(&filter)).await
-    }
-}
-
-impl<S: AuthSchema> SqlxStore<S> {
-    pub(super) async fn update_member_role_with_connection(
-        &self,
-        exec: Exec<'_>,
-        member_id: &str,
-        role: &str,
-    ) -> AuthResult<Member> {
-        let Some(model) = self
-            .organization_models
-            .member
-            .fetch_optional(
-                exec,
-                self.organization_models.member.by_id(exec, member_id)?,
-            )
-            .await?
-        else {
-            return Err(AuthError::not_found("Member not found"));
-        };
-        let mut active = model.into_active();
-        active.set("role", role);
-        self.organization_models
-            .member
-            .update(exec, &active)
-            .await?
-            .map(|model_2| Member::from(&model_2))
-            .ok_or_else(crate::error::record_not_updated)
     }
 }

@@ -230,34 +230,6 @@ impl AuthTransaction<BundledSchema> for MemoryTransaction<'_> {
     ) -> AuthResult<VerificationView> {
         self.store.create_verification(verification).await
     }
-    fn team_store(&self) -> AuthResult<&dyn crate::store::TeamStore> {
-        Err(AuthError::internal("unsupported test-store operation"))
-    }
-    async fn lock_organization(&self, _organization_id: &str) -> AuthResult<()> {
-        Err(AuthError::internal("unsupported test-store operation"))
-    }
-    async fn count_organization_members(&self, organization_id: &str) -> AuthResult<i64> {
-        self.store.count_organization_members(organization_id).await
-    }
-    async fn count_pending_invitations(&self, _organization_id: &str) -> AuthResult<i64> {
-        Err(AuthError::internal("unsupported test-store operation"))
-    }
-    async fn create_organization(&self, data: CreateOrganization) -> AuthResult<Organization> {
-        self.store.create_organization(data).await
-    }
-    async fn create_invitation_with_options(
-        &self,
-        _data: CreateInvitation,
-        _options: crate::store::InvitationCreateOptions,
-    ) -> AuthResult<Invitation> {
-        Err(AuthError::internal("unsupported test-store operation"))
-    }
-    async fn create_team(&self, _data: crate::types::CreateTeam) -> AuthResult<crate::types::Team> {
-        Err(AuthError::internal("unsupported test-store operation"))
-    }
-    async fn update_member_role(&self, member_id: &str, role: &str) -> AuthResult<Member> {
-        self.store.update_member_role(member_id, role).await
-    }
 }
 
 #[async_trait]

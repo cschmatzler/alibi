@@ -440,12 +440,6 @@ fn organization() -> OrganizationPlugin {
 
 Hook contexts carry immutable snapshots of the authority (user, session, headers) and the persisted rows. Hook errors that are intentional API errors (`AuthError::forbidden(..)`) are returned verbatim; other failures become an empty `500`.
 
-Organization admission retains early quota rejection before lifecycle callbacks, then performs the authoritative count and insert in a transaction that serializes writes to the organization: PostgreSQL locks the organization row, SQLite reserves its writer lock before counting, and the no-database store serializes organization transactions. Invitation limits count every unexpired pending invitation, independently of adapter pagination.
-
-Organization creation, its creator membership, default team and awaited creation hooks commit together. Any creation hook failure rolls these rows back. This deliberately differs from Better Auth TypeScript, which retains earlier creation writes after a hook fails. Creation callbacks observe row snapshots before commit; reads on an independent connection see the previously committed state.
-
-For callback writes that belong to creation, override `before_create_in_transaction`, `before_add_member_in_transaction`, `after_add_member_in_transaction` or `after_create_in_transaction`. Each receives an `&dyn OrganizationCreationStore`; use its organization/member methods or `store.teams()?` for transaction-local writes. Existing callback methods remain supported. A captured application connection uses an independent transaction: its writes cannot roll back with creation and may wait for the creation lock (particularly on SQLite). Network effects also cannot be rolled back.
-
 ## Server-side operations
 
 Some operations are only available to trusted server code — they bypass the "caller must be a member" checks. Use [`dispatch_endpoint`](/guides/server-side-calls/):

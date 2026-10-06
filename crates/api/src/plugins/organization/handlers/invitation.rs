@@ -367,25 +367,10 @@ pub(in crate::plugins) async fn invite_member_core(
             )?,
         },
     };
-    let invitation = better_auth_core::store::transaction(ctx.database.as_ref(), move |tx| {
-        Box::pin(async move {
-            tx.lock_organization(&invitation_data.organization_id)
-                .await?;
-            if tx
-                .count_pending_invitations(&invitation_data.organization_id)
-                .await? as f64
-                >= limit
-            {
-                return Err(super::extension_common::org_error(
-                    403,
-                    "INVITATION_LIMIT_REACHED",
-                ));
-            }
-            tx.create_invitation_with_options(invitation_data, draft.options)
-                .await
-        })
-    })
-    .await?;
+    let invitation = ctx
+        .database
+        .create_invitation_with_options(invitation_data, draft.options)
+        .await?;
     let invitation = ctx.invitation_view(&invitation);
     crate::plugins::organization::hooks::invitation::deliver(
         config,

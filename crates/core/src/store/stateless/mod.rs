@@ -43,7 +43,6 @@ impl AuthSchema for StatelessSchema {
 pub struct StatelessStore {
     state: std::sync::Mutex<IdentityState>,
     organizations: std::sync::Mutex<OrganizationState>,
-    organization_transaction: tokio::sync::Mutex<()>,
     find_many_limit: usize,
 }
 
@@ -82,7 +81,6 @@ impl StatelessStore {
         Self {
             state: Default::default(),
             organizations: Default::default(),
-            organization_transaction: Default::default(),
             find_many_limit,
         }
     }

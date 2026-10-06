@@ -10,13 +10,13 @@ use better_auth::integrations::axum::AxumIntegration;
 use better_auth::middleware::RateLimitConfig;
 use better_auth::plugins::organization::{
     OrganizationConfig, OrganizationCreatePatch, OrganizationCreatedContext,
-    OrganizationCreationHooks, OrganizationCreationStore, OrganizationDraftContext,
-    OrganizationMemberCreatePatch, OrganizationMemberDraftContext, OrganizationTeamHooks,
-    TeamsConfig, extensions::TeamHookContext, types::CreatedOrganizationResponse,
+    OrganizationCreationHooks, OrganizationDraftContext, OrganizationMemberCreatePatch,
+    OrganizationMemberDraftContext, OrganizationTeamHooks, TeamsConfig,
+    extensions::TeamHookContext, types::CreatedOrganizationResponse,
 };
 use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
 use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::{CreateTeam, Organization, Team, wire::UserView};
+use better_auth_core::{CreateTeam, Organization, Team, store::MemberStore, wire::UserView};
 use better_auth_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
@@ -80,6 +80,7 @@ async fn snapshot(database: &DatabaseConnection) -> AuthResult<Value> {
 }
 struct Hooks {
     database: DatabaseConnection,
+    store: Arc<crate::backend::Store<TestSchema>>,
     plan: Mutex<Value>,
     receipts: Mutex<Vec<Value>>,
     release: Mutex<Arc<Notify>>,
@@ -184,15 +185,12 @@ impl OrganizationCreationHooks for Hooks {
             _ => None,
         })
     }
-    async fn after_add_member_in_transaction(
-        &self,
-        context: &OrganizationCreatedContext,
-        store: &dyn OrganizationCreationStore,
-    ) -> AuthResult<()> {
+    async fn after_add_member(&self, context: &OrganizationCreatedContext) -> AuthResult<()> {
         self.note("after-member",&context.user,json!({"organization":organization_data(&context.organization),"member":context.member})).await?;
         match self.mode().await.as_str() {
             "stored-member" => {
-                let _ = store
+                let _ = self
+                    .store
                     .update_member_role(&context.member.id, "admin")
                     .await?;
             }
@@ -241,6 +239,7 @@ pub(crate) async fn router(
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let hooks = Arc::new(Hooks {
         database: database.clone(),
+        store: Arc::new(crate::backend::store(base.clone(), database)),
         plan: Mutex::new(json!({"mode":"record"})),
         receipts: Mutex::new(Vec::new()),
         release: Mutex::new(Arc::new(Notify::new())),
