@@ -1,3 +1,7 @@
+#![expect(
+    clippy::indexing_slicing,
+    reason = "Assert public JSON response fields by their documented paths"
+)]
 //! Public native organization calls retain typed values, lifecycle, and cookies.
 use async_trait::async_trait;
 use better_auth::plugins::{
@@ -172,6 +176,11 @@ async fn native_organization_workflow_preserves_typed_state_and_cookie_publicati
         Some("ran")
     );
     let cookies: Vec<_> = selected.headers().get_all("set-cookie").collect();
+    let active_owner = cookies
+        .iter()
+        .map(|value| value.split(';').next().unwrap())
+        .collect::<Vec<_>>()
+        .join("; ");
     assert!(cookies.iter().any(|value| value.contains("session_token=")));
     assert!(
         cookies
@@ -281,6 +290,43 @@ async fn native_organization_workflow_preserves_typed_state_and_cookie_publicati
     .unwrap();
     assert_eq!(page.total, 2);
     assert_eq!(page.members.len(), 1);
+    // Role updates share the HTTP handler's validation and error codes.
+    let member_id = accepted.decode().unwrap().member.id;
+    let update_role = |role: &str, organization_id: Option<&str>| {
+        OrganizationPlugin::update_member_role_endpoint(&UpdateMemberRoleRequest {
+            member_id: member_id.clone(),
+            role: RoleInput::One(role.into()),
+            organization_id: organization_id.map(Into::into),
+        })
+        .unwrap()
+    };
+    for role in ["", " , "] {
+        let empty =
+            Box::pin(auth.dispatch_endpoint(update_role(role, Some(&id)), credentials(&owner)))
+                .await
+                .unwrap_err();
+        assert_eq!(empty.error.status_code(), 400);
+    }
+    let unknown = Box::pin(auth.dispatch_endpoint(
+        update_role("nonexistent-role", Some(&id)),
+        credentials(&owner),
+    ))
+    .await
+    .unwrap_err();
+    assert_eq!(unknown.error.status_code(), 400);
+    assert_eq!(
+        unknown.body.unwrap().to_json_value().unwrap()["code"],
+        "ROLE_NOT_FOUND"
+    );
+    let promoted = Box::pin(
+        auth.dispatch_endpoint(update_role("admin", Some("")), credentials(&active_owner)),
+    )
+    .await
+    .unwrap()
+    .decode()
+    .unwrap();
+    assert_eq!(promoted.organization_id, id);
+    assert_eq!(promoted.role, "admin");
     let removed = Box::pin(
         auth.dispatch_endpoint(
             OrganizationPlugin::remove_member_endpoint(&RemoveMemberRequest {

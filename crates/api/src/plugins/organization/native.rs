@@ -888,22 +888,9 @@ pub(super) async fn execute<S: AuthSchema>(
         "updateMemberRole" => {
             let body = handlers::org_input::member_role_update_value(call.body().cloned())
                 .map_err(error_response)?;
-            let organization = handlers::resolve_organization_id(
-                body.organization_id.as_deref(),
-                None,
-                &session,
-                ctx,
-            )
-            .await?;
-            EndpointResponse::json(
-                &handlers::member::update_member_role_core(
-                    &body,
-                    &organization,
-                    &user,
-                    config,
-                    ctx,
-                )
-                .await?,
+            response(
+                handlers::member::update_member_role_response(&body, &user, &session, config, ctx)
+                    .await?,
             )
         }
         "hasPermission" => EndpointResponse::json(
