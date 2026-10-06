@@ -83,13 +83,18 @@ pub struct CreateOrganizationRequest {
     pub keep_current_active_organization: Option<bool>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct UpdateOrganizationData {
     #[serde(default, flatten)]
     pub additional_fields: indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>,
     pub name: Option<String>,
     pub slug: Option<String>,
-    #[serde(default, with = "serde_with::rust::double_option")]
+    #[serde(
+        default,
+        with = "serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub logo: Option<Option<String>>,
     #[serde(
         default,
@@ -98,7 +103,8 @@ pub struct UpdateOrganizationData {
     pub metadata: Option<serde_json::Value>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct UpdateOrganizationRequest {
     #[serde(rename = "organizationId")]
     pub organization_id: Option<String>,
@@ -112,30 +118,35 @@ pub struct DeleteOrganizationRequest {
     pub organization_id: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct CheckSlugRequest {
     pub slug: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct SetActiveOrganizationRequest {
     #[serde(
         default,
         rename = "organizationId",
         deserialize_with = "deserialize_nullable_string_field"
     )]
+    #[serde(skip_serializing_if = "NullableStringField::is_missing")]
     pub organization_id: NullableStringField,
     #[serde(rename = "organizationSlug")]
     pub organization_slug: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct LeaveOrganizationRequest {
     #[serde(rename = "organizationId")]
     pub organization_id: String,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct GetFullOrganizationQuery {
     #[serde(rename = "organizationId")]
     pub organization_id: Option<String>,
@@ -149,7 +160,8 @@ pub struct GetFullOrganizationQuery {
     pub members_limit: Option<f64>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct InviteMemberRequest {
     pub resend: Option<bool>,
     #[validate(email(message = "Invalid email address"))]
@@ -161,7 +173,7 @@ pub struct InviteMemberRequest {
     pub organization_id: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum TeamInput {
     One(String),
@@ -186,7 +198,8 @@ pub struct RemoveMemberRequest {
     pub organization_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct UpdateMemberRoleRequest {
     #[serde(rename = "memberId")]
     pub member_id: String,
@@ -195,7 +208,8 @@ pub struct UpdateMemberRoleRequest {
     pub organization_id: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct ListMembersQuery {
     #[serde(rename = "organizationId")]
     pub organization_id: Option<String>,
@@ -217,30 +231,35 @@ pub struct ListMembersQuery {
     pub filter_operator: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct AcceptInvitationRequest {
     #[serde(rename = "invitationId")]
     pub invitation_id: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct RejectInvitationRequest {
     #[serde(rename = "invitationId")]
     pub invitation_id: String,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct CancelInvitationRequest {
     #[serde(rename = "invitationId")]
     pub invitation_id: String,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct GetInvitationQuery {
     pub id: String,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct GetActiveMemberRoleQuery {
     #[serde(rename = "userId")]
     pub user_id: Option<String>,
@@ -250,30 +269,32 @@ pub struct GetActiveMemberRoleQuery {
     pub organization_slug: Option<String>,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Deserialize, Serialize)]
 pub struct ListInvitationsQuery {
     #[serde(rename = "organizationId")]
     pub organization_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct HasPermissionRequest {
     pub permissions: HashMap<String, Vec<String>>,
     #[serde(rename = "organizationId")]
     pub organization_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct CheckSlugResponse {
     pub status: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SuccessResponse {
     pub success: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct HasPermissionResponse {
     pub success: bool,
     pub error: Option<String>,
@@ -288,7 +309,7 @@ pub struct CreateOrganizationResponse<O, M> {
     pub default_team_id: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FullOrganizationResponse<O, I> {
     #[serde(flatten)]
     pub organization: O,
@@ -300,7 +321,7 @@ pub struct FullOrganizationResponse<O, I> {
 
 /// Upstream's full-organization join exposes the stored counter even though
 /// standalone team endpoints filter it from their response.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FullOrganizationTeamResponse {
     #[serde(flatten)]
     pub team: better_auth_core::types::Team,
@@ -317,7 +338,7 @@ impl From<better_auth_core::types::Team> for FullOrganizationTeamResponse {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct InvitationResponse<I> {
     pub invitation: I,
 }
@@ -350,24 +371,24 @@ pub struct BasicMemberResponse {
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AcceptInvitationResponse<I, M> {
     pub invitation: I,
     pub member: M,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ListMembersResponse {
     pub members: Vec<MemberResponse>,
     pub total: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GetActiveMemberRoleResponse {
     pub role: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct GetInvitationResponse<I> {
     #[serde(flatten)]
     pub invitation: I,
@@ -379,7 +400,7 @@ pub struct GetInvitationResponse<I> {
     pub inviter_email: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct UserInvitationResponse<I> {
     #[serde(flatten)]
     pub invitation: I,
@@ -473,7 +494,7 @@ impl OrganizationResponse {
 ///
 /// Uses [`MemberUserView`] from `better_auth_core::entity` for user info,
 /// keeping it compatible with the built-in auth store.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemberResponse {
     pub id: String,
     #[serde(rename = "organizationId")]
@@ -748,3 +769,114 @@ mod tests {
     }
 }
 // LCOV_EXCL_STOP
+
+impl NullableStringField {
+    #[must_use]
+    pub const fn is_missing(&self) -> bool {
+        matches!(self, Self::Missing)
+    }
+}
+impl Serialize for NullableStringField {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Missing | Self::Null => serializer.serialize_none(),
+            Self::Value(value) => serializer.serialize_str(value),
+        }
+    }
+}
+
+/// Select an organization without loading its joined members.
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetOrganizationQuery {
+    pub organization_id: Option<String>,
+    pub organization_slug: Option<String>,
+}
+
+/// Server-side email selection is allowed only without HTTP request metadata.
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct ListUserInvitationsQuery {
+    pub email: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MessageResponse {
+    pub message: String,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TeamQuery {
+    pub organization_id: Option<String>,
+    pub user_id: Option<String>,
+    pub team_id: Option<String>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRoleRequest {
+    pub organization_id: Option<String>,
+    pub role: String,
+    pub permission: better_auth_core::types::OrganizationPermissions,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleQuery {
+    pub organization_id: Option<String>,
+    pub role_name: Option<String>,
+    pub role_id: Option<String>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRoleData {
+    pub role_name: Option<String>,
+    pub permission: Option<better_auth_core::types::OrganizationPermissions>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateRoleRequest {
+    #[serde(flatten)]
+    pub selector: RoleQuery,
+    pub data: UpdateRoleData,
+}
+
+/// Dynamic roles expose parsed permission statements rather than stored JSON text.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleResponse {
+    pub id: String,
+    pub organization_id: String,
+    pub role: String,
+    pub permission: Option<better_auth_core::types::OrganizationPermissions>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreateRoleResponse {
+    pub success: bool,
+    pub role_data: RoleResponse,
+    pub statements: better_auth_core::types::OrganizationPermissions,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateRoleResponse {
+    pub success: bool,
+    pub role_data: RoleResponse,
+}
+
+pub use super::handlers::team::{
+    CreateTeamRequest, RemoveTeamRequest, SetActiveTeamRequest, TeamMemberRequest, UpdateTeamData,
+    UpdateTeamRequest,
+};

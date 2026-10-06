@@ -523,3 +523,59 @@ These are typed utilities. They do not change the organization HTTP permission s
 ## Frontend
 
 See the official [Organization guide](https://www.better-auth.com/docs/plugins/organization).
+
+## Typed native endpoints
+
+Call organization operations in-process through `BetterAuth::dispatch_endpoint`.
+The installed plugin, authentication, authorization, organization callbacks, and
+builder endpoint hooks all participate. Input is validated after before-hook
+patches. Supply genuine credentials with `EndpointOptions`; an optional original
+HTTP request remains distinct from the logical body/query. Native calls do not
+construct an HTTP request or flatten numeric query fields into strings.
+
+```rust
+use better_auth::plugins::organization::{OrganizationPlugin, types::{
+    SetActiveOrganizationRequest, NullableStringField,
+}};
+use better_auth_core::endpoint::EndpointOptions;
+
+let output = auth.dispatch_endpoint(
+    OrganizationPlugin::set_active_endpoint(&SetActiveOrganizationRequest {
+        organization_id: NullableStringField::Value(organization_id),
+        organization_slug: None,
+    })?,
+    EndpointOptions {
+        headers: Some(credentials),
+        ..Default::default()
+    },
+).await?;
+let organization = output.decode()?;
+// Publish every output.headers().get_all("set-cookie") value separately.
+```
+
+Successful outputs expose `decode()`, `headers()`, and `status()`. Endpoint API
+errors retain their `AuthError`, accumulated headers, and any explicit error
+body in `EndpointError`. Ordinary storage and application callback failures
+propagate through the native lifecycle. After hooks can replace response values;
+`decode()` reports a type error if the replacement has a different shape.
+
+Every organization operation has an `OrganizationPlugin` constructor. Types are
+public in `organization::types`; constructors encode body or query as appropriate:
+
+| Operations | Constructors (each ends in `_endpoint`) |
+| --- | --- |
+| Organizations | `create`, `update`, `delete`, `list_organizations`, `get_organization`, `get_full_organization`, `check_slug`, `set_active`, `leave` |
+| Members | `add_member`, `remove_member`, `update_member_role`, `list_members`, `get_active_member`, `get_active_member_role`, `has_permission` |
+| Invitations | `invite_member`, `get_invitation`, `list_invitations`, `list_user_invitations`, `accept_invitation`, `reject_invitation`, `cancel_invitation` |
+| Teams | `create_team`, `update_team`, `remove_team`, `set_active_team`, `list_teams`, `list_user_teams`, `list_team_members`, `add_team_member`, `remove_team_member` |
+| Dynamic roles | `create_role`, `update_role`, `delete_role`, `get_role`, `list_roles` |
+
+Team and dynamic role operations require their respective plugin configuration
+features. The existing server-only `add_member_endpoint` and explicit user option
+of `create_endpoint` retain their privileged authority. `list_user_invitations_endpoint`
+accepts an email selector for trusted native calls without an HTTP request;
+request-backed calls must use the authenticated session email.
+
+Use `NullableStringField::Missing` to omit an active organization/team selector,
+`Null` to clear it, and `Value` to select it. Optional update fields are omitted
+when absent; `UpdateOrganizationData::logo = Some(None)` explicitly clears a logo.

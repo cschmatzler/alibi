@@ -1,6 +1,6 @@
 use super::super::OrganizationConfig;
 use super::extension_common::{
-    cached_has_permissions, org_error, organization_roles, role_has_permissions, session,
+    cached_has_permissions, org_error, organization_roles, role_has_permissions,
 };
 use super::validation;
 use better_auth_core::entity::AuthUser;
@@ -126,14 +126,6 @@ fn missing_permissions(
 /// # Errors
 ///
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep role endpoint dispatch and each permission check adjacent to its persistence operation"
-)]
-#[expect(
-    clippy::cast_precision_loss,
-    reason = "Source compares stored counts as ECMAScript Numbers"
-)]
 pub async fn handle_role_request<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
@@ -160,8 +152,34 @@ pub async fn handle_role_request<S: AuthSchema>(
     } else {
         serde_json::Map::default()
     };
+    role_core(req.method(), req.path(), body, &req.query, req, ctx, config).await
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep role endpoint dispatch and each permission check adjacent to its persistence operation"
+)]
+#[expect(
+    clippy::cast_precision_loss,
+    reason = "Source compares stored counts as ECMAScript Numbers"
+)]
+pub(in crate::plugins::organization) async fn role_core<
+    S: AuthSchema,
+    R: better_auth_core::session::SessionRequest + Sync,
+>(
+    method: &HttpMethod,
+    path: &str,
+    body: serde_json::Map<String, serde_json::Value>,
+    query: &std::collections::HashMap<String, String>,
+    principal: &R,
+    ctx: &AuthContext<S>,
+    config: &OrganizationConfig,
+) -> AuthResult<Option<AuthResponse>> {
+    if !config.dynamic_access_control.enabled {
+        return Err(org_error(404, "DYNAMIC_ACCESS_CONTROL_DISABLED"));
+    }
     let mut issues = validation::Issues::default();
-    let (explicit, chosen, create, updates) = match (req.method(), req.path()) {
+    let (explicit, chosen, create, updates) = match (method, path) {
         (HttpMethod::Post, "/organization/create-role") => {
             let organization_id = issues
                 .take(validation::optional_string(
@@ -233,28 +251,40 @@ pub async fn handle_role_request<S: AuthSchema>(
             (organization_id, chosen, None, None)
         }
         (HttpMethod::Get, "/organization/get-role") => (
-            req.query.get("organizationId").cloned(),
+            query.get("organizationId").cloned(),
             issues.take(selector(
-                req.query.get("roleName").map(String::as_str),
-                req.query.get("roleId").map(String::as_str),
+                query.get("roleName").map(String::as_str),
+                query.get("roleId").map(String::as_str),
                 true,
             )),
             None,
             None,
         ),
-        _ => (req.query.get("organizationId").cloned(), None, None, None),
+        _ => (query.get("organizationId").cloned(), None, None, None),
     };
     if let Some(response) = issues.response() {
         return Ok(Some(response));
     }
-    let (user, current) = session(req, ctx).await?;
-    let action = match req.path() {
+    let (user, current) = ctx
+        .require_cached_session(principal)
+        .await
+        .map_err(|error| {
+            if matches!(
+                error,
+                AuthError::Unauthenticated | AuthError::SessionNotFound
+            ) {
+                org_error(401, "UNAUTHORIZED")
+            } else {
+                error
+            }
+        })?;
+    let action = match path {
         "/organization/create-role" => "create",
         "/organization/update-role" => "update",
         "/organization/delete-role" => "delete",
         _ => "read",
     };
-    let error_code = match req.path() {
+    let error_code = match path {
         "/organization/create-role" => "YOU_ARE_NOT_ALLOWED_TO_CREATE_A_ROLE",
         "/organization/update-role" => "YOU_ARE_NOT_ALLOWED_TO_UPDATE_A_ROLE",
         "/organization/delete-role" => "YOU_ARE_NOT_ALLOWED_TO_DELETE_A_ROLE",
@@ -323,7 +353,7 @@ pub async fn handle_role_request<S: AuthSchema>(
             200,
             &serde_json::json!({"success":true,"roleData":parsed_role(&role)?,"statements":permission}),
         )?
-    } else if req.path() == "/organization/list-roles" {
+    } else if path == "/organization/list-roles" {
         let roles = ctx.database.list_organization_roles(&org).await?;
         let parsed = roles
             .iter()

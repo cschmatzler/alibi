@@ -7,62 +7,65 @@ use better_auth_core::wire::{SessionView, UserView};
 use better_auth_core::{
     AuthContext, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use validator::Validate;
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateTeamRequest {
     pub name: String,
     pub organization_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
 pub struct RemoveTeamRequest {
     pub team_id: String,
     pub organization_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
-struct UpdateTeamRequest {
-    team_id: String,
-    data: UpdateTeamData,
+pub struct UpdateTeamRequest {
+    pub team_id: String,
+    pub data: UpdateTeamData,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
-struct UpdateTeamData {
+pub struct UpdateTeamData {
     #[validate(length(min = 1))]
-    name: Option<String>,
-    organization_id: Option<String>,
+    pub name: Option<String>,
+    pub organization_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize, Validate)]
 #[serde(rename_all = "camelCase")]
-#[expect(
-    clippy::struct_field_names,
-    reason = "Wire fields identify distinct team, user, and organization IDs"
-)]
-struct TeamMemberRequest {
-    team_id: String,
+pub struct TeamMemberRequest {
+    pub team_id: String,
     #[serde(
         default = "super::super::types::undefined_string",
         deserialize_with = "super::super::types::deserialize_coercible_string"
     )]
-    user_id: String,
-    organization_id: Option<String>,
+    pub user_id: String,
+    pub organization_id: Option<String>,
 }
 
-#[derive(Debug, Deserialize, Validate)]
-struct SetActiveRequest {
+#[serde_with::skip_serializing_none]
+#[derive(Debug, Deserialize, Serialize, Validate)]
+pub struct SetActiveTeamRequest {
     #[serde(
         default,
         rename = "teamId",
         deserialize_with = "super::super::types::deserialize_nullable_string_field"
     )]
-    team_id: super::super::types::NullableStringField,
+    #[serde(skip_serializing_if = "super::super::types::NullableStringField::is_missing")]
+    pub team_id: super::super::types::NullableStringField,
 }
 
 impl OrganizationPlugin {
@@ -336,10 +339,6 @@ pub async fn remove_team_core<S: AuthSchema>(
 /// # Errors
 ///
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
-#[expect(
-    clippy::too_many_lines,
-    reason = "Keep team endpoint dispatch and each organization ownership check adjacent to its writes"
-)]
 pub async fn handle_team_request<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
@@ -366,16 +365,63 @@ pub async fn handle_team_request<S: AuthSchema>(
         return Ok(None);
     }
     let (user, current) = session(req, ctx).await?;
+    team_core(
+        req.method(),
+        req.path(),
+        None,
+        &req.query,
+        user,
+        current,
+        Some(req),
+        true,
+        ctx,
+        config,
+    )
+    .await
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Keep team endpoint dispatch and each organization ownership check adjacent to its writes"
+)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Shared execution keeps logical input, original request metadata, authenticated authority, and installed configuration separate"
+)]
+pub(in crate::plugins::organization) async fn team_core<S: AuthSchema>(
+    method: &HttpMethod,
+    path: &str,
+    input: Option<serde_json::Value>,
+    query: &std::collections::HashMap<String, String>,
+    user: better_auth_core::AuthenticatedUser<S>,
+    current: SessionView,
+    request: Option<&AuthRequest>,
+    http_input: bool,
+    ctx: &AuthContext<S>,
+    config: &OrganizationConfig,
+) -> AuthResult<Option<AuthResponse>> {
+    if !config.teams.enabled {
+        return Err(org_error(404, "TEAMS_DISABLED"));
+    }
     let user_view = ctx.user_view(&user);
     macro_rules! body {
         ($ty:ty) => {
-            match better_auth_core::validate_request_body::<$ty>(req) {
-                Ok(body) => body,
-                Err(response) => return Ok(Some(response)),
+            if let Some(request) = request.filter(|_| http_input) {
+                match better_auth_core::validate_request_body::<$ty>(request) {
+                    Ok(body) => body,
+                    Err(response) => return Ok(Some(response)),
+                }
+            } else {
+                let body: $ty =
+                    serde_json::from_value(input.clone().unwrap_or(serde_json::Value::Null))
+                        .map_err(|error| crate::plugins::endpoint::validation(error.to_string()))?;
+                body.validate()
+                    .map_err(|error| crate::plugins::endpoint::validation(error.to_string()))?;
+                body
             }
         };
     }
-    let response = match (req.method(), req.path()) {
+    let response = match (method, path) {
         (HttpMethod::Post, "/organization/create-team") => {
             let body = body!(CreateTeamRequest);
             let org = org_id(body.organization_id.as_deref(), Some(&current))?;
@@ -386,7 +432,7 @@ pub async fn handle_team_request<S: AuthSchema>(
                     updated_at: Some(chrono::Utc::now()),
                 },
                 Some((&user_view, &current)),
-                Some(req),
+                request,
                 ctx,
                 config,
             )
@@ -455,7 +501,7 @@ pub async fn handle_team_request<S: AuthSchema>(
         }
         (HttpMethod::Get, "/organization/list-teams") => {
             let org = org_id(
-                req.query.get("organizationId").map(String::as_str),
+                query.get("organizationId").map(String::as_str),
                 Some(&current),
             )?;
             if ctx
@@ -472,13 +518,11 @@ pub async fn handle_team_request<S: AuthSchema>(
             AuthResponse::json(200, &ctx.database.list_teams(&org).await?)?
         }
         (HttpMethod::Get, "/organization/list-user-teams") => {
-            let target = req
-                .query
+            let target = query
                 .get("userId")
                 .filter(|id| !id.is_empty())
                 .map_or(user_view.id.as_str(), String::as_str);
-            let explicit = req
-                .query
+            let explicit = query
                 .get("organizationId")
                 .filter(|id| !id.is_empty())
                 .map(String::as_str);
@@ -522,8 +566,7 @@ pub async fn handle_team_request<S: AuthSchema>(
             AuthResponse::json(200, &teams)?
         }
         (HttpMethod::Get, "/organization/list-team-members") => {
-            let team_id = req
-                .query
+            let team_id = query
                 .get("teamId")
                 .filter(|id| !id.is_empty())
                 .map(String::as_str)
@@ -551,7 +594,7 @@ pub async fn handle_team_request<S: AuthSchema>(
         }
         (HttpMethod::Post, "/organization/set-active-team") => {
             use super::super::types::NullableStringField;
-            let body = body!(SetActiveRequest);
+            let body = body!(SetActiveTeamRequest);
             let team_id = match body.team_id {
                 NullableStringField::Null => None,
                 NullableStringField::Missing => current.active_team_id.clone(),
@@ -621,7 +664,7 @@ pub async fn handle_team_request<S: AuthSchema>(
                 .get_member(&org, &user_view.id)
                 .await?
                 .ok_or_else(|| org_error(400, "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION"))?;
-            let add = req.path().ends_with("/add-team-member");
+            let add = path.ends_with("/add-team-member");
             let action = if add { "update" } else { "delete" };
             if !has_action(&requester.role, "member", action, config, ctx, &org).await? {
                 return Err(org_error(

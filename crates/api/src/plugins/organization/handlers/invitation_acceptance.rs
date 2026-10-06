@@ -9,6 +9,7 @@ use crate::plugins::organization::{
     OrganizationInvitationAcceptedContext,
 };
 use better_auth_core::entity::{AuthInvitation, AuthSession, AuthUser};
+use better_auth_core::session::SessionRequest;
 use better_auth_core::store::transaction;
 use better_auth_core::types::AddTeamMemberResult;
 use better_auth_core::wire::InvitationView;
@@ -20,27 +21,57 @@ use std::sync::Arc;
 
 /// Keep only headers emitted by this accepted request's lifecycle removable.
 #[derive(Clone)]
-pub(super) struct AcceptanceTransport {
-    request: AuthRequest,
+pub(in crate::plugins::organization) struct AcceptanceTransport {
+    request: Option<AuthRequest>,
+    call: Option<better_auth_core::endpoint::EndpointCall>,
+    cookie_header: Option<String>,
     cookies: Arc<std::sync::Mutex<Vec<String>>>,
 }
 
 impl AcceptanceTransport {
-    pub(super) fn new(request: &AuthRequest) -> Self {
+    pub(in crate::plugins::organization) fn new(request: &AuthRequest) -> Self {
         Self {
-            request: request.clone(),
+            request: Some(request.clone()),
+            call: None,
+            cookie_header: request.header("cookie").cloned(),
+            cookies: Arc::default(),
+        }
+    }
+    pub(in crate::plugins::organization) fn native(
+        call: &better_auth_core::endpoint::EndpointCall,
+    ) -> Self {
+        Self {
+            request: None,
+            call: Some(call.clone()),
+            cookie_header: call.session_headers().get("cookie").cloned(),
             cookies: Arc::default(),
         }
     }
     fn issue_cookie(&self, value: String) {
-        self.request.queue_response_header("set-cookie", &value);
+        if let Some(request) = &self.request {
+            request.queue_response_header("set-cookie", &value);
+        }
+        if let Some(call) = &self.call {
+            call.queue_response_header("set-cookie", &value);
+        }
         self.cookies
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .push(value);
     }
-    pub(super) fn discard_cookies(&self) {
-        let mut headers: Vec<_> = self.request.take_response_headers().into_iter().collect();
+    pub(in crate::plugins::organization) fn discard_cookies(&self) {
+        let mut headers: Vec<_> = self
+            .request
+            .as_ref()
+            .map(AuthRequest::take_response_headers)
+            .or_else(|| {
+                self.call
+                    .as_ref()
+                    .map(better_auth_core::endpoint::EndpointCall::take_response_headers)
+            })
+            .unwrap_or_default()
+            .into_iter()
+            .collect();
         for cookie in self
             .cookies
             .lock()
@@ -55,7 +86,12 @@ impl AcceptanceTransport {
             }
         }
         for (name, value) in headers {
-            self.request.queue_response_header(name, value);
+            if let Some(request) = &self.request {
+                request.queue_response_header(&name, &value);
+            }
+            if let Some(call) = &self.call {
+                call.queue_response_header(name, value);
+            }
         }
     }
 }
@@ -88,7 +124,7 @@ fn acceptance_error(status: u16, code: &'static str) -> AuthError {
     clippy::too_many_lines,
     reason = "Keep invitation claims, membership transactions, and lifecycle callbacks in order"
 )]
-pub(super) async fn accept<S: AuthSchema>(
+pub(in crate::plugins::organization) async fn accept<S: AuthSchema>(
     body: &AcceptInvitationRequest,
     user: &impl AuthUser,
     session: &impl AuthSession,
@@ -218,10 +254,17 @@ pub(super) async fn accept<S: AuthSchema>(
                     .await?;
 
                 let preference = related_cookie_name(&auth_config, "dont_remember");
-                let dont_remember =
-                    crate::plugins::helpers::get_cookie(&tx_transport.request, &preference)
-                        .and_then(|value| verify_cookie_value(&value, auth_config.current_secret()))
-                        .is_some_and(|value| !value.is_empty());
+                let dont_remember = tx_transport
+                    .cookie_header
+                    .as_deref()
+                    .and_then(|header| {
+                        cookie::Cookie::split_parse(header)
+                            .flatten()
+                            .find(|cookie| cookie.name() == preference)
+                            .map(|cookie| cookie.value().to_owned())
+                    })
+                    .and_then(|value| verify_cookie_value(&value, auth_config.current_secret()))
+                    .is_some_and(|value| !value.is_empty());
                 tx_transport.issue_cookie(create_session_cookie_with_max_age(
                     Some(updated.token()),
                     (!dont_remember).then(|| auth_config.session.expires_in.num_seconds()),

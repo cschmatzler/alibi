@@ -1,5 +1,6 @@
 mod endpoint;
 pub mod hooks;
+mod native;
 
 pub mod policy;
 

@@ -497,7 +497,7 @@ pub(in crate::plugins) async fn list_user_invitations_core(
     list_user_invitations_for_email_core(user.email().unwrap_or_default(), ctx).await
 }
 
-async fn list_user_invitations_for_email_core(
+pub(in crate::plugins::organization) async fn list_user_invitations_for_email_core(
     email: &str,
     ctx: &AuthContext<impl better_auth_core::AuthSchema>,
 ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
