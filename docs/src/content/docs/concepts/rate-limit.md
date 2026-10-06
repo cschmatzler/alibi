@@ -140,6 +140,24 @@ async fn shared_limits(pool: SqlxPool) -> AuthResult<RateLimitConfig> {
 
 `SeaOrmRateLimitStorage::new(database)` works the same way. Implement the `RateLimitStorage` trait (`async fn consume(&self, key, rule) -> RateLimitDecision`) to use any other backend; it must decide and consume atomically.
 
+To limit your own routes, consume from the same storage and return `AuthError::rate_limited(retry_after)` for a blocked decision. Its response (`to_auth_response()`, or Axum's `IntoResponse`) is a `429` carrying `X-Retry-After`, like the middleware's:
+
+```rust
+use better_auth::middleware::{EndpointRateLimit, RateLimitDecision, RateLimitStorage};
+use better_auth::{AuthError, AuthResult};
+
+async fn admit(storage: &dyn RateLimitStorage, client: &str) -> AuthResult<()> {
+    let rule = EndpointRateLimit {
+        window_seconds: 60.0,
+        max_requests: 10.0,
+    };
+    match storage.consume(&format!("{client}|/export"), &rule).await? {
+        RateLimitDecision::Allowed => Ok(()),
+        RateLimitDecision::Blocked { retry_after } => Err(AuthError::rate_limited(retry_after)),
+    }
+}
+```
+
 ## Operational notes
 
 - Windows are floating-point seconds and counts are floating-point numbers. A zero or `NaN` *default* window or count falls back to 10 s and 100.

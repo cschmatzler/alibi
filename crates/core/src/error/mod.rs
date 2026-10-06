@@ -93,8 +93,10 @@ pub enum AuthError {
     #[error("{0}")]
     UnprocessableEntity(String),
 
+    /// `retry_after` is the number of seconds until the next request is
+    /// admitted; responses publish it as `X-Retry-After`.
     #[error("Too many requests")]
-    RateLimited,
+    RateLimited { retry_after: Option<f64> },
 
     #[error("{0}")]
     NotImplemented(String),
@@ -162,7 +164,7 @@ impl AuthError {
             // 422
             Self::UnprocessableEntity(_) => 422,
             // 429
-            Self::RateLimited => 429,
+            Self::RateLimited { .. } => 429,
             // 501
             Self::NotImplemented(_) => 501,
             // 500
@@ -221,7 +223,7 @@ impl AuthError {
             | Self::MethodNotAllowed(_)
             | Self::PayloadTooLarge(_)
             | Self::UnprocessableEntity(_)
-            | Self::RateLimited
+            | Self::RateLimited { .. }
             | Self::NotImplemented(_)
             | Self::Config(_)
             | Self::Database(_)
@@ -257,15 +259,40 @@ impl AuthError {
             tracing::error!(error = %self, "Authentication operation failed");
             return crate::types::AuthResponse::new(500);
         }
+        let retry_after = self.retry_after_header();
         let (status, code, message) = self.error_payload();
-        crate::types::AuthResponse::json(
+        let response = crate::types::AuthResponse::json(
             status,
             &crate::types::ErrorCodeMessageResponse {
                 code,
                 message: message.clone(),
             },
         )
-        .unwrap_or_else(|_| crate::types::AuthResponse::text(status, &message))
+        .unwrap_or_else(|_| crate::types::AuthResponse::text(status, &message));
+        match retry_after {
+            Some(seconds) => response.with_header("X-Retry-After", seconds),
+            None => response,
+        }
+    }
+
+    /// The `X-Retry-After` value of a rate-limit rejection, formatted as the
+    /// rate-limit middleware publishes it.
+    fn retry_after_header(&self) -> Option<String> {
+        match self {
+            Self::RateLimited {
+                retry_after: Some(seconds),
+            } => Some(ryu_js::Buffer::new().format(*seconds).to_owned()),
+            _ => None,
+        }
+    }
+
+    /// A `429` rejection that tells the client to retry after `retry_after` seconds,
+    /// such as [`RateLimitDecision::Blocked`](crate::middleware::RateLimitDecision::Blocked)'s.
+    #[must_use]
+    pub const fn rate_limited(retry_after: f64) -> Self {
+        Self::RateLimited {
+            retry_after: Some(retry_after),
+        }
     }
 
     #[must_use]
@@ -370,14 +397,19 @@ impl axum::response::IntoResponse for AuthError {
             tracing::error!(error = %self, "Authentication operation failed");
             return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
+        let retry_after = self.retry_after_header();
         let (status_u16, code, message) = self.error_payload();
         let status = axum::http::StatusCode::from_u16(status_u16)
             .unwrap_or(axum::http::StatusCode::INTERNAL_SERVER_ERROR);
-        (
+        let mut response = (
             status,
             axum::Json(crate::types::ErrorCodeMessageResponse { code, message }),
         )
-            .into_response()
+            .into_response();
+        if let Some(value) = retry_after.and_then(|value| value.parse().ok()) {
+            drop(response.headers_mut().insert("x-retry-after", value));
+        }
+        response
     }
 }
 
@@ -523,7 +555,30 @@ mod tests {
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
     #[test]
     fn rate_limited_is_429() {
-        assert_eq!(AuthError::RateLimited.status_code(), 429);
+        assert_eq!(
+            AuthError::RateLimited { retry_after: None }.status_code(),
+            429
+        );
+    }
+
+    // Application routes answer with the built-in middleware's retry header.
+    #[test]
+    fn rate_limited_responses_publish_retry_after() {
+        for (seconds, header) in [(9.0, "9"), (2.5, "2.5")] {
+            let response = AuthError::rate_limited(seconds).to_auth_response();
+            assert_eq!(response.status, 429);
+            assert_eq!(
+                response.headers.get("X-Retry-After").map(String::as_str),
+                Some(header)
+            );
+            #[cfg(feature = "axum")]
+            {
+                let response =
+                    axum::response::IntoResponse::into_response(AuthError::rate_limited(seconds));
+                assert_eq!(response.status(), 429);
+                assert_eq!(response.headers()["x-retry-after"], header);
+            }
+        }
     }
 
     // Rust-specific surface: `AuthError` and Rust-side response/error conversion behavior are public Rust library APIs with no direct TS analogue.
@@ -754,7 +809,10 @@ mod tests {
             "Insufficient permissions"
         );
         assert_eq!(AuthError::UserNotFound.to_string(), "User not found");
-        assert_eq!(AuthError::RateLimited.to_string(), "Too many requests");
+        assert_eq!(
+            AuthError::RateLimited { retry_after: None }.to_string(),
+            "Too many requests"
+        );
     }
 
     // The framework-neutral response conversion is distinct from Axum's HTTP path.
