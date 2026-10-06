@@ -682,7 +682,7 @@ impl OAuthProxyPlugin {
                         | AuthError::MethodNotAllowed(_)
                         | AuthError::PayloadTooLarge(_)
                         | AuthError::UnprocessableEntity(_)
-                        | AuthError::RateLimited
+                        | AuthError::RateLimited { .. }
                         | AuthError::NotImplemented(_)
                         | AuthError::Config(_)
                         | AuthError::Database(_)
@@ -716,7 +716,7 @@ impl OAuthProxyPlugin {
                         | AuthError::MethodNotAllowed(_)
                         | AuthError::PayloadTooLarge(_)
                         | AuthError::UnprocessableEntity(_)
-                        | AuthError::RateLimited
+                        | AuthError::RateLimited { .. }
                         | AuthError::NotImplemented(_)
                         | AuthError::Config(_)
                         | AuthError::Database(_)

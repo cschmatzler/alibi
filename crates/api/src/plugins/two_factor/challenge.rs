@@ -375,7 +375,7 @@ pub(in crate::plugins::two_factor) async fn verify_existing_session_factor(
             | AuthError::MethodNotAllowed(_)
             | AuthError::PayloadTooLarge(_)
             | AuthError::UnprocessableEntity(_)
-            | AuthError::RateLimited
+            | AuthError::RateLimited { .. }
             | AuthError::NotImplemented(_)
             | AuthError::Config(_)
             | AuthError::Database(_)

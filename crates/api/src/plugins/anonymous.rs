@@ -153,7 +153,7 @@ impl AnonymousPlugin {
                 | better_auth_core::AuthError::MethodNotAllowed(_)
                 | better_auth_core::AuthError::PayloadTooLarge(_)
                 | better_auth_core::AuthError::UnprocessableEntity(_)
-                | better_auth_core::AuthError::RateLimited
+                | better_auth_core::AuthError::RateLimited { .. }
                 | better_auth_core::AuthError::NotImplemented(_)
                 | better_auth_core::AuthError::Config(_)
                 | better_auth_core::AuthError::Database(_)
@@ -196,7 +196,7 @@ impl AnonymousPlugin {
                     | better_auth_core::AuthError::MethodNotAllowed(_)
                     | better_auth_core::AuthError::PayloadTooLarge(_)
                     | better_auth_core::AuthError::UnprocessableEntity(_)
-                    | better_auth_core::AuthError::RateLimited
+                    | better_auth_core::AuthError::RateLimited { .. }
                     | better_auth_core::AuthError::NotImplemented(_)
                     | better_auth_core::AuthError::Config(_)
                     | better_auth_core::AuthError::Database(_)
@@ -281,7 +281,7 @@ impl AnonymousPlugin {
                     | better_auth_core::AuthError::MethodNotAllowed(_)
                     | better_auth_core::AuthError::PayloadTooLarge(_)
                     | better_auth_core::AuthError::UnprocessableEntity(_)
-                    | better_auth_core::AuthError::RateLimited
+                    | better_auth_core::AuthError::RateLimited { .. }
                     | better_auth_core::AuthError::NotImplemented(_)
                     | better_auth_core::AuthError::Config(_)
                     | better_auth_core::AuthError::Database(_)

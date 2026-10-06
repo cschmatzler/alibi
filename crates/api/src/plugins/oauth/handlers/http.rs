@@ -576,7 +576,7 @@ pub(in crate::plugins::oauth) async fn handle_link_social(
             | AuthError::MethodNotAllowed(_)
             | AuthError::PayloadTooLarge(_)
             | AuthError::UnprocessableEntity(_)
-            | AuthError::RateLimited
+            | AuthError::RateLimited { .. }
             | AuthError::NotImplemented(_)
             | AuthError::Config(_)
             | AuthError::Database(_)
