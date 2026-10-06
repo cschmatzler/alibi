@@ -207,6 +207,28 @@ pub(in crate::plugins) async fn create_organization_core(
     })
 }
 
+/// Activate a newly created organization and publish the final stored session,
+/// including its default team, through both HTTP and native dispatch.
+pub(in crate::plugins) async fn activate_created_organization(
+    response: &CreateOrganizationResponse<CreatedOrganizationResponse, BasicMemberResponse>,
+    user: &impl AuthUser,
+    token: &str,
+    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+) -> AuthResult<()> {
+    let mut updated = ctx
+        .database
+        .update_session_active_organization_record(token, Some(&response.organization.id))
+        .await?;
+    if let Some(team_id) = &response.default_team_id {
+        updated = ctx
+            .database
+            .update_session_active_team_record(token, Some(team_id))
+            .await?;
+    }
+    better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated).await?;
+    Ok(())
+}
+
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
@@ -570,11 +592,12 @@ pub(in crate::plugins) async fn set_active_organization_core(
             return Ok(None);
         }
 
-        drop(
-            ctx.database
-                .update_session_active_organization_record(session.token(), None)
-                .await?,
-        );
+        let updated = ctx
+            .database
+            .update_session_active_organization_record(session.token(), None)
+            .await?;
+        better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated)
+            .await?;
         return Ok(None);
     }
 
@@ -627,14 +650,14 @@ pub(in crate::plugins) async fn set_active_organization_core(
         .await?
         .ok_or_else(|| AuthError::bad_request("Organization not found"))?;
 
-    drop(
-        ctx.database
-            .update_session_active_organization_record(
-                session.token(),
-                Some(organization.id().as_ref()),
-            )
-            .await?,
-    );
+    let updated = ctx
+        .database
+        .update_session_active_organization_record(
+            session.token(),
+            Some(organization.id().as_ref()),
+        )
+        .await?;
+    better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated).await?;
 
     Ok(Some(OrganizationResponse::from_stored_organization(
         &organization,
@@ -716,21 +739,7 @@ pub async fn handle_create_organization(
     let response =
         create_organization_core(&body, &user, Some(req), Some(&session), config, ctx).await?;
     if !body.keep_current_active_organization.unwrap_or(false) {
-        drop(
-            ctx.database
-                .update_session_active_organization_record(
-                    session.token(),
-                    Some(response.organization.id.as_str()),
-                )
-                .await?,
-        );
-        if let Some(team_id) = &response.default_team_id {
-            drop(
-                ctx.database
-                    .update_session_active_team_record(session.token(), Some(team_id))
-                    .await?,
-            );
-        }
+        activate_created_organization(&response, &user, session.token(), ctx).await?;
     }
     Ok(AuthResponse::json(200, &response)?)
 }

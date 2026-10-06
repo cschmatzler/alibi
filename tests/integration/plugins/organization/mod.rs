@@ -1,3 +1,4 @@
+mod cookie_cache;
 mod creation_policy;
 mod logo_patch;
 mod member_addition;
