@@ -54,6 +54,16 @@ pub async fn handle_update_user<S: better_auth_core::AuthSchema>(
         return Err(AuthError::bad_request("Email can not be updated"));
     }
 
+    // Role changes require the administrator's authorization, independently
+    // of any application-defined additional field policy.
+    if body.contains_key("role") {
+        return Err(AuthError::Api {
+            status: 400,
+            code: Some("FIELD_NOT_ALLOWED".into()),
+            message: "role is not allowed to be set".into(),
+        });
+    }
+
     let raw_body: better_auth_core::utils::json::JsValue = req.body_as_json()?;
     crate::plugins::last_login_method::reject_last_login_method_input(
         context,
@@ -139,7 +149,6 @@ pub async fn handle_update_user<S: better_auth_core::AuthSchema>(
         || update_req.image.is_some()
         || username.is_some()
         || display_username.is_some()
-        || update_req.role.is_some()
         || update_req.metadata.is_some();
     if !has_changes {
         return Err(AuthError::bad_request("No fields to update"));
@@ -160,7 +169,7 @@ pub async fn handle_update_user<S: better_auth_core::AuthSchema>(
         email_verified: None,
         username,
         display_username,
-        role: update_req.role,
+        role: None,
         banned: None,
         ban_reason: None,
         ban_expires: None,
@@ -194,9 +203,6 @@ pub async fn handle_update_user<S: better_auth_core::AuthSchema>(
             }
             if let Some(display_username) = update_user.display_username {
                 user.display_username = Some(display_username);
-            }
-            if let Some(role) = update_user.role {
-                user.role = Some(role);
             }
             if let Some(metadata) = update_user.metadata {
                 user.metadata = metadata;
