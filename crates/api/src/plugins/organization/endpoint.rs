@@ -34,13 +34,17 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
     endpoints
 }
 
-pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
+pub(super) fn validate(
+    call: &EndpointCall,
+    organization_fields: &better_auth_core::field_policy::SessionFields,
+) -> AuthResult<EndpointInput> {
     let mut body = call.body().cloned();
     match call.operation_id() {
         "createOrganization" => {
             let _validated =
                 handlers::org_input::create_value(body.clone()).map_err(error_response)?;
             if let Some(JsValue::Object(body)) = &mut body {
+                // Configured additional fields belong to the body schema, as upstream.
                 body.retain(|key, _| {
                     [
                         "name",
@@ -51,6 +55,7 @@ pub(super) fn validate(call: &EndpointCall) -> AuthResult<EndpointInput> {
                         "keepCurrentActiveOrganization",
                     ]
                     .contains(&key.as_str())
+                        || organization_fields.0.contains_key(key)
                 });
                 if let Some(value) = body.get("userId") {
                     let value = value.coerce_string().map_err(validation)?;
