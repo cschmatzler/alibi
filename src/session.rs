@@ -32,6 +32,38 @@
 //! metadata. [`create_session_cookie`] uses the configured name, signing secret,
 //! lifetime and cookie attributes.
 
-pub use better_auth_api::plugins::helpers::{IssuedSession, SessionIssueError, issue_user_session};
+//! To select an organization during the initial insert, use
+//! [`issue_user_session_with_fields`] after verifying access to that organization:
+//!
+//! ```
+//! use better_auth::session::{SessionIssueError, SessionOverrides, issue_user_session_with_fields};
+//! use better_auth::{AuthSchema, BetterAuth};
+//!
+//! async fn sign_in_to_organization<S: AuthSchema>(
+//!     auth: &BetterAuth<S>, user_id: &str, organization_id: &str,
+//! ) -> Result<(), SessionIssueError> {
+//!     let issued = issue_user_session_with_fields(
+//!         auth.context(), user_id, None, None,
+//!         SessionOverrides {
+//!             active_organization_id: Some(organization_id.to_owned()),
+//!             ..Default::default()
+//!         },
+//!     ).await?;
+//!     // Deliver a signed cookie using `issued.session`, as above.
+//!     Ok(())
+//! }
+//! ```
+//!
+//! Overrides also support active teams, impersonation, and configured additional
+//! fields. Creation hooks see these fields and can transform or reject them;
+//! the returned session contains the final stored values. For callbacks that
+//! need retained adapter output, use [`issue_user_session_with_fields_record`].
+
+pub use better_auth_api::plugins::helpers::{
+    IssuedSession, IssuedSessionRecord, SessionIssueError, SessionOverrides, issue_user_session,
+    issue_user_session_record, issue_user_session_with_fields,
+    issue_user_session_with_fields_record, issue_user_session_with_overrides,
+    issue_user_session_with_overrides_record,
+};
 pub use better_auth_core::session::{SessionRefreshSuppressed, cookie_cache};
 pub use better_auth_core::utils::cookie_utils::create_session_cookie;

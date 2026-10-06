@@ -22,6 +22,8 @@ pub use sessions::get_cookie;
 pub(in crate::plugins) use sessions::issue_selected_user_session_record;
 pub use sessions::issue_user_session;
 pub use sessions::issue_user_session_record;
+pub use sessions::issue_user_session_with_fields;
+pub use sessions::issue_user_session_with_fields_record;
 pub use sessions::issue_user_session_with_overrides;
 pub use sessions::issue_user_session_with_overrides_record;
 pub(in crate::plugins) use sessions::ordinary_session;
@@ -128,11 +130,22 @@ impl From<AuthError> for SessionIssueError {
     }
 }
 
-struct SessionOverrides {
-    additional_fields: better_auth_core::field_policy::FieldValues,
-    impersonated_by: Option<String>,
-    active_organization_id: Option<String>,
-    active_team_id: Option<String>,
+/// Trusted fields for the initial session insert in a custom sign-in flow.
+///
+/// These values pass through configured field policies and session creation
+/// hooks. Use only after authenticating the user and authorizing the requested
+/// organization, team, or impersonation; issuance does not check membership.
+/// The issuer owns the session token, user ID, and expiry.
+#[derive(Clone, Debug, Default)]
+pub struct SessionOverrides {
+    /// Application-defined session fields declared by the schema and configuration.
+    pub additional_fields: better_auth_core::field_policy::FieldValues,
+    /// The trusted administrator responsible for impersonation, if any.
+    pub impersonated_by: Option<String>,
+    /// The organization selected by the application for this session.
+    pub active_organization_id: Option<String>,
+    /// The team selected by the application for this session.
+    pub active_team_id: Option<String>,
 }
 
 impl<S: better_auth_core::AuthSchema> std::fmt::Debug for IssuedSession<S> {
