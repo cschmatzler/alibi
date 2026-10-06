@@ -2057,6 +2057,9 @@ const openApiInstances = openApiProfiles(PORT, database);
 const passkeyControls = passkeyFixture(database);
 const server = Bun.serve({
   port: PORT,
+  // Fixture bodies intentionally pause for eleven seconds after headers. The
+  // transport must outlive that proof; the auth verifier retains its own timeout.
+  idleTimeout: 60,
   async fetch(request) {
     await capturePasswordlessRequest(request);
     try {

@@ -271,3 +271,60 @@ test("organization application creation receipts retain full bodies with bounded
     await server.stop(true);
   }
 });
+
+test("concurrent traces retain request order when independent responses finish in reverse order", async () => {
+  let releaseSlow!: () => void;
+  let startedSlow!: () => void;
+  const slowStarted = new Promise<void>((resolve) => {
+    startedSlow = resolve;
+  });
+  const slowRelease = new Promise<void>((resolve) => {
+    releaseSlow = resolve;
+  });
+  const server = Bun.serve({
+    hostname: "127.0.0.1",
+    port: 0,
+    async fetch(request) {
+      if (new URL(request.url).pathname === "/slow") {
+        startedSlow();
+        await slowRelease;
+        return Response.json({ principal: "first" });
+      }
+      return Response.json({ principal: "second" }, { status: 201 });
+    },
+  });
+  try {
+    const traces: TraceEntry[] = [];
+    // Actors share the scenario trace, but each owns a separate cookie jar.
+    const slow = createTracingFetch(server.url.origin, "first", traces)("/slow");
+    await slowStarted;
+    const fast = await createTracingFetch(server.url.origin, "second", traces)("/fast");
+    expect(await fast.json()).toEqual({ principal: "second" });
+    releaseSlow();
+    expect(await (await slow).json()).toEqual({ principal: "first" });
+    expect(
+      traces.map(({ actor, path, responseStatus, responseBodyShape }) => ({
+        actor,
+        path,
+        responseStatus,
+        responseBodyShape,
+      })),
+    ).toEqual([
+      {
+        actor: "first",
+        path: "/slow",
+        responseStatus: 200,
+        responseBodyShape: { principal: "string" },
+      },
+      {
+        actor: "second",
+        path: "/fast",
+        responseStatus: 201,
+        responseBodyShape: { principal: "string" },
+      },
+    ]);
+  } finally {
+    releaseSlow();
+    await server.stop(true);
+  }
+});

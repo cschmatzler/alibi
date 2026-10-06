@@ -53,7 +53,9 @@ feature builds, TypeScript type checking, harness negative controls, the
 complete SDK scenario directory, process-environment cases, Chromium tests,
 doctests, docs, and LLVM line coverage.
 The 75% production line-coverage floor retains execution from unit, integration
-and SDK tests while excluding their own source. The filtered LCOV artifact
+and the complete SQLx SDK suite while excluding their own source. Instrumented
+SDK owners share one fixture pool, and the complete production floor remains
+75%. The filtered LCOV artifact
 reports lines only, because LLVM does not supply function-end ranges in LCOV.
 Rust unit and integration tests run with `cargo nextest run`, including the
 compatibility server and LLVM coverage (`cargo llvm-cov nextest`). Executable
@@ -73,8 +75,24 @@ with `TEST=0`, checking the dependency's process-initialization behavior. Run it
 alone with `tests/compat/client-tests/run-against-both.sh environment` inside the
 development shell.
 
-SDK scenarios run against both servers sequentially and default to a 30-second
-test deadline, including real password hashing and multi-step tables. Scenarios
+Each SDK scenario runs against TypeScript and then Rust and defaults to a
+30-second test deadline, including real password hashing and multi-step tables.
+Workers take the next scenario file from a shared queue, prioritizing measured
+slow files in `scenario-costs.json`; every discovered file still runs. Each pair
+owns separate fixture databases and process-global state, and executes its files
+and scenarios serially. The default budget reserves two CPUs and 4 GiB of
+available memory, estimates 1.5 GiB per pair, and caps concurrency at 16 pairs.
+Linux cgroup memory limits also constrain that budget; hosts without memory
+measurements default to at most four pairs.
+
+`./scripts/compat.sh` shares that total budget between concurrent SQLx and SeaORM
+runs, using separately compiled fixture executables and evidence namespaces.
+Standalone SDK owners use the budget for their selected adapter. Set
+`BETTER_AUTH_COMPAT_JOBS=1` for serial execution or choose 1–32 pairs explicitly.
+Full-suite evidence is cleared once per adapter and checked only after all its
+workers finish. A passing adapter cannot supply another adapter's receipts.
+The Rust fixture uses optimized production code and one Tokio event loop, and
+resolves its complete Axum router once before accepting connections. Scenarios
 can override that deadline; assertions about protocol timeouts and lifetimes
 remain independent. CI allows two hours for cold builds, the full SDK suite,
 browser checks, and the instrumented coverage pass.
@@ -90,7 +108,8 @@ Outside devenv, run `bunx playwright install --with-deps chromium` in
 ## What the tests establish
 
 - Rust tests cover storage, plugin logic, integration routes and feature builds.
-- SDK scenarios run sequentially against fresh TS and Rust fixture state.
+- SDK scenarios run sequentially within isolated TS/Rust worker pairs against
+  fresh fixture state.
   Their values, response shapes, status codes, redirects and cookie attributes
   are compared. The full runner discovers `tests/`, so new directories join
   the gate automatically.

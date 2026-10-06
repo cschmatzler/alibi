@@ -17,7 +17,13 @@ test("capability gate requires every committed scenario and regeneration preserv
       mkdir(join(root, "tests/compat/reference-server"), { recursive: true }),
     ]);
 
-    for (const name of ["coverage.ts", "check-coverage.ts", "oracle.ts"]) {
+    for (const name of [
+      "coverage.ts",
+      "check-coverage.ts",
+      "oracle.ts",
+      "artifacts.ts",
+      "trace-window.ts",
+    ]) {
       await copyFile(new URL(`../support/${name}`, import.meta.url), join(support, name));
     }
 
@@ -47,6 +53,29 @@ test("capability gate requires every committed scenario and regeneration preserv
     };
     await Bun.write(inventoryPath, JSON.stringify(inventory));
 
+    const run = async (update = false, inventoryOnly = false, namespace = "") => {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          join(support, "check-coverage.ts"),
+          ...(inventoryOnly ? ["--inventory-only"] : []),
+        ],
+        {
+          env: {
+            ...process.env,
+            COMPAT_ARTIFACT_NAMESPACE: namespace,
+            BETTER_AUTH_UPDATE_CAPABILITIES: update ? "1" : "0",
+          },
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      );
+      const [code, output] = await Promise.all([child.exited, new Response(child.stderr).text()]);
+      return { code, output };
+    };
+    // Valid metadata must pass before any runtime routes or evidence exist.
+    expect((await run(false, true)).code).toBe(0);
+
     for (const name of ["upstream-routes", "runtime-routes"]) {
       await Bun.write(join(root, `coverage/${name}.json`), JSON.stringify(["GET /token"]));
     }
@@ -61,15 +90,6 @@ test("capability gate requires every committed scenario and regeneration preserv
         },
       }),
     );
-    const run = async (update = false) => {
-      const child = Bun.spawn([process.execPath, join(support, "check-coverage.ts")], {
-        env: { ...process.env, BETTER_AUTH_UPDATE_CAPABILITIES: update ? "1" : "0" },
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const [code, output] = await Promise.all([child.exited, new Response(child.stderr).text()]);
-      return { code, output };
-    };
     const missing = await run();
     expect(missing.code).not.toBe(0);
     expect(missing.output).toContain("missing success (API key principal)");
@@ -78,6 +98,26 @@ test("capability gate requires every committed scenario and regeneration preserv
     expect(regeneration.code).not.toBe(0);
     expect(regeneration.output).toContain("missing success (API key principal)");
     expect(await Bun.file(inventoryPath).json()).toEqual(inventory);
+
+    // Receipts for one adapter must never satisfy the other's gate.
+    const sqlxEvidence = join(client, "artifacts/sqlx/evidence");
+    await mkdir(sqlxEvidence, { recursive: true });
+    await Bun.write(
+      join(sqlxEvidence, "scenario.json"),
+      JSON.stringify({
+        "GET /token": {
+          success: ["session refresh", "API key principal"],
+          rejection: ["expired session"],
+        },
+      }),
+    );
+    expect((await run(false, false, "sqlx")).code).toBe(0);
+    const seaormEvidence = join(client, "artifacts/seaorm/evidence");
+    await mkdir(seaormEvidence, { recursive: true });
+    await Bun.write(join(seaormEvidence, "scenario.json"), await Bun.file(observed).text());
+    const foreignBackend = await run(false, false, "seaorm");
+    expect(foreignBackend.code).not.toBe(0);
+    expect(foreignBackend.output).toContain("missing success (API key principal)");
 
     await Bun.write(
       observed,
@@ -148,9 +188,11 @@ test("capability gate requires every committed scenario and regeneration preserv
       ],
     };
     await Bun.write(inventoryPath, JSON.stringify(duplicated));
-    const duplicateResult = await run(true);
-    expect(duplicateResult.code).not.toBe(0);
-    expect(duplicateResult.output).toContain("Duplicate committed capability routes");
+    for (const inventoryOnly of [false, true]) {
+      const duplicateResult = await run(true, inventoryOnly);
+      expect(duplicateResult.code).not.toBe(0);
+      expect(duplicateResult.output).toContain("Duplicate committed capability routes");
+    }
     expect(await Bun.file(inventoryPath).json()).toEqual(duplicated);
 
     await Bun.write(inventoryPath, JSON.stringify(updated));

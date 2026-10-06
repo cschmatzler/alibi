@@ -2,7 +2,9 @@ import { mkdir } from "node:fs/promises";
 
 import { z } from "zod";
 
+import { ARTIFACT_ROOT } from "./artifacts";
 import type { TraceEntry } from "./trace";
+import { requestWindow } from "./trace-window";
 
 /**
  * Each category names the scenarios that must produce its evidence, or states
@@ -95,20 +97,59 @@ export function collectCoverage(
     if (
       baseURL &&
       trace.method === "GET" &&
-      /^\/callback\/[^/]+$/.test(path) &&
+      /^\/callback\/[^/]+(?:\/oauth-proxy)?$/.test(path) &&
       trace.responseStatus === 302
     ) {
       try {
         const base = new URL(baseURL);
         const location = new URL(trace.responseHeaders.location ?? "", base);
         const errors = location.searchParams.getAll("error");
+        // Cookie proxy owners deliberately use an application error callback.
+        // Admit only its exact destination from a preceding successful grant
+        // in this profile, preserving all configured application query fields.
+        const configuredProxyDenial =
+          path.endsWith("/oauth-proxy") &&
+          traces.slice(0, traces.indexOf(trace)).some((issued) => {
+            const input = issued[requestWindow]?.oauthErrorCallbackURL;
+            if (
+              issued.method !== "POST" ||
+              issued.responseStatus !== 200 ||
+              ![`${prefix}/sign-in/social`, `${prefix}/link-social`].includes(
+                new URL(issued.path, base).pathname,
+              ) ||
+              typeof input !== "string" ||
+              !issued.responseBody ||
+              typeof issued.responseBody !== "object" ||
+              !("url" in issued.responseBody) ||
+              typeof issued.responseBody.url !== "string"
+            ) {
+              return false;
+            }
+            try {
+              new URL(issued.responseBody.url);
+              const expected = new URL(input, base);
+              if (
+                expected.origin !== base.origin ||
+                expected.username ||
+                expected.password ||
+                expected.href.includes("#") ||
+                expected.searchParams.has("error")
+              ) {
+                return false;
+              }
+              expected.searchParams.set("error", errors[0]!);
+              return expected.href === location.href;
+            } catch {
+              return false;
+            }
+          });
         rejectedCallback =
           !!trace.responseHeaders.location &&
           location.origin === base.origin &&
           !location.username &&
           !location.password &&
           !location.href.includes("#") &&
-          location.pathname === `${prefix}/error` &&
+          (location.pathname === `${prefix}/error` || configuredProxyDenial) &&
           errors.length === 1 &&
           ["email_does_not_match", "unable_to_get_user_info", "state_mismatch"].includes(
             errors[0]!,
@@ -216,7 +257,7 @@ export async function recordCoverage(
   }
 
   const output = collectCoverage(scenario, traces, stateTransitions, baseURL);
-  const directory = new URL("../artifacts/evidence/", import.meta.url);
+  const directory = new URL("evidence/", ARTIFACT_ROOT);
   await mkdir(directory, { recursive: true });
   await Bun.write(
     new URL(`${Bun.hash(scenario)}.json`, directory),

@@ -45,3 +45,8 @@ opt-level = 3
 
 [profile.dev.package.num-bigint-dig]
 opt-level = 3
+
+# The fixture exercises production HTTP paths. Optimize the entire server and
+# its dependencies, not just the outer scrypt crate, without changing algorithms.
+[profile.dev]
+opt-level = 2

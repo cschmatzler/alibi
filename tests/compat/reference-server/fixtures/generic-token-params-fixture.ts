@@ -428,11 +428,14 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
       if (p === "/__test/generic-token/orphan" && request.method === "POST") {
         const body = (await request.json()) as { accountId: string };
         const db = base.database as import("bun:sqlite").Database;
+        const prior = db
+          .query<{ foreign_keys: number }, []>("PRAGMA foreign_keys")
+          .get()!.foreign_keys;
         db.exec("PRAGMA foreign_keys=OFF");
         try {
           db.query("UPDATE account SET userId='missing-owner' WHERE id=?").run(body.accountId);
         } finally {
-          db.exec("PRAGMA foreign_keys=ON");
+          db.exec(`PRAGMA foreign_keys=${prior}`);
         }
         return Response.json({ status: true });
       }
