@@ -92,51 +92,13 @@ impl OrganizationMemberCreatePatch {
 
 /// Creation hooks are awaited at their individual source phases.
 ///
-/// Organization, creator membership, default team and awaited creation hooks share a transaction.
-/// A failing creation hook rolls these writes back.
+/// Errors retain previous writes; the framework does not wrap this lifecycle in a transaction.
 /// Authority snapshots cannot be changed by an HTTP body or by mutating context. Typed patches
 /// cover bundled model fields, not arbitrary JavaScript columns or direct mutation of callback
-/// arguments. Use the `_in_transaction` methods and supplied store for atomic callback writes.
-/// Captured application connections are independent and cannot see uncommitted rows; writes
-/// through them may contend with the creation transaction and do not roll back with it.
+/// arguments. Capture an application store when the callback needs independent persistence or
+/// additional field access.
 #[async_trait]
 pub trait OrganizationCreationHooks: std::fmt::Debug + Send + Sync {
-    /// Use the supplied store for writes that must roll back with organization creation.
-    async fn before_create_in_transaction(
-        &self,
-        context: &OrganizationDraftContext,
-        _store: &dyn OrganizationCreationStore,
-    ) -> AuthResult<Option<OrganizationCreatePatch>> {
-        self.before_create(context).await
-    }
-
-    /// Use the supplied store for writes that must roll back with organization creation.
-    async fn before_add_member_in_transaction(
-        &self,
-        context: &OrganizationMemberDraftContext,
-        _store: &dyn OrganizationCreationStore,
-    ) -> AuthResult<Option<OrganizationMemberCreatePatch>> {
-        self.before_add_member(context).await
-    }
-
-    /// Use the supplied store for writes that must roll back with organization creation.
-    async fn after_add_member_in_transaction(
-        &self,
-        context: &OrganizationCreatedContext,
-        _store: &dyn OrganizationCreationStore,
-    ) -> AuthResult<()> {
-        self.after_add_member(context).await
-    }
-
-    /// Use the supplied store for writes that must roll back with organization creation.
-    async fn after_create_in_transaction(
-        &self,
-        context: &OrganizationCreatedContext,
-        _store: &dyn OrganizationCreationStore,
-    ) -> AuthResult<()> {
-        self.after_create(context).await
-    }
-
     async fn before_create(
         &self,
         _context: &OrganizationDraftContext,
@@ -274,13 +236,4 @@ pub trait OrganizationUpdateHooks: std::fmt::Debug + Send + Sync {
     async fn after_update(&self, _context: &OrganizationUpdatedContext) -> AuthResult<()> {
         Ok(())
     }
-}
-
-/// Organization writes and team access inside the creation lifecycle's transaction.
-#[async_trait]
-pub trait OrganizationCreationStore: Send + Sync {
-    fn teams(&self) -> AuthResult<&dyn better_auth_core::store::TeamStore>;
-    async fn create_organization(&self, data: CreateOrganization) -> AuthResult<Organization>;
-    async fn create_member(&self, data: CreateMember) -> AuthResult<Member>;
-    async fn update_member_role(&self, member_id: &str, role: &str) -> AuthResult<Member>;
 }

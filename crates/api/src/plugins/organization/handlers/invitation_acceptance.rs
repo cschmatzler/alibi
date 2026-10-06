@@ -205,18 +205,6 @@ pub(in crate::plugins::organization) async fn accept<S: AuthSchema>(
     let auth_config = Arc::clone(&ctx.config);
     let result = transaction(ctx.database.as_ref(), move |tx| {
         Box::pin(async move {
-            tx.lock_organization(&accepted_for_tx.organization_id)
-                .await?;
-            if tx
-                .count_organization_members(&accepted_for_tx.organization_id)
-                .await? as f64
-                >= limit
-            {
-                return Err(acceptance_error(
-                    403,
-                    "ORGANIZATION_MEMBERSHIP_LIMIT_REACHED",
-                ));
-            }
             let team_ids: Vec<_> = if teams.enabled {
                 accepted_for_tx
                     .team_id

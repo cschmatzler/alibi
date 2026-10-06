@@ -61,8 +61,21 @@ where
     }
 
     async fn update_member_role(&self, member_id: &str, role: &str) -> AuthResult<Member> {
-        self.update_member_role_with_connection(self.connection(), member_id, role)
+        let Some(model) = Entity::find_by_id(member_id.to_owned())
+            .one(self.connection())
             .await
+            .map_err(map_db_err)?
+        else {
+            return Err(AuthError::not_found("Member not found"));
+        };
+
+        let mut active = model.into_active_model();
+        active.role = Set(role.to_owned());
+        active
+            .update(self.connection())
+            .await
+            .map(|model_2| Member::from(&model_2))
+            .map_err(map_db_err)
     }
 
     async fn update_member_role_if_present(
@@ -348,30 +361,5 @@ fn apply_member_sort(
         Some(column) if descending => query.order_by_desc(column),
         Some(column) => query.order_by_asc(column),
         None => query.order_by_asc(Column::CreatedAt),
-    }
-}
-
-impl<S: AuthSchema> SeaOrmStore<S> {
-    pub(super) async fn update_member_role_with_connection<C: sea_orm::ConnectionTrait>(
-        &self,
-        connection: &C,
-        member_id: &str,
-        role: &str,
-    ) -> AuthResult<Member> {
-        let Some(model) = Entity::find_by_id(member_id.to_owned())
-            .one(connection)
-            .await
-            .map_err(map_db_err)?
-        else {
-            return Err(AuthError::not_found("Member not found"));
-        };
-
-        let mut active = model.into_active_model();
-        active.role = Set(role.to_owned());
-        active
-            .update(connection)
-            .await
-            .map(|model_2| Member::from(&model_2))
-            .map_err(map_db_err)
     }
 }

@@ -364,11 +364,6 @@ export function compatScenario(
   stateTransitions: readonly string[] = [],
   timeoutMs = 30_000,
   options: {
-    /** Explicit runtime contract differences must be asserted before projecting their comparison. */
-    readonly comparisonProjection?: {
-      readonly reason: string;
-      readonly project: (value: unknown) => unknown;
-    };
     readonly oauthProxyProfileSecret?: string;
     readonly oauthProxyProfileManagedKeys?: ComparisonContext["oauthProxyProfileManagedKeys"];
     readonly sessionCookieSecretsByAuthPath?: Readonly<Record<string, string>>;
@@ -380,7 +375,7 @@ export function compatScenario(
   } = {},
   reproduction?: unknown,
 ) {
-  const { oracle, comparisonProjection, ...comparisonOptions } = options;
+  const { oracle, ...comparisonOptions } = options;
   assuranceEvent({ event: "registered", name: scenarioName });
   test.serial(
     scenarioName,
@@ -425,15 +420,6 @@ export function compatScenario(
             serializeObservationReceipt({ scenarioName, ts, rust }),
           );
         }
-        if (comparisonProjection) {
-          console.info(`${scenarioName}: ${comparisonProjection.reason}`);
-          if (observationsDirectory) {
-            await Bun.write(
-              join(observationsDirectory, `${Bun.hash(scenarioName)}.comparison-exception.json`),
-              JSON.stringify({ scenarioName, reason: comparisonProjection.reason }, null, 2),
-            );
-          }
-        }
         const comparison = {
           sessionCookieSecret: "compat-test-only-key-not-real-minimum-32chars",
           compactSessionCacheSecret: "compat-test-only-key-not-real-minimum-32chars",
@@ -454,14 +440,8 @@ export function compatScenario(
         // Retain one identity graph across values and transport, and give the
         // trace shape markers their explicit scope when comparing type labels.
         const differences = compareValues(
-          comparisonProjection?.project({ observation: ts.observation, traces: ts.traces }) ?? {
-            observation: ts.observation,
-            traces: ts.traces,
-          },
-          comparisonProjection?.project({ observation: rust.observation, traces: rust.traces }) ?? {
-            observation: rust.observation,
-            traces: rust.traces,
-          },
+          { observation: ts.observation, traces: ts.traces },
+          { observation: rust.observation, traces: rust.traces },
           comparison,
         );
         const { clientDiffs, rawDiffs, unclassified } = classifyDifferences(differences);

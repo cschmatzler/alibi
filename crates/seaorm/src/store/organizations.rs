@@ -20,8 +20,29 @@ where
     S: AuthSchema + Send + Sync,
 {
     async fn create_organization(&self, org: CreateOrganization) -> AuthResult<Organization> {
-        self.create_organization_with_connection(self.connection(), org)
-            .await
+        let now = Utc::now();
+        let metadata = org
+            .metadata
+            .map(|metadata| {
+                JsonMetadata::for_backend(
+                    better_auth_core::utils::json::to_value(&metadata)?,
+                    self.connection().get_database_backend(),
+                )
+            })
+            .transpose()?;
+        ActiveModel {
+            id: Set(org.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
+            name: Set(org.name),
+            slug: Set(org.slug),
+            logo: Set(org.logo),
+            metadata: Set(metadata),
+            created_at: Set(now),
+            updated_at: Set(now),
+        }
+        .insert(self.connection())
+        .await
+        .map(|model| Organization::from(&model))
+        .map_err(map_db_err)
     }
 
     async fn get_organization_by_id(&self, id: &str) -> AuthResult<Option<Organization>> {
@@ -223,36 +244,4 @@ fn apply_organization_update(
     active.updated_at = Set(Utc::now());
 
     Ok(active)
-}
-
-impl<S: AuthSchema> SeaOrmStore<S> {
-    pub(super) async fn create_organization_with_connection<C: sea_orm::ConnectionTrait>(
-        &self,
-        connection: &C,
-        org: CreateOrganization,
-    ) -> AuthResult<Organization> {
-        let now = Utc::now();
-        let metadata = org
-            .metadata
-            .map(|metadata| {
-                JsonMetadata::for_backend(
-                    better_auth_core::utils::json::to_value(&metadata)?,
-                    connection.get_database_backend(),
-                )
-            })
-            .transpose()?;
-        ActiveModel {
-            id: Set(org.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
-            name: Set(org.name),
-            slug: Set(org.slug),
-            logo: Set(org.logo),
-            metadata: Set(metadata),
-            created_at: Set(now),
-            updated_at: Set(now),
-        }
-        .insert(connection)
-        .await
-        .map(|model| Organization::from(&model))
-        .map_err(map_db_err)
-    }
 }

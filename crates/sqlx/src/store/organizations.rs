@@ -18,9 +18,38 @@ impl<S> OrganizationStore for SqlxStore<S>
 where
     S: AuthSchema + Send + Sync,
 {
-    async fn create_organization(&self, org: CreateOrganization) -> AuthResult<Organization> {
-        self.create_organization_with_connection(self.exec(), org)
+    async fn create_organization(&self, mut org: CreateOrganization) -> AuthResult<Organization> {
+        let now = Utc::now();
+        let metadata = org
+            .metadata
+            .map(|metadata| {
+                JsonMetadata::for_backend(
+                    better_auth_core::utils::json::to_value(&metadata)?,
+                    self.exec().engine(),
+                )
+            })
+            .transpose()?;
+        let mut active = ActiveRow::new();
+        active.set(
+            "id",
+            org.id
+                .unwrap_or_else(|| self.organization_models.organization.new_id()),
+        );
+        active.set("name", org.name);
+        active.set("slug", org.slug);
+        active.set("logo", org.logo);
+        active.set("metadata", metadata.into_sql_value());
+        active.set("created_at", now);
+        active.set("updated_at", now);
+        self.organization_models
+            .organization
+            .set_fields(self.exec(), &mut active, &mut org.additional_fields)
+            .await?;
+        self.organization_models
+            .organization
+            .insert(self.exec(), &active)
             .await
+            .map(|model| Organization::from(&model))
     }
 
     async fn get_organization_by_id(&self, id: &str) -> AuthResult<Option<Organization>> {
@@ -304,44 +333,4 @@ fn apply_organization_update(
     active.set("updated_at", Utc::now());
 
     Ok(active)
-}
-
-impl<S: AuthSchema> SqlxStore<S> {
-    pub(super) async fn create_organization_with_connection(
-        &self,
-        exec: Exec<'_>,
-        mut org: CreateOrganization,
-    ) -> AuthResult<Organization> {
-        let now = Utc::now();
-        let metadata = org
-            .metadata
-            .map(|metadata| {
-                JsonMetadata::for_backend(
-                    better_auth_core::utils::json::to_value(&metadata)?,
-                    exec.engine(),
-                )
-            })
-            .transpose()?;
-        let mut active = ActiveRow::new();
-        active.set(
-            "id",
-            org.id
-                .unwrap_or_else(|| self.organization_models.organization.new_id()),
-        );
-        active.set("name", org.name);
-        active.set("slug", org.slug);
-        active.set("logo", org.logo);
-        active.set("metadata", metadata.into_sql_value());
-        active.set("created_at", now);
-        active.set("updated_at", now);
-        self.organization_models
-            .organization
-            .set_fields(exec, &mut active, &mut org.additional_fields)
-            .await?;
-        self.organization_models
-            .organization
-            .insert(exec, &active)
-            .await
-            .map(|model| Organization::from(&model))
-    }
 }
