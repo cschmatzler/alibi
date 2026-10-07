@@ -1100,6 +1100,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     .await?;
     let otp_outbox_for_reset = otp_outbox.clone();
     let auth_router = auth.clone().axum_router();
+    let mut error_url_router = Router::new();
+    for mode in ["redirect", "html"] {
+        let path = format!("/__test/profiles/error-url-{mode}/api/auth");
+        let mut profile_config = config.clone().base_path(&path).api_error_url("/problem?keep=a%2Bb#error-panel");
+        profile_config.render_error_page = mode == "html";
+        let profile_auth = Arc::new(AuthBuilder::<TestSchema>::new(profile_config.clone())
+            .store(crate::backend::store::<TestSchema>(profile_config, reset_database.clone()))
+            .rate_limit(RateLimitConfig::new().enabled(false)).build().await?);
+        error_url_router = error_url_router.nest(&path, profile_auth.clone().axum_router().with_state(profile_auth));
+    }
     let error_page_path = "/__test/profiles/error-page/api/auth";
     let mut error_page_config = config.clone().base_path(error_page_path);
     error_page_config.render_error_page = true;
@@ -2133,6 +2143,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nest("/api/auth", auth_router)
         .with_state(auth)
         .merge(error_page_router)
+        .merge(error_url_router)
         .merge(railway_router)
         .merge(reddit_router)
         .merge(provider_batch_router)

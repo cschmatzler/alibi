@@ -1088,6 +1088,20 @@ const errorPageAuth = betterAuth({
   basePath: "/__test/profiles/error-page/api/auth",
   onAPIError: { customizeDefaultErrorPage: {} },
 });
+for (const mode of ["redirect", "html"]) {
+  const path = `/__test/profiles/error-url-${mode}/api/auth`;
+  verificationProfiles.set(
+    path,
+    betterAuth({
+      ...authOptions,
+      basePath: path,
+      onAPIError: {
+        errorURL: "/problem?keep=a%2Bb#error-panel",
+        ...(mode === "html" ? { customizeDefaultErrorPage: {} } : {}),
+      },
+    }),
+  );
+}
 const authContext = await auth.$context;
 const oneTapProfiles = createOneTapProfiles(authOptions);
 const googleIdProfiles = googleIdTokenProfiles(authOptions);
