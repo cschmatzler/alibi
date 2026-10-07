@@ -1,9 +1,9 @@
 ---
 title: "Introduction"
-description: "What Better Auth RS is, how its pieces fit together, and where to start."
+description: "What Alibi is, how its pieces fit together, and where to start."
 ---
 
-Better Auth RS is an authentication framework for Rust backends. It implements the HTTP contract of [Better Auth](https://www.better-auth.com/) — the same endpoints, payloads, cookies and error codes — on top of your own database, your own models and your own web framework.
+Alibi is an authentication framework for Rust backends. It implements the HTTP contract of [Better Auth](https://www.better-auth.com/) — the same endpoints, payloads, cookies and error codes — on top of your own database, your own models and your own web framework.
 
 You assemble an auth instance from four parts:
 
@@ -27,9 +27,7 @@ async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<
 }
 ```
 
-:::caution[Unreleased]
-Better Auth RS is used directly from Git. APIs, wire formats and generated schemas may change before a release. Pin a reviewed commit with `rev = "<commit>"` for reproducible builds.
-:::
+Install Alibi `0.1.0` from [crates.io](https://crates.io/crates/alibi). See [Installation](/installation/) for the library dependency and matching schema generator.
 
 ## How a request flows
 
@@ -84,4 +82,4 @@ HTTP behavior targets **better-auth@1.7.7** and is verified by running the offic
 
 ## Frontend
 
-Better Auth RS serves the same API as the TypeScript server, so the official client works unchanged. See the Better Auth [client setup](https://www.better-auth.com/docs/concepts/client) and [frontend guides](https://www.better-auth.com/docs/basic-usage). For browsers on a different origin, read [Cross-origin applications](/guides/cross-origin/).
+Alibi serves the same API as the TypeScript server, so the official client works unchanged. See the Better Auth [client setup](https://www.better-auth.com/docs/concepts/client) and [frontend guides](https://www.better-auth.com/docs/basic-usage). For browsers on a different origin, read [Cross-origin applications](/guides/cross-origin/).

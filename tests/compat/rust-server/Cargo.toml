@@ -5,10 +5,10 @@ edition = "2021"
 publish = false
 
 [dependencies]
-better-auth = { path = "../../..", features = ["axum", "seaorm"] }
-better-auth-core = { path = "../../../crates/core" }
-better-auth-seaorm = { path = "../../../crates/seaorm" }
-better-auth-sqlx = { path = "../../../crates/sqlx" }
+better-auth = { package = "alibi", path = "../../..", features = ["axum", "seaorm"] }
+better-auth-core = { package = "alibi-core", path = "../../../crates/core" }
+better-auth-seaorm = { package = "alibi-seaorm", path = "../../../crates/seaorm" }
+better-auth-sqlx = { package = "alibi-sqlx", path = "../../../crates/sqlx" }
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "chrono", "json", "derive"] }
 tokio = { version = "1", features = ["full"] }
 axum = "0.8"

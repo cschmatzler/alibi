@@ -1,4 +1,4 @@
-//! Proc macros for the Better Auth `SeaORM` integration.
+//! Proc macros for the Alibi `SeaORM` integration.
 mod entities;
 mod fields;
 mod roots;

@@ -1,4 +1,4 @@
-//! `SQLx` model bindings for Better Auth schemas.
+//! `SQLx` model bindings for Alibi schemas.
 
 use crate::model::{ActiveRow, SqlxModel};
 use crate::pool::Engine;

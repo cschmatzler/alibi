@@ -1,4 +1,4 @@
-//! `SQLx` integration for Better Auth.
+//! `SQLx` integration for Alibi.
 //!
 //! [`SqlxStore`] persists every auth table through an application's own
 //! SQLite or PostgreSQL pool. Application-owned models derive

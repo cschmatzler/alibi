@@ -3,7 +3,7 @@ title: "Hooks"
 description: "Database hooks for physical writes, endpoint hooks for logical calls, and request context."
 ---
 
-Better Auth RS has two hook layers, and choosing the right one matters:
+Alibi has two hook layers, and choosing the right one matters:
 
 | Layer | Fires on | Use it to |
 | --- | --- | --- |

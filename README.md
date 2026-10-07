@@ -1,15 +1,12 @@
-# Better Auth RS
+# Alibi
 
 [![CI](https://github.com/cschmatzler/better-auth-rs/actions/workflows/ci.yml/badge.svg)](https://github.com/cschmatzler/better-auth-rs/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![Better Auth compatibility](https://img.shields.io/badge/better--auth-v1.7.7-blue)](https://www.npmjs.com/package/better-auth/v/1.7.7)
 
-A Rust implementation of [Better Auth](https://www.better-auth.com/), built to work with its official TypeScript client. Run authentication in your Rust backend while keeping Better Auth's frontend API.
+Alibi is a Rust implementation of [Better Auth](https://www.better-auth.com/), built to work with its official TypeScript client. Run authentication in your Rust backend while keeping Better Auth's frontend API. Requires Rust 1.99 or newer.
 
 Use email and password, social login, passkeys, two-factor authentication, organizations, and API keys through composable plugins. Store auth data with SQLx or SeaORM, own the generated models and migrations, and mount the server in Axum or Poem.
-
-> [!WARNING]
-> **Unreleased and under active development.** Use the repository directly from Git and pin a reviewed commit. Rust APIs and generated schemas may change before the first stable release. Production use is not recommended yet.
 
 ## Upstream compatibility
 
@@ -25,7 +22,7 @@ The example below runs email and password authentication with Axum and SQLite. A
 
 ```toml
 [dependencies]
-better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", features = ["axum"] }
+better-auth = { package = "alibi", version = "0.1.0", features = ["axum"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -34,12 +31,12 @@ chrono = { version = "0.4", features = ["serde"] }
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "chrono", "json", "derive"] }
 ```
 
-For reproducible builds, add `rev = "<commit>"` to the Git dependency and install the CLI from that same commit with `--rev <commit>`.
+Commit your application’s `Cargo.lock` for reproducible builds and install the matching `alibi-cli` version.
 
 Generate your auth models:
 
 ```bash
-cargo install --git https://github.com/cschmatzler/better-auth-rs --locked better-auth-cli
+cargo install alibi-cli --version 0.1.0 --locked
 better-auth-rs generate -o src/auth_schema.rs
 ```
 
@@ -106,13 +103,17 @@ Rust releases use independent Semantic Versioning. Each release records the exac
 
 Compatible Rust bug fixes can ship as patch releases without waiting for upstream. Compatible additions use minor releases; breaking changes require major releases. Upstream upgrades are versioned by their effect on Rust users.
 
-For example, Rust `1.0.0` and `1.0.1` could both target Better Auth `1.7.7`, with `1.0.1` fixing a Rust implementation bug. These are examples, not published versions: the current workspace version is `1.0.0-alpha.3`.
+For example, Rust `1.0.0` and `1.0.1` could both target Better Auth `1.7.7`, with `1.0.1` fixing a Rust implementation bug. These illustrate the versioning policy. The current release is `0.1.0`.
 
 See the [release policy](docs/src/content/docs/guides/releases.md) for compatibility rules and publication checks.
 
+Alibi `0.1.0` is available on [crates.io](https://crates.io/crates/alibi).
+
+The Rust library import remains `better_auth`, and the generator binary is `better-auth-rs`.
+
 ## Documentation
 
-Read the [documentation site](https://better-auth-rs.schmatzler.com) or browse the guides in this repository:
+Read the [documentation site](https://alibi.schmatzler.com) or browse the guides in this repository:
 
 - [Plugins](docs/src/content/docs/plugins/index.md) and [social sign-on](docs/src/content/docs/authentication/social-sign-on.md)
 - [SQLx](docs/src/content/docs/databases/sqlx.md), [SeaORM](docs/src/content/docs/databases/seaorm.md), and [existing databases](docs/src/content/docs/databases/existing-databases.md)

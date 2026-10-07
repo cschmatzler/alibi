@@ -10,7 +10,7 @@ description: "Use SeaORM entities for users, sessions, accounts and plugin data.
 Enable the `seaorm` feature. SeaORM is re-exported as `better_auth::seaorm::sea_orm`, so you do not need a separate `sea-orm` dependency for the generated code:
 
 ```toml title="Cargo.toml"
-better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", default-features = false, features = ["axum", "seaorm", "rustls"] }
+better-auth = { package = "alibi", version = "0.1.0", default-features = false, features = ["axum", "seaorm", "rustls"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }

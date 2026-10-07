@@ -1,4 +1,4 @@
-//! `SeaORM` integration for Better Auth.
+//! `SeaORM` integration for Alibi.
 
 extern crate self as better_auth_seaorm;
 

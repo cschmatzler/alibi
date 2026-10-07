@@ -1,19 +1,19 @@
 ---
 title: "Installation"
-description: "Add Better Auth RS, generate a schema, mount the auth routes and make the first request."
+description: "Add Alibi, generate a schema, mount the auth routes and make the first request."
 ---
 
 This page builds a working Axum server with email and password authentication on SQLite. Every later page assumes this setup and shows only what changes.
 
-**Requirements:** Rust 1.85 or newer (edition 2024), and a Tokio runtime. The default build uses OpenSSL (`native-tls`); see [Cargo features](/reference/features/) for Rustls.
+**Requirements:** Rust 1.99 or newer (edition 2024), and a Tokio runtime. The default build uses OpenSSL (`native-tls`); see [Cargo features](/reference/features/) for Rustls.
 
 ## 1. Add the dependencies
 
-Better Auth RS is distributed from its Git repository:
+Install Alibi `0.1.0` from crates.io:
 
 ```toml title="Cargo.toml"
 [dependencies]
-better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", features = ["axum"] }
+better-auth = { package = "alibi", version = "0.1.0", features = ["axum"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -22,13 +22,7 @@ chrono = { version = "0.4", features = ["serde"] }
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "chrono", "json", "derive"] }
 ```
 
-`serde`, `serde_json`, `chrono` and `sqlx` are needed because the generated models derive from them. Pin the Git dependency to a reviewed commit for reproducible builds:
-
-```toml title="Cargo.toml"
-better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", rev = "<commit>", features = ["axum"] }
-```
-
-Install the CLI from the same revision (`cargo install --git … --rev <commit>`).
+`serde`, `serde_json`, `chrono` and `sqlx` are needed because the generated models derive from them. Commit your application’s `Cargo.lock` for reproducible builds, and use the matching `alibi-cli` version shown below.
 
 ## 2. Set environment variables
 
@@ -49,7 +43,7 @@ The library never reads these itself and does not load `.env` files; the code be
 ## 3. Generate the schema
 
 ```bash
-cargo install --git https://github.com/cschmatzler/better-auth-rs --locked better-auth-cli
+cargo install alibi-cli --version 0.1.0 --locked
 better-auth-rs generate -o src/auth_schema.rs
 ```
 

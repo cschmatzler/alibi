@@ -3,7 +3,7 @@ title: "Server-side calls"
 description: "Call auth operations from your own Rust code: handle_request, trusted dispatch_endpoint, and plugin server-only APIs."
 ---
 
-Not every auth operation should be reachable over HTTP. Creating an API key *for* a user, verifying an API key, minting a service JWT, reading backup codes, adding a member without an invitation — these are **server-only** operations. Better Auth RS gives your Rust code two ways to call into an auth instance without a network hop.
+Not every auth operation should be reachable over HTTP. Creating an API key *for* a user, verifying an API key, minting a service JWT, reading backup codes, adding a member without an invitation — these are **server-only** operations. Alibi gives your Rust code two ways to call into an auth instance without a network hop.
 
 | API | Input | Use it for |
 | --- | --- | --- |

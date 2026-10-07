@@ -1,10 +1,15 @@
 [package]
-name = "better-auth-cli"
+name = "alibi-cli"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
 license = { workspace = true }
-description = "CLI tools for better-auth-rs"
+description = "Schema generator for Alibi authentication"
 repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi-cli"
+publish = ["crates-io"]
+include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
 
 readme = { workspace = true }
 keywords = { workspace = true }

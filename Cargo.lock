@@ -73,6 +73,238 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "250f629c0161ad8107cf89319e990051fae62832fd343083bea452d93e2205fd"
 
 [[package]]
+name = "alibi"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "alibi",
+ "alibi-api",
+ "alibi-core",
+ "alibi-seaorm",
+ "alibi-sqlx",
+ "async-trait",
+ "axum",
+ "base64 0.23.1",
+ "chacha20poly1305",
+ "chrono",
+ "clap",
+ "ed25519-dalek 3.0.0",
+ "hkdf 0.13.0",
+ "http-body-util",
+ "jsonwebtoken",
+ "k256",
+ "multer",
+ "oas3",
+ "p521",
+ "poem",
+ "proptest",
+ "rand 0.10.3",
+ "reqwest",
+ "rsa",
+ "serde",
+ "serde_cbor_2",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.11.0",
+ "sha3",
+ "sqlx",
+ "thiserror 2.0.21",
+ "tokio",
+ "totp-rs",
+ "tower",
+ "tower-http 0.7.1",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "alibi-api"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "alibi-core",
+ "alibi-schema-registry",
+ "alibi-seaorm",
+ "async-trait",
+ "base64 0.23.1",
+ "base64urlsafedata",
+ "bon",
+ "chacha20poly1305",
+ "chrono",
+ "cookie",
+ "der-parser",
+ "ed25519-dalek 3.0.0",
+ "futures-util",
+ "hkdf 0.13.0",
+ "hmac 0.13.0",
+ "indexmap 2.14.2",
+ "jsonwebtoken",
+ "k256",
+ "num-traits",
+ "openssl",
+ "p256 0.14.0",
+ "p384 0.14.0",
+ "p521",
+ "rand 0.10.3",
+ "rand_core 0.6.4",
+ "regex",
+ "reqwest",
+ "rsa",
+ "ryu-js",
+ "serde",
+ "serde_cbor_2",
+ "serde_json",
+ "serde_path_to_error",
+ "serde_with",
+ "sha1 0.11.0",
+ "sha2 0.11.0",
+ "sha3",
+ "signature 3.0.0",
+ "tokio",
+ "totp-rs",
+ "tracing",
+ "url",
+ "urlencoding",
+ "uuid",
+ "validator",
+ "webauthn-rs",
+ "webauthn-rs-core",
+ "x509-parser",
+]
+
+[[package]]
+name = "alibi-cli"
+version = "0.1.0"
+dependencies = [
+ "alibi-schema-registry",
+ "clap",
+ "prettyplease",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "alibi-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "alibi-macros",
+ "alibi-schema-registry",
+ "async-trait",
+ "axum",
+ "base64 0.23.1",
+ "chrono",
+ "cookie",
+ "flate2",
+ "futures-util",
+ "glob-match",
+ "hkdf 0.13.0",
+ "hmac 0.13.0",
+ "hybrid-array",
+ "indexmap 2.14.2",
+ "jsonwebtoken",
+ "percent-encoding",
+ "rand 0.10.3",
+ "redis",
+ "regex",
+ "ryu-js",
+ "scrypt",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
+ "unicode-normalization",
+ "url",
+ "uuid",
+ "validator",
+]
+
+[[package]]
+name = "alibi-entity-codegen"
+version = "0.1.0"
+dependencies = [
+ "alibi-schema-registry",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "alibi-macros"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "alibi-schema-registry"
+version = "0.1.0"
+
+[[package]]
+name = "alibi-seaorm"
+version = "0.1.0"
+dependencies = [
+ "alibi-core",
+ "alibi-seaorm-macros",
+ "async-trait",
+ "chrono",
+ "ryu-js",
+ "sea-orm",
+ "sea-orm-migration",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "alibi-seaorm-macros"
+version = "0.1.0"
+dependencies = [
+ "alibi-entity-codegen",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
+name = "alibi-sqlx"
+version = "0.1.0"
+dependencies = [
+ "alibi-core",
+ "alibi-sqlx-macros",
+ "async-trait",
+ "chrono",
+ "ryu-js",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "alibi-sqlx-macros"
+version = "0.1.0"
+dependencies = [
+ "alibi-entity-codegen",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "syn 3.0.6",
+]
+
+[[package]]
 name = "allocator-api2"
 version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -549,238 +781,6 @@ dependencies = [
  "base64 0.21.7",
  "pastey",
  "serde",
-]
-
-[[package]]
-name = "better-auth"
-version = "1.0.0-alpha.3"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "axum",
- "base64 0.23.1",
- "better-auth",
- "better-auth-api",
- "better-auth-core",
- "better-auth-seaorm",
- "better-auth-sqlx",
- "chacha20poly1305",
- "chrono",
- "clap",
- "ed25519-dalek 3.0.0",
- "hkdf 0.13.0",
- "http-body-util",
- "jsonwebtoken",
- "k256",
- "multer",
- "oas3",
- "p521",
- "poem",
- "proptest",
- "rand 0.10.3",
- "reqwest",
- "rsa",
- "serde",
- "serde_cbor_2",
- "serde_json",
- "serde_yaml",
- "sha2 0.11.0",
- "sha3",
- "sqlx",
- "thiserror 2.0.21",
- "tokio",
- "totp-rs",
- "tower",
- "tower-http 0.7.1",
- "tracing",
- "tracing-subscriber",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "better-auth-api"
-version = "1.0.0-alpha.3"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "base64 0.23.1",
- "base64urlsafedata",
- "better-auth-core",
- "better-auth-schema-registry",
- "better-auth-seaorm",
- "bon",
- "chacha20poly1305",
- "chrono",
- "cookie",
- "der-parser",
- "ed25519-dalek 3.0.0",
- "futures-util",
- "hkdf 0.13.0",
- "hmac 0.13.0",
- "indexmap 2.14.2",
- "jsonwebtoken",
- "k256",
- "num-traits",
- "openssl",
- "p256 0.14.0",
- "p384 0.14.0",
- "p521",
- "rand 0.10.3",
- "rand_core 0.6.4",
- "regex",
- "reqwest",
- "rsa",
- "ryu-js",
- "serde",
- "serde_cbor_2",
- "serde_json",
- "serde_path_to_error",
- "serde_with",
- "sha1 0.11.0",
- "sha2 0.11.0",
- "sha3",
- "signature 3.0.0",
- "tokio",
- "totp-rs",
- "tracing",
- "url",
- "urlencoding",
- "uuid",
- "validator",
- "webauthn-rs",
- "webauthn-rs-core",
- "x509-parser",
-]
-
-[[package]]
-name = "better-auth-cli"
-version = "1.0.0-alpha.3"
-dependencies = [
- "better-auth-schema-registry",
- "clap",
- "prettyplease",
- "proc-macro2",
- "quote",
- "syn 3.0.6",
-]
-
-[[package]]
-name = "better-auth-core"
-version = "1.0.0-alpha.3"
-dependencies = [
- "aes-gcm",
- "async-trait",
- "axum",
- "base64 0.23.1",
- "better-auth-macros",
- "better-auth-schema-registry",
- "chrono",
- "cookie",
- "flate2",
- "futures-util",
- "glob-match",
- "hkdf 0.13.0",
- "hmac 0.13.0",
- "hybrid-array",
- "indexmap 2.14.2",
- "jsonwebtoken",
- "percent-encoding",
- "rand 0.10.3",
- "redis",
- "regex",
- "ryu-js",
- "scrypt",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "thiserror 2.0.21",
- "tokio",
- "tracing",
- "unicode-normalization",
- "url",
- "uuid",
- "validator",
-]
-
-[[package]]
-name = "better-auth-entity-codegen"
-version = "1.0.0-alpha.3"
-dependencies = [
- "better-auth-schema-registry",
- "proc-macro2",
- "quote",
- "syn 3.0.6",
-]
-
-[[package]]
-name = "better-auth-macros"
-version = "1.0.0-alpha.3"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 3.0.6",
-]
-
-[[package]]
-name = "better-auth-schema-registry"
-version = "1.0.0-alpha.3"
-
-[[package]]
-name = "better-auth-seaorm"
-version = "1.0.0-alpha.3"
-dependencies = [
- "async-trait",
- "better-auth-core",
- "better-auth-seaorm-macros",
- "chrono",
- "ryu-js",
- "sea-orm",
- "sea-orm-migration",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "better-auth-seaorm-macros"
-version = "1.0.0-alpha.3"
-dependencies = [
- "better-auth-entity-codegen",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 3.0.6",
-]
-
-[[package]]
-name = "better-auth-sqlx"
-version = "1.0.0-alpha.3"
-dependencies = [
- "async-trait",
- "better-auth-core",
- "better-auth-sqlx-macros",
- "chrono",
- "ryu-js",
- "serde",
- "serde_json",
- "sqlx",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "better-auth-sqlx-macros"
-version = "1.0.0-alpha.3"
-dependencies = [
- "better-auth-entity-codegen",
- "proc-macro-crate",
- "proc-macro2",
- "quote",
- "syn 3.0.6",
 ]
 
 [[package]]

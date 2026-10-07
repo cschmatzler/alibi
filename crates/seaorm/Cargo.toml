@@ -1,21 +1,29 @@
 [package]
-name = "better-auth-seaorm"
+name = "alibi-seaorm"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
 license = { workspace = true }
-description = "SeaORM integration for better-auth"
+description = "SeaORM integration for Alibi"
 repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi-seaorm"
+publish = ["crates-io"]
+include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
 
 readme = { workspace = true }
 keywords = { workspace = true }
 categories = { workspace = true }
+
+[lib]
+name = "better_auth_seaorm"
 
 [lints]
 workspace = true
 
 [dependencies]
 better-auth-core = { workspace = true }
-better-auth-seaorm-macros = { version = "1.0.0-alpha.3", path = "../seaorm-macros" }
+better-auth-seaorm-macros = { package = "alibi-seaorm-macros", version = "0.1.0", path = "../seaorm-macros" }
 
 async-trait = { workspace = true }
 chrono = { workspace = true }
@@ -32,3 +40,6 @@ sea-orm-migration = { version = "2.0.4", features = ["runtime-tokio", "sqlx-post
 [features]
 tls-rustls = ["sea-orm/runtime-tokio-rustls", "sea-orm-migration/runtime-tokio-rustls"]
 tls-native-tls = ["sea-orm/runtime-tokio-native-tls", "sea-orm-migration/runtime-tokio-native-tls"]
+
+[package.metadata.docs.rs]
+all-features = true

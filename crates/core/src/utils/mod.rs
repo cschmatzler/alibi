@@ -1,4 +1,4 @@
-//! Shared utility modules for `better-auth-core`.
+//! Shared utility modules for `alibi-core`.
 
 pub mod cookie_utils;
 pub mod password;

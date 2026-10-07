@@ -52,7 +52,7 @@ fn export_openapi(auth: &BetterAuth<AppAuthSchema>) -> Result<String, serde_json
 }
 
 fn export_with_native(auth: &BetterAuth<AppAuthSchema>) -> Result<String, serde_json::Error> {
-    // Includes operations that exist only in Better Auth RS.
+    // Includes operations that exist only in Alibi.
     serde_json::to_string_pretty(&auth.openapi_spec_with_native_extensions())
 }
 ```

@@ -3,7 +3,7 @@ title: "Email and background tasks"
 description: "Deliver verification, reset and OTP messages, choose an error policy, and run delivery in the background."
 ---
 
-Better Auth RS does not send email itself. Features that need to reach a user — email verification, password reset, magic links, OTP codes, invitations — call **your** code. You provide it in one of two ways:
+Alibi does not send email itself. Features that need to reach a user — email verification, password reset, magic links, OTP codes, invitations — call **your** code. You provide it in one of two ways:
 
 | Mechanism | Used by |
 | --- | --- |

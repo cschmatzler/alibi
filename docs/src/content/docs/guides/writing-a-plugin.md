@@ -3,7 +3,7 @@ title: "Writing a plugin"
 description: "Add your own routes, hooks, rate limits and fields by implementing the AuthPlugin trait."
 ---
 
-Every feature in Better Auth RS — including the core session and password flows — is an `AuthPlugin`. Your application can add its own: a webhook endpoint, an audit trail, a custom sign-in method, a second factor. Plugins are registered with `.plugin(...)` like the built-in ones and participate in the same request pipeline.
+Every feature in Alibi — including the core session and password flows — is an `AuthPlugin`. Your application can add its own: a webhook endpoint, an audit trail, a custom sign-in method, a second factor. Plugins are registered with `.plugin(...)` like the built-in ones and participate in the same request pipeline.
 
 ## The minimal plugin
 

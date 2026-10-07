@@ -1,10 +1,15 @@
 [package]
-name = "better-auth-macros"
+name = "alibi-macros"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
 license = { workspace = true }
-description = "Proc macros used internally by the better-auth workspace"
+description = "Proc macros used internally by the Alibi workspace"
 repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi-macros"
+publish = ["crates-io"]
+include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
 
 readme = { workspace = true }
 keywords = { workspace = true }
@@ -14,9 +19,13 @@ categories = { workspace = true }
 workspace = true
 
 [lib]
+name = "better_auth_macros"
 proc-macro = true
 
 [dependencies]
 proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true

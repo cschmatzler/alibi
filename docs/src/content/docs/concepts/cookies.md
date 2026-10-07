@@ -3,7 +3,7 @@ title: "Cookies"
 description: "The cookies Better Auth sets, how to configure their attributes, and cookie-based session caches."
 ---
 
-Better Auth RS keeps browser state in `HttpOnly`, `SameSite=Lax` cookies. All names share one prefix and all attributes can be overridden — globally or per cookie.
+Alibi keeps browser state in `HttpOnly`, `SameSite=Lax` cookies. All names share one prefix and all attributes can be overridden — globally or per cookie.
 
 ## Cookies set by the library
 

@@ -1,10 +1,15 @@
 [package]
-name = "better-auth-sqlx-macros"
+name = "alibi-sqlx-macros"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
 license = { workspace = true }
-description = "SQLx proc macros for better-auth"
+description = "SQLx proc macros for Alibi"
 repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi-sqlx-macros"
+publish = ["crates-io"]
+include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
 
 readme = { workspace = true }
 keywords = { workspace = true }
@@ -14,6 +19,7 @@ categories = { workspace = true }
 workspace = true
 
 [lib]
+name = "better_auth_sqlx_macros"
 proc-macro = true
 
 [dependencies]
@@ -22,3 +28,6 @@ proc-macro-crate = "3"
 proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true }
+
+[package.metadata.docs.rs]
+all-features = true

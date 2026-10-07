@@ -23,7 +23,7 @@ export const Docs = Effect.gen(function* () {
   const zoneId = yield* Config.String("DOCS_DNS_ZONE_ID");
 
   const project = yield* Railway.Project("Project", {
-    name: "better-auth-rs",
+    name: "alibi",
   }).pipe(Namespace.push("Docs"));
 
   const docs = yield* Railway.Website.Astro("Docs", {

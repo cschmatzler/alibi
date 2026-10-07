@@ -1,6 +1,6 @@
 ---
 title: "Other frameworks"
-description: "Embed Better Auth RS in any HTTP host by converting requests and responses, or call it directly from server code."
+description: "Embed Alibi in any HTTP host by converting requests and responses, or call it directly from server code."
 ---
 
 Axum and Poem have first-class adapters. Any other Rust HTTP host — Actix, Hyper, Rocket, Warp, AWS Lambda, a custom server — can embed the auth instance through one method: `BetterAuth::handle_request`.

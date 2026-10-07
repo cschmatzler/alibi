@@ -1,16 +1,22 @@
 use super::*;
-pub(crate) fn found_crate_tokens(name: &str) -> Option<TokenStream> {
-    match crate_name(name).ok()? {
+pub(crate) fn found_crate_tokens(package_name: &str) -> Option<TokenStream> {
+    match crate_name(package_name).ok()? {
         FoundCrate::Itself => {
             // `Itself` means the Cargo.toml that triggered compilation lists
             // this crate as its own package name. Examples and integration
             // tests compile as separate binaries that link the crate
             // externally, so `crate::` would be wrong: use the extern name.
-            let ident = Ident::new(&name.replace('-', "_"), Span::call_site());
+            let ident = Ident::new("better_auth", Span::call_site());
             Some(quote!(::#ident))
         }
         FoundCrate::Name(name) => {
-            let ident = Ident::new(&name, Span::call_site());
+            // Cargo uses the explicit library name unless the dependency is aliased.
+            let library_name = if name == package_name.replace('-', "_") {
+                "better_auth"
+            } else {
+                &name
+            };
+            let ident = Ident::new(library_name, Span::call_site());
             Some(quote!(::#ident))
         }
     }
@@ -24,14 +30,14 @@ pub(crate) struct Roots {
 }
 
 pub(crate) fn resolve_roots() -> Roots {
-    if let Some(better_auth_root) = found_crate_tokens("better-auth") {
+    if let Some(better_auth_root) = found_crate_tokens("alibi") {
         return Roots {
             id_generator: quote! {},
             seaorm: quote!(#better_auth_root::seaorm),
             core: quote!(#better_auth_root::__private_core),
         };
     }
-    match crate_name("better-auth-seaorm") {
+    match crate_name("alibi-seaorm") {
         Ok(FoundCrate::Itself) => Roots {
             id_generator: quote! {},
             seaorm: quote!(crate),

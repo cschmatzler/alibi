@@ -1,7 +1,7 @@
 //! Shared password utilities for hashing, verification, validation and
 //! session-cookie construction.
 //!
-//! Lives in `better-auth-core` so that any crate in the workspace (plugins,
+//! Lives in `alibi-core` so that any crate in the workspace (plugins,
 //! integrations, etc.) can reuse these primitives without duplicating logic.
 
 use crate::error::{AuthError, AuthResult};

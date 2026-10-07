@@ -1,4 +1,4 @@
-//! `SeaORM` model bindings for Better Auth schemas.
+//! `SeaORM` model bindings for Alibi schemas.
 
 use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
 use better_auth_core::error::AuthResult;

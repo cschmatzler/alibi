@@ -2,7 +2,7 @@ import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
 export default defineConfig({
-  site: "https://better-auth-rs.schmatzler.com",
+  site: "https://alibi.schmatzler.com",
   // Pages that moved. Static redirects keep old links working.
   redirects: {
     '/guides/existing-databases': '/databases/existing-databases/',
@@ -10,8 +10,8 @@ export default defineConfig({
   },
   integrations: [
     starlight({
-      title: 'Better Auth RS',
-      description: 'Better Auth for Rust. Authentication, your database, your stack.',
+      title: 'Alibi',
+      description: 'Alibi: authentication for Rust, compatible with Better Auth. Your database, your models, your stack.',
       favicon: '/favicon.svg',
       logo: { src: './src/assets/logo.svg', replacesTitle: false },
       social: [

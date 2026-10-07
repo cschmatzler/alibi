@@ -1,4 +1,4 @@
-//! Storage traits and cache adapters used by Better Auth.
+//! Storage traits and cache adapters used by Alibi.
 
 #[cfg(feature = "redis-cache")]
 pub use better_auth_core::store::RedisAdapter;

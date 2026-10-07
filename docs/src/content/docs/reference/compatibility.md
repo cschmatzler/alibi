@@ -5,7 +5,7 @@ description: "Which Better Auth version this implementation tracks, how parity i
 
 ## The contract
 
-HTTP behavior targets **better-auth@1.7.7**: the same endpoints, request and response shapes, status codes, error codes, redirects and cookie attributes. The official TypeScript client therefore works against a Better Auth RS server without changes, and so do existing database rows and password hashes (scrypt in the TypeScript format).
+HTTP behavior targets **better-auth@1.7.7**: the same endpoints, request and response shapes, status codes, error codes, redirects and cookie attributes. The official TypeScript client therefore works against a Alibi server without changes, and so do existing database rows and password hashes (scrypt in the TypeScript format).
 
 Newer upstream documentation may describe behavior added after 1.7.7; it is outside the target until the pin moves.
 
@@ -61,12 +61,11 @@ These upstream packages are explicitly **not** implemented and have no planned w
 | `@better-auth/i18n` | Translated error messages |
 | `@better-auth/expo`, `@better-auth/electron` | Mobile and desktop client integrations |
 
-Better Auth RS can *consume* OAuth/OIDC providers (including enterprise IdPs through [Generic OAuth](/authentication/generic-oauth/)); it does not act as one. Redis storage and native framework integrations are covered separately from the upstream profiles.
+Alibi can *consume* OAuth/OIDC providers (including enterprise IdPs through [Generic OAuth](/authentication/generic-oauth/)); it does not act as one. Redis storage and native framework integrations are covered separately from the upstream profiles.
 
 ## Known boundaries
 
-- **Pre-release.** APIs, wire formats and generated schemas may change before a release; the compatibility target does not.
-- **Native token encoding.** Rows written by *early* better-auth-rs versions use an older OAuth-token encoding; see [Legacy OAuth token conversion](/guides/legacy-oauth-tokens/).
+- **Native token encoding.** Rows written by *early* versions of this Rust implementation use an older OAuth-token encoding; see [Legacy OAuth token conversion](/guides/legacy-oauth-tokens/).
 - **Concurrent device decisions** and a few other races retain the behavior measured on 1.7.6, unchanged by the 1.7.7 delta, including its edge cases.
 - The TypeScript generic-OAuth client helper `signIn.oauth2` is not served; use `signIn.social` ([Generic OAuth](/authentication/generic-oauth/#frontend)).
 

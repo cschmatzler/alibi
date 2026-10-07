@@ -18,19 +18,26 @@ fn read_repo_file(path: &str) -> String {
 mod tests {
     use super::*;
 
-    // The package is unreleased: installation must use the same Git repository
-    // for the library and generator, not an unavailable crates.io release.
+    // Installation examples must use the registry package and release version
+    // for both the library and generator.
     #[test]
-    fn readme_installation_matches_the_unreleased_package() {
+    fn readme_installation_matches_the_registry_release() {
         let readme = read_repo_file("README.md");
-        let repository = env!("CARGO_PKG_REPOSITORY");
+        let package = env!("CARGO_PKG_NAME");
+        let version = env!("CARGO_PKG_VERSION");
         assert!(
-            readme.contains(&format!("better-auth = {{ git = \"{repository}\"")),
-            "the install example must use the canonical Git repository"
+            readme.contains(&format!(
+                "better-auth = {{ package = \"{package}\", version = \"{version}\""
+            )),
+            "the install example must use the registry package and release version"
         );
         assert!(readme.contains(&format!(
-            "cargo install --git {repository} --locked better-auth-cli"
+            "cargo install {package}-cli --version {version} --locked"
         )));
+        assert!(
+            !readme.contains("git = ") && !readme.contains("cargo install --git"),
+            "README installation examples must use the released registry packages"
+        );
         assert!(readme.contains(&format!("`{}`", env!("CARGO_PKG_VERSION"))));
     }
 }

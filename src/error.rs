@@ -1,3 +1,3 @@
-//! Error types and result aliases for Better Auth.
+//! Error types and result aliases for Alibi.
 
 pub use better_auth_core::error::{AuthError, AuthResult, DatabaseError};
