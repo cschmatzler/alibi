@@ -3017,6 +3017,9 @@ const server = Bun.serve({
       }
       const managedSecretsResponse = await managedSecretsFixture.handle(request);
       if (managedSecretsResponse) return managedSecretsResponse;
+      if (url.pathname === "/__test/phone-reset-control" && request.method === "POST") {
+        return Response.json(phoneFixture.resetControl((await request.json()).mode));
+      }
       if (url.pathname === "/__test/phone-consume-otp" && request.method === "POST") {
         return phoneFixture.consume(await readJson(request));
       }
