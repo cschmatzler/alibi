@@ -92,6 +92,11 @@ export async function createPhoneFixture(
               userId: user.id,
               ...(context ? { context, verifiedOwner: owner?.phoneNumberVerified === true } : {}),
             });
+            if (name === "phone-callback-reject")
+              throw new APIError("FORBIDDEN", {
+                code: "PHONE_CALLBACK_REJECTED",
+                message: "Application verification callback rejected",
+              });
           },
         }),
       ],
@@ -105,6 +110,7 @@ export async function createPhoneFixture(
     "phone-signup",
     "phone-proof",
     "phone-custom",
+    "phone-callback-reject",
     ...numericModes.map((mode) => `phone-numeric-${mode}`),
   ]) {
     const config = options(name);
