@@ -22,6 +22,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
+static CALLBACK_EVENTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DeviceSelector {
@@ -35,7 +36,7 @@ struct DeviceExpiry {
 }
 pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<TestSchema>>> {
     let read_database = database.clone();
-    Router::new().route("/__test/device-state",get(move |Query(body):Query<DeviceSelector>| {
+    Router::new().route("/__test/device-callback-events", get(|| async { Json(std::mem::take(&mut *CALLBACK_EVENTS.lock().unwrap())) })).route("/__test/device-state",get(move |Query(body):Query<DeviceSelector>| {
   let database=read_database.clone();async move {
    match device_code::Entity::find().filter(device_code::Column::DeviceCode.eq(body.device_code)).one(&database).await {
     Ok(row)=>(StatusCode::OK,Json(row.map(|row|json!({"id":row.id,"deviceCode":row.device_code,"userCode":row.user_code,"userId":row.user_id,"status":row.status,"clientId":row.client_id,"scope":row.scope,"expiresAt":row.expires_at,"lastPolledAt":row.last_polled_at,"pollingInterval":row.polling_interval})).unwrap_or(Value::Null))),
@@ -58,6 +59,7 @@ pub(crate) async fn profiles(
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let mut router = Router::new();
     for name in [
+        "device-callback-success",
         "device-length-507",
         "device-length-506",
         "device-custom",
@@ -79,6 +81,17 @@ pub(crate) async fn profiles(
     ] {
         let mut plugin = DeviceAuthorizationPlugin::new();
         match name {
+            "device-callback-success" => {
+                let callback_database = database.clone();
+                plugin = plugin.on_device_auth_request(move |client_id, scope| {
+                    let database = callback_database.clone();
+                    async move {
+                        let rows = device_code::Entity::find().filter(device_code::Column::ClientId.eq(&client_id)).all(&database).await.map_err(|error| AuthError::Internal(error.to_string()))?;
+                        CALLBACK_EVENTS.lock().unwrap().push(json!({"clientId": client_id, "scope": scope, "persistedBeforeCallback": rows.len()}));
+                        Ok(())
+                    }
+                });
+            }
             "device-length-507" => { plugin = plugin.user_code_length(4); }
             "device-length-506" => { plugin = plugin.device_code_length(16); }
             "device-custom" => {

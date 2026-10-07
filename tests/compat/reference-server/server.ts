@@ -1232,8 +1232,10 @@ const ottProfiles = new Map(
     return [name, { auth: betterAuth(options), options }] as const;
   }),
 );
+const deviceCallbackEvents: Record<string, unknown>[] = [];
 const deviceProfiles = new Map(
   [
+    "device-callback-success",
     "device-length-507",
     "device-length-506",
     "device-custom",
@@ -1265,6 +1267,21 @@ const deviceProfiles = new Map(
       basePath: `/__test/profiles/${name}/api/auth`,
       plugins: [
         deviceAuthorization({
+          ...(name === "device-callback-success"
+            ? {
+                onDeviceAuthRequest: async (clientId: string, scope: string | undefined) => {
+                  const rows = await authContext.adapter.findMany({
+                    model: "deviceCode",
+                    where: [{ field: "clientId", value: clientId }],
+                  });
+                  deviceCallbackEvents.push({
+                    clientId,
+                    scope: scope ?? null,
+                    persistedBeforeCallback: rows.length,
+                  });
+                },
+              }
+            : {}),
           ...(name === "device-length-507" ? { userCodeLength: 4 } : {}),
           ...(name === "device-length-506" ? { deviceCodeLength: 16 } : {}),
           ...(name === "device-custom"
@@ -2471,6 +2488,8 @@ const server = Bun.serve({
         }
       }
 
+      if (url.pathname === "/__test/device-callback-events")
+        return jsonResponse(deviceCallbackEvents.splice(0));
       if (url.pathname === "/__test/device-state" && request.method === "GET") {
         const deviceCode = url.searchParams.get("deviceCode");
         if (deviceCode === null) {
