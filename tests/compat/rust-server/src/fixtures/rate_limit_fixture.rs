@@ -50,14 +50,19 @@ pub(crate) async fn router(
     outbox: otp_profiles::Outbox,
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let mut router = Router::new();
-    for name in ["ordered", "default"] {
+    let cache = Arc::new(alibi_core::MemoryCacheAdapter::new());
+    for name in ["ordered", "default", "secondary-a", "secondary-b"] {
         let mut config = base.clone();
         config.base_path = format!("/__test/profiles/rate-limit-{name}/api/auth");
         let path = config.base_path.clone();
         let mut limits = RateLimitConfig::new().default_limit(
-            Duration::from_secs(60),
-            if name == "ordered" { 1 } else { 10000 },
+            Duration::from_secs(60), if name == "ordered" { 1 } else { 10000 },
         );
+        if name.starts_with("secondary-") {
+            limits = limits.storage(Arc::new(alibi_core::CacheRateLimitStorage::new(cache.clone())))
+                .endpoint("/get-session", Duration::from_secs(1), 2)
+                .rule("/list-sessions", RateLimitRule::Disabled);
+        }
         if name == "ordered" {
             limits = limits
                 .endpoint("/sign-up/*", Duration::from_secs(60), 2)
@@ -82,5 +87,10 @@ pub(crate) async fn router(
         );
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    let control_cache = cache.clone();
+    router = router.route("/__test/rate-limit-secondary/control", axum::routing::get(move |axum::extract::Query(query): axum::extract::Query<std::collections::HashMap<String, String>>| {let cache = control_cache.clone(); async move {
+        use alibi_core::CacheAdapter;
+        axum::Json(serde_json::json!({"value": cache.get(query.get("key").expect("requested key")).await.unwrap()}))
+    }}));
     Ok(router)
 }
