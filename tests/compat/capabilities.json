@@ -5676,9 +5676,7 @@
         "success": "organization invitation validation, reject, and cancel flows match TS",
         "rejection": "session-gated routes reject requests without a session",
         "authorization": "session-gated routes reject requests without a session",
-        "state": {
-          "knownGap": "No scenario asserts the stored invitation status after rejection."
-        }
+        "state": "invitation lifecycle expired pending row can be rejected with callbacks"
       }
     },
     {
