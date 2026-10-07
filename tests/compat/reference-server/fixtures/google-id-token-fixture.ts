@@ -5,6 +5,8 @@ export function googleIdTokenProfiles(options: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const name of [
     "google-id-default",
+    "google-granted-scopes-enabled",
+    "google-granted-scopes-disabled",
     "google-id-array",
     "google-id-empty-array",
     "google-id-domain",
@@ -28,6 +30,7 @@ export function googleIdTokenProfiles(options: BetterAuthOptions) {
                   ? []
                   : "google-default-client",
             clientSecret: "local-google-default-secret",
+            includeGrantedScopes: name !== "google-granted-scopes-disabled",
             ...(name === "google-id-domain" ? { hd: "workspace.fixture.test" } : {}),
             ...(name === "google-id-domain-any" ? { hd: "*" } : {}),
             disableIdTokenSignIn: name === "google-id-disabled",

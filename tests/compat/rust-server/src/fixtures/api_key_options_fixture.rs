@@ -355,6 +355,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         callbacks.config_id = id.into();
         configurations.push(ApiKeyConfig {
             config_id: id.into(),
+            require_name: entry["requireName"].as_bool().unwrap_or(false),
             key_length: number(entry.get("keyLength"), 16.0),
             prefix: Some(entry["prefix"].as_str().unwrap_or("optKEY_").into()),
             api_key_headers: vec![format!("x-options-{id}")],

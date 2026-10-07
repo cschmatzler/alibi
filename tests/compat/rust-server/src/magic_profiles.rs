@@ -6,7 +6,7 @@ use axum::{Json, Router, extract::Query, routing::get};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::magic_link::{
-    MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenStorage, SendMagicLink,
+    MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenStorage, MagicLinkTokenGenerator, SendMagicLink,
 };
 use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
@@ -16,6 +16,14 @@ use alibi_seaorm::sea_orm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
+
+struct CustomToken;
+#[async_trait]
+impl MagicLinkTokenGenerator for CustomToken {
+    async fn generate(&self, email: &str) -> AuthResult<String> {
+        Ok(format!("custom-link-{email}"))
+    }
+}
 
 pub(super) type Outbox = Arc<Mutex<HashMap<String, Value>>>;
 #[derive(Clone)]
@@ -66,6 +74,7 @@ pub(super) async fn router(
     let mut router = Router::new();
     for name in [
         "magic-link-hashed",
+        "magic-link-hashed-custom-token",
         "magic-link-disabled",
         "magic-link-numeric-lifetime-zero",
         "magic-link-numeric-lifetime-fraction",
@@ -90,7 +99,8 @@ pub(super) async fn router(
                 .plugin(SessionManagementPlugin::new())
                 .plugin(MagicLinkPlugin::new(MagicLinkConfig {
                     send_magic_link: Some(Arc::new(Sender(outbox.clone()))),
-                    storage: if name == "magic-link-hashed" {
+                    generate_token: (name == "magic-link-hashed-custom-token").then(|| Arc::new(CustomToken) as Arc<dyn MagicLinkTokenGenerator>),
+                    storage: if name.starts_with("magic-link-hashed") {
                         MagicLinkTokenStorage::Hashed
                     } else {
                         MagicLinkTokenStorage::Plain
