@@ -119,6 +119,26 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
         results.push(result);
       }
 
+      // Exercise a session-gated endpoint as well as get-session's nullable response.
+      const protectedUnsigned = await client(ctx, profile, "protected-unsigned").listSessions({
+        fetchOptions: { headers: { authorization: `Bearer ${token}` } },
+      });
+      if (profile === "bearer-signed") {
+        expect(protectedUnsigned.error).toMatchObject({ status: 401 });
+      } else {
+        expect(protectedUnsigned.error).toBeNull();
+        expect(protectedUnsigned.data).toContainEqual(
+          expect.objectContaining({ userId: first.data.user.id }),
+        );
+      }
+      const protectedSigned = await client(ctx, profile, "protected-signed").listSessions({
+        fetchOptions: { headers: { authorization: `Bearer ${signed}` } },
+      });
+      expect(protectedSigned.error).toBeNull();
+      expect(protectedSigned.data).toContainEqual(
+        expect.objectContaining({ userId: first.data.user.id }),
+      );
+
       // A valid header replaces a foreign browser cookie; rejected signatures leave it intact.
       const precedence = await foreign.getSession({
         fetchOptions: { headers: { authorization: `Bearer ${signed}` } },
@@ -223,6 +243,8 @@ for (const profile of ["bearer-default", "bearer-signed", "bearer-composition"] 
         signed,
         issued,
         results,
+        protectedUnsigned: ctx.snapshot(protectedUnsigned),
+        protectedSigned: ctx.snapshot(protectedSigned),
         precedence,
         ignored,
         composition,

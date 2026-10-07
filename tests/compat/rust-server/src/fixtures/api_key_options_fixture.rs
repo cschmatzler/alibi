@@ -355,6 +355,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         callbacks.config_id = id.into();
         configurations.push(ApiKeyConfig {
             config_id: id.into(),
+            require_name: entry["requireName"].as_bool().unwrap_or(false),
             key_length: number(entry.get("keyLength"), 16.0),
             prefix: Some(entry["prefix"].as_str().unwrap_or("optKEY_").into()),
             api_key_headers: vec![format!("x-options-{id}")],
@@ -367,6 +368,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             min_name_length: number(entry.get("minName"), 1.0),
             max_name_length: number(entry.get("maxName"), 32.0),
             key_expiration: KeyExpirationConfig {
+                disable_custom_expires_time: entry["disableCustomExpiresTime"].as_bool().unwrap_or(false),
                 default_expires_in: entry
                     .get("expiration")
                     .map(|value| number(Some(value), 0.0)),

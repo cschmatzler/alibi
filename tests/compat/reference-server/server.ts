@@ -972,6 +972,7 @@ function createOtpProfile(name: string) {
         resendStrategy: name === "passwordless-encrypted-reuse" ? "reuse" : "rotate",
         disableSignUp: name === "passwordless-disabled",
         overrideDefaultEmailVerification: proof,
+        sendVerificationOnSignUp: name === "otp-signup-verification",
         changeEmail: { enabled: true, verifyCurrentEmail: proof },
         generateOTP: captureOtpGenerator,
         sendVerificationOTP: captureOtpSender,
@@ -981,6 +982,7 @@ function createOtpProfile(name: string) {
 }
 const otpProfiles = new Map<string, ReturnType<typeof createOtpProfile>>();
 for (const name of [
+  "otp-signup-verification",
   "passwordless-hashed",
   "passwordless-encrypted-reuse",
   "passwordless-proof",
@@ -996,6 +998,7 @@ for (const name of [
 const magicProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const name of [
   "magic-link-hashed",
+  "magic-link-hashed-custom-token",
   "magic-link-disabled",
   ...numericModes
     .filter((mode) => mode.startsWith("lifetime-"))
@@ -1010,7 +1013,10 @@ for (const name of [
       plugins: [
         magicLink({
           ...numericOptions(name),
-          storeToken: name === "magic-link-hashed" ? "hashed" : "plain",
+          storeToken: name.startsWith("magic-link-hashed") ? "hashed" : "plain",
+          ...(name === "magic-link-hashed-custom-token"
+            ? { generateToken: async (email: string) => `custom-link-${email}` }
+            : {}),
           disableSignUp: name === "magic-link-disabled",
           async sendMagicLink({ email, url, token, metadata }, ctx) {
             const identifier = ctx.context.options.basePath?.includes("magic-link-hashed")
@@ -1085,6 +1091,7 @@ const OTT_PROFILE_NAMES = [
   "ott-composed",
   "ott-custom-callback",
   "ott-default",
+  "ott-short-lived",
   "ott-hashed",
   "ott-no-cookie",
   "ott-server-header",
@@ -1161,6 +1168,7 @@ const ottProfiles = new Map(
         ...(name === "ott-composed" ? [twoFactor()] : []),
         ...(name === "ott-server-header" ? [ottExposedHeaderFixture] : []),
         oneTimeToken({
+          ...(name === "ott-short-lived" ? { expiresIn: 0.05 } : {}),
           ...(name === "ott-custom-callback"
             ? {
                 generateToken: async (session, ctx) => {
@@ -1226,6 +1234,8 @@ const ottProfiles = new Map(
 );
 const deviceProfiles = new Map(
   [
+    "device-length-507",
+    "device-length-506",
     "device-custom",
     "device-configured",
     "device-unicode",
@@ -1255,6 +1265,8 @@ const deviceProfiles = new Map(
       basePath: `/__test/profiles/${name}/api/auth`,
       plugins: [
         deviceAuthorization({
+          ...(name === "device-length-507" ? { userCodeLength: 4 } : {}),
+          ...(name === "device-length-506" ? { deviceCodeLength: 16 } : {}),
           ...(name === "device-custom"
             ? {
                 generateDeviceCode: async () => "custom-device-🔐",

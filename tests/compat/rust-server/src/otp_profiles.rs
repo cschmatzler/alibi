@@ -183,6 +183,7 @@ pub(super) async fn router(
         },
     );
     for name in [
+        "otp-signup-verification",
         "passwordless-hashed",
         "passwordless-encrypted-reuse",
         "passwordless-proof",
@@ -228,6 +229,7 @@ pub(super) async fn router(
                 OtpResendStrategy::Rotate
             },
             override_default_email_verification: proof,
+            send_verification_on_sign_up: name == "otp-signup-verification",
             verify_current_email: proof,
             disable_sign_up: name == "passwordless-disabled",
             otp_length: numeric_setting(name, "length", 6.0),
