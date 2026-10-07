@@ -2,7 +2,7 @@
 use crate::TestSchema;
 use crate::fixtures::passwordless_numeric_fixture::numeric_setting;
 use async_trait::async_trait;
-use axum::{Json, Router, extract::Query, routing::get};
+use axum::{Json, Router, extract::Query, routing::{get, post}};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::magic_link::{
@@ -23,6 +23,20 @@ impl MagicLinkTokenHasher for ApplicationHasher {
     async fn hash(&self, token: &str) -> AuthResult<String> {
         tokio::task::yield_now().await;
         Ok(format!("application:{token}"))
+    }
+}
+
+#[derive(Default)]
+struct GeneratorState { mode: String, receipts: Vec<String> }
+struct ControlledGenerator(Arc<Mutex<GeneratorState>>);
+#[async_trait]
+impl MagicLinkTokenGenerator for ControlledGenerator {
+    async fn generate(&self, email: &str) -> AuthResult<String> {
+        tokio::task::yield_now().await;
+        let mut state = self.0.lock().await;
+        state.receipts.push(email.to_owned());
+        if state.mode == "coded" { return Err(alibi::AuthError::Api { status: 403, code: Some("MAGIC_GENERATOR_REJECTED".into()), message: "Application generator rejected".into() }); }
+        Ok(format!("controlled-link-{email}"))
     }
 }
 
@@ -83,11 +97,13 @@ pub(super) async fn router(
     outbox: Outbox,
 ) -> AuthResult<Router> {
     let mut router = Router::new();
+    let generator_state = Arc::new(Mutex::new(GeneratorState::default()));
     for name in [
         "magic-link-rate-policy",
         "magic-link-hashed",
         "magic-link-hashed-custom-token",
         "magic-link-custom-hasher",
+        "magic-link-generator-reject",
         "magic-link-disabled",
         "magic-link-numeric-lifetime-zero",
         "magic-link-numeric-lifetime-fraction",
@@ -113,7 +129,7 @@ pub(super) async fn router(
                 .plugin(MagicLinkPlugin::new(MagicLinkConfig {
                     rate_limit: if name == "magic-link-rate-policy" { alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 2.0} } else { MagicLinkConfig::default().rate_limit },
                     send_magic_link: Some(Arc::new(Sender(outbox.clone()))),
-                    generate_token: (name == "magic-link-hashed-custom-token").then(|| Arc::new(CustomToken) as Arc<dyn MagicLinkTokenGenerator>),
+                    generate_token: if name == "magic-link-generator-reject" { Some(Arc::new(ControlledGenerator(generator_state.clone())) as Arc<dyn MagicLinkTokenGenerator>) } else { (name == "magic-link-hashed-custom-token").then(|| Arc::new(CustomToken) as Arc<dyn MagicLinkTokenGenerator>) },
                     storage: if name == "magic-link-custom-hasher" {
                         MagicLinkTokenStorage::Custom(Arc::new(ApplicationHasher))
                     } else if name.starts_with("magic-link-hashed") {
@@ -133,6 +149,18 @@ pub(super) async fn router(
             auth.clone().axum_router().with_state(auth),
         );
     }
+    router = router.route("/__test/magic-link/generator-control", post(move |Json(body): Json<Value>| {
+        let state = generator_state.clone();
+        let database = database.clone();
+        async move {
+            let mut state = state.lock().await;
+            if let Some(mode) = body["mode"].as_str() { state.mode = mode.to_owned(); }
+            if body["clear"].as_bool() == Some(true) { state.receipts.clear(); }
+            let counts: (i64, i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe("SELECT (SELECT COUNT(*) FROM verifications), (SELECT COUNT(*) FROM users), (SELECT COUNT(*) FROM sessions)"))
+                .fetch_one(database.get_sqlite_connection_pool()).await.unwrap();
+            Json(json!({"mode":state.mode,"receipts":state.receipts,"proofCount":counts.0,"userCount":counts.1,"sessionCount":counts.2}))
+        }
+    }));
     Ok(router.route(
         "/__test/magic-link",
         get(move |Query(query): Query<HashMap<String, String>>| {

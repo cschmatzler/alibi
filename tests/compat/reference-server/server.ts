@@ -1057,12 +1057,14 @@ for (const name of [
   otpProfiles.set(name, createOtpProfile(name));
 }
 
+const magicGeneratorState = { mode: "success", receipts: [] as string[] };
 const magicProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const name of [
   "magic-link-rate-policy",
   "magic-link-hashed",
   "magic-link-hashed-custom-token",
   "magic-link-custom-hasher",
+  "magic-link-generator-reject",
   "magic-link-disabled",
   ...numericModes
     .filter((mode) => mode.startsWith("lifetime-"))
@@ -1095,6 +1097,20 @@ for (const name of [
                 : "plain",
           ...(name === "magic-link-hashed-custom-token"
             ? { generateToken: async (email: string) => `custom-link-${email}` }
+            : {}),
+          ...(name === "magic-link-generator-reject"
+            ? {
+                generateToken: async (email: string) => {
+                  await Promise.resolve();
+                  magicGeneratorState.receipts.push(email);
+                  if (magicGeneratorState.mode === "coded")
+                    throw new APIError("FORBIDDEN", {
+                      code: "MAGIC_GENERATOR_REJECTED",
+                      message: "Application generator rejected",
+                    });
+                  return `controlled-link-${email}`;
+                },
+              }
             : {}),
           disableSignUp: name === "magic-link-disabled",
           async sendMagicLink({ email, url, token, metadata }, ctx) {
@@ -2975,6 +2991,17 @@ const server = Bun.serve({
         return jsonResponse(await auth.api.verifyApiKey({ body: await readJson(request) }));
       }
 
+      if (url.pathname === "/__test/magic-link/generator-control" && request.method === "POST") {
+        const body = await request.json();
+        if (body.mode) magicGeneratorState.mode = body.mode;
+        if (body.clear) magicGeneratorState.receipts.length = 0;
+        const counts = database
+          .query<{ proofCount: number; userCount: number; sessionCount: number }, []>(
+            "SELECT (SELECT COUNT(*) FROM verification) AS proofCount, (SELECT COUNT(*) FROM user) AS userCount, (SELECT COUNT(*) FROM session) AS sessionCount",
+          )
+          .get()!;
+        return Response.json({ ...magicGeneratorState, ...counts });
+      }
       if (url.pathname === "/__test/magic-link" && request.method === "GET") {
         return jsonResponse(magicLinkOutbox.get(url.searchParams.get("email") ?? "") ?? null);
       }
