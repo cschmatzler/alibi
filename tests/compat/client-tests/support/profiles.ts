@@ -1054,6 +1054,7 @@ export const FIXTURE_PROFILES = [
     "lifetime-negative-infinity",
   ]),
   "magic-link-hashed",
+  "magic-link-hashed-custom-token",
   "magic-link-disabled",
   "passwordless-hashed",
   "passwordless-encrypted-reuse",
