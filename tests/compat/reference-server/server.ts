@@ -773,6 +773,36 @@ for (const [path, instance] of apiKeyBackground.profiles) {
 }
 const apiKeyGenerationFixture = createApiKeyGenerationFixture(database, authOptions);
 verificationProfiles.set(apiKeyGenerationFixture.path, apiKeyGenerationFixture.auth);
+const apiKeyOrgAccess = createAccessControl({
+  ...defaultStatements,
+  apiKey: ["create", "read", "update", "delete"],
+});
+verificationProfiles.set(
+  "/__test/profiles/api-key-org-static/api/auth",
+  betterAuth({
+    ...authOptions,
+    basePath: "/__test/profiles/api-key-org-static/api/auth",
+    plugins: [
+      username(),
+      organization({
+        ac: apiKeyOrgAccess,
+        roles: {
+          owner: apiKeyOrgAccess.newRole({
+            invitation: ["create"],
+            member: ["update"],
+            apiKey: ["create", "read", "update", "delete"],
+          }),
+          admin: apiKeyOrgAccess.newRole({ apiKey: ["create"] }),
+          member: apiKeyOrgAccess.newRole({ apiKey: ["read"] }),
+          updater: apiKeyOrgAccess.newRole({ apiKey: ["read", "update"] }),
+          deleter: apiKeyOrgAccess.newRole({ apiKey: ["read", "delete"] }),
+        },
+        dynamicAccessControl: { enabled: false },
+      }),
+      apiKey([{ configId: "default" }, { configId: "organization", references: "organization" }]),
+    ],
+  }),
+);
 const apiKeyOptionsFixture = createApiKeyOptionsFixture(database, authOptions);
 verificationProfiles.set(apiKeyOptionsFixture.path, apiKeyOptionsFixture.auth);
 verificationProfiles.set(
