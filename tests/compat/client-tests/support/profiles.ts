@@ -891,6 +891,7 @@ export const FIXTURE_PROFILES = [
   "api-key-usage-rate-deferred",
   "api-key-generation",
   "api-key-options",
+  "api-key-no-default",
   "passkey-fresh",
   "passkey-no-freshness",
   "passkey-first",
