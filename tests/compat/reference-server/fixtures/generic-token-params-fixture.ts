@@ -90,6 +90,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "dynamic-error",
     "dynamic-custom",
     "override",
+    "local-verified",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
@@ -140,6 +141,17 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
         ...base,
         basePath: path,
         socialProviders: {},
+        ...(mode === "local-verified"
+          ? {
+              account: {
+                ...base.account,
+                accountLinking: {
+                  ...base.account?.accountLinking,
+                  requireLocalEmailVerified: true,
+                },
+              },
+            }
+          : {}),
         plugins: [
           genericOAuth({
             config: [
