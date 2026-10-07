@@ -380,7 +380,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 enabled: false,
                 ..Default::default()
             },
-            enable_metadata: true,
+            enable_metadata: entry["metadata"].as_bool().unwrap_or(true),
             custom_key_generator: (entry["custom"] == true)
                 .then(|| Arc::new(callbacks.clone()) as Arc<dyn ApiKeyGenerator>),
             custom_api_key_validator: (entry["validator"] == true)

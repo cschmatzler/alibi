@@ -90,7 +90,7 @@ export function createApiKeyOptionsFixture(
             maxExpiresIn: number(entry.maxExpiration, 365),
           },
           rateLimit: { enabled: false },
-          enableMetadata: true,
+          enableMetadata: entry.metadata ?? true,
           ...(entry.custom
             ? {
                 async customKeyGenerator(input: { length: number; prefix: string | undefined }) {
