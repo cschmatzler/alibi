@@ -5,11 +5,11 @@ use crate::{
     schema::{AuthSchema, SqlxAccountModel},
     sql::Sql,
 };
-use async_trait::async_trait;
-use better_auth_core::{
+use alibi_core::{
     AuthError, AuthResult,
     oauth_token_conversion::{OAuthTokenConversionStore, OAuthTokenSnapshot, OAuthTokenValues},
 };
+use async_trait::async_trait;
 
 #[async_trait]
 impl<S> OAuthTokenConversionStore<S> for SqlxStore<S>

@@ -4,12 +4,12 @@ use crate::plugins::oauth::{
     OAuthConfig, OAuthProcessPolicy, OAuthSignInError, OAuthTokenSet, OAuthUserInfo,
     process_oauth_sign_in,
 };
-use async_trait::async_trait;
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::{
+use alibi_core::utils::json::JsValue;
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     HttpMethod,
 };
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::sync::Arc;
@@ -99,7 +99,7 @@ impl OneTapPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
-        use better_auth_core::utils::cookie_utils::{
+        use alibi_core::utils::cookie_utils::{
             create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
             sign_cookie_value, verify_cookie_value,
         };
@@ -238,7 +238,7 @@ impl OneTapPlugin {
             &policy,
             &tokens,
             self.config.disable_signup || provider.is_some_and(|provider| provider.disable_sign_up),
-            &better_auth_core::RequestMeta::from_request(req),
+            &alibi_core::RequestMeta::from_request(req),
             ctx,
         )
         .await;
@@ -325,20 +325,20 @@ impl RequestBody for CallbackBody {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OneTapPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }

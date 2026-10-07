@@ -5,7 +5,7 @@ use super::*;
 pub(in crate::plugins::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
     maybe_user: Option<&U>,
     config: &PasskeyConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(Value, String)> {
     let core = build_verification_core(config, &ctx.config, &generation_origin(config, ctx))?;
 
@@ -83,11 +83,9 @@ pub(in crate::plugins::passkey) async fn generate_authenticate_options_core<U: A
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(in crate::plugins::passkey) async fn verify_authentication_core<
-    S: better_auth_core::AuthSchema,
->(
+pub(in crate::plugins::passkey) async fn verify_authentication_core<S: alibi_core::AuthSchema>(
     body: &VerifyAuthenticationRequest,
-    req: &better_auth_core::AuthRequest,
+    req: &alibi_core::AuthRequest,
     config: &PasskeyConfig,
     ip_address: Option<String>,
     user_agent: Option<String>,

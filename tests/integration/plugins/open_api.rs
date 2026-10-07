@@ -4,16 +4,16 @@
 )]
 //! Public metadata extension contracts; HTTP differential evidence owns built-in schemas.
 
-use async_trait::async_trait;
-use better_auth::plugin::{
+use alibi::plugin::{
     AuthContext, AuthPlugin, AuthRoute, OpenApiEndpoint, OpenApiField, OpenApiModel,
     PluginOpenApiMetadata,
 };
-use better_auth::plugins::{OpenApiConfig, OpenApiPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, AuthSchema, BetterAuth};
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
-use better_auth_seaorm::store::entities::{account, session, user, verification};
-use better_auth_seaorm::{Database, SeaOrmStore};
+use alibi::plugins::{OpenApiConfig, OpenApiPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult, AuthSchema, BetterAuth};
+use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
+use alibi_seaorm::store::entities::{account, session, user, verification};
+use alibi_seaorm::{Database, SeaOrmStore};
+use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -25,7 +25,7 @@ impl AuthSchema for AppSchema {
     type Account = account::Model;
     type Verification = verification::Model;
     fn openapi_models() -> Vec<OpenApiModel> {
-        let mut models = better_auth_core::openapi::annotations::core_models();
+        let mut models = alibi_core::openapi::annotations::core_models();
         // This schema's concrete User has a metadata JSON field. Declaring its
         // documentation does not install a request parser or alter its persistence.
         models[0].fields.push(
@@ -420,7 +420,7 @@ mod tests {
 
 #[test]
 fn embedded_builder_uses_plugin_owned_metadata_without_initialization() {
-    let document = better_auth_core::openapi::OpenApiBuilder::new("Application", "1")
+    let document = alibi_core::openapi::OpenApiBuilder::new("Application", "1")
         .plugin(&AppPlugin)
         .build()
         .to_value()

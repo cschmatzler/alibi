@@ -6,33 +6,33 @@ use axum::{
     extract::Request,
     routing::{get, post},
 };
-use better_auth::endpoint::{
+use alibi::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointError, EndpointHook,
     EndpointOptions, EndpointResponse, ServerEndpoint, current_endpoint_call_context,
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::api_key::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::api_key::{
     ApiKeyCallbackContext, ApiKeyConfig, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyGetter,
     ApiKeyValidator, RateLimitDefaults,
 };
-use better_auth::plugins::email_otp::{
+use alibi::plugins::email_otp::{
     EmailOtpConfig, EmailOtpGenerator, EmailOtpPlugin, EmailOtpType,
 };
-use better_auth::plugins::haveibeenpwned::{
+use alibi::plugins::haveibeenpwned::{
     HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient,
 };
-use better_auth::plugins::jwt::JwtPlugin;
-use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
-use better_auth::plugins::two_factor::TwoFactorConfig;
-use better_auth::plugins::{
+use alibi::plugins::jwt::JwtPlugin;
+use alibi::plugins::one_time_token::OneTimeTokenPlugin;
+use alibi::plugins::two_factor::TwoFactorConfig;
+use alibi::plugins::{
     ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::utils::json::{self, JsValue};
-use better_auth_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, HttpMethod};
-use better_auth_core::{PasswordHasher, ScryptHasher};
-use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::utils::json::{self, JsValue};
+use alibi_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, HttpMethod};
+use alibi_core::{PasswordHasher, ScryptHasher};
+use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use serde::Deserialize;
 use serde_json::{Value, json as value};
 use std::{
@@ -46,8 +46,8 @@ const HASH_PASSWORD: &str = "Actual-Phase-Hash-Password-205";
 struct Application {
     events: Arc<Mutex<Vec<Value>>>,
     mode: Arc<Mutex<String>>,
-    other: Arc<Mutex<Option<Arc<better_auth::BetterAuth<TestSchema>>>>>,
-    primary: Arc<Mutex<Option<Arc<better_auth::BetterAuth<TestSchema>>>>>,
+    other: Arc<Mutex<Option<Arc<alibi::BetterAuth<TestSchema>>>>>,
+    primary: Arc<Mutex<Option<Arc<alibi::BetterAuth<TestSchema>>>>>,
     hash_phase: Arc<Mutex<String>>,
     ranges: Arc<Mutex<Vec<Value>>>,
     serial: Arc<std::sync::atomic::AtomicUsize>,
@@ -72,7 +72,7 @@ fn snapshot(call: &EndpointCall, response: Option<&EndpointResponse>) -> Value {
     snapshot["current"] = current_endpoint_call_context()
         .as_ref()
         .map_or(Value::Null, input_snapshot);
-    snapshot["legacyRequest"] = better_auth_core::hooks::current_request_hook_context().map_or(Value::Null, |request|value!({"url":request.url.as_ref().map(url::Url::as_str),"method":format!("{:?}",request.method).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())}));
+    snapshot["legacyRequest"] = alibi_core::hooks::current_request_hook_context().map_or(Value::Null, |request|value!({"url":request.url.as_ref().map(url::Url::as_str),"method":format!("{:?}",request.method).to_uppercase(),"headers":request.headers,"query":request.query,"body":request.body.as_ref().map(|body|String::from_utf8_lossy(body).into_owned())}));
     snapshot
 }
 impl Application {
@@ -89,8 +89,8 @@ impl Application {
     }
 }
 #[async_trait::async_trait]
-impl better_auth_core::CookieCacheVersionResolver for Application {
-    async fn resolve(&self, input: &better_auth_core::CacheVersionContext) -> AuthResult<String> {
+impl alibi_core::CookieCacheVersionResolver for Application {
+    async fn resolve(&self, input: &alibi_core::CacheVersionContext) -> AuthResult<String> {
         self.events.lock().unwrap().push(value!({
             "stage":"cache-version", "user":input.user(), "session":input.session(),
             "current":current_endpoint_call_context().as_ref().map_or(Value::Null,input_snapshot)
@@ -299,7 +299,7 @@ impl EmailOtpGenerator for Application {
         &self,
         email: &str,
         otp_type: EmailOtpType,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<Option<String>> {
         let call = _context
             .endpoint
@@ -369,7 +369,7 @@ struct Input {
     #[serde(default)]
     logical_request_headers: bool,
 }
-fn header_snapshot(headers: &better_auth_core::Headers) -> HashMap<String, String> {
+fn header_snapshot(headers: &alibi_core::Headers) -> HashMap<String, String> {
     let mut values: HashMap<_, _> = headers
         .iter()
         .map(|(name, value)| (name.clone(), value.clone()))
@@ -380,7 +380,7 @@ fn header_snapshot(headers: &better_auth_core::Headers) -> HashMap<String, Strin
     }
     values
 }
-fn outcome(result: Result<better_auth::endpoint::EndpointOutput<JsValue>, EndpointError>) -> Value {
+fn outcome(result: Result<alibi::endpoint::EndpointOutput<JsValue>, EndpointError>) -> Value {
     match result {
         Ok(output) => {
             let mut result =
@@ -391,7 +391,7 @@ fn outcome(result: Result<better_auth::endpoint::EndpointOutput<JsValue>, Endpoi
             value!({"ok":true,"value":result})
         }
         Err(error) => {
-            let api = better_auth::endpoint::is_endpoint_api_error(&error.error);
+            let api = alibi::endpoint::is_endpoint_api_error(&error.error);
             let message = match &error.error {
                 AuthError::Internal(message) => message.clone(),
                 error => error.error_payload().2,
@@ -413,11 +413,11 @@ pub(crate) async fn router(
     let configured =
         base.clone()
             .base_path(&path)
-            .session_cookie_cache(better_auth_core::CookieCacheConfig {
+            .session_cookie_cache(alibi_core::CookieCacheConfig {
                 enabled: compact,
                 max_age: 300.0,
                 version: if profile == "server-dispatch-cache-version" {
-                    Some(better_auth_core::CookieCacheVersion::Resolver(Arc::new(
+                    Some(alibi_core::CookieCacheVersion::Resolver(Arc::new(
                         app.clone(),
                     )))
                 } else {
@@ -469,7 +469,7 @@ pub(crate) async fn router(
                 app: app.clone(),
             })
             .plugin(EmailPasswordPlugin::with_config(
-                better_auth::plugins::EmailPasswordConfig {
+                alibi::plugins::EmailPasswordConfig {
                     enable_username: false,
                     password_hasher: Some(Arc::new(app.clone())),
                     ..Default::default()

@@ -10,10 +10,10 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit},
 };
+use alibi::plugins::oauth_token_conversion::*;
+use alibi::{AuthConfig, AuthSchema, ManagedSecrets};
+use alibi_core::{AuthAccount, AuthUser, CreateAccount, CreateUser, store::AuthStore};
 use base64::{Engine, engine::general_purpose::STANDARD};
-use better_auth::plugins::oauth_token_conversion::*;
-use better_auth::{AuthConfig, AuthSchema, ManagedSecrets};
-use better_auth_core::{AuthAccount, AuthUser, CreateAccount, CreateUser, store::AuthStore};
 use chacha20poly1305::{XChaCha20Poly1305, XNonce};
 use hkdf::Hkdf;
 use sha2::{Digest, Sha256};
@@ -29,8 +29,7 @@ mod sqlx_schema {
         let db = super::Db::sqlite().await?;
         let pool = SqlxPool::connect(&db.url).await?;
         run_app_migrations(&pool).await?;
-        let store =
-            better_auth::sqlx::SqlxStore::<AppAuthSchema>::new(super::config(), pool.clone());
+        let store = alibi::sqlx::SqlxStore::<AppAuthSchema>::new(super::config(), pool.clone());
         super::exercise(&store, &db).await?;
         pool.close().await;
         Ok(())
@@ -43,12 +42,10 @@ mod seaorm_schema {
     #[tokio::test]
     async fn legacy_conversion_seaorm() -> super::TestResult {
         let db = super::Db::sqlite().await?;
-        let database = better_auth::seaorm::Database::connect(&db.url).await?;
+        let database = alibi::seaorm::Database::connect(&db.url).await?;
         run_app_migrations(&database).await?;
-        let store = better_auth::seaorm::SeaOrmStore::<AppAuthSchema>::new(
-            super::config(),
-            database.clone(),
-        );
+        let store =
+            alibi::seaorm::SeaOrmStore::<AppAuthSchema>::new(super::config(), database.clone());
         super::exercise(&store, &db).await?;
         database.close().await?;
         Ok(())
@@ -121,7 +118,7 @@ async fn exercise<S: AuthSchema>(
     store: &(impl AuthStore<S> + OAuthTokenConversionStore<S>),
     db: &Db,
 ) -> TestResult {
-    use better_auth::plugins::oauth::encryption::{
+    use alibi::plugins::oauth::encryption::{
         decrypt_token_with_config, encrypt_token, encrypt_token_with_config,
     };
     let bare = encrypt_token("legacy-reader-token", ORIGINAL)?;

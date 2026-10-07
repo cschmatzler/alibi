@@ -3,35 +3,35 @@
 //! Fixture scaffolding (seeding, inspection, resets) uses the SeaORM connection
 //! in both builds; it is test setup, not the store being compared.
 
-use better_auth::{AuthConfig, AuthSchema};
-use better_auth_seaorm::DatabaseConnection;
-use better_auth_seaorm::sea_orm::DbErr;
+use alibi::{AuthConfig, AuthSchema};
+use alibi_seaorm::DatabaseConnection;
+use alibi_seaorm::sea_orm::DbErr;
 use std::sync::Arc;
 
 #[cfg(feature = "seaorm")]
 mod selected {
-    pub use better_auth_seaorm::SeaOrmBackend as Backend;
-    pub use better_auth_seaorm::SeaOrmHookContext as HookContext;
-    pub use better_auth_seaorm::SeaOrmStore as Store;
-    pub use better_auth_seaorm::store::entities;
+    pub use alibi_seaorm::SeaOrmBackend as Backend;
+    pub use alibi_seaorm::SeaOrmHookContext as HookContext;
+    pub use alibi_seaorm::SeaOrmStore as Store;
+    pub use alibi_seaorm::store::entities;
     pub type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+        alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 }
 
 #[cfg(not(feature = "seaorm"))]
 mod selected {
-    pub use better_auth_sqlx::SqlxBackend as Backend;
-    pub use better_auth_sqlx::SqlxHookContext as HookContext;
-    pub use better_auth_sqlx::SqlxStore as Store;
-    pub use better_auth_sqlx::store::entities;
+    pub use alibi_sqlx::SqlxBackend as Backend;
+    pub use alibi_sqlx::SqlxHookContext as HookContext;
+    pub use alibi_sqlx::SqlxStore as Store;
+    pub use alibi_sqlx::store::entities;
     pub type TestSchema =
-        better_auth_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
+        alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
 }
 
 pub(crate) use selected::*;
 
 #[cfg(feature = "seaorm")]
-impl better_auth_seaorm::sea_orm::ActiveModelBehavior
+impl alibi_seaorm::sea_orm::ActiveModelBehavior
     for crate::session_field_model::application_session::ActiveModel
 {
 }
@@ -55,12 +55,12 @@ pub(crate) fn store<S: AuthSchema>(
 pub(crate) async fn migrate(database: &DatabaseConnection) -> Result<(), DbErr> {
     #[cfg(feature = "seaorm")]
     {
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(database).await
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(database).await
     }
     #[cfg(not(feature = "seaorm"))]
     {
-        let pool = better_auth_sqlx::SqlxPool::from(database.get_sqlite_connection_pool().clone());
-        better_auth_sqlx::store::__private_test_support::migrator::run_migrations(&pool)
+        let pool = alibi_sqlx::SqlxPool::from(database.get_sqlite_connection_pool().clone());
+        alibi_sqlx::store::__private_test_support::migrator::run_migrations(&pool)
             .await
             .map_err(|error| DbErr::Custom(error.to_string()))
     }
@@ -74,9 +74,9 @@ pub(crate) async fn rows<M>(
     args: Vec<String>,
 ) -> Result<Vec<M>, DbErr>
 where
-    M: better_auth_seaorm::sea_orm::FromQueryResult,
+    M: alibi_seaorm::sea_orm::FromQueryResult,
 {
-    use better_auth_seaorm::sea_orm::{DbBackend, Statement};
+    use alibi_seaorm::sea_orm::{DbBackend, Statement};
     M::find_by_statement(Statement::from_sql_and_values(
         DbBackend::Sqlite,
         sql,
@@ -108,13 +108,13 @@ where
 
 /// Run one statement on a hook's database connection.
 pub(crate) async fn hook_execute(
-    database: &<Backend as better_auth::store::HookBackend>::Connection,
+    database: &<Backend as alibi::store::HookBackend>::Connection,
     sql: &str,
     args: Vec<String>,
-) -> better_auth::AuthResult<u64> {
+) -> alibi::AuthResult<u64> {
     #[cfg(feature = "seaorm")]
     {
-        use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
+        use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
         database
             .execute_raw(Statement::from_sql_and_values(
                 database.get_database_backend(),
@@ -123,13 +123,13 @@ pub(crate) async fn hook_execute(
             ))
             .await
             .map(|result| result.rows_affected())
-            .map_err(|error| better_auth::AuthError::internal(error.to_string()))
+            .map_err(|error| alibi::AuthError::internal(error.to_string()))
     }
     #[cfg(not(feature = "seaorm"))]
     {
         let pool = database
             .as_sqlite()
-            .ok_or_else(|| better_auth::AuthError::internal("fixture database is SQLite"))?;
+            .ok_or_else(|| alibi::AuthError::internal("fixture database is SQLite"))?;
         let mut query = sqlx::query(sqlx::AssertSqlSafe(sql.to_owned()));
         for arg in args {
             query = query.bind(arg);
@@ -138,7 +138,7 @@ pub(crate) async fn hook_execute(
             .execute(pool)
             .await
             .map(|result| result.rows_affected())
-            .map_err(|error| better_auth::AuthError::internal(error.to_string()))
+            .map_err(|error| alibi::AuthError::internal(error.to_string()))
     }
 }
 
@@ -147,17 +147,17 @@ pub(crate) async fn hook_execute(
 pub(crate) async fn hook_rows<M>(
     context: &HookContext<'_>,
     sql: &str,
-) -> better_auth::AuthResult<Vec<M>>
+) -> alibi::AuthResult<Vec<M>>
 where
-    M: better_auth_seaorm::sea_orm::FromQueryResult,
+    M: alibi_seaorm::sea_orm::FromQueryResult,
 {
-    use better_auth_seaorm::sea_orm::{DbBackend, Statement};
+    use alibi_seaorm::sea_orm::{DbBackend, Statement};
     let statement = Statement::from_string(DbBackend::Sqlite, sql);
     let rows = match context.tx {
         Some(tx) => M::find_by_statement(statement).all(tx).await,
         None => M::find_by_statement(statement).all(context.db).await,
     };
-    rows.map_err(|error| better_auth::AuthError::internal(error.to_string()))
+    rows.map_err(|error| alibi::AuthError::internal(error.to_string()))
 }
 
 /// Read rows on a hook's transaction when present, otherwise its connection.
@@ -165,7 +165,7 @@ where
 pub(crate) async fn hook_rows<M>(
     context: &HookContext<'_>,
     sql: &str,
-) -> better_auth::AuthResult<Vec<M>>
+) -> alibi::AuthResult<Vec<M>>
 where
     M: for<'r> sqlx::FromRow<'r, sqlx::sqlite::SqliteRow> + Send + Unpin,
 {
@@ -175,18 +175,18 @@ where
             let mut guard = tx.lock().await;
             let connection = guard
                 .sqlite()
-                .ok_or_else(|| better_auth::AuthError::internal("fixture database is SQLite"))?;
+                .ok_or_else(|| alibi::AuthError::internal("fixture database is SQLite"))?;
             query().fetch_all(connection).await
         }
         None => {
             let pool = context
                 .db
                 .as_sqlite()
-                .ok_or_else(|| better_auth::AuthError::internal("fixture database is SQLite"))?;
+                .ok_or_else(|| alibi::AuthError::internal("fixture database is SQLite"))?;
             query().fetch_all(pool).await
         }
     };
-    rows.map_err(|error| better_auth::AuthError::internal(error.to_string()))
+    rows.map_err(|error| alibi::AuthError::internal(error.to_string()))
 }
 
 /// A SeaORM connection to the store's database, for fixture scaffolding.
@@ -202,7 +202,7 @@ pub(crate) fn database_of<S: AuthSchema>(store: &Store<S>) -> DatabaseConnection
             .as_sqlite()
             .cloned()
             .unwrap_or_else(|| unreachable!("fixture stores use SQLite"));
-        better_auth_seaorm::sea_orm::SqlxSqliteConnector::from_sqlx_sqlite_pool(pool)
+        alibi_seaorm::sea_orm::SqlxSqliteConnector::from_sqlx_sqlite_pool(pool)
     }
 }
 

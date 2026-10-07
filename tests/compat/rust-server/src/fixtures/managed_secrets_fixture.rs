@@ -7,18 +7,18 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::plugins::jwt::JwtPlugin;
-use better_auth::plugins::{
+use alibi::plugins::jwt::JwtPlugin;
+use alibi::plugins::{
     EmailPasswordPlugin, MultiSessionPlugin, OAuthPlugin, SessionManagementPlugin, TwoFactorConfig,
     TwoFactorPlugin,
     email_otp::{EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, EmailOtpStorage, SendEmailOtp},
 };
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig, AuthResult, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use better_auth_core::ManagedSecrets;
-use better_auth_seaorm::DatabaseConnection;
+use alibi_core::ManagedSecrets;
+use alibi_seaorm::DatabaseConnection;
 use std::{
     collections::HashMap,
     sync::{
@@ -32,15 +32,15 @@ const CURRENT: &str = "compat-test-only-key-not-real-minimum-32chars";
 const LEGACY: &str = "managed-legacy-reader-key-at-least-32-characters";
 struct TokenHook(Arc<AtomicUsize>);
 #[async_trait]
-impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
-        session: &mut better_auth_core::CreateSession,
+        session: &mut alibi_core::CreateSession,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         let counter = self.0.fetch_add(1, Ordering::SeqCst) + 1;
         session.token = Some(format!("managed{counter:025}"));
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
 }
 #[derive(Clone, Default)]
@@ -50,7 +50,7 @@ impl SendEmailOtp for Delivery {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        _: &better_auth_core::CallbackContext,
+        _: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         _ = self
             .0
@@ -82,14 +82,14 @@ pub(crate) async fn router(
     for mode in ["old", "retained", "retired", "legacy", "bare"] {
         let path = format!("/__test/profiles/managed-{mode}/api/auth");
         let mut config = base.clone().base_path(&path);
-        config.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+        config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
             enabled: !["old", "bare"].contains(&mode),
             ..Default::default()
         });
         config.secret = LEGACY.into();
         config.account.encrypt_oauth_tokens = true;
         config.account.store_account_cookie = true;
-        config.account.store_state_strategy = better_auth_core::OAuthStateStrategy::Cookie;
+        config.account.store_state_strategy = alibi_core::OAuthStateStrategy::Cookie;
         config.managed_secrets = match mode {
             "old" => Some(ManagedSecrets::new(0, OLD)),
             "retained" => Some(ManagedSecrets::new(2, CURRENT).retain(0, OLD)),
@@ -168,14 +168,14 @@ pub(crate) async fn router(
     router=router.route("/__test/managed-secrets/state",get(move |Query(input):Query<StateLookup>| {
         let db=state_db.clone();
         async move {
-            use better_auth_seaorm::sea_orm::{EntityTrait,QueryFilter,QueryOrder,ColumnTrait};
-            use better_auth_seaorm::store::entities::{account,jwk,user,session};
+            use alibi_seaorm::sea_orm::{EntityTrait,QueryFilter,QueryOrder,ColumnTrait};
+            use alibi_seaorm::store::entities::{account,jwk,user,session};
             let result=async {
                 let users=user::Entity::find().filter(user::Column::Id.eq(input.user_id.clone())).all(&db).await?;
                 let sessions=session::Entity::find().filter(session::Column::UserId.eq(input.user_id.clone())).order_by_asc(session::Column::CreatedAt).all(&db).await?;
                 let accounts=account::Entity::find().filter(account::Column::UserId.eq(input.user_id)).order_by_asc(account::Column::CreatedAt).all(&db).await?;
                 let keys=jwk::Entity::find().order_by_asc(jwk::Column::CreatedAt).all(&db).await?;
-                Ok::<_,better_auth_seaorm::sea_orm::DbErr>(serde_json::json!({
+                Ok::<_,alibi_seaorm::sea_orm::DbErr>(serde_json::json!({
                     "users":users.into_iter().map(|u|serde_json::json!({"id":u.id,"name":u.name,"email":u.email,"emailVerified":u.email_verified,"image":u.image,"twoFactorEnabled":u.two_factor_enabled,"createdAt":u.created_at,"updatedAt":u.updated_at})).collect::<Vec<_>>(),
                     "sessions":sessions.into_iter().map(|s|serde_json::json!({"id":s.id,"userId":s.user_id,"token":s.token,"expiresAt":s.expires_at,"ipAddress":s.ip_address,"userAgent":s.user_agent,"createdAt":s.created_at,"updatedAt":s.updated_at})).collect::<Vec<_>>(),
                     "accounts":accounts.into_iter().map(|a|serde_json::json!({"id":a.id,"userId":a.user_id,"accountId":a.account_id,"providerId":a.provider_id,"accessToken":a.access_token,"refreshToken":a.refresh_token,"idToken":a.id_token,"accessTokenExpiresAt":a.access_token_expires_at,"refreshTokenExpiresAt":a.refresh_token_expires_at,"scope":a.scope,"password":a.password,"createdAt":a.created_at,"updatedAt":a.updated_at})).collect::<Vec<_>>(),

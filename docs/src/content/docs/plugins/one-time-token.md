@@ -9,9 +9,9 @@ A one-time token (OTT) lets an already signed-in session be **handed off** to a 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::one_time_token::OneTimeTokenPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -25,7 +25,7 @@ async fn build_auth(
 }
 ```
 
-No schema changes; tokens are verification rows. Import the plugin from `better_auth::plugins::one_time_token`.
+No schema changes; tokens are verification rows. Import the plugin from `alibi::plugins::one_time_token`.
 
 ## Endpoints
 
@@ -61,7 +61,7 @@ Verification **does not create a new session**: the token resolves to the *exist
 | `set_ott_header_on_new_session` | `false` | Add a `set-ott` header with a fresh token to every response that creates a session |
 
 ```rust
-use better_auth::plugins::one_time_token::{OneTimeTokenConfig, OneTimeTokenPlugin, OneTimeTokenStorage};
+use alibi::plugins::one_time_token::{OneTimeTokenConfig, OneTimeTokenPlugin, OneTimeTokenStorage};
 use chrono::Duration;
 
 fn ott() -> OneTimeTokenPlugin {
@@ -80,9 +80,9 @@ fn ott() -> OneTimeTokenPlugin {
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::endpoint::EndpointOptions;
-use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
+use alibi::BetterAuth;
+use alibi::endpoint::EndpointOptions;
+use alibi::plugins::one_time_token::OneTimeTokenPlugin;
 
 async fn exchange(
     auth: &BetterAuth<AppAuthSchema>,

@@ -5,13 +5,13 @@ postgres_tests!(account_deletion_consumes_delivered_owner_proof_and_preserves_fo
 #[derive(Default)]
 struct DeletionMailbox(Mutex<Vec<(String, String, String)>>);
 #[async_trait::async_trait]
-impl better_auth::plugins::user_management::SendDeleteAccountVerification for DeletionMailbox {
+impl alibi::plugins::user_management::SendDeleteAccountVerification for DeletionMailbox {
     async fn send(
         &self,
-        user: &better_auth::plugins::user_management::UserInfo,
+        user: &alibi::plugins::user_management::UserInfo,
         url: &str,
         token: &str,
-    ) -> better_auth_core::AuthResult<()> {
+    ) -> alibi_core::AuthResult<()> {
         self.0
             .lock()
             .unwrap()
@@ -24,7 +24,7 @@ async fn account_deletion_consumes_delivered_owner_proof_and_preserves_foreign_i
 >(
     db: Db,
 ) -> TestResult {
-    use better_auth::plugins::{UserManagementPlugin, api_key::ApiKeyPlugin};
+    use alibi::plugins::{UserManagementPlugin, api_key::ApiKeyPlugin};
     for mode in ["callback", "nested-token", "immediate"] {
         let db = db.fresh().await?;
         let (connection, _) = db.migrated::<B>(SECRET).await?;

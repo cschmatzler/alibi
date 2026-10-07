@@ -36,7 +36,7 @@ pub trait JwtKeyring: Send + Sync {
 pub struct JwtKeyringContext<'a> {
     pub path: &'a str,
     pub request: Option<&'a AuthRequest>,
-    pub endpoint: Option<&'a better_auth_core::endpoint::EndpointCall>,
+    pub endpoint: Option<&'a alibi_core::endpoint::EndpointCall>,
 }
 
 /// One property in an application-owned remote signing payload.
@@ -44,7 +44,7 @@ pub struct JwtKeyringContext<'a> {
 pub enum RemoteJwtClaim<'a> {
     Absent,
     Undefined,
-    Value(&'a better_auth_core::utils::json::JsValue),
+    Value(&'a alibi_core::utils::json::JsValue),
 }
 
 /// Claims passed to a configured remote signer, before managed JOSE validation.
@@ -55,14 +55,14 @@ pub enum RemoteJwtClaim<'a> {
 /// Undefined properties are omitted from `raw_claims`, matching JSON.stringify.
 #[derive(Clone, Debug)]
 pub struct RemoteJwtPayload {
-    pub(in crate::plugins::jwt) raw_claims: better_auth_core::utils::json::JsValue,
+    pub(in crate::plugins::jwt) raw_claims: alibi_core::utils::json::JsValue,
     pub(in crate::plugins::jwt) own_keys: Vec<String>,
     pub(in crate::plugins::jwt) undefined_claims: Vec<String>,
 }
 
 impl RemoteJwtPayload {
     #[must_use]
-    pub const fn raw_claims(&self) -> &better_auth_core::utils::json::JsValue {
+    pub const fn raw_claims(&self) -> &alibi_core::utils::json::JsValue {
         &self.raw_claims
     }
 

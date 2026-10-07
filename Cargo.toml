@@ -14,7 +14,7 @@ readme = { workspace = true }
 keywords = { workspace = true }
 categories = { workspace = true }
 [lib]
-name = "better_auth"
+name = "alibi"
 
 [lints]
 workspace = true
@@ -38,7 +38,7 @@ exclude = ["tests/compat/rust-server"]
 readme = "README.md"
 keywords = ["auth", "authentication", "session", "oauth", "security"]
 categories = ["authentication", "web-programming"]
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 rust-version = "1.99"
 license = "MIT"
@@ -46,13 +46,13 @@ repository = "https://github.com/cschmatzler/better-auth-rs"
 homepage = "https://alibi.schmatzler.com"
 [workspace.dependencies]
 regex = "1"
-better-auth-core = { package = "alibi-core", version = "0.1.0", path = "crates/core" }
-better-auth-api = { package = "alibi-api", version = "0.1.0", path = "crates/api", default-features = false }
-better-auth-macros = { package = "alibi-macros", version = "0.1.0", path = "crates/derive" }
-better-auth-seaorm = { package = "alibi-seaorm", version = "0.1.0", path = "crates/seaorm" }
-better-auth-schema-registry = { package = "alibi-schema-registry", version = "0.1.0", path = "crates/schema-registry" }
-better-auth-entity-codegen = { package = "alibi-entity-codegen", version = "0.1.0", path = "crates/entity-codegen" }
-better-auth-sqlx = { package = "alibi-sqlx", version = "0.1.0", path = "crates/sqlx", default-features = false }
+alibi-core = { version = "0.1.1", path = "crates/core" }
+alibi-api = { version = "0.1.1", path = "crates/api", default-features = false }
+alibi-macros = { version = "0.1.1", path = "crates/derive" }
+alibi-seaorm = { version = "0.1.1", path = "crates/seaorm" }
+alibi-schema-registry = { version = "0.1.1", path = "crates/schema-registry" }
+alibi-entity-codegen = { version = "0.1.1", path = "crates/entity-codegen" }
+alibi-sqlx = { version = "0.1.1", path = "crates/sqlx", default-features = false }
 prettyplease = "0.3"
 tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1.92"
@@ -97,33 +97,33 @@ syn = { version = "3", features = ["full"] }
 [features]
 default = ["native-tls", "sqlx"]
 native-tls = [
-    "better-auth-api/native-tls",
-    "better-auth-sqlx?/tls-native-tls",
-    "better-auth-seaorm?/tls-native-tls",
+    "alibi-api/native-tls",
+    "alibi-sqlx?/tls-native-tls",
+    "alibi-seaorm?/tls-native-tls",
 ]
 rustls = [
-    "better-auth-api/rustls",
-    "better-auth-sqlx?/tls-rustls",
-    "better-auth-seaorm?/tls-rustls",
+    "alibi-api/rustls",
+    "alibi-sqlx?/tls-rustls",
+    "alibi-seaorm?/tls-rustls",
 ]
 axum = [
     "dep:axum",
     "dep:tower",
     "dep:http-body-util",
-    "better-auth-core/axum",
-    "better-auth-api/axum",
+    "alibi-core/axum",
+    "alibi-api/axum",
 ]
 poem = ["dep:poem"]
-seaorm = ["dep:better-auth-seaorm"]
+seaorm = ["dep:alibi-seaorm"]
 sqlx = ["sqlx-sqlite", "sqlx-postgres"]
-sqlx-sqlite = ["dep:better-auth-sqlx", "better-auth-sqlx/sqlite"]
-sqlx-postgres = ["dep:better-auth-sqlx", "better-auth-sqlx/postgres"]
-redis-cache = ["better-auth-core/redis-cache"]
+sqlx-sqlite = ["dep:alibi-sqlx", "alibi-sqlx/sqlite"]
+sqlx-postgres = ["dep:alibi-sqlx", "alibi-sqlx/postgres"]
+redis-cache = ["alibi-core/redis-cache"]
 [dependencies]
-better-auth-core = { workspace = true }
-better-auth-api = { workspace = true }
-better-auth-seaorm = { workspace = true, optional = true }
-better-auth-sqlx = { workspace = true, optional = true, default-features = false }
+alibi-core = { workspace = true }
+alibi-api = { workspace = true }
+alibi-seaorm = { workspace = true, optional = true }
+alibi-sqlx = { workspace = true, optional = true, default-features = false }
 tokio = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
@@ -146,7 +146,7 @@ http-body-util = { version = "0.1", optional = true }
 [dev-dependencies]
 rsa = { workspace = true }
 # Enable adapters for repository tests without changing downstream defaults.
-better-auth = { package = "alibi", path = ".", features = ["axum", "poem", "seaorm"] }
+alibi = { path = ".", features = ["axum", "poem", "seaorm"] }
 jsonwebtoken = { workspace = true, features = ["use_pem"] }
 ed25519-dalek = { workspace = true }
 k256 = { workspace = true }
@@ -159,8 +159,8 @@ aes-gcm = { workspace = true }
 chacha20poly1305 = { workspace = true }
 hkdf = { workspace = true }
 sha2 = { workspace = true }
-better-auth-seaorm = { workspace = true }
-better-auth-sqlx = { workspace = true }
+alibi-seaorm = { workspace = true }
+alibi-sqlx = { workspace = true }
 sqlx = { version = "0.9", default-features = false, features = ["sqlite", "postgres", "chrono", "json", "derive"] }
 tokio = { workspace = true, features = ["full", "test-util"] }
 serde_yaml = "0.9"

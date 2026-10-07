@@ -1,9 +1,9 @@
 //! Pending factor authority, authenticator interoperability and trusted-device rotation.
 use super::*;
+use alibi::plugins::TwoFactorPlugin;
+use alibi::plugins::two_factor::{SendTwoFactorOtp, TwoFactorConfig};
+use alibi_core::{AuthResult, UserView};
 use async_trait::async_trait;
-use better_auth::plugins::TwoFactorPlugin;
-use better_auth::plugins::two_factor::{SendTwoFactorOtp, TwoFactorConfig};
-use better_auth_core::{AuthResult, UserView};
 
 #[derive(Default)]
 struct FactorMailbox(Mutex<Vec<(String, String)>>);
@@ -14,7 +14,7 @@ impl SendTwoFactorOtp for FactorMailbox {
         Ok(())
     }
 }
-use better_auth_core::endpoint::EndpointOptions;
+use alibi_core::endpoint::EndpointOptions;
 
 backend_tests!(totp_enrollment_pending_login_and_trusted_device_rotation);
 postgres_tests!(totp_enrollment_pending_login_and_trusted_device_rotation);
@@ -42,7 +42,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     let auth = builder::<B>(&connection)
         .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
             send_otp: Some(mailbox.clone()),
-            account_lockout: better_auth::plugins::two_factor::AccountLockoutConfig {
+            account_lockout: alibi::plugins::two_factor::AccountLockoutConfig {
                 max_failed_attempts: 3.0,
                 ..Default::default()
             },
@@ -424,7 +424,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     // Disabling account-level lockout does not disable the per-challenge cap.
     let no_lockout = builder::<B>(&connection)
         .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
-            account_lockout: better_auth::plugins::two_factor::AccountLockoutConfig {
+            account_lockout: alibi::plugins::two_factor::AccountLockoutConfig {
                 enabled: false,
                 ..Default::default()
             },

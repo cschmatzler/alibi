@@ -1,5 +1,5 @@
 use crate::store::entities;
-use better_auth_core::{
+use alibi_core::{
     ApiKey, DeviceCode, Invitation, InvitationStatus, Member, Organization, Passkey, TwoFactor,
 };
 use chrono::{DateTime, Utc};

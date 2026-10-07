@@ -11,10 +11,10 @@ Register it alongside `OAuthPlugin` and `BearerPlugin` (embedded clients keep th
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::plugins::{BearerPlugin, OAuthPlugin, OAuthPopupPlugin};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::oauth::OAuthProvider;
+use alibi::plugins::{BearerPlugin, OAuthPlugin, OAuthPopupPlugin};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,

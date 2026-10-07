@@ -9,21 +9,21 @@ use axum::{
     routing::{any, get, post},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{
     OAuthAccountKey, OAuthAccountKeyContext, OAuthAccountKeyResolver, OAuthProvider,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, CreateSession,
 };
-use better_auth_seaorm::sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Statement};
-use better_auth_seaorm::store::entities::{account, session, user, verification};
-use better_auth_seaorm::{Database, DatabaseConnection, DatabaseHooks, HookControl};
+use alibi_seaorm::sea_orm::{ConnectionTrait, EntityTrait, QueryOrder, Statement};
+use alibi_seaorm::store::entities::{account, session, user, verification};
+use alibi_seaorm::{Database, DatabaseConnection, DatabaseHooks, HookControl};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -53,10 +53,10 @@ const OPTION_MODES: &[&str] = &[
 const SECRET: &str = "local-fixture-dedicated-oauth-proxy-secret-32";
 struct CacheFailure;
 #[async_trait]
-impl better_auth_core::CookieCacheVersionResolver for CacheFailure {
+impl alibi_core::CookieCacheVersionResolver for CacheFailure {
     async fn resolve(
         &self,
-        _context: &better_auth_core::CacheVersionContext,
+        _context: &alibi_core::CacheVersionContext,
     ) -> AuthResult<String> {
         Err(AuthError::internal("private cache publication failure"))
     }
@@ -189,19 +189,19 @@ impl Fixture {
             let _ = session::Entity::delete_many()
                 .exec(db)
                 .await
-                .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
+                .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
             let _ = account::Entity::delete_many()
                 .exec(db)
                 .await
-                .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
+                .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
             let _ = verification::Entity::delete_many()
                 .exec(db)
                 .await
-                .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
+                .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
             let _ = user::Entity::delete_many()
                 .exec(db)
                 .await
-                .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
+                .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
         }
         let mut provider = self.provider.lock().await;
         provider.grants.clear();
@@ -247,10 +247,10 @@ async fn build_router(
     let initial_mode = if managed { "old" } else { "dedicated" };
     let preview = Database::connect(crate::sqlite_fixture::options())
         .await
-        .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
+        .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
     let production = Database::connect(crate::sqlite_fixture::options())
         .await
-        .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
+        .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
     let fixture = Fixture {
         preview,
         production,
@@ -270,7 +270,7 @@ async fn build_router(
     for db in [&fixture.preview, &fixture.production] {
         crate::backend::migrate(db)
             .await
-            .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
+            .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
     }
     let production_origin = config.base_url.replace("localhost", "127.0.0.1");
     let mut routers = HashMap::new();
@@ -293,9 +293,9 @@ async fn build_router(
                 settings = settings.base_url(&production_origin);
             }
             if mode == "dynamic" {
-                settings.dynamic_base_url = Some(better_auth_core::config::DynamicBaseUrl {
+                settings.dynamic_base_url = Some(alibi_core::config::DynamicBaseUrl {
                     allowed_hosts: vec!["localhost:*".into(), "127.0.0.1:*".into()],
-                    protocol: Some(better_auth_core::config::BaseUrlProtocol::Http),
+                    protocol: Some(alibi_core::config::BaseUrlProtocol::Http),
                     fallback: Some(origin.clone()),
                 });
             }
@@ -307,18 +307,18 @@ async fn build_router(
                 settings.api_error_url = Some(String::new());
             }
             if ["cache", "cache-error"].contains(&mode) {
-                settings.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+                settings.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
                     enabled: true,
                     max_age: 120.0,
                     version: (mode == "cache-error").then(|| {
-                        better_auth_core::CookieCacheVersion::Resolver(Arc::new(CacheFailure))
+                        alibi_core::CookieCacheVersion::Resolver(Arc::new(CacheFailure))
                     }),
                     ..Default::default()
                 });
             }
             if cookie {
                 settings.account.store_state_strategy =
-                    better_auth_core::OAuthStateStrategy::Cookie;
+                    alibi_core::OAuthStateStrategy::Cookie;
             }
             if managed {
                 const OLD: &str = "managed-old-reader-key-at-least-32-characters";
@@ -326,13 +326,13 @@ async fn build_router(
                 const LEGACY: &str = "managed-legacy-reader-key-at-least-32-characters";
                 settings.secret = LEGACY.into();
                 settings.managed_secrets = match mode {
-                    "old" => Some(better_auth_core::ManagedSecrets::new(0, OLD)),
+                    "old" => Some(alibi_core::ManagedSecrets::new(0, OLD)),
                     "retained" => {
-                        Some(better_auth_core::ManagedSecrets::new(2, CURRENT).retain(0, OLD))
+                        Some(alibi_core::ManagedSecrets::new(2, CURRENT).retain(0, OLD))
                     }
-                    "retired" => Some(better_auth_core::ManagedSecrets::new(2, CURRENT)),
+                    "retired" => Some(alibi_core::ManagedSecrets::new(2, CURRENT)),
                     "legacy" => Some(
-                        better_auth_core::ManagedSecrets::new(2, CURRENT)
+                        alibi_core::ManagedSecrets::new(2, CURRENT)
                             .retain(0, OLD)
                             .legacy(LEGACY),
                     ),

@@ -12,23 +12,23 @@ use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{
     EmailPasswordPlugin, PasskeyPlugin, PasskeyRegistrationAfterVerification,
     PasskeyRegistrationConfig, PasskeyRegistrationContext, PasskeyRegistrationOverride,
     PasskeyRegistrationUser, PasskeyUserResolver, SessionManagementPlugin,
     VerifiedPasskeyRegistration,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::{
     AuthRequest, AuthUser, CreateSession, HttpMethod,
     utils::{
         cookie_utils::{sign_cookie_value, verify_cookie_value},
         json::JsValue,
     },
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection,
     hooks::{DatabaseHooks, HookControl},
     sea_orm::{ConnectionTrait, DbBackend, Statement},

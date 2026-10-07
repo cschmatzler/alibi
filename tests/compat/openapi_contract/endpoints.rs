@@ -12,7 +12,7 @@
 use crate::contract::helpers::*;
 use crate::contract::shapes::check_camel_case_fields;
 use crate::contract::validator::SpecValidator;
-use better_auth::prelude::CreateAccount;
+use alibi::prelude::CreateAccount;
 
 #[cfg(test)]
 mod tests {
@@ -28,9 +28,7 @@ mod tests {
     )]
     async fn test_spec_driven_endpoint_validation() {
         let mut config = test_config();
-        config.email_provider = Some(std::sync::Arc::new(
-            better_auth_core::email::ConsoleEmailProvider,
-        ));
+        config.email_provider = Some(std::sync::Arc::new(alibi_core::email::ConsoleEmailProvider));
         let auth = create_test_auth_with_config(config).await;
         let mut validator = SpecValidator::new();
 
@@ -251,7 +249,7 @@ mod tests {
         let spec = crate::contract::schema::load_openapi_spec();
 
         // Collect error scenarios
-        let error_scenarios: Vec<(&str, &str, better_auth::prelude::AuthRequest, u16)> = vec![
+        let error_scenarios: Vec<(&str, &str, alibi::prelude::AuthRequest, u16)> = vec![
             (
                 "/sign-in/email",
                 "post",

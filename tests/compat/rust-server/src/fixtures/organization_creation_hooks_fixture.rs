@@ -6,18 +6,18 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::organization::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::organization::{
     OrganizationConfig, OrganizationCreatePatch, OrganizationCreatedContext,
     OrganizationCreationHooks, OrganizationDraftContext, OrganizationMemberCreatePatch,
     OrganizationMemberDraftContext, OrganizationTeamHooks, TeamsConfig,
     extensions::TeamHookContext, types::CreatedOrganizationResponse,
 };
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::{CreateTeam, Organization, Team, store::MemberStore, wire::UserView};
-use better_auth_seaorm::{
+use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::{CreateTeam, Organization, Team, store::MemberStore, wire::UserView};
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
@@ -332,7 +332,7 @@ pub(crate) async fn router(
                         Json(json!({"message":"Unknown fixture profile"})),
                     );
                 };
-                let data = better_auth::plugins::organization::types::CreateOrganizationRequest {
+                let data = alibi::plugins::organization::types::CreateOrganizationRequest {
                     additional_fields: Default::default(),
                     name: body["name"].as_str().unwrap_or_default().into(),
                     slug: body["slug"].as_str().unwrap_or_default().into(),

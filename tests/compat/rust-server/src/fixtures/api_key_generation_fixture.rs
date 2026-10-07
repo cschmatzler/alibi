@@ -4,17 +4,17 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::__private_core::utils::json;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::api_key::{
+use alibi::__private_core::utils::json;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::api_key::{
     ApiKeyCallbackContext, ApiKeyConfig, ApiKeyDefaultPermissions, ApiKeyGenerationOptions,
     ApiKeyGenerator, ApiKeyPermissions, ApiKeyVerificationError, CreateKeyRequest,
     KeyExpirationConfig, RateLimitDefaults, UpdateKeyRequest, VerifyApiKey,
 };
-use better_auth::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use alibi::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use serde::Deserialize;
 use serde_json::{Value, json as value};
 use std::sync::{

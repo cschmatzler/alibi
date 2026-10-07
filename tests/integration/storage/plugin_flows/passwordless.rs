@@ -1,16 +1,16 @@
 use super::*;
-use async_trait::async_trait;
-use better_auth::plugins::email_otp::{
+use alibi::plugins::email_otp::{
     EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, EmailOtpType, SendEmailOtp,
 };
-use better_auth::plugins::magic_link::{
+use alibi::plugins::magic_link::{
     MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, SendMagicLink,
 };
-use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
-use better_auth::plugins::phone_number::{
+use alibi::plugins::one_time_token::OneTimeTokenPlugin;
+use alibi::plugins::phone_number::{
     PhoneNumberConfig, PhoneNumberPlugin, PhoneOtpDelivery, PhoneSignupIdentity, SendPhoneOtp,
 };
-use better_auth_core::{AuthResult, CallbackContext};
+use alibi_core::{AuthResult, CallbackContext};
+use async_trait::async_trait;
 
 backend_tests!(
     magic_link_delivery_is_redeemable_once,
@@ -227,14 +227,12 @@ async fn one_time_token_republishes_only_its_original_session<B: Backend>(db: Db
 // contracts now cross installed hooks, transport, and both persistence adapters.
 struct PhoneAdmission(std::sync::atomic::AtomicU8);
 #[async_trait]
-impl better_auth::plugins::phone_number::PhoneNumberValidator for PhoneAdmission {
+impl alibi::plugins::phone_number::PhoneNumberValidator for PhoneAdmission {
     async fn is_valid(&self, phone: &str) -> AuthResult<bool> {
         assert_eq!(phone, "+15551110003");
         match self.0.load(std::sync::atomic::Ordering::SeqCst) {
             1 => Ok(false),
-            2 => Err(better_auth_core::AuthError::internal(
-                "phone policy failure",
-            )),
+            2 => Err(alibi_core::AuthError::internal("phone policy failure")),
             _ => Ok(true),
         }
     }
@@ -243,7 +241,7 @@ impl better_auth::plugins::phone_number::PhoneNumberValidator for PhoneAdmission
 async fn phone_password_verification_and_reset_bind_one_credential<B: Backend>(
     db: Db,
 ) -> TestResult {
-    use better_auth_core::{AuthSession, AuthUser};
+    use alibi_core::{AuthSession, AuthUser};
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let codes = Arc::new(Mailbox::default());
     let reset = Arc::new(Mailbox::default());

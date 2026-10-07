@@ -23,25 +23,25 @@ use crate::plugins::authentication_helpers::{
     JsonField, JsonFieldKind, RequestBody, is_valid_email, parse_body,
 };
 use crate::plugins::helpers::{SessionIssueError, apply_default_role};
-use async_trait::async_trait;
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-use better_auth_core::field_policy::FieldValues;
-use better_auth_core::utils::cookie_utils::{
+use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::field_policy::FieldValues;
+use alibi_core::utils::cookie_utils::{
     create_session_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
     related_cookie_name, sign_cookie_value,
 };
-use better_auth_core::utils::password::{self as password_utils, PasswordHasher};
-pub use better_auth_core::utils::username::{
+use alibi_core::utils::password::{self as password_utils, PasswordHasher};
+pub use alibi_core::utils::username::{
     UsernameConfig, UsernameNormalization, UsernameNormalizer, UsernameValidationOrder,
     UsernameValidator,
 };
-use better_auth_core::wire::UserView;
-use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth_core::{AuthError, AuthResult};
-use better_auth_core::{
+use alibi_core::wire::UserView;
+use alibi_core::{AuthContext, AuthPlugin, AuthRoute};
+use alibi_core::{AuthError, AuthResult};
+use alibi_core::{
     AuthRequest, AuthResponse, CreateAccount, CreateSession, CreateUser, ErrorCodeMessageResponse,
     HttpMethod, RequestMeta,
 };
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 pub use signup::{CustomSyntheticUserCallback, ExistingUserSignupCallback, SyntheticUserContext};
 use std::io::Write;
@@ -160,21 +160,21 @@ impl EmailPasswordPlugin {
 }
 
 #[async_trait]
-impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+impl<S: alibi_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -183,7 +183,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
         "email-password"
     }
 
-    async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
         let mut config = self.config.clone();
         config.password_min_length = config.effective_min_length();
         config.password_max_length = config.effective_max_length();
@@ -220,7 +220,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for EmailPasswordPlugin {
         Ok(())
     }
 
-    fn user_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
+    fn user_fields(&self) -> alibi_core::field_policy::FieldConfigs {
         if self.config.enable_username {
             self.config.username.fields()
         } else {
@@ -303,7 +303,7 @@ fn username_error_response(status: u16, code: &str, message: &str) -> AuthResult
 fn create_session_cookie_for_remember_me(
     token: &str,
     remember_me: Option<bool>,
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
 ) -> AuthResult<String> {
     if remember_me == Some(false) {
         create_session_cookie_with_max_age(Some(token), None, config)
@@ -315,7 +315,7 @@ fn create_session_cookie_for_remember_me(
 fn append_dont_remember_cookie(
     response: AuthResponse,
     remember_me: Option<bool>,
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
 ) -> AuthResult<AuthResponse> {
     Ok(if remember_me == Some(false) {
         response.with_appended_header(
@@ -348,7 +348,7 @@ fn append_dont_remember_cookie(
     clippy::too_many_lines,
     reason = "Keep signup validation, persistence, and provider callbacks in compatibility order"
 )]
-pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) async fn sign_up_core<S: alibi_core::AuthSchema>(
     request: &AuthRequest,
     body: &SignUpRequest,
     config: &EmailPasswordConfig,
@@ -375,7 +375,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         if let Some(value) = &body.username {
             drop(input_fields.insert(
                 "username".into(),
-                better_auth_core::utils::json::JsValue::String(value.clone()),
+                alibi_core::utils::json::JsValue::String(value.clone()),
             ));
         }
         if config.username.include_display_username
@@ -383,21 +383,21 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         {
             drop(input_fields.insert(
                 "displayUsername".into(),
-                better_auth_core::utils::json::JsValue::String(value.clone()),
+                alibi_core::utils::json::JsValue::String(value.clone()),
             ));
         }
     }
     let additional_fields =
         ctx.parse_user_fields(&input_fields, true)
             .map_err(|error| match error {
-                better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
+                alibi_core::field_policy::FieldInputError::Validation { code, message } => {
                     AuthError::Api {
                         status: 400,
                         code: Some(code.into()),
                         message,
                     }
                 }
-                better_auth_core::field_policy::FieldInputError::Transform(error) => error,
+                alibi_core::field_policy::FieldInputError::Transform(error) => error,
             })?;
 
     super::last_login_method::reject_last_login_method_input(ctx, body.last_login_method.as_ref())?;
@@ -447,7 +447,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         create_user.username = create_user
             .additional_fields
             .get("username")
-            .and_then(better_auth_core::utils::json::JsValue::as_str)
+            .and_then(alibi_core::utils::json::JsValue::as_str)
             .map(str::to_owned);
         if create_user.username.is_none()
             && let Some(value) = &body.username
@@ -458,7 +458,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
             create_user.display_username = create_user
                 .additional_fields
                 .get("displayUsername")
-                .and_then(better_auth_core::utils::json::JsValue::as_str)
+                .and_then(alibi_core::utils::json::JsValue::as_str)
                 .map(str::to_owned)
                 .or_else(|| body.display_username.clone());
         }
@@ -486,15 +486,13 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
         extensions: ctx.extensions.clone(),
     };
 
-    better_auth_core::store::transaction(database.as_ref(), move |tx| {
+    alibi_core::store::transaction(database.as_ref(), move |tx| {
         let _database = Arc::clone(&transaction_database);
         Box::pin(async move {
             let user = match tx
                 .create_user_with_source_record(
                     create_user,
-                    better_auth_core::user_validation::UserValidationSource::creation(
-                        "email-password",
-                    ),
+                    alibi_core::user_validation::UserValidationSource::creation("email-password"),
                 )
                 .await
             {
@@ -573,7 +571,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
                         &signup_context.config,
                     )?);
                 }
-                better_auth_core::session::cookie_cache::runtime::emit_issuance_in_transaction(
+                alibi_core::session::cookie_cache::runtime::emit_issuance_in_transaction(
                     &signup_context,
                     &user,
                     &session,
@@ -605,7 +603,7 @@ pub(in crate::plugins) async fn sign_up_core<S: better_auth_core::AuthSchema>(
 
 async fn load_credential_password_hash(
     user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<String> {
     super::helpers::get_credential_account(ctx, user.id())
         .await?
@@ -617,16 +615,16 @@ async fn verify_user_password(
     user: &impl AuthUser,
     password: &str,
     config: &EmailPasswordConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
     let stored_hash = load_credential_password_hash(user, ctx).await?;
     password_utils::verify_password(config.password_hasher.as_ref(), password, &stored_hash).await
 }
 
 /// Shared sign-in finalization logic after user lookup and credential verification.
-async fn finalize_sign_in_with_user_core<S: better_auth_core::AuthSchema>(
+async fn finalize_sign_in_with_user_core<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
-    user: better_auth_core::AdapterRecord<S::User>,
+    user: alibi_core::AdapterRecord<S::User>,
     remember_me: Option<bool>,
     _email_verification: Option<&EmailVerificationPlugin>,
     callback_url: Option<&str>,
@@ -660,7 +658,7 @@ async fn finalize_sign_in_with_user_core<S: better_auth_core::AuthSchema>(
             set_cookie_headers.extend(trusted_device.set_cookie_headers);
         } else {
             ctx.database.delete_session(issued.session.token()).await?;
-            better_auth_core::session::cookie_cache::runtime::discard_issuance(req);
+            alibi_core::session::cookie_cache::runtime::discard_issuance(req);
             let redirect = two_factor::begin_sign_in_challenge(&user, remember_me, ctx).await?;
             let mut redirect_headers = trusted_device.set_cookie_headers;
             redirect_headers.extend(redirect.set_cookie_headers);
@@ -692,7 +690,7 @@ async fn send_required_sign_in_verification(
     user: &impl AuthUser,
     callback_url: Option<&str>,
     email_verification: Option<&EmailVerificationPlugin>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
     if let Some(plugin) = email_verification {
         plugin
@@ -714,14 +712,13 @@ async fn send_required_sign_in_verification(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use better_auth_core::AuthContext;
-    use better_auth_core::config::AuthConfig;
+    use alibi_core::AuthContext;
+    use alibi_core::config::AuthConfig;
     use std::collections::HashMap;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     async fn create_test_context() -> AuthContext<TestSchema> {
         let config = AuthConfig::new("test-secret-key-at-least-32-chars-long");

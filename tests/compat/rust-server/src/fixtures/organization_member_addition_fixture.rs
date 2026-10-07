@@ -8,23 +8,23 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use better_auth::plugins::organization::{
+use alibi::plugins::organization::{
     OrganizationConfig, OrganizationMemberAddedContext, OrganizationMemberAdditionContext,
     OrganizationMemberAdditionHooks, OrganizationMemberCreatePatch, TeamsConfig,
     extensions::{OrganizationLimitResolver, TeamLimitContext},
     types::AddOrganizationMemberRequest,
 };
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin},
 };
-use better_auth_core::{
+use alibi_core::{
     CreateMember, CreateUser, UpdateUser,
     store::{MemberStore, OrganizationStore, UserStore},
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
@@ -423,13 +423,13 @@ pub(crate) async fn router(
             organization_limit: name.starts_with("org-member-multiplicity").then_some(3.0),
             membership_limit: match name {
                 "org-member-addition-limit-one" => Some(
-                    better_auth::plugins::organization::MembershipLimit::Fixed(1.0),
+                    alibi::plugins::organization::MembershipLimit::Fixed(1.0),
                 ),
                 "org-member-addition-zero" => Some(
-                    better_auth::plugins::organization::MembershipLimit::Fixed(0.0),
+                    alibi::plugins::organization::MembershipLimit::Fixed(0.0),
                 ),
                 "org-member-addition-none" => None,
-                _ => Some(better_auth::plugins::organization::MembershipLimit::Fixed(
+                _ => Some(alibi::plugins::organization::MembershipLimit::Fixed(
                     100.0,
                 )),
             },

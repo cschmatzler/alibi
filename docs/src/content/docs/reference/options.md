@@ -6,7 +6,7 @@ description: "Reference for AuthConfig and AuthBuilder, with links to the guide 
 `AuthConfig` is created explicitly and passed to **both** the store and the builder, so they share session, field and account policy. Builder-style methods cover the common options; the rest are public fields.
 
 ```rust
-use better_auth::AuthConfig;
+use alibi::AuthConfig;
 
 fn auth_config(secret: &str) -> AuthConfig {
     AuthConfig::new(secret)

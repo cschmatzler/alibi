@@ -3,15 +3,15 @@ use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxVerificationModel};
 use crate::sql::Sql;
-use async_trait::async_trait;
-use better_auth_core::entity::AuthVerification;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::adapter::cancelled_by_hook;
-use better_auth_core::store::{VerificationStore, verification_reservation_key};
-use better_auth_core::types::{CreateVerification, UpdateVerification};
-use better_auth_core::verification::{
+use alibi_core::entity::AuthVerification;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::adapter::cancelled_by_hook;
+use alibi_core::store::{VerificationStore, verification_reservation_key};
+use alibi_core::types::{CreateVerification, UpdateVerification};
+use alibi_core::verification::{
     VerificationCreation, VerificationPublication, VerificationSnapshot,
 };
+use async_trait::async_trait;
 use chrono::{DateTime, SubsecRound, Utc};
 
 impl<S> SqlxStore<S>

@@ -2,15 +2,15 @@
 use crate::session_field_model::ApplicationSchema as TestSchema;
 use async_trait::async_trait;
 use axum::Router;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::jwt::JwtPlugin;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::jwt::JwtPlugin;
+use alibi::plugins::{
     CustomSessionPlugin, EmailPasswordPlugin, MultiSessionPlugin, SessionTransform,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::{AuthContext, AuthRequest};
-use better_auth_seaorm::sea_orm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::{AuthContext, AuthRequest};
+use alibi_seaorm::sea_orm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::{
     Arc,
@@ -18,17 +18,17 @@ use std::sync::{
 };
 struct TokenHook(Arc<AtomicUsize>);
 #[async_trait]
-impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
-        session: &mut better_auth::prelude::CreateSession,
+        session: &mut alibi::prelude::CreateSession,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         session.token = Some(format!(
             "custom{:027}",
             self.0.fetch_add(1, Ordering::SeqCst) + 1
         ));
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
 }
 
@@ -71,7 +71,7 @@ impl SessionTransform<TestSchema> for ApplicationTransform {
         let object = session
             .as_object_mut()
             .ok_or_else(|| AuthError::internal("Invalid session projection"))?;
-        use better_auth::prelude::AuthUser;
+        use alibi::prelude::AuthUser;
         drop(object.insert(
             "application".into(),
             json!({"userId":user.id(),"label":user.name(),"path":request.path()}),
@@ -98,14 +98,14 @@ pub(crate) async fn router(
         drop(
             config.session.additional_fields.insert(
                 "label".into(),
-                better_auth::field_policy::FieldConfig::new(json!({"type":"string"}))
+                alibi::field_policy::FieldConfig::new(json!({"type":"string"}))
                     .default_value(json!("custom-public-label")),
             ),
         );
         drop(
             config.session.additional_fields.insert(
                 "hidden".into(),
-                better_auth::field_policy::FieldConfig::new(json!({"type":"string"}))
+                alibi::field_policy::FieldConfig::new(json!({"type":"string"}))
                     .default_value(json!("custom-server-secret"))
                     .hidden(),
             ),
@@ -114,7 +114,7 @@ pub(crate) async fn router(
             drop(
                 config.session.additional_fields.insert(
                     "label".into(),
-                    better_auth::field_policy::FieldConfig::new(json!({"type":"string"}))
+                    alibi::field_policy::FieldConfig::new(json!({"type":"string"}))
                         .transform_output(|_| async {
                             Err(AuthError::internal("Configured session projection failed"))
                         }),

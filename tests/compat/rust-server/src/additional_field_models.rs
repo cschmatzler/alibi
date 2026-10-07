@@ -4,17 +4,17 @@
 //! physical tables, created by `additional_fields_fixture`.
 pub(super) mod application_user {
     #[cfg(feature = "seaorm")]
-    use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
+    use alibi::seaorm::sea_orm::{self, entity::prelude::*};
     use chrono::{DateTime, Utc};
     use serde::Serialize;
     #[cfg_attr(
         feature = "seaorm",
-        derive(better_auth::seaorm::AuthEntity, DeriveEntityModel),
+        derive(alibi::seaorm::AuthEntity, DeriveEntityModel),
         sea_orm(table_name = "app_user")
     )]
     #[cfg_attr(
         not(feature = "seaorm"),
-        derive(better_auth::sqlx::AuthEntity, sqlx::FromRow),
+        derive(alibi::sqlx::AuthEntity, sqlx::FromRow),
         auth(table = "app_user")
     )]
     #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -50,17 +50,17 @@ pub(super) mod application_user {
 }
 pub(super) mod application_session {
     #[cfg(feature = "seaorm")]
-    use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
+    use alibi::seaorm::sea_orm::{self, entity::prelude::*};
     use chrono::{DateTime, Utc};
     use serde::Serialize;
     #[cfg_attr(
         feature = "seaorm",
-        derive(better_auth::seaorm::AuthEntity, DeriveEntityModel),
+        derive(alibi::seaorm::AuthEntity, DeriveEntityModel),
         sea_orm(table_name = "app_session")
     )]
     #[cfg_attr(
         not(feature = "seaorm"),
-        derive(better_auth::sqlx::AuthEntity, sqlx::FromRow),
+        derive(alibi::sqlx::AuthEntity, sqlx::FromRow),
         auth(table = "app_session")
     )]
     #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -90,17 +90,17 @@ pub(super) mod application_session {
 }
 pub(super) mod application_account {
     #[cfg(feature = "seaorm")]
-    use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
+    use alibi::seaorm::sea_orm::{self, entity::prelude::*};
     use chrono::{DateTime, Utc};
     use serde::Serialize;
     #[cfg_attr(
         feature = "seaorm",
-        derive(better_auth::seaorm::AuthEntity, DeriveEntityModel),
+        derive(alibi::seaorm::AuthEntity, DeriveEntityModel),
         sea_orm(table_name = "app_account")
     )]
     #[cfg_attr(
         not(feature = "seaorm"),
-        derive(better_auth::sqlx::AuthEntity, sqlx::FromRow),
+        derive(alibi::sqlx::AuthEntity, sqlx::FromRow),
         auth(table = "app_account")
     )]
     #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -141,7 +141,7 @@ pub(super) const TABLES: [&str; 4] = [
 ];
 
 pub(super) struct ApplicationSchema;
-impl better_auth::AuthSchema for ApplicationSchema {
+impl alibi::AuthSchema for ApplicationSchema {
     type User = application_user::Model;
     type Session = application_session::Model;
     type Account = application_account::Model;

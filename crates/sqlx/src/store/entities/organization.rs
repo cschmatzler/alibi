@@ -13,7 +13,7 @@ pub struct Model {
     pub updated_at: DateTime<Utc>,
 }
 
-impl From<&Model> for better_auth_core::Organization {
+impl From<&Model> for alibi_core::Organization {
     fn from(model: &Model) -> Self {
         Self {
             additional_fields: Default::default(),

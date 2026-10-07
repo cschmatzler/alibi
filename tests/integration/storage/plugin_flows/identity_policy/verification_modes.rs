@@ -1,9 +1,9 @@
 //! Initialized verification policy across physical and secondary storage.
 use super::*;
-use better_auth_core::store::{
+use alibi_core::store::{
     CacheAdapter, DatabaseHookContext, DatabaseHooks, HookBackend, MemoryCacheAdapter,
 };
-use better_auth_core::verification::VerificationSnapshot;
+use alibi_core::verification::VerificationSnapshot;
 use chrono::Duration;
 use std::sync::atomic::AtomicUsize;
 

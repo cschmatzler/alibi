@@ -5,9 +5,9 @@ use axum::{
     extract::{Query, State},
     routing::get,
 };
-use better_auth::{AuthError, BetterAuth};
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-use better_auth_core::{
+use alibi::{AuthError, BetterAuth};
+use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
 };
 use serde_json::{Value, json};

@@ -12,7 +12,7 @@ use crate::plugins::{
     email_password::EmailPasswordConfig,
     password_management::{OnPasswordResetCallback, PasswordManagementConfig},
 };
-use better_auth_core::{
+use alibi_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
     AuthUser, CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
 };
@@ -22,7 +22,7 @@ use std::sync::Arc;
 struct PasswordSettings {
     minimum: usize,
     maximum: usize,
-    hasher: Option<Arc<dyn better_auth_core::PasswordHasher>>,
+    hasher: Option<Arc<dyn alibi_core::PasswordHasher>>,
     on_reset: Option<Arc<OnPasswordResetCallback>>,
     revoke: bool,
 }
@@ -34,9 +34,9 @@ impl PhoneNumberPlugin {
         req: &AuthRequest,
         sender: Arc<dyn super::SendPhoneOtp>,
         delivery: PhoneOtpDelivery,
-        policy: better_auth_core::AwaitedNotificationErrorPolicy,
+        policy: alibi_core::AwaitedNotificationErrorPolicy,
     ) -> AuthResult<()> {
-        let context = better_auth_core::CallbackContext::new(ctx, Some(req));
+        let context = alibi_core::CallbackContext::new(ctx, Some(req));
         crate::plugins::authentication_helpers::run_owned_notification(
             ctx,
             async move { sender.send(&delivery, &context).await },
@@ -100,7 +100,7 @@ impl PhoneNumberPlugin {
                         phone_number: phone_number.into(),
                         user: ctx.user_view(user),
                     },
-                    &better_auth_core::CallbackContext::new(ctx, Some(req)),
+                    &alibi_core::CallbackContext::new(ctx, Some(req)),
                 )
                 .await?;
         }
@@ -123,7 +123,7 @@ impl PhoneNumberPlugin {
                         phone_number: phone_number.into(),
                         code: code.into(),
                     },
-                    &better_auth_core::CallbackContext::new(ctx, request),
+                    &alibi_core::CallbackContext::new(ctx, request),
                 )
                 .await?
             {
@@ -208,7 +208,7 @@ impl PhoneNumberPlugin {
                 phone_number: body.phone_number,
                 code,
             },
-            better_auth_core::AwaitedNotificationErrorPolicy::Propagate,
+            alibi_core::AwaitedNotificationErrorPolicy::Propagate,
         )
         .await?;
         AuthResponse::json(200, &json!({"message":"code sent"})).map_err(AuthError::from)
@@ -231,12 +231,7 @@ impl PhoneNumberPlugin {
         };
         self.validate_phone(&body.phone_number).await?;
         let settings = password_settings(ctx);
-        better_auth_core::utils::password::validate_password(
-            &body.password,
-            0,
-            settings.maximum,
-            ctx,
-        )?;
+        alibi_core::utils::password::validate_password(&body.password, 0, settings.maximum, ctx)?;
         let user = ctx
             .database
             .get_user_by_phone_number_record(&body.phone_number)
@@ -273,7 +268,7 @@ impl PhoneNumberPlugin {
         let stored = account
             .password()
             .ok_or_else(|| phone_error(401, "UNEXPECTED_ERROR", "Unexpected error"))?;
-        better_auth_core::utils::password::verify_password(
+        alibi_core::utils::password::verify_password(
             settings.hasher.as_ref(),
             &body.password,
             stored,
@@ -479,9 +474,7 @@ impl PhoneNumberPlugin {
             ctx.database
                 .create_user_with_source_record(
                     user,
-                    better_auth_core::user_validation::UserValidationSource::creation(
-                        "phone-number",
-                    ),
+                    alibi_core::user_validation::UserValidationSource::creation("phone-number"),
                 )
                 .await?
         };
@@ -572,7 +565,7 @@ impl PhoneNumberPlugin {
             .await?
             .ok_or_else(|| phone_error(400, "UNEXPECTED_ERROR", "Unexpected error"))?;
         let settings = password_settings(ctx);
-        better_auth_core::utils::password::validate_password(
+        alibi_core::utils::password::validate_password(
             &body.new_password,
             settings.minimum,
             settings.maximum,

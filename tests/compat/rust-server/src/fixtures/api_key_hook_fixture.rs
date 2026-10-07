@@ -6,16 +6,16 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::__private_core::{AuthRequest, HttpMethod};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::api_key::{
+use alibi::__private_core::{AuthRequest, HttpMethod};
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::api_key::{
     ApiKeyCallbackContext, ApiKeyConfig, ApiKeyGetter, ApiKeyValidator, ApiKeyVerificationError,
     CreateKeyRequest, RateLimitDefaults, UpdateKeyRequest, VerifyApiKey,
 };
-use better_auth::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use alibi::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -57,7 +57,7 @@ struct VerifyBody {
     config_id: Option<String>,
     #[serde(
         default,
-        deserialize_with = "better_auth::__private_core::utils::json::deserialize_optional_value"
+        deserialize_with = "alibi::__private_core::utils::json::deserialize_optional_value"
     )]
     permissions: Option<Value>,
 }
@@ -167,7 +167,7 @@ pub(crate) async fn router(
             let plugin = plugin.clone();
             async move {
                 let mut request = AuthRequest::new(HttpMethod::Post, "/__test/api-key-hook/verify");
-                request.body = Some(better_auth::__private_core::utils::json::to_vec(&body).unwrap());
+                request.body = Some(alibi::__private_core::utils::json::to_vec(&body).unwrap());
                 for (key, value) in headers {
                     if let Some(key) = key {
                         request.headers.insert(key.as_str().to_owned(), value.to_str().unwrap().to_owned());

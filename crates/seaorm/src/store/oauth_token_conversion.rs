@@ -1,10 +1,10 @@
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmAccountModel};
-use async_trait::async_trait;
-use better_auth_core::{
+use alibi_core::{
     AuthError, AuthResult,
     oauth_token_conversion::{OAuthTokenConversionStore, OAuthTokenSnapshot, OAuthTokenValues},
 };
+use async_trait::async_trait;
 use sea_orm::{
     ColumnTrait, EntityTrait, QueryFilter, TransactionTrait,
     sea_query::{Expr, SimpleExpr},

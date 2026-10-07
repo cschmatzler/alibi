@@ -7,26 +7,26 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::email_otp::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::email_otp::{
     EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp,
 };
-use better_auth::plugins::email_verification::SendVerificationEmail;
-use better_auth::plugins::password_management::SendResetPassword;
-use better_auth::plugins::phone_number::{
+use alibi::plugins::email_verification::SendVerificationEmail;
+use alibi::plugins::password_management::SendResetPassword;
+use alibi::plugins::phone_number::{
     PhoneNumberConfig, PhoneNumberPlugin, PhoneOtpDelivery, PhoneSignupIdentity, SendPhoneOtp,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     EmailPasswordConfig, EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin,
     SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::{
     AuthRequest, BackgroundTaskCompletion, BackgroundTaskHandler, PasswordHasher, ScryptHasher,
     wire::{AccountView, UserView, VerificationView},
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, QueryOrder, Set},
     store::entities::{account, session, user, verification},
@@ -88,7 +88,7 @@ impl BackgroundTaskHandler for Application {
 impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     async fn before_create_user(
         &self,
-        _user: &mut better_auth_core::CreateUser,
+        _user: &mut alibi_core::CreateUser,
         _context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if _context.config.base_path.contains("signup-username-") {
@@ -148,7 +148,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.event(json!({"stage":"otp","email":delivery.email,"otp":delivery.otp,"type":delivery.otp_type.as_str()}));
         Ok(())
@@ -159,7 +159,7 @@ impl SendPhoneOtp for Application {
     async fn send(
         &self,
         delivery: &PhoneOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.event(
             json!({"stage":"phone-otp","phoneNumber":delivery.phone_number,"code":delivery.code}),
@@ -173,7 +173,7 @@ impl PhoneSignupIdentity for Application {
     }
 }
 fn request_observation() -> Value {
-    better_auth_core::hooks::current_request_hook_context().map_or(Value::Null, |request| {
+    alibi_core::hooks::current_request_hook_context().map_or(Value::Null, |request| {
         let path = request.path.rsplit("/api/auth").next().unwrap_or(&request.path);
         json!({"method":format!("{:?}",request.method).to_uppercase(),"path":path,
             "marker":request.headers.get("x-test-policy-marker"),"contentType":request.headers.get("content-type")})
@@ -186,7 +186,7 @@ impl SendResetPassword for Application {
         self.fail("reset-sender")
     }
 }
-fn database_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
+fn database_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 
@@ -264,7 +264,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     })
                 })}),
                 custom_synthetic_user: (name == "signup-custom").then(|| {
-                    let app=app.clone(); Arc::new(move |input: better_auth::plugins::email_password::SyntheticUserContext| {
+                    let app=app.clone(); Arc::new(move |input: alibi::plugins::email_password::SyntheticUserContext| {
                         app.event(json!({"stage":"synthetic-user","coreFields":input.core_fields,
                             "additionalFields":input.additional_fields,"id":input.id}));
                         app.fail("synthetic")?;
@@ -278,7 +278,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                         drop(fields.insert("role".into(),json!("admin")));
                         drop(fields.insert("privateCredential".into(),json!("unreturned-application-data")));
                         Ok(fields)
-                    }) as Arc<better_auth::plugins::email_password::CustomSyntheticUserCallback>
+                    }) as Arc<alibi::plugins::email_password::CustomSyntheticUserCallback>
                 }),
             }))
             .plugin(SessionManagementPlugin::new())
@@ -399,8 +399,8 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
 fn username_policy(
     name: &str,
     app: &Arc<Application>,
-) -> better_auth::plugins::email_password::UsernameConfig {
-    use better_auth::plugins::email_password::{
+) -> alibi::plugins::email_password::UsernameConfig {
+    use alibi::plugins::email_password::{
         UsernameConfig, UsernameNormalization, UsernameValidationOrder,
     };
     let mut policy = UsernameConfig::default();

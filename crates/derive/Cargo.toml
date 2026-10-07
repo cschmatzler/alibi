@@ -19,7 +19,7 @@ categories = { workspace = true }
 workspace = true
 
 [lib]
-name = "better_auth_macros"
+name = "alibi_macros"
 proc-macro = true
 
 [dependencies]

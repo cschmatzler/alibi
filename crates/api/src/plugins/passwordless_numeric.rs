@@ -1,5 +1,5 @@
 //! Numeric passwordless settings retain their IEEE754 configuration semantics.
-use better_auth_core::{AuthError, AuthResult};
+use alibi_core::{AuthError, AuthResult};
 use chrono::{DateTime, Utc};
 use num_traits::ToPrimitive;
 use rand::RngExt;

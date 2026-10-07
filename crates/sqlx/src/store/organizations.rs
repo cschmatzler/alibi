@@ -6,10 +6,10 @@ use crate::pool::{Engine, Exec};
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
 use crate::value::SqlxValue;
+use alibi_core::error::AuthResult;
+use alibi_core::store::OrganizationStore;
+use alibi_core::{CreateOrganization, Organization, UpdateOrganization};
 use async_trait::async_trait;
-use better_auth_core::error::AuthResult;
-use better_auth_core::store::OrganizationStore;
-use better_auth_core::{CreateOrganization, Organization, UpdateOrganization};
 use chrono::Utc;
 use std::collections::HashMap;
 
@@ -24,7 +24,7 @@ where
             .metadata
             .map(|metadata| {
                 JsonMetadata::for_backend(
-                    better_auth_core::utils::json::to_value(&metadata)?,
+                    alibi_core::utils::json::to_value(&metadata)?,
                     self.exec().engine(),
                 )
             })
@@ -120,7 +120,7 @@ where
             .fetch_optional(self.exec(), sql)
             .await?
         else {
-            return Err(better_auth_core::error::AuthError::not_found(
+            return Err(alibi_core::error::AuthError::not_found(
                 "Organization not found",
             ));
         };
@@ -155,10 +155,8 @@ where
             assignments.push(("logo", logo.into()));
         }
         if let Some(metadata) = update.metadata {
-            let metadata = JsonMetadata::for_backend(
-                better_auth_core::utils::json::to_value(&metadata)?,
-                backend,
-            )?;
+            let metadata =
+                JsonMetadata::for_backend(alibi_core::utils::json::to_value(&metadata)?, backend)?;
             assignments.push(("metadata", metadata.into_sql_value()));
         }
         let mut additional = ActiveRow::new();
@@ -324,7 +322,7 @@ fn apply_organization_update(
         active.set(
             "metadata",
             Some(JsonMetadata::for_backend(
-                better_auth_core::utils::json::to_value(&metadata)?,
+                alibi_core::utils::json::to_value(&metadata)?,
                 backend,
             )?)
             .into_sql_value(),

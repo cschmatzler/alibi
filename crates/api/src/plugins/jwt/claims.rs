@@ -3,7 +3,7 @@ pub(in crate::plugins::jwt) fn js_truthy(value: &Value) -> bool {
     match value {
         Value::Null => false,
         Value::Bool(value) => *value,
-        Value::Number(value) => better_auth_core::utils::json::number_as_f64(value)
+        Value::Number(value) => alibi_core::utils::json::number_as_f64(value)
             .is_some_and(|value| value != 0.0 && !value.is_nan()),
         Value::String(value) => !value.is_empty(),
         Value::Array(_) | Value::Object(_) => true,
@@ -11,9 +11,9 @@ pub(in crate::plugins::jwt) fn js_truthy(value: &Value) -> bool {
 }
 
 pub(in crate::plugins::jwt) fn js_raw_primitive_string(
-    value: &better_auth_core::utils::json::JsValue,
+    value: &alibi_core::utils::json::JsValue,
 ) -> String {
-    use better_auth_core::utils::json::JsValue;
+    use alibi_core::utils::json::JsValue;
     match value {
         JsValue::Null => "null".to_owned(),
         JsValue::String(value) => value.clone(),
@@ -22,7 +22,7 @@ pub(in crate::plugins::jwt) fn js_raw_primitive_string(
         JsValue::Number(value) if *value == f64::INFINITY => "Infinity".to_owned(),
         JsValue::Number(value) if *value == f64::NEG_INFINITY => "-Infinity".to_owned(),
         JsValue::Number(value) => serde_json::Number::from_f64(*value)
-            .and_then(|number| better_auth_core::utils::json::number_to_string(&number).ok())
+            .and_then(|number| alibi_core::utils::json::number_to_string(&number).ok())
             .unwrap_or_default(),
         JsValue::Array(values) => values
             .iter()
@@ -104,7 +104,7 @@ pub(in crate::plugins::jwt) fn decode_compact_json(
     let bytes = decode_compact_part(value, allow_whitespace)?;
     let text = std::str::from_utf8(&bytes)
         .map_err(|_error| AuthError::bad_request("Invalid JWT JSON UTF8"))?;
-    Ok(better_auth_core::utils::json::parse_value(text)?.to_json_value()?)
+    Ok(alibi_core::utils::json::parse_value(text)?.to_json_value()?)
 }
 
 pub(in crate::plugins::jwt) fn validate_numeric_date(
@@ -132,10 +132,7 @@ pub(in crate::plugins::jwt) fn normalize_signing_claims(
         {
             let value = match value {
                 Value::Number(number) => {
-                    validate_numeric_date(
-                        field,
-                        better_auth_core::utils::json::number_as_f64(number),
-                    )?;
+                    validate_numeric_date(field, alibi_core::utils::json::number_as_f64(number))?;
                     value.clone()
                 }
                 Value::String(value) => json!(now as f64 + relative_numeric_date(value)?),

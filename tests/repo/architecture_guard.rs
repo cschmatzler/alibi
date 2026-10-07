@@ -90,7 +90,7 @@ mod tests {
             "__private",
             "__private_core",
             "__private_test_support",
-            "better_auth::run_migrations",
+            "alibi::run_migrations",
         ];
 
         for fragment in &banned_fragments {

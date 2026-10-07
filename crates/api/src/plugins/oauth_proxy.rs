@@ -14,11 +14,11 @@ use super::oauth::{
     oauth_callback_path, oauth_disable_sign_up_option, resolve_oauth_account_key,
 };
 use super::token_crypto::EncryptionPurpose;
-use async_trait::async_trait;
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, BeforeRequestAction, HttpMethod, OAuthStateStrategy,
 };
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -96,7 +96,7 @@ struct ProxyUser {
     #[serde(skip_serializing_if = "Option::is_none")]
     image: Option<String>,
     #[serde(flatten)]
-    additional_fields: better_auth_core::field_policy::FieldOutput,
+    additional_fields: alibi_core::field_policy::FieldOutput,
     #[serde(default)]
     email_verified: bool,
 }
@@ -114,12 +114,12 @@ struct ProxyAccount {
     id_token: Option<String>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "better_auth_core::utils::datetime::serialize_optional"
+        serialize_with = "alibi_core::utils::datetime::serialize_optional"
     )]
     access_token_expires_at: Option<DateTime<Utc>>,
     #[serde(
         skip_serializing_if = "Option::is_none",
-        serialize_with = "better_auth_core::utils::datetime::serialize_optional"
+        serialize_with = "alibi_core::utils::datetime::serialize_optional"
     )]
     refresh_token_expires_at: Option<DateTime<Utc>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -133,7 +133,7 @@ struct ProxyPayload {
     account: ProxyAccount,
     #[serde(
         default,
-        deserialize_with = "better_auth_core::utils::json::deserialize_optional_value"
+        deserialize_with = "alibi_core::utils::json::deserialize_optional_value"
     )]
     profile: Option<Value>,
     scopes: Option<Vec<String>>,
@@ -242,8 +242,7 @@ impl OAuthProxyPlugin {
         let Ok(plain) = self.decrypt(encrypted, ctx, EncryptionPurpose::ProxyPackage) else {
             return Ok(None);
         };
-        let Ok(package) =
-            better_auth_core::utils::json::from_slice::<StatePackage>(plain.as_bytes())
+        let Ok(package) = alibi_core::utils::json::from_slice::<StatePackage>(plain.as_bytes())
         else {
             return Ok(None);
         };
@@ -255,7 +254,7 @@ impl OAuthProxyPlugin {
             return Ok(None);
         };
         let Ok(state) =
-            better_auth_core::utils::json::from_slice::<OAuthStatePayload>(plain_2.as_bytes())
+            alibi_core::utils::json::from_slice::<OAuthStatePayload>(plain_2.as_bytes())
         else {
             return Ok(None);
         };
@@ -389,7 +388,7 @@ impl OAuthProxyPlugin {
         _ = callback.query_pairs_mut().append_pair(
             "profile",
             &self.encrypt(
-                &better_auth_core::utils::json::to_string(&payload)?,
+                &alibi_core::utils::json::to_string(&payload)?,
                 ctx,
                 EncryptionPurpose::ProxyProfile,
             )?,
@@ -441,7 +440,7 @@ impl OAuthProxyPlugin {
         let Ok(plain) = self.decrypt(profile, ctx, EncryptionPurpose::ProxyProfile) else {
             return error_redirect(&default_error, "invalid_profile", None);
         };
-        let Ok(raw) = better_auth_core::utils::json::from_slice::<Value>(plain.as_bytes()) else {
+        let Ok(raw) = alibi_core::utils::json::from_slice::<Value>(plain.as_bytes()) else {
             return error_redirect(&default_error, "invalid_payload", None);
         };
         if raw.get("profile").is_some_and(|value| !value.is_object())
@@ -459,8 +458,7 @@ impl OAuthProxyPlugin {
         {
             return error_redirect(&default_error, "invalid_payload", None);
         }
-        let Ok(payload) =
-            better_auth_core::utils::json::from_slice::<ProxyPayload>(plain.as_bytes())
+        let Ok(payload) = alibi_core::utils::json::from_slice::<ProxyPayload>(plain.as_bytes())
         else {
             return error_redirect(&default_error, "invalid_payload", None);
         };
@@ -497,8 +495,7 @@ impl OAuthProxyPlugin {
                 else {
                     return error_redirect(error_url, "state_mismatch", None);
                 };
-                let Ok(state) = better_auth_core::utils::json::from_slice(row.value()?.as_bytes())
-                else {
+                let Ok(state) = alibi_core::utils::json::from_slice(row.value()?.as_bytes()) else {
                     return error_redirect(error_url, "state_mismatch", None);
                 };
                 state
@@ -531,7 +528,7 @@ impl OAuthProxyPlugin {
         {
             return error_redirect(error_url, "state_mismatch", None);
         }
-        let clear = better_auth_core::utils::cookie_utils::create_clear_cookie(
+        let clear = alibi_core::utils::cookie_utils::create_clear_cookie(
             &state_cookie_name(&ctx.config),
             &ctx.config,
         )?;
@@ -624,7 +621,7 @@ impl OAuthProxyPlugin {
                 values
                     .iter()
                     .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect::<better_auth_core::field_policy::FieldOutput>()
+                    .collect::<alibi_core::field_policy::FieldOutput>()
             });
         let outcome = match super::oauth::handlers::process_oauth_sign_in_with_output(
             super::oauth::handlers::OAuthIdentity {
@@ -638,7 +635,7 @@ impl OAuthProxyPlugin {
             },
             &tokens,
             payload.disable_sign_up.unwrap_or(false),
-            &better_auth_core::RequestMeta::from_request(req),
+            &alibi_core::RequestMeta::from_request(req),
             ctx,
             (user_output.as_ref(), None),
         )
@@ -753,7 +750,7 @@ impl OAuthProxyPlugin {
         let dont_remember = ctx.session_manager().has_dont_remember_cookie(req);
         let mut response = redirect(target).with_appended_header(
             "Set-Cookie",
-            better_auth_core::utils::cookie_utils::create_session_cookie_with_max_age(
+            alibi_core::utils::cookie_utils::create_session_cookie_with_max_age(
                 Some(outcome.session.token()),
                 (!dont_remember).then(|| ctx.config.session.expires_in.num_seconds()),
                 &ctx.config,
@@ -762,12 +759,12 @@ impl OAuthProxyPlugin {
         if dont_remember {
             response.headers.append(
                 "Set-Cookie",
-                better_auth_core::utils::cookie_utils::create_session_like_cookie(
-                    &better_auth_core::utils::cookie_utils::related_cookie_name(
+                alibi_core::utils::cookie_utils::create_session_like_cookie(
+                    &alibi_core::utils::cookie_utils::related_cookie_name(
                         &ctx.config,
                         "dont_remember",
                     ),
-                    &better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    &alibi_core::utils::cookie_utils::sign_cookie_value(
                         "true",
                         ctx.config.current_secret(),
                     ),
@@ -787,20 +784,20 @@ impl OAuthProxyPlugin {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -931,8 +928,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         let Some(issued) = req.extensions().get::<IssuedProxyState>() else {
             return Ok(response);
         };
-        let Ok(mut body) = better_auth_core::utils::json::from_slice::<Value>(&response.body)
-        else {
+        let Ok(mut body) = alibi_core::utils::json::from_slice::<Value>(&response.body) else {
             return Ok(response);
         };
         let Some(original_url) = body.get("url").and_then(Value::as_str) else {
@@ -950,14 +946,14 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         let package = StatePackage {
             state: issued.state.clone(),
             state_cookie: self.encrypt(
-                &better_auth_core::utils::json::to_string(&issued.payload)?,
+                &alibi_core::utils::json::to_string(&issued.payload)?,
                 ctx,
                 EncryptionPurpose::ProxyState,
             )?,
             is_oauth_proxy: true,
         };
         let encrypted = self.encrypt(
-            &better_auth_core::utils::json::to_string(&package)?,
+            &alibi_core::utils::json::to_string(&package)?,
             ctx,
             EncryptionPurpose::ProxyPackage,
         )?;
@@ -974,7 +970,7 @@ impl<S: AuthSchema> AuthPlugin<S> for OAuthProxyPlugin {
         if let Some(value) = body.get_mut("url") {
             *value = json!(url.as_str());
         }
-        response.body = better_auth_core::utils::json::to_vec(&body)?;
+        response.body = alibi_core::utils::json::to_vec(&body)?;
         if response.headers.get("location").is_some() {
             drop(response.headers.insert("Location", url.as_str()));
         }

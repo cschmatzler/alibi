@@ -21,14 +21,14 @@ pub(in crate::plugins) async fn prepare_additional_user_fields(
     }
     let policy = ctx
         .extensions
-        .get::<better_auth_core::utils::username::UsernameConfig>()
+        .get::<alibi_core::utils::username::UsernameConfig>()
         .map(|policy| (*policy).clone())
         .unwrap_or_default();
     let mut input = indexmap::IndexMap::new();
     if let Some(username) = &data.username {
         drop(input.insert(
             "username".into(),
-            better_auth_core::utils::json::JsValue::String(username.clone()),
+            alibi_core::utils::json::JsValue::String(username.clone()),
         ));
     }
     if policy.include_display_username
@@ -36,30 +36,30 @@ pub(in crate::plugins) async fn prepare_additional_user_fields(
     {
         drop(input.insert(
             "displayUsername".into(),
-            better_auth_core::utils::json::JsValue::String(display.clone()),
+            alibi_core::utils::json::JsValue::String(display.clone()),
         ));
     }
     data.additional_fields = ctx
         .parse_user_fields(&input, true)
         .map_err(|error| match error {
-            better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
+            alibi_core::field_policy::FieldInputError::Validation { code, message } => {
                 AuthError::Api {
                     status: 400,
                     code: Some(code.into()),
                     message,
                 }
             }
-            better_auth_core::field_policy::FieldInputError::Transform(error) => error,
+            alibi_core::field_policy::FieldInputError::Transform(error) => error,
         })?;
     data.username = data
         .additional_fields
         .get("username")
-        .and_then(better_auth_core::utils::json::JsValue::as_str)
+        .and_then(alibi_core::utils::json::JsValue::as_str)
         .map(str::to_owned);
     data.display_username = data
         .additional_fields
         .get("displayUsername")
-        .and_then(better_auth_core::utils::json::JsValue::as_str)
+        .and_then(alibi_core::utils::json::JsValue::as_str)
         .map(str::to_owned);
     let Some(username) = data
         .username

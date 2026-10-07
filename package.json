@@ -1,6 +1,6 @@
 {
   "name": "alibi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Documentation and deployment tooling for Alibi",
   "main": "index.js",
   "scripts": {

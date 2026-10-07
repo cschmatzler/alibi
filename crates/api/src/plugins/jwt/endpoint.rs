@@ -4,11 +4,11 @@ use super::{
 };
 use crate::plugins::authentication_helpers::{JsonField, JsonFieldKind};
 use crate::plugins::endpoint::{definition, validate_fields, validation};
-use better_auth_core::endpoint::{
+use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
+use alibi_core::utils::json::JsValue;
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 use chrono::Duration;
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -119,15 +119,14 @@ impl JwtPlugin {
     ) -> AuthResult<EndpointResponse> {
         match call.operation_id() {
             "getJSONWebToken" => {
-                let read = better_auth_core::session::cookie_cache::runtime::authenticated(
-                    ctx, call, false,
-                )
-                .await
-                .map_err(|_| super::unauthorized())?
-                .ok_or_else(super::unauthorized)?;
+                let read =
+                    alibi_core::session::cookie_cache::runtime::authenticated(ctx, call, false)
+                        .await
+                        .map_err(|_| super::unauthorized())?
+                        .ok_or_else(super::unauthorized)?;
                 let user = match &read.user {
-                    better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
-                    better_auth_core::AuthenticatedUser::Cached(user) => (**user).clone(),
+                    alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                    alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
                 };
                 let session = JwtSession {
                     user,
@@ -188,7 +187,7 @@ impl JwtPlugin {
                 );
             }
             if let Some(audience) = jwt.get("audience").filter(|value| !value.is_null()) {
-                plugin.config.claims.audience = Some(better_auth_core::utils::json::from_value::<
+                plugin.config.claims.audience = Some(alibi_core::utils::json::from_value::<
                     JwtAudience,
                 >(audience.clone())?);
             }

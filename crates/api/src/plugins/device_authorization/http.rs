@@ -3,7 +3,7 @@ impl DeviceAuthorizationPlugin {
     pub(in crate::plugins::device_authorization) async fn handle_device_code(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: DeviceCodeRequest = match parse_device_body(req, DeviceRequestKind::Issuance)
             .and_then(deserialize_device_body)
@@ -15,7 +15,7 @@ impl DeviceAuthorizationPlugin {
         self.issue_device_code(body, ctx)
             .await
             .inspect_err(|error| {
-                if better_auth_core::endpoint::is_endpoint_api_error(error) {
+                if alibi_core::endpoint::is_endpoint_api_error(error) {
                     set_device_no_store_headers(req);
                 }
             })
@@ -29,7 +29,7 @@ impl DeviceAuthorizationPlugin {
     pub(in crate::plugins::device_authorization) async fn handle_device_token(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: DeviceTokenRequest = match parse_device_body(req, DeviceRequestKind::Token)
             .and_then(deserialize_device_body)
@@ -41,7 +41,7 @@ impl DeviceAuthorizationPlugin {
         self.redeem_device_token(body, req, ctx)
             .await
             .inspect_err(|error| {
-                if better_auth_core::endpoint::is_endpoint_api_error(error) {
+                if alibi_core::endpoint::is_endpoint_api_error(error) {
                     set_device_no_store_headers(req);
                 }
             })
@@ -55,7 +55,7 @@ impl DeviceAuthorizationPlugin {
     pub(in crate::plugins::device_authorization) async fn handle_device_verify(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let Some(user_code) = req.query.get("user_code").cloned() else {
             return device_error_response(400, "invalid_request", INVALID_REQUEST);
@@ -104,7 +104,7 @@ impl DeviceAuthorizationPlugin {
     pub(in crate::plugins::device_authorization) async fn handle_device_approve(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         self.handle_device_decision(req, ctx, DeviceDecision::Approve)
             .await
@@ -113,7 +113,7 @@ impl DeviceAuthorizationPlugin {
     pub(in crate::plugins::device_authorization) async fn handle_device_deny(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         self.handle_device_decision(req, ctx, DeviceDecision::Deny)
             .await
@@ -122,7 +122,7 @@ impl DeviceAuthorizationPlugin {
     pub(in crate::plugins::device_authorization) async fn handle_device_decision(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         decision: DeviceDecision,
     ) -> AuthResult<AuthResponse> {
         if let Err(response) = validate_device_media(req, false) {

@@ -5,9 +5,9 @@ use super::types::{
 };
 use super::{PasswordManagementConfig, StatusResponse};
 use crate::plugins::helpers::{get_credential_account, get_credential_password_hash};
-use better_auth_core::utils::password as password_utils;
-use better_auth_core::wire::UserView;
-use better_auth_core::{
+use alibi_core::utils::password as password_utils;
+use alibi_core::wire::UserView;
+use alibi_core::{
     AuthAccount, AuthContext, AuthError, AuthResult, AuthSession, AuthUser, CreateAccount,
     RequestMeta, UpdateAccount,
 };
@@ -27,7 +27,7 @@ const PASSWORD_RESET_SUCCESS_MESSAGE: &str =
 pub(in crate::plugins) async fn request_password_reset_core(
     body: &RequestPasswordResetRequest,
     config: &PasswordManagementConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<RequestPasswordResetResponse> {
     if let Some(redirect_to) = &body.redirect_to {
         validate_redirect_target(redirect_to, ctx, "Invalid redirectURL")?;
@@ -44,13 +44,13 @@ pub(in crate::plugins) async fn request_password_reset_core(
     };
 
     let Some(user) = ctx.database.get_user_by_email_record(&body.email).await? else {
-        drop(better_auth_core::utils::id::generate_id(24));
+        drop(alibi_core::utils::id::generate_id(24));
         drop(ctx.verifications().find("dummy-verification-token").await?);
         tracing::warn!("Reset Password: User not found");
         return Ok(success);
     };
 
-    let reset_token = better_auth_core::utils::id::generate_id(24);
+    let reset_token = alibi_core::utils::id::generate_id(24);
     let expires_at = Utc::now()
         + config
             .reset_token_expiry
@@ -59,7 +59,7 @@ pub(in crate::plugins) async fn request_password_reset_core(
 
     drop(
         ctx.verifications()
-            .create(better_auth_core::CreateVerification {
+            .create(alibi_core::CreateVerification {
                 identifier: format!("reset-password:{reset_token}"),
                 value: user.id().to_string(),
                 expires_at,
@@ -93,7 +93,7 @@ pub(in crate::plugins) async fn request_password_reset_core(
 pub(in crate::plugins) async fn reset_password_core(
     body: &ResetPasswordRequest,
     config: &PasswordManagementConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
     let token = body.token.as_deref().unwrap_or("");
     if token.is_empty() {
@@ -175,7 +175,7 @@ pub(in crate::plugins) async fn reset_password_core(
 pub(in crate::plugins) async fn reset_password_token_core(
     token: &str,
     query: &ResetPasswordTokenQuery,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<ResetPasswordTokenResult> {
     if let Some(callback_url) = &query.callback_url {
         validate_redirect_target(callback_url, ctx, "Invalid callbackURL")?;
@@ -216,9 +216,9 @@ pub(in crate::plugins) async fn reset_password_token_core(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(in crate::plugins) async fn change_password_core<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) async fn change_password_core<S: alibi_core::AuthSchema>(
     body: &ChangePasswordRequest,
-    user: &better_auth_core::AdapterRecord<S::User>,
+    user: &alibi_core::AdapterRecord<S::User>,
     config: &PasswordManagementConfig,
     meta: &RequestMeta,
     ctx: &AuthContext<S>,
@@ -273,8 +273,7 @@ pub(in crate::plugins) async fn change_password_core<S: better_auth_core::AuthSc
             .create_session_record(user, meta.ip_address.clone(), meta.user_agent.clone())
             .await?;
         let user = ctx.filter_user_record(user.clone());
-        better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, &user, &session)
-            .await?;
+        alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &user, &session).await?;
         crate::plugins::helpers::record_completed_session_record::<S>(&user, &session);
         Some(session.token().to_owned())
     } else {
@@ -296,7 +295,7 @@ pub(in crate::plugins) async fn verify_password_core(
     body: &VerifyPasswordRequest,
     user: &impl AuthUser,
     config: &PasswordManagementConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
     let stored_hash = get_credential_password_hash(ctx, user)
         .await?
@@ -347,7 +346,7 @@ pub(in crate::plugins) async fn verify_password_core(
 
 fn validate_redirect_target(
     target: &str,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     error_message: &str,
 ) -> AuthResult<()> {
     if ctx.config.current_origin_check_disabled() {

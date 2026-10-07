@@ -1,9 +1,9 @@
 //! The bundled schema migration and its shared ledger.
 
 use super::{Backend, Db, SeaOrm, Sqlx, TestResult, backend_tests, postgres_tests};
-use better_auth::AuthConfig;
-use better_auth_core::store::{SchemaMigrator, UserStore};
-use better_auth_core::{AuthUser, CreateUser};
+use alibi::AuthConfig;
+use alibi_core::store::{SchemaMigrator, UserStore};
+use alibi_core::{AuthUser, CreateUser};
 use std::sync::Arc;
 
 backend_tests!(

@@ -2,25 +2,25 @@
 use crate::TestSchema;
 use async_trait::async_trait;
 use axum::{Json, Router, routing::post};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::email_verification::SendVerificationEmail;
-use better_auth::plugins::user_management::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::email_verification::SendVerificationEmail;
+use alibi::plugins::user_management::{
     AfterDeleteUser, BeforeDeleteUser, SendChangeEmailConfirmation, SendDeleteAccountVerification,
     UserInfo,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     EmailPasswordConfig, EmailPasswordPlugin, EmailVerificationPlugin, SessionManagementPlugin,
     UserManagementPlugin,
 };
-use better_auth::wire::UserView;
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::hooks::current_request_hook_context;
-use better_auth_core::utils::password::{PasswordHasher, ScryptHasher};
-use better_auth_core::{
+use alibi::wire::UserView;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::hooks::current_request_hook_context;
+use alibi_core::utils::password::{PasswordHasher, ScryptHasher};
+use alibi_core::{
     CacheVersionContext, CookieCacheConfig, CookieCacheVersion, CookieCacheVersionResolver,
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr},
     store::entities::{account, session, user, verification},
@@ -182,7 +182,7 @@ struct Control {
     created_at: Option<DateTime<Utc>>,
     expires_at: Option<DateTime<Utc>>,
 }
-fn db_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
+fn db_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthResult<Router> {
@@ -313,7 +313,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                         tokio::time::timeout(std::time::Duration::from_secs(3),ready).await.map_err(|_|AuthError::internal("Application deletion hook did not arrive"))?;
                     },
                     "failure" => app.state.lock().expect("lifecycle failure").failure = body.failure.unwrap_or_default(),
-                    "rename" => { drop(auth.store().update_user(body.user_id.as_deref().ok_or_else(||AuthError::bad_request("Missing rename"))?,better_auth_core::UpdateUser { name:Some(body.name.ok_or_else(||AuthError::bad_request("Missing rename"))?), ..Default::default() }).await?); },
+                    "rename" => { drop(auth.store().update_user(body.user_id.as_deref().ok_or_else(||AuthError::bad_request("Missing rename"))?,alibi_core::UpdateUser { name:Some(body.name.ok_or_else(||AuthError::bad_request("Missing rename"))?), ..Default::default() }).await?); },
                     "session-clock" => { _ = session::Entity::update_many().col_expr(session::Column::CreatedAt,Expr::value(body.created_at.ok_or_else(||AuthError::bad_request("Missing session clock"))?)).col_expr(session::Column::ExpiresAt,Expr::value(body.expires_at.unwrap_or(DateTime::parse_from_rfc3339("2099-01-01T00:00:00Z").unwrap().with_timezone(&Utc)))).filter(session::Column::Token.eq(body.token.ok_or_else(||AuthError::bad_request("Missing session clock"))?)).exec(&db).await.map_err(db_error)?; },
                     "state" => {},
                     _ => return Err(AuthError::bad_request("Unknown lifecycle action")),
@@ -322,8 +322,8 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                 let accounts = account::Entity::find().order_by_asc(account::Column::CreatedAt).all(&db).await.map_err(db_error)?;
                 let sessions = session::Entity::find().order_by_asc(session::Column::CreatedAt).all(&db).await.map_err(db_error)?;
                 let proofs = verification::Entity::find().order_by_asc(verification::Column::CreatedAt).all(&db).await.map_err(db_error)?;
-                let accounts = accounts.iter().map(|account| { let mut value = serde_json::to_value(better_auth_core::wire::AccountView::from(account)).unwrap(); value["password"] = json!(account.password); value }).collect::<Vec<_>>();
-                let proofs = proofs.iter().map(|proof| {let mut value = serde_json::to_value(better_auth_core::wire::VerificationView::from(proof)).unwrap(); let identifier = value.as_object_mut().unwrap().remove("identifier").unwrap(); let owner = value.as_object_mut().unwrap().remove("value").unwrap(); if let Some(token) = identifier.as_str().and_then(|identifier|identifier.strip_prefix("delete-account-")) {value["identifierPrefix"] = json!("delete-account-");value["token"] = json!(token);value["userId"] = owner;} else {value["identifier"] = identifier;value["value"] = owner;} value}).collect::<Vec<_>>();
+                let accounts = accounts.iter().map(|account| { let mut value = serde_json::to_value(alibi_core::wire::AccountView::from(account)).unwrap(); value["password"] = json!(account.password); value }).collect::<Vec<_>>();
+                let proofs = proofs.iter().map(|proof| {let mut value = serde_json::to_value(alibi_core::wire::VerificationView::from(proof)).unwrap(); let identifier = value.as_object_mut().unwrap().remove("identifier").unwrap(); let owner = value.as_object_mut().unwrap().remove("value").unwrap(); if let Some(token) = identifier.as_str().and_then(|identifier|identifier.strip_prefix("delete-account-")) {value["identifierPrefix"] = json!("delete-account-");value["token"] = json!(token);value["userId"] = owner;} else {value["identifier"] = identifier;value["value"] = owner;} value}).collect::<Vec<_>>();
                 let snapshot = json!({"users":users.iter().map(|user|auth.context().user_view(user)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions.iter().map(|session|auth.context().session_view(session)).collect::<Vec<_>>(),"verifications":proofs,"events":app.state.lock().expect("lifecycle state").events});
                 // Own every row and receipt before the blocked deletion can resume.
                 if body.action == "release" { app.release.notify_one(); }

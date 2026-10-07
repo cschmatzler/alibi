@@ -75,7 +75,7 @@ fn deserialize_bool_or_string<'de, D>(deserializer: D) -> Result<Option<bool>, D
 where
     D: Deserializer<'de>,
 {
-    let value = better_auth_core::utils::json::deserialize_optional_value(deserializer)?;
+    let value = alibi_core::utils::json::deserialize_optional_value(deserializer)?;
     match value {
         None => Ok(None),
         Some(serde_json::Value::Bool(b)) => Ok(Some(b)),

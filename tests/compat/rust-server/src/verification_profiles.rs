@@ -3,14 +3,14 @@
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use async_trait::async_trait;
 use axum::Router;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, SendVerificationEmail, SessionManagementPlugin,
 };
-use better_auth::wire::UserView;
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_seaorm::sea_orm::DatabaseConnection;
+use alibi::wire::UserView;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_seaorm::sea_orm::DatabaseConnection;
 use chrono::Duration;
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -1,6 +1,6 @@
 //! The CLI's generated schemas compile and serve as working store schemas.
 //!
-//! `tests/fixtures/cli` holds `better-auth-rs generate --plugins all` output
+//! `tests/fixtures/cli` holds `alibi generate --plugins all` output
 //! for each backend; the CLI's own tests keep the fixtures current. Core-only
 //! fixtures exercise deletion without any optional plugin tables.
 
@@ -27,8 +27,8 @@ mod sqlx_schema {
         run_app_migrations(&pool).await?;
         // Migrations are idempotent.
         run_app_migrations(&pool).await?;
-        let store = better_auth::sqlx::SqlxStore::<AppAuthSchema>::new(
-            better_auth::AuthConfig::new("generated-sqlx-schema-secret-32-chars"),
+        let store = alibi::sqlx::SqlxStore::<AppAuthSchema>::new(
+            alibi::AuthConfig::new("generated-sqlx-schema-secret-32-chars"),
             pool,
         );
         super::exercise(&store).await
@@ -54,11 +54,11 @@ mod seaorm_schema {
         all_tables(crate::storage::Db::postgres().await?).await
     }
     async fn all_tables(db: crate::storage::Db) -> super::TestResult {
-        let database = better_auth::seaorm::Database::connect(&db.url).await?;
+        let database = alibi::seaorm::Database::connect(&db.url).await?;
         run_app_migrations(&database).await?;
         run_app_migrations(&database).await?;
-        let store = better_auth::seaorm::SeaOrmStore::<AppAuthSchema>::new(
-            better_auth::AuthConfig::new("generated-seaorm-schema-secret-32-chars"),
+        let store = alibi::seaorm::SeaOrmStore::<AppAuthSchema>::new(
+            alibi::AuthConfig::new("generated-seaorm-schema-secret-32-chars"),
             database,
         );
         super::exercise(&store).await
@@ -69,11 +69,9 @@ type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
 
 /// Round-trip every core role through the generated models.
 #[cfg(any(feature = "sqlx", feature = "seaorm"))]
-async fn exercise<S: better_auth::AuthSchema>(
-    store: &dyn better_auth::store::AuthStore<S>,
-) -> TestResult {
-    use better_auth::prelude::{AuthSession, AuthUser, AuthVerification};
-    use better_auth_core::{CreateAccount, CreateSession, CreateUser, CreateVerification};
+async fn exercise<S: alibi::AuthSchema>(store: &dyn alibi::store::AuthStore<S>) -> TestResult {
+    use alibi::prelude::{AuthSession, AuthUser, AuthVerification};
+    use alibi_core::{CreateAccount, CreateSession, CreateUser, CreateVerification};
     let user = store
         .create_user(CreateUser::new().with_email("generated@fixture.test"))
         .await?;
@@ -81,7 +79,7 @@ async fn exercise<S: better_auth::AuthSchema>(
     let expires_at = chrono::Utc::now() + chrono::Duration::hours(1);
     let session = store
         .create_session(CreateSession {
-            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
             token: None,
             user_id: user_id.clone(),
             expires_at,
@@ -174,7 +172,7 @@ mod sqlx_core {
         let pool = SqlxPool::connect(&db.url).await?;
         run_app_migrations(&pool).await?;
         super::assert_core_only(&db).await?;
-        let store = better_auth::sqlx::SqlxStore::<AppAuthSchema>::new(
+        let store = alibi::sqlx::SqlxStore::<AppAuthSchema>::new(
             crate::storage::users::deletion_config(),
             pool,
         );
@@ -221,10 +219,10 @@ mod seaorm_core {
         Ok(())
     }
     async fn deletion(db: crate::storage::Db, admin: bool) -> super::TestResult {
-        let database = better_auth::seaorm::Database::connect(&db.url).await?;
+        let database = alibi::seaorm::Database::connect(&db.url).await?;
         run_app_migrations(&database).await?;
         super::assert_core_only(&db).await?;
-        let store = better_auth::seaorm::SeaOrmStore::<AppAuthSchema>::new(
+        let store = alibi::seaorm::SeaOrmStore::<AppAuthSchema>::new(
             crate::storage::users::deletion_config(),
             database,
         );

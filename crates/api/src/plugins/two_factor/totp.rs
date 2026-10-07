@@ -3,7 +3,7 @@ pub(in crate::plugins::two_factor) async fn get_totp_uri_core(
     body: &GetTotpUriRequest,
     user: &impl AuthUser,
     config: &TwoFactorConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<TotpUriResponse> {
     require_totp_enabled(config)?;
     let two_factor = load_two_factor_record(user, ctx).await?;
@@ -37,7 +37,7 @@ pub(in crate::plugins::two_factor) async fn verify_totp_core(
     req: &AuthRequest,
     body: &VerifyTotpRequest,
     config: &TwoFactorConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(SessionTokenResponse<UserView>, Vec<String>), TotpVerificationError> {
     require_totp_enabled(config)?;
     let state = resolve_two_factor_state(req, ctx).await?;

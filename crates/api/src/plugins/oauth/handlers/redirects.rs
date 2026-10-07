@@ -7,7 +7,7 @@ pub(in crate::plugins::oauth::handlers) fn redirect_response(location: &str) -> 
 
 pub(in crate::plugins::oauth::handlers) fn validate_redirect_target(
     target: &str,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     error_message: &str,
 ) -> AuthResult<()> {
     if ctx.config.current_origin_check_disabled() {
@@ -55,7 +55,7 @@ pub(in crate::plugins::oauth::handlers) fn build_redirect_url(
 }
 
 pub(in crate::plugins::oauth::handlers) fn auth_base_url(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> String {
     format!(
         "{}{}",
@@ -65,7 +65,7 @@ pub(in crate::plugins::oauth::handlers) fn auth_base_url(
 }
 
 pub(in crate::plugins::oauth::handlers) fn build_default_error_url(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> String {
     ctx.config
         .api_error_url
@@ -76,7 +76,7 @@ pub(in crate::plugins::oauth::handlers) fn build_default_error_url(
 }
 
 pub(in crate::plugins::oauth::handlers) fn callback_failure_location(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     error: &str,
 ) -> String {
     build_redirect_url(
@@ -94,14 +94,14 @@ pub(in crate::plugins::oauth::handlers) fn callback_failure_location(
 }
 
 pub(in crate::plugins::oauth::handlers) fn callback_failure_redirect(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     error: &str,
 ) -> AuthResponse {
     redirect_response(&callback_failure_location(ctx, error))
 }
 
 pub(in crate::plugins) fn ambiguous_account_sign_in_response(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResponse {
     callback_failure_redirect(ctx, "internal_server_error")
 }

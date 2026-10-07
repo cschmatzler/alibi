@@ -12,7 +12,7 @@ pub struct Model {
     pub crv: Option<String>,
 }
 
-impl From<Model> for better_auth_core::types::Jwk {
+impl From<Model> for alibi_core::types::Jwk {
     fn from(row: Model) -> Self {
         Self {
             id: row.id,

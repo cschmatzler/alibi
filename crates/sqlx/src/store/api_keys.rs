@@ -7,11 +7,11 @@ use crate::pool::Exec;
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
 use crate::value::SqlxValue;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::adapter::parse_optional_rfc3339;
+use alibi_core::store::{ApiKeyStore, ConsumeApiKeyResult};
+use alibi_core::types::{ApiKey, CreateApiKey, UpdateApiKey};
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::adapter::parse_optional_rfc3339;
-use better_auth_core::store::{ApiKeyStore, ConsumeApiKeyResult};
-use better_auth_core::types::{ApiKey, CreateApiKey, UpdateApiKey};
 use chrono::Utc;
 use uuid::Uuid;
 

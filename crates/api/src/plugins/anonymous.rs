@@ -4,12 +4,12 @@ use super::helpers::{
     apply_default_role, completed_response_session, delete_session_cookie_headers, get_cookie,
     issue_user_session_record, record_completed_session_record, response_has_session_cookie,
 };
-use async_trait::async_trait;
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{
+use alibi_core::wire::{SessionView, UserView};
+use alibi_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, AuthUser, BeforeRequestAction, CreateUser, HttpMethod, RequestMeta,
 };
+use async_trait::async_trait;
 use rand::distr::{Alphanumeric, SampleString};
 use serde_json::json;
 use std::sync::Arc;
@@ -71,7 +71,7 @@ impl AnonymousPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<AuthResponse> {
-        use better_auth_core::utils::cookie_utils::{
+        use alibi_core::utils::cookie_utils::{
             create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
             sign_cookie_value, verify_cookie_value,
         };
@@ -123,90 +123,88 @@ impl AnonymousPlugin {
             .database
             .create_user_with_source_record(
                 create,
-                better_auth_core::user_validation::UserValidationSource::creation("anonymous"),
+                alibi_core::user_validation::UserValidationSource::creation("anonymous"),
             )
             .await
             .map_err(|error| match error {
-                better_auth_core::AuthError::UserCreationCancelled => {
-                    better_auth_core::AuthError::Upstream {
-                        status: 500,
-                        code: "FAILED_TO_CREATE_USER",
-                        message: "Failed to create user",
-                    }
-                }
-                error @ (better_auth_core::AuthError::Api { .. }
-                | better_auth_core::AuthError::Upstream { .. }
-                | better_auth_core::AuthError::BadRequest(_)
-                | better_auth_core::AuthError::InvalidRequest(_)
-                | better_auth_core::AuthError::Validation(_)
-                | better_auth_core::AuthError::InvalidCredentials
-                | better_auth_core::AuthError::Unauthenticated
-                | better_auth_core::AuthError::AuthenticationFailed(_)
-                | better_auth_core::AuthError::SessionNotFound
-                | better_auth_core::AuthError::Forbidden(_)
-                | better_auth_core::AuthError::SessionCreationCancelled
-                | better_auth_core::AuthError::BannedUser(_)
-                | better_auth_core::AuthError::Unauthorized
-                | better_auth_core::AuthError::UserNotFound
-                | better_auth_core::AuthError::NotFound(_)
-                | better_auth_core::AuthError::Conflict(_)
-                | better_auth_core::AuthError::MethodNotAllowed(_)
-                | better_auth_core::AuthError::PayloadTooLarge(_)
-                | better_auth_core::AuthError::UnprocessableEntity(_)
-                | better_auth_core::AuthError::RateLimited { .. }
-                | better_auth_core::AuthError::NotImplemented(_)
-                | better_auth_core::AuthError::Config(_)
-                | better_auth_core::AuthError::Database(_)
-                | better_auth_core::AuthError::Serialization(_)
-                | better_auth_core::AuthError::Plugin { .. }
-                | better_auth_core::AuthError::CallbackFailure(_)
-                | better_auth_core::AuthError::Internal(_)
-                | better_auth_core::AuthError::Encryption(_)
-                | better_auth_core::AuthError::PasswordHash(_)
-                | better_auth_core::AuthError::Jwt(_)) => error,
+                alibi_core::AuthError::UserCreationCancelled => alibi_core::AuthError::Upstream {
+                    status: 500,
+                    code: "FAILED_TO_CREATE_USER",
+                    message: "Failed to create user",
+                },
+                error @ (alibi_core::AuthError::Api { .. }
+                | alibi_core::AuthError::Upstream { .. }
+                | alibi_core::AuthError::BadRequest(_)
+                | alibi_core::AuthError::InvalidRequest(_)
+                | alibi_core::AuthError::Validation(_)
+                | alibi_core::AuthError::InvalidCredentials
+                | alibi_core::AuthError::Unauthenticated
+                | alibi_core::AuthError::AuthenticationFailed(_)
+                | alibi_core::AuthError::SessionNotFound
+                | alibi_core::AuthError::Forbidden(_)
+                | alibi_core::AuthError::SessionCreationCancelled
+                | alibi_core::AuthError::BannedUser(_)
+                | alibi_core::AuthError::Unauthorized
+                | alibi_core::AuthError::UserNotFound
+                | alibi_core::AuthError::NotFound(_)
+                | alibi_core::AuthError::Conflict(_)
+                | alibi_core::AuthError::MethodNotAllowed(_)
+                | alibi_core::AuthError::PayloadTooLarge(_)
+                | alibi_core::AuthError::UnprocessableEntity(_)
+                | alibi_core::AuthError::RateLimited { .. }
+                | alibi_core::AuthError::NotImplemented(_)
+                | alibi_core::AuthError::Config(_)
+                | alibi_core::AuthError::Database(_)
+                | alibi_core::AuthError::Serialization(_)
+                | alibi_core::AuthError::Plugin { .. }
+                | alibi_core::AuthError::CallbackFailure(_)
+                | alibi_core::AuthError::Internal(_)
+                | alibi_core::AuthError::Encryption(_)
+                | alibi_core::AuthError::PasswordHash(_)
+                | alibi_core::AuthError::Jwt(_)) => error,
             })?;
         let meta = RequestMeta::from_request(req);
         let issued =
             issue_user_session_record(ctx, user.id().as_ref(), meta.ip_address, meta.user_agent)
                 .await
                 .map_err(|cause| match cause.into_auth_error() {
-                    better_auth_core::AuthError::SessionCreationCancelled => {
-                        better_auth_core::AuthError::Upstream {
+                    alibi_core::AuthError::SessionCreationCancelled => {
+                        alibi_core::AuthError::Upstream {
                             status: 400,
                             code: "COULD_NOT_CREATE_SESSION",
                             message: "Could not create session",
                         }
                     }
-                    cause @ (better_auth_core::AuthError::Api { .. }
-                    | better_auth_core::AuthError::Upstream { .. }
-                    | better_auth_core::AuthError::BadRequest(_)
-                    | better_auth_core::AuthError::InvalidRequest(_)
-                    | better_auth_core::AuthError::Validation(_)
-                    | better_auth_core::AuthError::InvalidCredentials
-                    | better_auth_core::AuthError::Unauthenticated
-                    | better_auth_core::AuthError::AuthenticationFailed(_)
-                    | better_auth_core::AuthError::SessionNotFound
-                    | better_auth_core::AuthError::Forbidden(_)
-                    | better_auth_core::AuthError::UserCreationCancelled
-                    | better_auth_core::AuthError::BannedUser(_)
-                    | better_auth_core::AuthError::Unauthorized
-                    | better_auth_core::AuthError::UserNotFound
-                    | better_auth_core::AuthError::NotFound(_)
-                    | better_auth_core::AuthError::Conflict(_)
-                    | better_auth_core::AuthError::MethodNotAllowed(_)
-                    | better_auth_core::AuthError::PayloadTooLarge(_)
-                    | better_auth_core::AuthError::UnprocessableEntity(_)
-                    | better_auth_core::AuthError::RateLimited { .. }
-                    | better_auth_core::AuthError::NotImplemented(_)
-                    | better_auth_core::AuthError::Config(_)
-                    | better_auth_core::AuthError::Database(_)
-                    | better_auth_core::AuthError::Serialization(_)
-                    | better_auth_core::AuthError::Plugin { .. }
-                    | better_auth_core::AuthError::CallbackFailure(_)
-                    | better_auth_core::AuthError::Internal(_)
-                    | better_auth_core::AuthError::Encryption(_)
-                    | better_auth_core::AuthError::PasswordHash(_)
-                    | better_auth_core::AuthError::Jwt(_)) => cause,
+                    cause @ (alibi_core::AuthError::Api { .. }
+                    | alibi_core::AuthError::Upstream { .. }
+                    | alibi_core::AuthError::BadRequest(_)
+                    | alibi_core::AuthError::InvalidRequest(_)
+                    | alibi_core::AuthError::Validation(_)
+                    | alibi_core::AuthError::InvalidCredentials
+                    | alibi_core::AuthError::Unauthenticated
+                    | alibi_core::AuthError::AuthenticationFailed(_)
+                    | alibi_core::AuthError::SessionNotFound
+                    | alibi_core::AuthError::Forbidden(_)
+                    | alibi_core::AuthError::UserCreationCancelled
+                    | alibi_core::AuthError::BannedUser(_)
+                    | alibi_core::AuthError::Unauthorized
+                    | alibi_core::AuthError::UserNotFound
+                    | alibi_core::AuthError::NotFound(_)
+                    | alibi_core::AuthError::Conflict(_)
+                    | alibi_core::AuthError::MethodNotAllowed(_)
+                    | alibi_core::AuthError::PayloadTooLarge(_)
+                    | alibi_core::AuthError::UnprocessableEntity(_)
+                    | alibi_core::AuthError::RateLimited { .. }
+                    | alibi_core::AuthError::NotImplemented(_)
+                    | alibi_core::AuthError::Config(_)
+                    | alibi_core::AuthError::Database(_)
+                    | alibi_core::AuthError::Serialization(_)
+                    | alibi_core::AuthError::Plugin { .. }
+                    | alibi_core::AuthError::CallbackFailure(_)
+                    | alibi_core::AuthError::Internal(_)
+                    | alibi_core::AuthError::Encryption(_)
+                    | alibi_core::AuthError::PasswordHash(_)
+                    | alibi_core::AuthError::Jwt(_)) => cause,
                 })?;
         // The created row is Source's original new-user snapshot, even if a
         // lifecycle hook subsequently changes the database during session creation.
@@ -255,43 +253,41 @@ impl AnonymousPlugin {
             ctx.require_authoritative_session(req)
                 .await
                 .map_err(|error| match error {
-                    better_auth_core::AuthError::Unauthenticated => {
-                        better_auth_core::AuthError::Upstream {
-                            status: 401,
-                            code: "UNAUTHORIZED",
-                            message: "Unauthorized",
-                        }
-                    }
-                    error @ (better_auth_core::AuthError::Api { .. }
-                    | better_auth_core::AuthError::Upstream { .. }
-                    | better_auth_core::AuthError::BadRequest(_)
-                    | better_auth_core::AuthError::InvalidRequest(_)
-                    | better_auth_core::AuthError::Validation(_)
-                    | better_auth_core::AuthError::InvalidCredentials
-                    | better_auth_core::AuthError::AuthenticationFailed(_)
-                    | better_auth_core::AuthError::SessionNotFound
-                    | better_auth_core::AuthError::Forbidden(_)
-                    | better_auth_core::AuthError::SessionCreationCancelled
-                    | better_auth_core::AuthError::UserCreationCancelled
-                    | better_auth_core::AuthError::BannedUser(_)
-                    | better_auth_core::AuthError::Unauthorized
-                    | better_auth_core::AuthError::UserNotFound
-                    | better_auth_core::AuthError::NotFound(_)
-                    | better_auth_core::AuthError::Conflict(_)
-                    | better_auth_core::AuthError::MethodNotAllowed(_)
-                    | better_auth_core::AuthError::PayloadTooLarge(_)
-                    | better_auth_core::AuthError::UnprocessableEntity(_)
-                    | better_auth_core::AuthError::RateLimited { .. }
-                    | better_auth_core::AuthError::NotImplemented(_)
-                    | better_auth_core::AuthError::Config(_)
-                    | better_auth_core::AuthError::Database(_)
-                    | better_auth_core::AuthError::Serialization(_)
-                    | better_auth_core::AuthError::Plugin { .. }
-                    | better_auth_core::AuthError::CallbackFailure(_)
-                    | better_auth_core::AuthError::Internal(_)
-                    | better_auth_core::AuthError::Encryption(_)
-                    | better_auth_core::AuthError::PasswordHash(_)
-                    | better_auth_core::AuthError::Jwt(_)) => error,
+                    alibi_core::AuthError::Unauthenticated => alibi_core::AuthError::Upstream {
+                        status: 401,
+                        code: "UNAUTHORIZED",
+                        message: "Unauthorized",
+                    },
+                    error @ (alibi_core::AuthError::Api { .. }
+                    | alibi_core::AuthError::Upstream { .. }
+                    | alibi_core::AuthError::BadRequest(_)
+                    | alibi_core::AuthError::InvalidRequest(_)
+                    | alibi_core::AuthError::Validation(_)
+                    | alibi_core::AuthError::InvalidCredentials
+                    | alibi_core::AuthError::AuthenticationFailed(_)
+                    | alibi_core::AuthError::SessionNotFound
+                    | alibi_core::AuthError::Forbidden(_)
+                    | alibi_core::AuthError::SessionCreationCancelled
+                    | alibi_core::AuthError::UserCreationCancelled
+                    | alibi_core::AuthError::BannedUser(_)
+                    | alibi_core::AuthError::Unauthorized
+                    | alibi_core::AuthError::UserNotFound
+                    | alibi_core::AuthError::NotFound(_)
+                    | alibi_core::AuthError::Conflict(_)
+                    | alibi_core::AuthError::MethodNotAllowed(_)
+                    | alibi_core::AuthError::PayloadTooLarge(_)
+                    | alibi_core::AuthError::UnprocessableEntity(_)
+                    | alibi_core::AuthError::RateLimited { .. }
+                    | alibi_core::AuthError::NotImplemented(_)
+                    | alibi_core::AuthError::Config(_)
+                    | alibi_core::AuthError::Database(_)
+                    | alibi_core::AuthError::Serialization(_)
+                    | alibi_core::AuthError::Plugin { .. }
+                    | alibi_core::AuthError::CallbackFailure(_)
+                    | alibi_core::AuthError::Internal(_)
+                    | alibi_core::AuthError::Encryption(_)
+                    | alibi_core::AuthError::PasswordHash(_)
+                    | alibi_core::AuthError::Jwt(_)) => error,
                 })?;
         if self.config.disable_delete_anonymous_user {
             return Ok(error(
@@ -329,20 +325,20 @@ impl AnonymousPlugin {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for AnonymousPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -488,7 +484,7 @@ impl std::fmt::Debug for AnonymousPlugin {
 async fn anonymous_session<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> Option<(better_auth_core::AuthenticatedUser<S>, SessionView)> {
+) -> Option<(alibi_core::AuthenticatedUser<S>, SessionView)> {
     let mut read = req.clone();
     drop(read.query.insert("disableRefresh".into(), "true".into()));
     ctx.require_cached_session(&read).await.ok()
@@ -502,8 +498,8 @@ async fn resolve_anonymous_session<S: AuthSchema>(
         && user.is_anonymous() == Some(true)
     {
         let user = match user {
-            better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
-            better_auth_core::AuthenticatedUser::Cached(user) => *user,
+            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
+            alibi_core::AuthenticatedUser::Cached(user) => *user,
         };
         return Ok(Some((user, session)));
     }
@@ -534,17 +530,17 @@ async fn resolve_anonymous_session<S: AuthSchema>(
 
 // An ordinary application exception has an empty 500 wire. Explicit typed
 // HTTP errors retain their status/body, including coded and uncoded API errors.
-fn callback_error(error: better_auth_core::AuthError) -> better_auth_core::AuthError {
+fn callback_error(error: alibi_core::AuthError) -> alibi_core::AuthError {
     match error {
-        better_auth_core::AuthError::Internal(_) => {
-            better_auth_core::AuthError::CallbackFailure(Box::new(error))
+        alibi_core::AuthError::Internal(_) => {
+            alibi_core::AuthError::CallbackFailure(Box::new(error))
         }
         other => other,
     }
 }
 
 fn error(status: u16, code: &'static str, message: &'static str) -> AuthResponse {
-    better_auth_core::AuthError::Upstream {
+    alibi_core::AuthError::Upstream {
         status,
         code,
         message,

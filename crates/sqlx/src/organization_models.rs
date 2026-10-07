@@ -6,8 +6,8 @@ use crate::pool::Exec;
 use crate::sql::Sql;
 use crate::store::entities::{invitation, member, organization};
 use crate::value::{ColumnKind, SqlValue};
+use alibi_core::{AuthError, AuthResult};
 use async_trait::async_trait;
-use better_auth_core::{AuthError, AuthResult};
 use std::{marker::PhantomData, sync::Arc};
 
 /// Bind the three organization entities to application models and ID factories.
@@ -133,7 +133,7 @@ impl<T: SqlxModel> Binding<T> {
         &self,
         exec: Exec<'_>,
         active: &mut ActiveRow,
-        fields: &mut better_auth_core::field_policy::FieldValues,
+        fields: &mut alibi_core::field_policy::FieldValues,
     ) -> AuthResult<()> {
         fields.apply_adapter_transforms_async().await?;
         for (name, value) in &*fields {
@@ -197,7 +197,7 @@ impl<T: SqlxModel> Binding<T> {
             }
             (ColumnKind::Text, SqlValue::Json(value)) => SqlValue::Text(
                 value
-                    .map(|value| better_auth_core::utils::json::to_string(&*value))
+                    .map(|value| alibi_core::utils::json::to_string(&*value))
                     .transpose()?,
             ),
             (_, value) => value,
@@ -373,7 +373,7 @@ impl<T: SqlxModel> Binding<T> {
     }
 }
 
-impl From<&Row<organization::Model>> for better_auth_core::Organization {
+impl From<&Row<organization::Model>> for alibi_core::Organization {
     fn from(row: &Row<organization::Model>) -> Self {
         let mut organization = Self::from(&row.value);
         for (field, value) in row.active.present() {
@@ -389,12 +389,12 @@ impl From<&Row<organization::Model>> for better_auth_core::Organization {
         organization
     }
 }
-impl From<&Row<member::Model>> for better_auth_core::Member {
+impl From<&Row<member::Model>> for alibi_core::Member {
     fn from(row: &Row<member::Model>) -> Self {
         Self::from(&row.value)
     }
 }
-impl From<&Row<invitation::Model>> for better_auth_core::Invitation {
+impl From<&Row<invitation::Model>> for alibi_core::Invitation {
     fn from(row: &Row<invitation::Model>) -> Self {
         let mut invitation = Self::from(&row.value);
         if row

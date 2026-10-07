@@ -24,13 +24,13 @@ impl<S: AuthSchema> BetterAuth<S> {
                 if !self.config.render_error_page {
                     return Ok(Some(AuthResponse::new(302).with_header(
                         "location",
-                        better_auth_core::error::page::error_page_redirect_location(
+                        alibi_core::error::page::error_page_redirect_location(
                             &error_code,
                             error_description,
                         ),
                     )));
                 }
-                let html = better_auth_core::error::page::error_page_html_with_description(
+                let html = alibi_core::error::page::error_page_html_with_description(
                     &error_code,
                     error_description,
                 );

@@ -67,19 +67,19 @@ use crate::plugins::helpers::{
 };
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, Key, Nonce};
-use async_trait::async_trait;
-pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth_core::entity::{AuthSession, AuthTwoFactor, AuthUser};
-use better_auth_core::utils::cookie_utils::{
+use alibi_core::entity::{AuthSession, AuthTwoFactor, AuthUser};
+use alibi_core::utils::cookie_utils::{
     create_clear_cookie, create_session_cookie, create_session_cookie_with_max_age,
     related_cookie_name,
 };
-use better_auth_core::wire::UserView;
-use better_auth_core::{
+use alibi_core::wire::UserView;
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateTwoFactor,
     CreateVerification, RequestMeta, TwoFactor, UpdateTwoFactor, UpdateUser,
 };
+use async_trait::async_trait;
+pub use backup_storage::{TwoFactorBackupCipher, TwoFactorBackupStorage};
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
 pub use endpoint::{BackupCodesOutput, TotpOutput};
 use hkdf::Hkdf;
@@ -256,17 +256,17 @@ pub(in crate::plugins) struct TwoFactorRedirectResponse {
     two_factor_methods: Vec<&'static str>,
 }
 
-struct PendingTwoFactorState<S: better_auth_core::AuthSchema> {
-    user: better_auth_core::AdapterRecord<S::User>,
-    verification: better_auth_core::verification::VerificationSnapshot,
+struct PendingTwoFactorState<S: alibi_core::AuthSchema> {
+    user: alibi_core::AdapterRecord<S::User>,
+    verification: alibi_core::verification::VerificationSnapshot,
     key: String,
     dont_remember: bool,
 }
 
-enum ResolvedTwoFactorState<S: better_auth_core::AuthSchema> {
+enum ResolvedTwoFactorState<S: alibi_core::AuthSchema> {
     Session {
-        user: better_auth_core::AuthenticatedUser<S>,
-        session: Box<better_auth_core::wire::SessionView>,
+        user: alibi_core::AuthenticatedUser<S>,
+        session: Box<alibi_core::wire::SessionView>,
         key: String,
     },
     Pending(PendingTwoFactorState<S>),
@@ -315,7 +315,7 @@ impl TwoFactorPlugin {
     /// # Errors
     ///
     /// Returns an error if backup codes are unavailable, cannot be decrypted, or cannot be loaded.
-    pub async fn view_backup_codes<S: better_auth_core::AuthSchema>(
+    pub async fn view_backup_codes<S: alibi_core::AuthSchema>(
         &self,
         user_id: &str,
         ctx: &AuthContext<S>,
@@ -324,7 +324,7 @@ impl TwoFactorPlugin {
     }
 }
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     TwoFactorPlugin, "two-factor";
     routes {
         post "/two-factor/enable" => handle_enable, "enable_two_factor";
@@ -337,28 +337,28 @@ better_auth_core::impl_auth_plugin! {
         post "/two-factor/verify-backup-code" => handle_verify_backup_code, "verify_backup_code";
     }
     extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
     }
 
-        fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
-            vec![better_auth_core::PluginRateLimit { matches: |path| path.starts_with("/two-factor/"), limit: better_auth_core::EndpointRateLimit { window_seconds: 10.0, max_requests: 3.0 } }]
+        fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
+            vec![alibi_core::PluginRateLimit { matches: |path| path.starts_with("/two-factor/"), limit: alibi_core::EndpointRateLimit { window_seconds: 10.0, max_requests: 3.0 } }]
         }
-        fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> { endpoint::definitions() }
+        fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
 
-        fn validate_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointInput> { endpoint::validate(call) }
+        fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
 
-        async fn on_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
+        async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
 
         async fn on_init(
             &self,
-            ctx: &mut better_auth_core::AuthInitContext<S>,
+            ctx: &mut alibi_core::AuthInitContext<S>,
         ) -> AuthResult<()> {
-            let default = |mut input: better_auth_core::CreateUser| {
+            let default = |mut input: alibi_core::CreateUser| {
                 _ = input.two_factor_enabled.get_or_insert(false);
                 Ok(input)
             };
@@ -393,7 +393,7 @@ impl TwoFactorPlugin {
     async fn handle_enable(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: EnableRequest =
             match parse_password_body(req, self.config.allow_passwordless, true) {
@@ -423,7 +423,7 @@ impl TwoFactorPlugin {
     async fn handle_disable(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: DisableRequest =
             match parse_password_body(req, self.config.allow_passwordless, false) {
@@ -482,7 +482,7 @@ impl TwoFactorPlugin {
     async fn handle_get_totp_uri(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
         let allow_passwordless = self
@@ -501,9 +501,9 @@ impl TwoFactorPlugin {
     async fn handle_verify_totp(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: VerifyTotpRequest = match better_auth_core::validate_request_body(req) {
+        let body: VerifyTotpRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -529,7 +529,7 @@ impl TwoFactorPlugin {
     async fn handle_send_otp(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         if let Err(response) =
             crate::plugins::authentication_helpers::parse_body::<SendOtpRequest>(req)
@@ -547,9 +547,9 @@ impl TwoFactorPlugin {
     async fn handle_verify_otp(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: VerifyOtpRequest = match better_auth_core::validate_request_body(req) {
+        let body: VerifyOtpRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -581,7 +581,7 @@ impl TwoFactorPlugin {
     async fn handle_generate_backup_codes(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
         let allow_passwordless = self
@@ -605,9 +605,9 @@ impl TwoFactorPlugin {
     async fn handle_verify_backup_code(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: VerifyBackupCodeRequest = match better_auth_core::validate_request_body(req) {
+        let body: VerifyBackupCodeRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -687,13 +687,11 @@ impl From<AuthError> for BackupOperationError {
     }
 }
 
-impl<S: better_auth_core::AuthSchema> ResolvedTwoFactorState<S> {
-    fn user(&self) -> better_auth_core::AuthenticatedUser<S> {
+impl<S: alibi_core::AuthSchema> ResolvedTwoFactorState<S> {
+    fn user(&self) -> alibi_core::AuthenticatedUser<S> {
         match self {
             Self::Session { user, .. } => user.clone(),
-            Self::Pending(pending) => {
-                better_auth_core::AuthenticatedUser::Stored(pending.user.clone())
-            }
+            Self::Pending(pending) => alibi_core::AuthenticatedUser::Stored(pending.user.clone()),
         }
     }
 
@@ -711,7 +709,7 @@ impl std::fmt::Debug for TwoFactorPlugin {
     }
 }
 
-pub(in crate::plugins) fn is_enabled(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> bool {
+pub(in crate::plugins) fn is_enabled(ctx: &AuthContext<impl alibi_core::AuthSchema>) -> bool {
     ctx.get_metadata(METADATA_ENABLED)
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
@@ -734,14 +732,13 @@ mod tests {
     use super::cookies::sign_cookie_value;
     use super::*;
     use crate::plugins::test_helpers;
-    use better_auth_core::wire::{SessionView, UserView};
-    use better_auth_core::{AuthPlugin, AuthVerification};
-    use better_auth_core::{CreateAccount, CreateUser, HttpMethod};
+    use alibi_core::wire::{SessionView, UserView};
+    use alibi_core::{AuthPlugin, AuthVerification};
+    use alibi_core::{CreateAccount, CreateUser, HttpMethod};
     use chrono::Duration;
     use cookie::Cookie;
 
-    type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     #[tokio::test]
     #[expect(
@@ -749,8 +746,8 @@ mod tests {
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
     async fn skip_enrollment_hooks_retain_factor_generation_and_current_token_on_rejection() {
-        use better_auth_core::{AuthConfig, CreateSession};
-        use better_auth_seaorm::{
+        use alibi_core::{AuthConfig, CreateSession};
+        use alibi_seaorm::{
             Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
         };
         struct PolicyHook {
@@ -819,13 +816,13 @@ mod tests {
                 Ok(HookControl::Continue)
             }
         }
-        let password_hash = better_auth_core::hash_password(None, "password123")
+        let password_hash = alibi_core::hash_password(None, "password123")
             .await
             .unwrap();
         for (cancel_session, session_forbidden) in [(false, false), (true, false), (true, true)] {
             for existing in [false, true] {
                 let db = Database::connect("sqlite::memory:").await.unwrap();
-                better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+                alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
                     .await
                     .unwrap();
                 let config = Arc::new(AuthConfig::new("skip-hook-secret-at-least-32-characters"));
@@ -874,7 +871,7 @@ mod tests {
                         impersonated_by: Some("retained-admin".into()),
                         ip_address: Some("127.0.0.9".into()),
                         user_agent: Some("retained-agent".into()),
-                        additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                        additional_fields: alibi_core::field_policy::FieldValues::default(),
                     })
                     .await
                     .unwrap();
@@ -910,7 +907,7 @@ mod tests {
                     skip_verification_on_enable: true,
                     ..Default::default()
                 });
-                let mut init = better_auth_core::AuthInitContext::new(
+                let mut init = alibi_core::AuthInitContext::new(
                     Arc::clone(&ctx.config),
                     Arc::clone(&ctx.database),
                 );
@@ -943,7 +940,7 @@ mod tests {
                         .insert("cookie".into(), cookie.split(';').next().unwrap().into()),
                 );
                 request.body = Some(br#"{"password":"password123"}"#.to_vec());
-                let result = better_auth_core::with_request_hook_context(
+                let result = alibi_core::with_request_hook_context(
                     &request,
                     plugin.on_request(&request, &ctx),
                 )
@@ -1010,7 +1007,7 @@ mod tests {
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
     async fn two_factor_password_checks_use_configured_native_hasher_and_utf16_maximum() {
-        use better_auth_core::{PasswordHasher, ScryptHasher, UpdateAccount};
+        use alibi_core::{PasswordHasher, ScryptHasher, UpdateAccount};
         struct PrefixedHasher {
             received: std::sync::Mutex<Vec<(String, String)>>,
         }
@@ -1058,10 +1055,8 @@ mod tests {
                 .unwrap(),
         );
         let plugin = TwoFactorPlugin::new();
-        let mut init = better_auth_core::AuthInitContext::new(
-            Arc::clone(&ctx.config),
-            Arc::clone(&ctx.database),
-        );
+        let mut init =
+            alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
         crate::plugins::EmailPasswordPlugin::new()
             .password_max_length(13)
             .password_hasher(Arc::<PrefixedHasher>::clone(&provider))
@@ -1146,10 +1141,9 @@ mod tests {
             })
             .await
             .unwrap();
-        let signed =
-            better_auth_core::utils::cookie_utils::sign_cookie_value("", &ctx.config.secret);
+        let signed = alibi_core::utils::cookie_utils::sign_cookie_value("", &ctx.config.secret);
         assert_eq!(
-            better_auth_core::utils::cookie_utils::verify_cookie_value(&signed, &ctx.config.secret),
+            alibi_core::utils::cookie_utils::verify_cookie_value(&signed, &ctx.config.secret),
             Some(String::new())
         );
         let mut req = AuthRequest::new(HttpMethod::Post, "/two-factor/verify-otp");
@@ -1189,12 +1183,9 @@ mod tests {
         let (ctx, user, _) =
             create_test_context_with_credential_user("preferences@fixture.test", true).await;
         let preference_name = related_cookie_name(&ctx.config, DONT_REMEMBER_COOKIE_SUFFIX);
-        let empty =
-            better_auth_core::utils::cookie_utils::sign_cookie_value("", &ctx.config.secret);
-        let signed =
-            better_auth_core::utils::cookie_utils::sign_cookie_value("true", &ctx.config.secret);
-        let foreign =
-            better_auth_core::utils::cookie_utils::sign_cookie_value("true", "foreign-secret");
+        let empty = alibi_core::utils::cookie_utils::sign_cookie_value("", &ctx.config.secret);
+        let signed = alibi_core::utils::cookie_utils::sign_cookie_value("true", &ctx.config.secret);
+        let foreign = alibi_core::utils::cookie_utils::sign_cookie_value("true", "foreign-secret");
         for (preference, temporary) in [
             (empty.clone(), false),
             (signed.clone(), true),
@@ -1274,10 +1265,8 @@ mod tests {
         two_factor_enabled: bool,
     ) -> (AuthContext<TestSchema>, UserView, SessionView) {
         let mut ctx = test_helpers::create_test_context().await;
-        let mut init = better_auth_core::AuthInitContext::new(
-            Arc::clone(&ctx.config),
-            Arc::clone(&ctx.database),
-        );
+        let mut init =
+            alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
         TwoFactorPlugin::new().on_init(&mut init).await.unwrap();
         ctx.database = init.database_with_registered_transforms();
         let parts = init.into_parts();
@@ -1291,7 +1280,7 @@ mod tests {
         )
         .await;
 
-        let password_hash = better_auth_core::hash_password(None, "password123")
+        let password_hash = alibi_core::hash_password(None, "password123")
             .await
             .unwrap();
         drop(
@@ -1485,7 +1474,7 @@ mod tests {
         ctx.database.delete_session(&session.token).await.unwrap();
         let session = ctx
             .database
-            .create_session(better_auth_core::CreateSession {
+            .create_session(alibi_core::CreateSession {
                 token: None,
                 user_id: user.id.clone(),
                 expires_at: session.expires_at,
@@ -1494,15 +1483,13 @@ mod tests {
                 active_organization_id: Some("configured-organization".into()),
                 active_team_id: Some("configured-team".into()),
                 impersonated_by: Some("configured-admin".into()),
-                additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
             })
             .await
             .unwrap();
         let plugin = TwoFactorPlugin::new();
-        let mut configured = better_auth_core::AuthInitContext::new(
-            Arc::clone(&ctx.config),
-            Arc::clone(&ctx.database),
-        );
+        let mut configured =
+            alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
         plugin.on_init(&mut configured).await.unwrap();
         crate::plugins::OrganizationPlugin::with_config(
             crate::plugins::organization::OrganizationConfig {
@@ -1543,10 +1530,8 @@ mod tests {
 
         let captured = Arc::new(std::sync::Mutex::new(Vec::new()));
         let observed = Arc::clone(&captured);
-        let mut init = better_auth_core::AuthInitContext::new(
-            Arc::clone(&ctx.config),
-            Arc::clone(&ctx.database),
-        );
+        let mut init =
+            alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
         // Keep the initialized plugin policy when adding the observer. The
         // wrapped adapter projects the old snapshot using this same context.
         init.metadata = ctx.metadata.clone();
@@ -1586,7 +1571,7 @@ mod tests {
             session.token
         );
         let set_cookie_headers = response.headers.get_all("Set-Cookie").collect::<Vec<_>>();
-        let rotated = better_auth_core::utils::cookie_utils::verify_cookie_value(
+        let rotated = alibi_core::utils::cookie_utils::verify_cookie_value(
             &cookie_value(
                 (set_cookie_headers)
                     .first()
@@ -1727,10 +1712,8 @@ mod tests {
     async fn disable_preserves_persisted_extensions_and_removes_all_matching_trust_records() {
         let (mut ctx, user, first_session) =
             create_test_context_with_credential_user("disable-extensions@fixture.test", true).await;
-        let mut init = better_auth_core::AuthInitContext::new(
-            Arc::clone(&ctx.config),
-            Arc::clone(&ctx.database),
-        );
+        let mut init =
+            alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
         crate::plugins::admin::AdminPlugin::new()
             .on_init(&mut init)
             .await
@@ -1754,7 +1737,7 @@ mod tests {
             .unwrap();
         let current = ctx
             .database
-            .create_session(better_auth_core::CreateSession {
+            .create_session(alibi_core::CreateSession {
                 token: None,
                 user_id: user.id.clone(),
                 expires_at: Utc::now() + Duration::hours(1),
@@ -1763,7 +1746,7 @@ mod tests {
                 impersonated_by: Some("trusted-impersonator".to_owned()),
                 active_organization_id: Some("trusted-organization".to_owned()),
                 active_team_id: Some("trusted-team".to_owned()),
-                additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
             })
             .await
             .unwrap();
@@ -1786,11 +1769,9 @@ mod tests {
                 .await
                 .unwrap();
         }
-        let session_cookie = better_auth_core::utils::cookie_utils::sign_cookie_value(
-            current.token(),
-            &ctx.config.secret,
-        );
-        let trust_cookie = better_auth_core::utils::cookie_utils::sign_cookie_value(
+        let session_cookie =
+            alibi_core::utils::cookie_utils::sign_cookie_value(current.token(), &ctx.config.secret);
+        let trust_cookie = alibi_core::utils::cookie_utils::sign_cookie_value(
             "trust-token!trusted-device-record",
             &ctx.config.secret,
         );
@@ -1903,8 +1884,8 @@ mod tests {
             ctx.database.delete_session(&original.token).await.unwrap();
             let session = ctx
                 .database
-                .create_session(better_auth_core::CreateSession {
-                    additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                .create_session(alibi_core::CreateSession {
+                    additional_fields: alibi_core::field_policy::FieldValues::default(),
                     token: None,
                     user_id: user.id.clone(),
                     expires_at: original.expires_at,
@@ -1929,7 +1910,7 @@ mod tests {
                 otp_storage: TwoFactorOtpStorage::CustomHash(callback),
                 ..Default::default()
             });
-            let mut init = better_auth_core::AuthInitContext::new(
+            let mut init = alibi_core::AuthInitContext::new(
                 Arc::clone(&ctx.config),
                 Arc::clone(&ctx.database),
             );
@@ -2079,7 +2060,7 @@ mod tests {
                     );
                     let header = response.headers.get_all("Set-Cookie").next().unwrap();
                     assert_eq!(
-                        better_auth_core::utils::cookie_utils::verify_cookie_value(
+                        alibi_core::utils::cookie_utils::verify_cookie_value(
                             &cookie_value(header),
                             &ctx.config.secret
                         )
@@ -2745,8 +2726,8 @@ mod tests {
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
     async fn authenticated_otp_maps_only_session_creation_cancellation_and_preserves_hook_inputs() {
-        use better_auth_core::{AuthConfig, CreateSession};
-        use better_auth_seaorm::{
+        use alibi_core::{AuthConfig, CreateSession};
+        use alibi_seaorm::{
             Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
         };
 
@@ -2806,7 +2787,7 @@ mod tests {
         }
         for mode in 0..4 {
             let database = Database::connect("sqlite::memory:").await.unwrap();
-            better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
                 .await
                 .unwrap();
             let config = Arc::new(AuthConfig::new("authenticated-otp-hook-secret-at-least-32"));
@@ -2837,7 +2818,7 @@ mod tests {
                     active_organization_id: None,
                     active_team_id: None,
                     impersonated_by: None,
-                    additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                    additional_fields: alibi_core::field_policy::FieldValues::default(),
                 })
                 .await
                 .unwrap();
@@ -2853,7 +2834,7 @@ mod tests {
                 send_otp: Some(Arc::new(Sender(Arc::clone(&delivered)))),
                 ..Default::default()
             });
-            let mut init = better_auth_core::AuthInitContext::new(
+            let mut init = alibi_core::AuthInitContext::new(
                 Arc::clone(&ctx.config),
                 Arc::clone(&ctx.database),
             );
@@ -2907,11 +2888,9 @@ mod tests {
             request.body = Some(
                 serde_json::to_vec(&serde_json::json!({"code":code,"trustDevice":true})).unwrap(),
             );
-            let result = better_auth_core::with_request_hook_context(
-                &request,
-                plugin.on_request(&request, &ctx),
-            )
-            .await;
+            let result =
+                alibi_core::with_request_hook_context(&request, plugin.on_request(&request, &ctx))
+                    .await;
             match mode {
                 0 => {
                     let response = result.unwrap().unwrap();
@@ -2981,7 +2960,7 @@ mod tests {
     )]
     async fn otp_delivery_keeps_owned_request_context_after_dropped_rejecting_observer_and_rotation()
      {
-        use better_auth_core::{BackgroundTaskCompletion, BackgroundTaskHandler};
+        use alibi_core::{BackgroundTaskCompletion, BackgroundTaskHandler};
         use tokio::sync::oneshot;
         type Observations = Arc<std::sync::Mutex<Vec<(String, String, String, bool)>>>;
         struct Sender {
@@ -2992,7 +2971,7 @@ mod tests {
         }
         impl Sender {
             fn record(&self, user: &UserView) {
-                let request = better_auth_core::hooks::current_request_hook_context()
+                let request = alibi_core::hooks::current_request_hook_context()
                     .expect("real delivery must retain initiating request context");
                 self.observed.lock().unwrap().push((
                     request.path,
@@ -3051,10 +3030,8 @@ mod tests {
             })),
             ..Default::default()
         }));
-        let mut init = better_auth_core::AuthInitContext::new(
-            Arc::clone(&ctx.config),
-            Arc::clone(&ctx.database),
-        );
+        let mut init =
+            alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
         plugin.on_init(&mut init).await.unwrap();
         ctx.database = init.database_with_registered_transforms();
         let parts = init.into_parts();
@@ -3096,7 +3073,7 @@ mod tests {
         let running_plugin = Arc::clone(&plugin);
         let running_request = request.clone();
         let mut running = tokio::spawn(async move {
-            better_auth_core::with_request_hook_context(
+            alibi_core::with_request_hook_context(
                 &running_request,
                 running_plugin.on_request(&running_request, &running_ctx),
             )
@@ -3137,13 +3114,11 @@ mod tests {
                 .insert("delivery".into(), "different-marker".into()),
         );
         request.body = Some(serde_json::to_vec(&serde_json::json!({"code":code})).unwrap());
-        let verified = better_auth_core::with_request_hook_context(
-            &request,
-            plugin.on_request(&request, &ctx),
-        )
-        .await
-        .unwrap()
-        .unwrap();
+        let verified =
+            alibi_core::with_request_hook_context(&request, plugin.on_request(&request, &ctx))
+                .await
+                .unwrap()
+                .unwrap();
         assert_eq!(verified.status, 200);
         assert!(
             ctx.database

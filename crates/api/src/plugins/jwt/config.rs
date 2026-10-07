@@ -89,9 +89,9 @@ impl JwtExpiration {
     )]
     pub(in crate::plugins::jwt) fn timestamp_raw(
         &self,
-        issued_at: Option<&better_auth_core::utils::json::JsValue>,
-    ) -> better_auth_core::utils::json::JsValue {
-        use better_auth_core::utils::json::JsValue;
+        issued_at: Option<&alibi_core::utils::json::JsValue>,
+    ) -> alibi_core::utils::json::JsValue {
+        use alibi_core::utils::json::JsValue;
         let timestamp = match self {
             Self::After(duration) => {
                 let seconds = (duration.num_milliseconds() as f64 / 1000.0 + 0.5).floor();

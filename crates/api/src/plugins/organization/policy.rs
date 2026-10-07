@@ -1,6 +1,6 @@
 //! Application-owned organization creation policies, evaluated on the persisted user.
+use alibi_core::{AuthResult, wire::UserView};
 use async_trait::async_trait;
-use better_auth_core::{AuthResult, wire::UserView};
 
 /// Optional asynchronous overrides for the fixed creation settings.
 ///

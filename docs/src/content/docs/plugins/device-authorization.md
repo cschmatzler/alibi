@@ -8,7 +8,7 @@ description: "OAuth 2.0 device flow (RFC 8628): sign in a CLI, TV or IoT device 
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins device-authorization -o src/auth_schema.rs
+alibi generate --plugins device-authorization -o src/auth_schema.rs
 ```
 
 Adds the `device_code` table (device code, user code, status, polling interval, client id, scope, owner). With [`AuthBuilder::without_database`](/databases/no-database/) device codes live in memory and are lost on restart.
@@ -17,9 +17,9 @@ Adds the `device_code` table (device code, user code, status, polling interval, 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::DeviceAuthorizationPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::DeviceAuthorizationPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -93,7 +93,7 @@ Concurrent approve/deny calls that both read a pending code can both succeed; th
 | `on_device_auth_request(async fn(client_id, Option<scope>))` | none | Hook when a request is created |
 
 ```rust
-use better_auth::plugins::DeviceAuthorizationPlugin;
+use alibi::plugins::DeviceAuthorizationPlugin;
 use chrono::Duration;
 
 fn device_flow() -> DeviceAuthorizationPlugin {

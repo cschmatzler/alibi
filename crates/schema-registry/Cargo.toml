@@ -16,7 +16,7 @@ keywords = { workspace = true }
 categories = { workspace = true }
 
 [lib]
-name = "better_auth_schema_registry"
+name = "alibi_schema_registry"
 
 [lints]
 workspace = true

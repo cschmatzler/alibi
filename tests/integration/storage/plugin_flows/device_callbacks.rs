@@ -1,7 +1,7 @@
 //! Callback rejection must preserve issued codes and never partially issue a new one.
 use super::*;
-use better_auth::plugins::DeviceAuthorizationPlugin;
-use better_auth_core::{AuthError, AuthResult};
+use alibi::plugins::DeviceAuthorizationPlugin;
+use alibi_core::{AuthError, AuthResult};
 
 backend_tests!(device_callback_errors_stop_at_the_failing_phase_and_preserve_pending_codes);
 postgres_tests!(device_callback_errors_stop_at_the_failing_phase_and_preserve_pending_codes);

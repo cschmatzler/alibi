@@ -2,10 +2,10 @@ use super::entities;
 use super::entities::organization::{ActiveModel, Column, Entity, JsonMetadata, Model};
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::AuthSchema;
+use alibi_core::error::AuthResult;
+use alibi_core::store::OrganizationStore;
+use alibi_core::{CreateOrganization, Organization, UpdateOrganization};
 use async_trait::async_trait;
-use better_auth_core::error::AuthResult;
-use better_auth_core::store::OrganizationStore;
-use better_auth_core::{CreateOrganization, Organization, UpdateOrganization};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, DbErr, EntityTrait, FromQueryResult,
@@ -25,7 +25,7 @@ where
             .metadata
             .map(|metadata| {
                 JsonMetadata::for_backend(
-                    better_auth_core::utils::json::to_value(&metadata)?,
+                    alibi_core::utils::json::to_value(&metadata)?,
                     self.connection().get_database_backend(),
                 )
             })
@@ -85,7 +85,7 @@ where
             .await
             .map_err(map_db_err)?
         else {
-            return Err(better_auth_core::error::AuthError::not_found(
+            return Err(alibi_core::error::AuthError::not_found(
                 "Organization not found",
             ));
         };
@@ -119,10 +119,8 @@ where
             let _ = query.value(Column::Logo, logo);
         }
         if let Some(metadata) = update.metadata {
-            let metadata = JsonMetadata::for_backend(
-                better_auth_core::utils::json::to_value(&metadata)?,
-                backend,
-            )?;
+            let metadata =
+                JsonMetadata::for_backend(alibi_core::utils::json::to_value(&metadata)?, backend)?;
             let _ = query.value(Column::Metadata, metadata);
         }
         if self.connection().support_returning() {
@@ -237,7 +235,7 @@ fn apply_organization_update(
     }
     if let Some(metadata) = update.metadata {
         active.metadata = Set(Some(JsonMetadata::for_backend(
-            better_auth_core::utils::json::to_value(&metadata)?,
+            alibi_core::utils::json::to_value(&metadata)?,
             backend,
         )?));
     }

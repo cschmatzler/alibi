@@ -8,9 +8,9 @@ use crate::plugins::oauth::{
     HttpOAuthJwksSource, OAuthIdTokenClaimsVerifier, OAuthIdTokenConfig, OAuthJwksSelection,
     OAuthJwksSource, OAuthNonceComparison,
 };
+use alibi_core::utils::json::JsValue;
 use async_trait::async_trait;
 use base64::Engine;
-use better_auth_core::utils::json::JsValue;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -267,7 +267,7 @@ impl OAuthUserInfoHandler for MicrosoftUserInfo {
             .decode(payload)
             .map_err(|error| error.to_string())?;
         let mut profile: Value =
-            better_auth_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
+            alibi_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
         if !profile.is_object() {
             return Err("Invalid Microsoft ID-token claims set".into());
         }
@@ -389,7 +389,7 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => better_auth_core::utils::json::number_to_string(value)
+        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),

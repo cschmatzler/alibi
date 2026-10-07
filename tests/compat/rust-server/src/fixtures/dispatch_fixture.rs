@@ -1,14 +1,14 @@
 //! Real configured router policy, application hooks and ordinary SQL sessions.
 use crate::TestSchema;
 use axum::{Json, Router, routing::get};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_core::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, BeforeRequestAction,
 };
-use better_auth_seaorm::DatabaseConnection;
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -30,7 +30,7 @@ impl AuthPlugin<TestSchema> for ApplicationObserver {
         ]
     }
     fn allowed_media_types(&self, route: &AuthRoute) -> Vec<&'static str> {
-        if route.method == better_auth_core::HttpMethod::Post {
+        if route.method == alibi_core::HttpMethod::Post {
             vec![" Application/JSON "]
         } else {
             vec!["application/json"]
@@ -41,7 +41,7 @@ impl AuthPlugin<TestSchema> for ApplicationObserver {
         req: &AuthRequest,
         _: &AuthContext<TestSchema>,
     ) -> AuthResult<Option<BeforeRequestAction>> {
-        let original = better_auth_core::hooks::current_request_hook_context();
+        let original = alibi_core::hooks::current_request_hook_context();
         let path = original
             .as_ref()
             .map_or(req.path(), |context| context.path.as_str());

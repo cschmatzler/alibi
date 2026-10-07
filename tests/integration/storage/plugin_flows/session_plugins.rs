@@ -1,12 +1,12 @@
 use super::*;
-use async_trait::async_trait;
-use better_auth::plugins::custom_session::{CustomSessionPlugin, SessionTransform};
-use better_auth::plugins::last_login_method::{
+use alibi::plugins::custom_session::{CustomSessionPlugin, SessionTransform};
+use alibi::plugins::last_login_method::{
     BeforeStoreLastLoginMethodCookie, LastLoginMethodConfig, LastLoginMethodContext,
     LastLoginMethodPlugin,
 };
-use better_auth::plugins::{BearerPlugin, MultiSessionPlugin};
-use better_auth_core::{AuthContext, AuthResult};
+use alibi::plugins::{BearerPlugin, MultiSessionPlugin};
+use alibi_core::{AuthContext, AuthResult};
+use async_trait::async_trait;
 use reqwest::cookie::{CookieStore, Jar};
 
 backend_tests!(

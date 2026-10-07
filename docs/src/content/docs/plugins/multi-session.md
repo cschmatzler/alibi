@@ -9,9 +9,9 @@ By default signing in replaces the current session. `MultiSessionPlugin` keeps *
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::MultiSessionPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::MultiSessionPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -61,7 +61,7 @@ This plugin is **account switching on one browser**. To list every session of a 
 | `maximum_sessions` | `5.0` | Number of accounts remembered per browser. Compared as a JavaScript number: `0` or negative stores none, fractions floor, `NaN`/infinity store all. New sessions beyond the limit are not remembered (nothing is evicted) |
 
 ```rust
-use better_auth::plugins::{MultiSessionConfig, MultiSessionPlugin};
+use alibi::plugins::{MultiSessionConfig, MultiSessionPlugin};
 
 fn multi() -> MultiSessionPlugin {
     MultiSessionPlugin::with_config(MultiSessionConfig { maximum_sessions: 3.0 })

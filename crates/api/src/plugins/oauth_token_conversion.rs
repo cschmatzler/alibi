@@ -9,11 +9,11 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
     aead::{Aead, KeyInit},
 };
-use base64::{Engine, engine::general_purpose::STANDARD};
-pub use better_auth_core::oauth_token_conversion::{
+pub use alibi_core::oauth_token_conversion::{
     OAuthTokenConversionStore, OAuthTokenSnapshot, OAuthTokenValues,
 };
-use better_auth_core::{AuthConfig, AuthError, AuthResult, AuthSchema};
+use alibi_core::{AuthConfig, AuthError, AuthResult, AuthSchema};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use hkdf::Hkdf;
 use sha2::Sha256;
 

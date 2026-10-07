@@ -1,8 +1,8 @@
 //! `SQLx` bindings for the shared database lifecycle hooks.
 
 use crate::pool::{SqlxPool, SqlxTransaction};
-pub use better_auth_core::hooks::current_request_hook_context;
-pub use better_auth_core::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
+pub use alibi_core::hooks::current_request_hook_context;
+pub use alibi_core::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
 
 /// The `SQLx` hook backend: implement [`DatabaseHooks<S, SqlxBackend>`] to
 /// receive its pool and transaction.

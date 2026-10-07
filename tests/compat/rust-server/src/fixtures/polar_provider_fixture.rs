@@ -6,12 +6,12 @@ use axum::{
     http::HeaderMap,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::{OAuthProvider, PolarOptions};
-use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{OAuthProvider, PolarOptions};
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -92,7 +92,7 @@ pub(crate) async fn router(
                     .lock()
                     .map_err(|error| error.to_string())?
                     .push(profile.clone());
-                Ok(better_auth::plugins::oauth::OAuthUserInfo {
+                Ok(alibi::plugins::oauth::OAuthUserInfo {
                     additional_fields: Default::default(),
                     id: "cannot-replace-account-subject".into(),
                     name: Some(format!(

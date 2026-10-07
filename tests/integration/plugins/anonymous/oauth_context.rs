@@ -5,17 +5,17 @@
 )]
 
 use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
+use alibi::plugins::anonymous::{AnonymousConfig, AnonymousLink, LinkAnonymousAccount};
+use alibi::plugins::oauth::OAuthProvider;
+use alibi::plugins::{AnonymousPlugin, EmailPasswordPlugin, OAuthPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi_core::{
+    AuthRequest, AuthResponse, AuthResult, AuthSession, AuthUser, AuthVerification, HttpMethod,
+};
 use async_trait::async_trait;
 use axum::{
     Json, Router,
     routing::{get, post},
-};
-use better_auth::plugins::anonymous::{AnonymousConfig, AnonymousLink, LinkAnonymousAccount};
-use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::plugins::{AnonymousPlugin, EmailPasswordPlugin, OAuthPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use better_auth_core::{
-    AuthRequest, AuthResponse, AuthResult, AuthSession, AuthUser, AuthVerification, HttpMethod,
 };
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};

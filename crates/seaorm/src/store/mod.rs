@@ -32,7 +32,7 @@ pub mod __private_test_support {
 }
 
 #[async_trait]
-impl<S: AuthSchema> better_auth_core::store::SchemaMigrator for SeaOrmStore<S> {
+impl<S: AuthSchema> alibi_core::store::SchemaMigrator for SeaOrmStore<S> {
     async fn migrate(&self) -> AuthResult<()> {
         migrator::run_migrations(&self.db).await.map_err(map_db_err)
     }
@@ -42,13 +42,13 @@ use crate::hooks::{DatabaseHooks, SeaOrmBackend, SeaOrmHookContext, current_requ
 use crate::schema::{
     AuthSchema, SeaOrmAccountModel, SeaOrmSessionModel, SeaOrmUserModel, SeaOrmVerificationModel,
 };
-use async_trait::async_trait;
-use better_auth_core::config::AuthConfig;
-use better_auth_core::error::{AuthError, AuthResult, DatabaseError};
-use better_auth_core::store::adapter::{AfterHook, AfterHookQueue};
-use better_auth_core::store::{
+use alibi_core::config::AuthConfig;
+use alibi_core::error::{AuthError, AuthResult, DatabaseError};
+use alibi_core::store::adapter::{AfterHook, AfterHookQueue};
+use alibi_core::store::{
     AuthTransaction, BoxedTransactionValue, TransactionStore, TransactionWork,
 };
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sea_orm::{DatabaseConnection, DatabaseTransaction, DbErr, SqlErr, TransactionTrait};
 use std::marker::PhantomData;
@@ -133,16 +133,16 @@ where
     S::Session: SeaOrmSessionModel,
     S::Verification: SeaOrmVerificationModel,
 {
-    async fn list_jwks(&self) -> AuthResult<Vec<better_auth_core::types::Jwk>> {
+    async fn list_jwks(&self) -> AuthResult<Vec<alibi_core::types::Jwk>> {
         self.store.list_jwks_with_connection(self.tx).await
     }
-    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<better_auth_core::types::Jwk>> {
+    async fn get_jwk_by_id(&self, id: &str) -> AuthResult<Option<alibi_core::types::Jwk>> {
         self.store.get_jwk_with_connection(self.tx, id).await
     }
     async fn create_jwk(
         &self,
-        data: better_auth_core::types::CreateJwk,
-    ) -> AuthResult<better_auth_core::types::Jwk> {
+        data: alibi_core::types::CreateJwk,
+    ) -> AuthResult<alibi_core::types::Jwk> {
         self.store.create_jwk_with_connection(self.tx, data).await
     }
 
@@ -150,7 +150,7 @@ where
         &self,
         organization_id: &str,
         team_id: &str,
-    ) -> AuthResult<Option<better_auth_core::types::Team>> {
+    ) -> AuthResult<Option<alibi_core::types::Team>> {
         self.store
             .get_team_with_connection(self.tx, Some(organization_id), team_id)
             .await
@@ -160,15 +160,15 @@ where
         team_id: &str,
         user_id: &str,
         maximum: Option<f64>,
-    ) -> AuthResult<better_auth_core::types::AddTeamMemberResult> {
+    ) -> AuthResult<alibi_core::types::AddTeamMemberResult> {
         self.store
             .add_team_member_in_tx(self.tx, team_id, user_id, maximum)
             .await
     }
     async fn create_member(
         &self,
-        member: better_auth_core::CreateMember,
-    ) -> AuthResult<better_auth_core::types::Member> {
+        member: alibi_core::CreateMember,
+    ) -> AuthResult<alibi_core::types::Member> {
         self.store
             .create_member_with_connection(self.tx, member)
             .await
@@ -216,13 +216,13 @@ where
     }
     async fn create_passkey(
         &self,
-        data: better_auth_core::CreatePasskey,
-    ) -> AuthResult<better_auth_core::Passkey> {
+        data: alibi_core::CreatePasskey,
+    ) -> AuthResult<alibi_core::Passkey> {
         self.store
             .create_passkey_with_connection(self.tx, data)
             .await
     }
-    async fn create_user(&self, create_user: better_auth_core::CreateUser) -> AuthResult<S::User> {
+    async fn create_user(&self, create_user: alibi_core::CreateUser) -> AuthResult<S::User> {
         let user = self.store.create_user_in_tx(self.tx, create_user).await?;
         self.pending_after
             .push(AfterHook::UserCreated(user.clone()))
@@ -232,7 +232,7 @@ where
 
     async fn create_user_prepared(
         &self,
-        prepared: better_auth_core::user_validation::PreparedUserCreation,
+        prepared: alibi_core::user_validation::PreparedUserCreation,
     ) -> AuthResult<S::User> {
         let user = self
             .store
@@ -246,7 +246,7 @@ where
 
     async fn create_account(
         &self,
-        create_account: better_auth_core::CreateAccount,
+        create_account: alibi_core::CreateAccount,
     ) -> AuthResult<S::Account> {
         let account = self
             .store
@@ -262,8 +262,8 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: better_auth_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, better_auth_core::field_policy::FieldValues)>> {
+        fields: alibi_core::field_policy::FieldValues,
+    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
         self.store
             .prepare_secondary_update_with_connection(
                 self.tx,
@@ -278,10 +278,10 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: better_auth_core::field_policy::FieldValues,
+        fields: alibi_core::field_policy::FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
-        use better_auth_core::AuthSession;
+        use alibi_core::AuthSession;
         let token = session.token().to_owned();
         let result = self
             .store
@@ -303,7 +303,7 @@ where
     }
     async fn prepare_secondary_session_creation(
         &self,
-        input: better_auth_core::CreateSession,
+        input: alibi_core::CreateSession,
         persist: bool,
     ) -> AuthResult<S::Session> {
         let session = self
@@ -317,7 +317,7 @@ where
     }
     async fn create_session(
         &self,
-        create_session: better_auth_core::CreateSession,
+        create_session: alibi_core::CreateSession,
     ) -> AuthResult<S::Session> {
         let session = self
             .store
@@ -330,9 +330,9 @@ where
     }
     async fn create_verification_record(
         &self,
-        data: better_auth_core::verification::VerificationCreation,
-        publication: better_auth_core::verification::VerificationPublication,
-    ) -> AuthResult<Option<better_auth_core::verification::VerificationSnapshot>> {
+        data: alibi_core::verification::VerificationCreation,
+        publication: alibi_core::verification::VerificationPublication,
+    ) -> AuthResult<Option<alibi_core::verification::VerificationSnapshot>> {
         let snapshot = self
             .store
             .create_verification_record_with_connection(self.tx, Some(self.tx), data, publication)
@@ -347,7 +347,7 @@ where
 
     async fn create_verification(
         &self,
-        verification: better_auth_core::CreateVerification,
+        verification: alibi_core::CreateVerification,
     ) -> AuthResult<S::Verification> {
         let verification = self
             .store

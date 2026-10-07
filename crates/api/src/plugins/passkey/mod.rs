@@ -11,13 +11,13 @@ pub(super) mod types;
 
 pub(super) mod webauthn;
 
+use alibi_core::utils::cookie_utils::create_session_cookie;
+use alibi_core::{AuthContext, AuthError, AuthResult};
+use alibi_core::{AuthRequest, AuthResponse};
 pub use authentication::{
     AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
     PasskeyAuthenticationContext, VerifiedPasskeyAuthentication,
 };
-use better_auth_core::utils::cookie_utils::create_session_cookie;
-use better_auth_core::{AuthContext, AuthError, AuthResult};
-use better_auth_core::{AuthRequest, AuthResponse};
 use handlers::{
     PasskeyHandlerOutcome, delete_passkey_core, generate_authenticate_options_core,
     generate_register_options_core, list_user_passkeys_core, update_passkey_core,
@@ -41,7 +41,7 @@ pub struct PasskeyPlugin {
     config: PasskeyConfig,
 }
 
-#[derive(Debug, Clone, better_auth_core::PluginConfig)]
+#[derive(Debug, Clone, alibi_core::PluginConfig)]
 #[plugin(name = "PasskeyPlugin")]
 pub struct PasskeyConfig {
     #[config(default = String::new())]
@@ -73,9 +73,9 @@ impl PasskeyPlugin {
     async fn handle_generate_register_options(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        use better_auth_core::AuthUser;
+        use alibi_core::AuthUser;
         let session = self.registration_session(req, ctx).await?;
         let user = if let Some((user, _)) = session {
             let id = user.id().into_owned();
@@ -134,9 +134,9 @@ impl PasskeyPlugin {
     async fn handle_verify_registration(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: VerifyRegistrationRequest = match better_auth_core::validate_request_body(req) {
+        let body: VerifyRegistrationRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -147,7 +147,7 @@ impl PasskeyPlugin {
         };
         let owner_id = session
             .as_ref()
-            .map(|(user, _)| better_auth_core::AuthUser::id(user).into_owned());
+            .map(|(user, _)| alibi_core::AuthUser::id(user).into_owned());
         match verify_registration_core(&body, req, owner_id.as_deref(), &self.config, ctx).await? {
             PasskeyHandlerOutcome::Success(result) => {
                 let token = result
@@ -156,7 +156,7 @@ impl PasskeyPlugin {
                     .and_then(serde_json::Value::as_str);
                 let response = AuthResponse::json(200, &result)?;
                 if let Some(token) = token {
-                    use better_auth_core::utils::cookie_utils::{
+                    use alibi_core::utils::cookie_utils::{
                         create_session_cookie_with_max_age, create_session_like_cookie,
                         related_cookie_name, sign_cookie_value, verify_cookie_value,
                     };
@@ -196,14 +196,14 @@ impl PasskeyPlugin {
         }
     }
 
-    async fn registration_session<S: better_auth_core::AuthSchema>(
+    async fn registration_session<S: alibi_core::AuthSchema>(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
     ) -> AuthResult<
         Option<(
-            better_auth_core::AuthenticatedUser<S>,
-            better_auth_core::wire::SessionView,
+            alibi_core::AuthenticatedUser<S>,
+            alibi_core::wire::SessionView,
         )>,
     > {
         let session = match ctx.require_cached_session(req).await {
@@ -232,7 +232,7 @@ impl PasskeyPlugin {
     async fn handle_generate_authenticate_options(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let maybe_user = ctx.require_cached_session(req).await.ok().map(|(u, _)| u);
         let (result, cookie_header) =
@@ -244,13 +244,13 @@ impl PasskeyPlugin {
     async fn handle_verify_authentication(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: VerifyAuthenticationRequest = match better_auth_core::validate_request_body(req) {
+        let body: VerifyAuthenticationRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
-        let metadata = better_auth_core::RequestMeta::from_request(req);
+        let metadata = alibi_core::RequestMeta::from_request(req);
         match verify_authentication_core(
             &body,
             req,
@@ -273,7 +273,7 @@ impl PasskeyPlugin {
     async fn handle_list_user_passkeys(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
         let result = list_user_passkeys_core(&user, ctx).await?;
@@ -284,10 +284,10 @@ impl PasskeyPlugin {
     async fn handle_delete_passkey(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
-        let body: DeletePasskeyRequest = match better_auth_core::validate_request_body(req) {
+        let body: DeletePasskeyRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -303,10 +303,10 @@ impl PasskeyPlugin {
     async fn handle_update_passkey(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
-        let body: UpdatePasskeyRequest = match better_auth_core::validate_request_body(req) {
+        let body: UpdatePasskeyRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -319,7 +319,7 @@ impl PasskeyPlugin {
     }
 }
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     PasskeyPlugin, "passkey";
     routes {
         get  "/passkey/generate-register-options"      => handle_generate_register_options,      "passkey_generate_register_options";
@@ -332,12 +332,12 @@ better_auth_core::impl_auth_plugin! {
     }
 
  extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
     }
  }
 }
@@ -354,9 +354,9 @@ mod tests {
     mod revocation;
     use super::*;
     use crate::plugins::test_helpers;
+    use alibi_core::{CreatePasskey, CreateUser, HttpMethod};
     use base64::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use better_auth_core::{CreatePasskey, CreateUser, HttpMethod};
     use chrono::Duration;
     use std::collections::HashMap;
     use std::fmt::Write;
@@ -858,11 +858,8 @@ mod tests {
             origin: "http://localhost:3100".into(),
             ..Default::default()
         };
-        let webauthn = webauthn::build_webauthn(
-            &config,
-            &better_auth_core::AuthConfig::default(),
-            &config.origin,
-        )?;
+        let webauthn =
+            webauthn::build_webauthn(&config, &alibi_core::AuthConfig::default(), &config.origin)?;
         let (options, legacy) = webauthn.start_passkey_registration(
             uuid::Uuid::new_v4(),
             "Legacy owner",
@@ -896,7 +893,7 @@ mod tests {
         ]));
         let core = webauthn::build_verification_core(
             &config,
-            &better_auth_core::AuthConfig::default(),
+            &alibi_core::AuthConfig::default(),
             &config.origin,
         )?;
         let builder = core
@@ -1035,7 +1032,7 @@ mod tests {
                 let token = uuid::Uuid::new_v4().to_string();
                 drop(
                     ctx.verifications()
-                        .create(better_auth_core::CreateVerification {
+                        .create(alibi_core::CreateVerification {
                             identifier: token.clone(),
                             value: serde_json::to_string(&state)?,
                             expires_at: chrono::Utc::now() + Duration::minutes(5),

@@ -6,17 +6,17 @@ use axum::{
     extract::{Query, State},
     routing::get,
 };
-use better_auth::config::CookieCacheConfig;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{
+use alibi::config::CookieCacheConfig;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{
     AdminBannedUserMessage, AdminConfig, AdminPlugin, AnonymousPlugin, EmailPasswordPlugin,
     SessionManagementPlugin, TwoFactorPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::store::UserStore;
-use better_auth_core::{AuthUser, CreateUser};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::store::UserStore;
+use alibi_core::{AuthUser, CreateUser};
+use alibi_seaorm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -24,23 +24,23 @@ use tokio::sync::Mutex;
 
 struct CallbackAnonymousIdentity;
 #[async_trait::async_trait]
-impl better_auth::plugins::anonymous::AnonymousIdentity for CallbackAnonymousIdentity {
+impl alibi::plugins::anonymous::AnonymousIdentity for CallbackAnonymousIdentity {
     async fn email(&self) -> AuthResult<Option<String>> {
         Ok(Some("callback-anonymous@fixture.test".into()))
     }
 }
 struct ApplicationMetadata;
 #[async_trait::async_trait]
-impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
     for ApplicationMetadata
 {
     async fn before_create_user(
         &self,
         input: &mut CreateUser,
         _context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         input.metadata = Some(json!({"supportCode":"private-fixture-code"}));
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
 }
 struct ApplicationMessage {
@@ -158,7 +158,7 @@ pub(crate) async fn router(
             );
         let builder = if name.ends_with("-cache") {
             builder.plugin(AnonymousPlugin::with_config(
-                better_auth::plugins::anonymous::AnonymousConfig {
+                alibi::plugins::anonymous::AnonymousConfig {
                     identity: Some(Arc::new(CallbackAnonymousIdentity)),
                     ..Default::default()
                 },

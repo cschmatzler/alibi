@@ -8,7 +8,7 @@ description: "User management for operators: list, create, update and delete use
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins admin -o src/auth_schema.rs
+alibi generate --plugins admin -o src/auth_schema.rs
 ```
 
 Adds `users.role`, `users.banned`, `users.ban_reason`, `users.ban_expires`, `users.metadata` and `sessions.impersonated_by`.
@@ -17,9 +17,9 @@ Adds `users.role`, `users.banned`, `users.ban_reason`, `users.ban_expires`, `use
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::{AdminPlugin, EmailPasswordPlugin};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::{AdminPlugin, EmailPasswordPlugin};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -135,7 +135,7 @@ Admins cannot impersonate other admins unless `allow_impersonating_admins` is se
 The permission model is `resource → actions`. The built-in resources are `user` (`create`, `list`, `set-role`, `ban`, `impersonate`, `delete`, `set-password`, `get`, `update`) and `session` (`list`, `revoke`, `delete`):
 
 ```rust
-use better_auth::plugins::{AdminPlugin, RolePermissions};
+use alibi::plugins::{AdminPlugin, RolePermissions};
 use std::collections::HashMap;
 
 fn admin() -> AdminPlugin {
@@ -168,9 +168,9 @@ Check a permission from the client with `POST /admin/has-permission` and `{"perm
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::{AdminBannedUserMessage, AdminPlugin};
-use better_auth::prelude::AuthUser;
-use better_auth::AuthResult;
+use alibi::plugins::{AdminBannedUserMessage, AdminPlugin};
+use alibi::prelude::AuthUser;
+use alibi::AuthResult;
 use crate::auth_schema::user::Model as User;
 
 struct BanNotice;

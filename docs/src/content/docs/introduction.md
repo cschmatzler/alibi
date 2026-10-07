@@ -15,8 +15,8 @@ You assemble an auth instance from four parts:
 | A framework adapter | Mounts the auth routes and extracts the current session | [Axum](/integrations/axum/), [Poem](/integrations/poem/), [other](/integrations/other-frameworks/) |
 
 ```rust
-use better_auth::plugins::{EmailPasswordPlugin, TwoFactorPlugin};
-use better_auth::{AuthBuilder, AuthResult, AuthSchema, BetterAuth};
+use alibi::plugins::{EmailPasswordPlugin, TwoFactorPlugin};
+use alibi::{AuthBuilder, AuthResult, AuthSchema, BetterAuth};
 
 async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<S>> {
     builder
@@ -27,7 +27,7 @@ async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<
 }
 ```
 
-Install Alibi `0.1.0` from [crates.io](https://crates.io/crates/alibi). See [Installation](/installation/) for the library dependency and matching schema generator.
+Install Alibi `0.1.1` from [crates.io](https://crates.io/crates/alibi). See [Installation](/installation/) for the library dependency and matching schema generator.
 
 ## How a request flows
 

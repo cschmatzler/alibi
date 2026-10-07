@@ -1,10 +1,10 @@
 use crate::plugins::organization::types::OrganizationResponse;
+use alibi_core::AuthResult;
+use alibi_core::CallbackContext;
+use alibi_core::Member;
+use alibi_core::wire::InvitationView;
+use alibi_core::wire::UserView;
 use async_trait::async_trait;
-use better_auth_core::AuthResult;
-use better_auth_core::CallbackContext;
-use better_auth_core::Member;
-use better_auth_core::wire::InvitationView;
-use better_auth_core::wire::UserView;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -36,7 +36,7 @@ pub struct OrganizationInvitationDraft {
     pub inviter_id: String,
     pub team_ids: Vec<String>,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
-    pub options: better_auth_core::store::InvitationCreateOptions,
+    pub options: alibi_core::store::InvitationCreateOptions,
 }
 #[derive(Debug, Clone, Default)]
 pub struct OrganizationInvitationCreatePatch {
@@ -47,7 +47,7 @@ pub struct OrganizationInvitationCreatePatch {
     pub team_ids: Option<Vec<String>>,
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
     pub id: Option<String>,
-    pub status: Option<better_auth_core::InvitationStatus>,
+    pub status: Option<alibi_core::InvitationStatus>,
     pub created_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 impl OrganizationInvitationCreatePatch {
@@ -159,10 +159,10 @@ pub trait OrganizationInvitationEmailSender: std::fmt::Debug + Send + Sync {
     ) -> AuthResult<()>;
 }
 
-pub(in crate::plugins::organization) async fn deliver<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins::organization) async fn deliver<S: alibi_core::AuthSchema>(
     config: &crate::plugins::organization::OrganizationConfig,
     delivery: OrganizationInvitationDelivery,
-    ctx: &better_auth_core::AuthContext<S>,
+    ctx: &alibi_core::AuthContext<S>,
 ) -> AuthResult<()> {
     let Some(sender) = config.send_invitation_email.clone() else {
         return Ok(());
@@ -175,7 +175,7 @@ pub(in crate::plugins::organization) async fn deliver<S: better_auth_core::AuthS
         Ok(())
     };
     if let Some(handler) = &ctx.config.background_tasks {
-        let completion = better_auth_core::start_background_task(work).await?;
+        let completion = alibi_core::start_background_task(work).await?;
         if let Err(error) = handler.handle(completion) {
             tracing::error!(%error, "Failed to run background task");
         }
@@ -200,12 +200,12 @@ pub(in crate::plugins::organization) fn expiry(
     let milliseconds = chrono::Utc::now().timestamp_millis() as f64 + span * 1000.0;
     // ECMAScript TimeClip bounds. Rust dates cannot represent Invalid Date.
     if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
-        return Err(better_auth_core::AuthError::Config(
+        return Err(alibi_core::AuthError::Config(
             "Invitation expiry is outside the representable date range".into(),
         ));
     }
     chrono::DateTime::from_timestamp_millis(milliseconds as i64).ok_or_else(|| {
-        better_auth_core::AuthError::Config(
+        alibi_core::AuthError::Config(
             "Invitation expiry is outside the representable date range".into(),
         )
     })

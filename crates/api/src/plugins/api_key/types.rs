@@ -1,7 +1,7 @@
 use super::ApiKeyPermissions;
-use better_auth_core::utils::json::JsValue;
-pub(in crate::plugins) use better_auth_core::wire::ApiKeyView;
-use better_auth_core::{AuthRequest, AuthResponse};
+use alibi_core::utils::json::JsValue;
+pub(in crate::plugins) use alibi_core::wire::ApiKeyView;
+use alibi_core::{AuthRequest, AuthResponse};
 use serde::{Deserialize, Deserializer, Serialize};
 use validator::Validate;
 
@@ -360,7 +360,7 @@ where
         validation_response(&location, &message)
     })?;
     body.validate()
-        .map_err(|error| better_auth_core::validation_error_response(&error))?;
+        .map_err(|error| alibi_core::validation_error_response(&error))?;
     Ok(body)
 }
 

@@ -11,9 +11,9 @@ A plugin has a **name**, a list of **routes**, and an `on_request` that handles 
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugin::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth::prelude::{AuthRequest, AuthResponse, AuthUser, HttpMethod};
-use better_auth::{AuthResult, AuthSchema};
+use alibi::plugin::{AuthContext, AuthPlugin, AuthRoute};
+use alibi::prelude::{AuthRequest, AuthResponse, AuthUser, HttpMethod};
+use alibi::{AuthResult, AuthSchema};
 use serde_json::json;
 
 pub struct StatusPlugin;
@@ -52,8 +52,8 @@ Register it:
 
 ```rust nocheck
 use crate::auth_schema::AppAuthSchema;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -113,10 +113,10 @@ This plugin tags every response and counts sign-ins, with its own rate-limit rul
 
 ```rust
 use async_trait::async_trait;
-use better_auth::middleware::{EndpointRateLimit, PluginRateLimit};
-use better_auth::plugin::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth::prelude::{AuthRequest, AuthResponse, AuthSession};
-use better_auth::{AuthResult, AuthSchema};
+use alibi::middleware::{EndpointRateLimit, PluginRateLimit};
+use alibi::plugin::{AuthContext, AuthPlugin, AuthRoute};
+use alibi::prelude::{AuthRequest, AuthResponse, AuthSession};
+use alibi::{AuthResult, AuthSchema};
 
 pub struct Audit;
 

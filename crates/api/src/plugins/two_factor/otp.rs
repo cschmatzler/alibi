@@ -1,6 +1,6 @@
 //! Delivery scheduling for the already persisted one-time password.
 use super::SendTwoFactorOtp;
-use better_auth_core::{
+use alibi_core::{
     AuthError, AuthResult, BackgroundTaskCompletion, BackgroundTaskHandler, wire::UserView,
 };
 use std::{future::Future, sync::Arc};
@@ -38,11 +38,11 @@ async fn start(
     operation: impl Future<Output = AuthResult<()>> + Send + 'static,
 ) -> AuthResult<BackgroundTaskCompletion> {
     use tracing::{Instrument, instrument::WithSubscriber};
-    let request_context = better_auth_core::hooks::current_request_hook_context();
+    let request_context = alibi_core::hooks::current_request_hook_context();
     let work = async move {
         match request_context {
             Some(context) => {
-                better_auth_core::hooks::with_request_hook_context_value(context, operation).await
+                alibi_core::hooks::with_request_hook_context_value(context, operation).await
             }
             None => operation.await,
         }

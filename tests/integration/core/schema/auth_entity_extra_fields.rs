@@ -43,10 +43,10 @@ mod user_with_extras {
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-use better_auth::seaorm::AuthEntity;
-use better_auth::seaorm::SeaOrmUserModel;
-use better_auth::seaorm::sea_orm;
-use better_auth::seaorm::sea_orm::entity::prelude::*;
+use alibi::seaorm::AuthEntity;
+use alibi::seaorm::SeaOrmUserModel;
+use alibi::seaorm::sea_orm;
+use alibi::seaorm::sea_orm::entity::prelude::*;
 
 #[cfg(test)]
 mod tests {
@@ -54,7 +54,7 @@ mod tests {
 
     #[test]
     fn extra_fields_get_not_set_in_new_active() {
-        use better_auth::prelude::CreateUser;
+        use alibi::prelude::CreateUser;
         use chrono::Utc;
         use sea_orm::ActiveValue;
 
@@ -81,7 +81,7 @@ mod tests {
     )]
     async fn boolean_custom_entities_keep_explicit_plugin_flags_through_persistence()
     -> Result<(), Box<dyn std::error::Error>> {
-        use better_auth::prelude::{AuthUser, CreateUser, UpdateUser};
+        use alibi::prelude::{AuthUser, CreateUser, UpdateUser};
         use sea_orm::{
             ActiveModelTrait, ConnectionTrait, Database, EntityTrait, IntoActiveModel, Schema,
         };
@@ -136,16 +136,15 @@ mod tests {
     )]
     async fn custom_user_array_filters_bind_declared_physical_columns()
     -> Result<(), Box<dyn std::error::Error>> {
-        use better_auth::prelude::{AuthSchema, UserFilterValue};
-        use better_auth::seaorm::{
+        use alibi::prelude::{AuthSchema, UserFilterValue};
+        use alibi::seaorm::{
             SeaOrmStore,
             sea_orm::{
                 ActiveModelTrait, ActiveValue::Set, ConnectionTrait, Database, EntityTrait, Schema,
             },
         };
-        use better_auth_core::{CreateUser, ListUsersParams, store::UserStore};
-        type Bundled =
-            better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+        use alibi_core::{CreateUser, ListUsersParams, store::UserStore};
+        type Bundled = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
         struct ApplicationSchema;
         impl AuthSchema for ApplicationSchema {
             type User = user_with_extras::Model;
@@ -179,7 +178,7 @@ mod tests {
             drop(active.insert(&database).await?);
         }
         let store = SeaOrmStore::<ApplicationSchema>::new(
-            better_auth::AuthConfig::new("custom-array-filter-application-secret32"),
+            alibi::AuthConfig::new("custom-array-filter-application-secret32"),
             database.clone(),
         );
         // This raw-page operation must read the chosen physical table and preserve

@@ -1,14 +1,14 @@
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmVerificationModel};
-use async_trait::async_trait;
-use better_auth_core::entity::AuthVerification;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::adapter::cancelled_by_hook;
-use better_auth_core::store::{VerificationStore, verification_reservation_key};
-use better_auth_core::types::{CreateVerification, UpdateVerification};
-use better_auth_core::verification::{
+use alibi_core::entity::AuthVerification;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::adapter::cancelled_by_hook;
+use alibi_core::store::{VerificationStore, verification_reservation_key};
+use alibi_core::types::{CreateVerification, UpdateVerification};
+use alibi_core::verification::{
     VerificationCreation, VerificationPublication, VerificationSnapshot,
 };
+use async_trait::async_trait;
 use chrono::{DateTime, SubsecRound, Utc};
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, IdenStatic,

@@ -1,6 +1,6 @@
 //! Raw configured values staged on actual session entity columns.
-use better_auth_core::store::adapter::RawFieldValue;
-use better_auth_core::{AuthError, AuthResult, utils::json::JsValue};
+use alibi_core::store::adapter::RawFieldValue;
+use alibi_core::{AuthError, AuthResult, utils::json::JsValue};
 use sea_orm::{ColumnTrait, ConnectionTrait, DbBackend, Statement, Value, sea_query::ColumnType};
 
 /// Called by generated model bindings before any backend affinity conversion.

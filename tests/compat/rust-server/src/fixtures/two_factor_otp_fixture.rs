@@ -1,6 +1,6 @@
 use crate::TestSchema;
 use axum::{Router, extract::Json, routing::post};
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
@@ -13,7 +13,7 @@ use better_auth::{
     },
     wire::UserView,
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };

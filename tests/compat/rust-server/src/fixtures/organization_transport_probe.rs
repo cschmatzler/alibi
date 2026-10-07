@@ -54,26 +54,26 @@ pub(crate) fn router(probe: Probe) -> Router {
 }
 
 #[async_trait::async_trait]
-impl better_auth_core::AuthPlugin<crate::TestSchema> for Probe {
+impl alibi_core::AuthPlugin<crate::TestSchema> for Probe {
     fn name(&self) -> &'static str {
         "organization-transport-observer"
     }
-    fn routes(&self) -> Vec<better_auth_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
         Vec::new()
     }
     async fn on_request(
         &self,
-        _request: &better_auth_core::AuthRequest,
-        _ctx: &better_auth_core::AuthContext<crate::TestSchema>,
-    ) -> better_auth_core::AuthResult<Option<better_auth_core::AuthResponse>> {
+        _request: &alibi_core::AuthRequest,
+        _ctx: &alibi_core::AuthContext<crate::TestSchema>,
+    ) -> alibi_core::AuthResult<Option<alibi_core::AuthResponse>> {
         Ok(None)
     }
     async fn after_request(
         &self,
-        request: &better_auth_core::AuthRequest,
-        _ctx: &better_auth_core::AuthContext<crate::TestSchema>,
-        response: better_auth_core::AuthResponse,
-    ) -> better_auth_core::AuthResult<better_auth_core::AuthResponse> {
+        request: &alibi_core::AuthRequest,
+        _ctx: &alibi_core::AuthContext<crate::TestSchema>,
+        response: alibi_core::AuthResponse,
+    ) -> alibi_core::AuthResult<alibi_core::AuthResponse> {
         if let Some(marker) = request.headers.get("x-continuation-marker") {
             let _ = self.0.lock().unwrap().completed.insert(marker.clone());
         }

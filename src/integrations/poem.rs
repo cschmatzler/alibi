@@ -1,6 +1,6 @@
 //! Poem endpoints and session extractors. Enable the `poem` feature.
 use crate::BetterAuth;
-use better_auth_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod};
+use alibi_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod};
 use poem::{Endpoint, FromRequest, Request, RequestBody, Response, http::StatusCode};
 use std::sync::Arc;
 

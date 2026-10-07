@@ -4,17 +4,17 @@ use crate::plugins::email_password::EmailPasswordConfig;
 use crate::plugins::email_verification::EmailVerificationConfig;
 use crate::plugins::email_verification::handlers::verification_url;
 use crate::plugins::email_verification::token::create_email_verification_token;
-use better_auth_core::SuccessMessageResponse;
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-use better_auth_core::utils::password as password_utils;
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, UpdateUser};
+use alibi_core::SuccessMessageResponse;
+use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::utils::password as password_utils;
+use alibi_core::wire::{SessionView, UserView};
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, UpdateUser};
 use chrono::{Duration, Utc};
 use rand::RngExt;
 
 /// Send an email using the configured email provider, logging on failure.
 pub(super) async fn send_email_or_log(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     to: &str,
     subject: &str,
     html: &str,
@@ -39,7 +39,7 @@ pub(super) async fn send_email_or_log(
     }
 }
 
-pub(super) async fn authoritative_session<S: better_auth_core::AuthSchema>(
+pub(super) async fn authoritative_session<S: alibi_core::AuthSchema>(
     request: &AuthRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(S::User, SessionView)> {
@@ -62,13 +62,10 @@ pub(super) async fn authoritative_session<S: better_auth_core::AuthSchema>(
         })?;
     let dont_remember = super::super::helpers::get_cookie(
         request,
-        &better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, "dont_remember"),
+        &alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "dont_remember"),
     )
     .and_then(|value| {
-        better_auth_core::utils::cookie_utils::verify_cookie_value(
-            &value,
-            ctx.config.current_secret(),
-        )
+        alibi_core::utils::cookie_utils::verify_cookie_value(&value, ctx.config.current_secret())
     })
     .is_some_and(|value| !value.is_empty());
     if !dont_remember
@@ -81,7 +78,7 @@ pub(super) async fn authoritative_session<S: better_auth_core::AuthSchema>(
             .is_some_and(|config| config.enabled)
         && let Some(stored) = ctx.database.get_session(&session.token).await?
     {
-        for header in better_auth_core::session::cookie_cache::runtime::stored_headers(
+        for header in alibi_core::session::cookie_cache::runtime::stored_headers(
             ctx,
             &user,
             &stored,
@@ -100,7 +97,7 @@ async fn send_verification(
     user: &UserView,
     token: &str,
     callback_url: Option<&str>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
     let config = ctx.extensions.get::<EmailVerificationConfig>();
     let url = verification_url(&ctx.config, token, callback_url);
@@ -132,7 +129,7 @@ pub(in crate::plugins) async fn change_email_core(
     user: &impl AuthUser,
     session: &SessionView,
     config: &UserManagementConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Option<UserView>> {
     let new_email = body.new_email.to_lowercase();
     if user.email().is_some_and(|email| email == new_email) {
@@ -236,16 +233,16 @@ pub(in crate::plugins) async fn change_email_core(
     Ok(None)
 }
 
-pub(in crate::plugins) async fn renew_session_snapshot<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) async fn renew_session_snapshot<S: alibi_core::AuthSchema>(
     user: &UserView,
     session: &SessionView,
     ctx: &AuthContext<S>,
 ) -> AuthResult<()> {
     // Source renews the chosen session/user projection. It does not replace
     // callback inputs with adapter rows reread after the authenticated stage.
-    better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(
+    alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
         ctx,
-        better_auth_core::CacheVersionContext::created(
+        alibi_core::CacheVersionContext::created(
             user.clone(),
             session.clone(),
             user.clone(),
@@ -273,7 +270,7 @@ pub(in crate::plugins) async fn delete_user_core(
     session: &impl AuthSession,
     request: &AuthRequest,
     config: &UserManagementConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SuccessMessageResponse> {
     let password = body.password.as_deref().filter(|value| !value.is_empty());
     if let Some(password) = password {
@@ -340,7 +337,7 @@ pub(in crate::plugins) async fn delete_user_core(
         };
         drop(
             ctx.verifications()
-                .create(better_auth_core::CreateVerification {
+                .create(alibi_core::CreateVerification {
                     identifier: format!("delete-account-{token}"),
                     value: user.id().into_owned(),
                     expires_at: Utc::now() + expiry,
@@ -416,7 +413,7 @@ pub(in crate::plugins) async fn delete_user_callback_core(
     request: &AuthRequest,
     clear_cookie_errors: bool,
     config: &UserManagementConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SuccessMessageResponse> {
     let verification = ctx
         .verifications()
@@ -437,7 +434,7 @@ async fn perform_user_deletion(
     request: &AuthRequest,
     clear_cookie_errors: bool,
     config: &UserManagementConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
     let snapshot = ctx.user_view(user);
     if let Some(hook) = &config.delete_user.before_delete {
@@ -453,7 +450,7 @@ async fn perform_user_deletion(
     {
         if clear_cookie_errors {
             for cookie in
-                better_auth_core::utils::cookie_utils::delete_session_cookie_headers(&ctx.config)?
+                alibi_core::utils::cookie_utils::delete_session_cookie_headers(&ctx.config)?
             {
                 request.queue_response_header("Set-Cookie", cookie);
             }

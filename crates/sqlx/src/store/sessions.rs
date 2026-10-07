@@ -4,11 +4,11 @@ use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxSessionModel};
 use crate::sql::Sql;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::SessionStore;
+use alibi_core::store::adapter::cancelled_by_hook;
+use alibi_core::types::CreateSession;
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::SessionStore;
-use better_auth_core::store::adapter::cancelled_by_hook;
-use better_auth_core::types::CreateSession;
 use chrono::{DateTime, Utc};
 
 impl<S> SqlxStore<S>
@@ -41,15 +41,14 @@ where
         complete: bool,
     ) -> AuthResult<S::Session> {
         if create_session.token.is_none() {
-            create_session.token =
-                Some(better_auth_core::utils::sessions::generate_session_token());
+            create_session.token = Some(alibi_core::utils::sessions::generate_session_token());
         }
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
             if hook
                 .before_create_session(&mut create_session, &hook_context)
                 .await
-                .map_err(better_auth_core::store::adapter::callback_error)?
+                .map_err(alibi_core::store::adapter::callback_error)?
                 .is_cancelled()
             {
                 return Err(AuthError::SessionCreationCancelled);
@@ -61,7 +60,7 @@ where
         let token = create_session
             .token
             .take()
-            .unwrap_or_else(better_auth_core::utils::sessions::generate_session_token);
+            .unwrap_or_else(alibi_core::utils::sessions::generate_session_token);
         let mut fields = std::mem::take(&mut create_session.additional_fields);
         let mut typed_fields = [
             (
@@ -75,7 +74,7 @@ where
             if let Some(value) = destination.as_ref() {
                 fields.preserve_creation_value(
                     name,
-                    better_auth_core::utils::json::JsValue::String(value.clone()),
+                    alibi_core::utils::json::JsValue::String(value.clone()),
                 );
             }
             // Configured values now belong to the adapter input. A transform
@@ -119,7 +118,7 @@ where
             for hook in self.hooks() {
                 hook.after_create_session(&session, &hook_context)
                     .await
-                    .map_err(better_auth_core::store::adapter::callback_error)?;
+                    .map_err(alibi_core::store::adapter::callback_error)?;
             }
         }
         Ok(session)
@@ -131,9 +130,9 @@ where
         tx: Option<&SqlxTransaction>,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: better_auth_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, better_auth_core::field_policy::FieldValues)>> {
-        use better_auth_core::AuthSession;
+        mut fields: alibi_core::field_policy::FieldValues,
+    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
+        use alibi_core::AuthSession;
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
             if hook
@@ -170,10 +169,10 @@ where
         tx: Option<&SqlxTransaction>,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: better_auth_core::field_policy::FieldValues,
+        mut fields: alibi_core::field_policy::FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
-        use better_auth_core::AuthSession;
+        use alibi_core::AuthSession;
         let context = self.hook_context(tx);
         let session = if persist {
             fields.apply_adapter_transforms_async().await?;
@@ -254,7 +253,7 @@ where
         &self,
         token: &str,
         expires_at: Option<DateTime<Utc>>,
-        mut fields: better_auth_core::field_policy::FieldValues,
+        mut fields: alibi_core::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {
@@ -361,7 +360,7 @@ where
         for hook in self.hooks() {
             hook.after_create_session(session, &context)
                 .await
-                .map_err(better_auth_core::store::adapter::callback_error)?;
+                .map_err(alibi_core::store::adapter::callback_error)?;
         }
         Ok(())
     }
@@ -370,8 +369,8 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: better_auth_core::field_policy::FieldValues,
-    ) -> AuthResult<Option<(S::Session, better_auth_core::field_policy::FieldValues)>> {
+        fields: alibi_core::field_policy::FieldValues,
+    ) -> AuthResult<Option<(S::Session, alibi_core::field_policy::FieldValues)>> {
         self.prepare_secondary_update_with_connection(
             self.exec(),
             None,
@@ -385,7 +384,7 @@ where
         &self,
         session: S::Session,
         expires_at: Option<DateTime<Utc>>,
-        fields: better_auth_core::field_policy::FieldValues,
+        fields: alibi_core::field_policy::FieldValues,
         persist: bool,
     ) -> AuthResult<Option<S::Session>> {
         self.complete_secondary_update_with_connection(
@@ -400,7 +399,7 @@ where
     }
 
     async fn end_session_preserving(&self, token: &str) -> AuthResult<()> {
-        use better_auth_core::AuthSession;
+        use alibi_core::AuthSession;
         let now = Utc::now();
         let Some(session) = self
             .get_session(token)
@@ -551,7 +550,7 @@ where
     async fn update_session_fields(
         &self,
         token: &str,
-        fields: better_auth_core::field_policy::FieldValues,
+        fields: alibi_core::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.update_session_with_fields(token, None, fields).await
     }
@@ -580,7 +579,7 @@ where
         &self,
         token: &str,
         expires_at: DateTime<Utc>,
-        fields: better_auth_core::field_policy::FieldValues,
+        fields: alibi_core::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>> {
         self.update_session_with_fields(token, Some(expires_at), fields)
             .await

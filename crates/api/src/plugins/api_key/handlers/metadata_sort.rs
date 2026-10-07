@@ -30,7 +30,7 @@
 // Copyright (c) 2001-2018 Python Software Foundation; All Rights Reserved.
 // Part of JavaScriptCore's galloping merge comes from Python's TimSort.
 
-use better_auth_core::{ApiKey, AuthError, AuthResult};
+use alibi_core::{ApiKey, AuthError, AuthResult};
 use std::slice::SliceIndex;
 
 fn get<I: SliceIndex<[ApiKey]>>(keys: &[ApiKey], index: I) -> AuthResult<&I::Output> {

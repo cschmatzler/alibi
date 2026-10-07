@@ -1,7 +1,7 @@
 //! Admin authority comes from the acting session; target mutations stay scoped.
 use super::*;
-use better_auth::plugins::AdminPlugin;
-use better_auth_core::{AuthUser, UpdateUser};
+use alibi::plugins::AdminPlugin;
+use alibi_core::{AuthUser, UpdateUser};
 
 backend_tests!(admin_provisioning_permissions_passwords_and_session_moderation);
 postgres_tests!(admin_provisioning_permissions_passwords_and_session_moderation);

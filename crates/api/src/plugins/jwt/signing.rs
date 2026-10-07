@@ -34,7 +34,7 @@ impl JwtPlugin {
     /// Returns an error if signing-key resolution, payload serialization, or JWT encoding fails.
     pub async fn sign_jwt_json(
         &self,
-        payload: &better_auth_core::utils::json::JsValue,
+        payload: &alibi_core::utils::json::JsValue,
         options: &JwtSignOptions,
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
@@ -51,13 +51,13 @@ impl JwtPlugin {
                     field,
                     object
                         .get(field)
-                        .and_then(better_auth_core::utils::json::JsValue::as_f64),
+                        .and_then(alibi_core::utils::json::JsValue::as_f64),
                 )?;
             }
             for field in ["iss", "sub", "jti"] {
                 if object
                     .get(field)
-                    .and_then(better_auth_core::utils::json::JsValue::as_f64)
+                    .and_then(alibi_core::utils::json::JsValue::as_f64)
                     .is_some_and(|number| {
                         !number.is_finite() && (field == "iss" || !number.is_nan())
                     })
@@ -104,11 +104,11 @@ impl JwtPlugin {
 
     pub(in crate::plugins::jwt) async fn sign_remote_jwt(
         &self,
-        mut raw_claims: better_auth_core::utils::json::JsValue,
+        mut raw_claims: alibi_core::utils::json::JsValue,
         options: &JwtSignOptions,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<String> {
-        use better_auth_core::utils::json::JsValue;
+        use alibi_core::utils::json::JsValue;
         let JsValue::Object(payload) = &mut raw_claims else {
             return Err(AuthError::bad_request("JWT payload must be an object"));
         };
@@ -216,8 +216,8 @@ impl JwtPlugin {
         normalize_signing_claims(&mut payload)?;
         let input = format!(
             "{}.{}",
-            URL_SAFE_NO_PAD.encode(better_auth_core::utils::json::to_vec(&header)?),
-            URL_SAFE_NO_PAD.encode(better_auth_core::utils::json::to_vec(&payload)?)
+            URL_SAFE_NO_PAD.encode(alibi_core::utils::json::to_vec(&header)?),
+            URL_SAFE_NO_PAD.encode(alibi_core::utils::json::to_vec(&payload)?)
         );
         let signature = crypto::sign(key.algorithm, &key.private_key, input.as_bytes())?;
         Ok(format!("{input}.{}", URL_SAFE_NO_PAD.encode(signature)))

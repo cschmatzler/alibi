@@ -2,15 +2,15 @@
 
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use super::helpers::delete_session_cookie_headers;
-use async_trait::async_trait;
-use better_auth_core::utils::cookie_utils::{
+use alibi_core::utils::cookie_utils::{
     create_derived_session_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
     related_cookie_name, sign_cookie_value, verify_cookie_value,
 };
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, AuthUser, HttpMethod,
 };
+use async_trait::async_trait;
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::json;
@@ -215,9 +215,9 @@ impl MultiSessionPlugin {
                             .ok_or(AuthError::UserNotFound)?;
                         let user_view = ctx.user_view(&user);
                         let session_view = ctx.session_view(&session);
-                        better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(
+                        alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
                             ctx,
-                            better_auth_core::CacheVersionContext::created(
+                            alibi_core::CacheVersionContext::created(
                                 user_view.clone(),
                                 session_view.clone(),
                                 user_view,
@@ -256,9 +256,9 @@ impl MultiSessionPlugin {
         )?;
         let user_view = ctx.user_view(&user);
         let session_view = ctx.session_view(&session);
-        better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(
+        alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
             ctx,
-            better_auth_core::CacheVersionContext::created(
+            alibi_core::CacheVersionContext::created(
                 user_view.clone(),
                 session_view.clone(),
                 user_view,
@@ -284,20 +284,20 @@ impl RequestBody for SessionTokenRequest {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -363,7 +363,7 @@ impl<S: AuthSchema> AuthPlugin<S> for MultiSessionPlugin {
             return Ok(response);
         }
         let Some((user, session)) =
-            better_auth_core::session::cookie_cache::runtime::published_session(req)
+            alibi_core::session::cookie_cache::runtime::published_session(req)
         else {
             return Ok(response);
         };
@@ -436,8 +436,8 @@ mod tests {
     use crate::plugins::test_helpers::{
         create_auth_json_request_no_query, create_test_context, create_user_and_session,
     };
-    use better_auth_core::utils::cookie_utils::create_session_cookie;
-    use better_auth_core::{CreateSession, CreateUser};
+    use alibi_core::utils::cookie_utils::create_session_cookie;
+    use alibi_core::{CreateSession, CreateUser};
     use chrono::Duration;
 
     fn request_with_cookies(
@@ -484,7 +484,7 @@ mod tests {
             impersonated_by: None,
             active_organization_id: None,
             active_team_id: None,
-            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
         };
         let bob_session = ctx
             .database

@@ -33,7 +33,7 @@ fn to_rfc3339(value: DateTime<Utc>) -> String {
     value.to_rfc3339()
 }
 
-impl From<&Model> for better_auth_core::ApiKey {
+impl From<&Model> for alibi_core::ApiKey {
     fn from(model: &Model) -> Self {
         Self {
             id: model.id.clone(),

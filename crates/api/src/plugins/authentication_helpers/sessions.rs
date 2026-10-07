@@ -5,7 +5,7 @@ use super::*;
 pub(in crate::plugins) async fn session_response<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
-    user: better_auth_core::AdapterRecord<S::User>,
+    user: alibi_core::AdapterRecord<S::User>,
 ) -> AuthResult<(Value, AuthResponse)> {
     session_response_with_remember(ctx, req, user, None).await
 }
@@ -16,10 +16,10 @@ pub(in crate::plugins) async fn session_response<S: AuthSchema>(
 pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
-    user: better_auth_core::AdapterRecord<S::User>,
+    user: alibi_core::AdapterRecord<S::User>,
     remember_me: Option<bool>,
 ) -> AuthResult<(Value, AuthResponse)> {
-    use better_auth_core::utils::cookie_utils::{
+    use alibi_core::utils::cookie_utils::{
         create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
         sign_cookie_value, verify_cookie_value,
     };
@@ -41,7 +41,7 @@ pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
         metadata: ctx.metadata.clone(),
         extensions: ctx.extensions.clone(),
     };
-    let meta = better_auth_core::RequestMeta::from_request(req);
+    let meta = alibi_core::RequestMeta::from_request(req);
     let issued = crate::plugins::helpers::issue_selected_user_session_record(
         &issuing_context,
         user,
@@ -89,7 +89,7 @@ pub(in crate::plugins) async fn session_response_with_remember<S: AuthSchema>(
 pub(in crate::plugins) async fn revoke_unproven_access<S: AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
-) -> AuthResult<Option<better_auth_core::AdapterRecord<S::User>>> {
+) -> AuthResult<Option<alibi_core::AdapterRecord<S::User>>> {
     let identifier = format!("revoke-unproven-account-access:{user_id}");
     let reserved = ctx
         .verifications()

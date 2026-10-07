@@ -18,11 +18,11 @@ pub(super) mod types;
 
 mod verification;
 
+use alibi_core::entity::AuthUser;
+use alibi_core::{AuthContext, AuthError, AuthResult, BeforeRequestAction};
+use alibi_core::{AuthRequest, AuthResponse};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use better_auth_core::entity::AuthUser;
-use better_auth_core::{AuthContext, AuthError, AuthResult, BeforeRequestAction};
-use better_auth_core::{AuthRequest, AuthResponse};
 pub use callbacks::{
     ApiKeyCallbackContext, ApiKeyDefaultPermissions, ApiKeyGenerationOptions, ApiKeyGenerator,
     ApiKeyGetter, ApiKeyPermissions, ApiKeyValidator,
@@ -224,7 +224,7 @@ impl ApiKeyPlugin {
 ///
 /// Usage:
 /// ```
-/// use better_auth_api::plugins::api_key::{ApiKeyPlugin, RateLimitDefaults};
+/// use alibi_api::plugins::api_key::{ApiKeyPlugin, RateLimitDefaults};
 /// let plugin = ApiKeyPlugin::builder()
 ///     .key_length(48)
 ///     .prefix("ba_".to_string())
@@ -242,7 +242,7 @@ impl ApiKeyPlugin {
         #[builder(default)] storage: ApiKeyStorageMode,
         #[builder(default)] fallback_to_database: bool,
         custom_storage: Option<Arc<dyn ApiKeyStorage>>,
-        secondary_storage: Option<Arc<dyn better_auth_core::store::CacheAdapter>>,
+        secondary_storage: Option<Arc<dyn alibi_core::store::CacheAdapter>>,
         #[builder(default = 64.0, into)] key_length: f64,
         prefix: Option<String>,
         default_permissions: Option<ApiKeyPermissions>,
@@ -313,7 +313,7 @@ impl ApiKeyPlugin {
     pub(super) fn generate_key(
         config: &ApiKeyConfig,
         custom_prefix: Option<&str>,
-    ) -> AuthResult<(String, String, better_auth_core::ApiKeyStartingCharacters)> {
+    ) -> AuthResult<(String, String, alibi_core::ApiKeyStartingCharacters)> {
         if config.key_length <= 0.0 {
             return Err(AuthError::internal("Length must be a positive integer."));
         }
@@ -365,7 +365,7 @@ impl ApiKeyPlugin {
     pub(super) fn starting_characters(
         key: &str,
         length: f64,
-    ) -> better_auth_core::ApiKeyStartingCharacters {
+    ) -> alibi_core::ApiKeyStartingCharacters {
         // substring(0, length) clamps negatives/NaN to zero, truncates finite
         // fractions, and preserves all code units for positive infinity.
         let end = if length.is_nan() || length < 0.0 {
@@ -381,7 +381,7 @@ impl ApiKeyPlugin {
                 keep.then_some(unit)
             })
             .collect();
-        better_auth_core::ApiKeyStartingCharacters::from_utf16(units)
+        alibi_core::ApiKeyStartingCharacters::from_utf16(units)
     }
 
     pub(super) fn hash_key(key: &str) -> String {
@@ -468,17 +468,15 @@ impl ApiKeyPlugin {
     /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate_metadata(
         config: &ApiKeyConfig,
-        metadata: Option<&better_auth_core::utils::json::JsValue>,
+        metadata: Option<&alibi_core::utils::json::JsValue>,
     ) -> AuthResult<()> {
         if let Some(value) = metadata.filter(|value| match value {
-            better_auth_core::utils::json::JsValue::Null => false,
-            better_auth_core::utils::json::JsValue::Bool(value) => *value,
-            better_auth_core::utils::json::JsValue::Number(value) => {
-                *value != 0.0 && !value.is_nan()
-            }
-            better_auth_core::utils::json::JsValue::String(value) => !value.is_empty(),
-            better_auth_core::utils::json::JsValue::Array(_)
-            | better_auth_core::utils::json::JsValue::Object(_) => true,
+            alibi_core::utils::json::JsValue::Null => false,
+            alibi_core::utils::json::JsValue::Bool(value) => *value,
+            alibi_core::utils::json::JsValue::Number(value) => *value != 0.0 && !value.is_nan(),
+            alibi_core::utils::json::JsValue::String(value) => !value.is_empty(),
+            alibi_core::utils::json::JsValue::Array(_)
+            | alibi_core::utils::json::JsValue::Object(_) => true,
         }) {
             if !config.enable_metadata {
                 return Err(api_key_error(ApiKeyErrorCode::MetadataDisabled));
@@ -518,7 +516,7 @@ impl ApiKeyPlugin {
     async fn handle_create(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let mut resolution = req.clone();
         drop(
@@ -582,7 +580,7 @@ impl ApiKeyPlugin {
     async fn handle_get(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let mut resolution = req.clone();
         drop(resolution.query.remove("disableCookieCache"));
@@ -599,7 +597,7 @@ impl ApiKeyPlugin {
     async fn handle_list(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let mut resolution = req.clone();
         drop(resolution.query.remove("disableCookieCache"));
@@ -615,7 +613,7 @@ impl ApiKeyPlugin {
     async fn handle_update(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let mut resolution = req.clone();
         drop(
@@ -670,7 +668,7 @@ impl ApiKeyPlugin {
     async fn handle_delete(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _session) = super::helpers::ordinary_session(req, ctx).await?;
         if user.banned() {
@@ -702,7 +700,7 @@ fn key_json_response<T: serde::Serialize>(result: AuthResult<T>) -> AuthResult<A
 // AuthPlugin trait implementation
 // ---------------------------------------------------------------------------
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     ApiKeyPlugin, "api-key";
     routes {
         post "/api-key/create"                    => handle_create,             "api_key_create";
@@ -712,12 +710,12 @@ better_auth_core::impl_auth_plugin! {
         get  "/api-key/list"                      => handle_list,               "api_key_list";
     }
     extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-        fn openapi_metadata(&self,ctx:&better_auth_core::AuthInitContext<S>)->better_auth_core::PluginOpenApiMetadata {
-            let mut metadata=crate::metadata::instance_plugin_metadata("api-key",&<Self as better_auth_core::AuthPlugin<S>>::routes(self),ctx);
+        fn openapi_metadata(&self,ctx:&alibi_core::AuthInitContext<S>)->alibi_core::PluginOpenApiMetadata {
+            let mut metadata=crate::metadata::instance_plugin_metadata("api-key",&<Self as alibi_core::AuthPlugin<S>>::routes(self),ctx);
             let defaults=self.configurations.first().filter(|_|self.configurations.len()==1).map(|config|config.rate_limit.clone()).unwrap_or_default();
             for model in &mut metadata.models {
                 if model.name!="Apikey" {continue;}
@@ -728,7 +726,7 @@ better_auth_core::impl_auth_plugin! {
             }
             metadata
         }
-        async fn on_init(&self, _ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+        async fn on_init(&self, _ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
             if self.configurations.len() > 1 {
                 let mut ids = std::collections::HashSet::new();
                 for config in &self.configurations {
@@ -743,13 +741,13 @@ better_auth_core::impl_auth_plugin! {
             Ok(())
         }
 
-        fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> { endpoint::definitions() }
+        fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
 
-    fn endpoint_hooks(&self) -> Vec<&dyn better_auth_core::endpoint::EndpointHook<S>> { vec![self] }
+    fn endpoint_hooks(&self) -> Vec<&dyn alibi_core::endpoint::EndpointHook<S>> { vec![self] }
 
-    fn validate_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointInput> { endpoint::validate(call) }
+    fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
 
-    async fn on_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
+    async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
 
     async fn before_request(
             &self,
@@ -836,19 +834,18 @@ pub(super) fn config_id_matches(key_config_id: &str, expected: &str) -> bool {
 mod tests {
 
     use super::*;
-    use better_auth_core::wire::{SessionView, UserView};
-    use better_auth_core::{
+    use alibi_core::wire::{SessionView, UserView};
+    use alibi_core::{
         AuthContext, AuthPlugin, CreateSession, CreateUser, HttpMethod, UpdateApiKey,
     };
     use chrono::{Duration, Utc};
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     async fn create_test_context_with_user() -> (AuthContext<TestSchema>, UserView, SessionView) {
-        let config = Arc::new(better_auth_core::AuthConfig::new(
+        let config = Arc::new(alibi_core::AuthConfig::new(
             "test-secret-key-at-least-32-chars-long",
         ));
         let database = crate::plugins::test_helpers::create_test_database().await;
@@ -866,7 +863,7 @@ mod tests {
 
         let session = database
             .create_session(CreateSession {
-                additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 token: None,
                 active_team_id: None,
                 user_id: user.id().to_string(),
@@ -884,7 +881,7 @@ mod tests {
     }
 
     async fn create_user_with_session(
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         email: &str,
     ) -> (UserView, SessionView) {
         let user = ctx
@@ -901,7 +898,7 @@ mod tests {
         let session = ctx
             .database
             .create_session(CreateSession {
-                additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 token: None,
                 active_team_id: None,
                 user_id: user.id().to_string(),
@@ -931,7 +928,7 @@ mod tests {
                 "cookie".to_owned(),
                 format!(
                     "better-auth.session_token={}",
-                    better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    alibi_core::utils::cookie_utils::sign_cookie_value(
                         token,
                         &crate::plugins::test_helpers::create_test_config().secret
                     )
@@ -956,7 +953,7 @@ mod tests {
     /// handler produced. Calls the public server-only verification method.
     async fn verify_key(
         plugin: &ApiKeyPlugin,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         raw_key: &str,
         permissions: Option<&serde_json::Value>,
     ) -> serde_json::Value {
@@ -991,7 +988,7 @@ mod tests {
     /// `rate_limit_enabled`, `rate_limit_time_window`, `rate_limit_max`, permissions.
     async fn create_key_with_server_fields(
         plugin: &ApiKeyPlugin,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         token: &str,
         client_body: serde_json::Value,
         server_fields: UpdateApiKey,
@@ -1006,7 +1003,7 @@ mod tests {
 
     /// Test helper: delete all expired keys and return a success JSON.
     async fn delete_all_expired(
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> serde_json::Value {
         let _ignored_result = ctx.database.delete_expired_api_keys().await.unwrap();
         serde_json::json!({ "success": true, "error": null })
@@ -1014,7 +1011,7 @@ mod tests {
 
     async fn create_key_and_get_id(
         plugin: &ApiKeyPlugin,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         token: &str,
         name: &str,
     ) -> String {
@@ -1038,7 +1035,7 @@ mod tests {
     /// Helper: create a key and return (id, `raw_key`)
     async fn create_key_and_get_raw(
         plugin: &ApiKeyPlugin,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         token: &str,
         body: serde_json::Value,
     ) -> (String, String) {
@@ -1719,7 +1716,7 @@ mod tests {
 
         #[tokio::test]
         async fn test_virtual_session_answers_get_and_post_get_session() {
-            use better_auth_core::AuthPlugin;
+            use alibi_core::AuthPlugin;
 
             let plugin = ApiKeyPlugin::builder()
                 .enable_session_for_api_keys(true)
@@ -2746,7 +2743,7 @@ mod tests {
             let (key, key_hash, start) =
                 ApiKeyPlugin::generate_key(&ApiKeyConfig::default(), None).unwrap();
             ctx.database
-                .create_api_key(better_auth_core::CreateApiKey {
+                .create_api_key(alibi_core::CreateApiKey {
                     // A colliding user ID must not turn an organization key into a user session.
                     reference_id: user.id,
                     config_id: "default".to_owned(),
@@ -2806,7 +2803,7 @@ mod tests {
                     config_id: config_id.to_owned(),
                     ..Default::default()
                 });
-                let mut init = better_auth_core::AuthInitContext::new(
+                let mut init = alibi_core::AuthInitContext::new(
                     Arc::clone(&ctx.config),
                     Arc::clone(&ctx.database),
                 );
@@ -2819,12 +2816,12 @@ mod tests {
 
         #[tokio::test]
         async fn verification_preserves_database_failures() {
-            let connection = better_auth_seaorm::Database::connect("sqlite::memory:")
+            let connection = alibi_seaorm::Database::connect("sqlite::memory:")
                 .await
                 .unwrap();
             connection.clone().close().await.unwrap();
             let config = Arc::new(crate::plugins::test_helpers::create_test_config());
-            let database = Arc::new(better_auth_seaorm::SeaOrmStore::<TestSchema>::new(
+            let database = Arc::new(alibi_seaorm::SeaOrmStore::<TestSchema>::new(
                 Arc::clone(&config),
                 connection,
             ));
@@ -2994,14 +2991,13 @@ mod tests {
 #[cfg(test)]
 mod crud_tests {
     use super::*;
-    use better_auth_core::{AuthConfig, CreateSession, CreateUser, HttpMethod};
+    use alibi_core::{AuthConfig, CreateSession, CreateUser, HttpMethod};
     use chrono::{Duration, Utc};
     use serde_json::json;
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     async fn context() -> (AuthContext<TestSchema>, String, String) {
         let database = crate::plugins::test_helpers::create_test_database().await;
@@ -3016,7 +3012,7 @@ mod crud_tests {
         let user_id = user.id().to_string();
         let session = database
             .create_session(CreateSession {
-                additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 token: None,
                 active_team_id: None,
                 user_id: user_id.clone(),
@@ -3028,7 +3024,7 @@ mod crud_tests {
             })
             .await
             .unwrap();
-        let token = better_auth_core::entity::AuthSession::token(&session).to_owned();
+        let token = alibi_core::entity::AuthSession::token(&session).to_owned();
         (
             AuthContext::new(
                 Arc::new(AuthConfig::new("a-secret-that-is-at-least-32-characters")),
@@ -3047,7 +3043,7 @@ mod crud_tests {
                 "cookie".to_owned(),
                 format!(
                     "better-auth.session_token={}",
-                    better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    alibi_core::utils::cookie_utils::sign_cookie_value(
                         token,
                         "a-secret-that-is-at-least-32-characters"
                     )
@@ -3326,15 +3322,15 @@ mod crud_tests {
 
     #[tokio::test]
     async fn forced_cleanup_preserves_rows_on_store_failure_and_retries_without_throttle() {
-        use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+        use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
         let config = Arc::new(AuthConfig::new("forced-cleanup-application-secret32"));
-        let connection = better_auth_seaorm::Database::connect("sqlite::memory:")
+        let connection = alibi_seaorm::Database::connect("sqlite::memory:")
             .await
             .unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&connection)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&connection)
             .await
             .unwrap();
-        let database = Arc::new(better_auth_seaorm::SeaOrmStore::<TestSchema>::new(
+        let database = Arc::new(alibi_seaorm::SeaOrmStore::<TestSchema>::new(
             std::sync::Arc::clone(&config),
             connection.clone(),
         ));
@@ -3366,7 +3362,7 @@ mod crud_tests {
             .database
             .update_api_key(
                 &key.api_key.id,
-                better_auth_core::UpdateApiKey {
+                alibi_core::UpdateApiKey {
                     expires_at: Some(Some("1970-01-01T00:00:00.000Z".into())),
                     ..Default::default()
                 },
@@ -3384,8 +3380,8 @@ mod crud_tests {
             .unwrap()
             .unwrap();
         assert_eq!(
-            better_auth_core::utils::json::to_value(&retained).unwrap(),
-            better_auth_core::utils::json::to_value(&expired).unwrap()
+            alibi_core::utils::json::to_value(&retained).unwrap(),
+            alibi_core::utils::json::to_value(&expired).unwrap()
         );
         connection
             .execute_raw(Statement::from_string(
@@ -3414,17 +3410,17 @@ mod crud_tests {
         );
     }
     struct ApplicationKeyStorage {
-        cache: Arc<better_auth_core::store::MemoryCacheAdapter>,
+        cache: Arc<alibi_core::store::MemoryCacheAdapter>,
         fail_writes: std::sync::atomic::AtomicBool,
     }
     #[async_trait::async_trait]
     impl ApiKeyStorage for ApplicationKeyStorage {
         async fn get(&self, key: &str) -> AuthResult<Option<String>> {
-            use better_auth_core::store::CacheAdapter as _;
+            use alibi_core::store::CacheAdapter as _;
             self.cache.get(key).await
         }
         async fn set(&self, key: &str, value: &str, ttl: Option<Duration>) -> AuthResult<()> {
-            use better_auth_core::store::CacheAdapter as _;
+            use alibi_core::store::CacheAdapter as _;
             if self.fail_writes.load(std::sync::atomic::Ordering::SeqCst) {
                 return Err(AuthError::internal("application storage unavailable"));
             }
@@ -3434,16 +3430,14 @@ mod crud_tests {
             }
         }
         async fn delete(&self, key: &str) -> AuthResult<()> {
-            use better_auth_core::store::CacheAdapter as _;
+            use alibi_core::store::CacheAdapter as _;
             self.cache.delete(key).await
         }
     }
     #[derive(Default)]
-    struct ApplicationCompletions(
-        std::sync::Mutex<Vec<better_auth_core::BackgroundTaskCompletion>>,
-    );
-    impl better_auth_core::BackgroundTaskHandler for ApplicationCompletions {
-        fn handle(&self, completion: better_auth_core::BackgroundTaskCompletion) -> AuthResult<()> {
+    struct ApplicationCompletions(std::sync::Mutex<Vec<alibi_core::BackgroundTaskCompletion>>);
+    impl alibi_core::BackgroundTaskHandler for ApplicationCompletions {
+        fn handle(&self, completion: alibi_core::BackgroundTaskCompletion) -> AuthResult<()> {
             self.0.lock().unwrap().push(completion);
             Ok(())
         }
@@ -3459,7 +3453,7 @@ mod crud_tests {
 
     #[tokio::test]
     async fn source_boxed_metadata_rows_list_successfully_without_mutating_storage() {
-        use better_auth_core::store::{CacheAdapter, MemoryCacheAdapter};
+        use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
         let (ctx, owner, token) = context().await;
         let cache = Arc::new(MemoryCacheAdapter::new());
         let plugin = ApiKeyPlugin::with_config(ApiKeyConfig {
@@ -3611,7 +3605,7 @@ mod crud_tests {
 
     #[tokio::test]
     async fn application_storage_preserves_authority_indexes_and_usage() {
-        use better_auth_core::store::{CacheAdapter, MemoryCacheAdapter};
+        use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
         // HTTP creation and trusted verification use the real plugin and stores;
         // independent database reads prove secondary-only keys create no SQL rows.
         for (fallback, custom, deferred) in [
@@ -3722,7 +3716,7 @@ mod crud_tests {
             );
             completions.drain().await;
             assert!(decoy.get(&by_id).await.unwrap().is_none());
-            let row: better_auth_core::ApiKey =
+            let row: alibi_core::ApiKey =
                 serde_json::from_str(&cache.get(&by_id).await.unwrap().unwrap()).unwrap();
             assert_eq!(row.remaining, Some(1.0));
             assert_eq!(row.reference_id, owner);
@@ -3822,7 +3816,7 @@ mod crud_tests {
                     cache.get(&hash_index).await.unwrap(),
                     cache.get(&id_index).await.unwrap()
                 );
-                let row: better_auth_core::ApiKey =
+                let row: alibi_core::ApiKey =
                     serde_json::from_str(&cache.get(&id_index).await.unwrap().unwrap()).unwrap();
                 assert_eq!(row.remaining, retried.remaining);
             }
@@ -3872,7 +3866,7 @@ mod crud_tests {
         assert!(denied.details.unwrap().try_again_in > 0.0);
         assert_eq!(cache.get(&by_id).await.unwrap(), before);
         assert_eq!(cache.get(&by_hash).await.unwrap(), before);
-        let mut elapsed: better_auth_core::ApiKey =
+        let mut elapsed: alibi_core::ApiKey =
             serde_json::from_str(before.as_deref().unwrap()).unwrap();
         let previous = (chrono::Utc::now() - chrono::Duration::minutes(2)).to_rfc3339();
         elapsed.last_request = Some(previous.clone());
@@ -3884,7 +3878,7 @@ mod crud_tests {
         assert_eq!(refilled.remaining, Some(4.0));
         assert_eq!(refilled.request_count, Some(1.0));
         assert_ne!(refilled.last_refill_at.as_deref(), Some(previous.as_str()));
-        let observed: better_auth_core::ApiKey =
+        let observed: alibi_core::ApiKey =
             serde_json::from_str(&cache.get(&by_id).await.unwrap().unwrap()).unwrap();
         assert_eq!(observed.remaining, Some(4.0));
         assert_eq!(observed.request_count, Some(1.0));

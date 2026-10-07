@@ -14,7 +14,7 @@ pub struct Model {
     pub created_at: DateTime<Utc>,
 }
 
-impl From<&Model> for better_auth_core::Invitation {
+impl From<&Model> for alibi_core::Invitation {
     fn from(model: &Model) -> Self {
         Self {
             id: model.id.clone(),
@@ -22,7 +22,7 @@ impl From<&Model> for better_auth_core::Invitation {
             email: model.email.clone(),
             role: Some(model.role.clone()),
             team_id: model.team_id.clone(),
-            status: better_auth_core::InvitationStatus::from(model.status.clone()),
+            status: alibi_core::InvitationStatus::from(model.status.clone()),
             inviter_id: model.inviter_id.clone(),
             expires_at: model.expires_at,
             created_at: model.created_at,

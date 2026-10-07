@@ -3,8 +3,8 @@
 use crate::pool::Exec;
 use crate::sql::Sql;
 use crate::value::{ColumnKind, SqlValue};
-use better_auth_core::store::adapter::RawFieldValue;
-use better_auth_core::{AuthError, AuthResult, utils::json::JsValue};
+use alibi_core::store::adapter::RawFieldValue;
+use alibi_core::{AuthError, AuthResult, utils::json::JsValue};
 
 /// Called by generated model bindings before any backend affinity conversion.
 ///

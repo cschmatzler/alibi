@@ -6,12 +6,12 @@ use axum::{
     http::HeaderMap,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::{CloudflareOptions, OAuthProvider};
-use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{CloudflareOptions, OAuthProvider};
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -62,7 +62,7 @@ pub(crate) async fn router(
             CloudflareOptions::new(client_id, (mode != "public").then(|| secret.to_owned()));
         if mode == "post" {
             options.token_endpoint_auth_method =
-                Some(better_auth::plugins::oauth::OAuthTokenEndpointAuth::ClientSecretPost);
+                Some(alibi::plugins::oauth::OAuthTokenEndpointAuth::ClientSecretPost);
         }
         options.user_info_endpoint = Some(format!("{}/__test/cloudflare/user", config.base_url));
         if mode == "configured" || mode == "disabled-configured" {
@@ -84,7 +84,7 @@ pub(crate) async fn router(
                     .lock()
                     .map_err(|error| error.to_string())?
                     .push(profile.clone());
-                Ok(better_auth::plugins::oauth::OAuthUserInfo {
+                Ok(alibi::plugins::oauth::OAuthUserInfo {
                     additional_fields: Default::default(),
                     id: "cannot-replace-account-subject".into(),
                     name: Some(format!(

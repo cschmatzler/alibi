@@ -30,7 +30,7 @@ pub struct EmailPasswordConfig {
 /// its configuration is the single source; the defaults only apply to contexts
 /// built without it.
 pub(in crate::plugins) fn password_length_limits(
-    ctx: &better_auth_core::AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &alibi_core::AuthContext<impl alibi_core::AuthSchema>,
 ) -> (usize, usize) {
     ctx.extensions
         .get::<EmailPasswordConfig>()

@@ -5,8 +5,8 @@ use crate::model::{self, SqlxModel};
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
 use crate::value::SqlValue;
-use better_auth_core::store::ConsumeApiKeyResult;
-use better_auth_core::{ApiKey, AuthError, AuthResult};
+use alibi_core::store::ConsumeApiKeyResult;
+use alibi_core::{ApiKey, AuthError, AuthResult};
 use chrono::{DateTime, Utc};
 
 /// One `SET` assignment of a guarded usage write.

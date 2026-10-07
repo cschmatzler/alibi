@@ -1,13 +1,13 @@
 //! Popup OAuth entry and callback delivery, paired with the official popup client.
 use super::oauth::{OAuthConfig, handlers::handle_social_sign_in};
-use async_trait::async_trait;
-use better_auth_core::utils::cookie_utils::{
+use alibi_core::utils::cookie_utils::{
     create_clear_cookie, create_cookie, related_cookie_name, sign_cookie_value, verify_cookie_value,
 };
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, HttpMethod,
 };
+use async_trait::async_trait;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -196,20 +196,20 @@ impl OAuthPopupPlugin {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OAuthPopupPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }

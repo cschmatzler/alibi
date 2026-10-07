@@ -1,25 +1,25 @@
 use crate::TestSchema;
 use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
-use better_auth::plugins::two_factor::TwoFactorConfig;
-use better_auth::{
+use alibi::plugins::two_factor::TwoFactorConfig;
+use alibi::{
     AuthBuilder, AuthConfig, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
     plugins::{EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin},
 };
-use better_auth_core::utils::json::{self, JsValue};
-use better_auth_seaorm::DatabaseConnection;
+use alibi_core::utils::json::{self, JsValue};
+use alibi_seaorm::DatabaseConnection;
 use serde_json::json;
 use std::{collections::HashMap, sync::Arc};
 type Auth = Arc<BetterAuth<TestSchema>>;
 struct SessionFailure;
 #[async_trait::async_trait]
-impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for SessionFailure {
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for SessionFailure {
     async fn before_create_session(
         &self,
-        _session: &mut better_auth_core::CreateSession,
+        _session: &mut alibi_core::CreateSession,
         context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         if let Some(request) = context
             .request
             .as_ref()
@@ -27,14 +27,14 @@ impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for 
         {
             if let Some(failure) = request.headers.get("x-two-factor-session") {
                 if failure == "cancel" {
-                    return Ok(better_auth_seaorm::HookControl::Cancel);
+                    return Ok(alibi_seaorm::HookControl::Cancel);
                 }
-                return Err(better_auth_core::AuthError::forbidden(
+                return Err(alibi_core::AuthError::forbidden(
                     "session creation cancelled by database hook",
                 ));
             }
         }
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
 }
 

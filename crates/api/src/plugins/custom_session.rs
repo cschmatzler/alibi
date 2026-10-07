@@ -1,9 +1,9 @@
 //! Application-owned asynchronous session response projection.
-use async_trait::async_trait;
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     HttpMethod,
 };
+use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::Arc;
 
@@ -52,10 +52,10 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
@@ -71,8 +71,8 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::openapi::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::openapi::PluginOpenApiMetadata {
         let mut metadata =
             crate::metadata::instance_plugin_metadata("session-management", &self.routes(), ctx);
         // Reuse the base schemas without treating this replacement as a core plugin.
@@ -117,7 +117,7 @@ impl<S: AuthSchema> AuthPlugin<S> for CustomSessionPlugin<S> {
             req.queue_response_header(name, value);
         }
         let (issued_cookies, _) =
-            better_auth_core::session::cookie_cache::runtime::take_issuance(req.extensions());
+            alibi_core::session::cookie_cache::runtime::take_issuance(req.extensions());
         if session.is_null() {
             // The replaced endpoint does not forward headers from a missing or
             // failed core response. Preserve headers emitted before that read.
@@ -179,8 +179,8 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
             metadata: context.metadata.clone(),
             extensions: context.extensions.clone(),
         };
-        let endpoint = better_auth_core::endpoint::current_endpoint_call_context();
-        let hook = better_auth_core::hooks::current_request_hook_context();
+        let endpoint = alibi_core::endpoint::current_endpoint_call_context();
+        let hook = alibi_core::hooks::current_request_hook_context();
         let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
         // Launched callbacks retain ownership after the aggregate rejects,
         // matching the independent application work of a device-session list.
@@ -206,21 +206,22 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
                 );
             };
             if let Some(endpoint) = endpoint {
-                better_auth_core::endpoint::with_endpoint_call_context(
+                alibi_core::endpoint::with_endpoint_call_context(
                     endpoint,
-                    better_auth_core::hooks::with_optional_request_hook_context(hook, project),
+                    alibi_core::hooks::with_optional_request_hook_context(hook, project),
                 )
                 .await;
             } else {
-                better_auth_core::hooks::with_optional_request_hook_context(hook, project).await;
+                alibi_core::hooks::with_optional_request_hook_context(hook, project).await;
             }
         }));
         for _ in 0..results.len() {
-            let (index, value) = receiver.recv().await.ok_or_else(|| {
-                better_auth_core::AuthError::internal("Session transformation stopped")
-            })?;
+            let (index, value) = receiver
+                .recv()
+                .await
+                .ok_or_else(|| alibi_core::AuthError::internal("Session transformation stopped"))?;
             let slot = results.get_mut(index).ok_or_else(|| {
-                better_auth_core::AuthError::internal("Invalid session transformation row")
+                alibi_core::AuthError::internal("Invalid session transformation row")
             })?;
             *slot = Some(value?);
         }
@@ -228,8 +229,8 @@ impl<S: AuthSchema> CustomSessionPlugin<S> {
     }
 }
 
-fn callback_error(error: better_auth_core::AuthError) -> better_auth_core::AuthError {
-    use better_auth_core::AuthError;
+fn callback_error(error: alibi_core::AuthError) -> alibi_core::AuthError {
+    use alibi_core::AuthError;
     match error {
         AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => error,
         error => AuthError::CallbackFailure(Box::new(error)),
@@ -243,11 +244,11 @@ mod tests {
     use crate::plugins::test_helpers::{
         create_auth_request_no_query, create_test_context, create_user_and_session,
     };
-    use better_auth_core::hooks::with_request_hook_context;
-    use better_auth_core::{CreateUser, UpdateUser};
+    use alibi_core::hooks::with_request_hook_context;
+    use alibi_core::{CreateUser, UpdateUser};
     use std::sync::Arc;
     use tokio::sync::Notify;
-    type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     struct Transform {
         entered: Arc<Notify>,
@@ -272,13 +273,13 @@ mod tests {
                 .expect("actual user name");
             if name == "Reject" {
                 self.entered.notified().await;
-                return Err(better_auth_core::AuthError::internal("application failure"));
+                return Err(alibi_core::AuthError::internal("application failure"));
             }
             self.entered.notify_one();
             self.release.notified().await;
             assert_eq!(req.path(), "/multi-session/list-device-sessions");
             assert_eq!(
-                better_auth_core::hooks::current_request_hook_context()
+                alibi_core::hooks::current_request_hook_context()
                     .expect("retained real request")
                     .headers
                     .get("x-application"),
@@ -336,7 +337,7 @@ mod tests {
             req.headers
                 .insert("x-application".into(), "original".into()),
         );
-        use better_auth_core::utils::cookie_utils::sign_cookie_value;
+        use alibi_core::utils::cookie_utils::sign_cookie_value;
         let cookies = [&reject_session.token, &slow_session.token]
             .into_iter()
             .map(|token| {
@@ -367,7 +368,7 @@ mod tests {
         .expect("aggregate rejects without waiting for held callback");
         assert!(matches!(
             result,
-            Err(better_auth_core::AuthError::CallbackFailure(_))
+            Err(alibi_core::AuthError::CallbackFailure(_))
         ));
         assert_eq!(
             ctx.database

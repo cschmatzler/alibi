@@ -24,8 +24,8 @@ Over HTTPS every name gets the `__Secure-` prefix (for example `__Secure-better-
 ## Configure names and attributes
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::config::{
+use alibi::AuthConfig;
+use alibi::config::{
     AdvancedConfig, CookieAttributes, CookieOverride, SameSite,
 };
 use std::collections::HashMap;
@@ -64,7 +64,7 @@ Session-token cookies use the real session lifetime, or no `Max-Age` for a brows
 ## Share cookies across subdomains
 
 ```rust
-use better_auth::AuthConfig;
+use alibi::AuthConfig;
 
 fn auth_config(secret: &str) -> AuthConfig {
     AuthConfig::new(secret)
@@ -82,8 +82,8 @@ Use this only when every subdomain is trusted, since every subdomain then receiv
 A cookie cache embeds the session and user in a second cookie (`session_data`) so most requests skip the database. It does not replace the database session: operations that need an authoritative answer, such as revoking sessions, still check the stored row.
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::config::{CookieCacheConfig, CookieCacheStrategy};
+use alibi::AuthConfig;
+use alibi::config::{CookieCacheConfig, CookieCacheStrategy};
 
 fn auth_config(secret: &str) -> AuthConfig {
     AuthConfig::new(secret).session_cookie_cache(CookieCacheConfig {
@@ -105,7 +105,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 
 Trade-offs to understand before enabling:
 
-- **Revocation lag.** A revoked or deleted session keeps authenticating from its cache until `max_age` elapses. Set `max_age` to the staleness you can tolerate, or invalidate everything by changing the cache **version** (`CookieCacheConfig::version`, a `better_auth::session::cookie_cache::CookieCacheVersion` literal or async resolver).
+- **Revocation lag.** A revoked or deleted session keeps authenticating from its cache until `max_age` elapses. Set `max_age` to the staleness you can tolerate, or invalidate everything by changing the cache **version** (`CookieCacheConfig::version`, a `alibi::session::cookie_cache::CookieCacheVersion` literal or async resolver).
 - **Key rotation.** The session-token cookie is signed with the *current* secret only; rotating it invalidates existing cookies even when you retain old encryption keys. JWE caches can still be read with retained keys. See [Secrets](/reference/secrets/).
 - **Bypass.** `GET /get-session?disableCookieCache=true` forces a database read.
 

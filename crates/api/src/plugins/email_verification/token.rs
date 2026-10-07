@@ -1,4 +1,4 @@
-use better_auth_core::{AuthError, AuthResult};
+use alibi_core::{AuthError, AuthResult};
 use chrono::{Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};

@@ -1,18 +1,18 @@
 //! Application storage hooks observe admitted mutations and committed snapshots.
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use async_trait::async_trait;
-use better_auth::AuthSchema;
-use better_auth_core::field_policy::FieldValues;
-use better_auth_core::store::{
+use alibi::AuthSchema;
+use alibi_core::field_policy::FieldValues;
+use alibi_core::store::{
     AccountStore, DatabaseHookContext, DatabaseHooks, HookBackend, HookControl, SessionStore,
     UserStore,
 };
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::verification::{VerificationCreation, VerificationSnapshot};
-use better_auth_core::{
+use alibi_core::utils::json::JsValue;
+use alibi_core::verification::{VerificationCreation, VerificationSnapshot};
+use alibi_core::{
     AuthAccount, AuthError, AuthResult, AuthSession, AuthUser, CreateAccount, CreateSession,
     CreateUser, CreateVerification, UpdateAccount, UpdateVerification,
 };
+use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -344,7 +344,7 @@ async fn database_callback_veto_mutation_missing_and_after_error_effects<B: Back
             json!(["session-deleted", [session.token(), "198.51.100.77"]])
         ]
     );
-    let auth = better_auth::AuthBuilder::new(better_auth::AuthConfig::new(
+    let auth = alibi::AuthBuilder::new(alibi::AuthConfig::new(
         "database-callback-contract-secret-32-characters",
     ))
     .store(store)

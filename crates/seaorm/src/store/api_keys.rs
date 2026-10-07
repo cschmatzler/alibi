@@ -2,11 +2,11 @@ use super::entities::api_key::{ActiveModel, Column, Entity};
 use super::entities::api_key_start::ApiKeyStart;
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::AuthSchema;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::adapter::parse_optional_rfc3339;
+use alibi_core::store::{ApiKeyStore, ConsumeApiKeyResult};
+use alibi_core::types::{ApiKey, CreateApiKey, UpdateApiKey};
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::adapter::parse_optional_rfc3339;
-use better_auth_core::store::{ApiKeyStore, ConsumeApiKeyResult};
-use better_auth_core::types::{ApiKey, CreateApiKey, UpdateApiKey};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, Iterable, QueryFilter, QueryOrder,

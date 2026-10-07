@@ -1,6 +1,10 @@
 #[cfg(feature = "axum")]
 use crate::BetterAuth;
 #[cfg(feature = "axum")]
+#[cfg(feature = "axum")]
+use alibi_core::middleware::BodyLimitConfig;
+use alibi_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod, core_paths};
+#[cfg(feature = "axum")]
 use axum::{
     Router,
     extract::{FromRef, FromRequestParts, Request, State},
@@ -9,10 +13,6 @@ use axum::{
     response::{IntoResponse, Response},
     routing::any,
 };
-#[cfg(feature = "axum")]
-#[cfg(feature = "axum")]
-use better_auth_core::middleware::BodyLimitConfig;
-use better_auth_core::{AuthError, AuthRequest, AuthResponse, AuthSchema, HttpMethod, core_paths};
 #[cfg(feature = "axum")]
 use std::sync::Arc;
 
@@ -88,8 +88,8 @@ impl<T: AuthSchema> AxumIntegration for Arc<BetterAuth<T>> {
 /// # Example
 ///
 /// ```rust,no_run
-/// use better_auth::{AuthSchema, prelude::AuthUser};
-/// use better_auth::integrations::axum::CurrentSession;
+/// use alibi::{AuthSchema, prelude::AuthUser};
+/// use alibi::integrations::axum::CurrentSession;
 /// use axum::response::IntoResponse;
 ///
 /// async fn profile<S: AuthSchema>(session: CurrentSession<S>) -> impl IntoResponse {
@@ -114,8 +114,8 @@ pub struct CurrentSession<T: AuthSchema> {
 /// # Example
 ///
 /// ```rust,no_run
-/// use better_auth::{AuthSchema, prelude::AuthUser};
-/// use better_auth::integrations::axum::OptionalSession;
+/// use alibi::{AuthSchema, prelude::AuthUser};
+/// use alibi::integrations::axum::OptionalSession;
 /// use axum::response::IntoResponse;
 ///
 /// async fn home<S: AuthSchema>(session: OptionalSession<S>) -> impl IntoResponse {

@@ -1,12 +1,12 @@
 //! Phone database hooks must apply through every trusted store facade and remain local to one auth instance.
 
-use better_auth::plugins::phone_number::{PhoneNumberConfig, PhoneNumberPlugin};
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::{AuthAccount, AuthSession, AuthUser, CreateUser, UpdateUser};
-use better_auth_seaorm::{Database, SeaOrmStore};
+use alibi::plugins::phone_number::{PhoneNumberConfig, PhoneNumberPlugin};
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::{AuthAccount, AuthSession, AuthUser, CreateUser, UpdateUser};
+use alibi_seaorm::{Database, SeaOrmStore};
 use std::sync::Arc;
 
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[cfg(test)]
 mod tests {
@@ -18,7 +18,7 @@ mod tests {
     async fn phone_null_update_hook_is_local_to_the_auth_instance_and_all_store_facades() {
         let config = AuthConfig::new("phone-hook-fixture-secret-minimum-32-characters");
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
@@ -100,19 +100,19 @@ mod tests {
     // is server-owned. The disabled instance treats these as unregistered inputs.
     #[tokio::test]
     async fn signup_phone_fields_require_the_plugin_and_cannot_claim_verification() {
-        use better_auth::plugins::EmailPasswordPlugin;
-        use better_auth_core::{AuthRequest, HttpMethod};
+        use alibi::plugins::EmailPasswordPlugin;
+        use alibi_core::{AuthRequest, HttpMethod};
         use serde_json::{Value, json};
 
         let config = AuthConfig::new("phone-signup-fixture-secret-minimum-32-characters");
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
         let enabled = AuthBuilder::new(config.clone())
             .store_arc(Arc::<SeaOrmStore<Schema>>::clone(&store))
-            .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_username(false))
             .plugin(PhoneNumberPlugin::new(PhoneNumberConfig::default()))
             .build()
@@ -120,7 +120,7 @@ mod tests {
             .unwrap();
         let disabled = AuthBuilder::new(config)
             .store_arc(store)
-            .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_username(false))
             .build()
             .await
@@ -201,18 +201,18 @@ mod tests {
     // have a distinct stored value depending on the primitive binding type.
     #[tokio::test]
     async fn numeric_phone_signup_uses_actual_adapter_text_coercion() {
-        use better_auth::plugins::EmailPasswordPlugin;
-        use better_auth_core::store::NumericTextInput;
-        use better_auth_core::{AuthRequest, HttpMethod};
+        use alibi::plugins::EmailPasswordPlugin;
+        use alibi_core::store::NumericTextInput;
+        use alibi_core::{AuthRequest, HttpMethod};
 
         let config = AuthConfig::new("phone-numeric-fixture-secret-minimum-32-characters");
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let auth = AuthBuilder::new(config.clone())
             .store(SeaOrmStore::<Schema>::new(config, database))
-            .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().enable_username(false))
             .plugin(PhoneNumberPlugin::new(PhoneNumberConfig::default()))
             .build()

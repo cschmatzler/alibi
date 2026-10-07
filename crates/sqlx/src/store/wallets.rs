@@ -5,10 +5,10 @@ use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxUserModel};
 use crate::sql::Sql;
 use crate::value::SqlxValue;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::WalletAddressStore;
+use alibi_core::{AuthUser, CreateWalletAddress, WalletAddress};
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::WalletAddressStore;
-use better_auth_core::{AuthUser, CreateWalletAddress, WalletAddress};
 use chrono::Utc;
 use uuid::Uuid;
 

@@ -1,12 +1,12 @@
 //! Real provider factories exchange grants and map distinct remote wire profiles.
 //! The local peer records delivered requests; it does not supply mapped users.
 use super::*;
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::*;
 use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::*;
 use sha2::{Digest as _, Sha256};
 use std::collections::HashMap;
 
@@ -620,7 +620,7 @@ impl OAuthProfileMapper for PartialProfileMapper {
     async fn map_profile(
         &self,
         profile: Value,
-    ) -> Result<better_auth_core::field_policy::FieldOutput, String> {
+    ) -> Result<alibi_core::field_policy::FieldOutput, String> {
         self.0.lock().unwrap().push(profile);
         Ok([
             ("id".into(), json!("application-presentation-id")),
@@ -634,10 +634,7 @@ impl OAuthProfileMapper for PartialProfileMapper {
 pub(super) struct FailedMapper;
 #[async_trait::async_trait]
 impl OAuthProfileMapper for FailedMapper {
-    async fn map_profile(
-        &self,
-        _: Value,
-    ) -> Result<better_auth_core::field_policy::FieldOutput, String> {
+    async fn map_profile(&self, _: Value) -> Result<alibi_core::field_policy::FieldOutput, String> {
         Err("Application profile rejected".into())
     }
 }

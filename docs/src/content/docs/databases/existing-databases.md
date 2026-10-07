@@ -8,7 +8,7 @@ You do not have to let the library own your schema. If you already have `users`,
 ## Rename tables and columns
 
 ```rust nocheck
-#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
 #[auth(role = "user", table = "app_users")]
 pub struct UserModel {
     pub id: String,
@@ -38,7 +38,7 @@ Match the Rust timestamp type to each existing column:
 For example, a verification table with naive timestamps:
 
 ```rust nocheck
-#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
 #[auth(role = "verification", table = "verifications")]
 pub struct VerificationModel {
     pub id: String,
@@ -61,7 +61,7 @@ Bundled models (the generated ones) use aware timestamps; use handwritten models
 Keep existing `CHAR(n)` columns and `String` fields. SQLx models opt each fixed-width field into PostgreSQL's `bpchar` wire type:
 
 ```rust nocheck
-#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
 #[auth(role = "session", table = "sessions")]
 pub struct SessionModel {
     #[auth(column_type = "bpchar")]
@@ -89,7 +89,7 @@ PostgreSQL pads stored `CHAR(n)` values, ignores trailing spaces in equality and
 The default id is a 36-character UUID and is never shortened. When existing columns are narrower, or you use a different id scheme, give the model an id generator:
 
 ```rust nocheck
-#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
 #[auth(role = "user", table = "users", id_generator = "crate::ids::user_id")]
 pub struct UserModel { /* … */ }
 ```
@@ -110,5 +110,5 @@ The function must return a unique `String` and runs only when no explicit id is 
 1. Declare one model per role with the right `table` and column names.
 2. Make every timestamp type match its column; verify UTC.
 3. Add the unique indexes on `users.email` and `sessions.token` if they are missing ([Database](/concepts/database/#migrations)).
-4. Generate plugin tables with `better-auth-rs generate --plugins …` and review the DDL against yours.
+4. Generate plugin tables with `alibi generate --plugins …` and review the DDL against yours.
 5. Keep application migrations in charge of the schema; do not call `run_app_migrations` against production data.

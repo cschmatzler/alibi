@@ -4,24 +4,24 @@
     reason = "the actual failing public helper operations must return errors"
 )]
 
-use async_trait::async_trait;
-use better_auth::plugins::organization::{
+use alibi::plugins::organization::{
     OrganizationConfig, OrganizationMemberAddedContext, OrganizationMemberAdditionHooks,
     OrganizationPlugin,
     types::{AddOrganizationMemberRequest, RoleInput},
 };
-use better_auth::{AuthConfig, AuthError, AuthResult};
-use better_auth_core::{
+use alibi::{AuthConfig, AuthError, AuthResult};
+use alibi_core::{
     AuthContext, CreateOrganization, CreateUser,
     store::{MemberStore, OrganizationStore, UserStore},
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     Database, SeaOrmStore,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
+use async_trait::async_trait;
 use std::{collections::HashMap, sync::Arc};
 
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 type TestResult = Result<(), Box<dyn std::error::Error>>;
 
@@ -51,8 +51,7 @@ mod tests {
     async fn server_addition_keeps_database_error_distinct_from_after_api_error_and_rows()
     -> TestResult {
         let database = Database::connect("sqlite::memory:").await?;
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
-            .await?;
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database).await?;
         let config = AuthConfig::new("member-addition-native-secret-at-least-32-bytes");
         let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database.clone()));
         let user = store

@@ -1,21 +1,21 @@
 //! Application configuration with concrete session columns and real callbacks.
 use crate::session_field_model::{ApplicationSchema, application_session};
 use axum::{Json, Router, extract::Query, routing::get};
-use better_auth::__private_core::utils::json::JsValue;
-use better_auth::field_policy::{FieldConfig, FieldValues};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{
+use alibi::__private_core::utils::json::JsValue;
+use alibi::field_policy::{FieldConfig, FieldValues};
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{
     AccountManagementPlugin, AdminPlugin, EmailPasswordPlugin, EmailVerificationPlugin,
     OAuthPlugin, OpenApiPlugin, OrganizationPlugin, PasswordManagementPlugin,
     SessionManagementPlugin, UserManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::sea_orm::{
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::sea_orm::{
     ColumnTrait, ConnectionTrait, EntityTrait, QueryFilter, Statement,
 };
-use better_auth_seaorm::store::entities::user;
-use better_auth_seaorm::{DatabaseConnection, DatabaseHooks, HookControl};
+use alibi_seaorm::store::entities::user;
+use alibi_seaorm::{DatabaseConnection, DatabaseHooks, HookControl};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -70,7 +70,7 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
         _ = db
             .execute_raw(Statement::from_string(db.get_database_backend(), sql))
             .await
-            .map_err(|error| better_auth::AuthError::internal(error.to_string()))?;
+            .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
     }
     let mut router = Router::new();
     for name in [
@@ -82,7 +82,7 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
         let mut config = config.clone().base_path(&path);
         if name == "session-fields-secondary" {
             config.session.secondary_storage =
-                Some(Arc::new(better_auth_core::store::MemoryCacheAdapter::new()));
+                Some(Arc::new(alibi_core::store::MemoryCacheAdapter::new()));
         }
         let fields = &mut config.session.additional_fields;
         _ = fields.insert(
@@ -116,7 +116,7 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
             FieldConfig::new(json!({"type":"string"})).transform(|value| {
                 match value.and_then(JsValue::as_str) {
                     None => Ok(Some(JsValue::String("generated-without-default".into()))),
-                    Some("stage:throw-at-binding") => Err(better_auth::AuthError::internal(
+                    Some("stage:throw-at-binding") => Err(alibi::AuthError::internal(
                         "configured transform failed",
                     )),
                     Some("omit" | "stage:omit-at-binding") => Ok(None),
@@ -194,8 +194,8 @@ pub(crate) async fn router(config: &AuthConfig, db: DatabaseConnection) -> AuthR
             builder = builder
                 .plugin(AdminPlugin::new())
                 .plugin(OrganizationPlugin::with_config(
-                    better_auth::plugins::OrganizationConfig {
-                        teams: better_auth::plugins::organization::TeamsConfig {
+                    alibi::plugins::OrganizationConfig {
+                        teams: alibi::plugins::organization::TeamsConfig {
                             enabled: true,
                             ..Default::default()
                         },

@@ -11,25 +11,25 @@ use axum::{
     routing::{get, post},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::email_otp::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::email_otp::{
     EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, SendEmailOtp,
 };
-use better_auth::plugins::magic_link::{
+use alibi::plugins::magic_link::{
     MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenGenerator, SendMagicLink,
 };
-use better_auth::plugins::oauth::OAuthPlugin;
-use better_auth::plugins::one_time_token::{
+use alibi::plugins::oauth::OAuthPlugin;
+use alibi::plugins::one_time_token::{
     GenerateOneTimeToken, OneTimeTokenConfig, OneTimeTokenPlugin, OneTimeTokenSession,
 };
-use better_auth::plugins::password_management::{PasswordManagementConfig, SendResetPassword};
-use better_auth::plugins::two_factor::{SendTwoFactorOtp, TwoFactorPlugin};
-use better_auth::plugins::{
+use alibi::plugins::password_management::{PasswordManagementConfig, SendResetPassword};
+use alibi::plugins::two_factor::{SendTwoFactorOtp, TwoFactorPlugin};
+use alibi::plugins::{
     EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::{
     AuthRequest, UpdateVerification,
     store::{CacheAdapter, transaction},
     verification::{
@@ -38,7 +38,7 @@ use better_auth_core::{
     },
     wire::{AccountView, UserView, VerificationView},
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ActiveModelTrait, Set},
 };
@@ -66,7 +66,7 @@ const PROFILES: [&str; 11] = [
 fn hash(value: &str) -> String {
     URL_SAFE_NO_PAD.encode(Sha256::digest(value.as_bytes()))
 }
-fn error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
+fn error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 fn decoded(raw: &str) -> Value {
@@ -163,11 +163,11 @@ impl Application {
         self.requests.lock().unwrap().clear();
     }
     fn current_frame(&self) -> Option<Arc<Mutex<PublicationFrame>>> {
-        let context = better_auth_core::hooks::current_request_hook_context()?;
+        let context = alibi_core::hooks::current_request_hook_context()?;
         let path = context.url?.path().to_owned();
         let method = match context.method {
-            better_auth_core::HttpMethod::Post => "POST",
-            better_auth_core::HttpMethod::Get => "GET",
+            alibi_core::HttpMethod::Post => "POST",
+            alibi_core::HttpMethod::Get => "GET",
             _ => return None,
         };
         let cookie = json!(context.headers.get("cookie"));
@@ -472,7 +472,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         data: &EmailOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         if let Some(pending) = self.pending_publication() {
             pending.lock().unwrap()["delivery"] =
@@ -489,7 +489,7 @@ impl SendMagicLink for Application {
     async fn send(
         &self,
         data: &MagicLinkDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         if let Some(pending) = self.pending_publication() {
             pending.lock().unwrap()["delivery"] = json!(data);
@@ -805,9 +805,9 @@ pub(crate) async fn router(
                         }
                         "seed" => {
                             let data = creation(&body)?;
-                            let seeded = better_auth_seaorm::store::entities::verification::ActiveModel {
+                            let seeded = alibi_seaorm::store::entities::verification::ActiveModel {
                                 id: Set(data.id.unwrap_or_else(|| {
-                                    better_auth_core::utils::id::generate_id(32)
+                                    alibi_core::utils::id::generate_id(32)
                                 })),
                                 identifier: Set(data.identifier),
                                 value: Set(data.value),

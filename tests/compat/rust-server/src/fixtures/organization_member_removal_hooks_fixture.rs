@@ -7,7 +7,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
@@ -17,11 +17,11 @@ use better_auth::{
     },
     plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin},
 };
-use better_auth_core::{
+use alibi_core::{
     UpdateUser,
     store::{MemberStore, UserStore},
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
@@ -266,7 +266,7 @@ pub(crate) async fn router(
             } else {
                 Some(hooks.clone())
             },
-            membership_limit: Some(better_auth::plugins::organization::MembershipLimit::Fixed(
+            membership_limit: Some(alibi::plugins::organization::MembershipLimit::Fixed(
                 if name == "org-member-removal-hooks-page-one" {
                     1.0
                 } else {

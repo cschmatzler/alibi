@@ -1,6 +1,6 @@
 //! Tenant discovery, invitation visibility and durable active-membership state.
 use super::*;
-use better_auth::plugins::organization::{
+use alibi::plugins::organization::{
     DynamicAccessControlConfig, OrganizationConfig, OrganizationPlugin, TeamsConfig,
     default_organization_statements,
 };
@@ -183,7 +183,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
             auth.store()
                 .update_user(
                     user,
-                    better_auth_core::UpdateUser {
+                    alibi_core::UpdateUser {
                         email_verified: Some(true),
                         ..Default::default()
                     },
@@ -896,7 +896,7 @@ async fn organization_discovery_invitations_and_active_membership_are_owner_scop
         .await?;
     let updated_at =
         chrono::DateTime::parse_from_rfc3339("2024-02-03T04:05:06Z")?.with_timezone(&chrono::Utc);
-    let team_input = || better_auth_core::CreateTeam {
+    let team_input = || alibi_core::CreateTeam {
         name: "Server team".into(),
         organization_id: disposable.clone(),
         updated_at: Some(updated_at),

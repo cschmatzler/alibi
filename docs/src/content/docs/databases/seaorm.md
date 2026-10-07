@@ -7,10 +7,10 @@ description: "Use SeaORM entities for users, sessions, accounts and plugin data.
 
 ## Dependencies
 
-Enable the `seaorm` feature. SeaORM is re-exported as `better_auth::seaorm::sea_orm`, so you do not need a separate `sea-orm` dependency for the generated code:
+Enable the `seaorm` feature. SeaORM is re-exported as `alibi::seaorm::sea_orm`, so you do not need a separate `sea-orm` dependency for the generated code:
 
 ```toml title="Cargo.toml"
-better-auth = { package = "alibi", version = "0.1.0", default-features = false, features = ["axum", "seaorm", "rustls"] }
+alibi = { version = "0.1.1", default-features = false, features = ["axum", "seaorm", "rustls"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -22,8 +22,8 @@ If your application also depends on `sea-orm` directly, use the same `2.x` versi
 ## Generate entities
 
 ```bash
-better-auth-rs generate --backend seaorm -o src/auth_schema.rs
-better-auth-rs generate --backend seaorm --plugins organization,two-factor -o src/auth_schema.rs
+alibi generate --backend seaorm -o src/auth_schema.rs
+alibi generate --backend seaorm --plugins organization,two-factor -o src/auth_schema.rs
 ```
 
 The file defines the four entities, an `AppAuthSchema`, and `run_app_migrations(&DatabaseConnection)`:
@@ -54,9 +54,9 @@ mod user {
 
 ```rust seaorm
 use crate::auth_schema::{AppAuthSchema, run_app_migrations};
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::seaorm::{Database, SeaOrmStore};
-use better_auth::{AuthConfig, BetterAuth};
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::seaorm::{Database, SeaOrmStore};
+use alibi::{AuthConfig, BetterAuth};
 
 async fn build_auth(
     secret: &str,
@@ -79,10 +79,10 @@ async fn build_auth(
 
 ## Use your own entities
 
-Derive `DeriveEntityModel` and `better_auth::seaorm::AuthEntity` on your model, then select it in the schema:
+Derive `DeriveEntityModel` and `alibi::seaorm::AuthEntity` on your model, then select it in the schema:
 
 ```rust nocheck
-#[derive(Clone, Debug, serde::Serialize, DeriveEntityModel, better_auth::seaorm::AuthEntity)]
+#[derive(Clone, Debug, serde::Serialize, DeriveEntityModel, alibi::seaorm::AuthEntity)]
 #[auth(role = "user", id_generator = "crate::ids::new_user_id")]
 #[sea_orm(table_name = "app_users")]
 pub struct Model {
@@ -109,10 +109,10 @@ The hook trait is shared with SQLx; use `SeaOrmBackend`:
 ```rust seaorm
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::prelude::CreateUser;
-use better_auth::seaorm::{SeaOrmBackend, SeaOrmStore};
-use better_auth::store::{DatabaseHookContext, DatabaseHooks, HookControl};
-use better_auth::AuthResult;
+use alibi::prelude::CreateUser;
+use alibi::seaorm::{SeaOrmBackend, SeaOrmStore};
+use alibi::store::{DatabaseHookContext, DatabaseHooks, HookControl};
+use alibi::AuthResult;
 
 struct DefaultName;
 
@@ -137,7 +137,7 @@ See [Hooks](/concepts/hooks/).
 
 ## Migrations
 
-`run_app_migrations` creates the generated entities with `Schema::create_table_from_entity` — convenient for new databases and tests. In production, keep migrations in your `sea-orm-migration` crate. The store can also install the library's bundled schema (all plugin tables with keys and indexes) through `SchemaMigrator::migrate`; see [Database](/concepts/database/#migrations). Rate-limit storage in the database has its own entity and migrator: `better_auth::seaorm::SeaOrmRateLimitStorage` ([Rate limiting](/concepts/rate-limit/#share-quotas)).
+`run_app_migrations` creates the generated entities with `Schema::create_table_from_entity` — convenient for new databases and tests. In production, keep migrations in your `sea-orm-migration` crate. The store can also install the library's bundled schema (all plugin tables with keys and indexes) through `SchemaMigrator::migrate`; see [Database](/concepts/database/#migrations). Rate-limit storage in the database has its own entity and migrator: `alibi::seaorm::SeaOrmRateLimitStorage` ([Rate limiting](/concepts/rate-limit/#share-quotas)).
 
 ## Frontend
 

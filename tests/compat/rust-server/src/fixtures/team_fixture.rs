@@ -7,25 +7,25 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::organization::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::organization::{
     DynamicAccessControlConfig, OrganizationConfig, OrganizationLimitResolver, RolePermissions,
     TeamsConfig, default_organization_statements,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, EmailPasswordPlugin,
     EmailVerificationPlugin, OrganizationPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::AuthUser;
-use better_auth_core::types::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::AuthUser;
+use alibi_core::types::{
     CreateMember, CreateOrganizationRole, CreateTeam, CreateUser, OrganizationPermissions,
 };
-use better_auth_seaorm::sea_orm::{
+use alibi_seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, Set,
 };
-use better_auth_seaorm::store::entities::{
+use alibi_seaorm::store::entities::{
     invitation, member, organization, organization_role, team, team_member,
 };
 use chrono::{DateTime, SecondsFormat, Utc};
@@ -83,7 +83,7 @@ struct NumericLimits {
 impl OrganizationLimitResolver for NumericLimits {
     async fn maximum_teams(
         &self,
-        context: &better_auth::plugins::organization::extensions::TeamLimitContext,
+        context: &alibi::plugins::organization::extensions::TeamLimitContext,
     ) -> AuthResult<Option<f64>> {
         let organization = organization::Entity::find_by_id(&context.organization_id)
             .one(&self.database)
@@ -103,7 +103,7 @@ impl OrganizationLimitResolver for NumericLimits {
         {
             for i in 0..2 {
                 team::ActiveModel {
-                    id: Set(better_auth_core::utils::id::generate_id(32)),
+                    id: Set(alibi_core::utils::id::generate_id(32)),
                     organization_id: Set(context.organization_id.clone()),
                     name: Set(format!("Callback team {i}")),
                     member_count: Set(0),
@@ -119,7 +119,7 @@ impl OrganizationLimitResolver for NumericLimits {
     }
     async fn maximum_team_members(
         &self,
-        context: &better_auth::plugins::organization::extensions::TeamLimitContext,
+        context: &alibi::plugins::organization::extensions::TeamLimitContext,
     ) -> AuthResult<Option<f64>> {
         numeric_event(
             &context.organization_id,
@@ -140,7 +140,7 @@ impl OrganizationLimitResolver for NumericLimits {
         if organization.name == "Callback writes roles" {
             for i in 0..2 {
                 organization_role::ActiveModel {
-                    id: Set(better_auth_core::utils::id::generate_id(32)),
+                    id: Set(alibi_core::utils::id::generate_id(32)),
                     organization_id: Set(organization_id.to_owned()),
                     role: Set(format!("callback{i}")),
                     permission: Set("{}".into()),
@@ -158,11 +158,11 @@ impl OrganizationLimitResolver for NumericLimits {
 #[derive(Debug)]
 struct NumericHooks(DatabaseConnection);
 #[async_trait::async_trait]
-impl better_auth::plugins::organization::OrganizationTeamHooks for NumericHooks {
+impl alibi::plugins::organization::OrganizationTeamHooks for NumericHooks {
     async fn before_create(
         &self,
         _: &mut CreateTeam,
-        context: &better_auth::plugins::organization::extensions::TeamHookContext,
+        context: &alibi::plugins::organization::extensions::TeamHookContext,
     ) -> AuthResult<()> {
         numeric_event(
             &context.organization.id,
@@ -171,12 +171,12 @@ impl better_auth::plugins::organization::OrganizationTeamHooks for NumericHooks 
     }
     async fn before_add_member(
         &self,
-        team: &better_auth_core::types::Team,
-        user: &better_auth_core::wire::UserView,
-        context: &better_auth::plugins::organization::extensions::TeamHookContext,
+        team: &alibi_core::types::Team,
+        user: &alibi_core::wire::UserView,
+        context: &alibi::plugins::organization::extensions::TeamHookContext,
     ) -> AuthResult<()> {
         if context.organization.name == "Legacy seats" {
-            use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+            use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
             self.0
                 .execute_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
@@ -193,10 +193,10 @@ impl better_auth::plugins::organization::OrganizationTeamHooks for NumericHooks 
     }
     async fn after_add_member(
         &self,
-        _: &better_auth_core::types::TeamMember,
-        team: &better_auth_core::types::Team,
-        user: &better_auth_core::wire::UserView,
-        context: &better_auth::plugins::organization::extensions::TeamHookContext,
+        _: &alibi_core::types::TeamMember,
+        team: &alibi_core::types::Team,
+        user: &alibi_core::wire::UserView,
+        context: &alibi::plugins::organization::extensions::TeamHookContext,
     ) -> AuthResult<()> {
         numeric_event(
             &context.organization.id,
@@ -308,7 +308,7 @@ fn delegated_roles() -> std::collections::HashMap<String, RolePermissions> {
 }
 
 fn api_key_plugin() -> ApiKeyPlugin {
-    use better_auth::plugins::api_key::{ApiKeyConfig, ApiKeyReferences};
+    use alibi::plugins::api_key::{ApiKeyConfig, ApiKeyReferences};
     let plugin = ApiKeyPlugin::builder()
         .enable_metadata(true)
         .build()
@@ -345,7 +345,7 @@ fn api_key_plugin() -> ApiKeyPlugin {
 impl OrganizationLimitResolver for RequestTeamLimits {
     async fn maximum_teams(
         &self,
-        context: &better_auth::plugins::organization::extensions::TeamLimitContext,
+        context: &alibi::plugins::organization::extensions::TeamLimitContext,
     ) -> AuthResult<Option<f64>> {
         let owner = context
             .user
@@ -361,7 +361,7 @@ impl OrganizationLimitResolver for RequestTeamLimits {
 
     async fn maximum_team_members(
         &self,
-        context: &better_auth::plugins::organization::extensions::TeamLimitContext,
+        context: &alibi::plugins::organization::extensions::TeamLimitContext,
     ) -> AuthResult<Option<f64>> {
         Ok(Some(f64::from(context.user.as_ref().is_some_and(|user| {
             user.name.as_deref() == Some("limit-owner")
@@ -372,7 +372,7 @@ impl OrganizationLimitResolver for RequestTeamLimits {
 pub(crate) async fn profiles(
     base: &AuthConfig,
     database: &DatabaseConnection,
-    verification_sender: Arc<dyn better_auth::plugins::email_verification::SendVerificationEmail>,
+    verification_sender: Arc<dyn alibi::plugins::email_verification::SendVerificationEmail>,
 ) -> AuthResult<Vec<TeamProfile>> {
     let mut profiles = Vec::new();
     for name in [
@@ -425,7 +425,7 @@ pub(crate) async fn profiles(
                 maximum_members_per_team: if numeric { numeric_value(name) } else { None },
                 hooks: numeric.then(|| {
                     Arc::new(NumericHooks(database.clone()))
-                        as Arc<dyn better_auth::plugins::organization::OrganizationTeamHooks>
+                        as Arc<dyn alibi::plugins::organization::OrganizationTeamHooks>
                 }),
                 allow_removing_all_teams: name == "org-teams-removable",
                 limit_resolver: numeric_resolver.clone().or_else(|| {
@@ -694,17 +694,17 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                             // A controlled legacy-row fixture operation; never return a
                             // connection with altered enforcement after failure/cancellation.
                             connection.close_on_drop();
-                            let enabled: i64 = better_auth_seaorm::sea_orm::sqlx::query_scalar(
+                            let enabled: i64 = alibi_seaorm::sea_orm::sqlx::query_scalar(
                                 "PRAGMA foreign_keys",
                             ).fetch_one(&mut *connection).await
                                 .map_err(|error| AuthError::internal(error.to_string()))?;
-                            let _ = better_auth_seaorm::sea_orm::sqlx::query("PRAGMA foreign_keys=OFF")
+                            let _ = alibi_seaorm::sea_orm::sqlx::query("PRAGMA foreign_keys=OFF")
                                 .execute(&mut *connection).await
                                 .map_err(|error| AuthError::internal(error.to_string()))?;
-                            let result = better_auth_seaorm::sea_orm::sqlx::query(
+                            let result = alibi_seaorm::sea_orm::sqlx::query(
                                 "DELETE FROM organization WHERE id=?",
                             ).bind(&organization_id).execute(&mut *connection).await;
-                            let _ = better_auth_seaorm::sea_orm::sqlx::query(
+                            let _ = alibi_seaorm::sea_orm::sqlx::query(
                                 if enabled == 0 { "PRAGMA foreign_keys=OFF" } else { "PRAGMA foreign_keys=ON" },
                             ).execute(&mut *connection).await
                                 .map_err(|error| AuthError::internal(error.to_string()))?;
@@ -805,7 +805,7 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                     for parent in &teams {
                         team_members.extend(team_member::Entity::find().filter(team_member::Column::TeamId.eq(&parent.id)).order_by_asc(team_member::Column::CreatedAt).all(&database).await?);
                     }
-                    Ok::<_, better_auth_seaorm::sea_orm::DbErr>(json!({
+                    Ok::<_, alibi_seaorm::sea_orm::DbErr>(json!({
                         "teams":teams.into_iter().map(|team|json!({"id":team.id,"name":team.name,"organizationId":team.organization_id,"createdAt":timestamp(team.created_at),"updatedAt":team.updated_at.map(timestamp),"memberCount":team.member_count})).collect::<Vec<_>>(),
                         "teamMembers":team_members.into_iter().map(|member|json!({"id":member.id,"teamId":member.team_id,"userId":member.user_id,"createdAt":timestamp(member.created_at)})).collect::<Vec<_>>(),
                         "roles":roles.into_iter().map(|role|json!({"id":role.id,"organizationId":role.organization_id,"role":role.role,"permission":role.permission,"createdAt":timestamp(role.created_at),"updatedAt":role.updated_at.map(timestamp)})).collect::<Vec<_>>(),

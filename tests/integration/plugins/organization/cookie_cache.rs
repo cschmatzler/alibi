@@ -1,18 +1,18 @@
 //! Organization selection must be readable from the newly issued cache alone.
-use better_auth::plugins::organization::{OrganizationConfig, TeamsConfig};
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin};
-use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-use better_auth_core::endpoint::{EndpointOptions, ServerEndpoint};
-use better_auth_core::{AuthRequest, CookieCacheConfig, CookieCacheStrategy, HttpMethod};
-use better_auth_seaorm::{Database, SeaOrmStore};
+use alibi::plugins::organization::{OrganizationConfig, TeamsConfig};
+use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin};
+use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi_core::endpoint::{EndpointOptions, ServerEndpoint};
+use alibi_core::{AuthRequest, CookieCacheConfig, CookieCacheStrategy, HttpMethod};
+use alibi_seaorm::{Database, SeaOrmStore};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 async fn build(config: AuthConfig) -> BetterAuth<Schema> {
     let database = Database::connect("sqlite::memory:").await.unwrap();
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     AuthBuilder::new(config.clone())

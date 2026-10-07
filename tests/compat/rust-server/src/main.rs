@@ -78,13 +78,13 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::api_key::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::api_key::{
     ApiKeyConfig, ApiKeyReferences, ApiKeyVerificationError, CreateKeyRequest, UpdateKeyRequest,
     VerifyApiKey,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
     EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin, PasskeyPlugin,
     PasswordManagementPlugin, SendTwoFactorOtp, SessionManagementPlugin, TwoFactorPlugin,
@@ -97,13 +97,13 @@ use better_auth::plugins::{
     password_management::SendResetPassword,
     user_management::SendChangeEmailConfirmation,
 };
-use better_auth::prelude::{
+use alibi::prelude::{
     AuthAccount, AuthUser, CreateAccount, CreateVerification, UpdateAccount,
 };
-use better_auth::wire::UserView;
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_seaorm::sea_orm::{DatabaseConnection, DbErr, EntityTrait};
-use better_auth_seaorm::store::entities::{
+use alibi::wire::UserView;
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_seaorm::sea_orm::{DatabaseConnection, DbErr, EntityTrait};
+use alibi_seaorm::store::entities::{
     account, api_key, device_code, invitation, member, organization, passkey, session, two_factor,
     user, verification, wallet_address,
 };
@@ -132,10 +132,10 @@ async fn password_fixture_operation(
 ) -> AuthResult<serde_json::Value> {
     match body {
         PasswordFixtureRequest::Hash { password } => Ok(serde_json::json!({
-            "hash": better_auth::hash_password(None, &password).await?,
+            "hash": alibi::hash_password(None, &password).await?,
         })),
         PasswordFixtureRequest::Verify { password, hash } => {
-            let valid = match better_auth::verify_password(None, &password, &hash).await {
+            let valid = match alibi::verify_password(None, &password, &hash).await {
                 Ok(()) => true,
                 Err(AuthError::InvalidCredentials) => false,
                 Err(error) => return Err(error),
@@ -280,7 +280,7 @@ fn default_github_profile() -> GitHubProfile {
 }
 
 async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr> {
-    better_auth_seaorm::store::entities::jwk::Entity::delete_many()
+    alibi_seaorm::store::entities::jwk::Entity::delete_many()
         .exec(database)
         .await?;
     let _ = wallet_address::Entity::delete_many().exec(database).await?;
@@ -289,13 +289,13 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     api_key::Entity::delete_many().exec(database).await?;
     two_factor::Entity::delete_many().exec(database).await?;
     // Dynamic roles are organization-scoped; the TypeScript reset clears them too.
-    better_auth_seaorm::store::entities::organization_role::Entity::delete_many()
+    alibi_seaorm::store::entities::organization_role::Entity::delete_many()
         .exec(database)
         .await?;
-    better_auth_seaorm::store::entities::team_member::Entity::delete_many()
+    alibi_seaorm::store::entities::team_member::Entity::delete_many()
         .exec(database)
         .await?;
-    better_auth_seaorm::store::entities::team::Entity::delete_many()
+    alibi_seaorm::store::entities::team::Entity::delete_many()
         .exec(database)
         .await?;
     invitation::Entity::delete_many().exec(database).await?;
@@ -308,7 +308,7 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
     // Fixture-owned table: the application keys of the custom-adapter JWT
     // keyring profiles.
     {
-        use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+        use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
         for table in ["fixtureJwtKeyring"] {
             let _ = database
                 .execute_raw(Statement::from_string(
@@ -327,7 +327,7 @@ async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr
 async fn database_residue(
     database: &DatabaseConnection,
 ) -> Result<serde_json::Map<String, serde_json::Value>, DbErr> {
-    use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+    use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
     let tables = database
         .query_all_raw(Statement::from_string(
             DbBackend::Sqlite,
@@ -363,9 +363,9 @@ impl SendResetPassword for CompatResetSender {
         user: &serde_json::Value,
         url: &str,
         token: &str,
-    ) -> better_auth::AuthResult<()> {
+    ) -> alibi::AuthResult<()> {
         if *self.mode.lock().await == ResetPasswordMode::Fail {
-            return Err(better_auth::AuthError::internal(
+            return Err(alibi::AuthError::internal(
                 "compat reset sender failure".to_string(),
             ));
         }
@@ -390,7 +390,7 @@ struct CompatVerificationSender {
 
 #[async_trait::async_trait]
 impl SendVerificationEmail for CompatVerificationSender {
-    async fn send(&self, user: &UserView, url: &str, token: &str) -> better_auth::AuthResult<()> {
+    async fn send(&self, user: &UserView, url: &str, token: &str) -> alibi::AuthResult<()> {
         if let Some(email) = user.email() {
             self.outbox.lock().await.insert(
                 email.to_string(),
@@ -411,7 +411,7 @@ struct CompatTwoFactorOtpSender {
 
 #[async_trait::async_trait]
 impl SendTwoFactorOtp for CompatTwoFactorOtpSender {
-    async fn send(&self, user: &UserView, otp: &str) -> better_auth::AuthResult<()> {
+    async fn send(&self, user: &UserView, otp: &str) -> alibi::AuthResult<()> {
         if let Some(email) = user.email() {
             self.outbox
                 .lock()
@@ -432,11 +432,11 @@ struct CompatChangeEmailSender {
 impl SendChangeEmailConfirmation for CompatChangeEmailSender {
     async fn send(
         &self,
-        user: &better_auth::plugins::user_management::UserInfo,
+        user: &alibi::plugins::user_management::UserInfo,
         new_email: &str,
         url: &str,
         token: &str,
-    ) -> better_auth::AuthResult<()> {
+    ) -> alibi::AuthResult<()> {
         if user.email_verified {
             if let Some(email) = &user.email {
                 self.outbox.lock().await.insert(
@@ -747,7 +747,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // The pinned reference awaits lifecycle mail and logs delivery errors.
     // Default native propagation is independently owned by HTTP integration tests.
     let config = AuthConfig::new(secret)
-        .awaited_notification_errors(better_auth::AwaitedNotificationErrorPolicy::LogAndContinue)
+        .awaited_notification_errors(alibi::AwaitedNotificationErrorPolicy::LogAndContinue)
         .base_url(format!("http://localhost:{port}"));
 
     let (database, invitation_status_observer) = sqlite_fixture::connect().await?;
@@ -1728,7 +1728,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         .store()
                         .update_user(
                             &user.id(),
-                            better_auth::prelude::UpdateUser {
+                            alibi::prelude::UpdateUser {
                                 role: Some("admin".to_string()),
                                 ..Default::default()
                             },
@@ -1900,7 +1900,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                         account.provider_id() == provider_id && account.account_id() == account_id
                     );
                     let result = if let Some(existing) = existing {
-                        auth.store().update_account(&existing.id(), better_auth_core::UpdateAccount {
+                        auth.store().update_account(&existing.id(), alibi_core::UpdateAccount {
                             provider_token_nulls: [body.access_token.is_none(), body.refresh_token.is_none(), body.id_token.is_none()],
                             access_token: body.access_token,
                             refresh_token: body.refresh_token,
@@ -1936,7 +1936,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                     };
 
                     if let Some((created, updated)) = timestamps {
-                        use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+                        use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
                         let result: AuthResult<serde_json::Value> = async {
                             db_for_oauth_seed.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,
                                 "UPDATE accounts SET created_at=?,updated_at=? WHERE id=?", [created.into(),updated.into(),account.id().into()])).await.map_err(|error| AuthError::Internal(error.to_string()))?;

@@ -1,12 +1,12 @@
 use super::{OrganizationPlugin, handlers, hooks, types};
 use crate::plugins::authentication_helpers::JsonField;
 use crate::plugins::endpoint::{definition, error_response, validate_fields, validation};
-use better_auth_core::endpoint::{
+use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
-use better_auth_core::session::SessionRequest;
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
+use alibi_core::session::SessionRequest;
+use alibi_core::utils::json::JsValue;
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, HttpMethod};
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     let mut endpoints = vec![
@@ -36,7 +36,7 @@ pub(super) fn definitions() -> Vec<EndpointDefinition> {
 
 pub(super) fn validate(
     call: &EndpointCall,
-    organization_fields: &better_auth_core::field_policy::SessionFields,
+    organization_fields: &alibi_core::field_policy::SessionFields,
 ) -> AuthResult<EndpointInput> {
     let mut body = call.body().cloned();
     match call.operation_id() {
@@ -159,9 +159,8 @@ impl OrganizationPlugin {
             >,
         >,
     > {
-        let mut value = better_auth_core::utils::json::parse_value(
-            &better_auth_core::utils::json::to_string(body)?,
-        )?;
+        let mut value =
+            alibi_core::utils::json::parse_value(&alibi_core::utils::json::to_string(body)?)?;
         if let Some(user_id) = user_id
             && let JsValue::Object(body) = &mut value
         {

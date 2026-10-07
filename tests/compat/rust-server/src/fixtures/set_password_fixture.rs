@@ -7,16 +7,16 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::password_management::set_password;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::password_management::set_password;
+use alibi::plugins::{
     EmailPasswordConfig, EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::utils::password::{PasswordHasher, ScryptHasher};
-use better_auth_core::{AuthRequest, CookieCacheConfig, HttpMethod};
-use better_auth_seaorm::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::utils::password::{PasswordHasher, ScryptHasher};
+use alibi_core::{AuthRequest, CookieCacheConfig, HttpMethod};
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{
         ActiveModelTrait, ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, IntoActiveModel,
@@ -99,7 +99,7 @@ impl PasswordHasher for Application {
         ScryptHasher.verify(hash, password).await
     }
 }
-fn database_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
+fn database_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 fn failure(error: AuthError) -> axum::response::Response {
@@ -170,7 +170,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
    let users=user::Entity::find().order_by_asc(user::Column::CreatedAt).all(&db).await.map_err(database_error)?;
    let accounts=account::Entity::find().order_by_asc(account::Column::CreatedAt).all(&db).await.map_err(database_error)?;
    let sessions=session::Entity::find().order_by_asc(session::Column::CreatedAt).all(&db).await.map_err(database_error)?;
-   let accounts=accounts.iter().map(|row|{let mut value=serde_json::to_value(better_auth_core::wire::AccountView::from(row)).unwrap();value["password"]=json!(row.password);value}).collect::<Vec<_>>();
+   let accounts=accounts.iter().map(|row|{let mut value=serde_json::to_value(alibi_core::wire::AccountView::from(row)).unwrap();value["password"]=json!(row.password);value}).collect::<Vec<_>>();
    Ok(json!({"users":users.iter().map(|row|auth.context().user_view(row)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions.iter().map(|row|auth.context().session_view(row)).collect::<Vec<_>>(),"events":*app.events.lock().unwrap()}))
   }.await;match result{Ok(value)=>Json(value).into_response(),Err(error)=>failure(error)}
  }}));

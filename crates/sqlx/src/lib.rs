@@ -4,7 +4,7 @@
 //! SQLite or PostgreSQL pool. Application-owned models derive
 //! `sqlx::FromRow` and [`AuthEntity`].
 
-extern crate self as better_auth_sqlx;
+extern crate self as alibi_sqlx;
 
 mod error;
 
@@ -32,8 +32,8 @@ pub mod store;
 pub mod value;
 
 #[doc(hidden)]
-pub use better_auth_core as __private_core;
-pub use better_auth_sqlx_macros::{AuthEntity, SqlxModel};
+pub use alibi_core as __private_core;
+pub use alibi_sqlx_macros::{AuthEntity, SqlxModel};
 pub use hooks::{
     DatabaseHooks, HookControl, SqlxBackend, SqlxHookContext, current_request_hook_context,
 };

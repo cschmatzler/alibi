@@ -5,17 +5,17 @@ use axum::{
     http::HeaderMap,
     routing::{get, post},
 };
-use better_auth::__private_core::{AuthRequest, HttpMethod};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::api_key::{
+use alibi::__private_core::{AuthRequest, HttpMethod};
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::api_key::{
     ApiKeyCallbackContext, ApiKeyConfig, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyGetter,
     ApiKeyValidator, ApiKeyVerificationError, CreateKeyRequest, KeyExpirationConfig,
     RateLimitDefaults, UpdateKeyRequest, VerifyApiKey,
 };
-use better_auth::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_seaorm::sea_orm::{
+use alibi::plugins::{ApiKeyPlugin, EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_seaorm::sea_orm::{
     ConnectionTrait, DatabaseConnection, DbBackend, QueryResult, Statement,
 };
 use serde_json::{Value, json};
@@ -74,7 +74,7 @@ impl Application {
                         .as_deref()
                         .filter(|body| !body.is_empty())
                         .and_then(|body| {
-                            better_auth::__private_core::utils::json::from_slice::<Value>(body).ok()
+                            alibi::__private_core::utils::json::from_slice::<Value>(body).ok()
                         })
                 })
             });
@@ -101,7 +101,7 @@ impl ApiKeyGenerator for Application {
                 "Infinity".to_owned()
             }
         } else {
-            better_auth::__private_core::utils::json::number_to_string(
+            alibi::__private_core::utils::json::number_to_string(
                 &serde_json::Number::from_f64(input.length).unwrap(),
             )?
         };
@@ -218,7 +218,7 @@ fn caught(error: AuthError) -> Value {
 }
 #[derive(Clone)]
 struct Fixture {
-    auth: Arc<better_auth::BetterAuth<TestSchema>>,
+    auth: Arc<alibi::BetterAuth<TestSchema>>,
     plugin: ApiKeyPlugin,
     database: DatabaseConnection,
     application: Application,
@@ -305,7 +305,7 @@ async fn verify(
         permissions: body.get("permissions"),
     };
     let mut request = AuthRequest::new(HttpMethod::Post, "/__test/api-key-options/verify");
-    request.body = Some(better_auth::__private_core::utils::json::to_vec(&input).unwrap());
+    request.body = Some(alibi::__private_core::utils::json::to_vec(&input).unwrap());
     for (name, value) in headers {
         if let Some(name) = name {
             request

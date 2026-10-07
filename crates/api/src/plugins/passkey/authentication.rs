@@ -1,8 +1,6 @@
 //! Trusted application policy after successful cryptographic authentication.
+use alibi_core::{AuthConfig, AuthRequest, AuthResult, ContextExtensions, utils::json::JsValue};
 use async_trait::async_trait;
-use better_auth_core::{
-    AuthConfig, AuthRequest, AuthResult, ContextExtensions, utils::json::JsValue,
-};
 use std::sync::Arc;
 /// Verification authority: Core verifies supported typed keys; the bounded raw
 /// verifier verifies original COSE facts without manufacturing a Core result.

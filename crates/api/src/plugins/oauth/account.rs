@@ -10,10 +10,8 @@ use super::state::AccountCookiePayload;
 use super::types::{
     AccessTokenResponse, AccountInfoAccount, AccountInfoResponse, RefreshTokenResponse,
 };
-use better_auth_core::entity::AuthAccount;
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateAccount,
-};
+use alibi_core::entity::AuthAccount;
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, UpdateAccount};
 use chrono::Utc;
 
 #[derive(Debug, Clone)]
@@ -79,7 +77,7 @@ impl OAuthAccountSelection {
         &self,
         req: &AuthRequest,
         user_id: &str,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AccountCookiePayload> {
         let account = match self {
             Self::Id(account_id) => ctx
@@ -118,7 +116,7 @@ const fn refresh_token_failure() -> AuthError {
 fn invalid_selection(location: &str, message: &str) -> AuthResult<AuthResponse> {
     Ok(AuthResponse::json(
         400,
-        &better_auth_core::ErrorCodeMessageResponse {
+        &alibi_core::ErrorCodeMessageResponse {
             code: Some("VALIDATION_ERROR".into()),
             message: format!("[{location}] {message}"),
         },
@@ -140,7 +138,7 @@ fn scopes(account: &AccountCookiePayload) -> Vec<String> {
 async fn persist_tokens(
     account: &mut AccountCookiePayload,
     tokens: &OAuthTokenSet,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     provider: &super::providers::OAuthProvider,
 ) -> AuthResult<()> {
     let raw_policy = provider.authorization.as_ref();
@@ -219,7 +217,7 @@ async fn valid_access_token(
     account: &mut AccountCookiePayload,
     config: &OAuthConfig,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(AccessTokenResponse, bool)> {
     let provider = config.providers.get(&account.provider_id).ok_or_else(|| {
         AuthError::bad_request(format!(
@@ -292,7 +290,7 @@ fn token_response(
     account: &AccountCookiePayload,
     set_cookie: bool,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let mut response = AuthResponse::json(200, value)?;
     if set_cookie && ctx.config.account.store_account_cookie {
@@ -309,7 +307,7 @@ fn token_response(
 async fn handle_get_access_token_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     server_user: Option<&str>,
 ) -> AuthResult<AuthResponse> {
     let selection = match OAuthAccountSelection::from_body(req) {
@@ -345,7 +343,7 @@ async fn handle_get_access_token_for_user(
 async fn handle_refresh_token_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     server_user: Option<&str>,
 ) -> AuthResult<AuthResponse> {
     let selection = match OAuthAccountSelection::from_body(req) {
@@ -475,7 +473,7 @@ async fn handle_refresh_token_for_user(
 async fn handle_account_info_for_user(
     config: &OAuthConfig,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     server_user: Option<&str>,
 ) -> AuthResult<AuthResponse> {
     let selection = match OAuthAccountSelection::from_query(req) {
@@ -551,7 +549,7 @@ async fn handle_account_info_for_user(
 pub(super) async fn handle_get_access_token(
     config: &OAuthConfig,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     handle_get_access_token_for_user(config, req, ctx, None).await
 }
@@ -559,7 +557,7 @@ pub(super) async fn handle_get_access_token(
 pub(super) async fn handle_refresh_token(
     config: &OAuthConfig,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     handle_refresh_token_for_user(config, req, ctx, None).await
 }
@@ -567,7 +565,7 @@ pub(super) async fn handle_refresh_token(
 pub(super) async fn handle_account_info(
     config: &OAuthConfig,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     handle_account_info_for_user(config, req, ctx, None).await
 }
@@ -582,7 +580,7 @@ impl OAuthAccountApi {
     pub async fn get_access_token(
         user_id: &str,
         selection: OAuthAccountSelection,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (config, req) = server_request(user_id, selection, "/get-access-token", ctx)?;
         handle_get_access_token_for_user(&config, &req, ctx, Some(user_id)).await
@@ -592,7 +590,7 @@ impl OAuthAccountApi {
     pub async fn refresh_token(
         user_id: &str,
         selection: OAuthAccountSelection,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (config, req) = server_request(user_id, selection, "/refresh-token", ctx)?;
         handle_refresh_token_for_user(&config, &req, ctx, Some(user_id)).await
@@ -602,7 +600,7 @@ impl OAuthAccountApi {
     pub async fn account_info(
         user_id: &str,
         selection: OAuthAccountSelection,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (config, req) = server_request(user_id, selection, "/account-info", ctx)?;
         handle_account_info_for_user(&config, &req, ctx, Some(user_id)).await
@@ -612,7 +610,7 @@ fn server_request(
     user_id: &str,
     selection: OAuthAccountSelection,
     path: &str,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(std::sync::Arc<OAuthConfig>, AuthRequest)> {
     if user_id.is_empty() {
         return Err(AuthError::Upstream {
@@ -627,9 +625,9 @@ fn server_request(
         .ok_or_else(|| AuthError::config("OAuth plugin is not initialized"))?;
     let mut req = AuthRequest::new(
         if path == "/account-info" {
-            better_auth_core::HttpMethod::Get
+            alibi_core::HttpMethod::Get
         } else {
-            better_auth_core::HttpMethod::Post
+            alibi_core::HttpMethod::Post
         },
         path,
     );

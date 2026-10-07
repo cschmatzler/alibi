@@ -6,7 +6,7 @@ use super::types::{
     ListKeysResponse, UpdateKeyRequest,
 };
 use crate::plugins::helpers;
-use better_auth_core::{ApiKey, AuthContext, AuthResult, CreateApiKey, UpdateApiKey};
+use alibi_core::{ApiKey, AuthContext, AuthResult, CreateApiKey, UpdateApiKey};
 
 // ---------------------------------------------------------------------------
 // Core functions -- framework-agnostic business logic
@@ -21,12 +21,12 @@ impl ApiKeyPlugin {
     /// Returns errors from input validation, permission checks, or API-key storage.
     pub async fn create_key(
         &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         body: &CreateKeyRequest,
     ) -> AuthResult<CreateKeyResponse> {
         use validator::Validate as _;
         body.validate()
-            .map_err(|error| better_auth_core::AuthError::Validation(error.to_string()))?;
+            .map_err(|error| alibi_core::AuthError::Validation(error.to_string()))?;
         let user_id = body
             .user_id
             .as_deref()
@@ -43,12 +43,12 @@ impl ApiKeyPlugin {
     /// Returns errors from input validation, permission checks, or API-key storage.
     pub async fn update_key(
         &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         body: &UpdateKeyRequest,
     ) -> AuthResult<ApiKeyView> {
         use validator::Validate as _;
         body.validate()
-            .map_err(|error| better_auth_core::AuthError::Validation(error.to_string()))?;
+            .map_err(|error| alibi_core::AuthError::Validation(error.to_string()))?;
         let user_id = body
             .user_id
             .as_deref()
@@ -72,7 +72,7 @@ pub(super) fn check_permissions(
     key_permissions_json: &str,
     required: &serde_json::Value,
 ) -> AuthResult<bool> {
-    use better_auth_core::utils::json::{JsValue, parse_value};
+    use alibi_core::utils::json::{JsValue, parse_value};
     let Some(required_map) = required.as_object().filter(|map| !map.is_empty()) else {
         return Ok(false);
     };
@@ -103,7 +103,7 @@ pub(super) fn check_permissions(
                 request.get("connector").and_then(serde_json::Value::as_str) == Some("OR"),
             )
         } else {
-            return Err(better_auth_core::AuthError::internal(
+            return Err(alibi_core::AuthError::internal(
                 "Invalid access control request",
             ));
         };
@@ -127,7 +127,7 @@ pub(super) fn check_permissions(
                     | JsValue::Number(_)
                     | JsValue::Object(_)
                     | JsValue::String(_) => {
-                        return Err(better_auth_core::AuthError::internal(
+                        return Err(alibi_core::AuthError::internal(
                             "Stored permission actions do not support includes",
                         ));
                     }
@@ -155,7 +155,7 @@ pub(super) fn check_permissions(
 // authorization. A Date does not provide String.includes and is not equal to a
 // requested string when nested inside an action array.
 fn revived_permission_date(value: &str) -> bool {
-    better_auth_core::utils::datetime::normalize_json_date(value).is_some()
+    alibi_core::utils::datetime::normalize_json_date(value).is_some()
 }
 
 ///
@@ -165,8 +165,8 @@ pub(in crate::plugins) async fn create_key_core(
     body: &CreateKeyRequest,
     user_id: impl AsRef<str>,
     plugin: &ApiKeyPlugin,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    request: Option<&better_auth_core::AuthRequest>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    request: Option<&alibi_core::AuthRequest>,
 ) -> AuthResult<CreateKeyResponse> {
     let _ignored_as_deref = plugin.resolve_configuration(body.config_id.as_deref())?;
     if body.refill_amount.is_some()
@@ -197,8 +197,8 @@ pub(super) async fn create_key_for_user(
     body: &CreateKeyRequest,
     user_id: &str,
     plugin: &ApiKeyPlugin,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-    request: Option<&better_auth_core::AuthRequest>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+    request: Option<&alibi_core::AuthRequest>,
 ) -> AuthResult<CreateKeyResponse> {
     let config = plugin.resolve_configuration(body.config_id.as_deref())?;
     let reference_id = match config.references {
@@ -280,15 +280,15 @@ pub(super) async fn create_key_for_user(
             .as_ref()
             .or(dynamic_permissions.as_ref())
             .or(config.default_permissions.as_ref())
-            .map(better_auth_core::utils::json::to_string)
+            .map(alibi_core::utils::json::to_string)
             .transpose()?,
         // Source supplies explicit JSON null to its JSON-column adapter when
         // metadata is absent or falsy, preserving "null" rather than SQL NULL.
-        metadata: Some(better_auth_core::utils::json::to_string(
+        metadata: Some(alibi_core::utils::json::to_string(
             body.metadata
                 .as_ref()
                 .filter(|value| json_truthy(value))
-                .unwrap_or(&better_auth_core::utils::json::JsValue::Null),
+                .unwrap_or(&alibi_core::utils::json::JsValue::Null),
         )?),
         enabled: true,
     };
@@ -298,7 +298,7 @@ pub(super) async fn create_key_for_user(
     api_key.metadata = body
         .metadata
         .as_ref()
-        .map(better_auth_core::utils::json::JsValue::to_json_value)
+        .map(alibi_core::utils::json::JsValue::to_json_value)
         .transpose()?;
     Ok(CreateKeyResponse {
         key: full_key,
@@ -306,8 +306,8 @@ pub(super) async fn create_key_for_user(
     })
 }
 
-fn json_truthy(value: &better_auth_core::utils::json::JsValue) -> bool {
-    use better_auth_core::utils::json::JsValue;
+fn json_truthy(value: &alibi_core::utils::json::JsValue) -> bool {
+    use alibi_core::utils::json::JsValue;
     match value {
         JsValue::Null => false,
         JsValue::Bool(value) => *value,
@@ -329,10 +329,10 @@ fn expiration_date(seconds: Option<f64>) -> AuthResult<Option<String>> {
     };
     let milliseconds = chrono::Utc::now().timestamp_millis() as f64 + seconds * 1000.0;
     if !milliseconds.is_finite() || milliseconds.abs() > 8_640_000_000_000_000.0 {
-        return Err(better_auth_core::AuthError::internal("Invalid Date"));
+        return Err(alibi_core::AuthError::internal("Invalid Date"));
     }
     let date = chrono::DateTime::from_timestamp_millis(milliseconds.trunc() as i64)
-        .ok_or_else(|| better_auth_core::AuthError::internal("Invalid Date"))?;
+        .ok_or_else(|| alibi_core::AuthError::internal("Invalid Date"))?;
     Ok(Some(
         date.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
     ))
@@ -346,7 +346,7 @@ pub(in crate::plugins) async fn get_key_core(
     config_id: Option<&str>,
     user_id: impl AsRef<str>,
     plugin: &ApiKeyPlugin,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<ApiKeyView> {
     let config = plugin.resolve_configuration(config_id)?;
     let api_key = helpers::get_owned_api_key(ctx, config, id, user_id.as_ref(), "read").await?;
@@ -361,7 +361,7 @@ pub(in crate::plugins) async fn list_keys_core(
     user_id: impl AsRef<str>,
     query: &ListKeysQuery,
     plugin: &ApiKeyPlugin,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<ListKeysResponse> {
     let organization_id = query.organization_id.as_deref().filter(|id| !id.is_empty());
     if let Some(organization_id) = organization_id {
@@ -457,7 +457,7 @@ fn compare_strings(
 }
 
 fn compare_metadata(left: Option<&str>, right: Option<&str>) -> AuthResult<std::cmp::Ordering> {
-    use better_auth_core::utils::{
+    use alibi_core::utils::{
         javascript::string_to_number,
         json::{JsValue, parse_value},
     };
@@ -473,7 +473,7 @@ fn compare_metadata(left: Option<&str>, right: Option<&str>) -> AuthResult<std::
         JsValue::Array(_) | JsValue::Object(_) => value
             .coerce_string()
             .map(JsValue::String)
-            .map_err(better_auth_core::AuthError::internal),
+            .map_err(alibi_core::AuthError::internal),
         value => Ok(value),
     };
     let left = primitive(left)?;
@@ -550,7 +550,7 @@ pub(in crate::plugins) async fn update_key_core(
     body: &UpdateKeyRequest,
     user_id: impl AsRef<str>,
     plugin: &ApiKeyPlugin,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<ApiKeyView> {
     if body
         .user_id
@@ -580,7 +580,7 @@ pub(super) async fn update_key_for_user(
     body: &UpdateKeyRequest,
     user_id: &str,
     plugin: &ApiKeyPlugin,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<ApiKeyView> {
     let config = plugin.resolve_configuration(body.config_id.as_deref())?;
     drop(helpers::get_owned_api_key(ctx, config, &body.key_id, user_id, "update").await?);
@@ -636,10 +636,10 @@ pub(super) async fn update_key_for_user(
         permissions: body
             .permissions
             .as_ref()
-            .map(better_auth_core::utils::json::to_string)
+            .map(alibi_core::utils::json::to_string)
             .transpose()?,
         metadata: metadata
-            .map(better_auth_core::utils::json::to_string)
+            .map(alibi_core::utils::json::to_string)
             .transpose()?,
         expires_at,
         ..Default::default()
@@ -656,7 +656,7 @@ pub(in crate::plugins) async fn delete_key_core(
     body: &DeleteKeyRequest,
     user_id: impl AsRef<str>,
     plugin: &ApiKeyPlugin,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<serde_json::Value> {
     let config = plugin.resolve_configuration(body.config_id.as_deref())?;
     let key =

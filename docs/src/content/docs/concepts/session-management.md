@@ -10,7 +10,7 @@ A session proves that a browser or client is signed in. By default it is a row i
 Configure sessions on `AuthConfig` **before** constructing the store, so the store and the builder see the same policy:
 
 ```rust
-use better_auth::AuthConfig;
+use alibi::AuthConfig;
 use chrono::Duration;
 
 fn auth_config(secret: &str) -> AuthConfig {
@@ -45,7 +45,7 @@ A refresh moves `expires_at` to *now + `expires_in`* and updates `updated_at`. I
 Writing to the database on a `GET` is awkward behind CDNs and read replicas. With `defer_session_refresh = true`, `GET /get-session` stays read-only and returns `needsRefresh: true` when a refresh is due; the client then calls `POST /get-session` to perform it. Without the flag, `POST /get-session` is rejected with `405 METHOD_NOT_ALLOWED_DEFER_SESSION_REQUIRED`.
 
 ```rust
-use better_auth::AuthConfig;
+use alibi::AuthConfig;
 
 fn auth_config(secret: &str) -> AuthConfig {
     let mut config = AuthConfig::new(secret);
@@ -87,9 +87,9 @@ curl -b cookies.txt -X POST http://localhost:3000/api/auth/revoke-session \
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::SessionManagementPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::SessionManagementPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -119,12 +119,12 @@ Some operations require a *fresh* session — one created within `fresh_age`: li
 
 ## Custom sign-in flows
 
-After your application verifies its own sign-in proof and resolves the user ID, use `better_auth::session` to issue a session through the initialized instance. The existing session hooks and admin-plugin ban policy still apply. This API needs only the top-level `better-auth` dependency.
+After your application verifies its own sign-in proof and resolves the user ID, use `alibi::session` to issue a session through the initialized instance. The existing session hooks and admin-plugin ban policy still apply. This API needs only the top-level `better-auth` dependency.
 
 ```rust
-use better_auth::prelude::{AuthResponse, AuthSession};
-use better_auth::session::{SessionIssueError, create_session_cookie, issue_user_session};
-use better_auth::{AuthResult, AuthSchema, BetterAuth};
+use alibi::prelude::{AuthResponse, AuthSession};
+use alibi::session::{SessionIssueError, create_session_cookie, issue_user_session};
+use alibi::{AuthResult, AuthSchema, BetterAuth};
 
 async fn sign_in_verified_user<S: AuthSchema>(
     auth: &BetterAuth<S>,
@@ -145,8 +145,8 @@ async fn sign_in_verified_user<S: AuthSchema>(
 Each session records the client's IP address and user agent. The IP comes from `advanced.ip_address`: the headers to trust (default `x-forwarded-for`), the proxies to strip from the right of a forwarded chain, the IPv6 grouping prefix and an opt-out. Configure it when behind a proxy:
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::config::{AdvancedConfig, IpAddressConfig};
+use alibi::AuthConfig;
+use alibi::config::{AdvancedConfig, IpAddressConfig};
 
 fn auth_config(secret: &str) -> AuthConfig {
     AuthConfig::new(secret).advanced(AdvancedConfig {
@@ -177,8 +177,8 @@ Axum and Poem extractors give you the authenticated `user` and `session` in your
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::integrations::axum::CurrentSession;
-use better_auth::prelude::{AuthSession, AuthUser};
+use alibi::integrations::axum::CurrentSession;
+use alibi::prelude::{AuthSession, AuthUser};
 
 async fn whoami(session: CurrentSession<AppAuthSchema>) -> String {
     format!(

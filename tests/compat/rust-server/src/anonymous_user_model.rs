@@ -1,21 +1,21 @@
 //! Real application user columns for anonymous callback contracts.
 #[cfg(feature = "seaorm")]
-use better_auth::seaorm::JsonMetadata;
+use alibi::seaorm::JsonMetadata;
 #[cfg(feature = "seaorm")]
-use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
+use alibi::seaorm::sea_orm::{self, entity::prelude::*};
 #[cfg(not(feature = "seaorm"))]
-use better_auth::sqlx::JsonMetadata;
+use alibi::sqlx::JsonMetadata;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 #[cfg_attr(
     feature = "seaorm",
-    derive(better_auth::seaorm::AuthEntity, DeriveEntityModel),
+    derive(alibi::seaorm::AuthEntity, DeriveEntityModel),
     sea_orm(table_name = "users")
 )]
 #[cfg_attr(
     not(feature = "seaorm"),
-    derive(better_auth::sqlx::AuthEntity, sqlx::FromRow),
+    derive(alibi::sqlx::AuthEntity, sqlx::FromRow),
     auth(table = "users")
 )]
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -57,7 +57,7 @@ pub enum Relation {}
 #[cfg(feature = "seaorm")]
 impl ActiveModelBehavior for ActiveModel {}
 pub(crate) struct ApplicationSchema;
-impl better_auth::AuthSchema for ApplicationSchema {
+impl alibi::AuthSchema for ApplicationSchema {
     type User = Model;
     type Session = crate::backend::entities::session::Model;
     type Account = crate::backend::entities::account::Model;

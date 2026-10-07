@@ -1,13 +1,13 @@
 use crate::plugins::organization::types::CreatedOrganizationResponse;
+use alibi_core::AuthResult;
+use alibi_core::CreateMember;
+use alibi_core::CreateOrganization;
+use alibi_core::Member;
+use alibi_core::Organization;
+use alibi_core::UpdateOrganization;
+use alibi_core::utils::json::JsValue;
+use alibi_core::wire::UserView;
 use async_trait::async_trait;
-use better_auth_core::AuthResult;
-use better_auth_core::CreateMember;
-use better_auth_core::CreateOrganization;
-use better_auth_core::Member;
-use better_auth_core::Organization;
-use better_auth_core::UpdateOrganization;
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::wire::UserView;
 use indexmap::IndexMap;
 use serde_json::Map;
 use serde_json::Value;
@@ -127,17 +127,17 @@ pub trait OrganizationCreationHooks: std::fmt::Debug + Send + Sync {
 pub struct OrganizationDeleteContext {
     pub organization: crate::plugins::organization::types::OrganizationResponse,
     pub user: UserView,
-    pub session: better_auth_core::wire::SessionView,
+    pub session: alibi_core::wire::SessionView,
     /// Actual supplied values; a trusted header-only call does not invent headers.
     pub headers: std::collections::HashMap<String, String>,
     /// None for the trusted header-only helper. HTTP snapshots use the native
     /// `AuthRequest`'s canonical route path and independent public request parts.
-    pub request: Option<better_auth_core::AuthRequest>,
+    pub request: Option<alibi_core::AuthRequest>,
 }
 
 pub(in crate::plugins) struct DeleteInvocation<'a> {
     pub headers: &'a std::collections::HashMap<String, String>,
-    pub request: Option<&'a better_auth_core::AuthRequest>,
+    pub request: Option<&'a alibi_core::AuthRequest>,
 }
 
 /// Awaited deletion phases, without a lifecycle-wide transaction.

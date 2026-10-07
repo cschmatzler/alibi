@@ -10,7 +10,7 @@ JWTs complement database sessions; they do not replace them. The session cookie 
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins jwt -o src/auth_schema.rs
+alibi generate --plugins jwt -o src/auth_schema.rs
 ```
 
 Adds the `jwks` table (`public_key`, `private_key`, `alg`, `crv`, `created_at`, `expires_at`). Private keys are encrypted with the auth [secret](/reference/secrets/) unless you disable that.
@@ -19,9 +19,9 @@ Adds the `jwks` table (`public_key`, `private_key`, `alg`, `crv`, `created_at`, 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::jwt::JwtPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::jwt::JwtPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -107,11 +107,11 @@ In any language, use a JWKS-aware library and validate issuer and audience. Neve
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::jwt::{
+use alibi::plugins::jwt::{
     DefineJwtPayload, JwtAlgorithm, JwtAudience, JwtClaimsConfig, JwtExpiration, JwtKeyPairConfig,
     JwtPlugin, JwtPluginConfig, JwtSession,
 };
-use better_auth::AuthResult;
+use alibi::AuthResult;
 use chrono::Duration;
 use serde_json::{Map, Value, json};
 use std::sync::Arc;
@@ -150,9 +150,9 @@ Sign arbitrary payloads and verify tokens from your own code through [`dispatch_
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::endpoint::EndpointOptions;
-use better_auth::plugins::jwt::JwtPlugin;
+use alibi::BetterAuth;
+use alibi::endpoint::EndpointOptions;
+use alibi::plugins::jwt::JwtPlugin;
 
 async fn check(
     auth: &BetterAuth<AppAuthSchema>,

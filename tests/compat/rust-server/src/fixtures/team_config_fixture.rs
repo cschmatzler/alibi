@@ -1,13 +1,13 @@
 //! Immutable configured team branches and read-only receipts of real store transitions.
-use better_auth::plugins::organization::{
+use alibi::plugins::organization::{
     OrganizationConfig, OrganizationTeamHooks,
     extensions::{DefaultTeamContext, DefaultTeamFactory, TeamHookContext},
 };
-use better_auth::{AuthError, AuthResult};
-use better_auth_core::{
+use alibi::{AuthError, AuthResult};
+use alibi_core::{
     CreateTeam, Organization, Team, TeamMember, UpdateTeam, store::TeamStore, wire::UserView,
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
@@ -134,7 +134,7 @@ impl Hooks {
         let reject = marker.contains(&format!("reject-{phase}"));
         let error = marker.contains(&format!("error-{phase}"));
         if reject || error {
-            let id = better_auth_core::utils::id::generate_id(32);
+            let id = alibi_core::utils::id::generate_id(32);
             self.database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"INSERT INTO team(id,organization_id,name,created_at,member_count) VALUES (?,?,?,?,0)",vec![id.into(),ctx.organization.id.clone().into(),format!("Independent:{phase}").into(),chrono::Utc::now().into()])).await.map_err(|e| AuthError::internal(e.to_string()))?;
             value["independentSnapshot"] = snapshot(&self.database).await?;
         }

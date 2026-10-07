@@ -4,9 +4,9 @@ use super::{
     OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
 use crate::plugins::oauth::{OAuthIdTokenConfig, OAuthJwksSource};
+use alibi_core::utils::json::{JsValue, parse_value};
 use async_trait::async_trait;
 use base64::Engine;
-use better_auth_core::utils::json::{JsValue, parse_value};
 use std::sync::Arc;
 
 /// Apple-specific immutable configuration. Generic provider policy and trusted
@@ -153,7 +153,7 @@ impl OAuthUserInfoHandler for AppleUserInfo {
         };
         let name = match &name_value {
             JsValue::String(value) => value.clone(),
-            JsValue::Number(value) => better_auth_core::utils::json::number_to_string(
+            JsValue::Number(value) => alibi_core::utils::json::number_to_string(
                 &serde_json::Number::from_f64(*value).ok_or("Invalid Apple name")?,
             )
             .map_err(|error| error.to_string())?,
@@ -169,7 +169,7 @@ impl OAuthUserInfoHandler for AppleUserInfo {
                 value.clone()
             }
             Some(JsValue::Number(value)) if value.is_finite() => {
-                better_auth_core::utils::json::number_to_string(
+                alibi_core::utils::json::number_to_string(
                     &serde_json::Number::from_f64(*value).ok_or("Invalid Apple subject")?,
                 )
                 .map_err(|error| error.to_string())?

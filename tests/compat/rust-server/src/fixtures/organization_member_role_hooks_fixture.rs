@@ -6,20 +6,20 @@ use axum::{
     extract::Query,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::organization::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::organization::{
     OrganizationConfig, OrganizationMemberRoleContext, OrganizationMemberRoleHooks,
     OrganizationMemberRolePatch, OrganizationMemberRoleUpdatedContext,
 };
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::{
+use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::{
     Member, UpdateUser,
     store::{MemberStore, UserStore},
     wire::UserView,
 };
-use better_auth_seaorm::DatabaseConnection;
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::{Mutex, Notify};

@@ -17,17 +17,17 @@
 )]
 
 use crate::contract::helpers::*;
-use better_auth::prelude::AuthUser;
+use alibi::prelude::AuthUser;
 use serde_json::json;
 
 // ---------------------------------------------------------------------------
 // Helper: create an admin user and return the admin token
 // ---------------------------------------------------------------------------
 
-type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
-async fn setup_admin(auth: &better_auth::BetterAuth<TestSchema>) -> String {
-    use better_auth::prelude::UpdateUser;
+async fn setup_admin(auth: &alibi::BetterAuth<TestSchema>) -> String {
+    use alibi::prelude::UpdateUser;
 
     // Sign up a regular user first
     let (token, _) = signup_user(auth, "admin@test.com", "password123", "Admin User").await;

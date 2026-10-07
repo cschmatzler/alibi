@@ -1,7 +1,7 @@
 //! A configured `__Secure-` cookie name prefix is applied once, by the cookie policy.
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::{AuthRequest, HttpMethod};
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::{AuthRequest, HttpMethod};
 use serde_json::json;
 
 async fn issued_cookie_names(base_url: &str, cookie_name: &str) -> Vec<String> {

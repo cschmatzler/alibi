@@ -13,8 +13,8 @@ mod storage;
 
 mod types;
 
+use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
 use async_trait::async_trait;
-use better_auth_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
 pub use endpoint::EmailOtpRead;
 use std::sync::Arc;
 pub use storage::{EmailOtpCodec, EmailOtpStorage};
@@ -28,7 +28,7 @@ pub trait SendEmailOtp: Send + Sync {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        context: &better_auth_core::CallbackContext,
+        context: &alibi_core::CallbackContext,
     ) -> AuthResult<()>;
 }
 
@@ -40,7 +40,7 @@ pub trait EmailOtpGenerator: Send + Sync {
         &self,
         email: &str,
         otp_type: EmailOtpType,
-        context: &better_auth_core::CallbackContext,
+        context: &alibi_core::CallbackContext,
     ) -> AuthResult<Option<String>>;
 }
 
@@ -62,7 +62,7 @@ pub struct EmailOtpConfig {
     /// Raw attempt budget compared with the persisted integer counter. Zero and
     /// NaN use three; negative values reject even an unused proof.
     pub allowed_attempts: f64,
-    pub rate_limit: better_auth_core::EndpointRateLimit,
+    pub rate_limit: alibi_core::EndpointRateLimit,
     pub storage: EmailOtpStorage,
     pub resend_strategy: OtpResendStrategy,
     pub disable_sign_up: bool,
@@ -73,7 +73,7 @@ pub struct EmailOtpConfig {
     pub auto_sign_in_after_verification: bool,
     pub before_email_verification: Option<super::email_verification::EmailVerificationHook>,
     pub after_email_verification: Option<super::email_verification::EmailVerificationHook>,
-    pub password_hasher: Option<Arc<dyn better_auth_core::PasswordHasher>>,
+    pub password_hasher: Option<Arc<dyn alibi_core::PasswordHasher>>,
     pub revoke_sessions_on_password_reset: bool,
     pub on_password_reset: Option<Arc<super::password_management::OnPasswordResetCallback>>,
 }
@@ -92,7 +92,7 @@ impl Default for EmailOtpConfig {
             otp_length: 6.0,
             expires_in: 300.0,
             allowed_attempts: 3.0,
-            rate_limit: better_auth_core::EndpointRateLimit {
+            rate_limit: alibi_core::EndpointRateLimit {
                 window_seconds: 60.0,
                 max_requests: 3.0,
             },
@@ -132,7 +132,7 @@ impl EmailOtpPlugin {
 
     fn verification_settings(
         &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> VerificationSettings {
         let inherited = ctx
             .extensions
@@ -155,7 +155,7 @@ impl EmailOtpPlugin {
 
     fn password_settings(
         &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> PasswordSettings {
         let passwords = ctx
             .extensions
@@ -194,7 +194,7 @@ impl EmailOtpPlugin {
     /// Returns an error if OTP generation, encoding, or persistence fails.
     pub async fn create_verification_otp(
         &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         email: &str,
         otp_type: EmailOtpType,
     ) -> AuthResult<String> {
@@ -210,7 +210,7 @@ impl EmailOtpPlugin {
     /// Returns an error if storage fails or the configured OTP representation cannot be recovered.
     pub async fn get_verification_otp(
         &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         email: &str,
         otp_type: EmailOtpType,
     ) -> AuthResult<Option<String>> {
@@ -237,12 +237,12 @@ struct VerificationSettings {
 struct PasswordSettings {
     minimum: usize,
     maximum: usize,
-    hasher: Option<Arc<dyn better_auth_core::PasswordHasher>>,
+    hasher: Option<Arc<dyn alibi_core::PasswordHasher>>,
     on_reset: Option<Arc<super::password_management::OnPasswordResetCallback>>,
     revoke_sessions: bool,
 }
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     EmailOtpPlugin, "email-otp";
     routes {
         post "/email-otp/send-verification-otp" => send_verification, "sendEmailVerificationOTP";
@@ -256,27 +256,27 @@ better_auth_core::impl_auth_plugin! {
         post "/email-otp/change-email" => change_email, "changeEmailWithEmailOTP";
     }
     extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
     }
 
-        fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
-            vec![better_auth_core::PluginRateLimit { matches: |path| matches!(path, "/email-otp/send-verification-otp" | "/email-otp/check-verification-otp" | "/email-otp/verify-email" | "/sign-in/email-otp" | "/email-otp/request-password-reset" | "/email-otp/reset-password" | "/forget-password/email-otp" | "/email-otp/request-email-change" | "/email-otp/change-email"), limit: better_auth_core::EndpointRateLimit {
+        fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
+            vec![alibi_core::PluginRateLimit { matches: |path| matches!(path, "/email-otp/send-verification-otp" | "/email-otp/check-verification-otp" | "/email-otp/verify-email" | "/sign-in/email-otp" | "/email-otp/request-password-reset" | "/email-otp/reset-password" | "/forget-password/email-otp" | "/email-otp/request-email-change" | "/email-otp/change-email"), limit: alibi_core::EndpointRateLimit {
                 window_seconds: if self.config.rate_limit.window_seconds == 0.0 || self.config.rate_limit.window_seconds.is_nan() { 60.0 } else { self.config.rate_limit.window_seconds },
                 max_requests: if self.config.rate_limit.max_requests == 0.0 || self.config.rate_limit.max_requests.is_nan() { 3.0 } else { self.config.rate_limit.max_requests },
             } }]
         }
-        fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> { endpoint::definitions() }
+        fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> { endpoint::definitions() }
 
-        fn validate_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointInput> { endpoint::validate(call) }
+        fn validate_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, _ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointInput> { endpoint::validate(call) }
 
-        async fn on_endpoint(&self, call: &better_auth_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<better_auth_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
+        async fn on_endpoint(&self, call: &alibi_core::endpoint::EndpointCall, ctx: &AuthContext<S>) -> AuthResult<alibi_core::endpoint::EndpointResponse> { self.call_endpoint(call, ctx).await }
 
-        async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+        async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
             ctx.set_metadata("email-otp.enabled", serde_json::json!(true));
             if self.config.override_default_email_verification {
                 ctx.set_email_verification_override(Arc::new(self.clone()));
@@ -306,12 +306,10 @@ better_auth_core::impl_auth_plugin! {
 }
 
 #[async_trait]
-impl<S: better_auth_core::AuthSchema> better_auth_core::VerificationEmailOverride<S>
-    for EmailOtpPlugin
-{
+impl<S: alibi_core::AuthSchema> alibi_core::VerificationEmailOverride<S> for EmailOtpPlugin {
     async fn send(
         &self,
-        user: &better_auth_core::wire::UserView,
+        user: &alibi_core::wire::UserView,
         request: Option<&AuthRequest>,
         ctx: &AuthContext<S>,
     ) -> AuthResult<()> {
@@ -320,7 +318,7 @@ impl<S: better_auth_core::AuthSchema> better_auth_core::VerificationEmailOverrid
         };
         let body = serde_json::json!({"email":email,"type":"email-verification"});
         let mut req = AuthRequest::new(
-            better_auth_core::HttpMethod::Post,
+            alibi_core::HttpMethod::Post,
             "/email-otp/send-verification-otp",
         );
         req.body = Some(serde_json::to_vec(&body)?);
@@ -333,10 +331,10 @@ impl<S: better_auth_core::AuthSchema> better_auth_core::VerificationEmailOverrid
 
     async fn send_in_transaction(
         &self,
-        user: &better_auth_core::wire::UserView,
+        user: &alibi_core::wire::UserView,
         request: Option<&AuthRequest>,
         ctx: &AuthContext<S>,
-        tx: &dyn better_auth_core::store::AuthTransaction<S>,
+        tx: &dyn alibi_core::store::AuthTransaction<S>,
     ) -> AuthResult<()> {
         let Some(email) = user.email.as_deref() else {
             return Ok(());
@@ -356,7 +354,7 @@ impl<S: better_auth_core::AuthSchema> better_auth_core::VerificationEmailOverrid
 mod tests {
     use super::*;
     use crate::plugins::test_helpers::{self, create_auth_json_request_no_query};
-    use better_auth_core::{
+    use alibi_core::{
         AuthError, AuthPlugin, AuthSession, AuthUser, AuthVerification, CreateAccount, CreateUser,
         CreateVerification, HttpMethod,
     };
@@ -373,7 +371,7 @@ mod tests {
         async fn send(
             &self,
             delivery: &EmailOtpDelivery,
-            _context: &better_auth_core::CallbackContext,
+            _context: &alibi_core::CallbackContext,
         ) -> AuthResult<()> {
             self.0.lock().unwrap().push(delivery.clone());
             Ok(())
@@ -387,7 +385,7 @@ mod tests {
         async fn send(
             &self,
             delivery: &EmailOtpDelivery,
-            _context: &better_auth_core::CallbackContext,
+            _context: &alibi_core::CallbackContext,
         ) -> AuthResult<()> {
             self.0.0.lock().unwrap().push(delivery.clone());
             if self.1 {
@@ -410,7 +408,7 @@ mod tests {
             &self,
             _: &str,
             _: EmailOtpType,
-            _: &better_auth_core::CallbackContext,
+            _: &alibi_core::CallbackContext,
         ) -> AuthResult<Option<String>> {
             Ok(Some(format!(
                 "{:06}",
@@ -423,19 +421,19 @@ mod tests {
 
     #[async_trait]
     impl
-        better_auth_seaorm::DatabaseHooks<
-            better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
-            better_auth_seaorm::SeaOrmBackend,
+        alibi_seaorm::DatabaseHooks<
+            alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
+            alibi_seaorm::SeaOrmBackend,
         > for CancelVerificationUpdate
     {
         async fn before_update_verification(
             &self,
             _: &str,
-            _: &mut better_auth_core::UpdateVerification,
-            _: &better_auth_seaorm::SeaOrmHookContext<'_>,
-        ) -> AuthResult<better_auth_seaorm::HookControl> {
+            _: &mut alibi_core::UpdateVerification,
+            _: &alibi_seaorm::SeaOrmHookContext<'_>,
+        ) -> AuthResult<alibi_seaorm::HookControl> {
             self.0.fetch_add(1, Ordering::SeqCst);
-            Ok(better_auth_seaorm::HookControl::Cancel)
+            Ok(alibi_seaorm::HookControl::Cancel)
         }
     }
 
@@ -453,7 +451,7 @@ mod tests {
 
     async fn post(
         plugin: &EmailOtpPlugin,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         path: &str,
         body: Value,
     ) -> AuthResponse {
@@ -470,20 +468,14 @@ mod tests {
     #[tokio::test]
     async fn notification_failure_retains_the_issued_otp_for_single_use_signin() {
         for (policy, coded) in [
+            (alibi_core::AwaitedNotificationErrorPolicy::Propagate, false),
+            (alibi_core::AwaitedNotificationErrorPolicy::Propagate, true),
             (
-                better_auth_core::AwaitedNotificationErrorPolicy::Propagate,
+                alibi_core::AwaitedNotificationErrorPolicy::LogAndContinue,
                 false,
             ),
             (
-                better_auth_core::AwaitedNotificationErrorPolicy::Propagate,
-                true,
-            ),
-            (
-                better_auth_core::AwaitedNotificationErrorPolicy::LogAndContinue,
-                false,
-            ),
-            (
-                better_auth_core::AwaitedNotificationErrorPolicy::LogAndContinue,
+                alibi_core::AwaitedNotificationErrorPolicy::LogAndContinue,
                 true,
             ),
         ] {
@@ -503,7 +495,7 @@ mod tests {
                 json!({"email":email,"type":"sign-in"}),
             )
             .await;
-            if policy == better_auth_core::AwaitedNotificationErrorPolicy::Propagate {
+            if policy == alibi_core::AwaitedNotificationErrorPolicy::Propagate {
                 assert_eq!(issued.status, if coded { 409 } else { 400 });
                 if coded {
                     assert_eq!(
@@ -587,10 +579,10 @@ mod tests {
     // returns false. Hook cancellation must not be retried as CAS contention.
     #[tokio::test]
     async fn cancelled_attempt_update_rejects_once_without_hanging_or_consuming_proof() {
-        use better_auth_seaorm::store::__private_test_support::{
+        use alibi_seaorm::store::__private_test_support::{
             bundled_schema::BundledSchema, migrator,
         };
-        use better_auth_seaorm::{Database, SeaOrmStore};
+        use alibi_seaorm::{Database, SeaOrmStore};
         let config = Arc::new(test_helpers::create_test_config());
         let database = Database::connect("sqlite::memory:").await.unwrap();
         migrator::run_migrations(&database).await.unwrap();
@@ -699,7 +691,7 @@ mod tests {
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
     async fn sign_in_creates_verified_user_and_owned_session_then_rejects_replay() {
-        use better_auth_core::utils::cookie_utils::{
+        use alibi_core::utils::cookie_utils::{
             related_cookie_name, sign_cookie_value, verify_cookie_value,
         };
 
@@ -1375,7 +1367,7 @@ mod tests {
             storage
                 .retrieve(
                     fixture,
-                    &better_auth_core::AuthConfig::new("upstream-otp-codec-fixture-secret")
+                    &alibi_core::AuthConfig::new("upstream-otp-codec-fixture-secret")
                 )
                 .await
                 .unwrap(),
@@ -1384,7 +1376,7 @@ mod tests {
         let encrypted = storage
             .store(
                 "654321",
-                &better_auth_core::AuthConfig::new("upstream-otp-codec-fixture-secret"),
+                &alibi_core::AuthConfig::new("upstream-otp-codec-fixture-secret"),
             )
             .await
             .unwrap();
@@ -1394,7 +1386,7 @@ mod tests {
                 .verify(
                     &encrypted,
                     "654321",
-                    &better_auth_core::AuthConfig::new("upstream-otp-codec-fixture-secret")
+                    &alibi_core::AuthConfig::new("upstream-otp-codec-fixture-secret")
                 )
                 .await
                 .unwrap()
@@ -1404,7 +1396,7 @@ mod tests {
                 .verify(
                     &encrypted,
                     "000000",
-                    &better_auth_core::AuthConfig::new("upstream-otp-codec-fixture-secret")
+                    &alibi_core::AuthConfig::new("upstream-otp-codec-fixture-secret")
                 )
                 .await
                 .unwrap()
@@ -1414,7 +1406,7 @@ mod tests {
                 .verify(
                     &encrypted,
                     "654321",
-                    &better_auth_core::AuthConfig::new("wrong-secret")
+                    &alibi_core::AuthConfig::new("wrong-secret")
                 )
                 .await
                 .is_err()
@@ -1429,7 +1421,7 @@ mod tests {
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
     async fn reset_updates_password_runs_hook_and_revokes_owned_sessions() {
-        use better_auth_core::AuthAccount;
+        use alibi_core::AuthAccount;
         let ctx = test_helpers::create_test_context().await;
         let user = ctx
             .database
@@ -1517,7 +1509,7 @@ mod tests {
             .await
             .unwrap()
             .unwrap();
-        better_auth_core::utils::password::verify_password(
+        alibi_core::utils::password::verify_password(
             None,
             "replacement-password",
             updated.password().unwrap(),
@@ -1557,7 +1549,7 @@ mod tests {
     // unknown mailboxes do not receive reset codes.
     #[tokio::test]
     async fn reset_creates_missing_credential_and_unknown_reset_is_indistinguishable() {
-        use better_auth_core::AuthAccount;
+        use alibi_core::AuthAccount;
 
         let ctx = test_helpers::create_test_context().await;
         let user = ctx
@@ -2047,14 +2039,10 @@ mod tests {
     /// request returns. No fixture supplies the proof or completes delivery.
     #[tokio::test]
     async fn background_delivery_retains_request_store_and_proof_after_observer_rejection() {
-        type Schema =
-            better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+        type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
         struct RejectObservation;
-        impl better_auth_core::BackgroundTaskHandler for RejectObservation {
-            fn handle(
-                &self,
-                completion: better_auth_core::BackgroundTaskCompletion,
-            ) -> AuthResult<()> {
+        impl alibi_core::BackgroundTaskHandler for RejectObservation {
+            fn handle(&self, completion: alibi_core::BackgroundTaskCompletion) -> AuthResult<()> {
                 drop(completion);
                 Err(AuthError::internal("observer rejected"))
             }
@@ -2069,7 +2057,7 @@ mod tests {
             async fn send(
                 &self,
                 delivery: &EmailOtpDelivery,
-                callback: &better_auth_core::CallbackContext,
+                callback: &alibi_core::CallbackContext,
             ) -> AuthResult<()> {
                 self.resume.notified().await;
                 let ctx = callback.context::<Schema>().unwrap();

@@ -119,7 +119,7 @@ pub struct Model {
 pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
-impl From<Model> for better_auth_core::WalletAddress {
+impl From<Model> for alibi_core::WalletAddress {
     fn from(row: Model) -> Self {
         Self {
             id: row.id,

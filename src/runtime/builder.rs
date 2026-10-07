@@ -49,7 +49,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
 
     /// Register configured application hooks before installed plugin endpoint hooks.
     #[must_use]
-    pub fn endpoint_hook<H: better_auth_core::endpoint::EndpointHook<S> + 'static>(
+    pub fn endpoint_hook<H: alibi_core::endpoint::EndpointHook<S> + 'static>(
         mut self,
         hook: H,
     ) -> Self {
@@ -94,14 +94,12 @@ impl<S: AuthSchema> AuthBuilder<S> {
         // Resolve the published deployment default once, before exposing config
         // to any plugin. A SQL user store is still a server store even when the
         // session policy suppresses durable session rows.
-        if self.config.account.store_state_strategy
-            == better_auth_core::OAuthStateStrategy::Automatic
-        {
+        if self.config.account.store_state_strategy == alibi_core::OAuthStateStrategy::Automatic {
             self.config.account.store_state_strategy =
                 if self.has_external_store || self.config.session.secondary_storage.is_some() {
-                    better_auth_core::OAuthStateStrategy::Database
+                    alibi_core::OAuthStateStrategy::Database
                 } else {
-                    better_auth_core::OAuthStateStrategy::Cookie
+                    alibi_core::OAuthStateStrategy::Cookie
                 };
         }
         // Validate configuration
@@ -157,10 +155,7 @@ impl<S: AuthSchema> AuthBuilder<S> {
             }
         }
         self.config.session.cookie_name =
-            better_auth_core::utils::cookie_utils::related_cookie_name(
-                &self.config,
-                "session_token",
-            );
+            alibi_core::utils::cookie_utils::related_cookie_name(&self.config, "session_token");
 
         // Core modules exist on every instance. Explicit modules keep their own
         // configuration and priority; defaults never enable credential login.
@@ -200,8 +195,8 @@ impl<S: AuthSchema> AuthBuilder<S> {
         }
 
         let mut session_fields =
-            better_auth_core::field_policy::SessionFields(config.session.additional_fields.clone());
-        let mut adapter_fields = better_auth_core::field_policy::FieldConfigs::new();
+            alibi_core::field_policy::SessionFields(config.session.additional_fields.clone());
+        let mut adapter_fields = alibi_core::field_policy::FieldConfigs::new();
         for plugin in &self.plugins {
             let fields = plugin.session_fields();
             adapter_fields.extend(fields.clone());
@@ -210,16 +205,16 @@ impl<S: AuthSchema> AuthBuilder<S> {
         adapter_fields.extend(config.session.additional_fields.clone());
         init_context
             .extensions
-            .insert(better_auth_core::field_policy::SessionAdapterFields(
-                Arc::new(adapter_fields),
-            ));
+            .insert(alibi_core::field_policy::SessionAdapterFields(Arc::new(
+                adapter_fields,
+            )));
         init_context.extensions.insert(session_fields);
         let mut user_fields =
-            better_auth_core::field_policy::SessionFields(config.user.additional_fields.clone());
+            alibi_core::field_policy::SessionFields(config.user.additional_fields.clone());
         let mut account_fields =
-            better_auth_core::field_policy::SessionFields(config.account.additional_fields.clone());
-        let mut user_adapter = better_auth_core::field_policy::FieldConfigs::new();
-        let mut account_adapter = better_auth_core::field_policy::FieldConfigs::new();
+            alibi_core::field_policy::SessionFields(config.account.additional_fields.clone());
+        let mut user_adapter = alibi_core::field_policy::FieldConfigs::new();
+        let mut account_adapter = alibi_core::field_policy::FieldConfigs::new();
         for plugin in &self.plugins {
             let fields = plugin.user_fields();
             user_adapter.extend(fields.clone());
@@ -232,23 +227,19 @@ impl<S: AuthSchema> AuthBuilder<S> {
         account_adapter.extend(config.account.additional_fields.clone());
         init_context
             .extensions
-            .insert(better_auth_core::field_policy::UserFields(user_fields));
+            .insert(alibi_core::field_policy::UserFields(user_fields));
         init_context
             .extensions
-            .insert(better_auth_core::field_policy::AccountFields(
-                account_fields,
-            ));
+            .insert(alibi_core::field_policy::AccountFields(account_fields));
         init_context
             .extensions
-            .insert(better_auth_core::field_policy::AdapterFieldPolicies {
-                user: better_auth_core::field_policy::SessionAdapterFields(Arc::new(user_adapter)),
-                account: better_auth_core::field_policy::SessionAdapterFields(Arc::new(
-                    account_adapter,
-                )),
+            .insert(alibi_core::field_policy::AdapterFieldPolicies {
+                user: alibi_core::field_policy::SessionAdapterFields(Arc::new(user_adapter)),
+                account: alibi_core::field_policy::SessionAdapterFields(Arc::new(account_adapter)),
             });
         let mut openapi = OpenApiRegistry::configured(S::openapi_models(), &config);
-        let core_routes = better_auth_api::metadata::core_routes();
-        let core_metadata = better_auth_api::metadata::plugin_metadata("core", &core_routes);
+        let core_routes = alibi_api::metadata::core_routes();
+        let core_metadata = alibi_api::metadata::plugin_metadata("core", &core_routes);
         openapi.register("core", core_routes, core_metadata);
         for plugin in &self.plugins {
             openapi.register(

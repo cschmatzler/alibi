@@ -2,7 +2,7 @@
 
 use crate::pool::{Engine, Exec, SqlxPool};
 use crate::sql::Sql;
-use better_auth_core::error::{AuthError, AuthResult, DatabaseError};
+use alibi_core::error::{AuthError, AuthResult, DatabaseError};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// One named schema change, as SQL for each backend.

@@ -38,7 +38,7 @@ Never classify by trying keys or inspecting string shape.
 | `Absent` | SQL `NULL` — **not** an empty string |
 
 ```rust nocheck
-use better_auth::plugins::oauth_token_conversion::{
+use alibi::plugins::oauth_token_conversion::{
     OAuthTokenConversion, OAuthTokenSnapshot, OAuthTokenValues,
     TokenEncoding, TrustedOAuthTokenManifest,
 };

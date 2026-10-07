@@ -1,12 +1,10 @@
 use super::super::extensions::{TeamHookContext, TeamLimitContext};
 use super::super::{OrganizationConfig, OrganizationPlugin};
 use super::extension_common::{has_action, org_error, session};
-use better_auth_core::entity::AuthUser;
-use better_auth_core::types::{AddTeamMemberResult, CreateTeam, Team, UpdateTeam};
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{
-    AuthContext, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
-};
+use alibi_core::entity::AuthUser;
+use alibi_core::types::{AddTeamMemberResult, CreateTeam, Team, UpdateTeam};
+use alibi_core::wire::{SessionView, UserView};
+use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod};
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -80,7 +78,7 @@ impl OrganizationPlugin {
         data: CreateTeam,
     ) -> AuthResult<Team> {
         if !self.config.teams.enabled {
-            return Err(better_auth_core::AuthError::NotImplemented(
+            return Err(alibi_core::AuthError::NotImplemented(
                 "Teams are disabled".to_owned(),
             ));
         }
@@ -99,7 +97,7 @@ impl OrganizationPlugin {
         data: CreateTeam,
     ) -> AuthResult<Team> {
         if !self.config.teams.enabled {
-            return Err(better_auth_core::AuthError::NotImplemented(
+            return Err(alibi_core::AuthError::NotImplemented(
                 "Teams are disabled".to_owned(),
             ));
         }
@@ -127,7 +125,7 @@ impl OrganizationPlugin {
         team_id: &str,
     ) -> AuthResult<()> {
         if !self.config.teams.enabled {
-            return Err(better_auth_core::AuthError::NotImplemented(
+            return Err(alibi_core::AuthError::NotImplemented(
                 "Teams are disabled".to_owned(),
             ));
         }
@@ -159,7 +157,7 @@ impl OrganizationPlugin {
         team_id: &str,
     ) -> AuthResult<()> {
         if !self.config.teams.enabled {
-            return Err(better_auth_core::AuthError::NotImplemented(
+            return Err(alibi_core::AuthError::NotImplemented(
                 "Teams are disabled".to_owned(),
             ));
         }
@@ -393,7 +391,7 @@ pub(in crate::plugins::organization) async fn team_core<S: AuthSchema>(
     path: &str,
     input: Option<serde_json::Value>,
     query: &std::collections::HashMap<String, String>,
-    user: better_auth_core::AuthenticatedUser<S>,
+    user: alibi_core::AuthenticatedUser<S>,
     current: SessionView,
     request: Option<&AuthRequest>,
     http_input: bool,
@@ -407,7 +405,7 @@ pub(in crate::plugins::organization) async fn team_core<S: AuthSchema>(
     macro_rules! body {
         ($ty:ty) => {
             if let Some(request) = request.filter(|_| http_input) {
-                match better_auth_core::validate_request_body::<$ty>(request) {
+                match alibi_core::validate_request_body::<$ty>(request) {
                     Ok(body) => body,
                     Err(response) => return Ok(Some(response)),
                 }
@@ -615,8 +613,8 @@ pub(in crate::plugins::organization) async fn team_core<S: AuthSchema>(
                         .await?;
                     response.headers.append(
                         "set-cookie",
-                        better_auth_core::utils::cookie_utils::create_session_cookie(
-                            better_auth_core::AuthSession::token(&updated),
+                        alibi_core::utils::cookie_utils::create_session_cookie(
+                            alibi_core::AuthSession::token(&updated),
                             &ctx.config,
                         )?,
                     );
@@ -646,8 +644,8 @@ pub(in crate::plugins::organization) async fn team_core<S: AuthSchema>(
                     .await?;
                 AuthResponse::json(200, &team)?.with_header(
                     "set-cookie",
-                    better_auth_core::utils::cookie_utils::create_session_cookie(
-                        better_auth_core::AuthSession::token(&updated),
+                    alibi_core::utils::cookie_utils::create_session_cookie(
+                        alibi_core::AuthSession::token(&updated),
                         &ctx.config,
                     )?,
                 )
@@ -693,7 +691,7 @@ pub(in crate::plugins::organization) async fn team_core<S: AuthSchema>(
                 .database
                 .get_user_by_id(&body.user_id)
                 .await?
-                .ok_or_else(|| better_auth_core::AuthError::bad_request("User not found"))?;
+                .ok_or_else(|| alibi_core::AuthError::bad_request("User not found"))?;
             let target = ctx.user_view(&target);
             let hooks = hook_context(ctx, &org, Some(user_view)).await?;
             if add {

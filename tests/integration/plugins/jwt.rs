@@ -1,22 +1,22 @@
 //! JWT issuance observes the pinned session middleware and completed-response context.
 
-use async_trait::async_trait;
-use better_auth::plugins::jwt::{
+use alibi::plugins::jwt::{
     DefineJwtPayload, DefineJwtSubject, JwtPlugin, JwtPluginConfig, JwtSession,
 };
-use better_auth::plugins::{ApiKeyPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use better_auth_core::{
+use alibi::plugins::{ApiKeyPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthSession, AuthUser,
     CreateUser, HttpMethod,
 };
-use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
-use better_auth_seaorm::{Database, SeaOrmStore};
+use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use alibi_seaorm::{Database, SeaOrmStore};
+use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use serde_json::{Map, Value, json};
 use std::sync::{Arc, Mutex};
 
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 const ORIGIN: &str = "http://jwt-session.fixture.test";
 
@@ -91,7 +91,7 @@ async fn fixture(
     config.session.disable_session_refresh = disabled;
     config.session.update_age = Some(Duration::zero());
     let db = Database::connect("sqlite::memory:").await.unwrap();
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
         .await
         .unwrap();
     _ = db
@@ -136,11 +136,9 @@ async fn issued(auth: &BetterAuth<Schema>, email: &str) -> (String, String, Stri
         .create_session(&user, None, None)
         .await
         .unwrap();
-    let cookie = better_auth_core::utils::cookie_utils::create_session_cookie(
-        session.token(),
-        auth.config(),
-    )
-    .unwrap();
+    let cookie =
+        alibi_core::utils::cookie_utils::create_session_cookie(session.token(), auth.config())
+            .unwrap();
     (
         user.id().into_owned(),
         session.token().to_owned(),
@@ -251,7 +249,7 @@ mod tests {
             let before = age(&auth, &db, &token, false).await;
             if let Some(value) = preference {
                 cookie.push_str("; better-auth.dont_remember=");
-                cookie.push_str(&better_auth_core::utils::cookie_utils::sign_cookie_value(
+                cookie.push_str(&alibi_core::utils::cookie_utils::sign_cookie_value(
                     value,
                     &auth.config().secret,
                 ));

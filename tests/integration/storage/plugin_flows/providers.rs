@@ -1,14 +1,14 @@
 use super::*;
-use better_auth::plugins::captcha::{
+use alibi::plugins::captcha::{
     CaptchaConfig, CaptchaPlugin, CaptchaProvider, RecaptchaConfig, SiteKeyCaptchaConfig,
     TurnstileConfig,
 };
-use better_auth::plugins::haveibeenpwned::{
+use alibi::plugins::haveibeenpwned::{
     HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient,
 };
-use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::plugins::one_tap::{OneTapConfig, OneTapPlugin};
-use better_auth::plugins::{OAuthPlugin, OAuthPopupPlugin};
+use alibi::plugins::oauth::OAuthProvider;
+use alibi::plugins::one_tap::{OneTapConfig, OneTapPlugin};
+use alibi::plugins::{OAuthPlugin, OAuthPopupPlugin};
 
 backend_tests!(
     pwned_password_admission_uses_private_range_requests,
@@ -217,11 +217,9 @@ async fn one_tap_verifies_signed_identity_before_creating_accounts<B: Backend>(
     let auth = builder::<B>(&connection)
         .plugin(OneTapPlugin::with_config(OneTapConfig {
             client_id: Some("native-google-client".into()),
-            jwks_source: Some(Arc::new(
-                better_auth::plugins::oauth::HttpOAuthJwksSource::new(
-                    remote.url.join("keys")?.to_string(),
-                ),
-            )),
+            jwks_source: Some(Arc::new(alibi::plugins::oauth::HttpOAuthJwksSource::new(
+                remote.url.join("keys")?.to_string(),
+            ))),
             ..Default::default()
         }))
         .build()

@@ -6,12 +6,12 @@ use axum::{
     http::HeaderMap,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::{AppleOptions, HttpOAuthJwksSource, OAuthProvider};
-use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{AppleOptions, HttpOAuthJwksSource, OAuthProvider};
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -72,7 +72,7 @@ pub(crate) async fn router(
         }
         if mode == "mapped" {
             options.map_profile_to_user = Some(|profile| {
-                Ok(better_auth::plugins::oauth::OAuthUserInfo {
+                Ok(alibi::plugins::oauth::OAuthUserInfo {
                     additional_fields: Default::default(),
                     id: "cannot-replace-source-subject".into(),
                     name: Some(format!(

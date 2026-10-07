@@ -1,14 +1,14 @@
 //! Application OTP representations and per-operation passwordless authority.
 use super::passwordless::Mailbox;
 use super::*;
-use async_trait::async_trait;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth::plugins::email_otp::{EmailOtpConfig, EmailOtpDelivery};
-use better_auth::plugins::two_factor::{
+use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpDelivery};
+use alibi::plugins::two_factor::{
     SendTwoFactorOtp, TwoFactorConfig, TwoFactorOtpCipher, TwoFactorOtpStorage,
 };
-use better_auth::plugins::{EmailOtpPlugin, TwoFactorPlugin};
-use better_auth_core::{AuthError, AuthResult, UserView};
+use alibi::plugins::{EmailOtpPlugin, TwoFactorPlugin};
+use alibi_core::{AuthError, AuthResult, UserView};
+use async_trait::async_trait;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
 backend_tests!(
     factor_storage_callbacks_preserve_consumption_and_totp_disable,
@@ -93,7 +93,7 @@ async fn factor_storage_callbacks_preserve_consumption_and_totp_disable<B: Backe
         let generated = auth
             .dispatch_endpoint(
                 TwoFactorPlugin::generate_totp_endpoint("12345678901234567890"),
-                better_auth_core::endpoint::EndpointOptions::default(),
+                alibi_core::endpoint::EndpointOptions::default(),
             )
             .await;
         assert_eq!(generated.unwrap_err().error.status_code(), 400);

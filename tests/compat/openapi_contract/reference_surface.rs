@@ -12,16 +12,16 @@
 )]
 
 use crate::contract::helpers::html_text_content;
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig, BetterAuth,
     plugins::EmailPasswordPlugin,
     prelude::{AuthRequest, HttpMethod},
 };
-use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
+use alibi_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use serde_json::Value;
 use std::collections::{BTreeMap, HashSet};
 
-type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -144,7 +144,7 @@ fn reference_profile_reference_surface(
 /// Create a test auth instance with all currently implemented plugins.
 async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:").await.unwrap();
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     database
@@ -159,20 +159,20 @@ async fn create_full_auth() -> BetterAuth<TestSchema> {
     AuthBuilder::<TestSchema>::new(config)
         .store(store)
         .plugin(EmailPasswordPlugin::new().enable_signup(true))
-        .plugin(better_auth::plugins::SessionManagementPlugin::new())
-        .plugin(better_auth::plugins::PasswordManagementPlugin::new())
-        .plugin(better_auth::plugins::EmailVerificationPlugin::new())
+        .plugin(alibi::plugins::SessionManagementPlugin::new())
+        .plugin(alibi::plugins::PasswordManagementPlugin::new())
+        .plugin(alibi::plugins::EmailVerificationPlugin::new())
         .plugin(
-            better_auth::plugins::UserManagementPlugin::new()
+            alibi::plugins::UserManagementPlugin::new()
                 .change_email_enabled(true)
                 .delete_user_enabled(true)
                 .require_delete_verification(false),
         )
-        .plugin(better_auth::plugins::AccountManagementPlugin::new())
-        .plugin(better_auth::plugins::OAuthPlugin::new())
-        .plugin(better_auth::plugins::DeviceAuthorizationPlugin::new())
-        .plugin(better_auth::plugins::TwoFactorPlugin::new())
-        .plugin(better_auth::plugins::ApiKeyPlugin::builder().build())
+        .plugin(alibi::plugins::AccountManagementPlugin::new())
+        .plugin(alibi::plugins::OAuthPlugin::new())
+        .plugin(alibi::plugins::DeviceAuthorizationPlugin::new())
+        .plugin(alibi::plugins::TwoFactorPlugin::new())
+        .plugin(alibi::plugins::ApiKeyPlugin::builder().build())
         .build()
         .await
         .expect("Failed to create test auth instance")
@@ -669,10 +669,7 @@ mod tests {
             "cookie".to_owned(),
             format!(
                 "better-auth.session_token={}",
-                better_auth_core::utils::cookie_utils::sign_cookie_value(
-                    token,
-                    &auth.config().secret
-                )
+                alibi_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
             ),
         ));
         drop(

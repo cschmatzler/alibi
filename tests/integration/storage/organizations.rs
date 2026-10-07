@@ -1,12 +1,12 @@
 //! Organization metadata, optional updates, patches and deletion boundaries.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use better_auth_core::store::{
+use alibi_core::store::{
     ApiKeyStore, InvitationStore, MemberStore, OrganizationRoleStore, OrganizationStore, TeamStore,
     UserStore,
 };
-use better_auth_core::types::CreateOrganizationRole;
-use better_auth_core::{
+use alibi_core::types::CreateOrganizationRole;
+use alibi_core::{
     AuthError, AuthUser, CreateApiKey, CreateInvitation, CreateMember, CreateOrganization,
     CreateTeam, CreateUser, UpdateOrganization,
 };
@@ -75,7 +75,7 @@ async fn public_store_distinguishes_omitted_and_literal_null_metadata<B: Backend
         assert_eq!(updated.metadata, Some(value.clone()));
         assert_eq!(
             raw_metadata(&db, &absent.id).await?,
-            Some(better_auth_core::utils::json::to_string(&value)?)
+            Some(alibi_core::utils::json::to_string(&value)?)
         );
         let read = store
             .get_organization_by_id(&absent.id)
@@ -312,7 +312,7 @@ async fn public_organization_delete_retains_extensions_and_rolls_back_all_scoped
                 .create_organization_role(CreateOrganizationRole {
                     organization_id: org.id.clone(),
                     role: "retained".into(),
-                    permission: better_auth_core::OrganizationPermissions::default(),
+                    permission: alibi_core::OrganizationPermissions::default(),
                 })
                 .await?,
         );

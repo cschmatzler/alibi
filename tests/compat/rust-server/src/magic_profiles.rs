@@ -3,16 +3,16 @@ use crate::TestSchema;
 use crate::fixtures::passwordless_numeric_fixture::numeric_setting;
 use async_trait::async_trait;
 use axum::{Json, Router, extract::Query, routing::get};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::magic_link::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::magic_link::{
     MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenStorage, SendMagicLink,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::sea_orm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::sea_orm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -25,7 +25,7 @@ impl SendMagicLink for Sender {
     async fn send(
         &self,
         delivery: &MagicLinkDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         let auth = _context.context::<TestSchema>().unwrap();
         let identifier = if auth.config.base_path.contains("magic-link-hashed") {

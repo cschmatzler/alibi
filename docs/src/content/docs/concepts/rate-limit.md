@@ -28,10 +28,10 @@ Plugins that issue codes carry their own limits too — for example the email OT
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 use std::time::Duration;
 
 async fn build_auth(
@@ -58,9 +58,9 @@ Disable a path, or compute the rule per request:
 
 ```rust
 use async_trait::async_trait;
-use better_auth::middleware::{EndpointRateLimit, RateLimitConfig, RateLimitResolver, RateLimitRule};
-use better_auth::prelude::AuthRequest;
-use better_auth::AuthResult;
+use alibi::middleware::{EndpointRateLimit, RateLimitConfig, RateLimitResolver, RateLimitRule};
+use alibi::prelude::AuthRequest;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -110,8 +110,8 @@ The default store is process-local memory. Run several instances? Share the coun
 | `SqlxRateLimitStorage` / `SeaOrmRateLimitStorage` | Every process sharing the database | Rolling |
 
 ```rust
-use better_auth::middleware::{CacheRateLimitStorage, RateLimitConfig};
-use better_auth::store::RedisAdapter;
+use alibi::middleware::{CacheRateLimitStorage, RateLimitConfig};
+use alibi::store::RedisAdapter;
 use std::sync::Arc;
 
 async fn redis_limits(url: &str) -> Result<RateLimitConfig, Box<dyn std::error::Error>> {
@@ -125,10 +125,10 @@ The cache backend must support an atomic `increment` (Redis and `MemoryCacheAdap
 For database storage, install the table before serving requests. It has its own migration ledger (`better_auth_rate_limit_migrations`), separate from the auth schema:
 
 ```rust
-use better_auth::middleware::RateLimitConfig;
-use better_auth::sqlx::{SqlxPool, SqlxRateLimitStorage};
-use better_auth::store::SchemaMigrator;
-use better_auth::AuthResult;
+use alibi::middleware::RateLimitConfig;
+use alibi::sqlx::{SqlxPool, SqlxRateLimitStorage};
+use alibi::store::SchemaMigrator;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 async fn shared_limits(pool: SqlxPool) -> AuthResult<RateLimitConfig> {
@@ -143,8 +143,8 @@ async fn shared_limits(pool: SqlxPool) -> AuthResult<RateLimitConfig> {
 To limit your own routes, consume from the same storage and return `AuthError::rate_limited(retry_after)` for a blocked decision. Its response (`to_auth_response()`, or Axum's `IntoResponse`) is a `429` carrying `X-Retry-After`, like the middleware's:
 
 ```rust
-use better_auth::middleware::{EndpointRateLimit, RateLimitDecision, RateLimitStorage};
-use better_auth::{AuthError, AuthResult};
+use alibi::middleware::{EndpointRateLimit, RateLimitDecision, RateLimitStorage};
+use alibi::{AuthError, AuthResult};
 
 async fn admit(storage: &dyn RateLimitStorage, client: &str) -> AuthResult<()> {
     let rule = EndpointRateLimit {

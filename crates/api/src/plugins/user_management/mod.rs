@@ -4,11 +4,11 @@ pub(super) mod handlers;
 
 pub(super) mod types;
 
+use alibi_core::wire::UserView;
+use alibi_core::{AuthContext, AuthPlugin, AuthRoute};
+use alibi_core::{AuthError, AuthResult};
+use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
-use better_auth_core::wire::UserView;
-use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth_core::{AuthError, AuthResult};
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 use chrono::Duration;
 use handlers::{change_email_core, delete_user_callback_core, delete_user_core};
 use std::sync::Arc;
@@ -28,7 +28,7 @@ pub type UserInfo = UserView;
 /// Custom callback for sending change-email confirmation emails.
 ///
 /// If set on [`ChangeEmailConfig`], this callback is invoked instead of the
-/// default [`EmailProvider`](better_auth_core::EmailProvider). This allows callers to customise the email
+/// default [`EmailProvider`](alibi_core::EmailProvider). This allows callers to customise the email
 /// subject, template, and delivery mechanism.
 #[async_trait]
 pub trait SendChangeEmailConfirmation: Send + Sync {
@@ -257,10 +257,10 @@ impl UserManagementPlugin {
     async fn handle_change_email(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, session) = handlers::authoritative_session(req, ctx).await?;
-        let body: ChangeEmailRequest = match better_auth_core::validate_request_body(req) {
+        let body: ChangeEmailRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -268,8 +268,7 @@ impl UserManagementPlugin {
             return Err(AuthError::bad_request("Change email is disabled"));
         }
         let projection = change_email_core(&body, &user, &session, &self.config, ctx).await?;
-        let mut response =
-            AuthResponse::json(200, &better_auth_core::StatusResponse { status: true })?;
+        let mut response = AuthResponse::json(200, &alibi_core::StatusResponse { status: true })?;
         if projection.is_some() {
             append_session_cookie(&mut response, req, &session.token, &ctx.config)?;
         }
@@ -280,10 +279,10 @@ impl UserManagementPlugin {
     async fn handle_delete_user(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, session) = handlers::authoritative_session(req, ctx).await?;
-        let body: DeleteUserRequest = match better_auth_core::validate_request_body(req) {
+        let body: DeleteUserRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -304,7 +303,7 @@ impl UserManagementPlugin {
     async fn handle_delete_user_callback(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         if !self.config.delete_user.enabled {
             return Err(AuthError::Api {
@@ -324,7 +323,7 @@ impl UserManagementPlugin {
         let response =
             delete_user_callback_core(&query.token, &user, req, true, &self.config, ctx).await?;
         if let Some(callback_url) = query.callback_url.filter(|url| !url.is_empty()) {
-            let mut headers = better_auth_core::Headers::new();
+            let mut headers = alibi_core::Headers::new();
             drop(headers.insert("Location".to_owned(), callback_url));
             drop(headers.insert("Content-Type".to_owned(), "application/json".to_owned()));
             let mut response_2 = AuthResponse {
@@ -347,21 +346,21 @@ impl UserManagementPlugin {
 // ---------------------------------------------------------------------------
 
 #[async_trait]
-impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+impl<S: alibi_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -402,22 +401,22 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for UserManagementPlugin {
 
 pub(super) fn append_clear_session_cookies(
     response: &mut AuthResponse,
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
 ) -> AuthResult<()> {
     response.headers.append(
         "Set-Cookie",
-        better_auth_core::utils::cookie_utils::create_clear_session_cookie(config)?,
+        alibi_core::utils::cookie_utils::create_clear_session_cookie(config)?,
     );
     response.headers.append(
         "Set-Cookie",
-        better_auth_core::utils::cookie_utils::create_clear_cookie(
+        alibi_core::utils::cookie_utils::create_clear_cookie(
             &related_cookie_name(config, "session_data"),
             config,
         )?,
     );
     response.headers.append(
         "Set-Cookie",
-        better_auth_core::utils::cookie_utils::create_clear_cookie(
+        alibi_core::utils::cookie_utils::create_clear_cookie(
             &related_cookie_name(config, "dont_remember"),
             config,
         )?,
@@ -425,7 +424,7 @@ pub(super) fn append_clear_session_cookies(
     if config.account.store_account_cookie {
         response.headers.append(
             "Set-Cookie",
-            better_auth_core::utils::cookie_utils::create_clear_cookie(
+            alibi_core::utils::cookie_utils::create_clear_cookie(
                 &related_cookie_name(config, "account_data"),
                 config,
             )?,
@@ -438,9 +437,9 @@ pub(in crate::plugins) fn append_session_cookie(
     response: &mut AuthResponse,
     req: &AuthRequest,
     token: &str,
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
 ) -> AuthResult<()> {
-    use better_auth_core::utils::cookie_utils::{
+    use alibi_core::utils::cookie_utils::{
         create_session_cookie_with_max_age, verify_cookie_value,
     };
     let dont_remember =
@@ -458,7 +457,7 @@ pub(in crate::plugins) fn append_session_cookie(
     Ok(())
 }
 
-fn related_cookie_name(config: &better_auth_core::AuthConfig, suffix: &str) -> String {
+fn related_cookie_name(config: &alibi_core::AuthConfig, suffix: &str) -> String {
     config
         .session
         .cookie_name
@@ -474,8 +473,8 @@ fn related_cookie_name(config: &better_auth_core::AuthConfig, suffix: &str) -> S
 mod tests {
     use super::*;
     use crate::plugins::test_helpers;
+    use alibi_core::{AccountConfig, CreateUser};
     use async_trait::async_trait;
-    use better_auth_core::{AccountConfig, CreateUser};
     use chrono::Duration;
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -495,7 +494,7 @@ mod tests {
         )
         .await;
 
-        ctx.email_provider = Some(Arc::new(better_auth_core::email::ConsoleEmailProvider));
+        ctx.email_provider = Some(Arc::new(alibi_core::email::ConsoleEmailProvider));
 
         let body = serde_json::json!({ "newEmail": "new@example.com" });
         let req = test_helpers::create_auth_request(
@@ -720,7 +719,7 @@ mod tests {
         // 2. Seed and confirm the callback token
         let token = "delete-token-123";
         ctx.database
-            .create_verification(better_auth_core::CreateVerification {
+            .create_verification(alibi_core::CreateVerification {
                 identifier: format!("delete-account-{token}"),
                 value: user.id.clone(),
                 expires_at: chrono::Utc::now() + Duration::hours(24),
@@ -771,7 +770,7 @@ mod tests {
 
         let token = "delete-cookie-token";
         ctx.database
-            .create_verification(better_auth_core::CreateVerification {
+            .create_verification(alibi_core::CreateVerification {
                 identifier: format!("delete-account-{token}"),
                 value: user.id.clone(),
                 expires_at: chrono::Utc::now() + Duration::hours(24),

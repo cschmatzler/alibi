@@ -2,9 +2,9 @@
 
 use crate::TestSchema;
 use axum::{Json, Router, extract::State, http::StatusCode, routing::post};
-use better_auth::BetterAuth;
-use better_auth_seaorm::sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
-use better_auth_seaorm::store::entities::invitation;
+use alibi::BetterAuth;
+use alibi_seaorm::sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
+use alibi_seaorm::store::entities::invitation;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -28,7 +28,7 @@ pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<Test
                     match invitation::Entity::update_many()
                         .col_expr(
                             invitation::Column::ExpiresAt,
-                            better_auth_seaorm::sea_orm::sea_query::Expr::value(body.expires_at),
+                            alibi_seaorm::sea_orm::sea_query::Expr::value(body.expires_at),
                         )
                         .filter(invitation::Column::Id.eq(body.invitation_id))
                         .exec(&database)

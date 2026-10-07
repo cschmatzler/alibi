@@ -1,15 +1,15 @@
 //! Native organization authority and lifetime through the public router.
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
-use better_auth::plugins::{
+use alibi::plugins::{
     EmailPasswordPlugin,
     organization::{
         DynamicAccessControlConfig, OrganizationConfig, OrganizationPlugin, TeamsConfig,
         default_organization_statements,
     },
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
+use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -22,7 +22,7 @@ fn config() -> AuthConfig {
 }
 fn plugins<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthBuilder<S> {
     builder
-        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new())
         .plugin(OrganizationPlugin::with_config(OrganizationConfig {
             teams: TeamsConfig {
@@ -175,7 +175,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, owner: &str) -> TestResul
         auth.store()
             .get_organization_role(
                 &org,
-                &better_auth_core::types::OrganizationRoleSelector::Id(temporary)
+                &alibi_core::types::OrganizationRoleSelector::Id(temporary)
             )
             .await?
             .is_none()
@@ -439,7 +439,7 @@ async fn native_organization_workflow<B: Backend>(db: Db) -> TestResult {
             .store()
             .get_organization_role(
                 &retained.organization,
-                &better_auth_core::types::OrganizationRoleSelector::Id(retained.role)
+                &alibi_core::types::OrganizationRoleSelector::Id(retained.role)
             )
             .await?
             .is_some()
@@ -492,26 +492,23 @@ async fn without_database_native_organization_workflow() -> TestResult {
     // Session scopes belong to the initialized wrapper and must not publish on abort.
     let original = auth.store().get_session(&retained.token).await?.unwrap();
     let token = retained.token.clone();
-    let aborted =
-        better_auth_core::store::transaction::<better_auth::store::StatelessSchema, (), _>(
-            auth.store().as_ref(),
-            move |tx| {
-                Box::pin(async move {
-                    drop(
-                        tx.update_session_active_team(&token, Some("uncommitted"))
-                            .await?,
-                    );
-                    drop(
-                        tx.update_session_active_organization(&token, Some("uncommitted"))
-                            .await?,
-                    );
-                    Err(better_auth_core::AuthError::bad_request(
-                        "abort scope change",
-                    ))
-                })
-            },
-        )
-        .await;
+    let aborted = alibi_core::store::transaction::<alibi::store::StatelessSchema, (), _>(
+        auth.store().as_ref(),
+        move |tx| {
+            Box::pin(async move {
+                drop(
+                    tx.update_session_active_team(&token, Some("uncommitted"))
+                        .await?,
+                );
+                drop(
+                    tx.update_session_active_organization(&token, Some("uncommitted"))
+                        .await?,
+                );
+                Err(alibi_core::AuthError::bad_request("abort scope change"))
+            })
+        },
+    )
+    .await;
     assert!(aborted.is_err());
     let session = auth.store().get_session(&retained.token).await?.unwrap();
     assert_eq!(session.active_team_id, original.active_team_id);
@@ -551,7 +548,7 @@ async fn without_database_native_organization_workflow() -> TestResult {
         auth.store()
             .get_organization_role(
                 &retained.organization,
-                &better_auth_core::types::OrganizationRoleSelector::Id(retained.role)
+                &alibi_core::types::OrganizationRoleSelector::Id(retained.role)
             )
             .await?
             .is_some()
@@ -562,12 +559,12 @@ async fn without_database_native_organization_workflow() -> TestResult {
 /// Snapshot reconciliation must preserve concurrent untouched rows and deletion.
 #[tokio::test]
 async fn native_organization_transaction_merge_and_rollback() -> TestResult {
-    use better_auth_core::store::{
+    use alibi_core::store::{
         MemberStore, TeamStore,
         stateless::{StatelessSchema, StatelessStore},
         transaction,
     };
-    use better_auth_core::{AuthError, CreateMember, CreateTeam};
+    use alibi_core::{AuthError, CreateMember, CreateTeam};
     let store = Arc::new(StatelessStore::default());
     let team = store
         .create_team(CreateTeam {
@@ -636,9 +633,9 @@ async fn native_organization_transaction_merge_and_rollback() -> TestResult {
 
 #[tokio::test]
 async fn native_organization_pages_keep_source_slice_and_empty_patch_semantics() -> TestResult {
-    use better_auth_core::store::MemberPageQuery;
-    use better_auth_core::store::{MemberStore, OrganizationStore, stateless::StatelessStore};
-    use better_auth_core::{CreateMember, CreateOrganization, UpdateOrganization};
+    use alibi_core::store::MemberPageQuery;
+    use alibi_core::store::{MemberStore, OrganizationStore, stateless::StatelessStore};
+    use alibi_core::{CreateMember, CreateOrganization, UpdateOrganization};
     let store = StatelessStore::with_find_many_limit(2);
     let organization = store
         .create_organization(

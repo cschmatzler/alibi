@@ -1,5 +1,5 @@
 //! Route-local HTTP schemas from the pinned admin endpoints.
-use better_auth_core::{AuthRequest, AuthResponse, utils::json::JsValue};
+use alibi_core::{AuthRequest, AuthResponse, utils::json::JsValue};
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
@@ -104,7 +104,7 @@ pub(super) fn parse(req: &AuthRequest) -> Result<Option<JsValue>, AuthResponse> 
         // spellings; object schemas see no declared fields on that stream.
         return Ok(Some(JsValue::Object(indexmap::IndexMap::default())));
     }
-    better_auth_core::utils::json::from_slice(bytes)
+    alibi_core::utils::json::from_slice(bytes)
         .map(Some)
         .map_err(|_error| response(400, "BAD_REQUEST", "Invalid JSON in request body"))
 }
@@ -274,7 +274,7 @@ pub(super) fn body<T: DeserializeOwned + 'static>(req: &AuthRequest) -> Result<T
     if !issues.is_empty() {
         return Err(schema_error(&(issues)));
     }
-    better_auth_core::utils::json::from_value(JsValue::Object(input))
+    alibi_core::utils::json::from_value(JsValue::Object(input))
         .map_err(|_error| response(400, "VALIDATION_ERROR", "[body] Invalid input"))
 }
 

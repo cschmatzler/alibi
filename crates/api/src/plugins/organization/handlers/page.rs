@@ -1,5 +1,5 @@
 //! Only these adapter-page handlers map actual SQL/join failures to Source's empty500.
-use better_auth_core::{AuthError, AuthResponse, AuthResult};
+use alibi_core::{AuthError, AuthResponse, AuthResult};
 #[derive(Debug)]
 pub(in crate::plugins) enum OrganizationPageError {
     Auth(AuthError),

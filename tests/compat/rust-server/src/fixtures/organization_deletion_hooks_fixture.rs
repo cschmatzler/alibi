@@ -7,17 +7,17 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::organization::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::organization::{
     OrganizationConfig, OrganizationDeleteContext, OrganizationDeletionHooks, TeamsConfig,
     types::DeleteOrganizationRequest,
 };
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::UpdateOrganization;
-use better_auth_core::store::OrganizationStore;
-use better_auth_seaorm::{
+use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::UpdateOrganization;
+use alibi_core::store::OrganizationStore;
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };

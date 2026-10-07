@@ -1,10 +1,10 @@
 use super::BetterAuth;
 use super::endpoint::merge_headers;
-use better_auth_core::endpoint::{
+use alibi_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointResponse,
     is_endpoint_api_error, with_endpoint_call_context,
 };
-use better_auth_core::{AuthError, AuthSchema, Headers};
+use alibi_core::{AuthError, AuthSchema, Headers};
 
 type HttpEndpointError = (u16, Option<String>, String);
 
@@ -21,10 +21,10 @@ pub(super) struct HttpEndpointFrame {
 impl<S: AuthSchema> BetterAuth<S> {
     pub(super) async fn before_http_endpoint(
         &self,
-        request: &mut better_auth_core::AuthRequest,
-        route: &better_auth_core::AuthRoute,
-        context: &better_auth_core::AuthContext<S>,
-    ) -> better_auth_core::AuthResult<Option<better_auth_core::AuthResponse>> {
+        request: &mut alibi_core::AuthRequest,
+        route: &alibi_core::AuthRoute,
+        context: &alibi_core::AuthContext<S>,
+    ) -> alibi_core::AuthResult<Option<alibi_core::AuthResponse>> {
         if self.endpoint_hooks.is_empty() {
             return Ok(None);
         }
@@ -90,8 +90,8 @@ impl<S: AuthSchema> BetterAuth<S> {
 
     pub(super) fn apply_http_endpoint_input(
         &self,
-        request: &mut better_auth_core::AuthRequest,
-    ) -> better_auth_core::AuthResult<()> {
+        request: &mut alibi_core::AuthRequest,
+    ) -> alibi_core::AuthResult<()> {
         let Some(frame) = request.extensions().get::<HttpEndpointFrame>() else {
             return Ok(());
         };
@@ -116,27 +116,23 @@ impl<S: AuthSchema> BetterAuth<S> {
             request.method = method.clone();
         }
         if let Some(body) = call.body() {
-            request.body = Some(better_auth_core::utils::json::to_vec(body)?);
+            request.body = Some(alibi_core::utils::json::to_vec(body)?);
             request
                 .extensions()
-                .insert(better_auth_core::types::ParsedRequestBody::Value(
-                    body.clone(),
-                ));
+                .insert(alibi_core::types::ParsedRequestBody::Value(body.clone()));
         }
-        if let Some(better_auth_core::utils::json::JsValue::Object(query)) = call.query() {
+        if let Some(alibi_core::utils::json::JsValue::Object(query)) = call.query() {
             request.set_query_pairs(query.iter().flat_map(|(name, value)| {
                 let values = match value {
-                    better_auth_core::utils::json::JsValue::Array(values) => values.clone(),
+                    alibi_core::utils::json::JsValue::Array(values) => values.clone(),
                     value => vec![value.clone()],
                 };
                 values.into_iter().map(|value| {
                     (
                         name.clone(),
                         match value {
-                            better_auth_core::utils::json::JsValue::String(value) => value,
-                            value => {
-                                better_auth_core::utils::json::to_string(&value).unwrap_or_default()
-                            }
+                            alibi_core::utils::json::JsValue::String(value) => value,
+                            value => alibi_core::utils::json::to_string(&value).unwrap_or_default(),
                         },
                     )
                 })
@@ -148,10 +144,10 @@ impl<S: AuthSchema> BetterAuth<S> {
 
     pub(super) async fn after_http_endpoint(
         &self,
-        request: &better_auth_core::AuthRequest,
-        context: &better_auth_core::AuthContext<S>,
-        mut response: better_auth_core::AuthResponse,
-    ) -> better_auth_core::AuthResult<better_auth_core::AuthResponse> {
+        request: &alibi_core::AuthRequest,
+        context: &alibi_core::AuthContext<S>,
+        mut response: alibi_core::AuthResponse,
+    ) -> alibi_core::AuthResult<alibi_core::AuthResponse> {
         let Some(frame) = request.extensions().get::<HttpEndpointFrame>() else {
             return Ok(response);
         };
@@ -161,10 +157,9 @@ impl<S: AuthSchema> BetterAuth<S> {
                 .record_authenticated_session(user.clone(), session.clone());
             frame.call.set_session_hook_snapshot(user, session);
         }
-        let original = better_auth_core::utils::json::from_slice::<
-            better_auth_core::utils::json::JsValue,
-        >(&response.body)
-        .unwrap_or(better_auth_core::utils::json::JsValue::Null);
+        let original =
+            alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(&response.body)
+                .unwrap_or(alibi_core::utils::json::JsValue::Null);
         let mut logical = if let Some((status, code, message)) = frame
             .error
             .lock()
@@ -234,17 +229,17 @@ fn ordinary_http_hook_error(error: AuthError) -> AuthError {
 
 fn render_http_endpoint_response(
     response: EndpointResponse,
-) -> better_auth_core::AuthResult<better_auth_core::AuthResponse> {
+) -> alibi_core::AuthResult<alibi_core::AuthResponse> {
     let mut rendered = match response.result() {
-        Ok(value) => better_auth_core::AuthResponse::json(response.status().unwrap_or(200), value)?,
+        Ok(value) => alibi_core::AuthResponse::json(response.status().unwrap_or(200), value)?,
         Err(error) => {
             let (status, code, message) = error.error_payload();
-            let mut rendered = better_auth_core::AuthResponse::json(
+            let mut rendered = alibi_core::AuthResponse::json(
                 status,
-                &better_auth_core::ErrorCodeMessageResponse { code, message },
+                &alibi_core::ErrorCodeMessageResponse { code, message },
             )?;
             if let Some(body) = response.error_body() {
-                rendered.body = better_auth_core::utils::json::to_vec(body)?;
+                rendered.body = alibi_core::utils::json::to_vec(body)?;
             }
             rendered
         }

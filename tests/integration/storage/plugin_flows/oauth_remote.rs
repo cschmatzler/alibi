@@ -1,8 +1,8 @@
 //! Provider protocols whose authority is carried by remote verification or
 //! nonstandard grants, rather than a generic bearer GET profile.
 use super::*;
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::{
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::{
     CognitoOptions, FacebookOptions, LineOptions, OAuthAccountApi, OAuthAccountSelection,
     OAuthProvider, OAuthUserInfo, WeChatOptions,
 };

@@ -6,7 +6,7 @@ description: "Mount the auth routes in an Axum application and protect handlers 
 The Axum adapter mounts every auth route as a nested router and provides two extractors, `CurrentSession` and `OptionalSession`. It needs Axum 0.8 and the `axum` feature:
 
 ```toml title="Cargo.toml"
-better-auth = { package = "alibi", version = "0.1.0", features = ["axum"] }
+alibi = { version = "0.1.1", features = ["axum"] }
 axum = "0.8"
 ```
 
@@ -15,9 +15,9 @@ axum = "0.8"
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::{Router, routing::get};
-use better_auth::BetterAuth;
-use better_auth::integrations::axum::{AxumIntegration, CurrentSession};
-use better_auth::prelude::AuthUser;
+use alibi::BetterAuth;
+use alibi::integrations::axum::{AxumIntegration, CurrentSession};
+use alibi::prelude::AuthUser;
 use std::sync::Arc;
 
 async fn profile(session: CurrentSession<AppAuthSchema>) -> String {
@@ -48,8 +48,8 @@ Both expose the session as `S::User` and `S::Session`, i.e. **your** model types
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::Json;
-use better_auth::integrations::axum::{CurrentSession, OptionalSession};
-use better_auth::prelude::{AuthSession, AuthUser};
+use alibi::integrations::axum::{CurrentSession, OptionalSession};
+use alibi::prelude::{AuthSession, AuthUser};
 use serde_json::{Value, json};
 
 async fn me(session: CurrentSession<AppAuthSchema>) -> Json<Value> {
@@ -78,8 +78,8 @@ Extractors only authenticate. Check roles and ownership in the handler or in you
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::http::StatusCode;
-use better_auth::integrations::axum::CurrentSession;
-use better_auth::prelude::AuthUser;
+use alibi::integrations::axum::CurrentSession;
+use alibi::prelude::AuthUser;
 
 async fn admin_dashboard(
     session: CurrentSession<AppAuthSchema>,
@@ -101,8 +101,8 @@ When your application has its own state, implement `FromRef` and mount with `axu
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::{Router, extract::FromRef};
-use better_auth::BetterAuth;
-use better_auth::integrations::axum::AxumIntegration;
+use alibi::BetterAuth;
+use alibi::integrations::axum::AxumIntegration;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -134,8 +134,8 @@ Apply tower layers around the nested router like any other Axum service:
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::{Router, http::{HeaderValue, Method, header}};
-use better_auth::BetterAuth;
-use better_auth::integrations::axum::AxumIntegration;
+use alibi::BetterAuth;
+use alibi::integrations::axum::AxumIntegration;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 

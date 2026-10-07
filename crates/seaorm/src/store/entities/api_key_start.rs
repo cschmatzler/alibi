@@ -1,4 +1,4 @@
-use better_auth_core::{ApiKeyStartText, ApiKeyStartingCharacters, AuthError, AuthResult};
+use alibi_core::{ApiKeyStartText, ApiKeyStartingCharacters, AuthError, AuthResult};
 use sea_orm::sea_query::{ArrayType, Nullable, ValueType, ValueTypeErr};
 use sea_orm::{ColIdx, ColumnType, DbBackend, QueryResult, TryGetError, TryGetable, Value};
 

@@ -1,15 +1,13 @@
 //! Member identities, physical pages, captured deletion and optional updates.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use better_auth::AuthConfig;
-use better_auth_core::store::SchemaMigrator;
-use better_auth_core::store::{
+use alibi::AuthConfig;
+use alibi_core::store::SchemaMigrator;
+use alibi_core::store::{
     ListOrganizationMembersParams, MemberPageQuery, MemberStore, OrganizationStore, TeamStore,
     UserStore,
 };
-use better_auth_core::{
-    AuthError, AuthUser, CreateMember, CreateOrganization, CreateTeam, CreateUser,
-};
+use alibi_core::{AuthError, AuthUser, CreateMember, CreateOrganization, CreateTeam, CreateUser};
 use std::sync::Arc;
 
 backend_tests!(

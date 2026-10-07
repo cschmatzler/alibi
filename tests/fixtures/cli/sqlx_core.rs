@@ -1,13 +1,7 @@
-use better_auth::AuthSchema;
-use better_auth::sqlx::{Engine, SqlxPool};
+use alibi::AuthSchema;
+use alibi::sqlx::{Engine, SqlxPool};
 pub mod user {
-    #[derive(
-        Clone,
-        Debug,
-        serde::Serialize,
-        sqlx::FromRow,
-        better_auth::sqlx::AuthEntity
-    )]
+    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
     #[auth(role = "user", table = "users")]
     pub struct Model {
         pub id: String,
@@ -20,13 +14,7 @@ pub mod user {
     }
 }
 pub mod session {
-    #[derive(
-        Clone,
-        Debug,
-        serde::Serialize,
-        sqlx::FromRow,
-        better_auth::sqlx::AuthEntity
-    )]
+    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
     #[auth(role = "session", table = "sessions")]
     pub struct Model {
         pub id: String,
@@ -41,13 +29,7 @@ pub mod session {
     }
 }
 pub mod account {
-    #[derive(
-        Clone,
-        Debug,
-        serde::Serialize,
-        sqlx::FromRow,
-        better_auth::sqlx::AuthEntity
-    )]
+    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
     #[auth(role = "account", table = "accounts")]
     pub struct Model {
         pub id: String,
@@ -66,13 +48,7 @@ pub mod account {
     }
 }
 pub mod verification {
-    #[derive(
-        Clone,
-        Debug,
-        serde::Serialize,
-        sqlx::FromRow,
-        better_auth::sqlx::AuthEntity
-    )]
+    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
     #[auth(role = "verification", table = "verifications")]
     pub struct Model {
         pub id: String,
@@ -104,7 +80,7 @@ const POSTGRES_TABLES: &[&str] = &[
 ];
 pub async fn run_app_migrations(
     pool: &SqlxPool,
-) -> Result<(), better_auth::sqlx::sqlx::Error> {
+) -> Result<(), alibi::sqlx::sqlx::Error> {
     let statements = match pool.engine() {
         Engine::Sqlite => SQLITE_TABLES,
         Engine::Postgres => POSTGRES_TABLES,

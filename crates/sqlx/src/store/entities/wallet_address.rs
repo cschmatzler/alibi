@@ -128,7 +128,7 @@ pub struct Model {
     pub created_at: DateTime<Utc>,
 }
 
-impl From<Model> for better_auth_core::WalletAddress {
+impl From<Model> for alibi_core::WalletAddress {
     fn from(row: Model) -> Self {
         Self {
             id: row.id,

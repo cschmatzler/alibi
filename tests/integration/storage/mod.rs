@@ -51,13 +51,13 @@ pub(crate) mod users;
 mod verifications;
 mod wallets;
 
-use async_trait::async_trait;
-use better_auth::{AuthConfig, AuthSchema};
-use better_auth_core::RateLimitStorage;
-use better_auth_core::store::{AuthStore, DatabaseHooks, HookBackend, SchemaMigrator};
-use better_auth_sqlx::sqlx::{
+use alibi::{AuthConfig, AuthSchema};
+use alibi_core::RateLimitStorage;
+use alibi_core::store::{AuthStore, DatabaseHooks, HookBackend, SchemaMigrator};
+use alibi_sqlx::sqlx::{
     self, PgPool, Row, SqlitePool, postgres::PgPoolOptions, sqlite::SqlitePoolOptions,
 };
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -303,26 +303,26 @@ pub(crate) struct SeaOrm;
 
 #[async_trait]
 impl Backend for SeaOrm {
-    type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-    type Hooks = better_auth_seaorm::SeaOrmBackend;
-    type Connection = better_auth_seaorm::DatabaseConnection;
-    type Store = better_auth_seaorm::SeaOrmStore<Self::Schema>;
-    type RateLimit = better_auth_seaorm::SeaOrmRateLimitStorage;
+    type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type Hooks = alibi_seaorm::SeaOrmBackend;
+    type Connection = alibi_seaorm::DatabaseConnection;
+    type Store = alibi_seaorm::SeaOrmStore<Self::Schema>;
+    type RateLimit = alibi_seaorm::SeaOrmRateLimitStorage;
     type UuidSchema = verifications::seaorm_uuid::Schema;
-    type UuidStore = better_auth_seaorm::SeaOrmStore<Self::UuidSchema>;
+    type UuidStore = alibi_seaorm::SeaOrmStore<Self::UuidSchema>;
 
     async fn connect(url: &str, connections: Option<u32>) -> TestResult<Self::Connection> {
-        let mut options = better_auth_seaorm::sea_orm::ConnectOptions::new(url.to_owned());
+        let mut options = alibi_seaorm::sea_orm::ConnectOptions::new(url.to_owned());
         if let Some(connections) = connections {
             _ = options
                 .max_connections(connections)
                 .min_connections(connections);
         }
-        Ok(better_auth_seaorm::Database::connect(options).await?)
+        Ok(alibi_seaorm::Database::connect(options).await?)
     }
 
     fn store(config: Arc<AuthConfig>, connection: &Self::Connection) -> Self::Store {
-        better_auth_seaorm::SeaOrmStore::new(config, connection.clone())
+        alibi_seaorm::SeaOrmStore::new(config, connection.clone())
     }
 
     fn hook<H: DatabaseHooks<Self::Schema, Self::Hooks> + 'static>(
@@ -333,11 +333,11 @@ impl Backend for SeaOrm {
     }
 
     fn rate_limit(connection: &Self::Connection) -> Self::RateLimit {
-        better_auth_seaorm::SeaOrmRateLimitStorage::new(connection.clone())
+        alibi_seaorm::SeaOrmRateLimitStorage::new(connection.clone())
     }
 
     fn uuid_store(config: Arc<AuthConfig>, connection: &Self::Connection) -> Self::UuidStore {
-        better_auth_seaorm::SeaOrmStore::new(config, connection.clone())
+        alibi_seaorm::SeaOrmStore::new(config, connection.clone())
     }
 
     async fn close(connection: Self::Connection) -> TestResult {
@@ -349,13 +349,13 @@ pub(crate) struct Sqlx;
 
 #[async_trait]
 impl Backend for Sqlx {
-    type Schema = better_auth_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
-    type Hooks = better_auth_sqlx::SqlxBackend;
-    type Connection = better_auth_sqlx::SqlxPool;
-    type Store = better_auth_sqlx::SqlxStore<Self::Schema>;
-    type RateLimit = better_auth_sqlx::SqlxRateLimitStorage;
+    type Schema = alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
+    type Hooks = alibi_sqlx::SqlxBackend;
+    type Connection = alibi_sqlx::SqlxPool;
+    type Store = alibi_sqlx::SqlxStore<Self::Schema>;
+    type RateLimit = alibi_sqlx::SqlxRateLimitStorage;
     type UuidSchema = verifications::sqlx_uuid::Schema;
-    type UuidStore = better_auth_sqlx::SqlxStore<Self::UuidSchema>;
+    type UuidStore = alibi_sqlx::SqlxStore<Self::UuidSchema>;
 
     async fn connect(url: &str, connections: Option<u32>) -> TestResult<Self::Connection> {
         if url.starts_with("postgres") {
@@ -377,7 +377,7 @@ impl Backend for Sqlx {
     }
 
     fn store(config: Arc<AuthConfig>, connection: &Self::Connection) -> Self::Store {
-        better_auth_sqlx::SqlxStore::new(config, connection.clone())
+        alibi_sqlx::SqlxStore::new(config, connection.clone())
     }
 
     fn hook<H: DatabaseHooks<Self::Schema, Self::Hooks> + 'static>(
@@ -388,11 +388,11 @@ impl Backend for Sqlx {
     }
 
     fn rate_limit(connection: &Self::Connection) -> Self::RateLimit {
-        better_auth_sqlx::SqlxRateLimitStorage::new(connection.clone())
+        alibi_sqlx::SqlxRateLimitStorage::new(connection.clone())
     }
 
     fn uuid_store(config: Arc<AuthConfig>, connection: &Self::Connection) -> Self::UuidStore {
-        better_auth_sqlx::SqlxStore::new(config, connection.clone())
+        alibi_sqlx::SqlxStore::new(config, connection.clone())
     }
 
     async fn close(connection: Self::Connection) -> TestResult {

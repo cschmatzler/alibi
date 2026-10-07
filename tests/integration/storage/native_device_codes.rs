@@ -1,9 +1,9 @@
 //! Device authorization through real handlers and all three native stores.
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
-use better_auth::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use better_auth_core::{AuthRequest, AuthResponse, AuthSession, HttpMethod, UpdateDeviceCode};
+use alibi::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi_core::{AuthRequest, AuthResponse, AuthSession, HttpMethod, UpdateDeviceCode};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -22,7 +22,7 @@ postgres_tests!(
 
 fn plugins<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthBuilder<S> {
     builder
-        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new())
         .plugin(DeviceAuthorizationPlugin::new().interval(Duration::zero()))
 }
@@ -143,7 +143,7 @@ async fn without_database_native_device_workflow() -> TestResult {
             .store()
             .update_device_code(&old.id, update.clone())
             .await,
-        Err(better_auth_core::AuthError::NotFound(_))
+        Err(alibi_core::AuthError::NotFound(_))
     ));
     assert!(
         !restarted
@@ -380,7 +380,7 @@ async fn workflow<S: AuthSchema>(auth: &BetterAuth<S>, backend: &str) -> TestRes
     // Seed an expired row through the public store, avoiding wall-clock sleeps.
     let expired = auth
         .store()
-        .create_device_code(better_auth_core::CreateDeviceCode {
+        .create_device_code(alibi_core::CreateDeviceCode {
             device_code: "expired-device".into(),
             user_code: "EXPIRED".into(),
             user_id: None,
@@ -593,7 +593,7 @@ async fn delayed_device_decisions<B: Backend>(db: Db) -> TestResult {
             assert_eq!(redeemed.status, 200);
             assert_eq!(body(&redeemed)["scope"], "profile raw");
             let token = body(&redeemed)["access_token"].as_str().unwrap().to_owned();
-            use better_auth_core::AuthSession;
+            use alibi_core::AuthSession;
             assert_eq!(
                 auth.store()
                     .get_session(&token)

@@ -1,8 +1,8 @@
 //! Signature and claim verification for trusted OAuth JWKS authorities.
 use super::providers::OAuthProvider;
+use alibi_core::utils::json::{JsValue, parse_value};
 use async_trait::async_trait;
 use base64::Engine;
-use better_auth_core::utils::json::{JsValue, parse_value};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey};
 use serde_json::Value;
@@ -50,7 +50,7 @@ impl OAuthJwksSource for HttpOAuthJwksSource {
             .await
             .map_err(|error| error.to_string())?;
         let data: Value =
-            better_auth_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
+            alibi_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
         data.get("keys")
             .and_then(Value::as_array)
             .cloned()

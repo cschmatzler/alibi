@@ -58,7 +58,7 @@ Helper constructors: `AuthError::bad_request(msg)`, `forbidden`, `not_found`, `c
 Delivery and policy callbacks return `AuthResult`. What the client sees depends on the variant:
 
 ```rust
-use better_auth::{AuthError, AuthResult};
+use alibi::{AuthError, AuthResult};
 
 fn check(allowed: bool) -> AuthResult<()> {
     if !allowed {

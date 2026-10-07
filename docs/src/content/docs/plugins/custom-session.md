@@ -14,11 +14,11 @@ Register it **before** `SessionManagementPlugin` so it owns the `GET /get-sessio
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::plugin::AuthContext;
-use better_auth::plugins::{CustomSessionPlugin, SessionManagementPlugin, SessionTransform};
-use better_auth::prelude::AuthRequest;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugin::AuthContext;
+use alibi::plugins::{CustomSessionPlugin, SessionManagementPlugin, SessionTransform};
+use alibi::prelude::AuthRequest;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 use serde_json::Value;
 
 struct AppSession;
@@ -64,10 +64,10 @@ async fn build_auth(
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::plugin::AuthContext;
-use better_auth::plugins::SessionTransform;
-use better_auth::prelude::AuthRequest;
-use better_auth::AuthResult;
+use alibi::plugin::AuthContext;
+use alibi::plugins::SessionTransform;
+use alibi::prelude::AuthRequest;
+use alibi::AuthResult;
 use serde_json::{Value, json};
 
 struct WithPlan;

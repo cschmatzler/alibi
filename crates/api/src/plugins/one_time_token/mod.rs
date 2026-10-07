@@ -4,17 +4,17 @@ mod endpoint;
 
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use super::helpers::{get_cookie, response_session};
-use async_trait::async_trait;
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth_core::utils::cookie_utils::{
+use alibi_core::utils::cookie_utils::{
     create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
     sign_cookie_value, verify_cookie_value,
 };
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{
+use alibi_core::wire::{SessionView, UserView};
+use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, CreateVerification, HttpMethod,
 };
+use async_trait::async_trait;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
 pub use endpoint::OneTimeTokenOutput;
 use rand::seq::IndexedRandom as _;
@@ -47,7 +47,7 @@ impl TokenSessionAbsence {
 enum TokenSessionLookup<S: AuthSchema> {
     Found {
         user: S::User,
-        session: better_auth_core::AdapterRecord<S::Session>,
+        session: alibi_core::AdapterRecord<S::Session>,
     },
     Missing(TokenSessionAbsence),
 }
@@ -326,9 +326,9 @@ impl OneTimeTokenPlugin {
         if !self.config.disable_set_session_cookie {
             // Source republishes the existing adapter session's parsed views;
             // verification does not create a replacement session.
-            better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(
+            alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
                 ctx,
-                better_auth_core::CacheVersionContext::created(
+                alibi_core::CacheVersionContext::created(
                     session.user.clone(),
                     session.session.clone(),
                     session.user.clone(),
@@ -383,20 +383,20 @@ impl RequestBody for VerifyRequest {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -410,23 +410,23 @@ impl<S: AuthSchema> AuthPlugin<S> for OneTimeTokenPlugin {
             AuthRoute::post("/one-time-token/verify", "verify_one_time_token"),
         ]
     }
-    fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> {
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         endpoint::definitions()
     }
 
     fn validate_endpoint(
         &self,
-        call: &better_auth_core::endpoint::EndpointCall,
+        call: &alibi_core::endpoint::EndpointCall,
         _ctx: &AuthContext<S>,
-    ) -> AuthResult<better_auth_core::endpoint::EndpointInput> {
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
         endpoint::validate(call)
     }
 
     async fn on_endpoint(
         &self,
-        call: &better_auth_core::endpoint::EndpointCall,
+        call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<better_auth_core::endpoint::EndpointResponse> {
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
         self.call_endpoint(call, ctx).await
     }
 
@@ -526,10 +526,9 @@ mod tests {
 
     use super::*;
     use crate::plugins::test_helpers;
-    use better_auth_core::CreateUser;
+    use alibi_core::CreateUser;
 
-    type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     struct CustomHasher;
 
@@ -574,7 +573,7 @@ mod tests {
         let mut req = test_helpers::create_auth_request_no_query(HttpMethod::Get, path, None, None);
         req.headers.insert(
             "cookie".to_owned(),
-            better_auth_core::utils::cookie_utils::create_session_cookie(
+            alibi_core::utils::cookie_utils::create_session_cookie(
                 &session.session.token,
                 &ctx.config,
             )

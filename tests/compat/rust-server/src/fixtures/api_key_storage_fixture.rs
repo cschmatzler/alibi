@@ -5,19 +5,19 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::api_key::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::api_key::{
     ApiKeyConfig, ApiKeyErrorCode, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyReferences,
     ApiKeyStorage, ApiKeyStorageMode, ApiKeyVerificationError, CreateKeyRequest,
     KeyExpirationConfig, RateLimitDefaults, VerifyApiKey,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     ApiKeyPlugin, EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::{BackgroundTaskCompletion, BackgroundTaskHandler, store::CacheAdapter};
-use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::{BackgroundTaskCompletion, BackgroundTaskHandler, store::CacheAdapter};
+use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::{
@@ -594,7 +594,7 @@ pub(crate) async fn router(
                 async move {
                     let (auth, plugin) = profiles.get(&query["profile"]).unwrap();
                     let input: CreateKeyRequest =
-                        better_auth_core::utils::json::from_value(input.into()).unwrap();
+                        alibi_core::utils::json::from_value(input.into()).unwrap();
                     Json(plugin.create_key(auth.context(), &input).await.unwrap())
                 }
             },

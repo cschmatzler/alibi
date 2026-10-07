@@ -4,7 +4,7 @@ mod notifications;
 mod sessions;
 mod validation;
 
-use better_auth_core::{
+use alibi_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema,
     AuthSession, AuthUser, CreateUser, CreateVerification, UpdateUser,
 };
@@ -37,7 +37,7 @@ pub(in crate::plugins) use validation::validation_response;
 pub(in crate::plugins) async fn find_verification<S: AuthSchema>(
     ctx: &AuthContext<S>,
     identifier: &str,
-) -> AuthResult<Option<better_auth_core::verification::VerificationSnapshot>> {
+) -> AuthResult<Option<alibi_core::verification::VerificationSnapshot>> {
     ctx.verifications().find(identifier).await
 }
 

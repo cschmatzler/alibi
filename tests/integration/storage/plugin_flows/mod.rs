@@ -28,9 +28,9 @@ mod two_factor;
 mod user_lifecycle;
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
+use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
@@ -42,7 +42,7 @@ fn builder<B: Backend>(connection: &B::Connection) -> AuthBuilder<B::Schema> {
     let config = AuthConfig::new(SECRET).base_url(ORIGIN);
     AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), connection))
-        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new())
         .plugin(SessionManagementPlugin::new())
 }

@@ -80,7 +80,7 @@ How registration works — and which core plugins are always installed — is co
 ## Conventions used on these pages
 
 - **Paths** are relative to `/api/auth` (your `base_path`).
-- **Schema** values are `better-auth-rs generate --plugins …` names; see [Database](/concepts/database/#plugin-schema).
+- **Schema** values are `alibi generate --plugins …` names; see [Database](/concepts/database/#plugin-schema).
 - **Examples** use `AppAuthSchema` and `SqlxStore<AppAuthSchema>` from the [installation](/installation/) guide. SeaORM works identically.
 - **Config structs** can be built with `..Default::default()`; plugins that use builder methods list them.
 - Numeric options that mirror JavaScript numbers (OTP lengths, lifetimes in seconds) are `f64`, so write `300.0`, not `300`.

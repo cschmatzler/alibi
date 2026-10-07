@@ -1,8 +1,8 @@
 //! Shared validation for genuine logical calls, independent of HTTP decoding.
 use super::authentication_helpers::{JsonField, JsonFieldKind, is_valid_email, json_type};
-use better_auth_core::endpoint::EndpointDefinition;
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::{AuthError, AuthResponse, AuthResult, HttpMethod};
+use alibi_core::endpoint::EndpointDefinition;
+use alibi_core::utils::json::JsValue;
+use alibi_core::{AuthError, AuthResponse, AuthResult, HttpMethod};
 
 pub(super) fn definition(
     name: &'static str,
@@ -109,7 +109,7 @@ pub(super) fn validate_fields(
 }
 
 pub(super) fn error_response(response: AuthResponse) -> AuthError {
-    let body = better_auth_core::utils::json::from_slice::<JsValue>(&response.body).ok();
+    let body = alibi_core::utils::json::from_slice::<JsValue>(&response.body).ok();
     AuthError::Api {
         status: response.status,
         code: body

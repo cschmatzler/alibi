@@ -1,15 +1,15 @@
 //! OAuth registration commits its user and account together before issuing a session.
 
 use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use async_trait::async_trait;
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::{
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::{
     OAuthIdTokenVerifier, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
     OAuthUserInfoResponse,
 };
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-use better_auth_core::{AuthRequest, HttpMethod};
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::{AuthRequest, HttpMethod};
+use async_trait::async_trait;
 use serde_json::json;
 use std::sync::Arc;
 

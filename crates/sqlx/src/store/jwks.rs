@@ -3,10 +3,10 @@ use super::entities::jwk::Model;
 use crate::model::{self, ActiveRow};
 use crate::pool::Exec;
 use crate::schema::AuthSchema;
+use alibi_core::error::AuthResult;
+use alibi_core::store::JwkStore;
+use alibi_core::types::{CreateJwk, Jwk};
 use async_trait::async_trait;
-use better_auth_core::error::AuthResult;
-use better_auth_core::store::JwkStore;
-use better_auth_core::types::{CreateJwk, Jwk};
 
 impl<S: AuthSchema> SqlxStore<S> {
     pub(super) async fn list_jwks_with(&self, exec: Exec<'_>) -> AuthResult<Vec<Jwk>> {

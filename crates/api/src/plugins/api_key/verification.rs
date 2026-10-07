@@ -2,10 +2,10 @@ use super::{
     ApiKeyCallbackContext, ApiKeyConfig, ApiKeyErrorCode, ApiKeyPlugin, ApiKeyReferences,
     config_id_matches,
 };
-use better_auth_core::entity::AuthUser;
-use better_auth_core::store::ConsumeApiKeyResult;
-use better_auth_core::wire::{ApiKeyView, SessionView};
-use better_auth_core::{
+use alibi_core::entity::AuthUser;
+use alibi_core::store::ConsumeApiKeyResult;
+use alibi_core::wire::{ApiKeyView, SessionView};
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, BeforeRequestAction,
 };
 use serde::Serialize;
@@ -165,7 +165,7 @@ impl ApiKeyPlugin {
     pub async fn verify_api_key(
         &self,
         input: &VerifyApiKey<'_>,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> Result<ApiKeyView, ApiKeyVerificationError> {
         self.verify_api_key_with_registration(input, None, ctx)
             .await
@@ -181,7 +181,7 @@ impl ApiKeyPlugin {
         &self,
         input: &VerifyApiKey<'_>,
         request: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> Result<ApiKeyView, ApiKeyVerificationError> {
         self.verify_api_key_with_registration(input, Some(request), ctx)
             .await
@@ -191,7 +191,7 @@ impl ApiKeyPlugin {
         &self,
         input: &VerifyApiKey<'_>,
         request: Option<&AuthRequest>,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> Result<ApiKeyView, ApiKeyVerificationError> {
         let view = self
             .verify_api_key_checked(input, request, ctx, true)
@@ -209,7 +209,7 @@ impl ApiKeyPlugin {
         &self,
         input: &VerifyApiKey<'_>,
         request: Option<&AuthRequest>,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         server_operation: bool,
     ) -> Result<ApiKeyView, ApiKeyVerificationError> {
         let lookup_config = self
@@ -323,9 +323,9 @@ impl ApiKeyPlugin {
     }
 
     async fn delete_rejected_key(
-        key: &better_auth_core::ApiKey,
+        key: &alibi_core::ApiKey,
         config: &ApiKeyConfig,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<()> {
         if !config.defer_updates {
             return config.remove_key(ctx, key).await;
@@ -365,7 +365,7 @@ impl ApiKeyPlugin {
     pub(super) fn find_session_key<'a>(
         &'a self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<Option<(&'a ApiKeyConfig, String)>> {
         self.find_session_key_for_input(&req.headers, Some(req), None, ctx)
     }
@@ -374,8 +374,8 @@ impl ApiKeyPlugin {
         &'a self,
         headers: &std::collections::HashMap<String, String>,
         request: Option<&AuthRequest>,
-        endpoint: Option<&better_auth_core::endpoint::EndpointCall>,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        endpoint: Option<&alibi_core::endpoint::EndpointCall>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<Option<(&'a ApiKeyConfig, String)>> {
         for config in self
             .configurations
@@ -414,7 +414,7 @@ impl ApiKeyPlugin {
     pub(super) async fn api_key_session(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<Option<BeforeRequestAction>> {
         // The Source hook matcher executes before its middleware handler. A
         // getter failure at that stage becomes the dispatcher's matcher error,
@@ -555,7 +555,7 @@ impl ApiKeyPlugin {
 }
 
 impl ApiKeyPlugin {
-    pub(super) fn virtual_session_from_key<S: better_auth_core::AuthSchema>(
+    pub(super) fn virtual_session_from_key<S: alibi_core::AuthSchema>(
         view: &ApiKeyView,
         key: &str,
         user: &S::User,
@@ -580,7 +580,7 @@ impl ApiKeyPlugin {
             .and_then(|request| {
                 request
                     .extensions()
-                    .get::<better_auth_core::config::IpAddressConfig>()
+                    .get::<alibi_core::config::IpAddressConfig>()
             })
             .unwrap_or_default();
         let session = SessionView {

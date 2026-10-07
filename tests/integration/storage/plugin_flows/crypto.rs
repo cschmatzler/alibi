@@ -1,10 +1,10 @@
 use super::*;
-use async_trait::async_trait;
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth::plugins::PasskeyPlugin;
-use better_auth::plugins::siwe::{
+use alibi::plugins::PasskeyPlugin;
+use alibi::plugins::siwe::{
     Eip191Verifier, SiweCallbackResult, SiweConfig, SiweNonceProvider, SiwePlugin,
 };
+use async_trait::async_trait;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use ed25519_dalek::Signer;
 use serde_cbor_2::Value as Cbor;
 use sha2::{Digest, Sha256};
@@ -131,12 +131,10 @@ struct RejectedWalletNonce(&'static str);
 #[async_trait]
 impl SiweNonceProvider for RejectedWalletNonce {
     async fn get_nonce(&self) -> SiweCallbackResult<String> {
-        use better_auth::plugins::siwe::SiweCallbackError;
+        use alibi::plugins::siwe::SiweCallbackError;
         match self.0 {
             "invalid" => Ok("not valid".into()),
-            "api" => Err(SiweCallbackError::Api(better_auth_core::AuthResponse::new(
-                418,
-            ))),
+            "api" => Err(SiweCallbackError::Api(alibi_core::AuthResponse::new(418))),
             _ => Err(SiweCallbackError::Failed(
                 "nonce service unavailable".into(),
             )),
@@ -148,18 +146,15 @@ struct WalletEns {
     observed: Arc<Mutex<Vec<String>>>,
 }
 #[async_trait]
-impl better_auth::plugins::siwe::EnsLookup for WalletEns {
-    async fn lookup(
-        &self,
-        address: &str,
-    ) -> SiweCallbackResult<better_auth::plugins::siwe::EnsProfile> {
+impl alibi::plugins::siwe::EnsLookup for WalletEns {
+    async fn lookup(&self, address: &str) -> SiweCallbackResult<alibi::plugins::siwe::EnsProfile> {
         self.observed.lock().unwrap().push(address.to_owned());
         if self.fail {
-            return Err(better_auth::plugins::siwe::SiweCallbackError::Failed(
+            return Err(alibi::plugins::siwe::SiweCallbackError::Failed(
                 "ENS unavailable".into(),
             ));
         }
-        Ok(better_auth::plugins::siwe::EnsProfile {
+        Ok(alibi::plugins::siwe::EnsProfile {
             name: Some("wallet.eth".into()),
             avatar: Some("https://images.example/wallet.png".into()),
         })
@@ -222,7 +217,7 @@ async fn wallet_email_policy<B: Backend>(parent: &Db) -> TestResult {
             assert!(
                 auth.context()
                     .verifications()
-                    .reserve(better_auth_core::CreateVerification {
+                    .reserve(alibi_core::CreateVerification {
                         identifier: "siwe-email-claim-claimed@example.test".into(),
                         value: "another-wallet".into(),
                         expires_at: chrono::Utc::now() + chrono::Duration::minutes(1)
@@ -335,13 +330,13 @@ struct PasskeyPolicy {
     authentications: Mutex<Vec<u32>>,
 }
 #[async_trait]
-impl better_auth::plugins::passkey::PasskeyAuthenticationAfterVerification for PasskeyPolicy {
+impl alibi::plugins::passkey::PasskeyAuthenticationAfterVerification for PasskeyPolicy {
     async fn after_verification(
         &self,
-        context: &better_auth::plugins::passkey::PasskeyAuthenticationContext<'_>,
-        verification: &better_auth::plugins::passkey::VerifiedPasskeyAuthentication,
-        client: &better_auth_core::utils::json::JsValue,
-    ) -> better_auth_core::AuthResult<()> {
+        context: &alibi::plugins::passkey::PasskeyAuthenticationContext<'_>,
+        verification: &alibi::plugins::passkey::VerifiedPasskeyAuthentication,
+        client: &alibi_core::utils::json::JsValue,
+    ) -> alibi_core::AuthResult<()> {
         assert!(
             context
                 .request
@@ -366,23 +361,21 @@ impl better_auth::plugins::passkey::PasskeyAuthenticationAfterVerification for P
             .deny_authentication
             .load(std::sync::atomic::Ordering::SeqCst)
         {
-            return Err(better_auth_core::AuthError::forbidden("Application veto"));
+            return Err(alibi_core::AuthError::forbidden("Application veto"));
         }
         Ok(())
     }
 }
 #[async_trait]
-impl better_auth::plugins::passkey::PasskeyRegistrationAfterVerification for PasskeyPolicy {
+impl alibi::plugins::passkey::PasskeyRegistrationAfterVerification for PasskeyPolicy {
     async fn after_verification(
         &self,
-        context: &better_auth::plugins::passkey::PasskeyRegistrationContext<'_>,
-        verification: &better_auth::plugins::passkey::VerifiedPasskeyRegistration,
-        user: &better_auth::plugins::passkey::PasskeyRegistrationUser,
-        client: &better_auth_core::utils::json::JsValue,
+        context: &alibi::plugins::passkey::PasskeyRegistrationContext<'_>,
+        verification: &alibi::plugins::passkey::VerifiedPasskeyRegistration,
+        user: &alibi::plugins::passkey::PasskeyRegistrationUser,
+        client: &alibi_core::utils::json::JsValue,
         stored_context: Option<&str>,
-    ) -> better_auth_core::AuthResult<
-        Option<better_auth::plugins::passkey::PasskeyRegistrationOverride>,
-    > {
+    ) -> alibi_core::AuthResult<Option<alibi::plugins::passkey::PasskeyRegistrationOverride>> {
         assert!(
             context
                 .request
@@ -408,33 +401,29 @@ impl better_auth::plugins::passkey::PasskeyRegistrationAfterVerification for Pas
         assert!(client.as_object().is_some());
         self.registrations.lock().unwrap().push(user.id.clone());
         match self.registration.load(std::sync::atomic::Ordering::SeqCst) {
-            0 => Err(better_auth_core::AuthError::forbidden("Registration veto")),
-            1 => Ok(Some(
-                better_auth::plugins::passkey::PasskeyRegistrationOverride {
-                    user_id: Some("foreign-user".into()),
-                    name: None,
-                },
-            )),
-            _ => Ok(Some(
-                better_auth::plugins::passkey::PasskeyRegistrationOverride {
-                    user_id: Some(user.id.clone()),
-                    name: Some("  Application credential  ".into()),
-                },
-            )),
+            0 => Err(alibi_core::AuthError::forbidden("Registration veto")),
+            1 => Ok(Some(alibi::plugins::passkey::PasskeyRegistrationOverride {
+                user_id: Some("foreign-user".into()),
+                name: None,
+            })),
+            _ => Ok(Some(alibi::plugins::passkey::PasskeyRegistrationOverride {
+                user_id: Some(user.id.clone()),
+                name: Some("  Application credential  ".into()),
+            })),
         }
     }
 }
 
 struct RegistrationSessionPolicy(Arc<PasskeyPolicy>);
 #[async_trait]
-impl<S: AuthSchema, H: better_auth_core::store::HookBackend>
-    better_auth_core::store::DatabaseHooks<S, H> for RegistrationSessionPolicy
+impl<S: AuthSchema, H: alibi_core::store::HookBackend> alibi_core::store::DatabaseHooks<S, H>
+    for RegistrationSessionPolicy
 {
     async fn before_create_session(
         &self,
-        _: &mut better_auth_core::CreateSession,
-        context: &better_auth_core::store::DatabaseHookContext<'_, H>,
-    ) -> better_auth_core::AuthResult<better_auth_core::store::HookControl> {
+        _: &mut alibi_core::CreateSession,
+        context: &alibi_core::store::DatabaseHookContext<'_, H>,
+    ) -> alibi_core::AuthResult<alibi_core::store::HookControl> {
         if context
             .request
             .as_ref()
@@ -450,21 +439,20 @@ impl<S: AuthSchema, H: better_auth_core::store::HookBackend>
                 .load(std::sync::atomic::Ordering::SeqCst)
                 == 2
             {
-                return Ok(better_auth_core::store::HookControl::Cancel);
+                return Ok(alibi_core::store::HookControl::Cancel);
             }
         }
-        Ok(better_auth_core::store::HookControl::Continue)
+        Ok(alibi_core::store::HookControl::Continue)
     }
 }
 struct RegistrationResolver(String);
 #[async_trait]
-impl better_auth::plugins::passkey::PasskeyUserResolver for RegistrationResolver {
+impl alibi::plugins::passkey::PasskeyUserResolver for RegistrationResolver {
     async fn resolve_user(
         &self,
-        context: &better_auth::plugins::passkey::PasskeyRegistrationContext<'_>,
+        context: &alibi::plugins::passkey::PasskeyRegistrationContext<'_>,
         requested: Option<&str>,
-    ) -> better_auth_core::AuthResult<Option<better_auth::plugins::passkey::PasskeyRegistrationUser>>
-    {
+    ) -> alibi_core::AuthResult<Option<alibi::plugins::passkey::PasskeyRegistrationUser>> {
         assert!(
             context
                 .request
@@ -472,7 +460,7 @@ impl better_auth::plugins::passkey::PasskeyUserResolver for RegistrationResolver
                 .ends_with("/passkey/generate-register-options")
         );
         Ok((requested == Some("application-enrollment")).then(|| {
-            better_auth::plugins::passkey::PasskeyRegistrationUser {
+            alibi::plugins::passkey::PasskeyRegistrationUser {
                 id: self.0.clone(),
                 name: "Resolved owner".into(),
                 display_name: Some("Application registration".into()),
@@ -495,11 +483,11 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
                 .rp_id("localhost")
                 .rp_name("Native test")
                 .origin(ORIGIN)
-                .registration(better_auth::plugins::passkey::PasskeyRegistrationConfig {
+                .registration(alibi::plugins::passkey::PasskeyRegistrationConfig {
                     after_verification: Some(policy.clone()),
                     ..Default::default()
                 })
-                .authentication(better_auth::plugins::passkey::PasskeyAuthenticationConfig {
+                .authentication(alibi::plugins::passkey::PasskeyAuthenticationConfig {
                     after_verification: Some(policy.clone()),
                 }),
         )
@@ -527,7 +515,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
                 .rp_id("localhost")
                 .rp_name("Native test")
                 .origin(ORIGIN)
-                .registration(better_auth::plugins::passkey::PasskeyRegistrationConfig {
+                .registration(alibi::plugins::passkey::PasskeyRegistrationConfig {
                     require_session: false,
                     resolve_user: Some(Arc::new(RegistrationResolver(
                         body(&owner)["user"]["id"].as_str().unwrap().into(),

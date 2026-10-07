@@ -1,6 +1,6 @@
 use crate::plugins::token_crypto;
+use alibi_core::AuthResult;
 use async_trait::async_trait;
-use better_auth_core::AuthResult;
 use std::sync::Arc;
 
 /// Application-owned irreversible OTP representation.
@@ -46,7 +46,7 @@ impl TwoFactorOtpStorage {
     pub(super) async fn store(
         &self,
         otp: &str,
-        secret: &better_auth_core::AuthConfig,
+        secret: &alibi_core::AuthConfig,
     ) -> AuthResult<String> {
         match self {
             Self::Plain => Ok(otp.to_owned()),
@@ -64,7 +64,7 @@ impl TwoFactorOtpStorage {
         &self,
         stored: &str,
         input: &str,
-        secret: &better_auth_core::AuthConfig,
+        secret: &alibi_core::AuthConfig,
     ) -> AuthResult<bool> {
         let (left, right) = match self {
             Self::Plain => (stored.to_owned(), input.to_owned()),

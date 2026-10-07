@@ -104,7 +104,7 @@ pub struct OAuthTokenSet {
 #[derive(Debug, Clone)]
 pub struct OAuthUserInfo {
     /// Trusted mapped application values; writes select initialized declared input fields.
-    pub additional_fields: better_auth_core::field_policy::FieldOutput,
+    pub additional_fields: alibi_core::field_policy::FieldOutput,
     pub id: String,
     pub email: String,
     pub name: Option<String>,
@@ -115,7 +115,7 @@ pub struct OAuthUserInfo {
 impl OAuthUserInfo {
     /// Original mapped public values. This is output, never account authority.
     #[must_use]
-    pub fn public_profile(&self, include_id: bool) -> better_auth_core::field_policy::FieldOutput {
+    pub fn public_profile(&self, include_id: bool) -> alibi_core::field_policy::FieldOutput {
         let mut output = self.additional_fields.clone();
         drop(output.insert("email".into(), Value::String(self.email.clone())));
         drop(output.insert("emailVerified".into(), Value::Bool(self.email_verified)));
@@ -161,7 +161,7 @@ pub struct OAuthUserInfoRequest {
 #[derive(Debug, Clone)]
 pub struct OAuthUserInfoResponse {
     /// Original mapped public profile, captured before raw account-subject resolution.
-    pub user_output: Option<better_auth_core::field_policy::FieldOutput>,
+    pub user_output: Option<alibi_core::field_policy::FieldOutput>,
     pub user: OAuthUserInfo,
     pub data: Value,
 }
@@ -205,12 +205,12 @@ pub trait OAuthProfileMapper: Send + Sync {
     async fn map_profile(
         &self,
         profile: Value,
-    ) -> Result<better_auth_core::field_policy::FieldOutput, String>;
+    ) -> Result<alibi_core::field_policy::FieldOutput, String>;
 }
 
 pub(super) fn apply_application_mapping(
     response: &mut OAuthUserInfoResponse,
-    mapped: better_auth_core::field_policy::FieldOutput,
+    mapped: alibi_core::field_policy::FieldOutput,
 ) -> Result<(), String> {
     let output = response
         .user_output
@@ -240,7 +240,7 @@ pub(super) fn apply_application_mapping(
 /// tenant/scope/audience entitlements before forwarding derived values.
 #[derive(Clone, Copy)]
 pub struct OAuthRefreshContext<'a> {
-    pub request: &'a better_auth_core::AuthRequest,
+    pub request: &'a alibi_core::AuthRequest,
 }
 
 /// An asynchronous alternative to static `refreshTokenParams`.

@@ -1,6 +1,6 @@
 //! Wire validation for the organization access-control schemas.
-use better_auth_core::types::OrganizationPermissions;
-use better_auth_core::{AuthRequest, AuthResponse};
+use alibi_core::types::OrganizationPermissions;
+use alibi_core::{AuthRequest, AuthResponse};
 use serde_json::{Map, Value, json};
 
 #[derive(Debug)]
@@ -94,7 +94,7 @@ pub(super) fn body_object(req: &AuthRequest) -> Result<Map<String, Value>, AuthR
         });
         return Err(expected("body", "object", (chunked && json).then_some(&Value::Null)).into());
     };
-    let value = better_auth_core::utils::json::from_slice::<Value>(bytes)
+    let value = alibi_core::utils::json::from_slice::<Value>(bytes)
         .map_err(|_error| response("BAD_REQUEST", "Invalid JSON in request body"))?;
     object(Some(&value), "body").cloned().map_err(Into::into)
 }

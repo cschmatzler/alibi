@@ -4,7 +4,7 @@ use super::*;
 /// # Errors
 ///
 /// Propagates errors from credential-account storage.
-pub async fn get_credential_account<S: better_auth_core::AuthSchema>(
+pub async fn get_credential_account<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: impl AsRef<str>,
 ) -> AuthResult<Option<S::Account>> {
@@ -12,7 +12,7 @@ pub async fn get_credential_account<S: better_auth_core::AuthSchema>(
         .database
         .get_credential_account_record(user_id.as_ref())
         .await?
-        .map(better_auth_core::AdapterRecord::into_stored))
+        .map(alibi_core::AdapterRecord::into_stored))
 }
 
 /// Resolve the user's stored password hash from the credential account.
@@ -21,7 +21,7 @@ pub async fn get_credential_account<S: better_auth_core::AuthSchema>(
 ///
 /// Propagates errors from credential-account storage.
 pub async fn get_credential_password_hash(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     user: &impl AuthUser,
 ) -> AuthResult<Option<String>> {
     Ok(get_credential_account(ctx, user.id())
@@ -35,7 +35,7 @@ pub async fn get_credential_password_hash(
 ///
 /// Propagates errors from credential-account storage.
 pub async fn user_has_password(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     user: &impl AuthUser,
 ) -> AuthResult<bool> {
     Ok(get_credential_password_hash(ctx, user).await?.is_some())

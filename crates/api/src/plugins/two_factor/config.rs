@@ -25,7 +25,7 @@ impl Default for AccountLockoutConfig {
 }
 
 /// Public configuration for the two-factor plugin.
-#[derive(Clone, better_auth_core::PluginConfig)]
+#[derive(Clone, alibi_core::PluginConfig)]
 #[plugin(name = "TwoFactorPlugin")]
 pub struct TwoFactorConfig {
     /// Allow omission of passwords for users without a stored credential hash.

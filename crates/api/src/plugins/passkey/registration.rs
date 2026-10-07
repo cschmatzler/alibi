@@ -1,8 +1,6 @@
 //! Trusted application policy for passkey-first registration.
+use alibi_core::{AuthConfig, AuthRequest, AuthResult, ContextExtensions, utils::json::JsValue};
 use async_trait::async_trait;
-use better_auth_core::{
-    AuthConfig, AuthRequest, AuthResult, ContextExtensions, utils::json::JsValue,
-};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
@@ -106,9 +104,9 @@ pub(super) fn trim_name(value: &str) -> &str {
 }
 
 /// Domain client errors and explicit public API errors preserve their wire contract.
-pub(super) const fn is_application_error(error: &better_auth_core::AuthError) -> bool {
+pub(super) const fn is_application_error(error: &alibi_core::AuthError) -> bool {
     matches!(
         error,
-        better_auth_core::AuthError::Upstream { .. } | better_auth_core::AuthError::Api { .. }
+        alibi_core::AuthError::Upstream { .. } | alibi_core::AuthError::Api { .. }
     ) || error.status_code() < 500
 }

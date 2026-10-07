@@ -1,10 +1,10 @@
 //! Application callbacks and physical tracking state for actual public login flows.
 use crate::{OAuthRefreshMode, SocialProfile, TestSchema};
 use axum::{Json, Router, routing::get};
-use better_auth::plugins::siwe::{
+use alibi::plugins::siwe::{
     Eip191Verifier, SiweCallbackResult, SiweConfig, SiweNonceProvider, SiwePlugin,
 };
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
@@ -17,8 +17,8 @@ use better_auth::{
         magic_link::{MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, SendMagicLink},
     },
 };
-use better_auth_core::{AuthRequest, HttpMethod};
-use better_auth_seaorm::{
+use alibi_core::{AuthRequest, HttpMethod};
+use alibi_seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
@@ -31,8 +31,8 @@ use std::{
     },
 };
 
-fn callback_value(value: &better_auth_core::utils::json::JsValue) -> Value {
-    use better_auth_core::utils::json::JsValue;
+fn callback_value(value: &alibi_core::utils::json::JsValue) -> Value {
+    use alibi_core::utils::json::JsValue;
     match value {
         JsValue::Number(number)
             if !number.is_finite() || (*number == 0.0 && number.is_sign_negative()) =>
@@ -127,10 +127,10 @@ impl ResolveLastLoginMethod for Application {
                 .ok_or_else(|| AuthError::internal("missing actual callback input"))?;
             let overflow = extra
                 .get("overflow")
-                .and_then(better_auth_core::utils::json::JsValue::as_f64);
+                .and_then(alibi_core::utils::json::JsValue::as_f64);
             let zero = extra
                 .get("zero")
-                .and_then(better_auth_core::utils::json::JsValue::as_f64);
+                .and_then(alibi_core::utils::json::JsValue::as_f64);
             return Ok(Some(format!(
                 "body:{}:{}",
                 if overflow == Some(f64::INFINITY) {
@@ -151,23 +151,23 @@ impl ResolveLastLoginMethod for Application {
     }
 }
 #[async_trait::async_trait]
-impl better_auth_core::AuthPlugin<TestSchema> for Application {
+impl alibi_core::AuthPlugin<TestSchema> for Application {
     fn name(&self) -> &'static str {
         "tracking-application"
     }
-    fn routes(&self) -> Vec<better_auth_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
         Vec::new()
     }
     async fn on_request(
         &self,
         _: &AuthRequest,
-        _: &better_auth_core::AuthContext<TestSchema>,
-    ) -> AuthResult<Option<better_auth_core::AuthResponse>> {
+        _: &alibi_core::AuthContext<TestSchema>,
+    ) -> AuthResult<Option<alibi_core::AuthResponse>> {
         Ok(None)
     }
     async fn on_init(
         &self,
-        ctx: &mut better_auth_core::AuthInitContext<TestSchema>,
+        ctx: &mut alibi_core::AuthInitContext<TestSchema>,
     ) -> AuthResult<()> {
         if self.mode == "transform" {
             ctx.register_user_update_transform(|_, mut update| {
@@ -184,7 +184,7 @@ impl better_auth_core::AuthPlugin<TestSchema> for Application {
 impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     async fn before_create_session(
         &self,
-        session: &mut better_auth_core::CreateSession,
+        session: &mut alibi_core::CreateSession,
         _: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if self.mode == "composition" {
@@ -237,7 +237,7 @@ impl SendMagicLink for Application {
     async fn send(
         &self,
         delivery: &MagicLinkDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(format!("magic:{}",delivery.email),json!({"email":delivery.email,"url":delivery.url,"token":delivery.token,"metadata":delivery.metadata}))
     }
@@ -247,7 +247,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("{}:{}", delivery.otp_type.as_str(), delivery.email),
@@ -306,7 +306,7 @@ pub(crate) async fn router(
         let path = format!("/__test/profiles/last-login-{mode}/api/auth");
         let mut config = base.clone().base_path(&path);
         if mode == "policy" {
-            config.session.cookie_same_site = better_auth_core::config::SameSite::Strict;
+            config.session.cookie_same_site = alibi_core::config::SameSite::Strict;
             login.cookie_name = "policy.last_login_method".into();
             login.max_age = 0.0;
         }

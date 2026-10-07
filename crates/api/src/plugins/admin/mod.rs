@@ -11,14 +11,14 @@ mod validation;
 use crate::plugins::helpers::{delete_session_cookie_headers, get_cookie};
 pub use access::RolePermissions;
 use access::{has_permission, is_admin_role, is_admin_user_id};
-use better_auth_core::entity::AuthUser;
-use better_auth_core::utils::cookie_utils::{
+use alibi_core::entity::AuthUser;
+use alibi_core::utils::cookie_utils::{
     create_clear_cookie, create_session_cookie_with_max_age, create_session_like_cookie,
     related_cookie_name,
 };
-use better_auth_core::utils::username::{UsernameValidationError, validate_username};
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{
+use alibi_core::utils::username::{UsernameValidationError, validate_username};
+use alibi_core::wire::{SessionView, UserView};
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, ErrorCodeMessageResponse,
 };
 pub(in crate::plugins) use callbacks::BannedUserMessagePolicy;
@@ -74,7 +74,7 @@ pub struct AdminPlugin {
 }
 
 /// Configuration for the admin plugin.
-#[derive(Debug, Clone, better_auth_core::PluginConfig)]
+#[derive(Debug, Clone, alibi_core::PluginConfig)]
 #[plugin(name = "AdminPlugin")]
 pub struct AdminConfig {
     /// Default role assigned to new users and role-less permission checks.
@@ -112,7 +112,7 @@ pub struct AdminConfig {
     pub allow_impersonating_admins: bool,
 }
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     AdminPlugin, "admin";
     routes {
         post "/admin/set-role" => handle_set_role, "admin_set_role";
@@ -132,21 +132,21 @@ better_auth_core::impl_auth_plugin! {
         post "/admin/has-permission" => handle_has_permission, "admin_has_permission";
     }
     extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
     }
 
-        fn session_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
-            std::iter::once(("impersonatedBy".into(), better_auth_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})).read_only())).collect()
+        fn session_fields(&self) -> alibi_core::field_policy::FieldConfigs {
+            std::iter::once(("impersonatedBy".into(), alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"})).read_only())).collect()
         }
 
         async fn on_init(
             &self,
-            ctx: &mut better_auth_core::AuthInitContext<S>,
+            ctx: &mut alibi_core::AuthInitContext<S>,
         ) -> AuthResult<()> {
             if let Some(admin_roles) = &self.config.admin_roles {
                 let roles = self.config.roles.clone().unwrap_or_else(access::default_roles);
@@ -204,7 +204,7 @@ impl AdminPlugin {
     async fn require_session(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<Option<(UserView, SessionView)>> {
         match ctx.require_authoritative_session(req).await {
             Ok((user, session)) => Ok(Some((UserView::from(&user), SessionView::from(&session)))),
@@ -240,7 +240,7 @@ impl AdminPlugin {
     async fn handle_set_role(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: SetRoleRequest = match validation::body(req) {
             Ok(v) => v,
@@ -257,7 +257,7 @@ impl AdminPlugin {
     async fn handle_get_user(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let query = match validation::get_user(req) {
             Ok(query) => query,
@@ -274,7 +274,7 @@ impl AdminPlugin {
     async fn handle_create_user(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: CreateUserRequest = match validation::body(req) {
             Ok(v) => v,
@@ -301,7 +301,7 @@ impl AdminPlugin {
     async fn handle_update_user(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let mut body: AdminUpdateUserRequest = match validation::body(req) {
             Ok(v) => v,
@@ -378,7 +378,7 @@ impl AdminPlugin {
     async fn handle_list_users(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         if let Err(response) = validation::list_users(req) {
             return Ok(response);
@@ -397,8 +397,8 @@ impl AdminPlugin {
             sort_direction: req.query.get("sortDirection").cloned(),
             filter_field: req.query.get("filterField").cloned(),
             filter_value: req.query_values("filterValue").map(|values| match values {
-                [value] => better_auth_core::UserFilterValue::Scalar(value.clone()),
-                values => better_auth_core::UserFilterValue::Multiple(values.to_vec()),
+                [value] => alibi_core::UserFilterValue::Scalar(value.clone()),
+                values => alibi_core::UserFilterValue::Multiple(values.to_vec()),
             }),
             filter_operator: req.query.get("filterOperator").cloned(),
         };
@@ -409,7 +409,7 @@ impl AdminPlugin {
     async fn handle_list_user_sessions(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: UserIdRequest = match validation::body(req) {
             Ok(v) => v,
@@ -426,7 +426,7 @@ impl AdminPlugin {
     async fn handle_ban_user(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: BanUserRequest = match validation::body(req) {
             Ok(v) => v,
@@ -447,7 +447,7 @@ impl AdminPlugin {
     async fn handle_unban_user(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: UserIdRequest = match validation::body(req) {
             Ok(v) => v,
@@ -464,7 +464,7 @@ impl AdminPlugin {
     async fn handle_impersonate_user(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: UserIdRequest = match validation::body(req) {
             Ok(v) => v,
@@ -474,7 +474,7 @@ impl AdminPlugin {
             return Ok(Self::missing_session_response());
         };
         self.authorize(&user, "user", "impersonate", MESSAGE_IMPERSONATE_USERS)?;
-        let metadata = better_auth_core::RequestMeta::from_request(req);
+        let metadata = alibi_core::RequestMeta::from_request(req);
         let (response, token) = match impersonate_user_core(
             &body,
             user.id.as_str(),
@@ -492,7 +492,7 @@ impl AdminPlugin {
         };
         let dont_remember = get_cookie(req, &related_cookie_name(&ctx.config, "dont_remember"))
             .and_then(|value| {
-                better_auth_core::utils::cookie_utils::verify_cookie_value(
+                alibi_core::utils::cookie_utils::verify_cookie_value(
                     &value,
                     ctx.config.current_secret(),
                 )
@@ -529,7 +529,7 @@ impl AdminPlugin {
             "Set-Cookie",
             create_session_like_cookie(
                 &related_cookie_name(&ctx.config, "dont_remember"),
-                &better_auth_core::utils::cookie_utils::sign_cookie_value(
+                &alibi_core::utils::cookie_utils::sign_cookie_value(
                     "true",
                     ctx.config.current_secret(),
                 ),
@@ -543,7 +543,7 @@ impl AdminPlugin {
     async fn handle_stop_impersonating(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         if let Err(response) = validation::parse(req) {
             return Ok(response);
@@ -584,7 +584,7 @@ impl AdminPlugin {
                 "Set-Cookie",
                 create_session_like_cookie(
                     &related_cookie_name(&ctx.config, "dont_remember"),
-                    &better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    &alibi_core::utils::cookie_utils::sign_cookie_value(
                         "true",
                         ctx.config.current_secret(),
                     ),
@@ -603,7 +603,7 @@ impl AdminPlugin {
     async fn handle_revoke_user_session(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: RevokeSessionRequest = match validation::body(req) {
             Ok(v) => v,
@@ -620,7 +620,7 @@ impl AdminPlugin {
     async fn handle_revoke_user_sessions(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: UserIdRequest = match validation::body(req) {
             Ok(v) => v,
@@ -637,7 +637,7 @@ impl AdminPlugin {
     async fn handle_remove_user(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: UserIdRequest = match validation::body(req) {
             Ok(v) => v,
@@ -654,7 +654,7 @@ impl AdminPlugin {
     async fn handle_set_user_password(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: SetUserPasswordRequest = match validation::body(req) {
             Ok(v) => v,
@@ -671,7 +671,7 @@ impl AdminPlugin {
     async fn handle_has_permission(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: HasPermissionRequest = match validation::body(req) {
             Ok(v) => v,
@@ -718,16 +718,15 @@ pub(super) fn target_is_admin(
 mod tests {
     use super::*;
     use crate::plugins::test_helpers;
-    use better_auth_core::entity::{AuthAccount, AuthSession};
-    use better_auth_core::utils::cookie_utils::related_cookie_name;
-    use better_auth_core::wire::{SessionView, UserView};
-    use better_auth_core::{AuthPlugin, CreateSession, CreateUser, HttpMethod};
+    use alibi_core::entity::{AuthAccount, AuthSession};
+    use alibi_core::utils::cookie_utils::related_cookie_name;
+    use alibi_core::wire::{SessionView, UserView};
+    use alibi_core::{AuthPlugin, CreateSession, CreateUser, HttpMethod};
     use chrono::{Duration, Utc};
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     async fn create_admin_context() -> (
         AuthContext<TestSchema>,
@@ -788,7 +787,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_custom_admin_role_can_use_permission_engine() {
-        let config = Arc::new(better_auth_core::AuthConfig::new(
+        let config = Arc::new(alibi_core::AuthConfig::new(
             "test-secret-key-at-least-32-chars-long",
         ));
         let database = test_helpers::create_test_database().await;
@@ -806,7 +805,7 @@ mod tests {
 
         let admin_session = database
             .create_session(CreateSession {
-                additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 token: None,
                 active_team_id: None,
                 user_id: admin.id.clone(),
@@ -973,10 +972,8 @@ mod tests {
     async fn test_stop_impersonating_restores_admin_session() {
         let (mut ctx, admin, admin_session, user, _user_session) = create_admin_context().await;
         let plugin = AdminPlugin::new();
-        let mut init = better_auth_core::AuthInitContext::new(
-            Arc::clone(&ctx.config),
-            Arc::clone(&ctx.database),
-        );
+        let mut init =
+            alibi_core::AuthInitContext::new(Arc::clone(&ctx.config), Arc::clone(&ctx.database));
         plugin.on_init(&mut init).await.unwrap();
         ctx.metadata.extend(init.into_parts().metadata);
 
@@ -1273,8 +1270,8 @@ mod tests {
         assert_eq!(account.account_id(), user_id);
         assert_eq!(account.provider_id(), "credential");
         assert!(
-            better_auth_core::PasswordHasher::verify(
-                &better_auth_core::ScryptHasher,
+            alibi_core::PasswordHasher::verify(
+                &alibi_core::ScryptHasher,
                 account.password().unwrap(),
                 "newpassword456",
             )

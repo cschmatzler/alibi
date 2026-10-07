@@ -5,24 +5,24 @@ use axum::{
     response::IntoResponse,
     routing::post,
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::anonymous::{AnonymousConfig, AnonymousIdentity};
-use better_auth::plugins::jwt::{DefineJwtPayload, JwtPlugin, JwtPluginConfig, JwtSession};
-use better_auth::plugins::one_time_token::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::anonymous::{AnonymousConfig, AnonymousIdentity};
+use alibi::plugins::jwt::{DefineJwtPayload, JwtPlugin, JwtPluginConfig, JwtSession};
+use alibi::plugins::one_time_token::{
     GenerateOneTimeToken, HashOneTimeToken, OneTimeTokenConfig, OneTimeTokenPlugin,
     OneTimeTokenSession, OneTimeTokenStorage,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     AccountManagementPlugin, AdminPlugin, AnonymousPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
     EmailPasswordPlugin, EmailVerificationPlugin, MultiSessionPlugin, OrganizationPlugin,
     PasskeyPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
     UserManagementPlugin,
 };
-use better_auth::prelude::{AuthRequest, HttpMethod};
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::prelude::{AuthRequest, HttpMethod};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::{AuthContext, AuthPlugin, AuthResponse, AuthRoute};
+use alibi_seaorm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::json;
 use std::{
@@ -76,30 +76,30 @@ impl AnonymousIdentity for ComposedIdentity {
     }
 }
 #[async_trait::async_trait]
-impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for CustomCallbacks {
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for CustomCallbacks {
     async fn before_create_session(
         &self,
-        session: &mut better_auth_core::CreateSession,
+        session: &mut alibi_core::CreateSession,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         let mut state = self.0.lock().unwrap();
         state.serial += 1;
         session.token = Some(format!("{:032}", state.serial));
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
     async fn before_create_verification(
         &self,
-        verification: &mut better_auth_core::CreateVerification,
+        verification: &mut alibi_core::CreateVerification,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         let mut state = self.0.lock().unwrap();
         if verification.identifier.starts_with("one-time-token:")
             && state.mode == "verification-cancel"
         {
             state.events.push(json!({"stage":"verification-cancel", "identifier":verification.identifier, "value":verification.value}));
-            Ok(better_auth_seaorm::HookControl::Cancel)
+            Ok(alibi_seaorm::HookControl::Cancel)
         } else {
-            Ok(better_auth_seaorm::HookControl::Continue)
+            Ok(alibi_seaorm::HookControl::Continue)
         }
     }
 }
@@ -222,7 +222,7 @@ pub(crate) async fn router(
         config.session.disable_session_refresh = *name == "ott-refresh-disabled";
         config.session.defer_session_refresh = *name == "ott-refresh-deferred";
         if *name == "ott-composed" {
-            config.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
                 enabled: true,
                 ..Default::default()
             });
@@ -291,7 +291,7 @@ pub(crate) async fn router(
                             let (auth, _) = profiles.get("ott-custom-callback").unwrap();
                             let result = auth.dispatch_endpoint(
                                 OneTimeTokenPlugin::generate_endpoint(),
-                                better_auth::endpoint::EndpointOptions {
+                                alibi::endpoint::EndpointOptions {
                                     headers: Some(headers.iter().filter_map(|(name,value)| value.to_str().ok().map(|value| (name.to_string(),value.to_owned()))).collect()),
                                     ..Default::default()
                                 },

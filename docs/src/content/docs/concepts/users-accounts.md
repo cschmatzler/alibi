@@ -44,9 +44,9 @@ Email changes are disabled by default. Enable them by replacing the default user
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::UserManagementPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::UserManagementPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -73,9 +73,9 @@ If the requested address belongs to another user, the response is the same `{"st
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::{SendChangeEmailConfirmation, UserManagementPlugin};
-use better_auth::wire::UserView;
-use better_auth::AuthResult;
+use alibi::plugins::{SendChangeEmailConfirmation, UserManagementPlugin};
+use alibi::wire::UserView;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 struct ChangeEmailMailer;
@@ -104,10 +104,10 @@ Deletion is also opt-in:
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::UserManagementPlugin;
-use better_auth::plugins::user_management::{AfterDeleteUser, BeforeDeleteUser, SendDeleteAccountVerification};
-use better_auth::wire::UserView;
-use better_auth::{AuthError, AuthResult};
+use alibi::plugins::UserManagementPlugin;
+use alibi::plugins::user_management::{AfterDeleteUser, BeforeDeleteUser, SendDeleteAccountVerification};
+use alibi::wire::UserView;
+use alibi::{AuthError, AuthResult};
 use chrono::Duration;
 use std::sync::Arc;
 
@@ -173,8 +173,8 @@ Public account output never includes tokens or password hashes. `POST /unlink-ac
 `AuthConfig::account` controls when an OAuth sign-in may attach to an existing user. Matching profile data alone never establishes ownership: the provider must assert a verified email, or be explicitly trusted.
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::config::AccountLinkingConfig;
+use alibi::AuthConfig;
+use alibi::config::AccountLinkingConfig;
 
 fn auth_config(secret: &str) -> AuthConfig {
     let mut config = AuthConfig::new(secret);
@@ -214,9 +214,9 @@ To decide linking per request, implement `TrustedProvidersResolver`:
 
 ```rust
 use async_trait::async_trait;
-use better_auth::config::TrustedProvidersResolver;
-use better_auth::prelude::AuthRequest;
-use better_auth::{AuthConfig, AuthResult};
+use alibi::config::TrustedProvidersResolver;
+use alibi::prelude::AuthRequest;
+use alibi::{AuthConfig, AuthResult};
 
 struct TenantProviders;
 
@@ -239,13 +239,13 @@ fn auth_config(secret: &str) -> AuthConfig {
 
 ## Validate new identities
 
-`AuthConfig::user_validation` runs before a user is created, before a provider account is written, and before a provider account is linked. It sees the candidate user and where it came from (`password`, OAuth provider, SSO, anonymous, …) and can mutate or reject it. A rejection becomes a `403` with your error code. Implement `better_auth::user_validation::UserInfoValidator`:
+`AuthConfig::user_validation` runs before a user is created, before a provider account is written, and before a provider account is linked. It sees the candidate user and where it came from (`password`, OAuth provider, SSO, anonymous, …) and can mutate or reject it. A rejection becomes a `403` with your error code. Implement `alibi::user_validation::UserInfoValidator`:
 
 ```rust
 use async_trait::async_trait;
-use better_auth::{AuthConfig, AuthResult};
-use better_auth::hooks::RequestHookContext;
-use better_auth::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
+use alibi::{AuthConfig, AuthResult};
+use alibi::hooks::RequestHookContext;
+use alibi::user_validation::{UserInfoValidator, UserValidationData, UserValidationRejection};
 use std::sync::Arc;
 
 struct CompanyAddressesOnly;

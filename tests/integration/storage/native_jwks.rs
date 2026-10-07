@@ -1,12 +1,12 @@
 //! Managed keyring lifecycle through real handlers, with independent physical SQL checks.
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::plugins::jwt::{JwtPlugin, JwtPluginConfig};
+use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi_core::endpoint::EndpointOptions;
+use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
 use base64::Engine as _;
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::plugins::jwt::{JwtPlugin, JwtPluginConfig};
-use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use better_auth_core::endpoint::EndpointOptions;
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 use chrono::Duration;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -18,7 +18,7 @@ postgres_tests!(native_jwk_workflow);
 
 fn plugins<S: AuthSchema>(builder: AuthBuilder<S>, grace: i64) -> AuthBuilder<S> {
     builder
-        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new())
         .plugin(JwtPlugin::with_config(JwtPluginConfig {
             rotation_interval: Some(Duration::seconds(2)),

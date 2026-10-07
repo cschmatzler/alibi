@@ -1,10 +1,10 @@
 //! Remember successful session issuance without changing authentication authority.
-use async_trait::async_trait;
-use better_auth_core::hooks::current_request_hook_context;
-use better_auth_core::{
+use alibi_core::hooks::current_request_hook_context;
+use alibi_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, AuthSession, RequestHookContext, UpdateUser,
 };
+use async_trait::async_trait;
 use std::sync::Arc;
 
 /// Request context retained at the actual adapter or completed-response boundary.
@@ -12,7 +12,7 @@ use std::sync::Arc;
 pub struct LastLoginMethodContext {
     pub request: RequestHookContext,
     /// Endpoint input at this callback phase; original HTTP bytes remain in request.body.
-    pub body: Option<better_auth_core::utils::json::JsValue>,
+    pub body: Option<alibi_core::utils::json::JsValue>,
     /// Admitted endpoint template; original request.path remains the actual URI.
     pub route_path: String,
     pub params: std::collections::HashMap<String, String>,
@@ -24,8 +24,8 @@ pub struct LastLoginMethodContext {
 }
 #[derive(Clone, Debug)]
 pub struct LastLoginMethodSession {
-    pub user: better_auth_core::wire::UserView,
-    pub session: better_auth_core::wire::SessionView,
+    pub user: alibi_core::wire::UserView,
+    pub session: alibi_core::wire::SessionView,
 }
 /// A synchronous application resolver. `None` falls back to the built-in resolver;
 /// an empty string suppresses tracking. Errors propagate at the invoking boundary.
@@ -86,8 +86,8 @@ impl LastLoginMethodPlugin {
     fn resolve(&self, context: &LastLoginMethodContext) -> AuthResult<Option<String>> {
         if let Some(resolver) = &self.config.resolver
             && let Some(method) = resolver.resolve(context).map_err(|error| match error {
-                ordinary @ better_auth_core::AuthError::Internal(_) => {
-                    better_auth_core::AuthError::CallbackFailure(Box::new(ordinary))
+                ordinary @ alibi_core::AuthError::Internal(_) => {
+                    alibi_core::AuthError::CallbackFailure(Box::new(ordinary))
                 }
                 other => other,
             })?
@@ -125,19 +125,19 @@ impl LastLoginMethodPlugin {
             .to_owned();
         let body = request
             .extensions
-            .get::<better_auth_core::hooks::ValidatedRequestBody>()
+            .get::<alibi_core::hooks::ValidatedRequestBody>()
             .map(|body| body.0.clone())
             .or_else(|| {
                 request
                     .extensions
-                    .get::<better_auth_core::hooks::TransformedRequestBody>()
+                    .get::<alibi_core::hooks::TransformedRequestBody>()
                     .map(|body| body.0.clone())
             })
             .or_else(|| {
                 request
                     .body
                     .as_deref()
-                    .and_then(|body| better_auth_core::utils::json::from_slice(body).ok())
+                    .and_then(|body| alibi_core::utils::json::from_slice(body).ok())
             });
         let new_session = request
             .extensions
@@ -148,7 +148,7 @@ impl LastLoginMethodPlugin {
             });
         let endpoint = request
             .extensions
-            .get::<better_auth_core::plugin::ResolvedEndpoint>();
+            .get::<alibi_core::plugin::ResolvedEndpoint>();
         let route_path = endpoint
             .as_ref()
             .map_or_else(|| request.path.clone(), |endpoint| endpoint.path.clone());
@@ -164,10 +164,10 @@ impl LastLoginMethodPlugin {
             new_session,
         })
     }
-    fn cookie(&self, method: &str, config: &better_auth_core::AuthConfig) -> AuthResult<String> {
+    fn cookie(&self, method: &str, config: &alibi_core::AuthConfig) -> AuthResult<String> {
         if self.config.max_age > 34_560_000.0 {
-            return Err(better_auth_core::AuthError::CallbackFailure(Box::new(
-                better_auth_core::AuthError::internal("Invalid login-method cookie lifetime"),
+            return Err(alibi_core::AuthError::CallbackFailure(Box::new(
+                alibi_core::AuthError::internal("Invalid login-method cookie lifetime"),
             )));
         }
         let defaults = &config.advanced.default_cookie_attributes;
@@ -207,9 +207,9 @@ impl LastLoginMethodPlugin {
             .secure(secure)
             .http_only(false)
             .same_site(match same_site {
-                better_auth_core::config::SameSite::Strict => cookie::SameSite::Strict,
-                better_auth_core::config::SameSite::Lax => cookie::SameSite::Lax,
-                better_auth_core::config::SameSite::None => cookie::SameSite::None,
+                alibi_core::config::SameSite::Strict => cookie::SameSite::Strict,
+                alibi_core::config::SameSite::Lax => cookie::SameSite::Lax,
+                alibi_core::config::SameSite::None => cookie::SameSite::None,
             });
         if let Some(domain) = domain {
             cookie = cookie.domain(domain.to_owned());
@@ -228,20 +228,20 @@ impl LastLoginMethodPlugin {
 }
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -308,7 +308,7 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
             });
         let endpoint = req
             .extensions()
-            .get::<better_auth_core::plugin::ResolvedEndpoint>();
+            .get::<alibi_core::plugin::ResolvedEndpoint>();
         let context = LastLoginMethodContext {
             route_path: endpoint
                 .as_ref()
@@ -318,12 +318,12 @@ impl<S: AuthSchema> AuthPlugin<S> for LastLoginMethodPlugin {
                 .unwrap_or_default(),
             body: req
                 .extensions()
-                .get::<better_auth_core::hooks::TransformedRequestBody>()
+                .get::<alibi_core::hooks::TransformedRequestBody>()
                 .map(|body| body.0.clone())
                 .or_else(|| {
                     req.body
                         .as_deref()
-                        .and_then(|body| better_auth_core::utils::json::from_slice(body).ok())
+                        .and_then(|body| alibi_core::utils::json::from_slice(body).ok())
                 }),
             request: RequestHookContext::from_request(req),
             response: Some(response.clone()),
@@ -360,11 +360,11 @@ struct LastLoginSessionHook<S: AuthSchema> {
     context: Arc<AuthContext<S>>,
 }
 #[async_trait]
-impl<S: AuthSchema> better_auth_core::store::SessionCreatedHook<S> for LastLoginSessionHook<S> {
+impl<S: AuthSchema> alibi_core::store::SessionCreatedHook<S> for LastLoginSessionHook<S> {
     async fn after_create(
         &self,
         session: &S::Session,
-        database: &dyn better_auth_core::store::AuthStore<S>,
+        database: &dyn alibi_core::store::AuthStore<S>,
     ) -> AuthResult<()> {
         if let Some(context) = LastLoginMethodPlugin::adapter_context(&self.context)
             && let Some(method) = self
@@ -394,9 +394,9 @@ impl<S: AuthSchema> better_auth_core::store::SessionCreatedHook<S> for LastLogin
 /// Returns the published FIELD_NOT_ALLOWED response for truthy supplied values.
 pub fn reject_last_login_method_input<S: AuthSchema>(
     ctx: &AuthContext<S>,
-    value: Option<&better_auth_core::utils::json::JsValue>,
+    value: Option<&alibi_core::utils::json::JsValue>,
 ) -> AuthResult<()> {
-    use better_auth_core::utils::json::JsValue;
+    use alibi_core::utils::json::JsValue;
     let truthy = match value {
         None | Some(JsValue::Null) => false,
         Some(JsValue::Bool(value)) => *value,
@@ -410,7 +410,7 @@ pub fn reject_last_login_method_input<S: AuthSchema>(
         == Some(true)
         && truthy
     {
-        return Err(better_auth_core::AuthError::Upstream {
+        return Err(alibi_core::AuthError::Upstream {
             status: 400,
             code: "FIELD_NOT_ALLOWED",
             message: "lastLoginMethod is not allowed to be set",

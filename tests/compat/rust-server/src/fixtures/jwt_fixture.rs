@@ -6,24 +6,24 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::jwt::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::jwt::{
     DefineJwtPayload, JwtAlgorithm, JwtAudience, JwtClaimsConfig, JwtExpiration, JwtPlugin,
     JwtPluginConfig, JwtSession, JwtSignOptions,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
     EmailPasswordPlugin, EmailVerificationPlugin, OrganizationPlugin, PasskeyPlugin,
     PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, AuthSession,
 };
-use better_auth_seaorm::DatabaseConnection;
-use better_auth_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
-use better_auth_seaorm::store::entities::jwk;
+use alibi_seaorm::DatabaseConnection;
+use alibi_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use alibi_seaorm::store::entities::jwk;
 use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -91,7 +91,7 @@ impl AuthPlugin<TestSchema> for EarlierExposedHeaders {
 struct ServerOperation {
     operation: String,
     profile: Option<String>,
-    payload: Option<better_auth_core::utils::json::JsValue>,
+    payload: Option<alibi_core::utils::json::JsValue>,
     token: Option<String>,
     issuer: Option<String>,
 }
@@ -194,7 +194,7 @@ pub(crate) async fn router(
     router = router.route("/__test/jwt", post(move |body: Bytes| {
         let profiles = profiles.clone();
         async move {
-            let body: ServerOperation = match better_auth_core::utils::json::from_slice(&body) {
+            let body: ServerOperation = match alibi_core::utils::json::from_slice(&body) {
                 Ok(body) => body,
                 Err(error) => return failure(error),
             };
@@ -239,7 +239,7 @@ pub(crate) async fn router(
                     .filter(jwk::Column::Id.eq(body.id))
                     .col_expr(
                         jwk::Column::ExpiresAt,
-                        better_auth_seaorm::sea_orm::sea_query::Expr::value(body.expires_at),
+                        alibi_seaorm::sea_orm::sea_query::Expr::value(body.expires_at),
                     )
                     .exec(&database)
                     .await

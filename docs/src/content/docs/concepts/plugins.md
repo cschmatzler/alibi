@@ -10,14 +10,14 @@ Everything beyond the core session machinery is a plugin. A plugin owns a set of
 Generate and migrate any schema the plugin needs ([Database](/concepts/database/#plugin-schema)), then add it to the builder:
 
 ```bash
-better-auth-rs generate --plugins admin,two-factor -o src/auth_schema.rs
+alibi generate --plugins admin,two-factor -o src/auth_schema.rs
 ```
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::{AdminPlugin, EmailPasswordPlugin, TwoFactorPlugin};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::{AdminPlugin, EmailPasswordPlugin, TwoFactorPlugin};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -36,7 +36,7 @@ async fn build_auth(
 `build()` initializes plugins in the order you registered them. Most plugins accept configuration in two equivalent forms — chained builder methods, or a config struct:
 
 ```rust
-use better_auth::plugins::{AdminConfig, AdminPlugin};
+use alibi::plugins::{AdminConfig, AdminPlugin};
 
 fn admin_plugins() -> (AdminPlugin, AdminPlugin) {
     // 1. Chained builder methods (one per option)
@@ -80,7 +80,7 @@ Registering one of these yourself **replaces** the default with your configurati
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
+use alibi::BetterAuth;
 
 fn describe(auth: &BetterAuth<AppAuthSchema>) {
     println!("plugins: {:?}", auth.plugin_names());

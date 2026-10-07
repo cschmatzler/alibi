@@ -8,7 +8,7 @@ description: "Configure the auth secret, rotate encryption keys with managed sec
 The simplest configuration is a single secret of **at least 32 characters** (`build()` rejects anything shorter):
 
 ```rust
-use better_auth::AuthConfig;
+use alibi::AuthConfig;
 
 fn auth_config() -> Result<AuthConfig, std::env::VarError> {
     Ok(AuthConfig::new(std::env::var("BETTER_AUTH_SECRET")?))
@@ -29,7 +29,7 @@ The secret does two jobs:
 To rotate **encryption** keys without losing data, use versioned keys:
 
 ```rust
-use better_auth::{AuthConfig, ManagedSecrets};
+use alibi::{AuthConfig, ManagedSecrets};
 
 fn auth_config(current: &str, previous: &str) -> AuthConfig {
     let keys = ManagedSecrets::new(2, current) // new writes use version 2

@@ -1,11 +1,9 @@
 use super::*;
-pub(in crate::plugins::oauth::handlers) async fn finish_oauth_session<
-    S: better_auth_core::AuthSchema,
->(
-    user: &better_auth_core::AdapterRecord<S::User>,
+pub(in crate::plugins::oauth::handlers) async fn finish_oauth_session<S: alibi_core::AuthSchema>(
+    user: &alibi_core::AdapterRecord<S::User>,
     is_register: bool,
     policy: &OAuthProcessPolicy,
-    meta: &better_auth_core::RequestMeta,
+    meta: &alibi_core::RequestMeta,
     ctx: &AuthContext<S>,
 ) -> Result<crate::plugins::helpers::IssuedSessionRecord<S>, OAuthSignInError> {
     if !user.email_verified() {
@@ -71,13 +69,11 @@ pub(in crate::plugins::oauth::handlers) async fn finish_oauth_session<
 pub(in crate::plugins::oauth::handlers) fn provider_fields(
     user_info: &OAuthUserInfo,
     creation: bool,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> Result<better_auth_core::field_policy::FieldValues, OAuthSignInError> {
-    let registered = ctx
-        .extensions
-        .get::<better_auth_core::field_policy::UserFields>();
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
+) -> Result<alibi_core::field_policy::FieldValues, OAuthSignInError> {
+    let registered = ctx.extensions.get::<alibi_core::field_policy::UserFields>();
     let fallback =
-        better_auth_core::field_policy::SessionFields(ctx.config.user.additional_fields.clone());
+        alibi_core::field_policy::SessionFields(ctx.config.user.additional_fields.clone());
     let fields = registered.as_ref().map_or(&fallback, |fields| &fields.0);
     let input = user_info
         .additional_fields
@@ -91,7 +87,7 @@ pub(in crate::plugins::oauth::handlers) fn provider_fields(
         .map(|(name, value)| {
             (
                 name.clone(),
-                better_auth_core::utils::json::JsValue::from(value.clone()),
+                alibi_core::utils::json::JsValue::from(value.clone()),
             )
         })
         .collect();
@@ -101,13 +97,13 @@ pub(in crate::plugins::oauth::handlers) fn provider_fields(
         fields.parse_update(&input)
     };
     result.map_err(|error| match error {
-        better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
+        alibi_core::field_policy::FieldInputError::Validation { code, message } => {
             OAuthSignInError::IdentityDenied {
                 code: code.into(),
                 message,
             }
         }
-        better_auth_core::field_policy::FieldInputError::Transform(error) => match error {
+        alibi_core::field_policy::FieldInputError::Transform(error) => match error {
             AuthError::Api { .. } | AuthError::Upstream { .. } => {
                 OAuthSignInError::from_identity_denial(error)
             }
@@ -136,7 +132,7 @@ pub(in crate::plugins::oauth::handlers) async fn validate_provider_identity(
     user: &OAuthUserInfo,
     user_id: &str,
     action: UserValidationAction,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(), OAuthSignInError> {
     let mut data = UserValidationData {
         user: provider_candidate(user, user_id),
@@ -176,8 +172,8 @@ pub(in crate::plugins) async fn process_oauth_sign_in(
     policy: &OAuthProcessPolicy,
     tokens: &OAuthTokenSet,
     disable_sign_up: bool,
-    meta: &better_auth_core::RequestMeta,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    meta: &alibi_core::RequestMeta,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
     process_oauth_sign_in_with_output(
         identity,
@@ -200,10 +196,10 @@ pub(in crate::plugins) async fn process_oauth_sign_in_with_output(
     policy: &OAuthProcessPolicy,
     tokens: &OAuthTokenSet,
     disable_sign_up: bool,
-    meta: &better_auth_core::RequestMeta,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    meta: &alibi_core::RequestMeta,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     (raw_output, raw_policy): (
-        Option<&better_auth_core::field_policy::FieldOutput>,
+        Option<&alibi_core::field_policy::FieldOutput>,
         Option<&super::super::providers::OAuthAuthorizationPolicy>,
     ),
 ) -> Result<ProcessOAuthUserResult, OAuthSignInError> {
@@ -546,7 +542,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in_with_output(
         // OAuth registration commits its identity and provider binding together.
         // Notifications and session creation follow the committed transaction.
         let (persisted_user, persisted_account) =
-            better_auth_core::store::transaction(ctx.database.as_ref(), move |tx| {
+            alibi_core::store::transaction(ctx.database.as_ref(), move |tx| {
                 Box::pin(async move {
                     let user = tx
                         .create_user_with_source_record(create_user, source)
@@ -570,7 +566,7 @@ pub(in crate::plugins) async fn process_oauth_sign_in_with_output(
             // Published registration commits the identity first, then catches
             // account-cookie configuration failures before issuing a session.
             if !age.is_finite()
-                || better_auth_core::utils::cookie_utils::create_account_cookie_header(
+                || alibi_core::utils::cookie_utils::create_account_cookie_header(
                     &account_cookie_name(&ctx.config),
                     &account_cookie_name(&ctx.config),
                     "",

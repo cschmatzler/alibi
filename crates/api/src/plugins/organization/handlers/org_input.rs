@@ -4,8 +4,8 @@ use crate::plugins::organization::types::{
     RoleInput, SetActiveOrganizationRequest, UpdateMemberRoleRequest, UpdateOrganizationData,
     UpdateOrganizationRequest,
 };
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::{AuthError, AuthRequest, AuthResponse};
+use alibi_core::utils::json::JsValue;
+use alibi_core::{AuthError, AuthRequest, AuthResponse};
 use serde_json::{Value, json};
 
 fn response(status: u16, code: &str, message: impl Into<String>) -> AuthResponse {
@@ -72,7 +72,7 @@ fn decode(req: &AuthRequest) -> Result<Option<JsValue>, AuthResponse> {
         // fallback. Zod sees an object with no declared own fields.
         return Ok(Some(JsValue::Object(indexmap::IndexMap::default())));
     }
-    better_auth_core::utils::json::from_slice::<JsValue>(bytes)
+    alibi_core::utils::json::from_slice::<JsValue>(bytes)
         .map(Some)
         .map_err(|_error| response(400, "BAD_REQUEST", "Invalid JSON in request body"))
 }

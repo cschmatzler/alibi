@@ -1,17 +1,17 @@
 //! Actual configured IP policies and physical session observations.
 use crate::TestSchema;
 use axum::{Json, Router, routing::get};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{
     AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin, EmailPasswordPlugin,
     EmailVerificationPlugin, PasskeyPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use better_auth_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute};
-use better_auth_seaorm::DatabaseConnection;
-use better_auth_seaorm::sea_orm::{EntityTrait, QueryOrder};
-use better_auth_seaorm::store::entities::session;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi_core::{AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute};
+use alibi_seaorm::DatabaseConnection;
+use alibi_seaorm::sea_orm::{EntityTrait, QueryOrder};
+use alibi_seaorm::store::entities::session;
 use chrono::SecondsFormat;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -49,7 +49,7 @@ impl AuthPlugin<TestSchema> for ApplicationEndpoint {
 pub(crate) async fn router(
     base: &AuthConfig,
     db: DatabaseConnection,
-    sender: Arc<dyn better_auth::plugins::email_verification::SendVerificationEmail>,
+    sender: Arc<dyn alibi::plugins::email_verification::SendVerificationEmail>,
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let mut router = Router::new();
     for name in [

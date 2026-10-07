@@ -16,14 +16,14 @@ keywords = { workspace = true }
 categories = { workspace = true }
 
 [lib]
-name = "better_auth_seaorm"
+name = "alibi_seaorm"
 
 [lints]
 workspace = true
 
 [dependencies]
-better-auth-core = { workspace = true }
-better-auth-seaorm-macros = { package = "alibi-seaorm-macros", version = "0.1.0", path = "../seaorm-macros" }
+alibi-core = { workspace = true }
+alibi-seaorm-macros = { version = "0.1.1", path = "../seaorm-macros" }
 
 async-trait = { workspace = true }
 chrono = { workspace = true }

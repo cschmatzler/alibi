@@ -1,10 +1,10 @@
 //! Optional native records through real handlers: SQLx, SeaORM and no database.
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
-use better_auth::plugins::{EmailPasswordPlugin, PasskeyPlugin, TwoFactorConfig, TwoFactorPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use better_auth_core::types::UpdatePasskeyAuthentication;
-use better_auth_core::{
+use alibi::plugins::{EmailPasswordPlugin, PasskeyPlugin, TwoFactorConfig, TwoFactorPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi_core::types::UpdatePasskeyAuthentication;
+use alibi_core::{
     AuthRequest, AuthResponse, CreatePasskey, CreateTwoFactor, HttpMethod, UpdateTwoFactor,
 };
 use chrono::{Duration, Utc};

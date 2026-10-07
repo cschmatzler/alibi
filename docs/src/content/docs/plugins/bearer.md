@@ -9,9 +9,9 @@ Cookies are the default carrier for sessions, but mobile apps, CLIs and server-t
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::BearerPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::BearerPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -55,7 +55,7 @@ The scheme is case-insensitive. A token of the form `<token>.<signature>` (what 
 ## Configuration
 
 ```rust
-use better_auth::plugins::{BearerConfig, BearerPlugin};
+use alibi::plugins::{BearerConfig, BearerPlugin};
 
 fn bearer() -> BearerPlugin {
     BearerPlugin::with_config(BearerConfig {

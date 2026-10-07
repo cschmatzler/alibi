@@ -1,17 +1,17 @@
 //! Real OpenAPI plugin configurations; no fixture endpoint manufactures schema output.
 use crate::TestSchema;
 use axum::Router;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::jwt::JwtPlugin;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::jwt::JwtPlugin;
+use alibi::plugins::{
     AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
     EmailPasswordPlugin, EmailVerificationPlugin, MultiSessionPlugin, OAuthPlugin, OpenApiConfig,
     OpenApiPlugin, OrganizationPlugin, PasskeyPlugin, PasswordManagementPlugin, PhoneNumberPlugin,
     SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
-use better_auth_seaorm::sea_orm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, AuthSchema};
+use alibi_seaorm::sea_orm::DatabaseConnection;
 use std::sync::Arc;
 
 struct DocumentationSchema;
@@ -20,10 +20,10 @@ impl AuthSchema for DocumentationSchema {
     type Session = <TestSchema as AuthSchema>::Session;
     type Account = <TestSchema as AuthSchema>::Account;
     type Verification = <TestSchema as AuthSchema>::Verification;
-    fn openapi_models() -> Vec<better_auth::plugin::OpenApiModel> {
-        let mut models = better_auth::__private_core::openapi::annotations::core_models();
+    fn openapi_models() -> Vec<alibi::plugin::OpenApiModel> {
+        let mut models = alibi::__private_core::openapi::annotations::core_models();
         models[0].fields.push(
-            better_auth::plugin::OpenApiField::new(
+            alibi::plugin::OpenApiField::new(
                 "metadata",
                 serde_json::json!({"type":"json","default":null}),
                 true,
@@ -51,7 +51,7 @@ impl AuthSchema for DocumentationSchema {
         ] {
             models[0]
                 .fields
-                .push(better_auth::plugin::OpenApiField::new(
+                .push(alibi::plugin::OpenApiField::new(
                     name,
                     schema,
                     name == "access",
@@ -146,15 +146,15 @@ where
         builder = builder.plugin(DocumentationPlugin);
     }
     if name.starts_with("openapi-last-login") {
-        builder = builder.plugin(better_auth::plugins::LastLoginMethodPlugin::with_config(
-            better_auth::plugins::LastLoginMethodConfig {
+        builder = builder.plugin(alibi::plugins::LastLoginMethodPlugin::with_config(
+            alibi::plugins::LastLoginMethodConfig {
                 store_in_database: name == "openapi-last-login-database",
                 ..Default::default()
             },
         ));
     }
     if name.starts_with("openapi-plugins") {
-        use better_auth::plugins::organization::{
+        use alibi::plugins::organization::{
             DynamicAccessControlConfig, OrganizationConfig, TeamsConfig,
         };
         let organization = OrganizationConfig {
@@ -168,15 +168,15 @@ where
             },
             ..Default::default()
         };
-        let mut api_key = better_auth::plugins::api_key::ApiKeyConfig::default();
+        let mut api_key = alibi::plugins::api_key::ApiKeyConfig::default();
         if name == "openapi-plugins-configured" {
             api_key.rate_limit.max_requests = 43.0;
             api_key.rate_limit.time_window = 7654321.0;
         }
         builder = builder
-            .plugin(better_auth::plugins::one_tap::OneTapPlugin::with_config(
-                better_auth::plugins::one_tap::OneTapConfig {
-                    client_id: Some(better_auth::plugins::one_tap::OneTapClientId::Single(
+            .plugin(alibi::plugins::one_tap::OneTapPlugin::with_config(
+                alibi::plugins::one_tap::OneTapConfig {
+                    client_id: Some(alibi::plugins::one_tap::OneTapClientId::Single(
                         "openapi-one-tap-client".into(),
                     )),
                     ..Default::default()
@@ -191,11 +191,11 @@ where
             .plugin(JwtPlugin::new())
             .plugin(MultiSessionPlugin::new())
             .plugin(PhoneNumberPlugin::new(Default::default()))
-            .plugin(better_auth::plugins::siwe::SiwePlugin::new(
-                better_auth::plugins::siwe::SiweConfig::new(
+            .plugin(alibi::plugins::siwe::SiwePlugin::new(
+                alibi::plugins::siwe::SiweConfig::new(
                     "localhost",
-                    Arc::new(better_auth::plugins::siwe::RandomSiweNonce),
-                    Arc::new(better_auth::plugins::siwe::Eip191Verifier),
+                    Arc::new(alibi::plugins::siwe::RandomSiweNonce),
+                    Arc::new(alibi::plugins::siwe::Eip191Verifier),
                 ),
             ));
     }
@@ -217,11 +217,11 @@ where
                 async move {
                     let output = auth
                         .dispatch_endpoint(
-                            better_auth::endpoint::ServerEndpoint::<serde_json::Value>::new(
+                            alibi::endpoint::ServerEndpoint::<serde_json::Value>::new(
                                 "documentation",
                                 "serverDocument",
                             ),
-                            better_auth::endpoint::EndpointOptions::default(),
+                            alibi::endpoint::EndpointOptions::default(),
                         )
                         .await
                         .unwrap();
@@ -235,12 +235,12 @@ where
 
 struct DocumentationPlugin;
 #[async_trait::async_trait]
-impl<S: AuthSchema> better_auth::plugin::AuthPlugin<S> for DocumentationPlugin {
+impl<S: AuthSchema> alibi::plugin::AuthPlugin<S> for DocumentationPlugin {
     fn name(&self) -> &'static str {
         "documentation"
     }
-    fn routes(&self) -> Vec<better_auth::plugin::AuthRoute> {
-        use better_auth::plugin::AuthRoute;
+    fn routes(&self) -> Vec<alibi::plugin::AuthRoute> {
+        use alibi::plugin::AuthRoute;
         vec![
             AuthRoute::get("/documents/{id}", "read_document"),
             AuthRoute::post("/documents/{id}", "update_document"),
@@ -249,34 +249,34 @@ impl<S: AuthSchema> better_auth::plugin::AuthPlugin<S> for DocumentationPlugin {
             AuthRoute::get("/documentation-disabled", "disabled_document"),
         ]
     }
-    fn server_endpoints(&self) -> Vec<better_auth::endpoint::EndpointDefinition> {
-        vec![better_auth::endpoint::EndpointDefinition {
+    fn server_endpoints(&self) -> Vec<alibi::endpoint::EndpointDefinition> {
+        vec![alibi::endpoint::EndpointDefinition {
             name: "serverDocument",
             operation_id: "serverDocument",
             path: Some("/documentation-server-only".into()),
-            method: better_auth::__private_core::HttpMethod::Get,
+            method: alibi::__private_core::HttpMethod::Get,
         }]
     }
     async fn on_endpoint(
         &self,
-        call: &better_auth::endpoint::EndpointCall,
-        _ctx: &better_auth::plugin::AuthContext<S>,
-    ) -> AuthResult<better_auth::endpoint::EndpointResponse> {
+        call: &alibi::endpoint::EndpointCall,
+        _ctx: &alibi::plugin::AuthContext<S>,
+    ) -> AuthResult<alibi::endpoint::EndpointResponse> {
         if call.operation_id() == "serverDocument" {
-            return better_auth::endpoint::EndpointResponse::json(
+            return alibi::endpoint::EndpointResponse::json(
                 &serde_json::json!({"kind":"server-only"}),
             );
         }
-        Err(better_auth::AuthError::not_found(
+        Err(alibi::AuthError::not_found(
             "Unknown documentation operation",
         ))
     }
     fn openapi_metadata(
         &self,
-        _ctx: &better_auth::plugin::AuthInitContext<S>,
-    ) -> better_auth::plugin::PluginOpenApiMetadata {
-        use better_auth::__private_core::HttpMethod;
-        use better_auth::plugin::{
+        _ctx: &alibi::plugin::AuthInitContext<S>,
+    ) -> alibi::plugin::PluginOpenApiMetadata {
+        use alibi::__private_core::HttpMethod;
+        use alibi::plugin::{
             OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata,
         };
         use serde_json::json;
@@ -348,13 +348,13 @@ impl<S: AuthSchema> better_auth::plugin::AuthPlugin<S> for DocumentationPlugin {
     }
     async fn on_request(
         &self,
-        req: &better_auth::__private_core::AuthRequest,
-        _ctx: &better_auth::plugin::AuthContext<S>,
-    ) -> AuthResult<Option<better_auth::__private_core::AuthResponse>> {
-        use better_auth::__private_core::AuthResponse;
+        req: &alibi::__private_core::AuthRequest,
+        _ctx: &alibi::plugin::AuthContext<S>,
+    ) -> AuthResult<Option<alibi::__private_core::AuthResponse>> {
+        use alibi::__private_core::AuthResponse;
         use serde_json::json;
         if let Some(id) = req.path().strip_prefix("/documents/") {
-            let body = if req.method() == &better_auth::__private_core::HttpMethod::Post {
+            let body = if req.method() == &alibi::__private_core::HttpMethod::Post {
                 json!({"id":id,"labels":req.body_as_json::<serde_json::Value>()?})
             } else {
                 json!({"id":id})

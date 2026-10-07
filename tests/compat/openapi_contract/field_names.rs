@@ -6,7 +6,7 @@
 
 use crate::contract::helpers::*;
 use crate::contract::shapes::check_camel_case_fields;
-use better_auth::prelude::CreateAccount;
+use alibi::prelude::CreateAccount;
 
 #[cfg(test)]
 mod tests {
@@ -27,7 +27,7 @@ mod tests {
             vec![("POST /sign-up/email", signup_body.clone())];
 
         // Endpoints that require auth
-        let auth_endpoints: Vec<(&str, better_auth::prelude::AuthRequest)> = vec![
+        let auth_endpoints: Vec<(&str, alibi::prelude::AuthRequest)> = vec![
             ("GET /get-session", get_with_auth("/get-session", &token)),
             (
                 "GET /list-sessions",

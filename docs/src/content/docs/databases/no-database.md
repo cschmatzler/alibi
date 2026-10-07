@@ -15,9 +15,9 @@ In both modes the session lives in an encrypted cookie, so neither can revoke a 
 ## Start without a database
 
 ```rust
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::store::StatelessSchema;
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::store::StatelessSchema;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth() -> AuthResult<BetterAuth<StatelessSchema>> {
     let config = AuthConfig::new("a-secret-with-at-least-32-characters")
@@ -33,9 +33,9 @@ async fn build_auth() -> AuthResult<BetterAuth<StatelessSchema>> {
 
 ```rust
 use axum::Json;
-use better_auth::integrations::axum::CurrentSession;
-use better_auth::store::StatelessSchema;
-use better_auth::wire::UserView;
+use alibi::integrations::axum::CurrentSession;
+use alibi::store::StatelessSchema;
+use alibi::wire::UserView;
 
 async fn me(session: CurrentSession<StatelessSchema>) -> Json<UserView> {
     Json(session.user)
@@ -67,9 +67,9 @@ To keep users and accounts in SQL while sessions live only in the cookie, make t
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::sqlx::{SqlxPool, SqlxStore};
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::sqlx::{SqlxPool, SqlxStore};
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(secret: &str, pool: SqlxPool) -> AuthResult<BetterAuth<AppAuthSchema>> {
     let mut config = AuthConfig::new(secret).base_url("https://auth.example.com");
@@ -97,8 +97,8 @@ No SQL session rows are read or written in this mode. A typed application sessio
 Renewal extends the outer cookie lifetime, not the embedded session expiry: the token and the original expiry stay the same. Override the policy afterwards:
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::config::{CookieCacheConfig, CookieCacheStrategy, CookieRefreshCache};
+use alibi::AuthConfig;
+use alibi::config::{CookieCacheConfig, CookieCacheStrategy, CookieRefreshCache};
 
 fn auth_config(secret: &str) -> AuthConfig {
     let mut config = AuthConfig::new(secret);
@@ -115,7 +115,7 @@ fn auth_config(secret: &str) -> AuthConfig {
 }
 ```
 
-`disable_session_refresh`, deferred refresh and `?disableRefresh` do **not** stop cache-hit renewal. A trusted request hook can insert `better_auth::session::SessionRefreshSuppressed` to suppress it for one request. The no-database builder keeps a stateless renewal policy you already selected.
+`disable_session_refresh`, deferred refresh and `?disableRefresh` do **not** stop cache-hit renewal. A trusted request hook can insert `alibi::session::SessionRefreshSuppressed` to suppress it for one request. The no-database builder keeps a stateless renewal policy you already selected.
 
 ## Revocation and replay
 

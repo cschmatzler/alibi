@@ -19,10 +19,10 @@ Implement `DatabaseHooks<Schema, Backend>` and wrap the store with `.hook(...)`.
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::prelude::CreateUser;
-use better_auth::sqlx::{SqlxBackend, SqlxStore};
-use better_auth::store::{DatabaseHookContext, DatabaseHooks, HookControl};
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::prelude::CreateUser;
+use alibi::sqlx::{SqlxBackend, SqlxStore};
+use alibi::store::{DatabaseHookContext, DatabaseHooks, HookControl};
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 struct NormalizeUsers;
 
@@ -50,7 +50,7 @@ async fn build_auth(
 }
 ```
 
-SeaORM uses the same trait with `SeaOrmBackend` (`better_auth::seaorm`).
+SeaORM uses the same trait with `SeaOrmBackend` (`alibi::seaorm`).
 
 Events exist in `before_*` / `after_*` pairs for **create**, **update** and **delete** of each model — `user`, `session`, `account` and `verification` (plus `after_update_session_missing` for updates that matched no row). `before_*` hooks receive the mutable input and return `HookControl::Continue` or `HookControl::Cancel`; a cancelled write is not performed and the endpoint reports the operation as failed (cancelling a user creation answers `400 FAILED_TO_CREATE_USER`).
 
@@ -76,10 +76,10 @@ Semantics worth knowing:
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::prelude::AuthSession;
-use better_auth::sqlx::SqlxBackend;
-use better_auth::store::{DatabaseHookContext, DatabaseHooks};
-use better_auth::AuthResult;
+use alibi::prelude::AuthSession;
+use alibi::sqlx::SqlxBackend;
+use alibi::store::{DatabaseHookContext, DatabaseHooks};
+use alibi::AuthResult;
 
 struct AuditSessions;
 
@@ -87,7 +87,7 @@ struct AuditSessions;
 impl DatabaseHooks<AppAuthSchema, SqlxBackend> for AuditSessions {
     async fn after_create_session(
         &self,
-        session: &<AppAuthSchema as better_auth::AuthSchema>::Session,
+        session: &<AppAuthSchema as alibi::AuthSchema>::Session,
         ctx: &DatabaseHookContext<'_, SqlxBackend>,
     ) -> AuthResult<()> {
         let user_agent = ctx
@@ -111,10 +111,10 @@ An `EndpointHook` sees a *logical call*: operation id, parsed body and query, an
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::endpoint::{BeforeEndpointAction, EndpointCall, EndpointHook, EndpointResponse};
-use better_auth::plugin::AuthContext;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::endpoint::{BeforeEndpointAction, EndpointCall, EndpointHook, EndpointResponse};
+use alibi::plugin::AuthContext;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthError, AuthResult, BetterAuth};
 
 #[derive(serde::Deserialize)]
 struct SignUpBody {

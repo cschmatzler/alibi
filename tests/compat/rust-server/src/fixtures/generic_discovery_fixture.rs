@@ -6,15 +6,15 @@ use axum::{
     http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{
     GenericOAuthConfig, OAuthProfileMapper, OAuthUserInfo, OAuthUserInfoHandler,
     OAuthUserInfoRequest, OAuthUserInfoResponse,
 };
-use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -39,7 +39,7 @@ impl OAuthProfileMapper for Mapper {
     async fn map_profile(
         &self,
         _: Value,
-    ) -> Result<better_auth_core::field_policy::FieldOutput, String> {
+    ) -> Result<alibi_core::field_policy::FieldOutput, String> {
         Ok([
             ("id".into(), json!("mapped-id")),
             ("name".into(), json!("Mapped Name")),
@@ -77,13 +77,13 @@ pub(crate) async fn router(
 ) -> AuthResult<(Router, Fixture)> {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
-        .map_err(|_| better_auth::AuthError::internal("Fixture listener failed"))?;
+        .map_err(|_| alibi::AuthError::internal("Fixture listener failed"))?;
     let fixture = Fixture {
         base: format!(
             "http://{}",
             listener
                 .local_addr()
-                .map_err(|_| better_auth::AuthError::internal("Fixture address failed"))?
+                .map_err(|_| alibi::AuthError::internal("Fixture address failed"))?
         ),
         ..Default::default()
     };
@@ -179,7 +179,7 @@ pub(crate) async fn router(
                     .as_mut()
                     .expect("generic authorization policy")
                     .authorization_code =
-                    Some(better_auth::plugins::oauth::OAuthAuthorizationCodeCallback(
+                    Some(alibi::plugins::oauth::OAuthAuthorizationCodeCallback(
                         Arc::new(CustomCode {
                             fixture: fixture.clone(),
                             denied: mode == "custom-token-error",
@@ -191,7 +191,7 @@ pub(crate) async fn router(
         if let Some(resolved) = generic
             .resolve()
             .await
-            .map_err(|e| better_auth::AuthError::config(e.to_string()))?
+            .map_err(|e| alibi::AuthError::config(e.to_string()))?
         {
             if mode == "logout" {
                 for (id, endpoint) in [
@@ -307,17 +307,17 @@ struct CustomCode {
     denied: bool,
 }
 #[async_trait::async_trait]
-impl better_auth::plugins::oauth::OAuthAuthorizationCodeHandler for CustomCode {
+impl alibi::plugins::oauth::OAuthAuthorizationCodeHandler for CustomCode {
     async fn validate_authorization_code(
         &self,
-        data: better_auth::plugins::oauth::OAuthAuthorizationCodeContext,
-    ) -> Result<better_auth::plugins::oauth::OAuthTokenSet, String> {
+        data: alibi::plugins::oauth::OAuthAuthorizationCodeContext,
+    ) -> Result<alibi::plugins::oauth::OAuthTokenSet, String> {
         tokio::task::yield_now().await;
         self.fixture.receipts.lock().await.push(json!({"kind":"custom-token","code":data.code,"redirectURI":data.redirect_uri,"codeVerifier":data.code_verifier}));
         if self.denied {
             return Err("custom token callback denied".into());
         }
-        Ok(better_auth::plugins::oauth::OAuthTokenSet {
+        Ok(alibi::plugins::oauth::OAuthTokenSet {
             access_token: Some("custom-access".into()),
             refresh_token: Some("custom-refresh".into()),
             scopes: vec!["custom-scope".into()],

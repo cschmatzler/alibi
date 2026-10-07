@@ -1,5 +1,5 @@
 #[cfg(feature = "seaorm")]
-use better_auth_seaorm::store::entities;
+use alibi_seaorm::store::entities;
 
 /// The application-owned session schema the Rust fixture server also serves.
 #[cfg(feature = "seaorm")]
@@ -10,18 +10,18 @@ mod application_model;
 /// as an application's `ActiveModelBehavior` would.
 #[cfg(feature = "seaorm")]
 #[async_trait::async_trait]
-impl better_auth_seaorm::sea_orm::ActiveModelBehavior
+impl alibi_seaorm::sea_orm::ActiveModelBehavior
     for application_model::application_session::ActiveModel
 {
     async fn before_save<C>(
         mut self,
         db: &C,
         insert: bool,
-    ) -> Result<Self, better_auth_seaorm::sea_orm::DbErr>
+    ) -> Result<Self, alibi_seaorm::sea_orm::DbErr>
     where
-        C: better_auth_seaorm::sea_orm::ConnectionTrait,
+        C: alibi_seaorm::sea_orm::ConnectionTrait,
     {
-        use better_auth_seaorm::sea_orm::{ActiveValue, Statement};
+        use alibi_seaorm::sea_orm::{ActiveValue, Statement};
         let label = self.label.clone().unwrap();
         _ = db
             .execute_raw(Statement::from_sql_and_values(
@@ -40,12 +40,12 @@ impl better_auth_seaorm::sea_orm::ActiveModelBehavior
         model: application_model::application_session::Model,
         db: &C,
         insert: bool,
-    ) -> Result<application_model::application_session::Model, better_auth_seaorm::sea_orm::DbErr>
+    ) -> Result<application_model::application_session::Model, alibi_seaorm::sea_orm::DbErr>
     where
-        C: better_auth_seaorm::sea_orm::ConnectionTrait,
+        C: alibi_seaorm::sea_orm::ConnectionTrait,
     {
         _ = db
-            .execute_raw(better_auth_seaorm::sea_orm::Statement::from_sql_and_values(
+            .execute_raw(alibi_seaorm::sea_orm::Statement::from_sql_and_values(
                 db.get_database_backend(),
                 "INSERT INTO session_model_events (phase, label, is_insert) VALUES (?, ?, ?)",
                 ["after".into(), model.label.clone().into(), insert.into()],

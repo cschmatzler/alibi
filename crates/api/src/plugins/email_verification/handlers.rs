@@ -5,13 +5,13 @@ use crate::plugins::helpers::{
     SessionIssueError, create_user_session_record, record_completed_session_record,
     record_completed_session_user_view,
 };
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{AuthContext, AuthError, AuthResult, UpdateUser};
-use better_auth_core::{AuthSession, AuthUser};
+use alibi_core::wire::{SessionView, UserView};
+use alibi_core::{AuthContext, AuthError, AuthResult, UpdateUser};
+use alibi_core::{AuthSession, AuthUser};
 use jsonwebtoken::errors::ErrorKind;
 
 pub(in crate::plugins) fn verification_url(
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
     token: &str,
     callback_url: Option<&str>,
 ) -> String {
@@ -30,7 +30,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
     body: &SendVerificationEmailRequest,
     current_user: Option<&U>,
     config: &EmailVerificationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
     if config.send_verification_email.is_none() && ctx.email_verification_override().is_none() {
         return Err(AuthError::bad_request("Verification email isn't enabled"));
@@ -65,7 +65,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
                 user,
                 url,
                 token,
-                better_auth_core::AwaitedNotificationErrorPolicy::Propagate,
+                alibi_core::AwaitedNotificationErrorPolicy::Propagate,
             )
             .await?;
         }
@@ -95,7 +95,7 @@ pub(super) async fn send_verification_email_core<U: AuthUser>(
                         user,
                         url,
                         token,
-                        better_auth_core::AwaitedNotificationErrorPolicy::Propagate,
+                        alibi_core::AwaitedNotificationErrorPolicy::Propagate,
                     )
                     .await?;
                 }
@@ -188,13 +188,13 @@ fn verification_error(
     clippy::too_many_lines,
     reason = "Keep verification ownership, account transitions, and callback ordering together"
 )]
-pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
+pub(super) async fn verify_email_core<A: alibi_core::AuthSchema>(
     query: &VerifyEmailQuery,
     config: &EmailVerificationConfig,
-    request: &better_auth_core::AuthRequest,
+    request: &alibi_core::AuthRequest,
     ctx: &AuthContext<A>,
 ) -> AuthResult<VerifyEmailResult> {
-    let meta = better_auth_core::RequestMeta::from_request(request);
+    let meta = alibi_core::RequestMeta::from_request(request);
     let ip_address = meta.ip_address;
     let user_agent = meta.user_agent;
 
@@ -454,9 +454,9 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
                 // verification flag changed, even though the stored row is newer.
                 let mut original_view = ctx.trusted_user_view(&user);
                 original_view.email_verified = true;
-                better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(
+                alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(
                     ctx,
-                    better_auth_core::CacheVersionContext::created(
+                    alibi_core::CacheVersionContext::created(
                         issued.user.clone(),
                         issued.session.clone(),
                         original_view.clone(),
@@ -486,11 +486,11 @@ pub(super) async fn verify_email_core<A: better_auth_core::AuthSchema>(
     })
 }
 
-async fn verification_session<S: better_auth_core::AuthSchema>(
-    request: &better_auth_core::AuthRequest,
+async fn verification_session<S: alibi_core::AuthSchema>(
+    request: &alibi_core::AuthRequest,
     ctx: &AuthContext<S>,
 ) -> Option<(UserView, SessionView)> {
-    better_auth_core::session::cookie_cache::runtime::authenticated(ctx, request, false)
+    alibi_core::session::cookie_cache::runtime::authenticated(ctx, request, false)
         .await
         .ok()
         .flatten()

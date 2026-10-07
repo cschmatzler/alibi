@@ -6,7 +6,7 @@ description: "Trusted origins, CSRF protection, CORS, request limits, proxies an
 Request protection runs before any plugin handler and mirrors the TypeScript server. Most deployments need only three things: a correct `base_url`, the list of browser origins in `trusted_origins`, and — if a browser app lives on another origin — CORS.
 
 ```rust
-use better_auth::AuthConfig;
+use alibi::AuthConfig;
 
 fn auth_config(secret: &str) -> AuthConfig {
     AuthConfig::new(secret)
@@ -39,8 +39,8 @@ Trusted-origin patterns:
 ### Relax or disable checks
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::config::AdvancedConfig;
+use alibi::AuthConfig;
+use alibi::config::AdvancedConfig;
 
 fn auth_config(secret: &str) -> AuthConfig {
     AuthConfig::new(secret).advanced(AdvancedConfig {
@@ -66,9 +66,9 @@ A browser app on another origin needs CORS headers and credentialed requests. Re
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::middleware::CorsConfig;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::middleware::CorsConfig;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -108,9 +108,9 @@ To use a framework CORS layer such as `tower-http`'s `CorsLayer`, leave `CorsCon
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::middleware::BodyLimitConfig;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::middleware::BodyLimitConfig;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -140,9 +140,9 @@ Preview deployments and multi-tenant hosts cannot use one static `base_url`. Res
 
 ```rust
 use async_trait::async_trait;
-use better_auth::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver};
-use better_auth::prelude::AuthRequest;
-use better_auth::{AuthConfig, AuthResult};
+use alibi::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver};
+use alibi::prelude::AuthRequest;
+use alibi::{AuthConfig, AuthResult};
 
 struct TenantOrigins;
 
@@ -181,7 +181,7 @@ The `Host` header (or `x-forwarded-host` when trusted) is matched against `allow
 OAuth failures redirect to an error destination. Set `api_error_url` for your own page; `render_error_page` controls the built-in HTML page for `GET /error` (enabled outside `NODE_ENV=production`):
 
 ```rust
-use better_auth::AuthConfig;
+use alibi::AuthConfig;
 
 fn auth_config(secret: &str) -> AuthConfig {
     let mut config = AuthConfig::new(secret).api_error_url("https://app.example.com/auth/error");

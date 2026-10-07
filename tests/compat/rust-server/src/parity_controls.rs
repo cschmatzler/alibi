@@ -7,7 +7,7 @@ use axum::{
     http::StatusCode,
     routing::get,
 };
-use better_auth::{
+use alibi::{
     BetterAuth,
     prelude::{AuthAccount, AuthSession, AuthUser},
 };
@@ -31,7 +31,7 @@ async fn user_state(
 ) -> (StatusCode, Json<Value>) {
     let result = async {
         let selected = if let Some(profile) = query.profile.as_ref() {
-            &runtimes.get(profile).ok_or_else(||better_auth::AuthError::bad_request("unknown fixture profile"))?.auth
+            &runtimes.get(profile).ok_or_else(||alibi::AuthError::bad_request("unknown fixture profile"))?.auth
         } else { &auth };
         let store = selected.store();
         let user = store.get_user_by_id(&query.user_id).await?;
@@ -40,7 +40,7 @@ async fn user_state(
         let mut sessions = store.get_user_sessions(&query.user_id).await?;
         sessions.sort_by_key(AuthSession::created_at);
         let two_factor = store.get_two_factor_by_user_id(&query.user_id).await?;
-        Ok::<_, better_auth::AuthError>(json!({
+        Ok::<_, alibi::AuthError>(json!({
             "user": user.map(|user| {
                 let mut value=json!({"id":user.id(),"email":user.email(),"emailVerified":user.email_verified(),"twoFactorEnabled":user.two_factor_enabled_value()});
                 if query.profile.is_some() {

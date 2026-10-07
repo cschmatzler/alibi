@@ -38,7 +38,7 @@ impl<S: AuthSchema> BetterAuth<S> {
             return middleware::run_after(&self.transport_middlewares, &req, response).await;
         }
         let request_context = RequestHookContext::from_request(&req);
-        better_auth_core::endpoint::without_endpoint_call_context(with_request_hook_context_value(
+        alibi_core::endpoint::without_endpoint_call_context(with_request_hook_context_value(
             request_context,
             async {
                 let mut run_after_hooks = false;
@@ -62,9 +62,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                     }
                 };
                 let (mut cache_headers, mut ordinary_cache_error) =
-                    better_auth_core::session::cookie_cache::runtime::take_issuance(
-                        req.extensions(),
-                    );
+                    alibi_core::session::cookie_cache::runtime::take_issuance(req.extensions());
                 // HTTP handlers publish into their logical frame; legacy paths
                 // retain the physical request accumulator. Drain both owners.
                 if let Some(frame) = req
@@ -72,7 +70,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                     .get::<super::http_hooks::HttpEndpointFrame>()
                 {
                     let (headers, ordinary_error) =
-                        better_auth_core::session::cookie_cache::runtime::take_issuance(
+                        alibi_core::session::cookie_cache::runtime::take_issuance(
                             frame.call.extensions(),
                         );
                     cache_headers.extend(headers);
@@ -86,7 +84,7 @@ impl<S: AuthSchema> BetterAuth<S> {
                     drop(req.take_response_headers());
                     cache_headers.clear();
                 }
-                if better_auth_api::plugins::oauth_proxy::take_unhandled_error(&req) {
+                if alibi_api::plugins::oauth_proxy::take_unhandled_error(&req) {
                     run_after_hooks = false;
                 }
                 let mut nested_headers = req.take_response_headers();
@@ -314,7 +312,7 @@ impl<S: AuthSchema> BetterAuth<S> {
             .collect();
         internal_req
             .extensions()
-            .insert(better_auth_core::plugin::ResolvedEndpoint {
+            .insert(alibi_core::plugin::ResolvedEndpoint {
                 path: context_path,
                 params,
             });
@@ -406,20 +404,16 @@ impl<S: AuthSchema> BetterAuth<S> {
                         *run_after_hooks = false;
                         // A raw endpoint response bypasses the dispatch accumulator.
                         drop(internal_req.take_response_headers());
-                        drop(
-                            better_auth_core::session::cookie_cache::runtime::take_issuance(
-                                internal_req.extensions(),
-                            ),
-                        );
+                        drop(alibi_core::session::cookie_cache::runtime::take_issuance(
+                            internal_req.extensions(),
+                        ));
                         if let Some(frame) = internal_req
                             .extensions()
                             .get::<super::http_hooks::HttpEndpointFrame>()
                         {
-                            drop(
-                                better_auth_core::session::cookie_cache::runtime::take_issuance(
-                                    frame.call.extensions(),
-                                ),
-                            );
+                            drop(alibi_core::session::cookie_cache::runtime::take_issuance(
+                                frame.call.extensions(),
+                            ));
                         }
                         Ok(response)
                     }
@@ -431,13 +425,13 @@ impl<S: AuthSchema> BetterAuth<S> {
             .extensions()
             .get::<super::http_hooks::HttpEndpointFrame>()
         {
-            let result = better_auth_core::endpoint::with_endpoint_call_context(
+            let result = alibi_core::endpoint::with_endpoint_call_context(
                 frame.call.clone(),
                 Box::pin(handler),
             )
             .await;
             if let Err(error) = &result
-                && better_auth_core::endpoint::is_endpoint_api_error(error)
+                && alibi_core::endpoint::is_endpoint_api_error(error)
             {
                 *frame
                     .error

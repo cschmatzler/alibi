@@ -3,17 +3,11 @@ pub(crate) fn found_crate_tokens(package_name: &str) -> Option<TokenStream> {
     match crate_name(package_name).ok()? {
         FoundCrate::Itself => {
             // Examples and integration tests link the crate externally.
-            let ident = Ident::new("better_auth", Span::call_site());
+            let ident = Ident::new("alibi", Span::call_site());
             Some(quote!(::#ident))
         }
         FoundCrate::Name(name) => {
-            // Cargo uses the explicit library name unless the dependency is aliased.
-            let library_name = if name == package_name.replace('-', "_") {
-                "better_auth"
-            } else {
-                &name
-            };
-            let ident = Ident::new(library_name, Span::call_site());
+            let ident = Ident::new(&name, Span::call_site());
             Some(quote!(::#ident))
         }
     }
@@ -27,11 +21,11 @@ pub(crate) struct Roots {
 }
 
 pub(crate) fn resolve_roots() -> Roots {
-    if let Some(better_auth_root) = found_crate_tokens("alibi") {
+    if let Some(alibi_root) = found_crate_tokens("alibi") {
         return Roots {
             id_generator: quote! {},
-            sqlx: quote!(#better_auth_root::sqlx),
-            core: quote!(#better_auth_root::__private_core),
+            sqlx: quote!(#alibi_root::sqlx),
+            core: quote!(#alibi_root::__private_core),
         };
     }
     match crate_name("alibi-sqlx") {
@@ -41,12 +35,7 @@ pub(crate) fn resolve_roots() -> Roots {
             core: quote!(crate::__private_core),
         },
         Ok(FoundCrate::Name(name)) => {
-            let library_name = if name == "alibi_sqlx" {
-                "better_auth_sqlx"
-            } else {
-                &name
-            };
-            let ident = Ident::new(library_name, Span::call_site());
+            let ident = Ident::new(&name, Span::call_site());
             Roots {
                 id_generator: quote! {},
                 sqlx: quote!(::#ident),
@@ -57,7 +46,7 @@ pub(crate) fn resolve_roots() -> Roots {
             id_generator: quote! {},
             sqlx: syn::Error::new(
                 Span::call_site(),
-                "AuthEntity must be used through better_auth::sqlx with the `sqlx` feature enabled",
+                "AuthEntity must be used through alibi::sqlx with the `sqlx` feature enabled",
             )
             .to_compile_error(),
             core: quote!(::core::compile_error!("unreachable")),

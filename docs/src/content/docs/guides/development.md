@@ -22,7 +22,7 @@ crates/core            shared contracts and services: config, sessions, stores, 
 crates/api             built-in plugins and their endpoint/model metadata
 crates/sqlx            SQLx store, AuthEntity derive, rate-limit storage
 crates/seaorm          SeaORM store and entities
-crates/cli             `better-auth-rs generate`
+crates/cli             `alibi generate`
 crates/schema-registry plugin schemas shared by the CLI and macros
 src/runtime/           instance assembly, HTTP/server dispatch and default plugins
 src/integrations/      shared dispatch supervision and Axum/Poem adapters

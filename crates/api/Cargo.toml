@@ -16,7 +16,7 @@ keywords = { workspace = true }
 categories = { workspace = true }
 
 [lib]
-name = "better_auth_api"
+name = "alibi_api"
 
 [lints]
 workspace = true
@@ -24,8 +24,8 @@ workspace = true
 [dependencies]
 rand_core = { version = "0.6", features = ["getrandom"] }
 signature = "3"
-better-auth-core = { workspace = true }
-better-auth-schema-registry = { workspace = true }
+alibi-core = { workspace = true }
+alibi-schema-registry = { workspace = true }
 
 # Asynchronous runtime
 async-trait = { workspace = true }
@@ -92,16 +92,16 @@ serde_cbor_2 = "0.13.0"
 serde_path_to_error = "0.1.20"
 
 [dev-dependencies]
-# Path-only on purpose: better-auth-seaorm depends on better-auth-core, so a
+# Path-only on purpose: alibi-seaorm depends on alibi-core, so a
 # versioned dev-dependency here would constrain publish order. Cargo drops
 # dev-dependencies without a version from the published manifest.
-better-auth-seaorm = { package = "alibi-seaorm", path = "../seaorm" }
+alibi-seaorm = { path = "../seaorm" }
 
 [features]
 default = ["native-tls"]
 native-tls = ["reqwest/default-tls"]
 rustls = ["reqwest/__rustls-aws-lc-rs", "reqwest/system-proxy"]
-axum = ["better-auth-core/axum"]
+axum = ["alibi-core/axum"]
 
 [package.metadata.docs.rs]
 features = ["axum"]

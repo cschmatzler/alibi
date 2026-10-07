@@ -1,7 +1,7 @@
 //! Shared token hashing and the pinned runtime's symmetric persistence encoding.
 
+use alibi_core::{AuthError, AuthResult};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth_core::{AuthError, AuthResult};
 use chacha20poly1305::{
     XChaCha20Poly1305, XNonce,
     aead::{Aead, KeyInit},
@@ -63,7 +63,7 @@ pub(in crate::plugins) fn decrypt_for_purpose(
 
 pub(in crate::plugins) fn encrypt_with_config_for_purpose(
     plain: &str,
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
     purpose: EncryptionPurpose,
 ) -> AuthResult<String> {
     let encrypted = encrypt_for_purpose(plain, config.current_secret(), purpose)?;
@@ -75,7 +75,7 @@ pub(in crate::plugins) fn encrypt_with_config_for_purpose(
 
 pub(in crate::plugins) fn decrypt_with_config_for_purpose(
     stored: &str,
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
     purpose: EncryptionPurpose,
 ) -> AuthResult<String> {
     let secret = decryption_key(stored, config)?;
@@ -90,7 +90,7 @@ pub(in crate::plugins) fn decrypt_with_config_for_purpose(
 /// Encrypt persistence data with the configured current version.
 pub(in crate::plugins) fn encrypt_with_config(
     plain: &str,
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
 ) -> AuthResult<String> {
     let encrypted = encrypt(plain, config.current_secret())?;
     match &config.managed_secrets {
@@ -103,7 +103,7 @@ pub(in crate::plugins) fn encrypt_with_config(
 /// data requires an explicit legacy key in managed mode.
 pub(in crate::plugins) fn decrypt_with_config(
     stored: &str,
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
 ) -> AuthResult<String> {
     let secret = decryption_key(stored, config)?;
     let ciphertext = if config.managed_secrets.is_some() {
@@ -118,7 +118,7 @@ pub(in crate::plugins) fn decrypt_with_config(
 // It binds native state proofs to that exact authenticated key version.
 pub(in crate::plugins) fn decryption_key<'a>(
     stored: &str,
-    config: &'a better_auth_core::AuthConfig,
+    config: &'a alibi_core::AuthConfig,
 ) -> AuthResult<&'a str> {
     let Some(keys) = &config.managed_secrets else {
         return Ok(config.current_secret());
@@ -137,7 +137,7 @@ fn parse_envelope(stored: &str) -> Option<(u64, &str)> {
     let (version, ciphertext) = stored.strip_prefix("$ba$")?.split_once('$')?;
     // The installed runtime uses parseInt(version, 10): leading whitespace,
     // a plus sign and a numeric prefix are accepted; a negative value is not.
-    let version = version.trim_start_matches(better_auth_core::utils::javascript::is_whitespace);
+    let version = version.trim_start_matches(alibi_core::utils::javascript::is_whitespace);
     let (negative, version) = if let Some(version) = version.strip_prefix('-') {
         (true, version)
     } else {

@@ -2,7 +2,7 @@
 
 use crate::error::map_sqlx_err;
 use crate::sql::Sql;
-use better_auth_core::error::{AuthError, AuthResult};
+use alibi_core::error::{AuthError, AuthResult};
 #[cfg(feature = "postgres")]
 use sqlx::postgres::{PgPool, PgRow, Postgres};
 #[cfg(feature = "sqlite")]
@@ -10,7 +10,7 @@ use sqlx::sqlite::{Sqlite, SqlitePool, SqliteRow};
 use sqlx::{AssertSqlSafe, Decode, Type};
 
 #[cfg(not(any(feature = "sqlite", feature = "postgres")))]
-compile_error!("better-auth-sqlx needs the `sqlite` or `postgres` feature");
+compile_error!("alibi-sqlx needs the `sqlite` or `postgres` feature");
 
 /// The database engine behind a pool.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -175,8 +175,8 @@ impl OAuthUserInfoHandler for FacebookUserInfo {
             let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
                 .decode(payload)
                 .map_err(|error| error.to_string())?;
-            let data: Value = better_auth_core::utils::json::from_slice(&bytes)
-                .map_err(|error| error.to_string())?;
+            let data: Value =
+                alibi_core::utils::json::from_slice(&bytes).map_err(|error| error.to_string())?;
             if !data.is_object() {
                 return Err("Invalid Facebook ID profile".into());
             }
@@ -301,7 +301,7 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => better_auth_core::utils::json::number_to_string(value)
+        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),

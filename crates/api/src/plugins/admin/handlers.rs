@@ -7,11 +7,9 @@ use super::types::{
 };
 use super::{AdminConfig, target_is_admin};
 use crate::plugins::StatusResponse;
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{
-    AuthContext, AuthError, AuthResult, CreateAccount, CreateSession, UpdateUser,
-};
+use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::wire::{SessionView, UserView};
+use alibi_core::{AuthContext, AuthError, AuthResult, CreateAccount, CreateSession, UpdateUser};
 use chrono::{DateTime, Duration, Utc};
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
@@ -159,7 +157,7 @@ fn validate_role_input(role: &RoleInput, config: &AdminConfig) -> AuthResult<()>
 pub(in crate::plugins) async fn set_role_core(
     body: &SetRoleRequest,
     config: &AdminConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<UserResponse<AdminUserView>> {
     let _target = ctx
         .database
@@ -188,7 +186,7 @@ pub(in crate::plugins) async fn set_role_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn get_user_core(
     query: &GetUserQuery,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AdminUserView> {
     let user = ctx
         .database
@@ -218,7 +216,7 @@ fn requested_create_role(body: &CreateUserRequest) -> AuthResult<Option<RoleInpu
 pub(in crate::plugins) async fn create_user_core(
     body: &CreateUserRequest,
     config: &AdminConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<UserResponse<UserView>> {
     let requested_role = requested_create_role(body)?;
     if let Some(role) = &requested_role {
@@ -268,7 +266,7 @@ pub(in crate::plugins) async fn create_user_core(
         },
     );
 
-    let mut create_user = better_auth_core::CreateUser::new()
+    let mut create_user = alibi_core::CreateUser::new()
         .with_email(&email)
         .with_name(&body.name)
         .with_role(role)
@@ -281,7 +279,7 @@ pub(in crate::plugins) async fn create_user_core(
         .database
         .create_user_with_source_record(
             create_user,
-            better_auth_core::user_validation::UserValidationSource::creation("admin"),
+            alibi_core::user_validation::UserValidationSource::creation("admin"),
         )
         .await?;
 
@@ -329,7 +327,7 @@ pub(in crate::plugins) async fn update_user_core(
     body: &AdminUpdateUserRequest,
     acting_user: &UserView,
     config: &AdminConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AdminUserView> {
     if body.data.is_empty() {
         return Err(AuthError::bad_request(MESSAGE_NO_DATA_TO_UPDATE));
@@ -420,9 +418,9 @@ pub(in crate::plugins) async fn update_user_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_users_core(
     query: &ListUsersQueryParams,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<ListUsersResponse<AdminUserView>> {
-    let params = better_auth_core::ListUsersParams {
+    let params = alibi_core::ListUsersParams {
         limit: query.limit,
         offset: query.offset,
         search_field: query.search_field.clone(),
@@ -462,7 +460,7 @@ pub(in crate::plugins) async fn list_users_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_user_sessions_core(
     body: &UserIdRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<ListSessionsResponse<SessionView>> {
     let sessions = ctx.database.get_user_sessions_record(&body.user_id).await?;
     let now = Utc::now();
@@ -482,7 +480,7 @@ pub(in crate::plugins) async fn ban_user_core(
     body: &BanUserRequest,
     admin_user_id: impl AsRef<str>,
     config: &AdminConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<UserResponse<AdminUserView>, AdminDateOperationError> {
     if body.user_id == admin_user_id.as_ref() {
         return Err(AuthError::bad_request("You cannot ban yourself").into());
@@ -536,7 +534,7 @@ pub(in crate::plugins) async fn ban_user_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn unban_user_core(
     body: &UserIdRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<UserResponse<AdminUserView>> {
     let _target = ctx
         .database
@@ -570,7 +568,7 @@ pub(in crate::plugins) async fn impersonate_user_core(
     ip_address: Option<&str>,
     user_agent: Option<&str>,
     config: &AdminConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(SessionUserResponse<SessionView, UserView>, String), AdminDateOperationError> {
     let target = ctx
         .database
@@ -624,7 +622,7 @@ pub(in crate::plugins) async fn impersonate_user_core(
         truthy_duration(config.impersonation_session_duration).unwrap_or(3600.0),
     )?;
     let create_session = CreateSession {
-        additional_fields: better_auth_core::field_policy::FieldValues::default(),
+        additional_fields: alibi_core::field_policy::FieldValues::default(),
         token: None,
         active_team_id: None,
         user_id: target.id().to_string(),
@@ -662,7 +660,7 @@ pub(in crate::plugins) async fn impersonate_user_core(
 pub(in crate::plugins) async fn stop_impersonating_core(
     session: &impl AuthSession,
     admin_cookie: &AdminSessionCookiePayload,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(SessionUserResponse<SessionView, UserView>, String)> {
     let admin_id = session
         .impersonated_by()
@@ -703,7 +701,7 @@ pub(in crate::plugins) async fn stop_impersonating_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn revoke_user_session_core(
     body: &RevokeSessionRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SuccessResponse> {
     ctx.session_manager()
         .delete_session(&body.session_token)
@@ -716,7 +714,7 @@ pub(in crate::plugins) async fn revoke_user_session_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn revoke_user_sessions_core(
     body: &UserIdRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SuccessResponse> {
     let _ignored_revoke_all_user_sessions_2 = ctx
         .session_manager()
@@ -732,7 +730,7 @@ pub(in crate::plugins) async fn revoke_user_sessions_core(
 pub(in crate::plugins) async fn remove_user_core(
     body: &UserIdRequest,
     admin_user_id: impl AsRef<str>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SuccessResponse> {
     if body.user_id == admin_user_id.as_ref() {
         return Err(AuthError::bad_request("You cannot remove yourself"));
@@ -760,15 +758,10 @@ pub(in crate::plugins) async fn remove_user_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn set_user_password_core(
     body: &SetUserPasswordRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
     let (minimum, maximum) = crate::plugins::email_password::password_length_limits(ctx);
-    better_auth_core::utils::password::validate_password(
-        &body.new_password,
-        minimum,
-        maximum,
-        ctx,
-    )?;
+    alibi_core::utils::password::validate_password(&body.new_password, minimum, maximum, ctx)?;
 
     let target = ctx
         .database
@@ -797,7 +790,7 @@ pub(in crate::plugins) async fn set_user_password_core(
             ctx.database
                 .update_account_record(
                     &account.id(),
-                    better_auth_core::UpdateAccount {
+                    alibi_core::UpdateAccount {
                         password: Some(password_hash),
                         ..Default::default()
                     },

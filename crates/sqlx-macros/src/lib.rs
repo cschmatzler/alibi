@@ -4,7 +4,7 @@ mod entities;
 mod model;
 mod roots;
 
-use better_auth_entity_codegen::{self as codegen, EntityRole, Insert};
+use alibi_entity_codegen::{self as codegen, EntityRole, Insert};
 use columns::Column;
 use columns::column_of;
 use columns::columns;

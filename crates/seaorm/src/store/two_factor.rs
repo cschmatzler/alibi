@@ -1,10 +1,10 @@
 use super::entities::two_factor::{ActiveModel, Column, Entity};
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::AuthSchema;
+use alibi_core::error::AuthResult;
+use alibi_core::store::TwoFactorStore;
+use alibi_core::types::{CreateTwoFactor, TwoFactor, UpdateTwoFactor};
 use async_trait::async_trait;
-use better_auth_core::error::AuthResult;
-use better_auth_core::store::TwoFactorStore;
-use better_auth_core::types::{CreateTwoFactor, TwoFactor, UpdateTwoFactor};
 use chrono::{DateTime, Utc};
 use sea_orm::sea_query::{Alias, Expr, ExprTrait, Query};
 use sea_orm::{
@@ -36,7 +36,7 @@ where
             backend,
             sea_orm::DatabaseBackend::Sqlite | sea_orm::DatabaseBackend::Postgres
         ) {
-            return Err(better_auth_core::error::AuthError::not_implemented(
+            return Err(alibi_core::error::AuthError::not_implemented(
                 "Atomic factor insertion requires SQLite or PostgreSQL",
             ));
         }
@@ -49,7 +49,7 @@ where
             .map_err(map_db_err)?
             .map(|model| TwoFactor::from(&model))
             .ok_or_else(|| {
-                better_auth_core::error::AuthError::internal("Factor insertion returned no row")
+                alibi_core::error::AuthError::internal("Factor insertion returned no row")
             })
     }
 
@@ -168,7 +168,7 @@ where
             .await
             .map_err(map_db_err)?
         else {
-            return Err(better_auth_core::error::AuthError::not_found(
+            return Err(alibi_core::error::AuthError::not_found(
                 "Two-factor settings not found",
             ));
         };
@@ -180,9 +180,7 @@ where
                 .col_expr(Column::UpdatedAt, Expr::value(Utc::now())),
         )
         .await?
-        .ok_or_else(|| {
-            better_auth_core::error::AuthError::not_found("Two-factor settings not found")
-        })
+        .ok_or_else(|| alibi_core::error::AuthError::not_found("Two-factor settings not found"))
     }
 
     async fn delete_two_factor(&self, user_id: &str) -> AuthResult<()> {
@@ -205,7 +203,7 @@ impl<S: AuthSchema + Send + Sync> SeaOrmStore<S> {
             backend,
             sea_orm::DatabaseBackend::Sqlite | sea_orm::DatabaseBackend::Postgres
         ) {
-            return Err(better_auth_core::error::AuthError::not_implemented(
+            return Err(alibi_core::error::AuthError::not_implemented(
                 "Atomic factor updates require SQLite or PostgreSQL",
             ));
         }

@@ -1,9 +1,9 @@
 //! Compromised-password policy at initialized password hashing.
-use async_trait::async_trait;
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
     AuthRoute, AuthSchema, PasswordHashContext, PasswordHashHook,
 };
+use async_trait::async_trait;
 use sha1::{Digest, Sha1};
 use std::sync::Arc;
 
@@ -108,8 +108,8 @@ impl PwnedPasswordClient {
 }
 
 fn response_text(text: String) -> AuthResult<String> {
-    match better_auth_core::utils::json::parse_value(&text) {
-        Ok(better_auth_core::utils::json::JsValue::String(value)) => Ok(value),
+    match alibi_core::utils::json::parse_value(&text) {
+        Ok(alibi_core::utils::json::JsValue::String(value)) => Ok(value),
         Ok(_) => Err(retry_error()),
         Err(_) if serde_json::from_str::<serde::de::IgnoredAny>(&text).is_ok() => {
             // JavaScript permits escaped unpaired UTF-16 surrogates in JSON.
@@ -305,20 +305,20 @@ impl PasswordHashHook for HaveIBeenPwnedPlugin {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for HaveIBeenPwnedPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }

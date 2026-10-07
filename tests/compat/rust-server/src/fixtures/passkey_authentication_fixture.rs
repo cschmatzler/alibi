@@ -3,16 +3,16 @@ use crate::TestSchema;
 use async_trait::async_trait;
 use axum::{Json, Router, routing::get};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{
     EmailPasswordPlugin, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
     PasskeyAuthenticationContext, PasskeyPlugin, SessionManagementPlugin,
     VerifiedPasskeyAuthentication,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::{AuthPasskey, store::PasskeyStore, utils::json::JsValue, wire::PasskeyView};
-use better_auth_seaorm::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::{AuthPasskey, store::PasskeyStore, utils::json::JsValue, wire::PasskeyView};
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
 pub(crate) type Events = Arc<Mutex<Vec<Value>>>;
-fn database_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
+fn database_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 struct Application {

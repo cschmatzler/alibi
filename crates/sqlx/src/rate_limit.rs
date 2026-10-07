@@ -3,10 +3,10 @@
 use crate::pool::{Exec, SqlxPool};
 use crate::sql::Sql;
 use crate::store::migrator::{Migration, apply};
+use alibi_core::middleware::rate_limit::bucket::{self, LongestWindow, Step};
+use alibi_core::store::SchemaMigrator;
+use alibi_core::{AuthResult, EndpointRateLimit, RateLimitDecision, RateLimitStorage};
 use async_trait::async_trait;
-use better_auth_core::middleware::rate_limit::bucket::{self, LongestWindow, Step};
-use better_auth_core::store::SchemaMigrator;
-use better_auth_core::{AuthResult, EndpointRateLimit, RateLimitDecision, RateLimitStorage};
 use std::sync::Arc;
 
 const RATE_LIMIT_SCHEMA: Migration = Migration {

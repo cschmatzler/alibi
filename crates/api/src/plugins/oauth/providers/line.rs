@@ -211,7 +211,7 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => better_auth_core::utils::json::number_to_string(value)
+        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),
@@ -297,6 +297,6 @@ fn decode_profile(token: &str) -> Option<Value> {
             .with_decode_padding_mode(base64::engine::DecodePaddingMode::Indifferent),
     );
     let bytes = decoder.decode(encoded).ok()?;
-    let profile: Value = better_auth_core::utils::json::from_slice(&bytes).ok()?;
+    let profile: Value = alibi_core::utils::json::from_slice(&bytes).ok()?;
     profile.is_object().then_some(profile)
 }

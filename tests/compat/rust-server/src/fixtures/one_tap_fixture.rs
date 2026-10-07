@@ -2,17 +2,17 @@
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
 use async_trait::async_trait;
 use axum::{Json, Router, routing::get};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::{OAuthIdTokenVerifier, OAuthProvider};
-use better_auth::plugins::one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{OAuthIdTokenVerifier, OAuthProvider};
+use alibi::plugins::one_tap::{OAuthJwksSource, OneTapClientId, OneTapConfig, OneTapPlugin};
+use alibi::plugins::{
     AdminPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin, OrganizationPlugin,
     SessionManagementPlugin, TwoFactorPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::sea_orm::{DatabaseConnection, EntityTrait};
-use better_auth_seaorm::store::entities::{account, session, user};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::sea_orm::{DatabaseConnection, EntityTrait};
+use alibi_seaorm::store::entities::{account, session, user};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -117,7 +117,7 @@ pub(crate) async fn router(
             _ => None,
         };
         if let Some(max_age) = age {
-            profile_config.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+            profile_config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
                 enabled: false,
                 max_age,
                 ..Default::default()
@@ -126,12 +126,12 @@ pub(crate) async fn router(
         if name == "one-tap-account-cookie-override" {
             profile_config.advanced.cookies.insert(
                 "account_data".into(),
-                better_auth_core::config::CookieOverride {
+                alibi_core::config::CookieOverride {
                     name: None,
-                    attributes: better_auth_core::config::CookieAttributes {
+                    attributes: alibi_core::config::CookieAttributes {
                         max_age: Some(7.0),
                         http_only: Some(false),
-                        same_site: Some(better_auth_core::config::SameSite::Strict),
+                        same_site: Some(alibi_core::config::SameSite::Strict),
                         ..Default::default()
                     },
                 },

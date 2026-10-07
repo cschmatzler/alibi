@@ -8,7 +8,7 @@ description: "Verify phone numbers with SMS codes, sign in with phone and passwo
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins phone-number -o src/auth_schema.rs
+alibi generate --plugins phone-number -o src/auth_schema.rs
 ```
 
 Adds `users.phone_number` and `users.phone_number_verified`. Add a **unique index** on `phone_number`. The phone number cannot be changed through `/update-user`; changes go through the verification flow (`POST /update-user` with a `phoneNumber` fails with `400 PHONE_NUMBER_CANNOT_BE_UPDATED`).
@@ -20,11 +20,11 @@ Implement `SendPhoneOtp` with your SMS service. Add `async-trait = "0.1"`.
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::CallbackContext;
-use better_auth::plugins::phone_number::PhoneOtpDelivery;
-use better_auth::plugins::{PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::CallbackContext;
+use alibi::plugins::phone_number::PhoneOtpDelivery;
+use alibi::plugins::{PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 use std::sync::Arc;
 
 #[async_trait]
@@ -115,9 +115,9 @@ Normalize numbers (E.164) in your validator or before calling the API: the store
 
 ```rust
 use async_trait::async_trait;
-use better_auth::CallbackContext;
-use better_auth::plugins::phone_number::{PhoneNumberConfig, PhoneOtpDelivery, PhoneOtpVerifier};
-use better_auth::AuthResult;
+use alibi::CallbackContext;
+use alibi::plugins::phone_number::{PhoneNumberConfig, PhoneOtpDelivery, PhoneOtpVerifier};
+use alibi::AuthResult;
 use std::sync::Arc;
 
 struct ProviderVerify;

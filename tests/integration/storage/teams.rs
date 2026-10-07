@@ -1,19 +1,19 @@
 //! Teams, dynamic roles and compound invitation acceptance.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use better_auth::{AuthConfig, AuthSchema};
-use better_auth_core::entity::{AuthSession, AuthUser};
-use better_auth_core::store::SchemaMigrator;
-use better_auth_core::store::{
+use alibi::{AuthConfig, AuthSchema};
+use alibi_core::entity::{AuthSession, AuthUser};
+use alibi_core::store::SchemaMigrator;
+use alibi_core::store::{
     AuthStore, InvitationStore, MemberStore, OrganizationRoleStore, SessionStore, TeamStore,
     UserStore,
 };
-use better_auth_core::types::{
+use alibi_core::types::{
     AddTeamMemberResult, CreateInvitation, CreateMember, CreateOrganization,
     CreateOrganizationRole, CreateSession, CreateTeam, CreateUser, Invitation, InvitationStatus,
     OrganizationRoleSelector, Team, UpdateOrganizationRole,
 };
-use better_auth_core::{AuthError, AuthResult};
+use alibi_core::{AuthError, AuthResult};
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 use tokio::{sync::Barrier, task::JoinSet};
@@ -71,7 +71,7 @@ async fn room<S: AuthSchema>(
 async fn session<S: AuthSchema>(store: &dyn AuthStore<S>, user_id: &str) -> AuthResult<String> {
     Ok(store
         .create_session(CreateSession {
-            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
             token: None,
             user_id: user_id.to_owned(),
             expires_at: Utc::now() + Duration::hours(1),
@@ -139,7 +139,7 @@ async fn configured_query_limit_bounds_public_lists_without_truncating_owned_del
                 .create_organization_role(CreateOrganizationRole {
                     organization_id: org.clone(),
                     role: name.to_owned(),
-                    permission: better_auth_core::OrganizationPermissions::default(),
+                    permission: alibi_core::OrganizationPermissions::default(),
                 })
                 .await?,
         );

@@ -1,20 +1,20 @@
 //! Plugin adapter transforms affect every trusted facade and real transactions.
 
-use async_trait::async_trait;
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::store::{AccountStore, AdapterAfterHook, AdapterEvent, AuthStore};
-use better_auth_core::{AuthAccount, CreateAccount};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::store::{AccountStore, AdapterAfterHook, AdapterEvent, AuthStore};
+use alibi_core::{AuthAccount, CreateAccount};
+use alibi_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
     AuthUser, CreateUser, UpdateUser,
     store::{UserStore, transaction},
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
 };
+use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[derive(Debug, PartialEq)]
 struct DefaultsObserved {
@@ -55,7 +55,7 @@ impl AuthPlugin<Schema> for UserTransforms {
         "user-store-transforms"
     }
 
-    fn routes(&self) -> Vec<better_auth_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
         Vec::new()
     }
 
@@ -95,7 +95,7 @@ impl AuthPlugin<Schema> for UserTransforms {
 async fn store() -> (AuthConfig, Arc<SeaOrmStore<Schema>>) {
     let config = AuthConfig::new("plugin-transform-fixture-secret-minimum-32-characters");
     let database = Database::connect("sqlite::memory:").await.unwrap();
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     let store = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
@@ -143,14 +143,14 @@ struct CommittedSessionObserver {
     fail: bool,
 }
 #[async_trait]
-impl better_auth_core::store::SessionCreatedHook<Schema> for CommittedSessionObserver {
+impl alibi_core::store::SessionCreatedHook<Schema> for CommittedSessionObserver {
     async fn after_create(
         &self,
-        session: &<Schema as better_auth_core::AuthSchema>::Session,
-        database: &dyn better_auth_core::store::AuthStore<Schema>,
+        session: &<Schema as alibi_core::AuthSchema>::Session,
+        database: &dyn alibi_core::store::AuthStore<Schema>,
     ) -> AuthResult<()> {
-        use better_auth_core::AuthSession;
-        use better_auth_core::store::SessionStore;
+        use alibi_core::AuthSession;
+        use alibi_core::store::SessionStore;
         assert!(self.raw.get_session(session.token()).await?.is_some());
         drop(
             database
@@ -178,7 +178,7 @@ impl AuthPlugin<Schema> for SessionLifecyclePlugin {
     fn name(&self) -> &'static str {
         "committed-session-observer"
     }
-    fn routes(&self) -> Vec<better_auth_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
         Vec::new()
     }
     async fn on_request(
@@ -193,8 +193,8 @@ impl AuthPlugin<Schema> for SessionLifecyclePlugin {
         Ok(())
     }
 }
-fn session_input(user_id: String, token: &str) -> better_auth_core::CreateSession {
-    better_auth_core::CreateSession {
+fn session_input(user_id: String, token: &str) -> alibi_core::CreateSession {
+    alibi_core::CreateSession {
         user_id,
         token: Some(token.into()),
         expires_at: chrono::Utc::now() + chrono::Duration::hours(1),
@@ -213,8 +213,8 @@ mod tests {
 
     #[tokio::test]
     async fn direct_initialization_preserves_configured_adapter_output_and_committed_observers() {
-        use better_auth_core::field_policy::FieldConfig;
-        use better_auth_core::utils::json::JsValue;
+        use alibi_core::field_policy::FieldConfig;
+        use alibi_core::utils::json::JsValue;
 
         let (plain, raw) = store().await;
         let mut configured = plain.clone();
@@ -467,7 +467,7 @@ mod tests {
         reason = "Keep this ordered integration scenario and its assertions together; Result propagates setup failures"
     )]
     async fn enabled_plugin_defaults_preserve_explicit_flags_and_existing_nulls() {
-        use better_auth::plugins::{AdminPlugin, TwoFactorPlugin};
+        use alibi::plugins::{AdminPlugin, TwoFactorPlugin};
 
         let (config, raw) = store().await;
         let seen = Arc::new(Mutex::new(Vec::new()));
@@ -612,8 +612,8 @@ mod tests {
     #[tokio::test]
     async fn session_callbacks_observe_real_commit_and_finalized_transforms_but_never_sql_rollback()
     {
-        use better_auth_core::{AuthSession, store::SessionStore};
-        use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+        use alibi_core::{AuthSession, store::SessionStore};
+        use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
         let (config, raw) = store().await;
         let seen = Arc::new(Mutex::new(Vec::new()));
         let auth = AuthBuilder::new(config.clone())
@@ -692,11 +692,11 @@ mod tests {
         assert_eq!(
             before
                 .iter()
-                .map(better_auth_core::AuthSession::token)
+                .map(alibi_core::AuthSession::token)
                 .collect::<Vec<_>>(),
             after
                 .iter()
-                .map(better_auth_core::AuthSession::token)
+                .map(alibi_core::AuthSession::token)
                 .collect::<Vec<_>>()
         );
         assert_eq!(
@@ -738,8 +738,8 @@ mod tests {
     #[tokio::test]
     async fn last_login_database_tracking_requires_actual_request_context_for_trusted_store_calls()
     {
-        use better_auth::plugins::LastLoginMethodConfig;
-        use better_auth::plugins::LastLoginMethodPlugin;
+        use alibi::plugins::LastLoginMethodConfig;
+        use alibi::plugins::LastLoginMethodPlugin;
         let (config, raw) = store().await;
         let auth = AuthBuilder::new(config)
             .store_arc(Arc::<SeaOrmStore<Schema>>::clone(&raw))

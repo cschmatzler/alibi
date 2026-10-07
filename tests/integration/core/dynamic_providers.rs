@@ -6,15 +6,15 @@
     reason = "endpoint regression setup and independent storage receipts fail fast"
 )]
 use crate::storage::{Backend, Db, Raw, TestResult, backend_tests, postgres_tests};
-use async_trait::async_trait;
-use better_auth::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedProvidersResolver};
-use better_auth::plugins::{OAuthPlugin, oauth::OAuthProvider};
-use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-use better_auth_core::{
+use alibi::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedProvidersResolver};
+use alibi::plugins::{OAuthPlugin, oauth::OAuthProvider};
+use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::{
     AuthContext, AuthError, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     AuthSchema, CreateAccount, CreateUser, HttpMethod, SessionManager,
 };
+use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 const SECRET: &str = "request-provider-fixture-secret-at-least-32";
@@ -192,7 +192,7 @@ fn callback(code: &str, host: &str, trust: &str, state: &str, cookies: &str) -> 
     r
 }
 async fn physical_account(db: &Db, id: &str) -> TestResult<Value> {
-    use better_auth_sqlx::sqlx::{self, Row};
+    use alibi_sqlx::sqlx::{self, Row};
     Ok(crate::storage::on_raw!(&db.raw, |pool| {
         let row = sqlx::query(sqlx::AssertSqlSafe(String::from(
             "SELECT id, user_id, account_id, access_token, scope FROM accounts WHERE id=$1",
@@ -241,7 +241,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
     let (issuer, server, provider_receipts) = issuer().await;
     let auth = AuthBuilder::<B::Schema>::new(cfg.clone())
         .store(B::store(Arc::new(cfg), &connection))
-        .rate_limit(better_auth::middleware::RateLimitConfig {
+        .rate_limit(alibi::middleware::RateLimitConfig {
             enabled: false,
             ..Default::default()
         })
@@ -376,7 +376,7 @@ async fn dynamic_provider_callbacks<B: Backend>(db: Db) -> TestResult {
         .await?;
     let session_cookie = format!(
         "__Secure-better-auth.session_token={}",
-        better_auth_core::utils::cookie_utils::sign_cookie_value(session.token(), SECRET)
+        alibi_core::utils::cookie_utils::sign_cookie_value(session.token(), SECRET)
     );
     let (state, cookies, start) = start(&auth, "actor", "allow", Some(&session_cookie)).await;
     let cookies = format!("{cookies}; {session_cookie}");

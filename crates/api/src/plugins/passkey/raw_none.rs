@@ -2,8 +2,8 @@
 //! None validates a ceremony; packed and authentication verify original proofs.
 use super::source::credential::Passkey;
 use super::webauthn::PasskeySnapshot;
+use alibi_core::utils::json::{JsValue, from_slice};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth_core::utils::json::{JsValue, from_slice};
 use serde::{Deserialize, Serialize};
 use serde_cbor_2::Value as Cbor;
 use webauthn_rs::prelude::RegisterPublicKeyCredential;
@@ -59,7 +59,7 @@ impl RawCredential {
     ///
     /// # Errors
     /// Returns an error when validation, storage, or an application callback fails.
-    pub(super) fn snapshot(&self) -> better_auth_core::AuthResult<PasskeySnapshot> {
+    pub(super) fn snapshot(&self) -> alibi_core::AuthResult<PasskeySnapshot> {
         let Self::SourceRawKey {
             counter,
             backup_eligible,

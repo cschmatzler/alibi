@@ -5,20 +5,20 @@ use axum::{
     extract::Query,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::organization::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::organization::{
     OrganizationConfig, OrganizationUpdateContext, OrganizationUpdateHooks,
     OrganizationUpdatePatch, OrganizationUpdatedContext,
 };
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::{
+use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::{
     Member, UpdateUser,
     store::{MemberStore, OrganizationStore, UserStore},
     wire::UserView,
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
@@ -119,7 +119,7 @@ impl OrganizationUpdateHooks for Hooks {
         if let Some(value) = &context.organization.metadata {
             let _ = input.insert(
                 "metadata".into(),
-                better_auth_core::utils::json::JsValue::Object(value.clone()).to_json_value()?,
+                alibi_core::utils::json::JsValue::Object(value.clone()).to_json_value()?,
             );
         }
         self.note(
@@ -141,7 +141,7 @@ impl OrganizationUpdateHooks for Hooks {
                 .as_ref()
                 .and_then(|map| map.get("n"))
                 .cloned()
-                .unwrap_or(better_auth_core::utils::json::JsValue::Null);
+                .unwrap_or(alibi_core::utils::json::JsValue::Null);
             let numeric = n.as_f64();
             let negative_zero =
                 numeric.is_some_and(|value| value == 0.0 && value.is_sign_negative());
@@ -162,7 +162,7 @@ impl OrganizationUpdateHooks for Hooks {
                         ("patched".into(), n),
                         (
                             "negativeZero".into(),
-                            better_auth_core::utils::json::JsValue::Bool(negative_zero),
+                            alibi_core::utils::json::JsValue::Bool(negative_zero),
                         ),
                     ]
                     .into_iter()

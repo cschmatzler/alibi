@@ -5,10 +5,10 @@ impl JwtPlugin {
         request: Option<&AuthRequest>,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Vec<Jwk>> {
-        let endpoint = better_auth_core::endpoint::current_endpoint_call_context();
+        let endpoint = alibi_core::endpoint::current_endpoint_call_context();
         let path = endpoint
             .as_ref()
-            .and_then(better_auth_core::endpoint::EndpointCall::path)
+            .and_then(alibi_core::endpoint::EndpointCall::path)
             .unwrap_or_else(|| request.map_or("virtual:", AuthRequest::path));
         self.keys_at_path(request, path, ctx).await
     }
@@ -17,7 +17,7 @@ impl JwtPlugin {
         &self,
         request: Option<&AuthRequest>,
         ctx: &AuthContext<S>,
-        transaction: Option<&dyn better_auth_core::store::AuthTransaction<S>>,
+        transaction: Option<&dyn alibi_core::store::AuthTransaction<S>>,
     ) -> AuthResult<Vec<Jwk>> {
         if self.config.keyring.is_none()
             && let Some(transaction) = transaction
@@ -34,7 +34,7 @@ impl JwtPlugin {
         path: &str,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<Vec<Jwk>> {
-        let endpoint = better_auth_core::endpoint::current_endpoint_call_context();
+        let endpoint = alibi_core::endpoint::current_endpoint_call_context();
         match &self.config.keyring {
             Some(keyring) => {
                 keyring
@@ -69,7 +69,7 @@ impl JwtPlugin {
         config: Option<&JwtKeyPairConfig>,
         request: Option<&AuthRequest>,
         ctx: &AuthContext<S>,
-        transaction: Option<&dyn better_auth_core::store::AuthTransaction<S>>,
+        transaction: Option<&dyn alibi_core::store::AuthTransaction<S>>,
     ) -> AuthResult<Jwk> {
         let config = config.unwrap_or(&self.config.key_pair);
         let (public, private) = crypto::generate(config)?;
@@ -93,7 +93,7 @@ impl JwtPlugin {
             alg: Some(config.algorithm.as_str().to_owned()),
             crv: config.algorithm.curve().map(str::to_owned),
         };
-        let endpoint = better_auth_core::endpoint::current_endpoint_call_context();
+        let endpoint = alibi_core::endpoint::current_endpoint_call_context();
         match &self.config.keyring {
             Some(keyring) => {
                 keyring
@@ -102,7 +102,7 @@ impl JwtPlugin {
                         &JwtKeyringContext {
                             path: endpoint
                                 .as_ref()
-                                .and_then(better_auth_core::endpoint::EndpointCall::path)
+                                .and_then(alibi_core::endpoint::EndpointCall::path)
                                 .unwrap_or_else(|| request.map_or("virtual:", AuthRequest::path)),
                             request,
                             endpoint: endpoint.as_ref(),
@@ -137,7 +137,7 @@ impl JwtPlugin {
         options: &JwtSignOptions,
         request: Option<&AuthRequest>,
         ctx: &AuthContext<S>,
-        transaction: Option<&dyn better_auth_core::store::AuthTransaction<S>>,
+        transaction: Option<&dyn alibi_core::store::AuthTransaction<S>>,
     ) -> AuthResult<Option<ResolvedJwtSigningKey>> {
         if self.config.remote_signer.is_some() {
             return Ok(None);

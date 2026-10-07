@@ -8,14 +8,14 @@ use axum::{
     routing::{get, post},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::{CorsConfig, RateLimitConfig};
-use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::plugins::{BearerPlugin, OAuthPlugin, OAuthPopupPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::sea_orm::{ActiveModelTrait, EntityTrait, Set};
-use better_auth_seaorm::store::entities::{account, session, user, verification};
-use better_auth_seaorm::{Database, DatabaseConnection};
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::{CorsConfig, RateLimitConfig};
+use alibi::plugins::oauth::OAuthProvider;
+use alibi::plugins::{BearerPlugin, OAuthPlugin, OAuthPopupPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::sea_orm::{ActiveModelTrait, EntityTrait, Set};
+use alibi_seaorm::store::entities::{account, session, user, verification};
+use alibi_seaorm::{Database, DatabaseConnection};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, sync::Arc};
@@ -43,10 +43,10 @@ struct Fixture {
 pub(crate) async fn router(config: &AuthConfig) -> AuthResult<Router> {
     let database = Database::connect(crate::sqlite_fixture::options())
         .await
-        .map_err(|e| better_auth::AuthError::internal(e.to_string()))?;
+        .map_err(|e| alibi::AuthError::internal(e.to_string()))?;
     crate::backend::migrate(&database)
         .await
-        .map_err(|e| better_auth::AuthError::internal(e.to_string()))?;
+        .map_err(|e| alibi::AuthError::internal(e.to_string()))?;
     let fixture = Fixture {
         database: database.clone(),
         provider: Arc::new(Mutex::new(Provider::default())),

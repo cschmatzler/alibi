@@ -50,7 +50,7 @@ pub(in crate::plugins) struct CreateUserRequest {
     pub role: Option<RoleInput>,
     #[serde(
         default,
-        deserialize_with = "better_auth_core::utils::json::deserialize_optional_map"
+        deserialize_with = "alibi_core::utils::json::deserialize_optional_map"
     )]
     pub data: Option<serde_json::Map<String, serde_json::Value>>,
 }
@@ -59,7 +59,7 @@ pub(in crate::plugins) struct CreateUserRequest {
 pub(in crate::plugins) struct AdminUpdateUserRequest {
     #[serde(rename = "userId")]
     pub user_id: String,
-    #[serde(deserialize_with = "better_auth_core::utils::json::deserialize_map")]
+    #[serde(deserialize_with = "alibi_core::utils::json::deserialize_map")]
     pub data: serde_json::Map<String, serde_json::Value>,
 }
 
@@ -131,10 +131,10 @@ pub(in crate::plugins) struct PhysicalAdminUserView {
     pub email_verified: bool,
     pub image: Option<String>,
     #[serde(rename = "createdAt")]
-    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
+    #[serde(serialize_with = "alibi_core::utils::datetime::serialize")]
     pub created_at: DateTime<Utc>,
     #[serde(rename = "updatedAt")]
-    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
+    #[serde(serialize_with = "alibi_core::utils::datetime::serialize")]
     pub updated_at: DateTime<Utc>,
     pub username: Option<String>,
     #[serde(rename = "displayUsername")]
@@ -149,7 +149,7 @@ pub(in crate::plugins) struct PhysicalAdminUserView {
     pub ban_expires: Option<String>,
 }
 
-impl<T: better_auth_core::entity::AuthUser> From<&T> for PhysicalAdminUserView {
+impl<T: alibi_core::entity::AuthUser> From<&T> for PhysicalAdminUserView {
     fn from(user: &T) -> Self {
         Self {
             id: user.id().into_owned(),
@@ -177,20 +177,18 @@ impl<T: better_auth_core::entity::AuthUser> From<&T> for PhysicalAdminUserView {
 pub(in crate::plugins) struct AdminUserView(serde_json::Map<String, serde_json::Value>);
 
 impl AdminUserView {
-    pub(in crate::plugins) fn from_output<S: better_auth_core::AuthSchema>(
-        ctx: &better_auth_core::AuthContext<S>,
-        user: &better_auth_core::AdapterRecord<S::User>,
-    ) -> better_auth_core::AuthResult<Self> {
+    pub(in crate::plugins) fn from_output<S: alibi_core::AuthSchema>(
+        ctx: &alibi_core::AuthContext<S>,
+        user: &alibi_core::AdapterRecord<S::User>,
+    ) -> alibi_core::AuthResult<Self> {
         let serde_json::Value::Object(mut output) =
             serde_json::to_value(PhysicalAdminUserView::from(user))?
         else {
-            return Err(better_auth_core::AuthError::internal(
+            return Err(alibi_core::AuthError::internal(
                 "Admin user output must be an object",
             ));
         };
-        let registered = ctx
-            .extensions
-            .get::<better_auth_core::field_policy::UserFields>();
+        let registered = ctx.extensions.get::<alibi_core::field_policy::UserFields>();
         let fields = registered
             .as_ref()
             .map_or(&ctx.config.user.additional_fields, |fields| &fields.0.0);
@@ -262,7 +260,7 @@ pub(in crate::plugins) struct ListUsersQueryParams {
     #[serde(rename = "filterField")]
     pub filter_field: Option<String>,
     #[serde(rename = "filterValue")]
-    pub filter_value: Option<better_auth_core::UserFilterValue>,
+    pub filter_value: Option<alibi_core::UserFilterValue>,
     #[serde(rename = "filterOperator")]
     pub filter_operator: Option<String>,
 }

@@ -1,6 +1,6 @@
 //! Trusted server-only passwordless-to-credential operation.
 use super::super::email_password::EmailPasswordConfig;
-use better_auth_core::{
+use alibi_core::{
     AuthAccount, AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, AuthUser,
     CreateAccount, UpdateAccount,
 };
@@ -63,11 +63,11 @@ pub async fn set_password<S: AuthSchema>(
     let hasher = policy
         .as_ref()
         .and_then(|policy| policy.password_hasher.as_ref());
-    let hash_context = better_auth_core::PasswordHashContext {
+    let hash_context = alibi_core::PasswordHashContext {
         // The pathless endpoint's handler context uses the published virtual
         // identity. It does not identify a public URL or register a route.
         path: Some("virtual:".into()),
-        request: better_auth_core::hooks::current_request_hook_context(),
+        request: alibi_core::hooks::current_request_hook_context(),
     };
     let password = context
         .hash_password_with_context(hasher, new_password, Some(&hash_context))

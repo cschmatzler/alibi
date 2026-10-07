@@ -4,20 +4,20 @@
 )]
 //! Application storage and native hook contracts; the SDK owns built-in wire parity.
 use super::application_model::ApplicationSchema;
-use async_trait::async_trait;
-use better_auth::plugins::{
+use alibi::plugins::{
     EmailPasswordPlugin, OpenApiPlugin, OrganizationPlugin, SessionManagementPlugin,
 };
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig,
     field_policy::{FieldConfig, FieldValues},
 };
-use better_auth_core::{AuthRequest, AuthResult, CreateSession, HttpMethod, utils::json::JsValue};
-use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
-use better_auth_seaorm::store::__private_test_support::migrator::run_migrations;
-use better_auth_seaorm::{
+use alibi_core::{AuthRequest, AuthResult, CreateSession, HttpMethod, utils::json::JsValue};
+use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
+use alibi_seaorm::store::__private_test_support::migrator::run_migrations;
+use alibi_seaorm::{
     Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
 };
+use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::{
     Arc,
@@ -57,7 +57,7 @@ impl DatabaseHooks<ApplicationSchema, SeaOrmBackend> for ApplicationHook {
                     [token.into()],
                 ))
                 .await
-                .map_err(|error| better_auth_core::AuthError::internal(error.to_string()))?;
+                .map_err(|error| alibi_core::AuthError::internal(error.to_string()))?;
         }
         Ok(HookControl::Continue)
     }
@@ -93,7 +93,7 @@ impl DatabaseHooks<ApplicationSchema, SeaOrmBackend> for InitialSessionFieldsHoo
 
     async fn after_create_session(
         &self,
-        session: &<ApplicationSchema as better_auth::AuthSchema>::Session,
+        session: &<ApplicationSchema as alibi::AuthSchema>::Session,
         _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
         assert_eq!(
@@ -106,7 +106,7 @@ impl DatabaseHooks<ApplicationSchema, SeaOrmBackend> for InitialSessionFieldsHoo
     }
 }
 
-async fn session_fields_database() -> better_auth_seaorm::DatabaseConnection {
+async fn session_fields_database() -> alibi_seaorm::DatabaseConnection {
     let db = Database::connect("sqlite::memory:").await.unwrap();
     run_migrations(&db).await.unwrap();
     for sql in [
@@ -152,11 +152,11 @@ mod tests {
 
     #[tokio::test]
     async fn public_issuance_inserts_explicit_session_fields_before_creation_hooks() {
-        use better_auth::prelude::{AuthSession, AuthUser};
-        use better_auth::session::{
+        use alibi::prelude::{AuthSession, AuthUser};
+        use alibi::session::{
             SessionOverrides, issue_user_session_with_fields, issue_user_session_with_fields_record,
         };
-        use better_auth_core::CreateUser;
+        use alibi_core::CreateUser;
 
         let db = session_fields_database().await;
         for sql in [
@@ -260,9 +260,7 @@ mod tests {
             .unwrap_err();
             assert!(matches!(
                 error,
-                better_auth::session::SessionIssueError::Auth(better_auth::AuthError::BadRequest(
-                    _
-                ))
+                alibi::session::SessionIssueError::Auth(alibi::AuthError::BadRequest(_))
             ));
         }
         let inserted = db
@@ -356,7 +354,7 @@ mod tests {
         let token = body["token"].as_str().unwrap();
         let cookie = format!(
             "better-auth.session_token={}",
-            better_auth_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
+            alibi_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
         );
         assert_eq!(calls.load(Ordering::SeqCst), 1);
         let documentation = AuthRequest::new(HttpMethod::Get, "/api/auth/open-api/generate-schema");
@@ -386,7 +384,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        let manual_context = better_auth_core::AuthContext::<ApplicationSchema>::new(
+        let manual_context = alibi_core::AuthContext::<ApplicationSchema>::new(
             Arc::new(auth.config().clone()),
             Arc::clone(auth.store()),
         );
@@ -428,7 +426,7 @@ mod tests {
             assert_eq!(stored_2.label.as_deref(), Some(expected));
             assert_eq!(stored_2.hidden, initial.hidden);
             assert_eq!(
-                better_auth_core::AuthSession::additional_fields(&stored_2).get("validated"),
+                alibi_core::AuthSession::additional_fields(&stored_2).get("validated"),
                 Some(&json!("unregistered-storage-secret"))
             );
         }

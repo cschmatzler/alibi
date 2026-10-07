@@ -19,10 +19,10 @@ pub(in crate::plugins) mod state;
 
 mod types;
 
+use alibi_core::AuthResult;
+use alibi_core::{AuthContext, AuthPlugin, AuthRoute};
+use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
-use better_auth_core::AuthResult;
-use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 pub(in crate::plugins) use handlers::{
     OAuthProcessPolicy, OAuthSignInError, create_account_cookie_headers, process_oauth_sign_in,
 };
@@ -84,21 +84,21 @@ impl Default for OAuthPlugin {
 }
 
 #[async_trait]
-impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -121,7 +121,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         ]
     }
 
-    async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
         ctx.extensions.insert(self.config.clone());
         Ok(())
     }
@@ -174,9 +174,9 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         // Source renews an existing account JWE whenever setCookieCache emits
         // a session cache, unless this endpoint already owns account issuance.
         let account_name =
-            better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, "account_data");
+            alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "account_data");
         let cache_name =
-            better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, "session_data");
+            alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, "session_data");
         let account_chunks = format!("{account_name}.");
         let cache_chunks = format!("{cache_name}.");
         let pending: Vec<_> = response
@@ -196,9 +196,8 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         {
             return Ok(response);
         }
-        let Some((user, _)) =
-            better_auth_core::session::cookie_cache::runtime::published_session(req)
-                .or_else(|| req.session_hook_snapshot())
+        let Some((user, _)) = alibi_core::session::cookie_cache::runtime::published_session(req)
+            .or_else(|| req.session_hook_snapshot())
         else {
             return Ok(response);
         };
@@ -208,7 +207,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OAuthPlugin {
         let headers = if account.user_id == user.id {
             handlers::create_account_cookie_headers(&ctx.config, &account, req)?
         } else {
-            better_auth_core::session::cookie_cache::runtime::chunked_cookie_headers(
+            alibi_core::session::cookie_cache::runtime::chunked_cookie_headers(
                 &account_name,
                 "",
                 Some(0.0),

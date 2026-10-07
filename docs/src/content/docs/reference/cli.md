@@ -1,20 +1,20 @@
 ---
 title: "CLI"
-description: "better-auth-rs generate: create application-owned models, plugin tables and bootstrap migrations."
+description: "alibi generate: create application-owned models, plugin tables and bootstrap migrations."
 ---
 
-The `better-auth-rs` binary generates the Rust source for your auth models. It has one command, `generate`.
+The `alibi` binary generates the Rust source for your auth models. It has one command, `generate`.
 
 ## Install
 
 ```bash
-cargo install alibi-cli --version 0.1.0 --locked
+cargo install alibi-cli --version 0.1.1 --locked
 ```
 
 ## `generate`
 
 ```bash
-better-auth-rs generate [--backend sqlx|seaorm] [--plugins <list>] [--output <file>]
+alibi generate [--backend sqlx|seaorm] [--plugins <list>] [--output <file>]
 ```
 
 | Option | Default | Meaning |
@@ -26,9 +26,9 @@ better-auth-rs generate [--backend sqlx|seaorm] [--plugins <list>] [--output <fi
 Examples:
 
 ```bash
-better-auth-rs generate -o src/auth_schema.rs
-better-auth-rs generate --backend seaorm --plugins organization,two-factor -o src/auth_schema.rs
-better-auth-rs generate --plugins all > src/auth_schema.rs
+alibi generate -o src/auth_schema.rs
+alibi generate --backend seaorm --plugins organization,two-factor -o src/auth_schema.rs
+alibi generate --plugins all > src/auth_schema.rs
 ```
 
 ### What it emits

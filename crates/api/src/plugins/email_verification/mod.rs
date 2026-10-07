@@ -5,11 +5,11 @@ pub(in crate::plugins) mod token;
 pub(super) mod types;
 
 use super::StatusResponse;
+use alibi_core::AuthUser;
+use alibi_core::wire::UserView;
+use alibi_core::{AuthContext, AuthError, AuthResult};
+use alibi_core::{AuthRequest, AuthResponse};
 use async_trait::async_trait;
-use better_auth_core::AuthUser;
-use better_auth_core::wire::UserView;
-use better_auth_core::{AuthContext, AuthError, AuthResult};
-use better_auth_core::{AuthRequest, AuthResponse};
 use chrono::Duration;
 use handlers::{send_verification_email_core, verification_url, verify_email_core};
 use std::future::Future;
@@ -44,7 +44,7 @@ impl std::fmt::Debug for EmailVerificationPlugin {
     }
 }
 
-#[derive(Clone, better_auth_core::PluginConfig)]
+#[derive(Clone, alibi_core::PluginConfig)]
 #[plugin(name = "EmailVerificationPlugin")]
 #[expect(
     clippy::struct_excessive_bools,
@@ -105,22 +105,22 @@ impl EmailVerificationPlugin {
     }
 }
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     EmailVerificationPlugin, "email-verification";
     routes {
         post "/send-verification-email" => handle_send_verification_email, "send_verification_email";
         get "/verify-email" => handle_verify_email, "verify_email";
     }
     extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
     }
 
-        async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+        async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
             ctx.extensions.insert(self.config.clone());
             Ok(())
         }
@@ -148,7 +148,7 @@ impl EmailVerificationPlugin {
     async fn handle_send_verification_email(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body: SendVerificationEmailRequest =
             match super::authentication_helpers::parse_body(req) {
@@ -156,7 +156,7 @@ impl EmailVerificationPlugin {
                 Err(resp) => return Ok(resp),
             };
         let current_user =
-            better_auth_core::session::cookie_cache::runtime::authenticated(ctx, req, false)
+            alibi_core::session::cookie_cache::runtime::authenticated(ctx, req, false)
                 .await
                 .ok()
                 .flatten()
@@ -169,7 +169,7 @@ impl EmailVerificationPlugin {
     async fn handle_verify_email(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let token = req.query.get("token").ok_or(AuthError::Upstream {
             status: 400,
@@ -198,7 +198,7 @@ impl EmailVerificationPlugin {
 
         match verify_email_core(&query, &self.config, req, ctx).await? {
             VerifyEmailResult::Redirect { url, session_token } => {
-                let mut headers = better_auth_core::Headers::new();
+                let mut headers = alibi_core::Headers::new();
                 drop(headers.insert("Location".to_owned(), url));
                 drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
                 let mut response = AuthResponse {
@@ -247,7 +247,7 @@ impl EmailVerificationPlugin {
         user: &impl AuthUser,
         email: &str,
         callback_url: Option<&str>,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<()> {
         if self.config.send_verification_email.is_none()
             && let Some(sender) = ctx.email_verification_override()
@@ -313,7 +313,7 @@ impl EmailVerificationPlugin {
         &self,
         user: &impl AuthUser,
         callback_url: Option<&str>,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<()> {
         if !self.config.send_on_sign_in {
             return Ok(());
@@ -351,12 +351,12 @@ impl EmailVerificationPlugin {
 
 /// Apply the configured delivery policy to an owned verification email.
 pub(in crate::plugins) async fn send_custom_verification_email(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     sender: &Arc<dyn SendVerificationEmail>,
-    user: better_auth_core::wire::UserView,
+    user: alibi_core::wire::UserView,
     url: String,
     token: String,
-    error_policy: better_auth_core::AwaitedNotificationErrorPolicy,
+    error_policy: alibi_core::AwaitedNotificationErrorPolicy,
 ) -> AuthResult<()> {
     let sender = Arc::clone(sender);
     super::authentication_helpers::run_owned_notification(
@@ -372,12 +372,12 @@ pub(in crate::plugins) async fn send_custom_verification_email(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(in crate::plugins) async fn send_signup_verification<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) async fn send_signup_verification<S: alibi_core::AuthSchema>(
     user: &impl AuthUser,
     callback_url: Option<&str>,
     required: bool,
     ctx: &AuthContext<S>,
-    tx: &dyn better_auth_core::store::AuthTransaction<S>,
+    tx: &dyn alibi_core::store::AuthTransaction<S>,
 ) -> AuthResult<()> {
     let config = ctx.extensions.get::<EmailVerificationConfig>();
     if !config
@@ -433,11 +433,11 @@ mod tests {
     use super::token::create_email_verification_token;
     use super::*;
     use crate::plugins::test_helpers;
+    use alibi_core::utils::cookie_utils::create_session_cookie;
+    use alibi_core::wire::UserView;
+    use alibi_core::{AuthPlugin, HttpMethod};
+    use alibi_core::{AuthResult, AuthSession, CreateUser, UpdateUser};
     use async_trait::async_trait;
-    use better_auth_core::utils::cookie_utils::create_session_cookie;
-    use better_auth_core::wire::UserView;
-    use better_auth_core::{AuthPlugin, HttpMethod};
-    use better_auth_core::{AuthResult, AuthSession, CreateUser, UpdateUser};
     use chrono::{Duration, Utc};
     use std::collections::HashMap;
     use std::sync::Arc;
@@ -600,7 +600,7 @@ mod tests {
     }
 
     fn jwt_token(
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         email: &str,
         update_to: Option<&str>,
         request_type: Option<&str>,
@@ -630,12 +630,9 @@ mod tests {
             fail: bool,
         }
         #[derive(Default)]
-        struct Observer(std::sync::Mutex<Option<better_auth_core::BackgroundTaskCompletion>>);
-        impl better_auth_core::BackgroundTaskHandler for Observer {
-            fn handle(
-                &self,
-                completion: better_auth_core::BackgroundTaskCompletion,
-            ) -> AuthResult<()> {
+        struct Observer(std::sync::Mutex<Option<alibi_core::BackgroundTaskCompletion>>);
+        impl alibi_core::BackgroundTaskHandler for Observer {
+            fn handle(&self, completion: alibi_core::BackgroundTaskCompletion) -> AuthResult<()> {
                 *self.0.lock().unwrap() = Some(completion);
                 Ok(())
             }
@@ -666,12 +663,12 @@ mod tests {
             let mut ctx = test_helpers::create_test_context().await;
             // AuthBuilder finalizes even empty session policies, installing the
             // adapter projection instead of the physical model's serialization.
-            let mut init = better_auth_core::AuthInitContext::new(
+            let mut init = alibi_core::AuthInitContext::new(
                 Arc::clone(&ctx.config),
                 Arc::clone(&ctx.database),
             );
             init.extensions
-                .insert(better_auth_core::field_policy::SessionFields::default());
+                .insert(alibi_core::field_policy::SessionFields::default());
             ctx.database = init.database_with_registered_transforms();
             ctx.extensions = init.into_parts().extensions;
             let observer = Arc::new(Observer::default());
@@ -693,9 +690,8 @@ mod tests {
             let current = if authenticated {
                 Some(
                     ctx.database
-                        .create_session(better_auth_core::CreateSession {
-                            additional_fields: better_auth_core::field_policy::FieldValues::default(
-                            ),
+                        .create_session(alibi_core::CreateSession {
+                            additional_fields: alibi_core::field_policy::FieldValues::default(),
                             token: None,
                             user_id: user.id().to_string(),
                             expires_at: Utc::now() + ctx.config.session.expires_in,
@@ -830,7 +826,7 @@ mod tests {
     // claimed user's verification state, including the exact expiry second.
     #[tokio::test]
     async fn external_verification_proofs_enforce_signature_algorithm_and_numeric_dates() {
-        use better_auth_core::AuthUser;
+        use alibi_core::AuthUser;
         let ctx = test_helpers::create_test_context().await;
         let plugin = EmailVerificationPlugin::new().auto_sign_in_after_verification(true);
         let user = ctx
@@ -941,7 +937,7 @@ mod tests {
     // Accepting a legitimately signed proof must preserve that embedding contract.
     #[tokio::test]
     async fn externally_signed_verification_without_dates_or_matching_audience_is_accepted() {
-        use better_auth_core::AuthUser;
+        use alibi_core::AuthUser;
         let ctx = test_helpers::create_test_context().await;
         let plugin = EmailVerificationPlugin::new();
         let user = ctx
@@ -1073,7 +1069,7 @@ mod tests {
         let plugin = EmailVerificationPlugin::new();
         assert_eq!(
             AuthPlugin::<
-                better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
+                alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
             >::name(&plugin,),
             "email-verification"
         );
@@ -1084,7 +1080,7 @@ mod tests {
     fn test_plugin_routes() {
         let plugin = EmailVerificationPlugin::new();
         let routes = AuthPlugin::<
-            better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
+            alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
         >::routes(&plugin);
         assert_eq!(routes.len(), 2);
         assert!(
@@ -1960,7 +1956,7 @@ mod tests {
     // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
     #[test]
     fn test_create_session_cookie_format() {
-        use better_auth_core::utils::cookie_utils::create_session_cookie;
+        use alibi_core::utils::cookie_utils::create_session_cookie;
 
         let ctx = test_helpers::create_test_context_blocking();
         let cookie_str = create_session_cookie("my-token-123", &ctx.config).unwrap();
@@ -1977,7 +1973,7 @@ mod tests {
     // Upstream reference: packages/better-auth/src/api/routes/email-verification.test.ts :: describe("Email Verification") and packages/better-auth/src/api/routes/email-verification.ts; adapted to the Rust email verification plugin.
     #[test]
     fn test_create_session_cookie_special_characters_in_token() {
-        use better_auth_core::utils::cookie_utils::create_session_cookie;
+        use alibi_core::utils::cookie_utils::create_session_cookie;
 
         let ctx = test_helpers::create_test_context_blocking();
         let token = "token+with/special=chars&more";

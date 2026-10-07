@@ -69,16 +69,16 @@ pub mod user_management;
 #[cfg(test)]
 pub(in crate::plugins) mod test_helpers {
 
-    use better_auth_core::config::AuthConfig;
-    use better_auth_core::wire::{SessionView, UserView};
-    use better_auth_core::{AuthContext, AuthRequest, CreateSession, CreateUser, HttpMethod};
-    use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-    use better_auth_seaorm::{Database, SeaOrmStore};
+    use alibi_core::config::AuthConfig;
+    use alibi_core::wire::{SessionView, UserView};
+    use alibi_core::{AuthContext, AuthRequest, CreateSession, CreateUser, HttpMethod};
+    use alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    use alibi_seaorm::{Database, SeaOrmStore};
     use chrono::{Duration, Utc};
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    pub type TestDatabase = dyn better_auth_core::store::AuthStore<BundledSchema>;
+    pub type TestDatabase = dyn alibi_core::store::AuthStore<BundledSchema>;
 
     pub fn create_test_config() -> AuthConfig {
         AuthConfig::new("test-secret-key-at-least-32-chars-long")
@@ -88,7 +88,7 @@ pub(in crate::plugins) mod test_helpers {
         let database = Database::connect("sqlite::memory:")
             .await
             .expect("sqlite test database should connect");
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .expect("sqlite test migrations should run");
         Arc::new(SeaOrmStore::<BundledSchema>::new(
@@ -116,7 +116,7 @@ pub(in crate::plugins) mod test_helpers {
     }
 
     pub async fn create_user(
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         create_user: CreateUser,
     ) -> UserView {
         let user = ctx.database.create_user(create_user).await.unwrap();
@@ -124,12 +124,12 @@ pub(in crate::plugins) mod test_helpers {
     }
 
     pub async fn create_session(
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         user_id: String,
         expires_in: Duration,
     ) -> SessionView {
         let create_session = CreateSession {
-            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
             token: None,
             active_team_id: None,
             user_id,
@@ -144,7 +144,7 @@ pub(in crate::plugins) mod test_helpers {
     }
 
     pub async fn create_user_and_session(
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         user_data: CreateUser,
         session_expires_in: Duration,
     ) -> (UserView, SessionView) {
@@ -177,7 +177,7 @@ pub(in crate::plugins) mod test_helpers {
                 format!(
                     "{}={}",
                     config.session.cookie_name,
-                    better_auth_core::utils::cookie_utils::sign_cookie_value(
+                    alibi_core::utils::cookie_utils::sign_cookie_value(
                         token,
                         config.current_secret()
                     )
@@ -232,10 +232,10 @@ pub use admin::{
     AdminBannedUserMessage, AdminBannedUserMessageHandler, AdminConfig, AdminPlugin,
     RolePermissions,
 };
+pub use alibi_core::PasswordHasher;
 pub use anonymous::{AnonymousConfig, AnonymousPlugin};
 pub use api_key::{ApiKeyConfig, ApiKeyPlugin};
 pub use bearer::{BearerConfig, BearerPlugin};
-pub use better_auth_core::PasswordHasher;
 pub use device_authorization::DeviceAuthorizationPlugin;
 pub use email_otp::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
 pub use email_password::{EmailPasswordConfig, EmailPasswordPlugin};

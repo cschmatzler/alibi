@@ -5,14 +5,14 @@ mod config;
 
 mod crypto;
 
-use better_auth_core::utils::datetime as date;
+use alibi_core::utils::datetime as date;
 
 mod parse;
 
 mod validation;
 
 use super::helpers::{apply_default_role, issue_selected_user_session_record};
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthSession,
     AuthUser, CreateAccount, CreateUser, CreateVerification, CreateWalletAddress, RequestMeta,
 };
@@ -246,7 +246,7 @@ impl SiwePlugin {
         ctx: &AuthContext<S>,
         address: &str,
         email: Option<&str>,
-    ) -> SiweCallbackResult<better_auth_core::AdapterRecord<S::User>> {
+    ) -> SiweCallbackResult<alibi_core::AdapterRecord<S::User>> {
         let normalized_email = email.map(str::to_lowercase);
         let wallet_email = self
             .config
@@ -301,7 +301,7 @@ impl SiwePlugin {
             .database
             .create_user_with_source_record(
                 create.clone(),
-                better_auth_core::user_validation::UserValidationSource::creation("siwe"),
+                alibi_core::user_validation::UserValidationSource::creation("siwe"),
             )
             .await;
         let created = match created {
@@ -314,9 +314,7 @@ impl SiwePlugin {
                         ctx.database
                             .create_user_with_source_record(
                                 create,
-                                better_auth_core::user_validation::UserValidationSource::creation(
-                                    "siwe",
-                                ),
+                                alibi_core::user_validation::UserValidationSource::creation("siwe"),
                             )
                             .await
                             .map_err(storage_error)
@@ -380,7 +378,7 @@ impl SiwePlugin {
         token: &str,
         response: &mut AuthResponse,
     ) -> AuthResult<()> {
-        use better_auth_core::utils::cookie_utils::{
+        use alibi_core::utils::cookie_utils::{
             create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
             sign_cookie_value, verify_cookie_value,
         };
@@ -411,7 +409,7 @@ impl SiwePlugin {
     }
 }
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     SiwePlugin, "siwe";
     routes {
         post "/siwe/nonce" => handle_nonce, "get_siwe_nonce";
@@ -420,12 +418,12 @@ better_auth_core::impl_auth_plugin! {
     }
 
  extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
     }
  }
 }
@@ -463,11 +461,11 @@ mod tests {
     )]
 
     use super::*;
+    use alibi_core::{AuthAccount, AuthPlugin, AuthVerification, HttpMethod};
+    use alibi_seaorm::sea_orm::{EntityTrait, PaginatorTrait};
+    use alibi_seaorm::store::entities::wallet_address;
+    use alibi_seaorm::{Database, DatabaseConnection, SeaOrmStore};
     use async_trait::async_trait;
-    use better_auth_core::{AuthAccount, AuthPlugin, AuthVerification, HttpMethod};
-    use better_auth_seaorm::sea_orm::{EntityTrait, PaginatorTrait};
-    use better_auth_seaorm::store::entities::wallet_address;
-    use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
     use k256::ecdsa::SigningKey;
     use std::fmt::Write;
     use std::sync::{
@@ -476,8 +474,7 @@ mod tests {
     };
     use tokio::sync::Mutex;
 
-    type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
     const ADDRESS: &str = "0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf";
 
     #[derive(Default)]
@@ -513,10 +510,10 @@ mod tests {
 
     async fn context() -> (AuthContext<TestSchema>, DatabaseConnection) {
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
-        let config = Arc::new(better_auth_core::AuthConfig::new(
+        let config = Arc::new(alibi_core::AuthConfig::new(
             "siwe-native-context-secret-at-least-32-characters",
         ));
         let store = Arc::new(SeaOrmStore::<TestSchema>::new(
@@ -780,7 +777,7 @@ mod tests {
 
     #[tokio::test]
     async fn signed_preferences_change_cookie_persistence_without_shortening_siwe_sessions() {
-        use better_auth_core::utils::cookie_utils::{related_cookie_name, sign_cookie_value};
+        use alibi_core::utils::cookie_utils::{related_cookie_name, sign_cookie_value};
         let (ctx, _) = context().await;
         let (plugin, _) = plugin();
         let preference_name = related_cookie_name(&ctx.config, "dont_remember");

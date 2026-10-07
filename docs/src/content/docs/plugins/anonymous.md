@@ -8,7 +8,7 @@ description: "Let visitors use your app as a guest and upgrade to a real account
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins anonymous -o src/auth_schema.rs
+alibi generate --plugins anonymous -o src/auth_schema.rs
 ```
 
 Adds the nullable `users.is_anonymous` column (`isAnonymous` in API output, default `false`).
@@ -17,9 +17,9 @@ Adds the nullable `users.is_anonymous` column (`isAnonymous` in API output, defa
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::AnonymousPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::AnonymousPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -58,9 +58,9 @@ Use the callback to move data the guest created:
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::{AnonymousConfig, AnonymousLink, AnonymousPlugin, LinkAnonymousAccount};
-use better_auth::prelude::AuthRequest;
-use better_auth::AuthResult;
+use alibi::plugins::{AnonymousConfig, AnonymousLink, AnonymousPlugin, LinkAnonymousAccount};
+use alibi::prelude::AuthRequest;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 struct MoveCart;

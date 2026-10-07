@@ -1,15 +1,15 @@
 //! Typed logical organization operations, independent of HTTP request construction.
 use super::{OrganizationPlugin, handlers, types};
 use crate::plugins::endpoint::{definition, error_response, validation};
-use better_auth_core::endpoint::{
+use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
-use better_auth_core::entity::{AuthOrganization, AuthUser};
-use better_auth_core::session::SessionRequest;
-use better_auth_core::types::{Team, TeamMember};
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::wire::InvitationView;
-use better_auth_core::{AuthContext, AuthError, AuthResponse, AuthResult, AuthSchema, HttpMethod};
+use alibi_core::entity::{AuthOrganization, AuthUser};
+use alibi_core::session::SessionRequest;
+use alibi_core::types::{Team, TeamMember};
+use alibi_core::utils::json::JsValue;
+use alibi_core::wire::InvitationView;
+use alibi_core::{AuthContext, AuthError, AuthResponse, AuthResult, AuthSchema, HttpMethod};
 
 pub(super) fn definitions() -> Vec<EndpointDefinition> {
     vec![
@@ -658,7 +658,7 @@ fn response(output: AuthResponse) -> AuthResult<EndpointResponse> {
     let value = if output.body.is_empty() {
         JsValue::Null
     } else {
-        better_auth_core::utils::json::from_slice::<JsValue>(&output.body)?
+        alibi_core::utils::json::from_slice::<JsValue>(&output.body)?
     };
     let mut response = if output.status >= 400 {
         EndpointResponse::error(error_response(output.clone())).with_error_body(value)
@@ -790,7 +790,7 @@ pub(super) async fn execute<S: AuthSchema>(
                     .as_deref()
                     .is_some_and(|id| !id.is_empty())
             {
-                use better_auth_core::utils::cookie_utils::{
+                use alibi_core::utils::cookie_utils::{
                     create_session_cookie_with_max_age, create_session_like_cookie,
                     related_cookie_name, sign_cookie_value, verify_cookie_value,
                 };

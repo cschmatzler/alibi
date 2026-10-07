@@ -8,16 +8,16 @@ Username support is part of `EmailPasswordPlugin`: it adds `username` and `displ
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins username -o src/auth_schema.rs
+alibi generate --plugins username -o src/auth_schema.rs
 ```
 
 This adds `users.username` and `users.display_username` (both nullable). Apply the migration, then enable the feature:
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -68,11 +68,11 @@ Configure `UsernameConfig` with `username_config`:
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::plugins::email_password::{
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::plugins::email_password::{
     UsernameConfig, UsernameNormalization, UsernameValidationOrder, UsernameValidator,
 };
-use better_auth::AuthResult;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 struct NoReservedNames;

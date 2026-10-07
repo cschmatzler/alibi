@@ -1,7 +1,7 @@
 //! Router-owned dispatch continues after a fully buffered client request disconnects.
 
 use crate::BetterAuth;
-use better_auth_core::{AuthError, AuthRequest, AuthResponse, AuthSchema};
+use alibi_core::{AuthError, AuthRequest, AuthResponse, AuthSchema};
 use std::sync::{Arc, Mutex};
 use tokio::{
     sync::{mpsc, oneshot},

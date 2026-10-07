@@ -1,11 +1,11 @@
 use super::entities::invitation::{ActiveModel, Column, Entity};
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmSessionModel, SeaOrmUserModel};
+use alibi_core::entity::AuthUser;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::InvitationStore;
+use alibi_core::{CreateInvitation, Invitation, InvitationStatus};
 use async_trait::async_trait;
-use better_auth_core::entity::AuthUser;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::InvitationStore;
-use better_auth_core::{CreateInvitation, Invitation, InvitationStatus};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
@@ -23,14 +23,14 @@ where
     async fn create_invitation(&self, invitation: CreateInvitation) -> AuthResult<Invitation> {
         self.create_invitation_with_options(
             invitation,
-            better_auth_core::store::InvitationCreateOptions::default(),
+            alibi_core::store::InvitationCreateOptions::default(),
         )
         .await
     }
     async fn create_invitation_with_options(
         &self,
         invitation: CreateInvitation,
-        options: better_auth_core::store::InvitationCreateOptions,
+        options: alibi_core::store::InvitationCreateOptions,
     ) -> AuthResult<Invitation> {
         ActiveModel {
             id: Set(options.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
@@ -87,9 +87,9 @@ where
         session_token: &str,
         team_limits: &[(String, Option<f64>)],
         membership_limit: Option<usize>,
-    ) -> AuthResult<Option<(Invitation, better_auth_core::types::Member)>> {
+    ) -> AuthResult<Option<(Invitation, alibi_core::types::Member)>> {
         use super::entities::{member, organization};
-        use better_auth_core::error::AuthError;
+        use alibi_core::error::AuthError;
         let transaction = self
             .connection()
             .begin_with_options(sea_orm::TransactionOptions {
@@ -135,7 +135,7 @@ where
                 .await
                 .map_err(map_db_err)?
                 .ok_or(AuthError::SessionNotFound)?;
-            if better_auth_core::AuthSession::expires_at(&session) < Utc::now() {
+            if alibi_core::AuthSession::expires_at(&session) < Utc::now() {
                 return Err(AuthError::SessionNotFound);
             }
             drop(
@@ -184,7 +184,7 @@ where
                 if matches!(
                     self.add_team_member_in_tx(&transaction, team_id, user_id, maximum)
                         .await?,
-                    better_auth_core::types::AddTeamMemberResult::LimitReached
+                    alibi_core::types::AddTeamMemberResult::LimitReached
                 ) {
                     return Err(AuthError::Upstream {
                         status: 403,
@@ -230,7 +230,7 @@ where
             invitation.status = InvitationStatus::Accepted;
             Ok(Some((
                 invitation,
-                better_auth_core::types::Member::from(&created),
+                alibi_core::types::Member::from(&created),
             )))
         }
         .await;

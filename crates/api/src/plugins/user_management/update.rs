@@ -1,6 +1,6 @@
-use better_auth_core::entity::AuthUser;
-use better_auth_core::utils::username::UsernameConfig;
-use better_auth_core::{
+use alibi_core::entity::AuthUser;
+use alibi_core::utils::username::UsernameConfig;
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, ErrorCodeMessageResponse,
     UpdateUser, UpdateUserRequest,
 };
@@ -10,7 +10,7 @@ use better_auth_core::{
     clippy::too_many_lines,
     reason = "Keep field validation and user-update callbacks adjacent to the persistence operation"
 )]
-pub async fn handle_update_user<S: better_auth_core::AuthSchema>(
+pub async fn handle_update_user<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     context: &AuthContext<S>,
 ) -> AuthResult<AuthResponse> {
@@ -64,7 +64,7 @@ pub async fn handle_update_user<S: better_auth_core::AuthSchema>(
         });
     }
 
-    let raw_body: better_auth_core::utils::json::JsValue = req.body_as_json()?;
+    let raw_body: alibi_core::utils::json::JsValue = req.body_as_json()?;
     crate::plugins::last_login_method::reject_last_login_method_input(
         context,
         raw_body.get("lastLoginMethod"),
@@ -120,22 +120,22 @@ pub async fn handle_update_user<S: better_auth_core::AuthSchema>(
     let additional_fields = context
         .parse_user_fields(&input_fields, false)
         .map_err(|error| match error {
-            better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
+            alibi_core::field_policy::FieldInputError::Validation { code, message } => {
                 AuthError::Api {
                     status: 400,
                     code: Some(code.into()),
                     message,
                 }
             }
-            better_auth_core::field_policy::FieldInputError::Transform(error) => error,
+            alibi_core::field_policy::FieldInputError::Transform(error) => error,
         })?;
     let username = additional_fields
         .get("username")
-        .and_then(better_auth_core::utils::json::JsValue::as_str)
+        .and_then(alibi_core::utils::json::JsValue::as_str)
         .map(str::to_owned);
     let display_username = additional_fields
         .get("displayUsername")
-        .and_then(better_auth_core::utils::json::JsValue::as_str)
+        .and_then(alibi_core::utils::json::JsValue::as_str)
         .map(str::to_owned);
 
     let clear_phone = context
@@ -182,7 +182,7 @@ pub async fn handle_update_user<S: better_auth_core::AuthSchema>(
         .update_user_record(&current_user.id(), update_user.clone())
         .await
     {
-        Ok(updated_user) => better_auth_core::CacheVersionContext::created(
+        Ok(updated_user) => alibi_core::CacheVersionContext::created(
             updated_user.clone(),
             current_session.clone(),
             context.user_view(&updated_user),
@@ -217,7 +217,7 @@ pub async fn handle_update_user<S: better_auth_core::AuthSchema>(
                         .insert("phoneNumber".into(), serde_json::Value::Null),
                 );
             }
-            better_auth_core::CacheVersionContext::created(
+            alibi_core::CacheVersionContext::created(
                 user.clone(),
                 current_session.clone(),
                 user,
@@ -226,14 +226,14 @@ pub async fn handle_update_user<S: better_auth_core::AuthSchema>(
         }
         Err(error) => return Err(error),
     };
-    better_auth_core::session::cookie_cache::runtime::emit_issuance_snapshot(context, publication)
+    alibi_core::session::cookie_cache::runtime::emit_issuance_snapshot(context, publication)
         .await?;
 
-    let mut response = AuthResponse::json(200, &better_auth_core::StatusResponse { status: true })?;
+    let mut response = AuthResponse::json(200, &alibi_core::StatusResponse { status: true })?;
 
     if let Some(token) = context.session_manager().extract_session_token(req) {
         let cookie_header =
-            better_auth_core::utils::cookie_utils::create_session_cookie(&token, &context.config)?;
+            alibi_core::utils::cookie_utils::create_session_cookie(&token, &context.config)?;
         response = response.with_header("Set-Cookie", cookie_header);
     }
 

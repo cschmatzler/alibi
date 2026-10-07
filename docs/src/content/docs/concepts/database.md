@@ -17,16 +17,16 @@ A user has many accounts (one per sign-in method) and many sessions.
 ## Generate a schema
 
 ```bash
-better-auth-rs generate -o src/auth_schema.rs                       # SQLx, core models
-better-auth-rs generate --backend seaorm -o src/auth_schema.rs      # SeaORM entities
-better-auth-rs generate --plugins username,admin,two-factor -o src/auth_schema.rs
+alibi generate -o src/auth_schema.rs                       # SQLx, core models
+alibi generate --backend seaorm -o src/auth_schema.rs      # SeaORM entities
+alibi generate --plugins username,admin,two-factor -o src/auth_schema.rs
 ```
 
 The output contains the four models, an `AppAuthSchema`, and — for SQLx — `run_app_migrations`:
 
 ```rust title="src/auth_schema.rs (excerpt)" nocheck
 pub mod user {
-    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
     #[auth(role = "user", table = "users")]
     pub struct Model {
         pub id: String,
@@ -84,11 +84,11 @@ There are three ways to create the tables; pick one per environment.
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::AuthConfig;
-use better_auth::sqlx::{SqlxPool, SqlxStore};
-use better_auth::store::SchemaMigrator;
+use alibi::AuthConfig;
+use alibi::sqlx::{SqlxPool, SqlxStore};
+use alibi::store::SchemaMigrator;
 
-async fn migrate(config: AuthConfig, pool: SqlxPool) -> better_auth::AuthResult<()> {
+async fn migrate(config: AuthConfig, pool: SqlxPool) -> alibi::AuthResult<()> {
     let store = SqlxStore::<AppAuthSchema>::new(config, pool);
     store.migrate().await // idempotent; fails if the ledger lists an unknown version
 }
@@ -113,10 +113,10 @@ Rate-limit storage in the database has its own table and ledger, separate from t
 
 ## Handwritten models
 
-Models are ordinary structs deriving `AuthEntity` (`better_auth::sqlx::AuthEntity` or `better_auth::seaorm::AuthEntity`). Required fields depend on the role; extra columns of your own are allowed and surface through [additional fields](/concepts/field-policies/).
+Models are ordinary structs deriving `AuthEntity` (`alibi::sqlx::AuthEntity` or `alibi::seaorm::AuthEntity`). Required fields depend on the role; extra columns of your own are allowed and surface through [additional fields](/concepts/field-policies/).
 
 ```rust nocheck
-#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
 #[auth(role = "user", table = "app_users")]
 pub struct User {
     pub id: String,

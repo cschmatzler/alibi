@@ -1,13 +1,7 @@
-use better_auth::AuthSchema;
-use better_auth::sqlx::{Engine, SqlxPool};
+use alibi::AuthSchema;
+use alibi::sqlx::{Engine, SqlxPool};
 pub mod user {
-    #[derive(
-        Clone,
-        Debug,
-        serde::Serialize,
-        sqlx::FromRow,
-        better_auth::sqlx::AuthEntity
-    )]
+    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
     #[auth(role = "user", table = "users")]
     pub struct Model {
         pub id: String,
@@ -28,17 +22,11 @@ pub mod user {
         pub banned: Option<bool>,
         pub ban_reason: Option<String>,
         pub ban_expires: Option<chrono::DateTime<chrono::Utc>>,
-        pub metadata: better_auth::sqlx::JsonMetadata,
+        pub metadata: alibi::sqlx::JsonMetadata,
     }
 }
 pub mod session {
-    #[derive(
-        Clone,
-        Debug,
-        serde::Serialize,
-        sqlx::FromRow,
-        better_auth::sqlx::AuthEntity
-    )]
+    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
     #[auth(role = "session", table = "sessions")]
     pub struct Model {
         pub id: String,
@@ -56,13 +44,7 @@ pub mod session {
     }
 }
 pub mod account {
-    #[derive(
-        Clone,
-        Debug,
-        serde::Serialize,
-        sqlx::FromRow,
-        better_auth::sqlx::AuthEntity
-    )]
+    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
     #[auth(role = "account", table = "accounts")]
     pub struct Model {
         pub id: String,
@@ -81,13 +63,7 @@ pub mod account {
     }
 }
 pub mod verification {
-    #[derive(
-        Clone,
-        Debug,
-        serde::Serialize,
-        sqlx::FromRow,
-        better_auth::sqlx::AuthEntity
-    )]
+    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
     #[auth(role = "verification", table = "verifications")]
     pub struct Model {
         pub id: String,
@@ -189,7 +165,7 @@ pub mod organization {
         pub name: String,
         pub slug: String,
         pub logo: Option<String>,
-        pub metadata: Option<better_auth::sqlx::JsonMetadata>,
+        pub metadata: Option<alibi::sqlx::JsonMetadata>,
         pub created_at: chrono::DateTime<chrono::Utc>,
         pub updated_at: chrono::DateTime<chrono::Utc>,
     }
@@ -309,7 +285,7 @@ const POSTGRES_TABLES: &[&str] = &[
 ];
 pub async fn run_app_migrations(
     pool: &SqlxPool,
-) -> Result<(), better_auth::sqlx::sqlx::Error> {
+) -> Result<(), alibi::sqlx::sqlx::Error> {
     let statements = match pool.engine() {
         Engine::Sqlite => SQLITE_TABLES,
         Engine::Postgres => POSTGRES_TABLES,

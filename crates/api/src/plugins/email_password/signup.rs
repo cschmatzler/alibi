@@ -1,6 +1,6 @@
 //! Enumeration-safe duplicate responses and application callbacks.
 use super::{EmailPasswordConfig, SignUpRequest, SignUpResponse};
-use better_auth_core::{AuthContext, AuthRequest, AuthResult, AuthSchema, wire::UserView};
+use alibi_core::{AuthContext, AuthRequest, AuthResult, AuthSchema, wire::UserView};
 use serde_json::{Map, Value, json};
 use std::{future::Future, pin::Pin};
 
@@ -102,7 +102,7 @@ pub(super) fn synthetic_response(
         defaults.push(("twoFactorEnabled", json!(false)));
     }
     if enabled("admin.enabled") {
-        let mut creation = better_auth_core::CreateUser::new();
+        let mut creation = alibi_core::CreateUser::new();
         super::super::helpers::apply_default_role(context, &mut creation);
         defaults.extend([
             ("role", json!(creation.role)),

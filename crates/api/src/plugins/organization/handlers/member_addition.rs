@@ -6,7 +6,7 @@ use crate::plugins::organization::{
     extensions::TeamLimitContext,
     types::{AddOrganizationMemberRequest, BasicMemberResponse, OrganizationResponse},
 };
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, CreateMember,
     entity::{AuthSession, AuthUser},
     types::{AddTeamMemberResult, HttpMethod},
@@ -48,10 +48,7 @@ pub(in crate::plugins) async fn add_member<S: AuthSchema>(
 )]
 pub(in crate::plugins) async fn add_member_with_session<S: AuthSchema>(
     body: &AddOrganizationMemberRequest,
-    session: Option<(
-        better_auth_core::AuthenticatedUser<S>,
-        better_auth_core::SessionView,
-    )>,
+    session: Option<(alibi_core::AuthenticatedUser<S>, alibi_core::SessionView)>,
     request: Option<&AuthRequest>,
     config: &OrganizationConfig,
     ctx: &AuthContext<S>,

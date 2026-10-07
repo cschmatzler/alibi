@@ -7,19 +7,19 @@ use axum::{
     extract::Query,
     routing::{get, post},
 };
-use better_auth::plugins::organization::{
+use alibi::plugins::organization::{
     InvitationLimit, OrganizationConfig, OrganizationInvitationContext,
     OrganizationInvitationCreatePatch, OrganizationInvitationCreationContext,
     OrganizationInvitationDelivery, OrganizationInvitationEmailSender, OrganizationInvitationHooks,
     OrganizationInvitationLimitContext, OrganizationInvitationLimitResolver, TeamsConfig,
 };
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
-use better_auth::{
+use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BackgroundTaskCompletion,
     BackgroundTaskHandler, CallbackContext, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use better_auth_seaorm::DatabaseConnection;
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
@@ -115,7 +115,7 @@ impl OrganizationInvitationHooks for Application {
                 id: Some(format!("trusted-{}", ctx.invitation.organization_id)),
                 role: Some("admin".into()),
                 email: Some(ctx.invitation.email.to_uppercase()),
-                status: Some(better_auth_core::InvitationStatus::Rejected),
+                status: Some(alibi_core::InvitationStatus::Rejected),
                 created_at: Some(date("2020-01-02T03:04:05.123Z")?),
                 expires_at: Some(date("2020-01-03T03:04:05.456Z")?),
                 ..Default::default()

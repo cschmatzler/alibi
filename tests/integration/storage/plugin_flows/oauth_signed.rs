@@ -1,7 +1,7 @@
 //! Provider-specific signed identity admission through the actual HTTP boundary.
 use super::*;
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::{
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::{
     AppleOptions, CognitoOptions, FacebookOptions, HttpOAuthJwksSource, MicrosoftOptions,
     OAuthProvider,
 };

@@ -1,6 +1,6 @@
 //! Application messages for banned users, resolved from the stored user entity.
+use alibi_core::{AuthError, AuthResult, entity::AuthUser};
 use async_trait::async_trait;
-use better_auth_core::{AuthError, AuthResult, entity::AuthUser};
 use std::{
     any::{Any, TypeId},
     fmt,
@@ -35,7 +35,7 @@ impl<U: AuthUser, H: AdminBannedUserMessage<U>> ErasedMessage for TypedMessage<U
         TypeId::of::<U>()
     }
     async fn message(&self, user: &(dyn Any + Send + Sync)) -> AuthResult<String> {
-        let user = user.downcast_ref::<U>().or_else(|| user.downcast_ref::<better_auth_core::AdapterRecord<U>>().map(better_auth_core::AdapterRecord::stored)).ok_or_else(|| AuthError::config(
+        let user = user.downcast_ref::<U>().or_else(|| user.downcast_ref::<alibi_core::AdapterRecord<U>>().map(alibi_core::AdapterRecord::stored)).ok_or_else(|| AuthError::config(
             "Admin banned-user message callback user type does not match the authentication schema"
         ))?;
         self.handler
@@ -70,7 +70,7 @@ impl AdminBannedUserMessageHandler {
     /// Returns an error when validation, storage, or an application callback fails.
     pub(super) fn validate<U: AuthUser>(&self) -> AuthResult<()> {
         if self.0.user_type() != TypeId::of::<U>()
-            && self.0.user_type() != TypeId::of::<better_auth_core::AdapterRecord<U>>()
+            && self.0.user_type() != TypeId::of::<alibi_core::AdapterRecord<U>>()
         {
             return Err(AuthError::config(
                 "Admin banned-user message callback user type does not match the authentication schema",

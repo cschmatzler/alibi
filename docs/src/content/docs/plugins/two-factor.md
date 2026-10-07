@@ -8,7 +8,7 @@ description: "Add TOTP, email/SMS one-time codes and backup codes as a second si
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins two-factor -o src/auth_schema.rs
+alibi generate --plugins two-factor -o src/auth_schema.rs
 ```
 
 Adds `users.two_factor_enabled` and the `two_factor` table: `secret`, `backup_codes` (encrypted by default), `verified`, `failed_verification_count`, `locked_until`, timestamps.
@@ -17,9 +17,9 @@ Adds `users.two_factor_enabled` and the `two_factor` table: `secret`, `backup_co
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::{EmailPasswordPlugin, TwoFactorPlugin};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::{EmailPasswordPlugin, TwoFactorPlugin};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -96,9 +96,9 @@ Email/SMS codes need your delivery callback (`/two-factor/send-otp` is unavailab
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::{SendTwoFactorOtp, TwoFactorPlugin};
-use better_auth::wire::UserView;
-use better_auth::AuthResult;
+use alibi::plugins::{SendTwoFactorOtp, TwoFactorPlugin};
+use alibi::wire::UserView;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 struct OtpMailer;
@@ -142,8 +142,8 @@ Scalar options have builder methods of the same name, taking the plain value (`.
 | `account_lockout` | on, 10 attempts, 900 s | `AccountLockoutConfig`: lock sign-in verification after consecutive failures across factors |
 
 ```rust
-use better_auth::plugins::TwoFactorPlugin;
-use better_auth::plugins::two_factor::AccountLockoutConfig;
+use alibi::plugins::TwoFactorPlugin;
+use alibi::plugins::two_factor::AccountLockoutConfig;
 
 fn strict() -> TwoFactorPlugin {
     TwoFactorPlugin::new()
@@ -164,9 +164,9 @@ Two operations are not HTTP routes; call them through [`dispatch_endpoint`](/gui
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::endpoint::EndpointOptions;
-use better_auth::plugins::TwoFactorPlugin;
+use alibi::BetterAuth;
+use alibi::endpoint::EndpointOptions;
+use alibi::plugins::TwoFactorPlugin;
 
 async fn backup_codes(
     auth: &BetterAuth<AppAuthSchema>,

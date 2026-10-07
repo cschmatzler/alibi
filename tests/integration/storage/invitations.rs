@@ -1,15 +1,15 @@
 //! Conditional invitation claims remain separate from membership transactions.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use better_auth::AuthConfig;
-use better_auth_core::entity::{AuthSession, AuthUser};
-use better_auth_core::field_policy::FieldValues;
-use better_auth_core::store::SchemaMigrator;
-use better_auth_core::store::{
+use alibi::AuthConfig;
+use alibi_core::entity::{AuthSession, AuthUser};
+use alibi_core::field_policy::FieldValues;
+use alibi_core::store::SchemaMigrator;
+use alibi_core::store::{
     AuthStore, InvitationStore, MemberStore, OrganizationStore, SessionStore, TeamStore, UserStore,
     transaction,
 };
-use better_auth_core::{
+use alibi_core::{
     AuthError, AuthResult, CreateInvitation, CreateMember, CreateOrganization, CreateSession,
     CreateTeam, CreateUser, InvitationStatus,
 };
@@ -38,7 +38,7 @@ struct Seeded {
     token: String,
 }
 
-async fn seed<S: better_auth::AuthSchema>(store: &dyn AuthStore<S>) -> AuthResult<Seeded> {
+async fn seed<S: alibi::AuthSchema>(store: &dyn AuthStore<S>) -> AuthResult<Seeded> {
     let user = store
         .create_user(CreateUser::new().with_email("actual@invitation-stage.test"))
         .await?;

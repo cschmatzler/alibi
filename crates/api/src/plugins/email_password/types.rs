@@ -3,10 +3,10 @@ use super::*;
 pub(in crate::plugins) struct SignUpRequest {
     #[serde(flatten, default)]
     pub(in crate::plugins::email_password) additional_fields:
-        indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>,
+        indexmap::IndexMap<String, alibi_core::utils::json::JsValue>,
     #[serde(rename = "lastLoginMethod")]
     pub(in crate::plugins::email_password) last_login_method:
-        Option<better_auth_core::utils::json::JsValue>,
+        Option<alibi_core::utils::json::JsValue>,
     #[validate(length(min = 1, message = "Name is required"))]
     pub(in crate::plugins::email_password) name: String,
     #[validate(email(message = "Invalid email address"))]
@@ -22,11 +22,10 @@ pub(in crate::plugins) struct SignUpRequest {
     #[serde(rename = "rememberMe")]
     pub(in crate::plugins::email_password) remember_me: Option<bool>,
     #[serde(rename = "phoneNumber")]
-    pub(in crate::plugins::email_password) phone_number:
-        Option<better_auth_core::utils::json::JsValue>,
+    pub(in crate::plugins::email_password) phone_number: Option<alibi_core::utils::json::JsValue>,
     #[serde(rename = "phoneNumberVerified")]
     pub(in crate::plugins::email_password) phone_number_verified:
-        Option<better_auth_core::utils::json::JsValue>,
+        Option<alibi_core::utils::json::JsValue>,
 }
 
 impl RequestBody for SignUpRequest {

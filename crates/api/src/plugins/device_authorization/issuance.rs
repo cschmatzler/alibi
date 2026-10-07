@@ -3,7 +3,7 @@ impl DeviceAuthorizationPlugin {
     pub(in crate::plugins::device_authorization) async fn issue_device_code(
         &self,
         mut body: DeviceCodeRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         if body.client_id.is_empty() {
             return device_error_response(400, "invalid_request", "client_id is required");

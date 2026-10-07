@@ -26,12 +26,12 @@ Delivery needs a sender. This example forwards the link through your `EmailProvi
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::email::EmailProvider;
-use better_auth::plugins::email_verification::SendVerificationEmail;
-use better_auth::plugins::{EmailPasswordPlugin, EmailVerificationConfig, EmailVerificationPlugin};
-use better_auth::sqlx::SqlxStore;
-use better_auth::wire::UserView;
-use better_auth::{AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::email::EmailProvider;
+use alibi::plugins::email_verification::SendVerificationEmail;
+use alibi::plugins::{EmailPasswordPlugin, EmailVerificationConfig, EmailVerificationPlugin};
+use alibi::sqlx::SqlxStore;
+use alibi::wire::UserView;
+use alibi::{AuthConfig, AuthError, AuthResult, BetterAuth};
 use std::sync::Arc;
 
 struct VerificationMailer(Arc<dyn EmailProvider>);
@@ -102,7 +102,7 @@ If you have no custom sender but did set an `EmailProvider` on the builder, veri
 ### React to verification
 
 ```rust
-use better_auth::plugins::EmailVerificationConfig;
+use alibi::plugins::EmailVerificationConfig;
 use std::sync::Arc;
 
 fn verification() -> EmailVerificationConfig {

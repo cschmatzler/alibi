@@ -70,9 +70,9 @@ Without a valid session the response is `null` with status 200. `GET /list-sessi
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::{Json, Router, routing::get};
-use better_auth::BetterAuth;
-use better_auth::integrations::axum::{AxumIntegration, CurrentSession, OptionalSession};
-use better_auth::prelude::AuthUser;
+use alibi::BetterAuth;
+use alibi::integrations::axum::{AxumIntegration, CurrentSession, OptionalSession};
+use alibi::prelude::AuthUser;
 use serde_json::{Value, json};
 use std::sync::Arc;
 
@@ -130,8 +130,8 @@ set-cookie: better-auth.dont_remember=; Max-Age=0; Path=/; HttpOnly; SameSite=La
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::prelude::{AuthRequest, AuthResponse, HttpMethod};
-use better_auth::{AuthResult, BetterAuth};
+use alibi::prelude::{AuthRequest, AuthResponse, HttpMethod};
+use alibi::{AuthResult, BetterAuth};
 
 async fn sign_in(
     auth: &BetterAuth<AppAuthSchema>,

@@ -9,7 +9,7 @@
 
 use crate::pool::Engine;
 use crate::value::{ColumnKind, SqlValue, SqlxValue, ValueTypeError};
-use better_auth_core::error::AuthResult;
+use alibi_core::error::AuthResult;
 use sqlx::encode::IsNull;
 use sqlx::error::BoxDynError;
 #[cfg(feature = "postgres")]
@@ -26,7 +26,7 @@ use sqlx::{Decode, Encode, Type};
 /// binding cannot become stale relative to its public JSON serialization.
 ///
 /// ```compile_fail
-/// use better_auth_sqlx::JsonMetadata;
+/// use alibi_sqlx::JsonMetadata;
 /// let mut metadata = JsonMetadata::from(serde_json::json!({"version": "old"}));
 /// metadata.0["version"] = serde_json::json!("edited");
 /// ```
@@ -40,7 +40,7 @@ impl JsonMetadata {
         backend: Engine,
     ) -> Result<Self, serde_json::Error> {
         let text = if backend == Engine::Sqlite {
-            Some(better_auth_core::utils::json::to_string(&value)?)
+            Some(alibi_core::utils::json::to_string(&value)?)
         } else {
             None
         };
@@ -64,7 +64,7 @@ impl PartialEq for JsonMetadata {
 
 impl<'de> serde::Deserialize<'de> for JsonMetadata {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        better_auth_core::utils::json::deserialize_value(deserializer).map(Self::from)
+        alibi_core::utils::json::deserialize_value(deserializer).map(Self::from)
     }
 }
 
@@ -102,7 +102,7 @@ impl SqlxValue for JsonMetadata {
         match value {
             SqlValue::Json(Some(value)) => Ok(Self::from(*value)),
             SqlValue::Text(Some(text)) => {
-                better_auth_core::utils::json::from_slice::<serde_json::Value>(text.as_bytes())
+                alibi_core::utils::json::from_slice::<serde_json::Value>(text.as_bytes())
                     .map(Self::from)
                     .map_err(|_error| ValueTypeError)
             }
@@ -121,7 +121,7 @@ impl SqlxValue for JsonMetadata {
         }
     }
     fn prepare(self, engine: Engine) -> AuthResult<Self> {
-        let value = better_auth_core::utils::json::to_value(&self.0)?;
+        let value = alibi_core::utils::json::to_value(&self.0)?;
         Ok(Self::for_backend(value, engine)?)
     }
 }

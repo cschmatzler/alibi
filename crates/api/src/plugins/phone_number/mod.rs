@@ -7,8 +7,8 @@ mod handlers;
 
 mod types;
 
+use alibi_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
 use async_trait::async_trait;
-use better_auth_core::{AuthContext, AuthRequest, AuthResult, AuthSchema};
 use std::sync::Arc;
 pub use types::{PhoneNumberVerification, PhoneOtpDelivery};
 pub(in crate::plugins) use types::{parse_signup_phone, reject_verified_input};
@@ -18,7 +18,7 @@ pub trait SendPhoneOtp: Send + Sync {
     async fn send(
         &self,
         delivery: &PhoneOtpDelivery,
-        context: &better_auth_core::CallbackContext,
+        context: &alibi_core::CallbackContext,
     ) -> AuthResult<()>;
 }
 
@@ -34,7 +34,7 @@ pub trait PhoneOtpVerifier: Send + Sync {
     async fn verify(
         &self,
         delivery: &PhoneOtpDelivery,
-        context: &better_auth_core::CallbackContext,
+        context: &alibi_core::CallbackContext,
     ) -> AuthResult<bool>;
 }
 
@@ -50,7 +50,7 @@ pub trait PhoneVerificationHook: Send + Sync {
     async fn verified(
         &self,
         result: &PhoneNumberVerification,
-        context: &better_auth_core::CallbackContext,
+        context: &alibi_core::CallbackContext,
     ) -> AuthResult<()>;
 }
 
@@ -129,7 +129,7 @@ impl PhoneNumberPlugin {
     }
 }
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     PhoneNumberPlugin,"phone-number";
     routes {
         post "/sign-in/phone-number" => sign_in,"signInPhoneNumber";
@@ -139,18 +139,18 @@ better_auth_core::impl_auth_plugin! {
         post "/phone-number/reset-password" => reset_password,"resetPasswordPhoneNumber";
     }
     extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
     }
 
-        fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
-            vec![better_auth_core::PluginRateLimit { matches: |path| path.starts_with("/phone-number"), limit: better_auth_core::EndpointRateLimit { window_seconds: 60.0, max_requests: 10.0 } }]
+        fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
+            vec![alibi_core::PluginRateLimit { matches: |path| path.starts_with("/phone-number"), limit: alibi_core::EndpointRateLimit { window_seconds: 60.0, max_requests: 10.0 } }]
         }
-        async fn on_init(&self,ctx:&mut better_auth_core::AuthInitContext<S>)->AuthResult<()> {
+        async fn on_init(&self,ctx:&mut alibi_core::AuthInitContext<S>)->AuthResult<()> {
             ctx.set_metadata("phone-number.enabled",serde_json::json!(true));
             ctx.register_user_update_transform(|_, mut update| {
                 if matches!(update.phone_number.as_ref(), Some(None)) {
@@ -160,8 +160,8 @@ better_auth_core::impl_auth_plugin! {
             });
             Ok(())
         }
-        async fn before_request(&self,req:&AuthRequest,_ctx:&AuthContext<S>)->AuthResult<Option<better_auth_core::BeforeRequestAction>> {
-            if req.path()=="/update-user" && req.body_as_json::<better_auth_core::utils::json::JsValue>().ok().and_then(|value|value.get("phoneNumber").cloned()).is_some_and(|value|!value.is_null()) {
+        async fn before_request(&self,req:&AuthRequest,_ctx:&AuthContext<S>)->AuthResult<Option<alibi_core::BeforeRequestAction>> {
+            if req.path()=="/update-user" && req.body_as_json::<alibi_core::utils::json::JsValue>().ok().and_then(|value|value.get("phoneNumber").cloned()).is_some_and(|value|!value.is_null()) {
                 return Err(types::phone_error(400,"PHONE_NUMBER_CANNOT_BE_UPDATED","Phone number cannot be updated"));
             }
             Ok(None)
@@ -174,7 +174,7 @@ better_auth_core::impl_auth_plugin! {
 mod tests {
     use super::*;
     use crate::plugins::test_helpers;
-    use better_auth_core::{
+    use alibi_core::{
         AuthError, AuthPlugin, AuthResponse, AuthSession, AuthUser, AuthVerification,
         CreateAccount, CreateUser, CreateVerification, HttpMethod,
     };
@@ -190,7 +190,7 @@ mod tests {
         async fn send(
             &self,
             delivery: &PhoneOtpDelivery,
-            _context: &better_auth_core::CallbackContext,
+            _context: &alibi_core::CallbackContext,
         ) -> AuthResult<()> {
             self.0.lock().unwrap().push(delivery.clone());
             Ok(())
@@ -204,7 +204,7 @@ mod tests {
         async fn send(
             &self,
             delivery: &PhoneOtpDelivery,
-            _context: &better_auth_core::CallbackContext,
+            _context: &alibi_core::CallbackContext,
         ) -> AuthResult<()> {
             self.0.0.lock().unwrap().push(delivery.clone());
             Err(AuthError::bad_request("fixture delivery failed"))
@@ -226,7 +226,7 @@ mod tests {
         async fn verify(
             &self,
             delivery: &PhoneOtpDelivery,
-            _context: &better_auth_core::CallbackContext,
+            _context: &alibi_core::CallbackContext,
         ) -> AuthResult<bool> {
             let mut challenge = self.0.lock().unwrap();
             let verified = if challenge.as_ref().is_some_and(|expected| {
@@ -253,7 +253,7 @@ mod tests {
         async fn verified(
             &self,
             result: &PhoneNumberVerification,
-            _context: &better_auth_core::CallbackContext,
+            _context: &alibi_core::CallbackContext,
         ) -> AuthResult<()> {
             self.captured.lock().unwrap().push(result.clone());
             if self.reject {
@@ -284,8 +284,7 @@ mod tests {
     }
 
     async fn context()
-    -> AuthContext<better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema>
-    {
+    -> AuthContext<alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema> {
         let mut ctx = test_helpers::create_test_context().await;
         ctx.set_metadata("phone-number.enabled", json!(true));
         ctx
@@ -317,7 +316,7 @@ mod tests {
         user.phone_number = Some(phone.into());
         user.phone_number_verified = Some(verified);
         let user = ctx.database.create_user(user).await.unwrap();
-        let hash = better_auth_core::utils::password::hash_password(None, "original-password123")
+        let hash = alibi_core::utils::password::hash_password(None, "original-password123")
             .await
             .unwrap();
         drop(
@@ -351,7 +350,7 @@ mod tests {
     async fn notification_failure_preserves_phone_authentication_gates_and_issued_proofs() {
         let mut ctx = context().await;
         ctx.config = Arc::new((*ctx.config).clone().awaited_notification_errors(
-            better_auth_core::AwaitedNotificationErrorPolicy::LogAndContinue,
+            alibi_core::AwaitedNotificationErrorPolicy::LogAndContinue,
         ));
         let phone = "+15551110099";
         let user_id = phone_user(&ctx, phone, false).await;
@@ -706,11 +705,11 @@ mod tests {
     // sign-in challenge or consume that user's trusted-device record.
     #[tokio::test]
     async fn phone_credentials_reject_another_users_signed_trust_before_authenticating() {
-        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-        use better_auth_core::utils::cookie_utils::{
+        use alibi_core::utils::cookie_utils::{
             related_cookie_name, sign_cookie_value, verify_cookie_value,
         };
-        use better_auth_core::{AuthInitContext, UpdateUser};
+        use alibi_core::{AuthInitContext, UpdateUser};
+        use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
         use hmac::{Hmac, KeyInit, Mac};
         use sha2::Sha256;
 

@@ -1,6 +1,6 @@
 use crate::plugins::token_crypto::{decrypt_with_config, encrypt_with_config, hash_token};
+use alibi_core::{AuthError, AuthResult};
 use async_trait::async_trait;
-use better_auth_core::{AuthError, AuthResult};
 use std::sync::Arc;
 
 /// Application-owned codec for custom hash/encryption storage.
@@ -38,7 +38,7 @@ impl EmailOtpStorage {
     pub(super) async fn store(
         &self,
         otp: &str,
-        secret: &better_auth_core::AuthConfig,
+        secret: &alibi_core::AuthConfig,
     ) -> AuthResult<String> {
         match self {
             Self::Plain => Ok(otp.to_owned()),
@@ -55,7 +55,7 @@ impl EmailOtpStorage {
         &self,
         stored: &str,
         otp: &str,
-        secret: &better_auth_core::AuthConfig,
+        secret: &alibi_core::AuthConfig,
     ) -> AuthResult<bool> {
         match self {
             Self::Plain => Ok(constant_time_equal(stored, otp)),
@@ -74,7 +74,7 @@ impl EmailOtpStorage {
     pub(super) async fn retrieve(
         &self,
         stored: &str,
-        secret: &better_auth_core::AuthConfig,
+        secret: &alibi_core::AuthConfig,
     ) -> AuthResult<Option<String>> {
         let plain = match self {
             Self::Plain => Some(stored.to_owned()),
@@ -93,7 +93,7 @@ impl EmailOtpStorage {
     pub(super) async fn reusable(
         &self,
         stored: &str,
-        secret: &better_auth_core::AuthConfig,
+        secret: &alibi_core::AuthConfig,
     ) -> AuthResult<Option<String>> {
         match self {
             Self::Hashed => Ok(None),

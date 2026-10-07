@@ -14,7 +14,7 @@ pub struct Model {
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
 pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
-impl From<Model> for better_auth_core::types::Jwk {
+impl From<Model> for alibi_core::types::Jwk {
     fn from(row: Model) -> Self {
         Self {
             id: row.id,

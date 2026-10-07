@@ -8,11 +8,11 @@ description: "Multi-tenant organizations with members, roles, invitations, teams
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins organization -o src/auth_schema.rs
+alibi generate --plugins organization -o src/auth_schema.rs
 # teams:
-better-auth-rs generate --plugins organization,organization-teams -o src/auth_schema.rs
+alibi generate --plugins organization,organization-teams -o src/auth_schema.rs
 # dynamic roles:
-better-auth-rs generate --plugins organization,organization-dynamic-roles -o src/auth_schema.rs
+alibi generate --plugins organization,organization-dynamic-roles -o src/auth_schema.rs
 ```
 
 | Flag | Adds |
@@ -23,12 +23,12 @@ better-auth-rs generate --plugins organization,organization-dynamic-roles -o src
 
 ## Application-owned SQLx tables
 
-Bind existing organization, member, and invitation tables with `OrganizationModels`. Each application row derives `sqlx::FromRow` and `better_auth::sqlx::SqlxModel`. Use the plugin's Rust field names and `#[sqlx(rename = "…")]` for physical columns; the organization table can have any name.
+Bind existing organization, member, and invitation tables with `OrganizationModels`. Each application row derives `sqlx::FromRow` and `alibi::sqlx::SqlxModel`. Use the plugin's Rust field names and `#[sqlx(rename = "…")]` for physical columns; the organization table can have any name.
 
 ```rust nocheck
-use better_auth::sqlx::{OrganizationModels, SqlxStore};
-use better_auth::plugins::organization::OrganizationConfig;
-use better_auth::field_policy::{FieldConfig, SessionFields};
+use alibi::sqlx::{OrganizationModels, SqlxStore};
+use alibi::plugins::organization::OrganizationConfig;
+use alibi::field_policy::{FieldConfig, SessionFields};
 use crate::auth_schema::{AppAuthSchema, Event, Membership, Invite};
 use crate::ids::{event_id, member_id, invitation_id};
 
@@ -65,9 +65,9 @@ An organization model without `updated_at` uses its creation timestamp for that 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::OrganizationPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::OrganizationPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -175,12 +175,12 @@ Creating an invitation stores it; sending the email is yours. Provide `send_invi
 
 ```rust
 use async_trait::async_trait;
-use better_auth::CallbackContext;
-use better_auth::plugins::organization::{
+use alibi::CallbackContext;
+use alibi::plugins::organization::{
     OrganizationConfig, OrganizationInvitationDelivery, OrganizationInvitationEmailSender,
 };
-use better_auth::plugins::OrganizationPlugin;
-use better_auth::AuthResult;
+use alibi::plugins::OrganizationPlugin;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -242,8 +242,8 @@ Builder methods work for scalar options; the rest are fields of `OrganizationCon
 Static roles map to `RolePermissions` (fields `organization`, `member`, `invitation`, `team`, `ac`, `api_key` and a flattened map for your own resources):
 
 ```rust
-use better_auth::plugins::OrganizationPlugin;
-use better_auth::plugins::organization::{OrganizationConfig, RolePermissions};
+use alibi::plugins::OrganizationPlugin;
+use alibi::plugins::organization::{OrganizationConfig, RolePermissions};
 use std::collections::HashMap;
 
 fn organization() -> OrganizationPlugin {
@@ -277,12 +277,12 @@ A user may hold several roles (comma-separated); a request needs **one assigned 
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::OrganizationPlugin;
-use better_auth::plugins::organization::{
+use alibi::plugins::OrganizationPlugin;
+use alibi::plugins::organization::{
     MembershipLimit, OrganizationConfig, OrganizationCreationPolicy,
 };
-use better_auth::wire::UserView;
-use better_auth::AuthResult;
+use alibi::wire::UserView;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -311,8 +311,8 @@ fn organization() -> OrganizationPlugin {
 Teams group members inside an organization (for example "Backend", "Support"). Enable them on the config and generate `organization-teams`:
 
 ```rust
-use better_auth::plugins::OrganizationPlugin;
-use better_auth::plugins::organization::{OrganizationConfig, TeamsConfig};
+use alibi::plugins::OrganizationPlugin;
+use alibi::plugins::organization::{OrganizationConfig, TeamsConfig};
 
 fn organization() -> OrganizationPlugin {
     OrganizationPlugin::with_config(OrganizationConfig {
@@ -353,8 +353,8 @@ Invitations can carry a `teamId`; accepting adds the user to that team too. `set
 Static roles live in code. **Dynamic roles** let organization admins define custom roles at runtime and store them in `organization_role`. Enable them *and* declare the permission statements roles may reference — without `access_control` the endpoints answer `501 MISSING_AC_INSTANCE`:
 
 ```rust
-use better_auth::plugins::OrganizationPlugin;
-use better_auth::plugins::organization::{
+use alibi::plugins::OrganizationPlugin;
+use alibi::plugins::organization::{
     DynamicAccessControlConfig, OrganizationConfig, default_organization_statements,
 };
 
@@ -400,12 +400,12 @@ Each phase of the organization lifecycle has an awaited, typed hook trait you im
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::OrganizationPlugin;
-use better_auth::plugins::organization::{
+use alibi::plugins::OrganizationPlugin;
+use alibi::plugins::organization::{
     OrganizationConfig, OrganizationCreatePatch, OrganizationCreatedContext,
     OrganizationCreationHooks, OrganizationDraftContext,
 };
-use better_auth::AuthResult;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -446,10 +446,10 @@ Some operations are only available to trusted server code — they bypass the "c
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::endpoint::EndpointOptions;
-use better_auth::plugins::OrganizationPlugin;
-use better_auth::plugins::organization::types::CreateOrganizationRequest;
+use alibi::BetterAuth;
+use alibi::endpoint::EndpointOptions;
+use alibi::plugins::OrganizationPlugin;
+use alibi::plugins::organization::types::CreateOrganizationRequest;
 
 async fn create_for(
     auth: &BetterAuth<AppAuthSchema>,
@@ -479,10 +479,10 @@ async fn create_for(
 
 ## Application-side access control
 
-`better_auth::plugins::access` provides the same resource/action model for **your own** authorization checks, independent of the HTTP API. Create the access-control instance with your statements and derive roles from it:
+`alibi::plugins::access` provides the same resource/action model for **your own** authorization checks, independent of the HTTP API. Create the access-control instance with your statements and derive roles from it:
 
 ```rust
-use better_auth::plugins::access::{ActionRequest, Connector, create_access_control};
+use alibi::plugins::access::{ActionRequest, Connector, create_access_control};
 
 fn authorize_report_access() -> bool {
     let ac = create_access_control(
@@ -534,10 +534,10 @@ HTTP request remains distinct from the logical body/query. Native calls do not
 construct an HTTP request or flatten numeric query fields into strings.
 
 ```rust
-use better_auth::plugins::organization::{OrganizationPlugin, types::{
+use alibi::plugins::organization::{OrganizationPlugin, types::{
     SetActiveOrganizationRequest, NullableStringField,
 }};
-use better_auth_core::endpoint::EndpointOptions;
+use alibi_core::endpoint::EndpointOptions;
 
 let output = auth.dispatch_endpoint(
     OrganizationPlugin::set_active_endpoint(&SetActiveOrganizationRequest {

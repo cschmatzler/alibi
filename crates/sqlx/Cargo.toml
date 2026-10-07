@@ -16,14 +16,14 @@ keywords = { workspace = true }
 categories = { workspace = true }
 
 [lib]
-name = "better_auth_sqlx"
+name = "alibi_sqlx"
 
 [lints]
 workspace = true
 
 [dependencies]
-better-auth-core = { workspace = true }
-better-auth-sqlx-macros = { package = "alibi-sqlx-macros", version = "0.1.0", path = "../sqlx-macros" }
+alibi-core = { workspace = true }
+alibi-sqlx-macros = { version = "0.1.1", path = "../sqlx-macros" }
 
 async-trait = { workspace = true }
 chrono = { workspace = true }

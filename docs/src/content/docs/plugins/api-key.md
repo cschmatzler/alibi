@@ -8,7 +8,7 @@ API keys are long-lived credentials for programs: CI jobs, integrations, custome
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins api-key -o src/auth_schema.rs
+alibi generate --plugins api-key -o src/auth_schema.rs
 ```
 
 The `api_keys` table stores the key **hash** (never the plaintext), a short `start` fragment for display, the owner (`reference_id`), the configuration it belongs to (`config_id`), limits and counters, `permissions` and `metadata` (as JSON text), and timestamps.
@@ -37,9 +37,9 @@ CREATE INDEX idx_api_keys_reference_id ON api_keys (reference_id);
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::ApiKeyPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::ApiKeyPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -140,8 +140,8 @@ Quota and rate limits are per key: each request consumes one `remaining` use (if
 Register more than one configuration to run, say, user keys and organization keys side by side. Each key records its `config_id`:
 
 ```rust
-use better_auth::plugins::ApiKeyPlugin;
-use better_auth::plugins::api_key::{ApiKeyConfig, ApiKeyReferences};
+use alibi::plugins::ApiKeyPlugin;
+use alibi::plugins::api_key::{ApiKeyConfig, ApiKeyReferences};
 
 fn api_keys() -> ApiKeyPlugin {
     let org_keys = ApiKeyConfig {
@@ -162,10 +162,10 @@ Verification is a **server-only** operation, not an HTTP route. It checks hash, 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::endpoint::EndpointOptions;
-use better_auth::plugins::ApiKeyPlugin;
-use better_auth::plugins::api_key::ApiKeyVerificationInput;
+use alibi::BetterAuth;
+use alibi::endpoint::EndpointOptions;
+use alibi::plugins::ApiKeyPlugin;
+use alibi::plugins::api_key::ApiKeyVerificationInput;
 
 async fn authorize(
     auth: &BetterAuth<AppAuthSchema>,
@@ -193,10 +193,10 @@ The returned `key` omits the plaintext and the hash. Permissions are `IndexMap<S
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::endpoint::EndpointOptions;
-use better_auth::plugins::ApiKeyPlugin;
-use better_auth::plugins::api_key::CreateKeyRequest;
+use alibi::BetterAuth;
+use alibi::endpoint::EndpointOptions;
+use alibi::plugins::ApiKeyPlugin;
+use alibi::plugins::api_key::CreateKeyRequest;
 
 async fn provision(
     auth: &BetterAuth<AppAuthSchema>,

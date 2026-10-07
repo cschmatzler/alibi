@@ -1,7 +1,7 @@
 //! Nullable plugin flags on the bundled user table.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use better_auth_core::{AuthUser, CreateUser, UpdateUser, store::UserStore};
+use alibi_core::{AuthUser, CreateUser, UpdateUser, store::UserStore};
 
 backend_tests!(
     disabled_plugin_creation_preserves_sql_null,
@@ -104,16 +104,12 @@ async fn explicit_flags_persist_without_initializing_unrelated_updates<B: Backen
 const DELETION_SECRET: &str = "installed-cleanup-secret-at-least-32-characters";
 const DELETION_ORIGIN: &str = "http://localhost:43181";
 
-pub(crate) fn deletion_config() -> better_auth::AuthConfig {
-    better_auth::AuthConfig::new(DELETION_SECRET).base_url(DELETION_ORIGIN)
+pub(crate) fn deletion_config() -> alibi::AuthConfig {
+    alibi::AuthConfig::new(DELETION_SECRET).base_url(DELETION_ORIGIN)
 }
 
-fn deletion_request(
-    path: &str,
-    body: serde_json::Value,
-    cookie: &str,
-) -> better_auth_core::AuthRequest {
-    use better_auth_core::{AuthRequest, HttpMethod};
+fn deletion_request(path: &str, body: serde_json::Value, cookie: &str) -> alibi_core::AuthRequest {
+    use alibi_core::{AuthRequest, HttpMethod};
     let mut request = AuthRequest::new(HttpMethod::Post, path);
     request.body = Some(body.to_string().into_bytes());
     drop(
@@ -130,8 +126,8 @@ fn deletion_request(
     request
 }
 
-async fn signup<S: better_auth::AuthSchema>(
-    auth: &better_auth::BetterAuth<S>,
+async fn signup<S: alibi::AuthSchema>(
+    auth: &alibi::BetterAuth<S>,
     email: &str,
 ) -> TestResult<(String, String)> {
     let response = Box::pin(auth.handle_request(deletion_request(
@@ -159,8 +155,8 @@ async fn signup<S: better_auth::AuthSchema>(
     ))
 }
 
-async fn create_key<S: better_auth::AuthSchema>(
-    auth: &better_auth::BetterAuth<S>,
+async fn create_key<S: alibi::AuthSchema>(
+    auth: &alibi::BetterAuth<S>,
     cookie: &str,
 ) -> TestResult<(String, String)> {
     let response = Box::pin(auth.handle_request(deletion_request(
@@ -182,18 +178,18 @@ async fn create_key<S: better_auth::AuthSchema>(
     ))
 }
 
-pub(crate) async fn public_user_deletion<S: better_auth::AuthSchema>(
-    store: std::sync::Arc<dyn better_auth::store::AuthStore<S>>,
+pub(crate) async fn public_user_deletion<S: alibi::AuthSchema>(
+    store: std::sync::Arc<dyn alibi::store::AuthStore<S>>,
     admin: bool,
     installed_keys: Option<&Db>,
 ) -> TestResult {
-    use better_auth::AuthBuilder;
-    use better_auth::plugins::{
+    use alibi::AuthBuilder;
+    use alibi::plugins::{
         AdminConfig, AdminPlugin, ApiKeyPlugin, EmailPasswordPlugin, UserManagementPlugin,
     };
-    use better_auth_core::{AuthRequest, HttpMethod};
+    use alibi_core::{AuthRequest, HttpMethod};
     use serde_json::{Value, json};
-    let plugins = |builder: better_auth::AuthBuilder<S>| {
+    let plugins = |builder: alibi::AuthBuilder<S>| {
         let builder = builder.plugin(EmailPasswordPlugin::new());
         if installed_keys.is_some() {
             builder.plugin(ApiKeyPlugin::with_config(Default::default()))
@@ -327,13 +323,11 @@ pub(crate) async fn public_user_deletion<S: better_auth::AuthSchema>(
     {
         for (plaintext, expected) in [(foreign_plaintext, true), (owned_plaintext, false)] {
             let verified = Box::pin(auth.dispatch_endpoint(
-                ApiKeyPlugin::verify_endpoint(
-                    &better_auth::plugins::api_key::ApiKeyVerificationInput {
-                        key: plaintext.clone(),
-                        config_id: None,
-                        permissions: None,
-                    },
-                )?,
+                ApiKeyPlugin::verify_endpoint(&alibi::plugins::api_key::ApiKeyVerificationInput {
+                    key: plaintext.clone(),
+                    config_id: None,
+                    permissions: None,
+                })?,
                 Default::default(),
             ))
             .await?

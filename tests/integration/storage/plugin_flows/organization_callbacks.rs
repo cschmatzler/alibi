@@ -1,8 +1,8 @@
 //! Organization callbacks surround real writes, with intentionally partial effects.
 use super::*;
+use alibi::plugins::organization::*;
+use alibi_core::{AuthError, AuthResult};
 use async_trait::async_trait;
-use better_auth::plugins::organization::*;
-use better_auth_core::{AuthError, AuthResult};
 
 backend_tests!(
     organization_lifecycle_callbacks_preserve_patch_authority_and_committed_phases,
@@ -275,7 +275,7 @@ async fn organization_lifecycle_callbacks_preserve_patch_authority_and_committed
             .delete_organization_with_headers(
                 auth.context(),
                 &headers,
-                &better_auth::plugins::organization::types::DeleteOrganizationRequest {
+                &alibi::plugins::organization::types::DeleteOrganizationRequest {
                     organization_id: "hook-organization".into(),
                 },
             )
@@ -310,7 +310,7 @@ impl OrganizationInvitationLimitResolver for Lifecycle {
     async fn invitation_limit(
         &self,
         ctx: &OrganizationInvitationLimitContext,
-        _: &better_auth_core::CallbackContext,
+        _: &alibi_core::CallbackContext,
     ) -> AuthResult<f64> {
         assert_eq!(ctx.user.id, *self.actor.lock().unwrap());
         assert_eq!(ctx.member.user_id, ctx.member_user.id);
@@ -380,7 +380,7 @@ impl OrganizationInvitationEmailSender for Lifecycle {
     async fn send_invitation_email(
         &self,
         delivery: &OrganizationInvitationDelivery,
-        _: &better_auth_core::CallbackContext,
+        _: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         assert_eq!(delivery.email(), "target@example.test");
         assert_eq!(delivery.user.id, *self.actor.lock().unwrap());
@@ -404,10 +404,7 @@ impl OrganizationInvitationAcceptanceHooks for Lifecycle {
     ) -> AuthResult<()> {
         assert_eq!(ctx.user.id, *self.target.lock().unwrap());
         assert_eq!(ctx.invitation.email, "target@example.test");
-        assert_eq!(
-            ctx.invitation.status,
-            better_auth_core::InvitationStatus::Pending
-        );
+        assert_eq!(ctx.invitation.status, alibi_core::InvitationStatus::Pending);
         assert_eq!(ctx.invitation.organization_id, ctx.organization.id);
         self.phase("before-accept")
     }
@@ -491,7 +488,7 @@ async fn organization_invitation_and_member_callbacks_preserve_actor_and_commit_
             auth.store()
                 .update_user(
                     &target_id,
-                    better_auth_core::UpdateUser {
+                    alibi_core::UpdateUser {
                         email_verified: Some(true),
                         ..Default::default()
                     },

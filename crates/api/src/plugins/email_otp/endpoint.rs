@@ -1,11 +1,11 @@
 use super::{EmailOtpPlugin, EmailOtpType};
 use crate::plugins::authentication_helpers::{JsonField, JsonFieldKind};
 use crate::plugins::endpoint::{definition, validate_fields};
-use better_auth_core::endpoint::{
+use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::{AuthContext, AuthResult, AuthSchema, HttpMethod};
+use alibi_core::utils::json::JsValue;
+use alibi_core::{AuthContext, AuthResult, AuthSchema, HttpMethod};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]

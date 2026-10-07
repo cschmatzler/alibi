@@ -4,10 +4,10 @@ use crate::error::record_not_updated;
 use crate::model::{self, ActiveRow, SqlxModel};
 use crate::pool::Exec;
 use crate::schema::AuthSchema;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::PasskeyStore;
+use alibi_core::types::{CreatePasskey, Passkey, UpdatePasskeyAuthentication};
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::PasskeyStore;
-use better_auth_core::types::{CreatePasskey, Passkey, UpdatePasskeyAuthentication};
 use chrono::Utc;
 use uuid::Uuid;
 

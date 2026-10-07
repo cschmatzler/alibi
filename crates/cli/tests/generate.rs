@@ -5,14 +5,14 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 #[test]
 fn generate_help_advertises_and_parser_accepts_every_supported_plugin() -> TestResult {
-    let output = Command::new(env!("CARGO_BIN_EXE_better-auth-rs"))
+    let output = Command::new(env!("CARGO_BIN_EXE_alibi"))
         .args(["generate", "--help"])
         .output()?;
     if !output.status.success() {
         return Err(format!("help failed: {:?}", output.stderr).into());
     }
     let help = String::from_utf8(output.stdout)?;
-    for name in better_auth_schema_registry::plugin_schemas()
+    for name in alibi_schema_registry::plugin_schemas()
         .iter()
         .map(|plugin| plugin.name)
         .chain(["all"])
@@ -20,7 +20,7 @@ fn generate_help_advertises_and_parser_accepts_every_supported_plugin() -> TestR
         if !help.contains(name) {
             return Err(format!("help omitted {name}: {help}").into());
         }
-        let generated = Command::new(env!("CARGO_BIN_EXE_better-auth-rs"))
+        let generated = Command::new(env!("CARGO_BIN_EXE_alibi"))
             .args(["generate", "--plugins", name])
             .output()?;
         if !generated.status.success() || generated.stdout.is_empty() {
@@ -44,7 +44,7 @@ fn unknown_plugins_fail_without_output_or_filesystem_changes() -> TestResult {
     let new_output = directory.join("new-parent/schema.rs");
     for plugins in ["nonsense", "api-key,nonsense", "all,nonsense"] {
         for destination in [None, Some(&existing), Some(&new_output)] {
-            let mut command = Command::new(env!("CARGO_BIN_EXE_better-auth-rs"));
+            let mut command = Command::new(env!("CARGO_BIN_EXE_alibi"));
             let _ = command.args(["generate", "--plugins", plugins]);
             if let Some(path) = destination {
                 let _ = command.arg("--output").arg(path);
@@ -77,7 +77,7 @@ fn unknown_plugins_fail_without_output_or_filesystem_changes() -> TestResult {
 fn generated_output_files_match_working_application_schemas() -> TestResult {
     let directory =
         std::env::temp_dir().join(format!("better-auth-cli-output-{}", std::process::id()));
-    let repeated = better_auth_schema_registry::plugin_schemas()
+    let repeated = alibi_schema_registry::plugin_schemas()
         .iter()
         .flat_map(|plugin| [plugin.name, plugin.name])
         .collect::<Vec<_>>()
@@ -100,7 +100,7 @@ fn generated_output_files_match_working_application_schemas() -> TestResult {
             (Some(repeated.as_str()), all),
         ] {
             let path = directory.join(backend).join("nested/schema.rs");
-            let mut command = Command::new(env!("CARGO_BIN_EXE_better-auth-rs"));
+            let mut command = Command::new(env!("CARGO_BIN_EXE_alibi"));
             let _ = command
                 .args(["generate", "--backend", backend, "--output"])
                 .arg(&path);

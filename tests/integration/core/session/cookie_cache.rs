@@ -4,16 +4,16 @@
 )]
 //! Native-only application schema contract. Official SDK scenarios own built-in wire parity.
 use super::application_model::{ApplicationSchema, application_session};
-use async_trait::async_trait;
-use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::{
+use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::{
     AuthRequest, AuthResult, CacheVersionContext, CacheVersionSource, CookieCacheConfig,
     CookieCacheVersion, CookieCacheVersionResolver, HttpMethod,
 };
-use better_auth_seaorm::sea_orm::{ConnectionTrait, Statement};
-use better_auth_seaorm::store::__private_test_support::migrator::run_migrations;
-use better_auth_seaorm::{Database, SeaOrmStore};
+use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
+use alibi_seaorm::store::__private_test_support::migrator::run_migrations;
+use alibi_seaorm::{Database, SeaOrmStore};
+use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
@@ -33,7 +33,7 @@ impl CookieCacheVersionResolver for Version {
                 );
                 assert!(
                     context
-                        .stored_user::<better_auth_seaorm::store::entities::user::Model>()
+                        .stored_user::<alibi_seaorm::store::entities::user::Model>()
                         .is_some()
                 );
                 json!({"phase":"stored","id":raw.id,"hidden":raw.hidden,"physical":raw.server_only})
@@ -45,7 +45,7 @@ impl CookieCacheVersionResolver for Version {
                 assert!(raw.is_none());
                 assert!(
                     context
-                        .stored_user::<better_auth_seaorm::store::entities::user::Model>()
+                        .stored_user::<alibi_seaorm::store::entities::user::Model>()
                         .is_none()
                 );
                 json!({"phase":"cached","id":context.session().id})
@@ -94,8 +94,7 @@ mod tests {
 
     #[tokio::test]
     async fn successful_cached_reader_does_not_cross_auth_configuration_or_database() {
-        type Schema =
-            better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+        type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
         let db = Database::connect("sqlite::memory:").await.unwrap();
         run_migrations(&db).await.unwrap();
         let config = AuthConfig::new("cache-owner-instance-secret-at-least-32")
@@ -128,13 +127,13 @@ mod tests {
         assert!(cookies.contains("session_data="));
         let empty = Database::connect("sqlite::memory:").await.unwrap();
         run_migrations(&empty).await.unwrap();
-        let empty_store: Arc<dyn better_auth_core::AuthStore<Schema>> =
+        let empty_store: Arc<dyn alibi_core::AuthStore<Schema>> =
             Arc::new(SeaOrmStore::<Schema>::new(auth.config().clone(), empty));
         let mut wrong_secret = auth.config().clone();
         wrong_secret.secret = "another-cache-instance-secret-at-least-32".into();
         let contexts = [
-            better_auth_core::AuthContext::new(Arc::new(wrong_secret), Arc::clone(auth.store())),
-            better_auth_core::AuthContext::new(Arc::clone(&auth.context().config), empty_store),
+            alibi_core::AuthContext::new(Arc::new(wrong_secret), Arc::clone(auth.store())),
+            alibi_core::AuthContext::new(Arc::clone(&auth.context().config), empty_store),
         ];
         let mut denied = Vec::new();
         for (index, other) in contexts.iter().enumerate() {
@@ -156,7 +155,7 @@ mod tests {
             assert_eq!(repeated, first);
             denied.push(matches!(
                 other.require_cached_session(&read).await,
-                Err(better_auth_core::AuthError::Unauthenticated)
+                Err(alibi_core::AuthError::Unauthenticated)
             ));
             let (_, retained) = auth.context().require_cached_session(&read).await.unwrap();
             assert_eq!(retained, first);
@@ -182,12 +181,12 @@ mod tests {
     )]
     async fn cache_version_retains_actual_custom_models_only_for_created_source_and_never_leaks_private_columns()
      {
-        use better_auth::field_policy::FieldConfig;
+        use alibi::field_policy::FieldConfig;
 
         for strategy in [
-            better_auth_core::CookieCacheStrategy::Compact,
-            better_auth_core::CookieCacheStrategy::Jwt,
-            better_auth_core::CookieCacheStrategy::Jwe,
+            alibi_core::CookieCacheStrategy::Compact,
+            alibi_core::CookieCacheStrategy::Jwt,
+            alibi_core::CookieCacheStrategy::Jwe,
         ] {
             let db = Database::connect("sqlite::memory:").await.unwrap();
             run_migrations(&db).await.unwrap();
@@ -301,7 +300,7 @@ mod tests {
                 .await;
             assert!(matches!(
                 physical,
-                Err(better_auth_core::AuthError::Unauthenticated)
+                Err(alibi_core::AuthError::Unauthenticated)
             ));
             assert!(
                 auth.store()
@@ -316,13 +315,12 @@ mod tests {
     #[tokio::test]
     async fn jwt_and_jwe_strategies_initialize_when_enabled_or_disabled_without_issuing_authority()
     {
-        type Schema =
-            better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+        type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
         let db = Database::connect("sqlite::memory:").await.unwrap();
         run_migrations(&db).await.unwrap();
         for strategy in [
-            better_auth_core::CookieCacheStrategy::Jwt,
-            better_auth_core::CookieCacheStrategy::Jwe,
+            alibi_core::CookieCacheStrategy::Jwt,
+            alibi_core::CookieCacheStrategy::Jwe,
         ] {
             for enabled in [true, false] {
                 let config = AuthConfig::new("cache-native-initialization-secret-at-least-32")

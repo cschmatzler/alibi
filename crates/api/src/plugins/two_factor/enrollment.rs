@@ -8,7 +8,7 @@ pub(in crate::plugins::two_factor) async fn enable_core(
     user: &impl AuthUser,
     current_session: &impl AuthSession,
     config: &TwoFactorConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(EnableResponse, Vec<String>), BackupOperationError> {
     verify_user_password(
         ctx,
@@ -160,7 +160,7 @@ pub(in crate::plugins::two_factor) async fn disable_core(
     current_session: &impl AuthSession,
     req: &AuthRequest,
     config: &TwoFactorConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(StatusResponse, Vec<String>)> {
     verify_user_password(
         ctx,
@@ -230,7 +230,7 @@ pub(in crate::plugins::two_factor) async fn disable_core(
 
 pub(in crate::plugins::two_factor) async fn mark_factor_verified(
     two_factor: &TwoFactor,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
     if two_factor.verified() != Some(true) {
         drop(
@@ -249,7 +249,7 @@ pub(in crate::plugins::two_factor) async fn mark_factor_verified(
 }
 
 pub(in crate::plugins::two_factor) async fn verify_user_password(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     user: &impl AuthUser,
     password: Option<&str>,
     allow_passwordless: bool,
@@ -276,7 +276,7 @@ pub(in crate::plugins::two_factor) async fn verify_user_password(
     let hasher = password_config
         .as_ref()
         .and_then(|config| config.password_hasher.as_ref());
-    match better_auth_core::verify_password(hasher, password, &stored_hash).await {
+    match alibi_core::verify_password(hasher, password, &stored_hash).await {
         Ok(()) => Ok(()),
         Err(AuthError::InvalidCredentials) => Err(AuthError::bad_request("Invalid password")),
         Err(error) => Err(error),

@@ -8,16 +8,16 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::plugins::phone_number::{
+use alibi::plugins::phone_number::{
     PhoneNumberConfig, PhoneNumberPlugin, PhoneNumberValidator, PhoneNumberVerification,
     PhoneOtpDelivery, PhoneOtpVerifier, PhoneSignupIdentity, PhoneVerificationHook, SendPhoneOtp,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use better_auth::{integrations::axum::AxumIntegration, middleware::RateLimitConfig};
-use better_auth_seaorm::sea_orm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::{integrations::axum::AxumIntegration, middleware::RateLimitConfig};
+use alibi_seaorm::sea_orm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
@@ -46,7 +46,7 @@ impl SendPhoneOtp for Sender {
     async fn send(
         &self,
         delivery: &PhoneOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         let identifier = if self.purpose == "password-reset" {
             format!("{}-request-password-reset", delivery.phone_number)
@@ -100,7 +100,7 @@ impl PhoneOtpVerifier for Verifier {
     async fn verify(
         &self,
         delivery: &PhoneOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<bool> {
         if let Some(snapshot) =
             crate::fixtures::passwordless_context::snapshot(_context, &delivery.phone_number)
@@ -125,7 +125,7 @@ impl PhoneVerificationHook for Callback {
     async fn verified(
         &self,
         result: &PhoneNumberVerification,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         let mut event = json!({"phoneNumber":result.phone_number,"userId":result.user.id});
         if let Some(snapshot) =
@@ -138,7 +138,7 @@ impl PhoneVerificationHook for Callback {
                     .get_user_by_id_record(&result.user.id)
                     .await?
                     .is_some_and(
-                        |owner| better_auth_core::AuthUser::phone_number_verified(&owner)
+                        |owner| alibi_core::AuthUser::phone_number_verified(&owner)
                             == Some(true)
                     )
             );
@@ -273,13 +273,13 @@ pub(super) async fn build(
                 async move {
                     let result = async {
                         let selected = runtimes.get(&body.profile).ok_or_else(|| {
-                            better_auth::AuthError::bad_request("unknown fixture profile")
+                            alibi::AuthError::bad_request("unknown fixture profile")
                         })?;
                         selected
                             .plugin
                             .consume_otp(selected.auth.context(), &body.phone_number, &body.code)
                             .await?;
-                        Ok::<_, better_auth::AuthError>(json!({"status":true}))
+                        Ok::<_, alibi::AuthError>(json!({"status":true}))
                     }
                     .await;
                     match result {

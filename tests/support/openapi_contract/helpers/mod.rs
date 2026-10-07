@@ -3,14 +3,14 @@
 //! This is the **canonical** location for all shared test utilities.
 //! All integration test files should use `use compat::helpers::*;`.
 
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::magic_link::MagicLinkConfig;
-use better_auth::plugins::multi_session::MultiSessionPlugin;
-use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
-use better_auth::plugins::phone_number::PhoneNumberConfig;
-use better_auth::plugins::phone_number::PhoneNumberPlugin;
-use better_auth::plugins::siwe::{Eip191Verifier, RandomSiweNonce, SiweConfig, SiwePlugin};
-use better_auth::{
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::magic_link::MagicLinkConfig;
+use alibi::plugins::multi_session::MultiSessionPlugin;
+use alibi::plugins::one_time_token::OneTimeTokenPlugin;
+use alibi::plugins::phone_number::PhoneNumberConfig;
+use alibi::plugins::phone_number::PhoneNumberPlugin;
+use alibi::plugins::siwe::{Eip191Verifier, RandomSiweNonce, SiweConfig, SiwePlugin};
+use alibi::{
     AuthBuilder, AuthConfig, BetterAuth,
     plugins::{
         AccountManagementPlugin, AdminPlugin, ApiKeyPlugin, DeviceAuthorizationPlugin,
@@ -31,13 +31,13 @@ use better_auth::{
     },
     prelude::{AuthRequest, HttpMethod},
 };
-use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
+use alibi_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use serde_json::Value;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
-type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 type TestAuth = BetterAuth<TestSchema>;
 
@@ -76,9 +76,9 @@ static RESET_PASSWORD_OUTBOX: OnceLock<Mutex<std::collections::HashMap<String, S
 
 #[async_trait::async_trait]
 impl SendResetPassword for TestResetSender {
-    async fn send(&self, user: &Value, _url: &str, token: &str) -> better_auth::AuthResult<()> {
+    async fn send(&self, user: &Value, _url: &str, token: &str) -> alibi::AuthResult<()> {
         if self.mode == ResetSenderMode::Fail {
-            return Err(better_auth::AuthError::internal(
+            return Err(alibi::AuthError::internal(
                 "test reset sender failure".to_owned(),
             ));
         }
@@ -262,7 +262,7 @@ fn mock_oauth_plugin() -> OAuthPlugin {
 fn test_session_cookie(token: &str) -> String {
     format!(
         "better-auth.session_token={}",
-        better_auth_core::utils::cookie_utils::sign_cookie_value(token, &test_secret())
+        alibi_core::utils::cookie_utils::sign_cookie_value(token, &test_secret())
     )
 }
 
@@ -270,7 +270,7 @@ async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:")
         .await
         .unwrap_or_else(|e| panic!("sqlite test database should connect: {e}"));
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap_or_else(|e| panic!("sqlite test migrations should run: {e}"));
     database
@@ -374,12 +374,12 @@ async fn build_test_auth(config: AuthConfig, options: TestAuthOptions) -> TestAu
         builder
     };
     let builder = if options.anonymous_enabled {
-        builder.plugin(better_auth::plugins::AnonymousPlugin::new())
+        builder.plugin(alibi::plugins::AnonymousPlugin::new())
     } else {
         builder
     };
     let builder = if options.oauth_proxy_enabled {
-        builder.plugin(better_auth::plugins::OAuthProxyPlugin::new())
+        builder.plugin(alibi::plugins::OAuthProxyPlugin::new())
     } else {
         builder
     };

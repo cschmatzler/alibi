@@ -9,14 +9,14 @@ use super::*;
 pub(in crate::plugins) async fn handle_social_sign_in(
     config: &OAuthConfig,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
-    let body: SocialSignInRequest = match better_auth_core::validate_request_body(req) {
+    let body: SocialSignInRequest = match alibi_core::validate_request_body(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
     validate_authorization_params(body.additional_params.as_ref())?;
-    let meta = better_auth_core::RequestMeta::from_request(req);
+    let meta = alibi_core::RequestMeta::from_request(req);
     if let Some(id_token) = &body.id_token {
         let provider = config
             .providers
@@ -24,16 +24,16 @@ pub(in crate::plugins) async fn handle_social_sign_in(
             .ok_or_else(|| AuthError::not_found("Provider not found"))?;
         let response = match sign_in_with_id_token_core(&body, id_token, provider, &meta, ctx).await
         {
-            Err(AuthError::Database(better_auth_core::DatabaseError::AmbiguousAccount {
-                ..
-            })) => return Ok(ambiguous_account_sign_in_response(ctx)),
+            Err(AuthError::Database(alibi_core::DatabaseError::AmbiguousAccount { .. })) => {
+                return Ok(ambiguous_account_sign_in_response(ctx));
+            }
             result => result?,
         };
         let mut auth_response = AuthResponse::json(200, &response).map_err(AuthError::from)?;
         if let Some(token) = response.token.as_deref() {
             auth_response = auth_response.with_appended_header(
                 "Set-Cookie",
-                better_auth_core::utils::cookie_utils::create_session_cookie(token, &ctx.config)?,
+                alibi_core::utils::cookie_utils::create_session_cookie(token, &ctx.config)?,
             );
         }
         return Ok(auth_response);
@@ -57,13 +57,12 @@ pub(in crate::plugins) async fn handle_social_sign_in(
     if let Some(token) = response.token.as_deref() {
         auth_response = auth_response.with_appended_header(
             "Set-Cookie",
-            better_auth_core::utils::cookie_utils::create_session_cookie(token, &ctx.config)?,
+            alibi_core::utils::cookie_utils::create_session_cookie(token, &ctx.config)?,
         );
     }
 
     match ctx.config.account.store_state_strategy {
-        better_auth_core::OAuthStateStrategy::Automatic
-        | better_auth_core::OAuthStateStrategy::Database => {
+        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
             if response.token.is_some() {
                 return Ok(auth_response);
             }
@@ -74,7 +73,7 @@ pub(in crate::plugins) async fn handle_social_sign_in(
                 &flow.state,
             )
         }
-        better_auth_core::OAuthStateStrategy::Cookie => {
+        alibi_core::OAuthStateStrategy::Cookie => {
             if response.token.is_some() {
                 return Ok(auth_response);
             }
@@ -94,13 +93,13 @@ pub(in crate::plugins::oauth) async fn handle_callback(
     config: &OAuthConfig,
     provider_name: &str,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let default_error_url = build_default_error_url(ctx);
-    let meta = better_auth_core::RequestMeta::from_request(req);
+    let meta = alibi_core::RequestMeta::from_request(req);
 
     let mut merged = HashMap::new();
-    if req.method() == &better_auth_core::HttpMethod::Post {
+    if req.method() == &alibi_core::HttpMethod::Post {
         if let Some(body) = &req.body
             && !body.is_empty()
         {
@@ -159,8 +158,7 @@ pub(in crate::plugins::oauth) async fn handle_callback(
         return Ok(callback_failure_redirect(ctx, "state_not_found"));
     };
     let payload = match ctx.config.account.store_state_strategy {
-        better_auth_core::OAuthStateStrategy::Automatic
-        | better_auth_core::OAuthStateStrategy::Database => {
+        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
             let verification = match ctx
                 .verifications()
                 .find(&state_verification_identifier(&state_param))
@@ -232,7 +230,7 @@ pub(in crate::plugins::oauth) async fn handle_callback(
                 ))
                 .with_appended_header(
                     "Set-Cookie",
-                    better_auth_core::utils::cookie_utils::create_clear_cookie(
+                    alibi_core::utils::cookie_utils::create_clear_cookie(
                         &state_cookie_name(&ctx.config),
                         &ctx.config,
                     )?,
@@ -240,7 +238,7 @@ pub(in crate::plugins::oauth) async fn handle_callback(
             }
             payload
         }
-        better_auth_core::OAuthStateStrategy::Cookie => {
+        alibi_core::OAuthStateStrategy::Cookie => {
             let Some(cookie_value) = get_cookie(req, &state_cookie_name(&ctx.config)) else {
                 return Ok(redirect_response(&callback_failure_location(
                     ctx,
@@ -282,7 +280,7 @@ pub(in crate::plugins::oauth) async fn handle_callback(
         }
     };
 
-    let clear_state_cookie = better_auth_core::utils::cookie_utils::create_clear_cookie(
+    let clear_state_cookie = alibi_core::utils::cookie_utils::create_clear_cookie(
         &state_cookie_name(&ctx.config),
         &ctx.config,
     )?;
@@ -315,7 +313,7 @@ pub(in crate::plugins::oauth) async fn handle_callback(
 
     let authenticated_state_cookie = get_cookie(req, &state_cookie_name(&ctx.config));
     let context_secret = match ctx.config.account.store_state_strategy {
-        better_auth_core::OAuthStateStrategy::Cookie => {
+        alibi_core::OAuthStateStrategy::Cookie => {
             super::super::super::token_crypto::decryption_key(
                 authenticated_state_cookie
                     .as_deref()
@@ -323,8 +321,9 @@ pub(in crate::plugins::oauth) async fn handle_callback(
                 &ctx.config,
             )?
         }
-        better_auth_core::OAuthStateStrategy::Automatic
-        | better_auth_core::OAuthStateStrategy::Database => ctx.config.current_secret(),
+        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
+            ctx.config.current_secret()
+        }
     };
     if let Some(context) = verified_server_context(&payload, &state_param, context_secret) {
         req.extensions()
@@ -528,7 +527,7 @@ pub(in crate::plugins::oauth) async fn handle_callback(
         .with_appended_header("Set-Cookie", clear_state_cookie)
         .with_appended_header(
             "Set-Cookie",
-            better_auth_core::utils::cookie_utils::create_session_cookie(
+            alibi_core::utils::cookie_utils::create_session_cookie(
                 outcome.session.token(),
                 &ctx.config,
             )?,
@@ -547,7 +546,7 @@ pub(in crate::plugins::oauth) async fn handle_callback(
 pub(in crate::plugins::oauth) async fn handle_link_social(
     config: &OAuthConfig,
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let session = require_session(req, ctx)
         .await
@@ -588,7 +587,7 @@ pub(in crate::plugins::oauth) async fn handle_link_social(
             | AuthError::PasswordHash(_)
             | AuthError::Jwt(_)) => error,
         })?;
-    let body: LinkSocialRequest = match better_auth_core::validate_request_body(req) {
+    let body: LinkSocialRequest = match alibi_core::validate_request_body(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
@@ -600,9 +599,9 @@ pub(in crate::plugins::oauth) async fn handle_link_social(
             .ok_or_else(|| AuthError::not_found("Provider not found"))?;
         let response = match link_with_id_token_core(&body, id_token, provider, &session, ctx).await
         {
-            Err(AuthError::Database(better_auth_core::DatabaseError::AmbiguousAccount {
-                ..
-            })) => return Ok(AuthResponse::new(500)),
+            Err(AuthError::Database(alibi_core::DatabaseError::AmbiguousAccount { .. })) => {
+                return Ok(AuthResponse::new(500));
+            }
             result => result?,
         };
         return AuthResponse::json(200, &response).map_err(AuthError::from);
@@ -625,14 +624,15 @@ pub(in crate::plugins::oauth) async fn handle_link_social(
     }
 
     match ctx.config.account.store_state_strategy {
-        better_auth_core::OAuthStateStrategy::Automatic
-        | better_auth_core::OAuthStateStrategy::Database => attach_state_cookie(
-            auth_response,
-            &ctx.config,
-            ctx.config.current_secret(),
-            &flow.state,
-        ),
-        better_auth_core::OAuthStateStrategy::Cookie => {
+        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
+            attach_state_cookie(
+                auth_response,
+                &ctx.config,
+                ctx.config.current_secret(),
+                &flow.state,
+            )
+        }
+        alibi_core::OAuthStateStrategy::Cookie => {
             attach_cookie_state_payload(auth_response, &ctx.config, &flow.payload)
         }
     }

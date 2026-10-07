@@ -1,4 +1,4 @@
-pub(in crate::plugins) use better_auth_core::wire::PasskeyView;
+pub(in crate::plugins) use alibi_core::wire::PasskeyView;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -8,11 +8,11 @@ use validator::Validate;
 #[serde(rename_all = "camelCase")]
 pub(in crate::plugins) struct VerifyRegistrationRequest {
     #[serde(default, deserialize_with = "optional_name")]
-    pub(super) response: Option<better_auth_core::utils::json::JsValue>,
+    pub(super) response: Option<alibi_core::utils::json::JsValue>,
     #[serde(default, deserialize_with = "optional_name")]
-    pub(super) name: Option<better_auth_core::utils::json::JsValue>,
+    pub(super) name: Option<alibi_core::utils::json::JsValue>,
     #[serde(default = "no_registration_session")]
-    pub(super) create_session: better_auth_core::utils::json::JsValue,
+    pub(super) create_session: alibi_core::utils::json::JsValue,
 }
 
 impl Validate for VerifyRegistrationRequest {
@@ -71,7 +71,7 @@ impl Validate for VerifyRegistrationRequest {
 #[serde(rename_all = "camelCase")]
 pub(in crate::plugins) struct VerifyAuthenticationRequest {
     #[serde(default, deserialize_with = "optional_name")]
-    pub(super) response: Option<better_auth_core::utils::json::JsValue>,
+    pub(super) response: Option<alibi_core::utils::json::JsValue>,
 }
 impl Validate for VerifyAuthenticationRequest {
     fn validate(&self) -> Result<(), validator::ValidationErrors> {
@@ -121,17 +121,17 @@ pub(in crate::plugins) struct PasskeyResponse {
     pub(super) passkey: PasskeyView,
 }
 
-const fn no_registration_session() -> better_auth_core::utils::json::JsValue {
-    better_auth_core::utils::json::JsValue::Bool(false)
+const fn no_registration_session() -> alibi_core::utils::json::JsValue {
+    alibi_core::utils::json::JsValue::Bool(false)
 }
 
 fn optional_name<'de, D: serde::Deserializer<'de>>(
     decoder: D,
-) -> Result<Option<better_auth_core::utils::json::JsValue>, D::Error> {
-    better_auth_core::utils::json::JsValue::deserialize(decoder).map(Some)
+) -> Result<Option<alibi_core::utils::json::JsValue>, D::Error> {
+    alibi_core::utils::json::JsValue::deserialize(decoder).map(Some)
 }
-fn received_type(value: &better_auth_core::utils::json::JsValue) -> &'static str {
-    use better_auth_core::utils::json::JsValue;
+fn received_type(value: &alibi_core::utils::json::JsValue) -> &'static str {
+    use alibi_core::utils::json::JsValue;
     match value {
         JsValue::Null => "null",
         JsValue::Array(_) => "array",

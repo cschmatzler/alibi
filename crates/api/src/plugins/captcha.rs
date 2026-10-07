@@ -1,9 +1,9 @@
 //! CAPTCHA admission before endpoint parsing and authentication side effects.
-use async_trait::async_trait;
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     utils::json::{JsValue, parse_value},
 };
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::Duration};
 
@@ -200,13 +200,10 @@ impl CaptchaPlugin {
         let token = request.header("x-captcha-response").ok_or(())?;
         let policy = request
             .extensions()
-            .get::<better_auth_core::config::IpAddressConfig>();
+            .get::<alibi_core::config::IpAddressConfig>();
         let ip = policy
             .map_or_else(
-                || {
-                    better_auth_core::config::IpAddressConfig::default()
-                        .resolve_ip(&request.headers)
-                },
+                || alibi_core::config::IpAddressConfig::default().resolve_ip(&request.headers),
                 |policy| policy.resolve_ip(&request.headers),
             )
             .filter(|ip| !ip.is_empty());
@@ -418,20 +415,20 @@ fn path_matches(pattern: &str, path: &str) -> Result<bool, regex::Error> {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for CaptchaPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }

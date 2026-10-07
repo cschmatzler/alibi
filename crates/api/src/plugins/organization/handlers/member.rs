@@ -7,11 +7,11 @@ use crate::plugins::organization::types::{
     ListMembersResponse, MemberResponse, OrganizationMemberRemovalSnapshot, RemoveMemberRequest,
     RemovedMemberResponse, UpdateMemberRoleRequest,
 };
-use better_auth_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::plugin::AuthContext;
-use better_auth_core::store::MemberPageQuery;
-use better_auth_core::types::{AuthRequest, AuthResponse};
+use alibi_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::plugin::AuthContext;
+use alibi_core::store::MemberPageQuery;
+use alibi_core::types::{AuthRequest, AuthResponse};
 use std::collections::HashMap;
 
 fn has_role(member: &impl AuthMember, role: &str) -> bool {
@@ -56,7 +56,7 @@ fn normalized_update_roles(role: &super::super::types::RoleInput) -> Vec<&str> {
 pub(in crate::plugins) async fn get_active_member_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<MemberResponse> {
     let org_id = session
         .active_organization_id()
@@ -84,7 +84,7 @@ pub(in crate::plugins) async fn list_members_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<ListMembersResponse, OrganizationPageError> {
     let org_id = if let Some(slug) = query.organization_slug.as_deref() {
         let organization = ctx
@@ -157,7 +157,7 @@ pub(in crate::plugins) async fn get_active_member_role_core(
     query: &GetActiveMemberRoleQuery,
     user: &impl AuthUser,
     session: &impl AuthSession,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<GetActiveMemberRoleResponse> {
     let org_id = if let Some(slug) = query.organization_slug.as_deref() {
         let organization = ctx
@@ -204,7 +204,7 @@ pub(in crate::plugins) async fn remove_member_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<RemovedMemberResponse<OrganizationMemberRemovalSnapshot>> {
     let org_id = body
         .organization_id
@@ -314,8 +314,7 @@ pub(in crate::plugins) async fn remove_member_core(
     let is_self_removal = target_member.user_id() == user.id();
     let response = RemovedMemberResponse {
         member: OrganizationMemberRemovalSnapshot {
-            user: by_email
-                .then(|| better_auth_core::entity::MemberUserView::from_user(&target_user)),
+            user: by_email.then(|| alibi_core::entity::MemberUserView::from_user(&target_user)),
             member: target_member.clone(),
         },
     };
@@ -369,7 +368,7 @@ pub(in crate::plugins) async fn update_member_role_core(
     organization_id: &str,
     user: &impl AuthUser,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<BasicMemberResponse> {
     let org_id = organization_id.to_owned();
 
@@ -524,7 +523,7 @@ pub(in crate::plugins) async fn update_member_role_core(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_get_active_member(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let (user, session) = super::extension_common::session(req, ctx).await?;
     let response = get_active_member_core(&user, &session, ctx).await?;
@@ -537,7 +536,7 @@ pub async fn handle_get_active_member(
 /// Returns an error when validation, storage, or an application callback fails.
 pub async fn handle_list_members(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let (user, session) = super::extension_common::session(req, ctx).await?;
@@ -556,7 +555,7 @@ pub async fn handle_list_members(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_get_active_member_role(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let (user, session) = super::extension_common::session(req, ctx).await?;
     let query = parse_query::<GetActiveMemberRoleQuery>(&req.query);
@@ -571,7 +570,7 @@ pub async fn handle_get_active_member_role(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_remove_member(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let body = match super::org_input::member_remove(req) {
@@ -596,7 +595,7 @@ pub async fn handle_remove_member(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_update_member_role(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let body = match super::org_input::member_role_update(req) {
@@ -619,9 +618,9 @@ pub async fn handle_update_member_role(
 pub(in crate::plugins) async fn update_member_role_response(
     body: &UpdateMemberRoleRequest,
     user: &impl AuthUser,
-    session: &better_auth_core::wire::SessionView,
+    session: &alibi_core::wire::SessionView,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let empty = || {
         let mut response = AuthResponse::new(400);

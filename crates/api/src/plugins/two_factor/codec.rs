@@ -11,14 +11,14 @@ pub(in crate::plugins::two_factor) fn derive_encryption_key(
 }
 
 pub(in crate::plugins::two_factor) fn encrypt_value(
-    secret: &better_auth_core::AuthConfig,
+    secret: &alibi_core::AuthConfig,
     plaintext: &str,
 ) -> AuthResult<String> {
     super::super::token_crypto::encrypt_with_config(plaintext, secret)
 }
 
 pub(in crate::plugins::two_factor) fn decrypt_value(
-    secret: &better_auth_core::AuthConfig,
+    secret: &alibi_core::AuthConfig,
     encrypted: &str,
 ) -> AuthResult<String> {
     // New factor rows use the pinned runtime's XChaCha/hex encoding. Installed

@@ -3,17 +3,17 @@
 mod hooks;
 
 use super::*;
-use better_auth::plugins::api_key::{ApiKeyPlugin, CreateKeyRequest};
-use better_auth::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, EmailOtpType};
-use better_auth::plugins::jwt::JwtPlugin;
-use better_auth::plugins::one_time_token::{OneTimeTokenConfig, OneTimeTokenPlugin};
-use better_auth::plugins::organization::OrganizationPlugin;
-use better_auth::plugins::organization::types::{
+use alibi::plugins::api_key::{ApiKeyPlugin, CreateKeyRequest};
+use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpPlugin, EmailOtpType};
+use alibi::plugins::jwt::JwtPlugin;
+use alibi::plugins::one_time_token::{OneTimeTokenConfig, OneTimeTokenPlugin};
+use alibi::plugins::organization::OrganizationPlugin;
+use alibi::plugins::organization::types::{
     AddOrganizationMemberRequest, CreateOrganizationRequest, DeleteOrganizationRequest,
     RemoveMemberRequest, RoleInput,
 };
-use better_auth_core::endpoint::EndpointOptions;
-use better_auth_core::utils::json::parse_value;
+use alibi_core::endpoint::EndpointOptions;
+use alibi_core::utils::json::parse_value;
 
 backend_tests!(
     server_otp_can_bootstrap_a_password_without_replacing_sessions,
@@ -41,50 +41,49 @@ struct PasswordPolicyProbe {
     fail: Arc<std::sync::atomic::AtomicBool>,
 }
 #[async_trait::async_trait]
-impl better_auth_core::PasswordHasher for PasswordPolicyProbe {
-    async fn hash(&self, password: &str) -> better_auth_core::AuthResult<String> {
+impl alibi_core::PasswordHasher for PasswordPolicyProbe {
+    async fn hash(&self, password: &str) -> alibi_core::AuthResult<String> {
         self.events.lock().unwrap().push("hasher");
         if self.fail.load(std::sync::atomic::Ordering::SeqCst) {
-            return Err(better_auth_core::AuthError::forbidden("Hasher rejected"));
+            return Err(alibi_core::AuthError::forbidden("Hasher rejected"));
         }
-        better_auth_core::PasswordHasher::hash(&better_auth_core::ScryptHasher, password).await
+        alibi_core::PasswordHasher::hash(&alibi_core::ScryptHasher, password).await
     }
-    async fn verify(&self, hash: &str, password: &str) -> better_auth_core::AuthResult<bool> {
-        better_auth_core::PasswordHasher::verify(&better_auth_core::ScryptHasher, hash, password)
-            .await
+    async fn verify(&self, hash: &str, password: &str) -> alibi_core::AuthResult<bool> {
+        alibi_core::PasswordHasher::verify(&alibi_core::ScryptHasher, hash, password).await
     }
 }
 #[async_trait::async_trait]
-impl better_auth_core::PasswordHashHook for PasswordPolicyProbe {
+impl alibi_core::PasswordHashHook for PasswordPolicyProbe {
     async fn before_hash(
         &self,
         _: &str,
-        context: Option<&better_auth_core::PasswordHashContext>,
-    ) -> better_auth_core::AuthResult<()> {
+        context: Option<&alibi_core::PasswordHashContext>,
+    ) -> alibi_core::AuthResult<()> {
         assert_eq!(context.unwrap().path.as_deref(), Some("virtual:"));
         self.events.lock().unwrap().push("hook");
         Ok(())
     }
 }
 #[async_trait::async_trait]
-impl<S: AuthSchema> better_auth_core::AuthPlugin<S> for PasswordPolicyProbe {
+impl<S: AuthSchema> alibi_core::AuthPlugin<S> for PasswordPolicyProbe {
     fn name(&self) -> &'static str {
         "application-password-policy"
     }
-    fn routes(&self) -> Vec<better_auth_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
         Vec::new()
     }
     async fn on_request(
         &self,
         _: &AuthRequest,
-        _: &better_auth_core::AuthContext<S>,
-    ) -> better_auth_core::AuthResult<Option<AuthResponse>> {
+        _: &alibi_core::AuthContext<S>,
+    ) -> alibi_core::AuthResult<Option<AuthResponse>> {
         Ok(None)
     }
     async fn on_init(
         &self,
-        context: &mut better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::AuthResult<()> {
+        context: &mut alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::AuthResult<()> {
         context.register_password_hash_hook(Arc::new(self.clone()));
         Ok(())
     }
@@ -162,7 +161,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         ("better-auth.session_token=forged", PASSWORD, 401),
         (&*cookie, "short", 400),
     ] {
-        let denied = better_auth::plugins::password_management::set_password(
+        let denied = alibi::plugins::password_management::set_password(
             &request("/server-only", None, cookie),
             password,
             context,
@@ -172,11 +171,11 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         assert_eq!(denied.status_code(), status);
         assert_eq!(db.count("accounts").await?, 0);
     }
-    better_auth::plugins::password_management::set_password(&authorized, PASSWORD, context).await?;
+    alibi::plugins::password_management::set_password(&authorized, PASSWORD, context).await?;
     assert_eq!(db.count("accounts").await?, 1);
     assert_eq!(db.table("sessions").await?, original_sessions);
     let accounts = db.table("accounts").await?;
-    let denied = better_auth::plugins::password_management::set_password(
+    let denied = alibi::plugins::password_management::set_password(
         &authorized,
         "a-different-password",
         context,
@@ -185,7 +184,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     .unwrap_err();
     assert!(matches!(
         denied,
-        better_auth_core::AuthError::Upstream {
+        alibi_core::AuthError::Upstream {
             code: "PASSWORD_ALREADY_SET",
             ..
         }
@@ -205,7 +204,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     authenticated(&auth, &cookie, email).await;
     let probe = PasswordPolicyProbe::default();
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
-    config.session.cookie_cache = Some(better_auth_core::config::CookieCacheConfig {
+    config.session.cookie_cache = Some(alibi_core::config::CookieCacheConfig {
         enabled: true,
         ..Default::default()
     });
@@ -245,7 +244,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     let user = body(&issued)["user"]["id"].as_str().unwrap().to_owned();
     let credential = configured
         .store()
-        .create_account(better_auth_core::CreateAccount {
+        .create_account(alibi_core::CreateAccount {
             user_id: user.clone(),
             account_id: user.clone(),
             provider_id: "credential".into(),
@@ -270,35 +269,28 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         ("😀😀😀a", "PASSWORD_TOO_SHORT"),
         ("😀😀😀😀😀😀", "PASSWORD_TOO_LONG"),
     ] {
-        let error = better_auth::plugins::password_management::set_password(
+        let error = alibi::plugins::password_management::set_password(
             &input,
             password,
             configured.context(),
         )
         .await
         .unwrap_err();
-        assert!(matches!(error,better_auth_core::AuthError::Upstream {code,..} if code==expected));
+        assert!(matches!(error,alibi_core::AuthError::Upstream {code,..} if code==expected));
         assert_eq!(db.table("accounts").await?, empty_accounts);
     }
     assert!(probe.events.lock().unwrap().is_empty());
     probe.fail.store(true, std::sync::atomic::Ordering::SeqCst);
-    let failed = better_auth::plugins::password_management::set_password(
-        &input,
-        "😀😀😀😀",
-        configured.context(),
-    )
-    .await
-    .unwrap_err();
+    let failed =
+        alibi::plugins::password_management::set_password(&input, "😀😀😀😀", configured.context())
+            .await
+            .unwrap_err();
     assert_eq!(failed.status_code(), 403);
     assert_eq!(db.table("accounts").await?, empty_accounts);
     probe.fail.store(false, std::sync::atomic::Ordering::SeqCst);
-    better_auth::plugins::password_management::set_password(
-        &input,
-        "😀😀😀😀",
-        configured.context(),
-    )
-    .await?;
-    use better_auth_core::entity::AuthAccount;
+    alibi::plugins::password_management::set_password(&input, "😀😀😀😀", configured.context())
+        .await?;
+    use alibi_core::entity::AuthAccount;
     assert_eq!(
         db.count_where("SELECT COUNT(*) FROM accounts WHERE user_id=$1", &[&user])
             .await?,
@@ -307,8 +299,8 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     let saved = configured.store().get_user_accounts(&user).await?;
     assert_eq!(saved[0].id(), credential.id());
     assert!(
-        better_auth_core::PasswordHasher::verify(
-            &better_auth_core::ScryptHasher,
+        alibi_core::PasswordHasher::verify(
+            &alibi_core::ScryptHasher,
             saved[0].password().unwrap(),
             "😀😀😀😀"
         )
@@ -316,7 +308,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     );
     assert_eq!(db.table("sessions").await?, sessions);
     let saved_accounts = db.table("accounts").await?;
-    let duplicate = better_auth::plugins::password_management::set_password(
+    let duplicate = alibi::plugins::password_management::set_password(
         &input,
         "😀😀😀😀😀",
         configured.context(),
@@ -325,7 +317,7 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
     .unwrap_err();
     assert!(matches!(
         duplicate,
-        better_auth_core::AuthError::Upstream {
+        alibi_core::AuthError::Upstream {
             code: "PASSWORD_ALREADY_SET",
             ..
         }
@@ -352,13 +344,10 @@ async fn server_otp_can_bootstrap_a_password_without_replacing_sessions<B: Backe
         .await?;
     // Cached presentation still works, but cannot authorize credential changes.
     authenticated(&configured, &policy_cookie, policy_email).await;
-    let denied = better_auth::plugins::password_management::set_password(
-        &input,
-        "😀😀😀😀",
-        configured.context(),
-    )
-    .await
-    .unwrap_err();
+    let denied =
+        alibi::plugins::password_management::set_password(&input, "😀😀😀😀", configured.context())
+            .await
+            .unwrap_err();
     assert_eq!(denied.status_code(), 401);
     assert_eq!(probe.events.lock().unwrap().len(), 6);
     assert_eq!(db.table("accounts").await?, saved_accounts);

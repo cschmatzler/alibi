@@ -12,7 +12,7 @@
     )
 )]
 
-extern crate self as better_auth;
+extern crate self as alibi;
 
 pub mod authenticated_user;
 
@@ -68,13 +68,13 @@ pub mod wire;
 #[doc(hidden)]
 pub use crate as __private_core;
 pub use adapter_record::{AdapterOutput, AdapterRecord};
+// Re-export commonly used items
+pub use alibi_macros::{AuthSchema, PluginConfig};
 pub use authenticated_user::AuthenticatedUser;
 // Re-export commonly used items
 pub use background_tasks::{
     BackgroundTaskCompletion, BackgroundTaskHandler, start_background_task,
 };
-// Re-export commonly used items
-pub use better_auth_macros::{AuthSchema, PluginConfig};
 pub use config::{
     AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, AuthConfig,
     AwaitedNotificationErrorPolicy, CookieAttributes, CookieCacheConfig, CookieCacheStrategy,

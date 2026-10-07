@@ -2,9 +2,9 @@ use super::PasskeyConfig;
 use super::source::{
     Verifier, credential::Passkey as WebauthnPasskey, crypto::COSEKeyType, data::AuthenticatorData,
 };
+use alibi_core::{AuthConfig, AuthError, AuthRequest, AuthResult};
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE, URL_SAFE_NO_PAD};
-use better_auth_core::{AuthConfig, AuthError, AuthRequest, AuthResult};
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use rand::seq::IndexedRandom as _;
@@ -220,10 +220,10 @@ pub(super) async fn build_registration_core(
 // The pinned verifier uses different legacy spellings in the two ceremonies.
 // Validate the original client data without altering the bytes covered by the signature.
 fn validate_token_binding(
-    client_data: &better_auth_core::utils::json::JsValue,
+    client_data: &alibi_core::utils::json::JsValue,
     unsupported_status: &str,
 ) -> Result<(), WebauthnError> {
-    use better_auth_core::utils::json::JsValue;
+    use alibi_core::utils::json::JsValue;
 
     let Some(binding) = client_data.get("tokenBinding") else {
         return Ok(());
@@ -257,9 +257,9 @@ pub(super) fn finish_core_registration(
     state: &RegistrationState,
     origin: &str,
 ) -> Result<WebauthnPasskey, WebauthnError> {
-    let client_data = better_auth_core::utils::json::from_slice::<
-        better_auth_core::utils::json::JsValue,
-    >(registration.response.client_data_json.as_ref())?;
+    let client_data = alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(
+        registration.response.client_data_json.as_ref(),
+    )?;
     if client_data
         .get("origin")
         .and_then(|origin_2| origin_2.as_str())
@@ -306,9 +306,9 @@ pub(super) fn finish_core_authentication(
     current_counter: u32,
     origin: &str,
 ) -> Result<AuthenticationResult, WebauthnError> {
-    let client_data = better_auth_core::utils::json::from_slice::<
-        better_auth_core::utils::json::JsValue,
-    >(authentication.response.client_data_json.as_ref())?;
+    let client_data = alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(
+        authentication.response.client_data_json.as_ref(),
+    )?;
     if client_data
         .get("origin")
         .and_then(|origin_2| origin_2.as_str())
@@ -388,7 +388,7 @@ pub(super) fn create_challenge_cookie(
         &claims,
         &EncodingKey::from_secret(auth_config.current_secret().as_bytes()),
     )?;
-    better_auth_core::utils::cookie_utils::create_cookie(
+    alibi_core::utils::cookie_utils::create_cookie(
         &challenge_cookie_name(auth_config, config),
         &signed,
         ttl_secs,

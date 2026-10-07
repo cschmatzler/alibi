@@ -1,13 +1,13 @@
 //! Shared database rate limits across independent storage instances.
 
 use super::{Backend, Db, Raw, TestResult, backend_tests, on_raw, postgres_tests};
-use better_auth_core::middleware::{Middleware, RateLimitConfig, RateLimitMiddleware};
-use better_auth_core::store::SchemaMigrator;
-use better_auth_core::{
+use alibi_core::middleware::{Middleware, RateLimitConfig, RateLimitMiddleware};
+use alibi_core::store::SchemaMigrator;
+use alibi_core::{
     AuthRequest, EndpointRateLimit, HttpMethod, PluginRateLimit, RateLimitDecision,
     RateLimitStorage,
 };
-use better_auth_sqlx::sqlx;
+use alibi_sqlx::sqlx;
 use std::{collections::HashMap, sync::Arc};
 
 backend_tests!(independent_sqlite_instances_preserve_quota_expiry_and_fail_closed);
@@ -16,18 +16,18 @@ postgres_tests!(independent_sqlite_instances_preserve_quota_expiry_and_fail_clos
 #[derive(Debug)]
 struct ApplicationRule;
 #[async_trait::async_trait]
-impl better_auth_core::middleware::rate_limit::RateLimitResolver for ApplicationRule {
+impl alibi_core::middleware::rate_limit::RateLimitResolver for ApplicationRule {
     async fn resolve(
         &self,
         request: &AuthRequest,
         inherited: &EndpointRateLimit,
-    ) -> better_auth_core::AuthResult<Option<EndpointRateLimit>> {
+    ) -> alibi_core::AuthResult<Option<EndpointRateLimit>> {
         assert_eq!(request.path, "/api/auth/dynamic-rule");
         assert_eq!(inherited.max_requests, 3.0, "first matching plugin wins");
         assert_eq!(inherited.window_seconds, 180.0);
         match request.headers.get("x-policy").map(String::as_str) {
             Some("disabled") => Ok(None),
-            Some("error") => Err(better_auth_core::AuthError::forbidden(
+            Some("error") => Err(alibi_core::AuthError::forbidden(
                 "application rate policy veto",
             )),
             _ => Ok(Some(EndpointRateLimit {
@@ -95,7 +95,7 @@ async fn independent_sqlite_instances_preserve_quota_expiry_and_fail_closed<B: B
             .storage(Arc::new(stores[0].clone()))
             .rule(
                 "/dynamic-rule",
-                better_auth_core::middleware::rate_limit::RateLimitRule::Dynamic(Arc::new(
+                alibi_core::middleware::rate_limit::RateLimitRule::Dynamic(Arc::new(
                     ApplicationRule,
                 )),
             ),

@@ -8,8 +8,8 @@ By default sessions and verification values (reset tokens, OTP codes, magic link
 ## Configure a backend
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::store::MemoryCacheAdapter;
+use alibi::AuthConfig;
+use alibi::store::MemoryCacheAdapter;
 use std::sync::Arc;
 
 fn auth_config(secret: &str) -> AuthConfig {
@@ -24,12 +24,12 @@ fn auth_config(secret: &str) -> AuthConfig {
 `MemoryCacheAdapter` is local to one process — good for development and tests. For several server processes, use the Redis adapter (`redis-cache` feature):
 
 ```toml title="Cargo.toml"
-better-auth = { package = "alibi", version = "0.1.0", features = ["axum", "redis-cache"] }
+alibi = { version = "0.1.1", features = ["axum", "redis-cache"] }
 ```
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::store::RedisAdapter;
+use alibi::AuthConfig;
+use alibi::store::RedisAdapter;
 use std::sync::Arc;
 
 async fn auth_config(secret: &str, redis_url: &str) -> Result<AuthConfig, redis::RedisError> {
@@ -46,7 +46,7 @@ async fn auth_config(secret: &str, redis_url: &str) -> Result<AuthConfig, redis:
 Application models that are cached must implement `serde::Deserialize`, and the user and session models need `secondary_storage` on their `AuthEntity` attribute so they can be snapshotted:
 
 ```rust nocheck
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
 #[auth(role = "session", table = "sessions", secondary_storage)]
 pub struct Session { /* … */ }
 ```
@@ -71,11 +71,11 @@ Cached credentials and user snapshots are authoritative. A SQL fallback for a *m
 | `secondary_storage` | none | Cache backend for verification values. Single-use values need atomic `get_and_delete` |
 | `store_in_database` | `false` | Persist in SQL as well. Without a secondary backend, SQL is always used |
 | `disable_cleanup` | `false` | Keep expired rows during lookup instead of removing them. An atomic consume still invalidates an expired proof it selects |
-| `store_identifier` | plain | Transform stored identifiers: store them `Hashed`, or hash only selected prefixes (for example `email-otp`) with a `better_auth::verification::VerificationIdentifierPolicy` |
+| `store_identifier` | plain | Transform stored identifiers: store them `Hashed`, or hash only selected prefixes (for example `email-otp`) with a `alibi::verification::VerificationIdentifierPolicy` |
 
 ## Writing a backend
 
-Implement `better_auth::store::CacheAdapter`:
+Implement `alibi::store::CacheAdapter`:
 
 | Method | Required | Used for |
 | --- | --- | --- |

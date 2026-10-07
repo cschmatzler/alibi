@@ -8,12 +8,12 @@ use crate::plugins::organization::{
     OrganizationConfig, OrganizationInvitationAcceptanceContext,
     OrganizationInvitationAcceptedContext,
 };
-use better_auth_core::entity::{AuthInvitation, AuthSession, AuthUser};
-use better_auth_core::session::SessionRequest;
-use better_auth_core::store::transaction;
-use better_auth_core::types::AddTeamMemberResult;
-use better_auth_core::wire::InvitationView;
-use better_auth_core::{
+use alibi_core::entity::{AuthInvitation, AuthSession, AuthUser};
+use alibi_core::session::SessionRequest;
+use alibi_core::store::transaction;
+use alibi_core::types::AddTeamMemberResult;
+use alibi_core::wire::InvitationView;
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema, CreateMember, InvitationStatus,
 };
 /// Source acceptance claims before its subsequent membership transaction.
@@ -23,7 +23,7 @@ use std::sync::Arc;
 #[derive(Clone)]
 pub(in crate::plugins::organization) struct AcceptanceTransport {
     request: Option<AuthRequest>,
-    call: Option<better_auth_core::endpoint::EndpointCall>,
+    call: Option<alibi_core::endpoint::EndpointCall>,
     cookie_header: Option<String>,
     cookies: Arc<std::sync::Mutex<Vec<String>>>,
 }
@@ -38,7 +38,7 @@ impl AcceptanceTransport {
         }
     }
     pub(in crate::plugins::organization) fn native(
-        call: &better_auth_core::endpoint::EndpointCall,
+        call: &alibi_core::endpoint::EndpointCall,
     ) -> Self {
         Self {
             request: None,
@@ -67,7 +67,7 @@ impl AcceptanceTransport {
             .or_else(|| {
                 self.call
                     .as_ref()
-                    .map(better_auth_core::endpoint::EndpointCall::take_response_headers)
+                    .map(alibi_core::endpoint::EndpointCall::take_response_headers)
             })
             .unwrap_or_default()
             .into_iter()
@@ -244,7 +244,7 @@ pub(in crate::plugins::organization) async fn accept<S: AuthSchema>(
                 }
             }
             if team_ids.len() == 1 {
-                use better_auth_core::utils::cookie_utils::{
+                use alibi_core::utils::cookie_utils::{
                     create_session_cookie_with_max_age, create_session_like_cookie,
                     related_cookie_name, sign_cookie_value, verify_cookie_value,
                 };

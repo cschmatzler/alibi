@@ -1,11 +1,11 @@
 //! Configurable teams and persisted organization access control.
-use async_trait::async_trait;
-use better_auth_core::store::TeamStore;
-use better_auth_core::types::{
+use alibi_core::store::TeamStore;
+use alibi_core::types::{
     CreateTeam, Organization, OrganizationPermissions, Team, TeamMember, UpdateTeam,
 };
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{AuthRequest, AuthResult};
+use alibi_core::wire::{SessionView, UserView};
+use alibi_core::{AuthRequest, AuthResult};
+use async_trait::async_trait;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Default)]
@@ -115,7 +115,7 @@ pub struct DefaultTeamContext {
     pub request: Option<AuthRequest>,
     pub user: UserView,
     pub session: Option<SessionView>,
-    pub config: Arc<better_auth_core::AuthConfig>,
+    pub config: Arc<alibi_core::AuthConfig>,
 }
 
 impl std::fmt::Debug for DefaultTeamContext {
@@ -200,14 +200,12 @@ pub fn default_organization_statements() -> OrganizationPermissions {
 
 /// Preserve explicit application API errors; ordinary team callback failures
 /// use the pinned empty HTTP 500 contract without exposing their private cause.
-pub(super) fn team_callback_error(
-    error: better_auth_core::AuthError,
-) -> better_auth_core::AuthError {
+pub(super) fn team_callback_error(error: alibi_core::AuthError) -> alibi_core::AuthError {
     match error {
-        error @ (better_auth_core::AuthError::Api { .. }
-        | better_auth_core::AuthError::Upstream { .. }
-        | better_auth_core::AuthError::CallbackFailure(_)) => error,
+        error @ (alibi_core::AuthError::Api { .. }
+        | alibi_core::AuthError::Upstream { .. }
+        | alibi_core::AuthError::CallbackFailure(_)) => error,
         error if error.status_code() != 500 => error,
-        error => better_auth_core::AuthError::CallbackFailure(Box::new(error)),
+        error => alibi_core::AuthError::CallbackFailure(Box::new(error)),
     }
 }

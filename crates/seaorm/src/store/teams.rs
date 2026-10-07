@@ -1,10 +1,10 @@
 use super::entities::{invitation, team, team_member};
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmUserModel};
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::{TeamStore, team_membership_key};
+use alibi_core::types::{AddTeamMemberResult, CreateTeam, Team, TeamMember, UpdateTeam};
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::{TeamStore, team_membership_key};
-use better_auth_core::types::{AddTeamMemberResult, CreateTeam, Team, TeamMember, UpdateTeam};
 use chrono::Utc;
 use sea_orm::ExprTrait;
 use sea_orm::{

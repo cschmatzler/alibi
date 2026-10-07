@@ -4,7 +4,7 @@ impl DeviceAuthorizationPlugin {
         &self,
         body: DeviceTokenRequest,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         if !self.validate_client_id(&body.client_id).await? {
             return device_error_response(400, "invalid_grant", INVALID_CLIENT_ID);

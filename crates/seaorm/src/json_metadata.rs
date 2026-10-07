@@ -16,7 +16,7 @@
 /// serialization.
 ///
 /// ```compile_fail
-/// use better_auth_seaorm::JsonMetadata;
+/// use alibi_seaorm::JsonMetadata;
 /// let mut metadata = JsonMetadata::from(serde_json::json!({"version": "old"}));
 /// metadata.0["version"] = serde_json::json!("edited");
 /// ```
@@ -30,7 +30,7 @@ impl JsonMetadata {
         backend: sea_orm::DbBackend,
     ) -> Result<Self, serde_json::Error> {
         let text = if backend == sea_orm::DbBackend::Sqlite {
-            Some(better_auth_core::utils::json::to_string(&value)?)
+            Some(alibi_core::utils::json::to_string(&value)?)
         } else {
             None
         };
@@ -44,7 +44,7 @@ impl PartialEq for JsonMetadata {
 }
 impl<'de> serde::Deserialize<'de> for JsonMetadata {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        better_auth_core::utils::json::deserialize_value(deserializer).map(Self::from)
+        alibi_core::utils::json::deserialize_value(deserializer).map(Self::from)
     }
 }
 impl From<serde_json::Value> for JsonMetadata {
@@ -71,7 +71,7 @@ impl sea_orm::sea_query::ValueType for JsonMetadata {
         match v {
             sea_orm::Value::Json(Some(v)) => Ok(Self::from(*v)),
             sea_orm::Value::String(Some(text)) => {
-                better_auth_core::utils::json::from_slice::<serde_json::Value>(text.as_bytes())
+                alibi_core::utils::json::from_slice::<serde_json::Value>(text.as_bytes())
                     .map(Self::from)
                     .map_err(|_error| sea_orm::sea_query::ValueTypeErr)
             }
@@ -143,24 +143,24 @@ pub trait MetadataBinding: Sized {
     /// # Errors
     ///
     /// Returns an error if the value cannot be serialized for `backend`.
-    fn prepare(self, backend: sea_orm::DbBackend) -> better_auth_core::AuthResult<Self>;
+    fn prepare(self, backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self>;
 }
 
 impl MetadataBinding for serde_json::Value {
-    fn prepare(self, _backend: sea_orm::DbBackend) -> better_auth_core::AuthResult<Self> {
-        Ok(better_auth_core::utils::json::to_value(&self)?)
+    fn prepare(self, _backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self> {
+        Ok(alibi_core::utils::json::to_value(&self)?)
     }
 }
 
 impl MetadataBinding for JsonMetadata {
-    fn prepare(self, backend: sea_orm::DbBackend) -> better_auth_core::AuthResult<Self> {
-        let value = better_auth_core::utils::json::to_value(&self.0)?;
+    fn prepare(self, backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self> {
+        let value = alibi_core::utils::json::to_value(&self.0)?;
         Ok(Self::for_backend(value, backend)?)
     }
 }
 
 impl<T: MetadataBinding> MetadataBinding for Option<T> {
-    fn prepare(self, backend: sea_orm::DbBackend) -> better_auth_core::AuthResult<Self> {
+    fn prepare(self, backend: sea_orm::DbBackend) -> alibi_core::AuthResult<Self> {
         self.map(|value| value.prepare(backend)).transpose()
     }
 }

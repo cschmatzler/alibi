@@ -9,11 +9,11 @@ This page builds a working Axum server with email and password authentication on
 
 ## 1. Add the dependencies
 
-Install Alibi `0.1.0` from crates.io:
+Install Alibi `0.1.1` from crates.io:
 
 ```toml title="Cargo.toml"
 [dependencies]
-better-auth = { package = "alibi", version = "0.1.0", features = ["axum"] }
+alibi = { version = "0.1.1", features = ["axum"] }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
@@ -43,8 +43,8 @@ The library never reads these itself and does not load `.env` files; the code be
 ## 3. Generate the schema
 
 ```bash
-cargo install alibi-cli --version 0.1.0 --locked
-better-auth-rs generate -o src/auth_schema.rs
+cargo install alibi-cli --version 0.1.1 --locked
+alibi generate -o src/auth_schema.rs
 ```
 
 The generated file is yours to keep and edit. It contains:
@@ -62,10 +62,10 @@ mod auth_schema;
 
 use auth_schema::{AppAuthSchema, run_app_migrations};
 use axum::Router;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::sqlx::{SqlxPool, SqlxStore};
-use better_auth::{AuthConfig, BetterAuth};
+use alibi::integrations::axum::AxumIntegration;
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::sqlx::{SqlxPool, SqlxStore};
+use alibi::{AuthConfig, BetterAuth};
 use std::sync::Arc;
 
 #[tokio::main]

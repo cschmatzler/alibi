@@ -6,23 +6,23 @@ use axum::{
     http::HeaderMap,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::OAuthProvider;
+use alibi::plugins::{
     AccountManagementPlugin, EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin,
     UserManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_core::{
     CreateAccount,
     store::{AccountStore, UserStore},
 };
-use better_auth_seaorm::DatabaseConnection;
-use better_auth_seaorm::sea_orm::{
+use alibi_seaorm::DatabaseConnection;
+use alibi_seaorm::sea_orm::{
     ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, QueryOrder, Set,
 };
-use better_auth_seaorm::store::entities::{account, session, user};
+use alibi_seaorm::store::entities::{account, session, user};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -83,7 +83,7 @@ pub(crate) async fn router(
                 ));
             }
             let policy = provider.authorization.as_mut().ok_or_else(|| {
-                better_auth::AuthError::internal("Missing builtin fixture policy")
+                alibi::AuthError::internal("Missing builtin fixture policy")
             })?;
             policy.disable_default_scopes = mode.starts_with("disabled");
             if mode == "configured" || mode == "disabled-configured" {
@@ -148,7 +148,7 @@ pub(crate) async fn router(
         let policy = provider
             .authorization
             .as_mut()
-            .ok_or_else(|| better_auth::AuthError::internal("Missing GitLab policy"))?;
+            .ok_or_else(|| alibi::AuthError::internal("Missing GitLab policy"))?;
         policy.disable_default_scopes = mode.starts_with("disabled");
         if mode == "configured" || mode == "disabled-configured" {
             policy.configured_scopes.push("configured-scope".into());
@@ -242,7 +242,7 @@ pub(crate) async fn router(
                     let date = DateTime::parse_from_rfc3339(timestamp)
                         .map_err(|_| axum::http::StatusCode::BAD_REQUEST)?
                         .with_timezone(&Utc);
-                    use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+                    use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
                     db.execute_raw(Statement::from_sql_and_values(
                         DbBackend::Sqlite,
                         "UPDATE accounts SET created_at = ?, updated_at = ? WHERE id = ?",

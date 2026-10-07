@@ -1,17 +1,17 @@
 //! Verification generations, lifecycle hooks and compare-and-swap winners.
 
 use super::{Backend, Db, Raw, TestResult, backend_tests, postgres_tests};
-use async_trait::async_trait;
-use better_auth::{AuthConfig, AuthSchema};
-use better_auth_core::store::SchemaMigrator;
-use better_auth_core::store::{
+use alibi::{AuthConfig, AuthSchema};
+use alibi_core::store::SchemaMigrator;
+use alibi_core::store::{
     BoxedTransactionValue, DatabaseHookContext, DatabaseHooks, HookBackend, HookControl,
     TransactionStore, VerificationStore,
 };
-use better_auth_core::{
+use alibi_core::{
     AuthAccount, AuthError, AuthResult, AuthSession, AuthUser, AuthVerification, CreateAccount,
     CreateSession, CreateUser, CreateVerification,
 };
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -303,8 +303,7 @@ async fn transactional_verification_creation_rolls_back_with_signup_work<B: Back
                         .await?;
                     drop(
                         tx.create_session(CreateSession {
-                            additional_fields: better_auth_core::field_policy::FieldValues::default(
-                            ),
+                            additional_fields: alibi_core::field_policy::FieldValues::default(),
                             token: Some(identifier.to_owned()),
                             user_id: user.id().into_owned(),
                             expires_at: expires,
@@ -1035,12 +1034,12 @@ async fn native_uuid_verification_schema_reserves_and_consumes_deterministically
     reason = "SeaORM's derive emits public entity associated types"
 )]
 pub(crate) mod seaorm_uuid {
-    use better_auth::AuthSchema;
-    use better_auth_core::entity::AuthVerification;
-    use better_auth_core::{AuthError, AuthResult, CreateVerification};
-    use better_auth_seaorm::SeaOrmVerificationModel;
-    use better_auth_seaorm::sea_orm::{self, Set, entity::prelude::*};
-    use better_auth_seaorm::store::entities::{account, session, user};
+    use alibi::AuthSchema;
+    use alibi_core::entity::AuthVerification;
+    use alibi_core::{AuthError, AuthResult, CreateVerification};
+    use alibi_seaorm::SeaOrmVerificationModel;
+    use alibi_seaorm::sea_orm::{self, Set, entity::prelude::*};
+    use alibi_seaorm::store::entities::{account, session, user};
     use chrono::{DateTime, Utc};
     use std::borrow::Cow;
 
@@ -1135,14 +1134,12 @@ pub(crate) mod seaorm_uuid {
 }
 
 pub(crate) mod sqlx_uuid {
-    use better_auth::AuthSchema;
-    use better_auth_core::entity::AuthVerification;
-    use better_auth_core::{AuthError, AuthResult, CreateVerification};
-    use better_auth_sqlx::sqlx::{self, Row, postgres::PgRow, sqlite::SqliteRow};
-    use better_auth_sqlx::store::entities::{account, session, user};
-    use better_auth_sqlx::{
-        ActiveRow, ColumnDef, SqlValue, SqlxModel, SqlxValue, SqlxVerificationModel,
-    };
+    use alibi::AuthSchema;
+    use alibi_core::entity::AuthVerification;
+    use alibi_core::{AuthError, AuthResult, CreateVerification};
+    use alibi_sqlx::sqlx::{self, Row, postgres::PgRow, sqlite::SqliteRow};
+    use alibi_sqlx::store::entities::{account, session, user};
+    use alibi_sqlx::{ActiveRow, ColumnDef, SqlValue, SqlxModel, SqlxValue, SqlxVerificationModel};
     use chrono::{DateTime, Utc};
     use std::borrow::Cow;
     use uuid::Uuid;

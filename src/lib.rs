@@ -5,9 +5,9 @@
 //! ## Quick Start
 //!
 //! ```rust,ignore
-//! use better_auth::{AuthConfig, AuthSchema, BetterAuth};
-//! use better_auth::plugins::EmailPasswordPlugin;
-//! use better_auth::seaorm::{Database, SeaOrmStore};
+//! use alibi::{AuthConfig, AuthSchema, BetterAuth};
+//! use alibi::plugins::EmailPasswordPlugin;
+//! use alibi::seaorm::{Database, SeaOrmStore};
 //!
 //! #[tokio::main]
 //! async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -38,7 +38,7 @@
     )
 )]
 
-extern crate self as better_auth;
+extern crate self as alibi;
 
 mod runtime;
 
@@ -62,13 +62,13 @@ pub mod telemetry;
 pub mod wire;
 
 #[doc(hidden)]
-pub use better_auth_core as __private_core;
-pub use better_auth_core::PluginConfig;
-pub use better_auth_core::{
+pub use alibi_core as __private_core;
+pub use alibi_core::PluginConfig;
+pub use alibi_core::{
     AuthConfig, AuthError, AuthResult, AuthSchema, AuthenticatedUser,
     AwaitedNotificationErrorPolicy, BackgroundTaskCompletion, BackgroundTaskHandler,
     CallbackContext, ManagedSecrets, PasswordHashContext, PasswordHashHook, PasswordHasher,
     ScryptHasher, hash_password, verify_password,
 };
-pub use better_auth_core::{endpoint, field_policy, user_validation, utils, verification};
+pub use alibi_core::{endpoint, field_policy, user_validation, utils, verification};
 pub use runtime::{AuthBuilder, BetterAuth};

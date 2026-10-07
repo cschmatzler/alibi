@@ -1,4 +1,4 @@
-use better_auth_core::AuthError;
+use alibi_core::AuthError;
 
 pub(super) const fn invalid_otp() -> AuthError {
     AuthError::Upstream {

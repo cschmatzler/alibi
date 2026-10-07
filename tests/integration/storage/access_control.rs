@@ -1,16 +1,16 @@
 //! Public operator decisions guard real writes after dynamic-role loading.
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
-use better_auth::plugins::access::{
+use alibi::plugins::access::{
     ActionRequest, AuthorizeRequest, AuthorizeResponse, Connector, create_access_control, role,
 };
-use better_auth::plugins::organization::{
+use alibi::plugins::organization::{
     DynamicAccessControlConfig, OrganizationConfig,
     handlers::extension_common::{has_permissions, organization_roles},
 };
-use better_auth_core::store::{OrganizationRoleStore, OrganizationStore};
-use better_auth_core::types::{CreateOrganizationRole, OrganizationPermissions};
-use better_auth_core::{AuthConfig, AuthContext, CreateOrganization, CreateTeam};
+use alibi_core::store::{OrganizationRoleStore, OrganizationStore};
+use alibi_core::types::{CreateOrganizationRole, OrganizationPermissions};
+use alibi_core::{AuthConfig, AuthContext, CreateOrganization, CreateTeam};
 use serde_json::{Value, json};
 use std::sync::Arc;
 

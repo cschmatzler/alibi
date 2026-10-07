@@ -1,6 +1,6 @@
 //! Generated application migrations must support the API key plugin's physical contract.
-use better_auth::{AuthConfig, AuthSchema};
-use better_auth_core::store::AuthStore;
+use alibi::{AuthConfig, AuthSchema};
+use alibi_core::store::AuthStore;
 use std::sync::Arc;
 
 type TestResult = Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -33,7 +33,7 @@ mod sqlx_schema {
     async fn exercise_schema(db: crate::storage::Db) -> super::TestResult {
         let pool = SqlxPool::connect(&db.url).await?;
         run_app_migrations(&pool).await?;
-        let store = std::sync::Arc::new(better_auth::sqlx::SqlxStore::<AppAuthSchema>::new(
+        let store = std::sync::Arc::new(alibi::sqlx::SqlxStore::<AppAuthSchema>::new(
             super::config(),
             pool.clone(),
         ));
@@ -62,9 +62,9 @@ mod seaorm_schema {
         exercise_schema(crate::storage::Db::postgres().await?).await
     }
     async fn exercise_schema(db: crate::storage::Db) -> super::TestResult {
-        let database = better_auth::seaorm::Database::connect(&db.url).await?;
+        let database = alibi::seaorm::Database::connect(&db.url).await?;
         run_app_migrations(&database).await?;
-        let store = std::sync::Arc::new(better_auth::seaorm::SeaOrmStore::<AppAuthSchema>::new(
+        let store = std::sync::Arc::new(alibi::seaorm::SeaOrmStore::<AppAuthSchema>::new(
             super::config(),
             database.clone(),
         ));
@@ -81,12 +81,12 @@ fn config() -> AuthConfig {
 }
 
 async fn exercise<S: AuthSchema>(store: Arc<dyn AuthStore<S>>) -> TestResult {
-    use better_auth::prelude::{AuthRequest, HttpMethod};
-    let auth = better_auth::BetterAuth::<S>::new(config())
+    use alibi::prelude::{AuthRequest, HttpMethod};
+    let auth = alibi::BetterAuth::<S>::new(config())
         .store_arc(store)
-        .plugin(better_auth::plugins::EmailPasswordPlugin::new())
-        .plugin(better_auth::plugins::ApiKeyPlugin::with_config(
-            better_auth::plugins::ApiKeyConfig::default(),
+        .plugin(alibi::plugins::EmailPasswordPlugin::new())
+        .plugin(alibi::plugins::ApiKeyPlugin::with_config(
+            alibi::plugins::ApiKeyConfig::default(),
         ))
         .build()
         .await?;
@@ -116,7 +116,7 @@ async fn exercise<S: AuthSchema>(store: Arc<dyn AuthStore<S>>) -> TestResult {
         .ok_or("signup lacks token")?;
     let cookie = format!(
         "better-auth.session_token={}",
-        better_auth_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
+        alibi_core::utils::cookie_utils::sign_cookie_value(token, &auth.config().secret)
     );
     let request = AuthRequest::from_parts(
         HttpMethod::Post,

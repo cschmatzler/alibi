@@ -1,7 +1,7 @@
 //! Typed account-cookie payload boundary for the shared authenticated JWE codec.
 
 use super::state::AccountCookiePayload;
-use better_auth_core::{AuthError, AuthResult, utils::jwe};
+use alibi_core::{AuthError, AuthResult, utils::jwe};
 
 pub(super) fn encode(
     secret: &str,
@@ -45,7 +45,7 @@ mod tests {
         .unwrap();
         for name in ["valid", "noKid"] {
             let decoded = crate::plugins::oauth::state::decode_account_cookie_value(
-                &better_auth_core::AuthConfig::new(secret),
+                &alibi_core::AuthConfig::new(secret),
                 (*(vectors)
                     .get(name)
                     .expect("fixture contains the requested index"))
@@ -64,7 +64,7 @@ mod tests {
         for name in ["wrongSalt", "wrongSecret", "expired", "gcm", "jws"] {
             assert!(
                 crate::plugins::oauth::state::decode_account_cookie_value(
-                    &better_auth_core::AuthConfig::new(secret),
+                    &alibi_core::AuthConfig::new(secret),
                     (*(vectors)
                         .get(name)
                         .expect("fixture contains the requested index"))
@@ -93,7 +93,7 @@ mod tests {
             *parts.get_mut(segment).expect("fixture segment exists") = BASE64.encode(bytes);
             assert!(
                 crate::plugins::oauth::state::decode_account_cookie_value(
-                    &better_auth_core::AuthConfig::new(secret),
+                    &alibi_core::AuthConfig::new(secret),
                     &parts.join(".")
                 )
                 .is_err(),

@@ -3,12 +3,12 @@ use super::entities::organization_role::Model;
 use crate::model::{self, ActiveRow, SqlxModel};
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
-use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::OrganizationRoleStore;
-use better_auth_core::types::{
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::OrganizationRoleStore;
+use alibi_core::types::{
     CreateOrganizationRole, OrganizationRole, OrganizationRoleSelector, UpdateOrganizationRole,
 };
+use async_trait::async_trait;
 use chrono::Utc;
 use uuid::Uuid;
 

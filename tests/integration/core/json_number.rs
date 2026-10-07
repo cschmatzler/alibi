@@ -1,21 +1,21 @@
 //! JSON wire conversion must not mask incorrect persisted metadata or mutate delivery inputs.
 
-use async_trait::async_trait;
-use better_auth::plugins::magic_link::{
+use alibi::plugins::magic_link::{
     MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, SendMagicLink,
 };
-use better_auth::plugins::{ApiKeyPlugin, EmailPasswordPlugin};
-use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-use better_auth_core::utils::cookie_utils::create_session_cookie;
-use better_auth_core::{
+use alibi::plugins::{ApiKeyPlugin, EmailPasswordPlugin};
+use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi_core::utils::cookie_utils::create_session_cookie;
+use alibi_core::{
     AuthRequest, AuthResponse, AuthResult, CreateOrganization, HttpMethod, UpdateOrganization,
 };
-use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-use better_auth_seaorm::{Database, SeaOrmStore};
+use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+use alibi_seaorm::{Database, SeaOrmStore};
+use async_trait::async_trait;
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
 
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 const ORIGIN: &str = "http://json-numbers.fixture.test";
 
@@ -31,7 +31,7 @@ impl SendMagicLink for Sender {
     async fn send(
         &self,
         delivery: &MagicLinkDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.0.lock().unwrap().push(delivery.clone());
         Ok(())
@@ -56,7 +56,7 @@ async fn post(
     }
     request.body = Some(body.as_bytes().to_vec());
     let response = auth.handle_request(request).await.unwrap();
-    let payload = better_auth_core::utils::json::from_slice(&response.body).unwrap();
+    let payload = alibi_core::utils::json::from_slice(&response.body).unwrap();
     (response, payload)
 }
 
@@ -70,7 +70,7 @@ mod tests {
     async fn magic_delivery_retains_decoded_numbers_until_serialization() {
         let config = AuthConfig::new("json-delivery-secret-minimum-32-characters").base_url(ORIGIN);
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let sender = Arc::new(Sender::default());
@@ -98,20 +98,20 @@ mod tests {
         assert_eq!(
             metadata
                 .get("2")
-                .and_then(better_auth_core::utils::json::JsValue::as_f64),
+                .and_then(alibi_core::utils::json::JsValue::as_f64),
             Some(f64::INFINITY)
         );
         assert!(
             metadata
                 .get("1")
-                .and_then(better_auth_core::utils::json::JsValue::as_f64)
+                .and_then(alibi_core::utils::json::JsValue::as_f64)
                 .unwrap()
                 .is_sign_negative()
         );
         assert_eq!(
             metadata
                 .get("rounded")
-                .and_then(better_auth_core::utils::json::JsValue::as_f64),
+                .and_then(alibi_core::utils::json::JsValue::as_f64),
             Some(9_007_199_254_740_992.0)
         );
         assert_eq!(
@@ -154,7 +154,7 @@ mod tests {
         assert_eq!(
             metadata
                 .get("2")
-                .and_then(better_auth_core::utils::json::JsValue::as_f64),
+                .and_then(alibi_core::utils::json::JsValue::as_f64),
             Some(f64::INFINITY)
         );
         drop(deliveries);
@@ -170,7 +170,7 @@ mod tests {
     async fn arbitrary_metadata_stores_javascript_json_and_rejects_foreign_updates() {
         let config = AuthConfig::new("json-storage-secret-minimum-32-characters").base_url(ORIGIN);
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let auth = AuthBuilder::new(config.clone())
@@ -290,7 +290,7 @@ mod tests {
                 .unwrap_or(&Value::Null))
         );
 
-        let mut native_metadata = better_auth_core::utils::json::parse_value(METADATA)
+        let mut native_metadata = alibi_core::utils::json::parse_value(METADATA)
             .unwrap()
             .to_json_value()
             .unwrap();
@@ -393,11 +393,11 @@ mod tests {
     // (17 significant digits since 3.52) are the engine's, not the adapter's.
     #[tokio::test]
     async fn sqlite_numeric_user_text_affinity_preserves_binding_and_uniqueness() {
-        use better_auth_core::store::NumericTextInput::{Integer, Real};
-        use better_auth_core::{AuthUser, CreateUser};
+        use alibi_core::store::NumericTextInput::{Integer, Real};
+        use alibi_core::{AuthUser, CreateUser};
         let config = AuthConfig::new("numeric-binding-secret-minimum-32-characters");
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let auth = AuthBuilder::new(config.clone())
@@ -476,13 +476,13 @@ mod tests {
     async fn malformed_json_cannot_issue_magic_link_proofs_or_deliver_notifications() {
         let config = AuthConfig::new("json-parser-secret-minimum-32-characters").base_url(ORIGIN);
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let sender = Arc::new(Sender::default());
         let auth = AuthBuilder::new(config.clone())
             .store(SeaOrmStore::<Schema>::new(config, database.clone()))
-            .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(MagicLinkPlugin::new(MagicLinkConfig {
                 send_magic_link: Some(Arc::<Sender>::clone(&sender)),
                 ..Default::default()

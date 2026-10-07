@@ -1,22 +1,22 @@
 //! Explicit session configurations and trusted persisted-clock controls.
 use crate::TestSchema;
 use axum::{Json, Router, http::StatusCode, routing::post};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::api_key::{ApiKeyConfig, ApiKeyPlugin};
-use better_auth::plugins::multi_session::MultiSessionPlugin;
-use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
-use better_auth::plugins::password_management::SendResetPassword;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::api_key::{ApiKeyConfig, ApiKeyPlugin};
+use alibi::plugins::multi_session::MultiSessionPlugin;
+use alibi::plugins::one_time_token::OneTimeTokenPlugin;
+use alibi::plugins::password_management::SendResetPassword;
+use alibi::plugins::{
     AdminPlugin, EmailPasswordPlugin, OrganizationPlugin, PasswordManagementPlugin,
     SessionManagementPlugin, TwoFactorPlugin, UserManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_core::store::{CacheAdapter, MemoryCacheAdapter};
-use better_auth_seaorm::sea_orm::{
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
+use alibi_seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, sea_query::Expr,
 };
-use better_auth_seaorm::store::entities::session;
+use alibi_seaorm::store::entities::session;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -67,7 +67,7 @@ pub(super) async fn router(
         }
         if name == "session-cookie-cleanup" {
             config.account.store_account_cookie = true;
-            config.account.store_state_strategy = better_auth::config::OAuthStateStrategy::Cookie;
+            config.account.store_state_strategy = alibi::config::OAuthStateStrategy::Cookie;
         }
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(crate::backend::store::<TestSchema>(

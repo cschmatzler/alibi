@@ -1,8 +1,8 @@
 //! Wallet owner lookup and atomic user deletion.
 
 use super::{Backend, Db, TestResult, backend_tests};
-use better_auth_core::store::{UserStore, WalletAddressStore};
-use better_auth_core::{AuthError, AuthUser, CreateUser, CreateWalletAddress};
+use alibi_core::store::{UserStore, WalletAddressStore};
+use alibi_core::{AuthError, AuthUser, CreateUser, CreateWalletAddress};
 
 backend_tests!(wallet_owner_lookup_and_user_deletion_keep_state_atomic);
 

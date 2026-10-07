@@ -4,7 +4,7 @@
 //! `NULL` for each column rather than an untyped text parameter.
 
 use crate::pool::Engine;
-use better_auth_core::error::AuthResult;
+use alibi_core::error::AuthResult;
 use chrono::{DateTime, NaiveDateTime, Utc};
 
 /// A typed value bound to one SQL parameter.

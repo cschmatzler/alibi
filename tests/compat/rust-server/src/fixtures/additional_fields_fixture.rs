@@ -8,26 +8,26 @@ use axum::{
     extract::Query,
     routing::{get, post},
 };
-use better_auth::field_policy::{FieldConfig, FieldConfigs};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::magic_link::{
+use alibi::field_policy::{FieldConfig, FieldConfigs};
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::magic_link::{
     MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, SendMagicLink,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     AccountManagementPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OAuthPlugin,
     OpenApiPlugin, PasswordManagementPlugin, SessionManagementPlugin, UserManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::{
     AuthAccount, AuthInitContext, AuthPlugin, AuthRoute, AuthSession, AuthUser,
     store::{AdapterAfterHook, AdapterEvent, AuthStore},
     utils::json::JsValue,
 };
-use better_auth_seaorm::sea_orm::{
+use alibi_seaorm::sea_orm::{
     ConnectionTrait, Database, DatabaseConnection, DbBackend, Statement,
 };
-use better_auth_seaorm::{DatabaseHooks, HookControl};
+use alibi_seaorm::{DatabaseHooks, HookControl};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
@@ -48,7 +48,7 @@ impl SendMagicLink for Application {
     async fn send(
         &self,
         delivery: &MagicLinkDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.events.lock().expect("application delivery").push(json!({
             "phase":"delivery", "delivery":delivery, "metadataPresent":delivery.metadata.is_some()
@@ -83,7 +83,7 @@ impl Fixture {
         Ok(())
     }
 }
-fn db_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
+fn db_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 fn fields(
@@ -160,7 +160,7 @@ fn fields(
                     if entity == "session" && name == "label" && matches!(value.as_ref().and_then(Value::as_str), Some("collection-slow" | "collection-slower")) {
                         let delay = if value.as_ref().and_then(Value::as_str) == Some("collection-slower") { 400 } else { 200 };
                         tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
-                        let request = better_auth_core::hooks::current_request_hook_context();
+                        let request = alibi_core::hooks::current_request_hook_context();
                         let mut receipt = json!({"phase":"settled","entity":entity,"field":name,"value":value,"requestScoped":request.as_ref().is_some_and(|context| context.path.ends_with("/change-password"))});
                         if request.as_ref().is_some_and(|context| context.path.ends_with("/list-sessions")) {
                             receipt["requestPath"] = json!(request.as_ref().map(|context| context.path.rsplit("/api/auth").next().unwrap_or(&context.path)));
@@ -172,7 +172,7 @@ fn fields(
                         && value.as_ref().and_then(Value::as_str) == Some("collection-coordinated-slow")
                     {
                         pending.notified().await;
-                        let request = better_auth_core::hooks::current_request_hook_context();
+                        let request = alibi_core::hooks::current_request_hook_context();
                         events.lock().expect("application receipts").push(json!({
                             "phase": "settled", "entity": entity, "field": name, "value": value,
                             "requestScoped": request.as_ref().is_some_and(|context| context.path.ends_with("/change-password")),
@@ -368,20 +368,20 @@ impl AuthPlugin<ApplicationSchema> for Application {
     }
     async fn on_request(
         &self,
-        _: &better_auth_core::AuthRequest,
-        _: &better_auth_core::AuthContext<ApplicationSchema>,
-    ) -> AuthResult<Option<better_auth_core::AuthResponse>> {
+        _: &alibi_core::AuthRequest,
+        _: &alibi_core::AuthContext<ApplicationSchema>,
+    ) -> AuthResult<Option<alibi_core::AuthResponse>> {
         Ok(None)
     }
     async fn after_request(
         &self,
-        request: &better_auth_core::AuthRequest,
-        _: &better_auth_core::AuthContext<ApplicationSchema>,
-        response: better_auth_core::AuthResponse,
-    ) -> AuthResult<better_auth_core::AuthResponse> {
+        request: &alibi_core::AuthRequest,
+        _: &alibi_core::AuthContext<ApplicationSchema>,
+        response: alibi_core::AuthResponse,
+    ) -> AuthResult<alibi_core::AuthResponse> {
         if self.mode == "cached" {
             let snapshot =
-                better_auth_core::session::cookie_cache::runtime::published_session_snapshot(
+                alibi_core::session::cookie_cache::runtime::published_session_snapshot(
                     request,
                 );
             let record = snapshot
@@ -409,8 +409,8 @@ impl AuthPlugin<ApplicationSchema> for Application {
     }
 }
 #[async_trait::async_trait]
-impl better_auth_core::CookieCacheVersionResolver for Application {
-    async fn resolve(&self, context: &better_auth_core::CacheVersionContext) -> AuthResult<String> {
+impl alibi_core::CookieCacheVersionResolver for Application {
+    async fn resolve(&self, context: &alibi_core::CacheVersionContext) -> AuthResult<String> {
         let user_output = context.user_output();
         let session_output = context.session_output();
         let user = serde_json::to_value(context.user())?;
@@ -507,7 +507,7 @@ impl DatabaseHooks<ApplicationSchema, crate::backend::Backend> for Application {
     async fn before_update_session(
         &self,
         token: &str,
-        fields: &mut better_auth::field_policy::FieldValues,
+        fields: &mut alibi::field_policy::FieldValues,
         _: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         if self.mode != "cached" {
@@ -591,19 +591,19 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
     settings.account.store_account_cookie = mode == "provider";
     if mode == "provider" {
         settings.account.cookie_max_age = Some(1.75);
-        settings.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+        settings.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
             enabled: false,
             max_age: 1.75,
             ..Default::default()
         });
         settings.advanced.cookies.insert(
             "account_data".into(),
-            better_auth_core::config::CookieOverride {
+            alibi_core::config::CookieOverride {
                 name: None,
-                attributes: better_auth_core::config::CookieAttributes {
+                attributes: alibi_core::config::CookieAttributes {
                     max_age: None,
                     http_only: Some(false),
-                    same_site: Some(better_auth_core::config::SameSite::Strict),
+                    same_site: Some(alibi_core::config::SameSite::Strict),
                     ..Default::default()
                 },
             },
@@ -642,9 +642,9 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
         &application.drained,
     );
     if mode == "cached" {
-        settings.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+        settings.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
             enabled: true,
-            version: Some(better_auth_core::CookieCacheVersion::Resolver(Arc::new(
+            version: Some(alibi_core::CookieCacheVersion::Resolver(Arc::new(
                 application.clone(),
             ))),
             ..Default::default()
@@ -667,7 +667,7 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
         )
         .plugin(EmailVerificationPlugin::new())
         .plugin(if mode == "provider" {
-            let mut options = better_auth::plugins::oauth::AtlassianOptions::new(
+            let mut options = alibi::plugins::oauth::AtlassianOptions::new(
                 "fixture-social-client",
                 "fixture-social-secret",
             );
@@ -677,7 +677,7 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
                     .lock()
                     .map_err(|error| error.to_string())?
                     .push(profile.clone());
-                Ok(better_auth::plugins::oauth::OAuthUserInfo {
+                Ok(alibi::plugins::oauth::OAuthUserInfo {
                     additional_fields: serde_json::Map::from_iter([
                         ("label".into(), profile["nickname"].clone()),
                         ("hidden".into(), json!("provider-cannot-set-hidden")),
@@ -694,7 +694,7 @@ async fn application(config: &AuthConfig, mode: &'static str) -> AuthResult<(Rou
                 })
             });
             let mut provider =
-                better_auth::plugins::oauth::OAuthProvider::atlassian_with_options(options);
+                alibi::plugins::oauth::OAuthProvider::atlassian_with_options(options);
             provider.token_url = format!("{}/__test/atlassian/token", config.base_url);
             provider.override_user_info_on_sign_in = true;
             OAuthPlugin::new().add_provider("atlassian", provider)

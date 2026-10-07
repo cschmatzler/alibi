@@ -1,8 +1,8 @@
-use better_auth::AuthSchema;
-use better_auth::seaorm::sea_orm;
-use better_auth::seaorm::sea_orm::entity::prelude::*;
-use better_auth::seaorm::sea_orm::{ConnectionTrait, Schema};
-use better_auth::seaorm::{AuthEntity, DatabaseConnection};
+use alibi::AuthSchema;
+use alibi::seaorm::sea_orm;
+use alibi::seaorm::sea_orm::entity::prelude::*;
+use alibi::seaorm::sea_orm::{ConnectionTrait, Schema};
+use alibi::seaorm::{AuthEntity, DatabaseConnection};
 mod user {
     use super::*;
     #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel, AuthEntity)]

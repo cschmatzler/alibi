@@ -8,7 +8,7 @@ pub(in crate::plugins) async fn complete_link_social(
     profile: &serde_json::Value,
     tokens: &OAuthTokenSet,
     link: &OAuthStateLink,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(), OAuthSignInError> {
     complete_link_social_with_raw_email(
         provider_name,
@@ -29,7 +29,7 @@ pub(in crate::plugins::oauth::handlers) async fn complete_link_social_with_raw_e
     profile: &serde_json::Value,
     tokens: &OAuthTokenSet,
     link: &OAuthStateLink,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     (raw_email, raw_policy): (
         Option<&serde_json::Value>,
         Option<&super::super::providers::OAuthAuthorizationPolicy>,
@@ -138,8 +138,8 @@ pub(in crate::plugins::oauth::handlers) async fn sign_in_with_id_token_core(
     body: &SocialSignInRequest,
     id_token: &OAuthIdTokenRequest,
     provider: &OAuthProvider,
-    meta: &better_auth_core::RequestMeta,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    meta: &alibi_core::RequestMeta,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SocialSignInResponse> {
     if provider.disable_id_token_sign_in
         || provider.verify_id_token.is_none() && provider.id_token.is_none()
@@ -275,7 +275,7 @@ pub(in crate::plugins::oauth::handlers) async fn link_with_id_token_core(
     id_token: &OAuthIdTokenRequest,
     provider: &OAuthProvider,
     session: &impl AuthSession,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SocialSignInResponse> {
     if provider.disable_id_token_sign_in
         || provider.verify_id_token.is_none() && provider.id_token.is_none()

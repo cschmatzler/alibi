@@ -5,13 +5,13 @@
     reason = "contract tests assert independently specified wire fields; setup errors propagate"
 )]
 
-use async_trait::async_trait;
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::types::{MultipartFiles, ParsedRequestBody};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::types::{MultipartFiles, ParsedRequestBody};
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     HttpMethod,
 };
+use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::{
     Arc,
@@ -85,7 +85,7 @@ async fn public_media_admission_decodes_fields_and_uploads_before_invoking_plugi
         request.body = Some(body);
         // Caller-supplied decoded state must not bypass media admission/parsing.
         request.extensions().insert(ParsedRequestBody::Value(
-            better_auth_core::utils::json::parse_value(r#"{"forged":true}"#).unwrap(),
+            alibi_core::utils::json::parse_value(r#"{"forged":true}"#).unwrap(),
         ));
         request
     };

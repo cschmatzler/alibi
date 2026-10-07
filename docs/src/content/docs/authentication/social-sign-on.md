@@ -11,10 +11,10 @@ Not finding your provider? Use [Generic OAuth](/authentication/generic-oauth/) f
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::OAuthProvider;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -122,8 +122,8 @@ All 36 providers share the upstream defaults for scopes, PKCE, token authenticat
 Every field of `OAuthProvider` is public, so you can adjust a built-in provider after constructing it:
 
 ```rust
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::OAuthProvider;
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::OAuthProvider;
 
 fn plugin(client_id: &str, client_secret: &str) -> OAuthPlugin {
     let mut github = OAuthProvider::github(client_id, client_secret);
@@ -184,12 +184,12 @@ curl -b cookies.txt http://localhost:3000/api/auth/get-access-token \
 # {"accessToken":"ya29…","accessTokenExpiresAt":"2026-10-04T10:47:38.071Z","scopes":["email","profile","openid"],"idToken":"eyJ…"}
 ```
 
-Server-side code can do the same without HTTP through `better_auth::plugins::oauth::OAuthAccountApi::{get_access_token, refresh_token, account_info}`, which take the already-authorized `user_id` — they are not routes and cannot be called with a client-chosen principal.
+Server-side code can do the same without HTTP through `alibi::plugins::oauth::OAuthAccountApi::{get_access_token, refresh_token, account_info}`, which take the already-authorized `user_id` — they are not routes and cannot be called with a client-chosen principal.
 
 ### Token storage
 
 ```rust
-use better_auth::AuthConfig;
+use alibi::AuthConfig;
 
 fn auth_config(secret: &str) -> AuthConfig {
     let mut config = AuthConfig::new(secret);

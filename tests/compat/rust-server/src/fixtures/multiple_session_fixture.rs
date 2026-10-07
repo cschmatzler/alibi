@@ -1,14 +1,14 @@
 //! Equivalent configured session-token generation and multiple-session runtimes.
 use crate::TestSchema;
 use axum::Router;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{
     EmailPasswordPlugin, MultiSessionConfig, MultiSessionPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
-use better_auth_core::{CookieAttributes, CookieOverride, SameSite};
-use better_auth_seaorm::sea_orm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
+use alibi_core::{CookieAttributes, CookieOverride, SameSite};
+use alibi_seaorm::sea_orm::DatabaseConnection;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -16,12 +16,12 @@ use std::sync::{
 
 struct TokenHook(Arc<AtomicUsize>);
 #[async_trait::async_trait]
-impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
         session: &mut CreateSession,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         let count = self.0.fetch_add(1, Ordering::SeqCst) + 1;
         let rank = match count % 3 {
             1 => 3,
@@ -29,7 +29,7 @@ impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for 
             _ => 2,
         };
         session.token = Some(format!("{rank:04}{count:028}"));
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
 }
 pub(crate) async fn router(
@@ -98,9 +98,9 @@ pub(crate) async fn router(
         config
             .clone()
             .base_path(path)
-            .session_cookie_cache(better_auth_core::CookieCacheConfig {
+            .session_cookie_cache(alibi_core::CookieCacheConfig {
                 enabled: true,
-                strategy: better_auth_core::CookieCacheStrategy::Jwe,
+                strategy: alibi_core::CookieCacheStrategy::Jwe,
                 max_age: 300.0,
                 ..Default::default()
             });

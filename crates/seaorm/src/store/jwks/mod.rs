@@ -1,10 +1,10 @@
 use super::entities::jwk::{ActiveModel, Entity};
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::AuthSchema;
+use alibi_core::error::AuthResult;
+use alibi_core::store::JwkStore;
+use alibi_core::types::{CreateJwk, Jwk};
 use async_trait::async_trait;
-use better_auth_core::error::AuthResult;
-use better_auth_core::store::JwkStore;
-use better_auth_core::types::{CreateJwk, Jwk};
 use sea_orm::{ActiveModelTrait, ConnectionTrait, EntityTrait, QuerySelect, Set};
 
 impl<S: AuthSchema> SeaOrmStore<S> {
@@ -14,9 +14,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
     ) -> AuthResult<Vec<Jwk>> {
         let limit =
             <u64 as TryFrom<_>>::try_from(self.config().advanced.database.default_find_many_limit)
-                .map_err(|_error| {
-                    better_auth_core::AuthError::config("Invalid keyring result limit")
-                })?;
+                .map_err(|_error| alibi_core::AuthError::config("Invalid keyring result limit"))?;
         Entity::find()
             .limit(limit)
             .all(connection)

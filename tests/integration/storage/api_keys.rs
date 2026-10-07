@@ -1,10 +1,10 @@
 //! API key quota consumption across connections and Source-phased writes.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use better_auth::AuthConfig;
-use better_auth_core::store::ApiKeyStore;
-use better_auth_core::store::SchemaMigrator;
-use better_auth_core::{ConsumeApiKeyResult, CreateApiKey, UpdateApiKey};
+use alibi::AuthConfig;
+use alibi_core::store::ApiKeyStore;
+use alibi_core::store::SchemaMigrator;
+use alibi_core::{ConsumeApiKeyResult, CreateApiKey, UpdateApiKey};
 use std::sync::Arc;
 use tokio::sync::Barrier;
 use tokio::task::JoinSet;

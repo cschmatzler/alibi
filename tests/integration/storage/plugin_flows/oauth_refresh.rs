@@ -1,9 +1,9 @@
 //! Request-scoped refresh configuration must not replace grant authority or leak
 //! into another request; application refresh handlers own their own transport.
 use super::*;
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::*;
 use async_trait::async_trait;
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::*;
 use std::collections::BTreeMap;
 
 backend_tests!(dynamic_refresh_preserves_grant_authority_and_callback_precedence);

@@ -1,7 +1,7 @@
 use super::StatusResponse;
-use better_auth_core::entity::{AuthAccount, AuthUser};
-use better_auth_core::{AuthContext, AuthError, AuthResult};
-use better_auth_core::{AuthRequest, AuthResponse};
+use alibi_core::entity::{AuthAccount, AuthUser};
+use alibi_core::{AuthContext, AuthError, AuthResult};
+use alibi_core::{AuthRequest, AuthResponse};
 use serde::Deserialize;
 use validator::Validate;
 
@@ -10,7 +10,7 @@ pub struct AccountManagementPlugin {
     config: AccountManagementConfig,
 }
 
-#[derive(Debug, Clone, better_auth_core::PluginConfig)]
+#[derive(Debug, Clone, alibi_core::PluginConfig)]
 #[plugin(name = "AccountManagementPlugin")]
 pub struct AccountManagementConfig {
     #[config(default = true)]
@@ -23,7 +23,7 @@ struct UnlinkAccountRequest {
     account_id: String,
 }
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     AccountManagementPlugin, "account-management";
     routes {
         get "/list-accounts" => handle_list_accounts, "list_accounts";
@@ -31,12 +31,12 @@ better_auth_core::impl_auth_plugin! {
     }
 
  extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
     }
  }
 }
@@ -49,7 +49,7 @@ impl AccountManagementPlugin {
     async fn handle_list_accounts(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _session) =
             super::organization::handlers::extension_common::session(req, ctx).await?;
@@ -60,11 +60,11 @@ impl AccountManagementPlugin {
     async fn handle_unlink_account(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _session) = ctx.require_cached_session(req).await?;
 
-        let unlink_req: UnlinkAccountRequest = match better_auth_core::validate_request_body(req) {
+        let unlink_req: UnlinkAccountRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -90,7 +90,7 @@ impl std::fmt::Debug for AccountManagementPlugin {
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_accounts_core(
     user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Vec<serde_json::Map<String, serde_json::Value>>> {
     let accounts = ctx.database.get_user_accounts_record(&user.id()).await?;
     accounts
@@ -119,7 +119,7 @@ pub(in crate::plugins) async fn list_accounts_core(
 pub(in crate::plugins) async fn unlink_account_core(
     user: &impl AuthUser,
     account_id: &str,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
     let accounts = ctx.database.get_user_accounts(&user.id()).await?;
     if accounts.len() == 1 && !ctx.config.account.account_linking.allow_unlinking_all {

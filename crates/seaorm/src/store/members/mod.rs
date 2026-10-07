@@ -1,10 +1,10 @@
 use super::entities::member::{ActiveModel, Column, Entity};
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::AuthSchema;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::{ListOrganizationMembersParams, MemberPageQuery, MemberStore};
+use alibi_core::{CreateMember, Member};
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::{ListOrganizationMembersParams, MemberPageQuery, MemberStore};
-use better_auth_core::{CreateMember, Member};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DbErr, EntityTrait, IntoActiveModel, PaginatorTrait,

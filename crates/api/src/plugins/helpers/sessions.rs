@@ -2,13 +2,10 @@ use super::*;
 /// Source ordinary HTTP middleware admits the authenticated cache snapshot.
 /// Only the nested read is caught; subsequent storage and callback errors keep
 /// their own endpoint contract.
-pub(in crate::plugins) async fn ordinary_session<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) async fn ordinary_session<S: alibi_core::AuthSchema>(
     request: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> AuthResult<(
-    better_auth_core::AuthenticatedUser<S>,
-    better_auth_core::SessionView,
-)> {
+) -> AuthResult<(alibi_core::AuthenticatedUser<S>, alibi_core::SessionView)> {
     ctx.require_cached_session(request).await.map_err(|error| {
         if matches!(error, AuthError::Unauthenticated) {
             AuthError::Upstream {
@@ -52,9 +49,9 @@ pub fn expires_in_to_at(expires_in_secs: Option<i64>) -> AuthResult<Option<Strin
 /// # Errors
 ///
 /// Returns an error if the session cannot be serialized.
-pub async fn response_session<S: better_auth_core::AuthSchema>(
+pub async fn response_session<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
-    response: &better_auth_core::AuthResponse,
+    response: &alibi_core::AuthResponse,
 ) -> AuthResult<Option<IssuedSession<S>>> {
     let token = response
         .headers
@@ -63,7 +60,7 @@ pub async fn response_session<S: better_auth_core::AuthSchema>(
             let cookie = cookie::Cookie::parse(header.clone()).ok()?;
             (cookie.name() == ctx.config.session.cookie_name && !cookie.value().is_empty())
                 .then(|| {
-                    better_auth_core::utils::cookie_utils::verify_cookie_value(
+                    alibi_core::utils::cookie_utils::verify_cookie_value(
                         cookie.value(),
                         ctx.config.current_secret(),
                     )
@@ -83,11 +80,11 @@ pub async fn response_session<S: better_auth_core::AuthSchema>(
     Ok(Some(IssuedSession { user, session }))
 }
 
-pub(in crate::plugins) fn record_completed_session<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) fn record_completed_session<S: alibi_core::AuthSchema>(
     user: &S::User,
     session: &S::Session,
 ) {
-    if let Some(request) = better_auth_core::hooks::current_request_hook_context() {
+    if let Some(request) = alibi_core::hooks::current_request_hook_context() {
         request.extensions.insert(CompletedSession::<S> {
             user: user.clone(),
             session: session.clone(),
@@ -98,11 +95,11 @@ pub(in crate::plugins) fn record_completed_session<S: better_auth_core::AuthSche
     }
 }
 
-pub(in crate::plugins) fn record_completed_session_record<S: better_auth_core::AuthSchema>(
-    user: &better_auth_core::AdapterRecord<S::User>,
-    session: &better_auth_core::AdapterRecord<S::Session>,
+pub(in crate::plugins) fn record_completed_session_record<S: alibi_core::AuthSchema>(
+    user: &alibi_core::AdapterRecord<S::User>,
+    session: &alibi_core::AdapterRecord<S::Session>,
 ) {
-    if let Some(request) = better_auth_core::hooks::current_request_hook_context() {
+    if let Some(request) = alibi_core::hooks::current_request_hook_context() {
         request.extensions.insert(CompletedSession::<S> {
             user: user.stored().clone(),
             session: session.stored().clone(),
@@ -115,13 +112,13 @@ pub(in crate::plugins) fn record_completed_session_record<S: better_auth_core::A
 
 /// Retain a Source-defined callback projection after genuine session issuance.
 /// This cannot create a completion or replace its raw models/owner/token.
-pub(in crate::plugins) fn record_completed_session_user_view<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) fn record_completed_session_user_view<S: alibi_core::AuthSchema>(
     original_user: &impl AuthUser,
-    session: &impl better_auth_core::AuthSession,
-    view: better_auth_core::wire::UserView,
+    session: &impl alibi_core::AuthSession,
+    view: alibi_core::wire::UserView,
 ) {
-    use better_auth_core::AuthSession;
-    if let Some(request) = better_auth_core::hooks::current_request_hook_context()
+    use alibi_core::AuthSession;
+    if let Some(request) = alibi_core::hooks::current_request_hook_context()
         && let Some(completed) = request.extensions.get::<CompletedSession<S>>()
         && completed.user.id() == original_user.id()
         && view.id == original_user.id().as_ref()
@@ -137,9 +134,9 @@ pub(in crate::plugins) fn record_completed_session_user_view<S: better_auth_core
     }
 }
 
-pub(in crate::plugins) fn response_has_session_cookie<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) fn response_has_session_cookie<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
-    response: &better_auth_core::AuthResponse,
+    response: &alibi_core::AuthResponse,
 ) -> bool {
     response.headers.get_all("set-cookie").any(|header| {
         cookie::Cookie::parse(header.clone()).is_ok_and(|cookie| {
@@ -153,10 +150,10 @@ pub(in crate::plugins) fn response_has_session_cookie<S: better_auth_core::AuthS
     })
 }
 
-pub(in crate::plugins) fn completed_response_session<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) fn completed_response_session<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-    response: &better_auth_core::AuthResponse,
+    response: &alibi_core::AuthResponse,
 ) -> Option<std::sync::Arc<CompletedSession<S>>> {
     // A clearing cookie is not a completed login. The snapshot comes from the
     // trusted issuer, never the response body or a freshly mutated database row.
@@ -168,7 +165,7 @@ pub(in crate::plugins) fn completed_response_session<S: better_auth_core::AuthSc
 
 /// Whether the admin plugin is active for this auth instance.
 #[must_use]
-pub fn admin_plugin_enabled(ctx: &AuthContext<impl better_auth_core::AuthSchema>) -> bool {
+pub fn admin_plugin_enabled(ctx: &AuthContext<impl alibi_core::AuthSchema>) -> bool {
     ctx.get_metadata("admin.enabled")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false)
@@ -176,9 +173,7 @@ pub fn admin_plugin_enabled(ctx: &AuthContext<impl better_auth_core::AuthSchema>
 
 /// Resolve the configured message shown when a banned user attempts to create
 /// a session.
-pub fn admin_banned_user_message(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
-) -> Option<String> {
+pub fn admin_banned_user_message(ctx: &AuthContext<impl alibi_core::AuthSchema>) -> Option<String> {
     ctx.get_metadata("admin.banned_user_message")
         .and_then(|value| value.as_str())
         .map(ToOwned::to_owned)
@@ -188,9 +183,7 @@ pub fn admin_banned_user_message(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(in crate::plugins) async fn resolve_admin_banned_user_message<
-    S: better_auth_core::AuthSchema,
->(
+pub(in crate::plugins) async fn resolve_admin_banned_user_message<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user: &impl AuthUser,
 ) -> AuthResult<String> {
@@ -211,7 +204,7 @@ pub(in crate::plugins) async fn resolve_admin_banned_user_message<
 /// # Errors
 ///
 /// Returns an error if session hooks reject issuance, the user is banned, or storage fails.
-pub async fn issue_user_session<S: better_auth_core::AuthSchema>(
+pub async fn issue_user_session<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
     ip_address: Option<String>,
@@ -226,7 +219,7 @@ pub async fn issue_user_session<S: better_auth_core::AuthSchema>(
 ///
 /// # Errors
 /// Propagates validation, storage and configured callback errors.
-pub async fn issue_user_session_record<S: better_auth_core::AuthSchema>(
+pub async fn issue_user_session_record<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
     ip_address: Option<String>,
@@ -243,7 +236,7 @@ pub async fn issue_user_session_record<S: better_auth_core::AuthSchema>(
 ///
 /// # Errors
 /// Returns an error if hooks reject issuance, the user is banned, or storage fails.
-pub async fn issue_user_session_with_fields<S: better_auth_core::AuthSchema>(
+pub async fn issue_user_session_with_fields<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
     ip_address: Option<String>,
@@ -261,7 +254,7 @@ pub async fn issue_user_session_with_fields<S: better_auth_core::AuthSchema>(
 ///
 /// # Errors
 /// Propagates validation, storage, ban policy, and configured callback errors.
-pub async fn issue_user_session_with_fields_record<S: better_auth_core::AuthSchema>(
+pub async fn issue_user_session_with_fields_record<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
     ip_address: Option<String>,
@@ -302,7 +295,7 @@ pub async fn issue_user_session_with_fields_record<S: better_auth_core::AuthSche
 
 /// Create a genuine session for an endpoint that publishes it after later
 /// persistence and application callbacks have completed.
-pub(in crate::plugins) async fn create_user_session_record<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) async fn create_user_session_record<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
     ip_address: Option<String>,
@@ -316,12 +309,12 @@ pub(in crate::plugins) async fn create_user_session_record<S: better_auth_core::
 /// # Errors
 ///
 /// Returns an error if session hooks reject issuance, the user is banned, or storage fails.
-pub async fn issue_user_session_with_overrides<S: better_auth_core::AuthSchema>(
+pub async fn issue_user_session_with_overrides<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
     ip_address: Option<String>,
     user_agent: Option<String>,
-    current_session: &impl better_auth_core::AuthSession,
+    current_session: &impl alibi_core::AuthSession,
 ) -> Result<IssuedSession<S>, SessionIssueError> {
     issue_user_session_with_overrides_record(ctx, user_id, ip_address, user_agent, current_session)
         .await
@@ -332,18 +325,18 @@ pub async fn issue_user_session_with_overrides<S: better_auth_core::AuthSchema>(
 ///
 /// # Errors
 /// Propagates persistence or configured callback errors.
-pub async fn issue_user_session_with_overrides_record<S: better_auth_core::AuthSchema>(
+pub async fn issue_user_session_with_overrides_record<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
     ip_address: Option<String>,
     user_agent: Option<String>,
-    current_session: &impl better_auth_core::AuthSession,
+    current_session: &impl alibi_core::AuthSession,
 ) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
     let overrides = SessionOverrides {
         additional_fields: current_session
             .additional_fields()
             .into_iter()
-            .map(|(name, value)| (name, better_auth_core::utils::json::JsValue::from(value)))
+            .map(|(name, value)| (name, alibi_core::utils::json::JsValue::from(value)))
             .collect(),
         impersonated_by: current_session.impersonated_by().map(str::to_owned),
         active_organization_id: current_session.active_organization_id().map(str::to_owned),
@@ -363,11 +356,9 @@ pub async fn issue_user_session_with_overrides_record<S: better_auth_core::AuthS
 
 /// Issue from the actual lookup already used to authenticate this user. This
 /// retains its callback snapshot without repeating adapter output callbacks.
-pub(in crate::plugins) async fn issue_selected_user_session_record<
-    S: better_auth_core::AuthSchema,
->(
+pub(in crate::plugins) async fn issue_selected_user_session_record<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
-    user: better_auth_core::AdapterRecord<S::User>,
+    user: alibi_core::AdapterRecord<S::User>,
     ip_address: Option<String>,
     user_agent: Option<String>,
 ) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
@@ -375,16 +366,14 @@ pub(in crate::plugins) async fn issue_selected_user_session_record<
     issue_user_session_inner(ctx, &id, ip_address, user_agent, None, true, Some(user)).await
 }
 
-pub(in crate::plugins::helpers) async fn issue_user_session_inner<
-    S: better_auth_core::AuthSchema,
->(
+pub(in crate::plugins::helpers) async fn issue_user_session_inner<S: alibi_core::AuthSchema>(
     ctx: &AuthContext<S>,
     user_id: &str,
     ip_address: Option<String>,
     user_agent: Option<String>,
     overrides: Option<SessionOverrides>,
     publish: bool,
-    selected: Option<better_auth_core::AdapterRecord<S::User>>,
+    selected: Option<alibi_core::AdapterRecord<S::User>>,
 ) -> Result<IssuedSessionRecord<S>, SessionIssueError> {
     let user = match selected {
         Some(user) => user,
@@ -428,7 +417,7 @@ pub(in crate::plugins::helpers) async fn issue_user_session_inner<
         }
         Some(overrides) => {
             ctx.database
-                .create_session_record(better_auth_core::CreateSession {
+                .create_session_record(alibi_core::CreateSession {
                     additional_fields: overrides.additional_fields,
                     token: None,
                     user_id: user.id().to_string(),
@@ -444,8 +433,7 @@ pub(in crate::plugins::helpers) async fn issue_user_session_inner<
     };
 
     if publish {
-        better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, &user, &session)
-            .await?;
+        alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &user, &session).await?;
         record_completed_session_record::<S>(&user, &session);
     }
     Ok(IssuedSessionRecord { user, session })
@@ -463,8 +451,6 @@ pub fn get_cookie(req: &AuthRequest, name: &str) -> Option<String> {
 }
 
 /// TS-style cookie clearing used by `deleteSessionCookie`.
-pub fn delete_session_cookie_headers(
-    config: &better_auth_core::AuthConfig,
-) -> AuthResult<Vec<String>> {
-    better_auth_core::utils::cookie_utils::delete_session_cookie_headers(config)
+pub fn delete_session_cookie_headers(config: &alibi_core::AuthConfig) -> AuthResult<Vec<String>> {
+    alibi_core::utils::cookie_utils::delete_session_cookie_headers(config)
 }

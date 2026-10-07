@@ -1,9 +1,9 @@
 //! JWT keyring rows retain private key material and configured list pages.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use better_auth::AuthConfig;
-use better_auth_core::store::JwkStore;
-use better_auth_core::types::CreateJwk;
+use alibi::AuthConfig;
+use alibi_core::store::JwkStore;
+use alibi_core::types::CreateJwk;
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 

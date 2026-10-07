@@ -7,9 +7,9 @@
 )]
 
 use super::{Db, Raw, TestResult, on_raw};
-use better_auth::{AuthConfig, AuthSchema};
-use better_auth_core::store::AuthStore;
-use better_auth_core::{
+use alibi::{AuthConfig, AuthSchema};
+use alibi_core::store::AuthStore;
+use alibi_core::{
     AuthAccount, AuthSession, AuthUser, AuthVerification, CreateAccount, CreateSession, CreateUser,
     CreateVerification, UpdateAccount, UpdateUser,
 };
@@ -20,7 +20,7 @@ macro_rules! auth_model {
     (sqlx, $module:ident, $role:literal, $table:literal, {$($fields:tt)*}) => {
         pub mod $module {
             use super::*;
-            #[derive(better_auth::sqlx::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
+            #[derive(alibi::sqlx::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
             #[auth(role = $role, table = $table)]
             pub struct Model {
                 pub id: String,
@@ -31,8 +31,8 @@ macro_rules! auth_model {
     (seaorm, $module:ident, $role:literal, $table:literal, {$($fields:tt)*}) => {
         pub mod $module {
             use super::*;
-            use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
-            #[derive(better_auth::seaorm::AuthEntity, Clone, Debug, serde::Serialize, DeriveEntityModel)]
+            use alibi::seaorm::sea_orm::{self, entity::prelude::*};
+            #[derive(alibi::seaorm::AuthEntity, Clone, Debug, serde::Serialize, DeriveEntityModel)]
             #[auth(role = $role)]
             #[sea_orm(table_name = $table)]
             pub struct Model {
@@ -119,7 +119,7 @@ macro_rules! sqlx_case {
                         .await?;
                     assert_eq!(actual, timezone);
                 }
-                let store = better_auth::sqlx::SqlxStore::<Schema>::new(
+                let store = alibi::sqlx::SqlxStore::<Schema>::new(
                     AuthConfig::new("timestamp-regression-local-secret-32-chars"),
                     connection,
                 );
@@ -138,7 +138,7 @@ macro_rules! seaorm_case {
                 install(&db, $naive).await?;
                 let connection = super::super::SeaOrm::connect(&db.url, Some(1)).await?;
                 if db.is_postgres() {
-                    use better_auth::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+                    use alibi::seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
                     _ = connection
                         .execute_raw(Statement::from_sql_and_values(
                             DbBackend::Postgres,
@@ -156,7 +156,7 @@ macro_rules! seaorm_case {
                     let actual: String = row.try_get("", "timezone")?;
                     assert_eq!(actual, timezone);
                 }
-                let store = better_auth::seaorm::SeaOrmStore::<Schema>::new(
+                let store = alibi::seaorm::SeaOrmStore::<Schema>::new(
                     AuthConfig::new("timestamp-regression-local-secret-32-chars"),
                     connection,
                 );
@@ -188,7 +188,7 @@ sqlx_case!(sqlx_naive, NaiveDateTime, true);
 sqlx_case!(sqlx_aware, DateTime<Utc>, false);
 seaorm_case!(seaorm_naive, NaiveDateTime, true);
 // SeaORM's normal aware field alias, also exercising shared accessor conversion.
-use better_auth::seaorm::sea_orm::prelude::DateTimeUtc;
+use alibi::seaorm::sea_orm::prelude::DateTimeUtc;
 seaorm_case!(seaorm_aware, DateTimeUtc, false);
 
 async fn install(db: &Db, naive: bool) -> TestResult {
@@ -453,7 +453,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
     let _updated = store
         .update_verification_by_identifier(
             "synthetic-verification",
-            better_auth_core::UpdateVerification {
+            alibi_core::UpdateVerification {
                 value: Some("updated-proof".into()),
                 expires_at: Some(now - Duration::minutes(30)),
             },
@@ -479,7 +479,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
     // Adapter record creation has a separate direct updated_at write.
     let snapshot = store
         .create_verification_record(
-            better_auth_core::verification::VerificationCreation {
+            alibi_core::verification::VerificationCreation {
                 id: Some("synthetic-record".into()),
                 identifier: "record".into(),
                 value: "record-proof".into(),
@@ -487,7 +487,7 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>, naive: boo
                 created_at: historical,
                 updated_at: historical + Duration::seconds(1),
             },
-            better_auth_core::verification::VerificationPublication {
+            alibi_core::verification::VerificationPublication {
                 store_in_database: true,
                 secondary_storage: None,
                 cache_key: "unused".into(),

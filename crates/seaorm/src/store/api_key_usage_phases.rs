@@ -5,8 +5,8 @@ use super::{
     map_db_err,
 };
 use crate::schema::AuthSchema;
-use better_auth_core::store::ConsumeApiKeyResult;
-use better_auth_core::{ApiKey, AuthError, AuthResult};
+use alibi_core::store::ConsumeApiKeyResult;
+use alibi_core::{ApiKey, AuthError, AuthResult};
 use chrono::{DateTime, Utc};
 use sea_orm::{
     ColumnTrait, DbBackend, EntityTrait, QueryFilter,

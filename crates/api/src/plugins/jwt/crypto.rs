@@ -1,6 +1,6 @@
 use super::{JwtAlgorithm, JwtKeyPairConfig};
+use alibi_core::{AuthError, AuthResult};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth_core::{AuthError, AuthResult};
 use ed25519_dalek::{Signer, Verifier};
 use p256::elliptic_curve::Generate as _;
 use p256::elliptic_curve::sec1::ToSec1Point;

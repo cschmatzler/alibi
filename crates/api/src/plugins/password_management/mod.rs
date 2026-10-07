@@ -6,12 +6,12 @@ pub(super) mod handlers;
 pub(super) mod types;
 
 use super::StatusResponse;
+use alibi_core::RequestMeta;
+use alibi_core::utils::password::PasswordHasher;
+use alibi_core::{AuthContext, AuthPlugin, AuthRoute};
+use alibi_core::{AuthError, AuthResult};
+use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
-use better_auth_core::RequestMeta;
-use better_auth_core::utils::password::PasswordHasher;
-use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth_core::{AuthError, AuthResult};
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 use handlers::{
     change_password_core, request_password_reset_core, reset_password_core,
     reset_password_token_core, verify_password_core,
@@ -55,7 +55,7 @@ impl std::fmt::Debug for PasswordManagementPlugin {
     }
 }
 
-#[derive(Clone, better_auth_core::PluginConfig)]
+#[derive(Clone, alibi_core::PluginConfig)]
 #[plugin(name = "PasswordManagementPlugin")]
 pub struct PasswordManagementConfig {
     #[config(default = 1)]
@@ -114,21 +114,21 @@ impl std::fmt::Debug for PasswordManagementConfig {
 }
 
 #[async_trait]
-impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+impl<S: alibi_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -137,7 +137,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for PasswordManagementPlugin
         "password-management"
     }
 
-    async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
         ctx.extensions.insert(self.config.clone());
         Ok(())
     }
@@ -186,9 +186,9 @@ impl PasswordManagementPlugin {
     async fn handle_request_password_reset(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: RequestPasswordResetRequest = match better_auth_core::validate_request_body(req) {
+        let body: RequestPasswordResetRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -199,9 +199,9 @@ impl PasswordManagementPlugin {
     async fn handle_reset_password(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let mut body: ResetPasswordRequest = match better_auth_core::validate_request_body(req) {
+        let mut body: ResetPasswordRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -215,9 +215,9 @@ impl PasswordManagementPlugin {
     async fn handle_change_password(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: ChangePasswordRequest = match better_auth_core::validate_request_body(req) {
+        let body: ChangePasswordRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -250,7 +250,7 @@ impl PasswordManagementPlugin {
 
         // Set session cookie if a new session was created
         if let Some(token) = new_token {
-            use better_auth_core::utils::cookie_utils::{
+            use alibi_core::utils::cookie_utils::{
                 create_session_cookie_with_max_age, create_session_like_cookie,
                 related_cookie_name, sign_cookie_value, verify_cookie_value,
             };
@@ -284,9 +284,9 @@ impl PasswordManagementPlugin {
     async fn handle_verify_password(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: VerifyPasswordRequest = match better_auth_core::validate_request_body(req) {
+        let body: VerifyPasswordRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -307,14 +307,14 @@ impl PasswordManagementPlugin {
         &self,
         token: &str,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let query = ResetPasswordTokenQuery {
             callback_url: req.query.get("callbackURL").cloned(),
         };
         match reset_password_token_core(token, &query, ctx).await? {
             ResetPasswordTokenResult::Redirect(url) => {
-                let mut headers = better_auth_core::Headers::new();
+                let mut headers = alibi_core::Headers::new();
                 drop(headers.insert("Location".to_owned(), url));
                 drop(headers.insert("content-type".to_owned(), "application/json".to_owned()));
                 Ok(AuthResponse {
@@ -326,7 +326,7 @@ impl PasswordManagementPlugin {
         }
     }
 
-    async fn get_current_user<S: better_auth_core::AuthSchema>(
+    async fn get_current_user<S: alibi_core::AuthSchema>(
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
@@ -349,17 +349,16 @@ mod tests {
     use super::types::RequestPasswordResetResponse;
     use super::*;
     use crate::plugins::test_helpers;
-    use better_auth_core::AuthContext;
-    use better_auth_core::config::{AuthConfig, PasswordConfig};
-    use better_auth_core::utils::password::{hash_password, verify_password};
-    use better_auth_core::wire::{SessionView, UserView};
-    use better_auth_core::{CreateAccount, CreateUser, CreateVerification};
+    use alibi_core::AuthContext;
+    use alibi_core::config::{AuthConfig, PasswordConfig};
+    use alibi_core::utils::password::{hash_password, verify_password};
+    use alibi_core::wire::{SessionView, UserView};
+    use alibi_core::{CreateAccount, CreateUser, CreateVerification};
     use chrono::{Duration, Utc};
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     const PASSWORD_RESET_SUCCESS_MESSAGE: &str =
         "If this email exists in our system, check your email for the reset link";
@@ -458,7 +457,7 @@ mod tests {
     /// Helper: create a reset-password verification token for the given user
     /// and store it in the database. Returns the token string.
     async fn create_reset_token(
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         user_id: &str,
     ) -> String {
         let reset_token = uuid::Uuid::new_v4().simple().to_string();
@@ -1093,7 +1092,7 @@ mod tests {
     async fn test_plugin_routes() {
         let plugin = PasswordManagementPlugin::new();
         let routes = AuthPlugin::<
-            better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
+            alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
         >::routes(&plugin);
 
         assert_eq!(routes.len(), 5);
@@ -1186,7 +1185,7 @@ mod tests {
     // Upstream reference: packages/better-auth/src/api/routes/password.test.ts :: describe("forget password") and packages/better-auth/src/api/routes/password.ts; adapted to the Rust password-management plugin.
     #[tokio::test]
     async fn test_send_reset_password_custom_sender() {
-        use better_auth_core::{BackgroundTaskCompletion, BackgroundTaskHandler};
+        use alibi_core::{BackgroundTaskCompletion, BackgroundTaskHandler};
         use std::sync::{
             Mutex,
             atomic::{AtomicU32, Ordering},

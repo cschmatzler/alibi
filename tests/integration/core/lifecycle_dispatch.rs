@@ -1,21 +1,21 @@
 //! Pinned dispatch behavior: hooks share authenticated context and response headers.
 #![allow(clippy::unwrap_used, reason = "regressions assert dispatch outcomes")]
 
-use async_trait::async_trait;
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::wire::SessionView;
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::wire::SessionView;
+use alibi_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute,
     BeforeRequestAction, HttpMethod,
 };
-use better_auth_seaorm::{Database, SeaOrmStore};
+use alibi_seaorm::{Database, SeaOrmStore};
+use async_trait::async_trait;
 use serde_json::json;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
 
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 struct Probe {
     session: Option<SessionView>,
@@ -61,7 +61,7 @@ impl AuthPlugin<Schema> for Probe {
         ctx: &AuthContext<Schema>,
     ) -> AuthResult<Option<AuthResponse>> {
         if req.path() == "/reject" {
-            return Err(better_auth::AuthError::bad_request("handler rejection"));
+            return Err(alibi::AuthError::bad_request("handler rejection"));
         }
         let mut response = AuthResponse::json(
             200,
@@ -80,7 +80,7 @@ impl AuthPlugin<Schema> for Probe {
     ) -> AuthResult<AuthResponse> {
         _ = self.after_calls.fetch_add(1, Ordering::SeqCst);
         if self.reject_after {
-            return Err(better_auth::AuthError::forbidden("after rejection"));
+            return Err(alibi::AuthError::forbidden("after rejection"));
         }
         drop(
             response.headers.insert(
@@ -121,7 +121,7 @@ impl AuthPlugin<Schema> for NestedHeadersProbe {
             nested.queue_response_header("x-nested", "forwarded");
         }
         if req.path() == "/headers-error" {
-            return Err(better_auth::AuthError::forbidden("endpoint rejection"));
+            return Err(alibi::AuthError::forbidden("endpoint rejection"));
         }
         let mut response = AuthResponse::json(200, &json!({"ok": true}))?;
         if req.path() == "/headers" {
@@ -218,7 +218,7 @@ impl AuthPlugin<Schema> for EmitNestedHeaders {
         req.queue_response_header("x-nested-after", "forwarded");
         req.queue_response_header("set-cookie", "nested-after=value; HttpOnly; Path=/");
         if self.reject {
-            Err(better_auth::AuthError::forbidden("first hook rejected"))
+            Err(alibi::AuthError::forbidden("first hook rejected"))
         } else {
             Ok(response)
         }
@@ -268,7 +268,7 @@ impl AuthPlugin<Schema> for ObserveNestedHeaders {
 struct CaptureEmail(Arc<std::sync::Mutex<Vec<String>>>);
 
 #[async_trait]
-impl better_auth_core::EmailProvider for CaptureEmail {
+impl alibi_core::EmailProvider for CaptureEmail {
     async fn send(&self, to: &str, subject: &str, html: &str, text: &str) -> AuthResult<()> {
         self.0
             .lock()
@@ -307,10 +307,10 @@ impl AuthPlugin<Schema> for InitializedEmail {
     }
 }
 
-async fn auth(probe: Probe) -> better_auth::BetterAuth<Schema> {
+async fn auth(probe: Probe) -> alibi::BetterAuth<Schema> {
     let config = AuthConfig::new("dispatch-tests-only-secret-minimum-32-characters");
     let db = Database::connect("sqlite::memory:").await.unwrap();
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
         .await
         .unwrap();
     AuthBuilder::new(config.clone())
@@ -434,7 +434,7 @@ mod tests {
     async fn nested_headers_survive_endpoint_errors_and_remain_request_scoped() {
         let config = AuthConfig::new("nested-header-tests-secret-minimum-32-characters");
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let configured = AuthBuilder::new(config.clone())
@@ -491,7 +491,7 @@ mod tests {
     async fn unknown_paths_and_methods_cannot_dispatch_plugin_hooks() {
         let config = AuthConfig::new("route-boundary-tests-secret-minimum-32-characters");
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
@@ -537,7 +537,7 @@ mod tests {
         for reject in [false, true] {
             let config = AuthConfig::new("successive-header-tests-secret-minimum-32-characters");
             let db = Database::connect("sqlite::memory:").await.unwrap();
-            better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
                 .await
                 .unwrap();
             let configured = AuthBuilder::new(config.clone())
@@ -567,7 +567,7 @@ mod tests {
     async fn initialized_email_provider_is_shared_with_handlers_and_server_callers() {
         let config = AuthConfig::new("initialized-email-test-secret-minimum-32-characters");
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let original = Arc::new(std::sync::Mutex::new(Vec::new()));
@@ -605,11 +605,11 @@ mod tests {
     #[cfg(feature = "axum")]
     #[tokio::test]
     async fn axum_core_routes_share_hooks_and_unregistered_methods_are_empty() {
-        use better_auth::integrations::axum::AxumIntegration;
+        use alibi::integrations::axum::AxumIntegration;
         use tower::ServiceExt;
         let config = AuthConfig::new("axum-lifecycle-test-secret-minimum-32-characters");
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
@@ -665,16 +665,16 @@ mod tests {
 
     #[derive(Clone, Default)]
     struct CapturedTelemetry {
-        events: Arc<std::sync::Mutex<Vec<better_auth::telemetry::TelemetryEvent>>>,
+        events: Arc<std::sync::Mutex<Vec<alibi::telemetry::TelemetryEvent>>>,
         reject: bool,
     }
 
     #[async_trait]
-    impl better_auth::telemetry::TelemetrySink for CapturedTelemetry {
-        async fn track(&self, event: better_auth::telemetry::TelemetryEvent) -> AuthResult<()> {
+    impl alibi::telemetry::TelemetrySink for CapturedTelemetry {
+        async fn track(&self, event: alibi::telemetry::TelemetryEvent) -> AuthResult<()> {
             self.events.lock().unwrap().push(event);
             if self.reject {
-                Err(better_auth::AuthError::internal("synthetic sink failure"))
+                Err(alibi::AuthError::internal("synthetic sink failure"))
             } else {
                 Ok(())
             }
@@ -683,7 +683,7 @@ mod tests {
 
     #[tokio::test]
     async fn initialization_telemetry_is_opt_in_bounded_and_nonfatal() {
-        use better_auth::telemetry::{TelemetryConfig, TelemetryEvent};
+        use alibi::telemetry::{TelemetryConfig, TelemetryEvent};
 
         for (enabled, reject) in [(false, false), (true, false), (true, true)] {
             let capture = CapturedTelemetry {
@@ -692,10 +692,10 @@ mod tests {
             };
             let config = AuthConfig::new("telemetry-secret-must-never-be-captured-32-characters");
             let db = Database::connect("sqlite::memory:").await.unwrap();
-            better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+            alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
                 .await
                 .unwrap();
-            use better_auth_core::store::UserStore;
+            use alibi_core::store::UserStore;
             let store = SeaOrmStore::<Schema>::new(config.clone(), db);
             let seeded = store
                 .create_user(
@@ -772,9 +772,7 @@ mod tests {
     async fn rejected_initialization_does_not_emit_telemetry() {
         let capture = CapturedTelemetry::default();
         let result = AuthBuilder::<Schema>::new(AuthConfig::new("short"))
-            .telemetry(better_auth::telemetry::TelemetryConfig::new(
-                capture.clone(),
-            ))
+            .telemetry(alibi::telemetry::TelemetryConfig::new(capture.clone()))
             .build()
             .await;
         assert!(result.is_err());
@@ -802,7 +800,7 @@ mod tests {
         }
 
         async fn on_init(&self, _ctx: &mut AuthInitContext<Schema>) -> AuthResult<()> {
-            Err(better_auth::AuthError::config(
+            Err(alibi::AuthError::config(
                 "synthetic initialization rejection",
             ))
         }
@@ -813,15 +811,13 @@ mod tests {
         let capture = CapturedTelemetry::default();
         let config = AuthConfig::new("telemetry-failed-init-secret-at-least-32-characters");
         let db = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
             .await
             .unwrap();
         let result = AuthBuilder::<Schema>::new(config.clone())
             .store(SeaOrmStore::<Schema>::new(config, db))
             .plugin(RejectInitialization)
-            .telemetry(better_auth::telemetry::TelemetryConfig::new(
-                capture.clone(),
-            ))
+            .telemetry(alibi::telemetry::TelemetryConfig::new(capture.clone()))
             .build()
             .await;
         assert!(result.is_err());

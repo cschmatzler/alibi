@@ -11,10 +11,10 @@ Discovery is performed **once, at startup**, from operator-supplied configuratio
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::GenericOAuthConfig;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::GenericOAuthConfig;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthError, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -75,7 +75,7 @@ Behavior you get automatically with discovery metadata:
 ### Plain OAuth 2.0 (no discovery)
 
 ```rust
-use better_auth::plugins::oauth::GenericOAuthConfig;
+use alibi::plugins::oauth::GenericOAuthConfig;
 
 fn custom_oauth() -> GenericOAuthConfig {
     let mut custom = GenericOAuthConfig::new("client-id", "client-secret");
@@ -95,7 +95,7 @@ Without an ID token, the profile comes from `user_info_url` (a bearer-authentica
 Fine-grained transport options live on the provider's authorization policy:
 
 ```rust
-use better_auth::plugins::oauth::{GenericOAuthConfig, OAuthTokenEndpointAuth};
+use alibi::plugins::oauth::{GenericOAuthConfig, OAuthTokenEndpointAuth};
 
 fn tuned(mut custom: GenericOAuthConfig) -> GenericOAuthConfig {
     if let Some(policy) = custom.provider.authorization.as_mut() {

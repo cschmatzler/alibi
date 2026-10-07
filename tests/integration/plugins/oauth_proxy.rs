@@ -5,17 +5,17 @@
 )]
 
 use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
+use alibi::plugins::oauth::OAuthProvider;
+use alibi::plugins::{
+    EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
+};
+use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, HttpMethod};
 use axum::{
     Json, Router,
     extract::{Form, State},
     routing::{get, post},
 };
-use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::plugins::{
-    EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
-};
-use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use better_auth_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, HttpMethod};
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,

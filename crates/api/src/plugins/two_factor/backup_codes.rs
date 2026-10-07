@@ -3,7 +3,7 @@ pub(in crate::plugins::two_factor) async fn generate_backup_codes_core(
     body: &GenerateBackupCodesRequest,
     user: &impl AuthUser,
     config: &TwoFactorConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<BackupCodesResponse, BackupOperationError> {
     if !user.two_factor_enabled() {
         return Err(AuthError::bad_request("Two factor isn't enabled").into());
@@ -47,7 +47,7 @@ pub(in crate::plugins::two_factor) async fn verify_backup_code_core(
     req: &AuthRequest,
     body: &VerifyBackupCodeRequest,
     config: &TwoFactorConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(BackupVerificationResponse, Vec<String>)> {
     let state = resolve_two_factor_state(req, ctx).await?;
     let two_factor = ctx
@@ -73,7 +73,7 @@ pub(in crate::plugins::two_factor) async fn verify_backup_code_core(
         }
     };
     let codes = match codes {
-        Some(better_auth_core::utils::json::JsValue::Array(codes)) => Some(codes),
+        Some(alibi_core::utils::json::JsValue::Array(codes)) => Some(codes),
         None => None,
         Some(value) if !backup_storage::truthy(&value) => None,
         Some(_) => {
@@ -100,12 +100,12 @@ pub(in crate::plugins::two_factor) async fn verify_backup_code_core(
     };
     backup_codes.retain(|candidate| candidate.as_str() != Some(body.code.as_str()));
 
-    let mut backup_codes = better_auth_core::utils::json::JsValue::Array(backup_codes);
+    let mut backup_codes = alibi_core::utils::json::JsValue::Array(backup_codes);
     backup_storage::normalize_json_dates(&mut backup_codes);
     let encrypted = config
         .backup_storage
         .store_json(
-            better_auth_core::utils::json::to_string(&backup_codes)?,
+            alibi_core::utils::json::to_string(&backup_codes)?,
             &ctx.config,
         )
         .await?;
@@ -166,9 +166,7 @@ pub(in crate::plugins::two_factor) async fn verify_backup_code_core(
     }
 }
 
-pub(in crate::plugins::two_factor) async fn view_backup_codes_core<
-    S: better_auth_core::AuthSchema,
->(
+pub(in crate::plugins::two_factor) async fn view_backup_codes_core<S: alibi_core::AuthSchema>(
     user_id: &str,
     config: &TwoFactorConfig,
     ctx: &AuthContext<S>,
@@ -198,7 +196,7 @@ pub(in crate::plugins::two_factor) async fn view_backup_codes_core<
 )]
 pub(in crate::plugins::two_factor) async fn generate_backup_codes(
     config: &TwoFactorConfig,
-    secret: &better_auth_core::AuthConfig,
+    secret: &alibi_core::AuthConfig,
 ) -> Result<(Vec<String>, String), BackupOperationError> {
     let codes = if let Some(generate) = &config.custom_backup_codes_generate {
         generate()?

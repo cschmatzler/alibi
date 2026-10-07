@@ -4,11 +4,11 @@ use crate::model::{self, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxAccountModel};
 use crate::sql::Sql;
+use alibi_core::error::AuthResult;
+use alibi_core::store::AccountStore;
+use alibi_core::store::adapter::cancelled_by_hook;
+use alibi_core::types::{CreateAccount, UpdateAccount};
 use async_trait::async_trait;
-use better_auth_core::error::AuthResult;
-use better_auth_core::store::AccountStore;
-use better_auth_core::store::adapter::cancelled_by_hook;
-use better_auth_core::types::{CreateAccount, UpdateAccount};
 use chrono::Utc;
 
 impl<S> SqlxStore<S>
@@ -87,13 +87,13 @@ where
 {
     async fn provider_token_text(&self, value: &serde_json::Value) -> AuthResult<Option<String>> {
         if value.is_object() || value.is_array() {
-            return Err(better_auth_core::AuthError::internal(
+            return Err(alibi_core::AuthError::internal(
                 "Unsupported provider token SQL parameter",
             ));
         }
-        let value = crate::additional_fields::raw_value(
-            &better_auth_core::utils::json::JsValue::from(value.clone()),
-        )?;
+        let value = crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(
+            value.clone(),
+        ))?;
         crate::additional_fields::prepare_string_value(self.exec(), value).await
     }
 
@@ -122,8 +122,8 @@ where
         sql.bind(2_i64);
         let mut accounts: Vec<S::Account> = self.exec().fetch_all(sql).await?;
         if accounts.len() > 1 {
-            return Err(better_auth_core::AuthError::Database(
-                better_auth_core::DatabaseError::AmbiguousAccount {
+            return Err(alibi_core::AuthError::Database(
+                alibi_core::DatabaseError::AmbiguousAccount {
                     provider: provider.to_owned(),
                 },
             ));
@@ -157,9 +157,7 @@ where
             }
         }
         let Some(model) = self.find_account_by_id(id).await? else {
-            return Err(better_auth_core::error::AuthError::not_found(
-                "Account not found",
-            ));
+            return Err(alibi_core::error::AuthError::not_found("Account not found"));
         };
 
         let mut active = model.into_active();
@@ -189,9 +187,7 @@ where
     async fn delete_account(&self, id: &str) -> AuthResult<()> {
         let account_id = <S::Account as SqlxAccountModel>::parse_id(id)?;
         let Some(account_model) = self.find_account_by_id(id).await? else {
-            return Err(better_auth_core::error::AuthError::not_found(
-                "Account not found",
-            ));
+            return Err(alibi_core::error::AuthError::not_found("Account not found"));
         };
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {

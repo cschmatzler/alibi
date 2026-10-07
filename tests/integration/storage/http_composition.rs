@@ -1,17 +1,17 @@
 //! Real HTTP plugin composition over both stores, with independent physical observers.
 use super::postgres_tests;
 use super::{Backend, Db, TestResult, backend_tests};
-use async_trait::async_trait;
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
-use better_auth_core::endpoint::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
+use alibi_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointHook, EndpointResponse,
 };
-use better_auth_core::entity::AuthUser;
-use better_auth_core::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
-use better_auth_core::{
+use alibi_core::entity::AuthUser;
+use alibi_core::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
+use alibi_core::{
     AuthContext, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute,
     BeforeRequestAction, HttpEndpointResponse, HttpMethod, HttpRequestAction, UpdateUser,
 };
+use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
@@ -76,7 +76,7 @@ impl<S: AuthSchema> EndpointHook<S> for Global {
                 EndpointContextPatch {
                     request: Some(request),
                     path: Some("/logical-patched".into()),
-                    body: Some(better_auth_core::utils::json::parse_value(
+                    body: Some(alibi_core::utils::json::parse_value(
                         "{\"name\":\"patched\"}",
                     )?),
                     ..Default::default()
@@ -85,7 +85,7 @@ impl<S: AuthSchema> EndpointHook<S> for Global {
         }
         Ok(Some(BeforeEndpointAction::Patch(Box::new(
             EndpointContextPatch {
-                body: Some(better_auth_core::utils::json::parse_value(
+                body: Some(alibi_core::utils::json::parse_value(
                     "{\"name\":\"patched\"}",
                 )?),
                 headers: Some(std::collections::HashMap::from([
@@ -351,7 +351,7 @@ impl<S: AuthSchema, B: HookBackend> DatabaseHooks<S, B> for StorageObserver {
     ) -> AuthResult<HookControl> {
         record(
             &self.0,
-            json!({"stage":"db-before","principal":id,"physical":c.request.as_ref().map(|r|r.path.as_str()),"url":c.request.as_ref().and_then(|r|r.url.as_ref()).map(url::Url::as_str),"authority":c.request.as_ref().and_then(|r|r.extensions.get::<Authority>()).is_some(),"logical":better_auth_core::endpoint::current_endpoint_call_context().and_then(|c|c.body().cloned())}),
+            json!({"stage":"db-before","principal":id,"physical":c.request.as_ref().map(|r|r.path.as_str()),"url":c.request.as_ref().and_then(|r|r.url.as_ref()).map(url::Url::as_str),"authority":c.request.as_ref().and_then(|r|r.extensions.get::<Authority>()).is_some(),"logical":alibi_core::endpoint::current_endpoint_call_context().and_then(|c|c.body().cloned())}),
         );
         Ok(HookControl::Continue)
     }
@@ -383,7 +383,7 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
             cookie_b: cookie_b.clone(),
         })
         .plugin(Endpoint(events.clone()))
-        .plugin(better_auth::plugins::EmailPasswordPlugin::new())
+        .plugin(alibi::plugins::EmailPasswordPlugin::new())
         .build()
         .await?;
     let mut cookies = Vec::new();
@@ -648,9 +648,7 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
     let config = AuthConfig::new(secret).base_url("http://original.test");
     let cors_auth = AuthBuilder::<B::Schema>::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
-        .cors(
-            better_auth_core::middleware::CorsConfig::new().allowed_origin("http://original.test"),
-        )
+        .cors(alibi_core::middleware::CorsConfig::new().allowed_origin("http://original.test"))
         .plugin(Physical {
             events: events.clone(),
             cookie_b: cookie_b.clone(),
@@ -688,18 +686,18 @@ async fn physical_http_composition_preserves_principals_and_committed_rows<B: Ba
     // Upstream CAPTCHA admission precedes CORS, including protected preflights.
     let config = AuthConfig::new(secret).base_url("http://original.test");
     let mut captcha_cors =
-        better_auth_core::middleware::CorsConfig::new().allowed_origin("http://original.test");
+        alibi_core::middleware::CorsConfig::new().allowed_origin("http://original.test");
     captcha_cors
         .allowed_headers
         .push("x-captcha-response".into());
     let captcha_auth = AuthBuilder::<B::Schema>::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
         .cors(captcha_cors)
-        .plugin(better_auth::plugins::EmailPasswordPlugin::new())
-        .plugin(better_auth::plugins::CaptchaPlugin::new(
-            better_auth::plugins::CaptchaConfig::new(
-                better_auth::plugins::CaptchaProvider::CloudflareTurnstile(
-                    better_auth::plugins::captcha::TurnstileConfig::new("configured-secret"),
+        .plugin(alibi::plugins::EmailPasswordPlugin::new())
+        .plugin(alibi::plugins::CaptchaPlugin::new(
+            alibi::plugins::CaptchaConfig::new(
+                alibi::plugins::CaptchaProvider::CloudflareTurnstile(
+                    alibi::plugins::captcha::TurnstileConfig::new("configured-secret"),
                 ),
             ),
         ))

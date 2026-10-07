@@ -1,10 +1,10 @@
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmAccountModel};
+use alibi_core::error::AuthResult;
+use alibi_core::store::AccountStore;
+use alibi_core::store::adapter::cancelled_by_hook;
+use alibi_core::types::{CreateAccount, UpdateAccount};
 use async_trait::async_trait;
-use better_auth_core::error::AuthResult;
-use better_auth_core::store::AccountStore;
-use better_auth_core::store::adapter::cancelled_by_hook;
-use better_auth_core::types::{CreateAccount, UpdateAccount};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
@@ -71,13 +71,13 @@ where
 {
     async fn provider_token_text(&self, value: &serde_json::Value) -> AuthResult<Option<String>> {
         if value.is_object() || value.is_array() {
-            return Err(better_auth_core::AuthError::internal(
+            return Err(alibi_core::AuthError::internal(
                 "Unsupported provider token SQL parameter",
             ));
         }
-        let value = crate::additional_fields::raw_value(
-            &better_auth_core::utils::json::JsValue::from(value.clone()),
-        )?;
+        let value = crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(
+            value.clone(),
+        ))?;
         crate::additional_fields::prepare_string_value(self.connection(), value).await
     }
 
@@ -99,8 +99,8 @@ where
             .await
             .map_err(map_db_err)?;
         if accounts.len() > 1 {
-            return Err(better_auth_core::AuthError::Database(
-                better_auth_core::DatabaseError::AmbiguousAccount {
+            return Err(alibi_core::AuthError::Database(
+                alibi_core::DatabaseError::AmbiguousAccount {
                     provider: provider.to_owned(),
                 },
             ));
@@ -135,9 +135,7 @@ where
             .await
             .map_err(map_db_err)?
         else {
-            return Err(better_auth_core::error::AuthError::not_found(
-                "Account not found",
-            ));
+            return Err(alibi_core::error::AuthError::not_found("Account not found"));
         };
 
         let mut active = model.into_active_model();
@@ -166,9 +164,7 @@ where
             .await
             .map_err(map_db_err)?
         else {
-            return Err(better_auth_core::error::AuthError::not_found(
-                "Account not found",
-            ));
+            return Err(alibi_core::error::AuthError::not_found("Account not found"));
         };
         let hook_context = self.hook_context(None);
         for hook in self.hooks() {

@@ -4,7 +4,7 @@
 //! refresh tokens, and ID tokens are encrypted before being persisted and
 //! decrypted transparently on read.
 
-use better_auth_core::{AuthConfig, AuthError};
+use alibi_core::{AuthConfig, AuthError};
 
 /// A set of OAuth tokens (access, refresh, id) after conditional encryption.
 pub struct EncryptedTokenSet {
@@ -73,7 +73,7 @@ pub fn maybe_decrypt(
 /// Returns an error if token encryption fails.
 pub fn encrypt_token_with_config(
     plaintext: &str,
-    secret: &better_auth_core::AuthConfig,
+    secret: &alibi_core::AuthConfig,
 ) -> Result<String, AuthError> {
     crate::plugins::token_crypto::encrypt_with_config(plaintext, secret)
 }
@@ -85,7 +85,7 @@ pub fn encrypt_token_with_config(
 /// Returns an error when validation, storage, or an application callback fails.
 pub fn decrypt_token_with_config(
     stored: &str,
-    secret: &better_auth_core::AuthConfig,
+    secret: &alibi_core::AuthConfig,
 ) -> Result<String, AuthError> {
     let likely_encrypted = stored.starts_with("$ba$")
         || (!stored.is_empty()
@@ -105,7 +105,7 @@ pub fn decrypt_token_with_config(
 pub fn maybe_encrypt_with_config(
     value: Option<String>,
     encrypt: bool,
-    secret: &better_auth_core::AuthConfig,
+    secret: &alibi_core::AuthConfig,
 ) -> Result<Option<String>, AuthError> {
     match (value, encrypt) {
         (Some(v), true) if !v.is_empty() => Ok(Some(encrypt_token_with_config(&v, secret)?)),
@@ -122,7 +122,7 @@ pub fn maybe_encrypt_with_config(
 pub fn maybe_decrypt_with_config(
     value: Option<&str>,
     encrypt: bool,
-    secret: &better_auth_core::AuthConfig,
+    secret: &alibi_core::AuthConfig,
 ) -> Result<Option<String>, AuthError> {
     match (value, encrypt) {
         (Some(v), true) => decrypt_token_with_config(v, secret).map(Some),
@@ -137,7 +137,7 @@ pub fn maybe_decrypt_with_config(
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
 pub fn encrypt_token_set(
-    ctx: &better_auth_core::AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &alibi_core::AuthContext<impl alibi_core::AuthSchema>,
     access_token: Option<String>,
     refresh_token: Option<String>,
     id_token: Option<String>,
@@ -172,7 +172,7 @@ pub(super) fn provider_token_nulls(
 /// Typed application callbacks and providers without the source policy retain
 /// the native token interface. Source's encryption rejects truthy nonstrings.
 pub(super) async fn encrypt_provider_token_set(
-    ctx: &better_auth_core::AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &alibi_core::AuthContext<impl alibi_core::AuthSchema>,
     tokens: &super::providers::OAuthTokenSet,
     policy: Option<&super::providers::OAuthAuthorizationPolicy>,
 ) -> Result<EncryptedTokenSet, AuthError> {

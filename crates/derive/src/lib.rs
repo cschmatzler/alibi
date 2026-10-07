@@ -44,7 +44,7 @@ fn generate_auth_schema(input: &DeriveInput) -> TokenStream {
     let ident = &input.ident;
 
     quote! {
-        impl ::better_auth::__private_core::schema::AuthSchema for #ident {
+        impl ::alibi::__private_core::schema::AuthSchema for #ident {
             type User = #user;
             type Session = #session;
             type Account = #account;

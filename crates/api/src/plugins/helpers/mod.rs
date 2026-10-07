@@ -5,10 +5,10 @@ mod api_key_authorization;
 mod credentials;
 mod sessions;
 
+use alibi_core::entity::{AuthAccount, AuthUser};
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, CreateUser, UpdateUser};
 pub use api_key_authorization::get_owned_api_key;
 pub use api_key_authorization::require_org_api_key_permission;
-use better_auth_core::entity::{AuthAccount, AuthUser};
-use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, CreateUser, UpdateUser};
 pub use credentials::get_credential_account;
 pub use credentials::get_credential_password_hash;
 pub use credentials::user_has_password;
@@ -34,7 +34,7 @@ pub(in crate::plugins) use sessions::response_has_session_cookie;
 pub use sessions::response_session;
 
 /// Join the configured auth origin and mount path for links sent to users.
-pub(in crate::plugins) fn auth_base_url(config: &better_auth_core::AuthConfig) -> String {
+pub(in crate::plugins) fn auth_base_url(config: &alibi_core::AuthConfig) -> String {
     let origin = config.base_url.trim_end_matches('/');
     let path = config.base_path.trim_matches('/');
     if path.is_empty() {
@@ -46,18 +46,18 @@ pub(in crate::plugins) fn auth_base_url(config: &better_auth_core::AuthConfig) -
 use chrono::Utc;
 
 /// Result of issuing a real session for a user.
-pub struct IssuedSession<S: better_auth_core::AuthSchema> {
+pub struct IssuedSession<S: alibi_core::AuthSchema> {
     pub user: S::User,
     pub session: S::Session,
 }
 
 /// Actual session issuance with retained adapter output for framework callbacks
 /// and separately filtered public responses.
-pub struct IssuedSessionRecord<S: better_auth_core::AuthSchema> {
-    pub user: better_auth_core::AdapterRecord<S::User>,
-    pub session: better_auth_core::AdapterRecord<S::Session>,
+pub struct IssuedSessionRecord<S: alibi_core::AuthSchema> {
+    pub user: alibi_core::AdapterRecord<S::User>,
+    pub session: alibi_core::AdapterRecord<S::Session>,
 }
-impl<S: better_auth_core::AuthSchema> IssuedSessionRecord<S> {
+impl<S: alibi_core::AuthSchema> IssuedSessionRecord<S> {
     fn into_stored(self) -> IssuedSession<S> {
         IssuedSession {
             user: self.user.into_stored(),
@@ -68,18 +68,15 @@ impl<S: better_auth_core::AuthSchema> IssuedSessionRecord<S> {
 
 /// Original rows used by the handler that issued the completed session.
 /// This is a callback observation; authorization still uses a current session read.
-pub(in crate::plugins) struct CompletedSession<S: better_auth_core::AuthSchema> {
+pub(in crate::plugins) struct CompletedSession<S: alibi_core::AuthSchema> {
     pub(in crate::plugins) user: S::User,
     pub(in crate::plugins) session: S::Session,
-    pub(in crate::plugins) user_view: Option<better_auth_core::wire::UserView>,
-    user_record: Option<better_auth_core::AdapterRecord<S::User>>,
-    session_record: Option<better_auth_core::AdapterRecord<S::Session>>,
+    pub(in crate::plugins) user_view: Option<alibi_core::wire::UserView>,
+    user_record: Option<alibi_core::AdapterRecord<S::User>>,
+    session_record: Option<alibi_core::AdapterRecord<S::Session>>,
 }
-impl<S: better_auth_core::AuthSchema> CompletedSession<S> {
-    pub(in crate::plugins) fn callback_user(
-        &self,
-        ctx: &AuthContext<S>,
-    ) -> better_auth_core::UserView {
+impl<S: alibi_core::AuthSchema> CompletedSession<S> {
+    pub(in crate::plugins) fn callback_user(&self, ctx: &AuthContext<S>) -> alibi_core::UserView {
         self.user_view.clone().unwrap_or_else(|| {
             self.user_record.as_ref().map_or_else(
                 || ctx.trusted_user_view(&self.user),
@@ -90,7 +87,7 @@ impl<S: better_auth_core::AuthSchema> CompletedSession<S> {
     pub(in crate::plugins) fn callback_session(
         &self,
         ctx: &AuthContext<S>,
-    ) -> better_auth_core::SessionView {
+    ) -> alibi_core::SessionView {
         self.session_record.as_ref().map_or_else(
             || ctx.trusted_session_view(&self.session),
             |record| ctx.trusted_session_view(record),
@@ -139,7 +136,7 @@ impl From<AuthError> for SessionIssueError {
 #[derive(Clone, Debug, Default)]
 pub struct SessionOverrides {
     /// Application-defined session fields declared by the schema and configuration.
-    pub additional_fields: better_auth_core::field_policy::FieldValues,
+    pub additional_fields: alibi_core::field_policy::FieldValues,
     /// The trusted administrator responsible for impersonation, if any.
     pub impersonated_by: Option<String>,
     /// The organization selected by the application for this session.
@@ -148,7 +145,7 @@ pub struct SessionOverrides {
     pub active_team_id: Option<String>,
 }
 
-impl<S: better_auth_core::AuthSchema> std::fmt::Debug for IssuedSession<S> {
+impl<S: alibi_core::AuthSchema> std::fmt::Debug for IssuedSession<S> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("IssuedSession").finish_non_exhaustive()
     }
@@ -157,7 +154,7 @@ impl<S: better_auth_core::AuthSchema> std::fmt::Debug for IssuedSession<S> {
 /// Apply the configured default admin role to a new user when the caller
 /// didn't set an explicit role.
 pub fn apply_default_role(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     create_user: &mut CreateUser,
 ) {
     // The registered admin create transform runs after identity validation.

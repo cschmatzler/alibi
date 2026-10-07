@@ -11,10 +11,10 @@ Supported providers: **Cloudflare Turnstile**, **Google reCAPTCHA**, **hCaptcha*
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::captcha::TurnstileConfig;
-use better_auth::plugins::{CaptchaConfig, CaptchaPlugin, CaptchaProvider};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::captcha::TurnstileConfig;
+use alibi::plugins::{CaptchaConfig, CaptchaPlugin, CaptchaProvider};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -59,8 +59,8 @@ Verification honors the client IP resolved by `advanced.ip_address` (sent to the
 By default the plugin protects `/sign-up/email`, `/sign-in/email` and `/request-password-reset`. Set `endpoints` to replace that list. Patterns are relative to `base_path` and support `*` (within one segment) and `**` (across segments):
 
 ```rust
-use better_auth::plugins::captcha::TurnstileConfig;
-use better_auth::plugins::{CaptchaConfig, CaptchaPlugin, CaptchaProvider};
+use alibi::plugins::captcha::TurnstileConfig;
+use alibi::plugins::{CaptchaConfig, CaptchaPlugin, CaptchaProvider};
 
 fn captcha(secret: &str) -> CaptchaPlugin {
     let mut config = CaptchaConfig::new(CaptchaProvider::CloudflareTurnstile(TurnstileConfig::new(secret)));
@@ -79,8 +79,8 @@ An empty list means "the three defaults". Trusted server calls through `dispatch
 ## Providers
 
 ```rust
-use better_auth::plugins::captcha::{RecaptchaConfig, SiteKeyCaptchaConfig, TurnstileConfig};
-use better_auth::plugins::CaptchaProvider;
+use alibi::plugins::captcha::{RecaptchaConfig, SiteKeyCaptchaConfig, TurnstileConfig};
+use alibi::plugins::CaptchaProvider;
 
 fn providers(secret: &str) -> Vec<CaptchaProvider> {
     let mut turnstile = TurnstileConfig::new(secret);
@@ -112,7 +112,7 @@ fn providers(secret: &str) -> Vec<CaptchaProvider> {
 Every HTTP provider carries `http: CaptchaHttpOptions { secret_key, site_verify_url }`. Set `site_verify_url` to route verification through your own proxy, and use `CaptchaPlugin::with_http_client(reqwest::Client)` to apply proxy and TLS settings to the verification calls:
 
 ```rust
-use better_auth::plugins::captcha::TurnstileConfig;
+use alibi::plugins::captcha::TurnstileConfig;
 
 fn proxied(secret: &str) -> Result<TurnstileConfig, url::ParseError> {
     let mut config = TurnstileConfig::new(secret);

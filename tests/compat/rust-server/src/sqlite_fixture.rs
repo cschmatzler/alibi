@@ -1,9 +1,9 @@
 //! Keep the fixture's in-memory database alive for the server lifetime.
-use better_auth_seaorm::sea_orm::{ConnectOptions, ConnectionTrait, DbBackend, Statement};
+use alibi_seaorm::sea_orm::{ConnectOptions, ConnectionTrait, DbBackend, Statement};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static DATABASE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
-use better_auth_seaorm::{Database, DatabaseConnection};
+use alibi_seaorm::{Database, DatabaseConnection};
 
 pub(crate) fn options() -> ConnectOptions {
     let name = format!(
@@ -28,7 +28,7 @@ pub(crate) fn options() -> ConnectOptions {
 }
 
 pub(super) async fn connect()
--> Result<(DatabaseConnection, DatabaseConnection), better_auth_seaorm::sea_orm::DbErr> {
+-> Result<(DatabaseConnection, DatabaseConnection), alibi_seaorm::sea_orm::DbErr> {
     let configured = options();
     let writer = Database::connect(configured.clone()).await?;
     let observer = Database::connect(configured).await?;
@@ -46,12 +46,12 @@ pub(super) async fn connect()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use better_auth_core::{AuthUser, CreateUser};
+    use alibi_core::{AuthUser, CreateUser};
     use std::time::Duration;
 
     #[tokio::test]
     async fn observer_reads_committed_status_during_writer_transaction_and_cannot_write() {
-        use better_auth_seaorm::sea_orm::TransactionTrait;
+        use alibi_seaorm::sea_orm::TransactionTrait;
         let (writer, observer) = connect().await.unwrap();
         writer
             .execute_raw(Statement::from_string(
@@ -128,11 +128,11 @@ mod tests {
             }
             let database = Database::connect(configured).await.unwrap();
             crate::backend::migrate(&database).await.unwrap();
-            let config = better_auth::AuthConfig::new(
+            let config = alibi::AuthConfig::new(
                 "fixture-database-retention-test-secret-at-least-32chars",
             );
             let store = crate::backend::store::<crate::TestSchema>(config, database.clone());
-            let issued = better_auth_core::store::UserStore::create_user(
+            let issued = alibi_core::store::UserStore::create_user(
                 &store,
                 CreateUser::new().with_email("retained@fixture.test"),
             )
@@ -172,7 +172,7 @@ mod tests {
             .fetch_one(pool)
             .await;
             let found =
-                better_auth_core::store::UserStore::get_user_by_id(&store, issued.id().as_ref())
+                alibi_core::store::UserStore::get_user_by_id(&store, issued.id().as_ref())
                     .await;
             eprintln!(
                 "{label}: tables={tables_before}->{tables_after}; connection={before}->{connection:?}; user={found:?}"
@@ -187,13 +187,13 @@ mod tests {
                 let independent = Database::connect(options()).await.unwrap();
                 crate::backend::migrate(&independent).await.unwrap();
                 let independent_store = crate::backend::store::<crate::TestSchema>(
-                    better_auth::AuthConfig::new(
+                    alibi::AuthConfig::new(
                         "fixture-database-isolation-test-secret-at-least-32chars",
                     ),
                     independent,
                 );
                 assert!(
-                    better_auth_core::store::UserStore::get_user_by_id(
+                    alibi_core::store::UserStore::get_user_by_id(
                         &independent_store,
                         issued.id().as_ref(),
                     )

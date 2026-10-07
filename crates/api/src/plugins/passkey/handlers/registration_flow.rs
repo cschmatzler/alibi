@@ -8,7 +8,7 @@ pub(in crate::plugins::passkey) async fn generate_register_options_core(
     passkey_name: Option<&str>,
     authenticator_attachment: Option<&str>,
     config: &PasskeyConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(Value, String)> {
     let core = build_verification_core(config, &ctx.config, &generation_origin(config, ctx))?;
     let existing_passkeys = ctx.database.list_passkeys_by_user(&user.id).await?;
@@ -121,11 +121,9 @@ pub(in crate::plugins::passkey) async fn generate_register_options_core(
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(in crate::plugins::passkey) async fn verify_registration_core<
-    S: better_auth_core::AuthSchema,
->(
+pub(in crate::plugins::passkey) async fn verify_registration_core<S: alibi_core::AuthSchema>(
     body: &VerifyRegistrationRequest,
-    req: &better_auth_core::AuthRequest,
+    req: &alibi_core::AuthRequest,
     authenticated_owner: Option<&str>,
     config: &PasskeyConfig,
     ctx: &AuthContext<S>,
@@ -185,15 +183,15 @@ pub(in crate::plugins::passkey) async fn verify_registration_core<
     if matches!(stored_state.state, StoredRegistrationVerifier::Source(_)) {
         // Source treats transports as persistence metadata, never authenticator
         // admission. Keep the original callback input and signed bytes intact.
-        if let better_auth_core::utils::json::JsValue::Object(response) = &mut parsed_response
-            && let Some(better_auth_core::utils::json::JsValue::Object(authenticator)) =
+        if let alibi_core::utils::json::JsValue::Object(response) = &mut parsed_response
+            && let Some(alibi_core::utils::json::JsValue::Object(authenticator)) =
                 response.get_mut("response")
         {
             drop(authenticator.shift_remove("transports"));
         }
     }
     let registration: RegisterPublicKeyCredential =
-        match better_auth_core::utils::json::from_value(parsed_response) {
+        match alibi_core::utils::json::from_value(parsed_response) {
             Ok(registration) => registration,
             Err(_) => return passkey_registration_failure(),
         };
@@ -282,7 +280,7 @@ pub(in crate::plugins::passkey) async fn verify_registration_core<
 
     let source_transports = matches!(stored_state.state, StoredRegistrationVerifier::Source(_));
     let transports = if source_transports {
-        use better_auth_core::utils::json::JsValue;
+        use alibi_core::utils::json::JsValue;
         match response
             .get("response")
             .and_then(|response| response.get("transports"))
@@ -335,7 +333,7 @@ pub(in crate::plugins::passkey) async fn verify_registration_core<
         name: body
             .name
             .as_ref()
-            .and_then(better_auth_core::utils::json::JsValue::as_str)
+            .and_then(alibi_core::utils::json::JsValue::as_str)
             .map(trim_name)
             .filter(|name| !name.is_empty())
             .map(str::to_owned),
@@ -412,7 +410,7 @@ pub(in crate::plugins::passkey) async fn verify_registration_core<
         Ok(input_2)
     };
     let outcome: AuthResult<Value> = if body.create_session.as_bool() == Some(true) {
-        let meta = better_auth_core::RequestMeta::from_request(req);
+        let meta = alibi_core::RequestMeta::from_request(req);
         let expires_at = Utc::now() + ctx.config.session.expires_in;
         let committed = ctx
             .database
@@ -430,9 +428,8 @@ pub(in crate::plugins::passkey) async fn verify_registration_core<
                     let user_id = input.user_id.clone();
                     let passkey = transaction.create_passkey(input).await?;
                     let session = transaction
-                        .create_session_record(better_auth_core::CreateSession {
-                            additional_fields: better_auth_core::field_policy::FieldValues::default(
-                            ),
+                        .create_session_record(alibi_core::CreateSession {
+                            additional_fields: alibi_core::field_policy::FieldValues::default(),
                             token: None,
                             user_id,
                             expires_at,
@@ -480,7 +477,7 @@ pub(in crate::plugins::passkey) async fn verify_registration_core<
                             | AuthError::UserCreationCancelled
                             | AuthError::Jwt(_)) => other,
                         })?;
-                    Ok::<better_auth_core::store::BoxedTransactionValue, AuthError>(Box::new((
+                    Ok::<alibi_core::store::BoxedTransactionValue, AuthError>(Box::new((
                         passkey, user, session,
                     )))
                 })
@@ -490,9 +487,9 @@ pub(in crate::plugins::passkey) async fn verify_registration_core<
             Ok(value) => {
                 let (passkey, user, session) = *value
                     .downcast::<(
-                        better_auth_core::Passkey,
-                        better_auth_core::AdapterRecord<S::User>,
-                        better_auth_core::AdapterRecord<S::Session>,
+                        alibi_core::Passkey,
+                        alibi_core::AdapterRecord<S::User>,
+                        alibi_core::AdapterRecord<S::Session>,
                     )>()
                     .map_err(|_error| {
                         AuthError::internal("invalid passkey registration transaction result")

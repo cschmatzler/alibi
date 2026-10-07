@@ -1,6 +1,6 @@
 //! Map `SQLx` failures to auth errors.
 
-use better_auth_core::error::{AuthError, DatabaseError};
+use alibi_core::error::{AuthError, DatabaseError};
 
 /// Unique and foreign-key violations become constraint errors; everything
 /// else is a query error.

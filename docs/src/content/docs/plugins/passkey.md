@@ -8,7 +8,7 @@ description: "WebAuthn passkeys: register, authenticate, manage credentials, and
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins passkey -o src/auth_schema.rs
+alibi generate --plugins passkey -o src/auth_schema.rs
 ```
 
 Adds the `passkeys` table (credential id, public key, counter, device type, backup state, transports, AAGUID, user id, name).
@@ -17,9 +17,9 @@ Adds the `passkeys` table (credential id, public key, counter, device type, back
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::PasskeyPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::PasskeyPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -89,11 +89,11 @@ By default registering a passkey needs a signed-in user. To let someone **create
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::{
+use alibi::plugins::{
     PasskeyConfig, PasskeyPlugin, PasskeyRegistrationConfig, PasskeyRegistrationContext,
     PasskeyRegistrationUser, PasskeyUserResolver,
 };
-use better_auth::AuthResult;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 struct InviteResolver;
@@ -130,7 +130,7 @@ fn plugin() -> PasskeyPlugin {
 }
 ```
 
-Without a session, an unusable resolver result fails with `400 RESOLVED_USER_INVALID`; a missing resolver with `400 RESOLVE_USER_REQUIRED`. The optional `PasskeyRegistrationAfterVerification` callback runs after the credential verifies; it can return a `PasskeyRegistrationOverride` to reassign the passkey to another `user_id` or rename it — this is where you create the real user for a passkey-first sign-up. `PasskeyAuthenticationAfterVerification` runs after a successful assertion, before the counter and session are written. These traits take decoded client data as a `JsValue` from `better_auth::utils::json`.
+Without a session, an unusable resolver result fails with `400 RESOLVED_USER_INVALID`; a missing resolver with `400 RESOLVE_USER_REQUIRED`. The optional `PasskeyRegistrationAfterVerification` callback runs after the credential verifies; it can return a `PasskeyRegistrationOverride` to reassign the passkey to another `user_id` or rename it — this is where you create the real user for a passkey-first sign-up. `PasskeyAuthenticationAfterVerification` runs after a successful assertion, before the counter and session are written. These traits take decoded client data as a `JsValue` from `alibi::utils::json`.
 
 ## Security notes
 

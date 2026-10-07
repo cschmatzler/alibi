@@ -2,7 +2,7 @@ mod seaorm;
 mod selection;
 mod sqlx;
 
-use better_auth_schema_registry::{self as registry, EntityRole, ExtraEntitySchema, FieldDef};
+use alibi_schema_registry::{self as registry, EntityRole, ExtraEntitySchema, FieldDef};
 use clap::{Parser, Subcommand, ValueEnum};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 #[derive(Parser)]
-#[command(name = "better-auth-rs", about = "CLI tools for better-auth-rs")]
+#[command(name = "alibi", about = "CLI tools for Alibi")]
 struct Cli {
     #[command(subcommand)]
     command: Command,

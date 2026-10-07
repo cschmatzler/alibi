@@ -8,20 +8,20 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::email_otp::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::email_otp::{
     EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, EmailOtpStorage, EmailOtpType,
     OtpResendStrategy, SendEmailOtp,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::{
     AuthRequest, CreateVerification, DatabaseError, HttpMethod, wire::VerificationView,
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder},
     store::entities::verification,
 };
@@ -39,7 +39,7 @@ impl SendEmailOtp for Sender {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         let identifier = if delivery.otp_type == EmailOtpType::ChangeEmail
             && _context.request.as_ref().is_some_and(|request| {
@@ -54,7 +54,7 @@ impl SendEmailOtp for Sender {
                 .get_verification_by_value(&format!("{}:0", delivery.otp))
                 .await?
                 .ok_or_else(|| AuthError::internal("missing issued change proof"))?;
-            better_auth_core::AuthVerification::identifier(&proof).to_string()
+            alibi_core::AuthVerification::identifier(&proof).to_string()
         } else {
             format!("{}-otp-{}", delivery.otp_type.as_str(), delivery.email)
         };
@@ -83,12 +83,12 @@ impl SendEmailOtp for Sender {
     }
 }
 #[async_trait]
-impl better_auth::plugins::email_otp::EmailOtpGenerator for Sender {
+impl alibi::plugins::email_otp::EmailOtpGenerator for Sender {
     async fn generate(
         &self,
         email: &str,
         kind: EmailOtpType,
-        context: &better_auth_core::CallbackContext,
+        context: &alibi_core::CallbackContext,
     ) -> AuthResult<Option<String>> {
         if let Some(mut snapshot) = crate::fixtures::passwordless_context::snapshot(
             context,
@@ -288,7 +288,7 @@ pub(super) async fn router(
             if body.action=="seed" {
                 let _=auth.store().create_verification(CreateVerification {identifier:body.identifier,value:body.value.ok_or_else(||AuthError::bad_request("value is required"))?,expires_at}).await?;
             } else if body.action=="expire" {
-                use better_auth_seaorm::sea_orm::sea_query::Expr;
+                use alibi_seaorm::sea_orm::sea_query::Expr;
                 let _=verification::Entity::update_many().col_expr(verification::Column::ExpiresAt,Expr::value(expires_at)).col_expr(verification::Column::UpdatedAt,Expr::value(Utc::now())).filter(verification::Column::Identifier.eq(body.identifier)).exec(&database).await.map_err(|error|DatabaseError::Query(error.to_string()))?;
             } else {return Err(AuthError::bad_request("unknown verification action"));}
             Ok(json!({"status":true}))

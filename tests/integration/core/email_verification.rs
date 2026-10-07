@@ -5,17 +5,17 @@
 )]
 
 use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use async_trait::async_trait;
-use better_auth::plugins::user_management::{SendChangeEmailConfirmation, UserInfo};
-use better_auth::plugins::{
+use alibi::plugins::user_management::{SendChangeEmailConfirmation, UserInfo};
+use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationConfig, EmailVerificationPlugin, SendVerificationEmail,
     UserManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-use better_auth_core::wire::UserView;
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi_core::wire::UserView;
+use alibi_core::{
     AuthAccount, AuthError, AuthRequest, AuthResponse, AuthResult, AuthUser, HttpMethod,
 };
+use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -74,11 +74,11 @@ async fn auth<B: Backend>(
     required: bool,
     send_on_signup: Option<bool>,
     fail: bool,
-    policy: better_auth::AwaitedNotificationErrorPolicy,
+    policy: alibi::AwaitedNotificationErrorPolicy,
 ) -> (BetterAuth<B::Schema>, Arc<Sender>, Db) {
     let mut config =
         AuthConfig::new("verification-fixture-secret-minimum-32-characters").base_url(ORIGIN);
-    if policy == better_auth::AwaitedNotificationErrorPolicy::LogAndContinue {
+    if policy == alibi::AwaitedNotificationErrorPolicy::LogAndContinue {
         config = config.awaited_notification_errors(policy);
     }
     let (connection, _) = db
@@ -111,7 +111,7 @@ async fn auth<B: Backend>(
     (auth, sender, db)
 }
 
-async fn post<S: better_auth::AuthSchema>(
+async fn post<S: alibi::AuthSchema>(
     auth: &BetterAuth<S>,
     path: &str,
     body: Value,
@@ -119,7 +119,7 @@ async fn post<S: better_auth::AuthSchema>(
     Box::pin(post_with_cookie(auth, path, body, None)).await
 }
 
-async fn post_with_cookie<S: better_auth::AuthSchema>(
+async fn post_with_cookie<S: alibi::AuthSchema>(
     auth: &BetterAuth<S>,
     path: &str,
     body: Value,
@@ -175,7 +175,7 @@ mod tests {
             false,
             Some(false),
             false,
-            better_auth::AwaitedNotificationErrorPolicy::Propagate,
+            alibi::AwaitedNotificationErrorPolicy::Propagate,
         )
         .await;
         let (registered, body) = post(&auth, "/sign-up/email", signup()).await;
@@ -228,7 +228,7 @@ mod tests {
             false,
             Some(false),
             false,
-            better_auth::AwaitedNotificationErrorPolicy::Propagate,
+            alibi::AwaitedNotificationErrorPolicy::Propagate,
         )
         .await;
         for (email, username, display) in [
@@ -303,7 +303,7 @@ mod tests {
                 required,
                 send_on_signup,
                 false,
-                better_auth::AwaitedNotificationErrorPolicy::Propagate,
+                alibi::AwaitedNotificationErrorPolicy::Propagate,
             )
             .await;
             let (response, payload) = post(&auth, "/sign-up/email", signup()).await;
@@ -349,12 +349,12 @@ mod tests {
         db: Db,
     ) -> TestResult {
         for policy in [
-            better_auth::AwaitedNotificationErrorPolicy::Propagate,
-            better_auth::AwaitedNotificationErrorPolicy::LogAndContinue,
+            alibi::AwaitedNotificationErrorPolicy::Propagate,
+            alibi::AwaitedNotificationErrorPolicy::LogAndContinue,
         ] {
             let (auth, sender, _db) = auth::<B>(db.fresh().await?, true, None, true, policy).await;
             let (registered, signup_body) = post(&auth, "/sign-up/email", signup()).await;
-            if policy == better_auth::AwaitedNotificationErrorPolicy::Propagate {
+            if policy == alibi::AwaitedNotificationErrorPolicy::Propagate {
                 assert_eq!(registered.status, 400, "{signup_body}");
                 assert_eq!(
                     signup_body.get("message"),
@@ -364,7 +364,7 @@ mod tests {
                 assert_eq!(registered.status, 200, "{signup_body}");
                 assert_eq!(signup_body.get("token"), Some(&Value::Null));
             }
-            if policy == better_auth::AwaitedNotificationErrorPolicy::Propagate {
+            if policy == alibi::AwaitedNotificationErrorPolicy::Propagate {
                 assert!(
                     auth.store()
                         .get_user_by_email(EMAIL)
@@ -400,12 +400,11 @@ mod tests {
                 assert_eq!(retry.status, 200, "{retry_body}");
                 sender.fail.store(true, Ordering::SeqCst);
             }
-            let signup_deliveries =
-                if policy == better_auth::AwaitedNotificationErrorPolicy::Propagate {
-                    2
-                } else {
-                    1
-                };
+            let signup_deliveries = if policy == alibi::AwaitedNotificationErrorPolicy::Propagate {
+                2
+            } else {
+                1
+            };
             let user = auth
                 .store()
                 .get_user_by_email(EMAIL)
@@ -441,7 +440,7 @@ mod tests {
                 json!({"email":EMAIL,"password":PASSWORD}),
             )
             .await;
-            if policy == better_auth::AwaitedNotificationErrorPolicy::Propagate {
+            if policy == alibi::AwaitedNotificationErrorPolicy::Propagate {
                 assert_eq!(denied.status, 400, "{denied_body}");
                 assert_eq!(
                     denied_body.get("message"),
@@ -563,7 +562,7 @@ mod tests {
                 auth.store()
                     .update_user(
                         id,
-                        better_auth_core::UpdateUser {
+                        alibi_core::UpdateUser {
                             email_verified: Some(true),
                             ..Default::default()
                         },

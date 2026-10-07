@@ -1,5 +1,5 @@
+use alibi_core::{AuthError, AuthResult};
 use async_trait::async_trait;
-use better_auth_core::{AuthError, AuthResult};
 use std::sync::Arc;
 
 /// Async persistence callbacks for the complete backup-code JSON string.
@@ -39,7 +39,7 @@ impl TwoFactorBackupStorage {
     pub(in crate::plugins) async fn store_codes(
         &self,
         codes: &[String],
-        secret: &better_auth_core::AuthConfig,
+        secret: &alibi_core::AuthConfig,
     ) -> AuthResult<String> {
         self.store_json(serde_json::to_string(codes)?, secret).await
     }
@@ -47,7 +47,7 @@ impl TwoFactorBackupStorage {
     pub(in crate::plugins) async fn store_json(
         &self,
         json: String,
-        secret: &better_auth_core::AuthConfig,
+        secret: &alibi_core::AuthConfig,
     ) -> AuthResult<String> {
         match self {
             Self::Encrypted => super::encrypt_value(secret, &json),
@@ -62,23 +62,23 @@ impl TwoFactorBackupStorage {
     pub(in crate::plugins) async fn load_value(
         &self,
         stored: &str,
-        secret: &better_auth_core::AuthConfig,
-    ) -> AuthResult<Option<better_auth_core::utils::json::JsValue>> {
+        secret: &alibi_core::AuthConfig,
+    ) -> AuthResult<Option<alibi_core::utils::json::JsValue>> {
         let json = match self {
             Self::Encrypted => super::decrypt_value(secret, stored)?,
             Self::Plain => stored.to_owned(),
             Self::CustomCipher(cipher) => cipher.decrypt(stored).await.map_err(callback_error)?,
         };
-        Ok(better_auth_core::utils::json::parse_value(&json).ok())
+        Ok(alibi_core::utils::json::parse_value(&json).ok())
     }
 }
 
 pub(super) fn json_date(value: &str) -> Option<String> {
-    better_auth_core::utils::datetime::normalize_json_date(value)
+    alibi_core::utils::datetime::normalize_json_date(value)
 }
 
-pub(super) fn normalize_json_dates(value: &mut better_auth_core::utils::json::JsValue) {
-    use better_auth_core::utils::json::JsValue;
+pub(super) fn normalize_json_dates(value: &mut alibi_core::utils::json::JsValue) {
+    use alibi_core::utils::json::JsValue;
     match value {
         JsValue::String(text) => {
             if let Some(date) = json_date(text) {
@@ -91,8 +91,8 @@ pub(super) fn normalize_json_dates(value: &mut better_auth_core::utils::json::Js
     }
 }
 
-pub(super) fn truthy(value: &better_auth_core::utils::json::JsValue) -> bool {
-    use better_auth_core::utils::json::JsValue;
+pub(super) fn truthy(value: &alibi_core::utils::json::JsValue) -> bool {
+    use alibi_core::utils::json::JsValue;
     match value {
         JsValue::Null | JsValue::Bool(false) => false,
         JsValue::Number(number) => *number != 0.0 && !number.is_nan(),

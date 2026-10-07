@@ -22,10 +22,10 @@ No CORS, no `SameSite` negotiation, first-party cookies. Set `base_url` to `http
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::middleware::CorsConfig;
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::middleware::CorsConfig;
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 fn auth_config(secret: &str) -> AuthConfig {
     AuthConfig::new(secret)
@@ -72,8 +72,8 @@ When the frontend and auth server are on different **sites** (`app.com` and `aut
 **3a. Use `SameSite=None; Secure`** (HTTPS only), optionally partitioned (CHIPS):
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::config::{AdvancedConfig, CookieAttributes, SameSite};
+use alibi::AuthConfig;
+use alibi::config::{AdvancedConfig, CookieAttributes, SameSite};
 
 fn auth_config(secret: &str) -> AuthConfig {
     AuthConfig::new(secret)
@@ -101,8 +101,8 @@ Third-party cookie restrictions keep tightening (Safari and Firefox block them o
 use crate::auth_schema::AppAuthSchema;
 use axum::Router;
 use axum::http::{HeaderValue, Method, header};
-use better_auth::BetterAuth;
-use better_auth::integrations::axum::AxumIntegration;
+use alibi::BetterAuth;
+use alibi::integrations::axum::AxumIntegration;
 use std::sync::Arc;
 use tower_http::cors::CorsLayer;
 

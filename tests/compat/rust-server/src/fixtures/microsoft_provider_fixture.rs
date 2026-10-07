@@ -7,15 +7,15 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{
     HttpOAuthJwksSource, MicrosoftOptions, MicrosoftProfilePhotoSize, OAuthClientAssertion,
     OAuthClientAssertionContext, OAuthClientAssertionGetter, OAuthProvider, OAuthUserInfo,
 };
-use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -43,8 +43,8 @@ impl OAuthClientAssertionGetter for Assertion {
     ) -> Result<String, String> {
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         let grant = match context.grant_type {
-            better_auth::plugins::oauth::OAuthTokenGrant::AuthorizationCode => "authorization_code",
-            better_auth::plugins::oauth::OAuthTokenGrant::RefreshToken => "refresh_token",
+            alibi::plugins::oauth::OAuthTokenGrant::AuthorizationCode => "authorization_code",
+            alibi::plugins::oauth::OAuthTokenGrant::RefreshToken => "refresh_token",
         };
         self.0.assertions.lock().await.push(json!({"clientId":context.client_id,"tokenEndpoint":context.token_endpoint,"grantType":grant}));
         Ok(format!("fixture-assertion-{grant}"))

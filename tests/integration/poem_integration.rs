@@ -6,16 +6,16 @@
     reason = "boundary assertions use known fixture values"
 )]
 use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use async_trait::async_trait;
-use better_auth::integrations::poem::{CurrentSession, OptionalSession, PoemIntegration};
-use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::entity::AuthUser;
-use better_auth_core::middleware::{BodyLimitConfig, RateLimitConfig};
-use better_auth_core::{
+use alibi::integrations::poem::{CurrentSession, OptionalSession, PoemIntegration};
+use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::entity::AuthUser;
+use alibi_core::middleware::{BodyLimitConfig, RateLimitConfig};
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     CreateUser, UpdateUser,
 };
+use async_trait::async_trait;
 use poem::{
     Endpoint, FromRequest, Request, Route,
     http::{Method, StatusCode},
@@ -37,7 +37,7 @@ impl<S: AuthSchema> AuthPlugin<S> for Probe {
     }
     fn routes(&self) -> Vec<AuthRoute> {
         vec![
-            AuthRoute::new(better_auth_core::HttpMethod::Patch, "/wire", "wire"),
+            AuthRoute::new(alibi_core::HttpMethod::Patch, "/wire", "wire"),
             AuthRoute::post("/persist", "persist"),
         ]
     }
@@ -210,7 +210,7 @@ async fn wire_and_authority<B: Backend>(db: Db) -> TestResult {
 }
 
 async fn denied_session<S: AuthSchema>(
-    auth: &Arc<better_auth::BetterAuth<S>>,
+    auth: &Arc<alibi::BetterAuth<S>>,
     cookie: &str,
 ) -> TestResult {
     let mut req = request(Method::GET, "/profile", ());
@@ -268,7 +268,7 @@ async fn sessions<B: Backend>(db: Db) -> TestResult {
     let user_id = body["user"]["id"].as_str().unwrap();
     let token = body["token"].as_str().unwrap();
     denied_session(&auth, "__Secure-better-auth.session_token=bad-signature").await?;
-    let foreign = better_auth_core::utils::cookie_utils::sign_cookie_value(
+    let foreign = alibi_core::utils::cookie_utils::sign_cookie_value(
         token,
         "foreign-secret-with-at-least-32-characters",
     );

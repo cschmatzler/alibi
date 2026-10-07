@@ -10,7 +10,7 @@ use crate::plugins::authentication_helpers::{
     find_verification, parse_body, parse_email, prepare_additional_user_fields,
     revoke_unproven_access, session_response,
 };
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
     CreateAccount, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
 };
@@ -52,7 +52,7 @@ impl EmailOtpPlugin {
                     .generate(
                         email,
                         otp_type,
-                        &better_auth_core::CallbackContext::new(ctx, request),
+                        &alibi_core::CallbackContext::new(ctx, request),
                     )
                     .await?
             }
@@ -115,7 +115,7 @@ impl EmailOtpPlugin {
                     ctx.verifications()
                         .update(
                             &key,
-                            better_auth_core::UpdateVerification {
+                            alibi_core::UpdateVerification {
                                 expires_at: Some(
                                     super::super::passwordless_numeric::expires_at(
                                         self.config.expires_in,
@@ -169,7 +169,7 @@ impl EmailOtpPlugin {
                 AuthError::bad_request("send email verification is not implemented")
             })?;
         let sender = sender.clone();
-        let context = better_auth_core::CallbackContext::new(ctx, request);
+        let context = alibi_core::CallbackContext::new(ctx, request);
         let delivery = EmailOtpDelivery {
             email: email.to_owned(),
             otp,
@@ -321,7 +321,7 @@ impl EmailOtpPlugin {
                 ctx.verifications()
                     .update(
                         &key,
-                        better_auth_core::UpdateVerification {
+                        alibi_core::UpdateVerification {
                             value: Some(format!("{stored}:{}", attempts + 1)),
                             ..Default::default()
                         },
@@ -445,9 +445,7 @@ impl EmailOtpPlugin {
                 ctx.database
                     .create_user_with_source_record(
                         data,
-                        better_auth_core::user_validation::UserValidationSource::creation(
-                            "email-otp",
-                        ),
+                        alibi_core::user_validation::UserValidationSource::creation("email-otp"),
                     )
                     .await?
             }
@@ -502,14 +500,14 @@ impl EmailOtpPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        use better_auth_core::AuthAccount;
+        use alibi_core::AuthAccount;
         let body: PasswordRequest = match parse_body(req) {
             Ok(value) => value,
             Err(response) => return Ok(response),
         };
         let email = body.email.to_lowercase();
         let settings = self.password_settings(ctx);
-        better_auth_core::utils::password::validate_password(
+        alibi_core::utils::password::validate_password(
             &body.password,
             settings.minimum,
             settings.maximum,
@@ -708,7 +706,7 @@ impl EmailOtpPlugin {
             .map_err(AuthError::from)?
             .with_header(
                 "Set-Cookie",
-                better_auth_core::utils::cookie_utils::create_session_cookie(
+                alibi_core::utils::cookie_utils::create_session_cookie(
                     &session.token,
                     &ctx.config,
                 )?,
@@ -719,7 +717,7 @@ impl EmailOtpPlugin {
 async fn require_authoritative_session<S: AuthSchema>(
     ctx: &AuthContext<S>,
     req: &AuthRequest,
-) -> AuthResult<(S::User, better_auth_core::wire::SessionView)> {
+) -> AuthResult<(S::User, alibi_core::wire::SessionView)> {
     ctx.require_session(req).await.map_err(|error| match error {
         AuthError::Unauthenticated | AuthError::SessionNotFound => AuthError::Upstream {
             status: 401,

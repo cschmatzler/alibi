@@ -4,9 +4,9 @@
     reason = "SeaORM entity derives expose associated types in private fixtures"
 )]
 use super::{Backend, Db, Raw, TestResult, on_raw};
-use better_auth::{AuthConfig, AuthSchema};
-use better_auth_core::store::{AuthStore, UserStore};
-use better_auth_core::{
+use alibi::{AuthConfig, AuthSchema};
+use alibi_core::store::{AuthStore, UserStore};
+use alibi_core::{
     AuthAccount, AuthSession, AuthUser, AuthVerification, CreateAccount, CreateSession, CreateUser,
     CreateVerification, UpdateAccount, UpdateUser,
 };
@@ -25,7 +25,7 @@ macro_rules! auth_model {
     (sqlx, $module:ident, $role:literal, $table:literal, [$($charfield:ident : $chartype:ty),*], {$($fields:tt)*}) => {
         pub mod $module {
             use super::*;
-            #[derive(better_auth::sqlx::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
+            #[derive(alibi::sqlx::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
             #[auth(role = $role, table = $table, id_generator = "super::super::new_id")]
             pub struct Model {
                 #[auth(column_type = "bpchar")]
@@ -38,8 +38,8 @@ macro_rules! auth_model {
     (seaorm, $module:ident, $role:literal, $table:literal, [$($charfield:ident : $chartype:ty),*], {$($fields:tt)*}) => {
         pub mod $module {
             use super::*;
-            use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
-            #[derive(better_auth::seaorm::AuthEntity, Clone, Debug, serde::Serialize, DeriveEntityModel)]
+            use alibi::seaorm::sea_orm::{self, entity::prelude::*};
+            #[derive(alibi::seaorm::AuthEntity, Clone, Debug, serde::Serialize, DeriveEntityModel)]
             #[auth(role = $role, id_generator = "super::super::new_id")]
             #[sea_orm(table_name = $table)]
             pub struct Model {
@@ -117,7 +117,7 @@ mod sqlx_char {
         baseline(&db).await?;
         let connection = super::super::Sqlx::connect(&db.url, Some(1)).await?;
         let pool = connection.as_postgres().unwrap().clone();
-        let store = better_auth::sqlx::SqlxStore::<Schema>::new(
+        let store = alibi::sqlx::SqlxStore::<Schema>::new(
             AuthConfig::new("char-schema-test-secret-at-least-32"),
             connection,
         );
@@ -135,7 +135,7 @@ mod sqlx_char {
         let db = Db::sqlite().await?;
         install(&db).await?;
         let connection = super::super::Sqlx::connect(&db.url, Some(1)).await?;
-        let store = better_auth::sqlx::SqlxStore::<Schema>::new(
+        let store = alibi::sqlx::SqlxStore::<Schema>::new(
             AuthConfig::new("char-schema-test-secret-at-least-32"),
             connection,
         );
@@ -150,7 +150,7 @@ mod seaorm_char {
         let db = Db::sqlite().await?;
         install(&db).await?;
         let connection = super::super::SeaOrm::connect(&db.url, Some(1)).await?;
-        let store = better_auth::seaorm::SeaOrmStore::<Schema>::new(
+        let store = alibi::seaorm::SeaOrmStore::<Schema>::new(
             AuthConfig::new("char-schema-test-secret-at-least-32"),
             connection,
         );
@@ -163,7 +163,7 @@ mod seaorm_char {
         install(&db).await?;
         let connection = super::super::SeaOrm::connect(&db.url, Some(1)).await?;
         let pool = connection.get_postgres_connection_pool().clone();
-        let store = better_auth::seaorm::SeaOrmStore::<Schema>::new(
+        let store = alibi::seaorm::SeaOrmStore::<Schema>::new(
             AuthConfig::new("char-schema-test-secret-at-least-32"),
             connection,
         );
@@ -183,7 +183,7 @@ mod seaorm_char {
 // No override: reproduce the consumer's actual native SqlxStore lookup.
 mod baseline_model {
     use super::*;
-    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+    #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
     #[auth(role = "user", table = "users")]
     pub struct User {
         pub id: String,
@@ -197,9 +197,9 @@ mod baseline_model {
     pub struct Schema;
     impl AuthSchema for Schema {
         type User = User;
-        type Session = better_auth_sqlx::store::entities::session::Model;
-        type Account = better_auth_sqlx::store::entities::account::Model;
-        type Verification = better_auth_sqlx::store::entities::verification::Model;
+        type Session = alibi_sqlx::store::entities::session::Model;
+        type Account = alibi_sqlx::store::entities::account::Model;
+        type Verification = alibi_sqlx::store::entities::verification::Model;
     }
 }
 async fn baseline(db: &Db) -> TestResult {
@@ -207,7 +207,7 @@ async fn baseline(db: &Db) -> TestResult {
         .max_connections(1)
         .connect(&db.url)
         .await?;
-    let store = better_auth::sqlx::SqlxStore::<baseline_model::Schema>::new(
+    let store = alibi::sqlx::SqlxStore::<baseline_model::Schema>::new(
         AuthConfig::new("baseline-char-schema-test-secret"),
         pool.clone(),
     );
@@ -321,10 +321,9 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
             .with_email(format!("{id}@example.invalid"))
             .with_name("Created");
         create.id = Some(id.into());
-        _ = create.additional_fields.insert(
-            "linkedId".into(),
-            better_auth_core::utils::json::JsValue::Null,
-        );
+        _ = create
+            .additional_fields
+            .insert("linkedId".into(), alibi_core::utils::json::JsValue::Null);
         let user = store.create_user(create).await?;
         assert_eq!(user.id(), id);
         assert_eq!(user.name(), Some("Created"));
@@ -359,10 +358,10 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
         assert_eq!(users.len(), 1);
         for operator in ["in", "eq"] {
             let (_, total) = store
-                .list_users(better_auth_core::ListUsersParams {
+                .list_users(alibi_core::ListUsersParams {
                     filter_field: Some("id".into()),
                     filter_operator: Some(operator.into()),
-                    filter_value: Some(better_auth_core::UserFilterValue::Multiple(vec![format!(
+                    filter_value: Some(alibi_core::UserFilterValue::Multiple(vec![format!(
                         "{id}   "
                     )])),
                     ..Default::default()
@@ -404,8 +403,8 @@ async fn exercise<S: AuthSchema>(raw: &Raw, store: &dyn AuthStore<S>) -> TestRes
         let mut update = UpdateUser::default();
         _ = update.additional_fields.insert(
             "linkedId".into(),
-            linked.map_or(better_auth_core::utils::json::JsValue::Null, |id| {
-                better_auth_core::utils::json::JsValue::String(id.into())
+            linked.map_or(alibi_core::utils::json::JsValue::Null, |id| {
+                alibi_core::utils::json::JsValue::String(id.into())
             }),
         );
         let updated = store.update_user(id, update).await?;
@@ -591,10 +590,8 @@ async fn native_ownership_bindings(pool: &sqlx::PgPool, wire_type: &str) -> Test
 
 mod seaorm_text {
     use super::*;
-    use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
-    #[derive(
-        Clone, Debug, serde::Serialize, DeriveEntityModel, better_auth::seaorm::AuthEntity,
-    )]
+    use alibi::seaorm::sea_orm::{self, entity::prelude::*};
+    #[derive(Clone, Debug, serde::Serialize, DeriveEntityModel, alibi::seaorm::AuthEntity)]
     #[sea_orm(table_name = "users")]
     #[auth(role = "user")]
     pub struct Model {
@@ -625,13 +622,13 @@ async fn postgres_text_and_varchar_ids_retain_significant_spaces() -> TestResult
         let db = Db::postgres().await?;
         install_as(&db, column, false, false).await?;
         let connection = super::Sqlx::connect(&db.url, Some(1)).await?;
-        let store = better_auth::sqlx::SqlxStore::<baseline_model::Schema>::new(
+        let store = alibi::sqlx::SqlxStore::<baseline_model::Schema>::new(
             AuthConfig::new("ordinary-string-column-test-secret"),
             connection,
         );
         ordinary_strings(&store, "sqlx").await?;
         let connection = super::SeaOrm::connect(&db.url, Some(1)).await?;
-        let store = better_auth::seaorm::SeaOrmStore::<seaorm_text::Schema>::new(
+        let store = alibi::seaorm::SeaOrmStore::<seaorm_text::Schema>::new(
             AuthConfig::new("ordinary-string-column-test-secret"),
             connection,
         );

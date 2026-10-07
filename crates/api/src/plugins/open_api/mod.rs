@@ -1,10 +1,10 @@
 //! `OpenAPI` schema generation and Scalar reference page.
-use async_trait::async_trait;
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
     AuthRoute, AuthSchema, HttpMethod, OpenApiBuilder, OpenApiEndpoint, OpenApiRegistry,
     PluginOpenApiMetadata, core_paths,
 };
+use async_trait::async_trait;
 
 #[derive(Debug, Clone, Default)]
 pub struct OpenApiConfig {
@@ -61,10 +61,10 @@ impl OpenApiPlugin {
 }
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for OpenApiPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 

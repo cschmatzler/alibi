@@ -1,7 +1,7 @@
 //! `SeaORM` bindings for the shared database lifecycle hooks.
 
-pub use better_auth_core::hooks::current_request_hook_context;
-pub use better_auth_core::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
+pub use alibi_core::hooks::current_request_hook_context;
+pub use alibi_core::store::{DatabaseHookContext, DatabaseHooks, HookBackend, HookControl};
 use sea_orm::{DatabaseConnection, DatabaseTransaction};
 
 /// The `SeaORM` hook backend: implement [`DatabaseHooks<S, SeaOrmBackend>`]

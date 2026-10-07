@@ -1,18 +1,18 @@
 //! Persisted precision must survive every public organization JSON projection.
 
-use better_auth::plugins::organization::types::{
+use alibi::plugins::organization::types::{
     BasicMemberResponse, CreatedOrganizationResponse, MemberResponse, OrganizationResponse,
 };
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin};
-use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-use better_auth_core::{AuthRequest, CreateInvitation, HttpMethod};
-use better_auth_seaorm::sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
-use better_auth_seaorm::store::entities::{invitation, member, organization};
-use better_auth_seaorm::{Database, SeaOrmStore};
+use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin};
+use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi_core::{AuthRequest, CreateInvitation, HttpMethod};
+use alibi_seaorm::sea_orm::{ActiveModelTrait, EntityTrait, IntoActiveModel, Set};
+use alibi_seaorm::store::entities::{invitation, member, organization};
+use alibi_seaorm::{Database, SeaOrmStore};
 use chrono::{DateTime, Utc};
 use serde_json::{Value, json};
 
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 const ORIGIN: &str = "http://organization-timestamp.fixture.test";
 
@@ -27,7 +27,7 @@ async fn request(
     body: Option<Value>,
     cookie: Option<&str>,
     organization_id: Option<&str>,
-) -> (better_auth_core::AuthResponse, Value) {
+) -> (alibi_core::AuthResponse, Value) {
     let mut req = AuthRequest::new(method, format!("/api/auth{path}"));
     drop(req.headers.insert("origin".into(), ORIGIN.into()));
     if let Some(cookie) = cookie {
@@ -63,7 +63,7 @@ mod tests {
             AuthConfig::new("organization-timestamp-fixture-secret-at-least-32-characters")
                 .base_url(ORIGIN);
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let auth = AuthBuilder::new(config.clone())

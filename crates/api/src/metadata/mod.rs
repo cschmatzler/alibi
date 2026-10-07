@@ -13,9 +13,9 @@ mod source_endpoints;
 #[rustfmt::skip]
 #[allow(warnings, clippy::all, clippy::pedantic, clippy::nursery, clippy::restriction, reason = "Generated API declarations retain the upstream generator output")]
 mod source_models;
-use better_auth_core::AuthRoute;
-use better_auth_core::{OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata};
-use better_auth_schema_registry::{FieldDef, plugin_schemas};
+use alibi_core::AuthRoute;
+use alibi_core::{OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata};
+use alibi_schema_registry::{FieldDef, plugin_schemas};
 use serde_json::{Value, json};
 fn wire_name(name: &str) -> String {
     let mut words = name.split('_');
@@ -148,10 +148,10 @@ pub fn plugin_metadata(plugin: &str, routes: &[AuthRoute]) -> PluginOpenApiMetad
     metadata
 }
 #[must_use]
-pub fn instance_plugin_metadata<S: better_auth_core::AuthSchema>(
+pub fn instance_plugin_metadata<S: alibi_core::AuthSchema>(
     plugin: &str,
     routes: &[AuthRoute],
-    ctx: &better_auth_core::AuthInitContext<S>,
+    ctx: &alibi_core::AuthInitContext<S>,
 ) -> PluginOpenApiMetadata {
     let mut metadata = plugin_metadata(plugin, routes);
     model_annotations::apply(plugin, ctx, &mut metadata);

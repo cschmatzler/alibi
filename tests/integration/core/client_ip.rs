@@ -6,7 +6,7 @@
 )]
 
 use crate::contract::helpers::{TestHarness, post_json, send_request, test_config};
-use better_auth_core::AuthSession;
+use alibi_core::AuthSession;
 use serde_json::json;
 
 #[tokio::test]

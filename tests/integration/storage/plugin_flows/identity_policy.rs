@@ -1,15 +1,13 @@
 //! Application admission must run with the real request and before persistence.
 use super::*;
 mod verification_modes;
-use async_trait::async_trait;
-use better_auth_core::hooks::RequestHookContext;
-use better_auth_core::user_validation::{
+use alibi_core::hooks::RequestHookContext;
+use alibi_core::user_validation::{
     UserInfoValidator, UserValidationAction, UserValidationData, UserValidationRejection,
 };
-use better_auth_core::verification::{
-    VerificationIdentifierHasher, VerificationIdentifierStrategy,
-};
-use better_auth_core::{AuthError, AuthResult, CreateUser, CreateVerification, UpdateVerification};
+use alibi_core::verification::{VerificationIdentifierHasher, VerificationIdentifierStrategy};
+use alibi_core::{AuthError, AuthResult, CreateUser, CreateVerification, UpdateVerification};
+use async_trait::async_trait;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 backend_tests!(
@@ -41,7 +39,7 @@ impl UserInfoValidator for Admission {
         let policy = context.headers["x-admission"].clone();
         // Yield inside the callback so concurrently admitted requests interleave.
         tokio::task::yield_now().await;
-        let actual = better_auth_core::hooks::current_request_hook_context().unwrap();
+        let actual = alibi_core::hooks::current_request_hook_context().unwrap();
         assert_eq!(actual.headers["x-admission"], policy);
         assert_eq!(actual.body, context.body);
         self.0
@@ -77,7 +75,7 @@ async fn identity_policy_admits_mutations_and_isolates_concurrent_requests<B: Ba
     config.user_validation = Some(policy.clone());
     let auth = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
-        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new())
         .plugin(SessionManagementPlugin::new())
         .build()
@@ -147,7 +145,7 @@ async fn identity_policy_admits_mutations_and_isolates_concurrent_requests<B: Ba
             .is_err()
     );
     assert_eq!(db.count("users").await?, 3);
-    assert!(better_auth_core::hooks::current_request_hook_context().is_none());
+    assert!(alibi_core::hooks::current_request_hook_context().is_none());
     B::close(connection).await
 }
 
@@ -309,7 +307,7 @@ impl UserInfoValidator for ProviderAdmission {
 async fn provider_admission_distinguishes_creation_returning_and_linking<B: Backend>(
     db: Db,
 ) -> TestResult {
-    use better_auth::plugins::{OAuthPlugin, oauth::GenericOAuthConfig};
+    use alibi::plugins::{OAuthPlugin, oauth::GenericOAuthConfig};
     use std::collections::HashMap;
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let peer = Provider::start("application/json", "{}").await;
@@ -332,7 +330,7 @@ async fn provider_admission_distinguishes_creation_returning_and_linking<B: Back
     config.account.update_account_on_sign_in = true;
     let auth = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
-        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new())
         .plugin(SessionManagementPlugin::new())
         .plugin(OAuthPlugin::new().add_provider("policy-provider", provider))
@@ -367,7 +365,7 @@ async fn provider_admission_distinguishes_creation_returning_and_linking<B: Back
         auth.store()
             .update_user(
                 &local_id,
-                better_auth_core::UpdateUser {
+                alibi_core::UpdateUser {
                     email_verified: Some(true),
                     ..Default::default()
                 },

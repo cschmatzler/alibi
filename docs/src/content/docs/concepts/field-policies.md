@@ -12,7 +12,7 @@ Adding a field takes two steps — a column and a policy.
 Add a field to your model and a column to the table (and a migration):
 
 ```rust nocheck
-#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
 #[auth(role = "user", table = "users")]
 pub struct User {
     pub id: String,
@@ -37,8 +37,8 @@ ALTER TABLE users ADD COLUMN plan TEXT;
 Policies live on `AuthConfig` and must be set before the store is created:
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::field_policy::FieldConfig;
+use alibi::AuthConfig;
+use alibi::field_policy::FieldConfig;
 use serde_json::json;
 
 fn auth_config(secret: &str) -> AuthConfig {
@@ -95,8 +95,8 @@ curl -b cookies.txt … /update-user -d '{"locale":"fr"}'
 Asynchronous endpoint validation (`validate_async`) is rejected during request parsing, matching the pinned runtime; use an adapter transform or a hook for I/O.
 
 ```rust
-use better_auth::AuthConfig;
-use better_auth::field_policy::FieldConfig;
+use alibi::AuthConfig;
+use alibi::field_policy::FieldConfig;
 use serde_json::json;
 
 fn auth_config(secret: &str) -> AuthConfig {

@@ -10,13 +10,13 @@
 )]
 
 use crate::contract::helpers::*;
-use better_auth::prelude::{AuthUser, UpdateUser};
+use alibi::prelude::{AuthUser, UpdateUser};
 use chrono::{Duration, Utc};
 use serde_json::json;
 
-type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
-async fn setup_admin(auth: &better_auth::BetterAuth<TestSchema>) -> String {
+async fn setup_admin(auth: &alibi::BetterAuth<TestSchema>) -> String {
     let (token, _) = signup_user(auth, "admin-stateful@test.com", "password123", "Admin").await;
 
     let user = auth

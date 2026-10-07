@@ -5,15 +5,15 @@ use axum::{
     extract::{Query, State},
     routing::{get, post},
 };
-use better_auth::__private_core::store::{AccountStore, SessionStore, UserStore};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{
+use alibi::__private_core::store::{AccountStore, SessionStore, UserStore};
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{
     AdminConfig, AdminPlugin, EmailPasswordPlugin, RolePermissions, SessionManagementPlugin,
     TwoFactorPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::{
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
@@ -23,37 +23,37 @@ use std::{collections::HashMap, sync::Arc};
 
 struct ApplicationDateErrors;
 #[async_trait::async_trait]
-impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
     for ApplicationDateErrors
 {
     async fn before_update_user(
         &self,
         _id: &str,
-        update: &mut better_auth_core::UpdateUser,
+        update: &mut alibi_core::UpdateUser,
         _context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         if update.banned == Some(true) {
-            return Err(better_auth_core::AuthError::Upstream {
+            return Err(alibi_core::AuthError::Upstream {
                 status: 403,
                 code: "APPLICATION_BAN_REFUSED",
                 message: "Invalid Date",
             });
         }
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
     async fn before_create_session(
         &self,
-        session: &mut better_auth_core::CreateSession,
+        session: &mut alibi_core::CreateSession,
         _context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         if session.impersonated_by.is_some() {
-            return Err(better_auth_core::AuthError::Upstream {
+            return Err(alibi_core::AuthError::Upstream {
                 status: 500,
                 code: "APPLICATION_SESSION_REFUSED",
                 message: "Invalid Date",
             });
         }
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
 }
 
@@ -198,10 +198,10 @@ struct StoredTimestamps {
 async fn set_timestamps(
     State(store): State<Arc<crate::backend::Store<TestSchema>>>,
     Json(body): Json<StoredTimestamps>,
-) -> Result<Json<Value>, better_auth::AuthError> {
+) -> Result<Json<Value>, alibi::AuthError> {
     for value in [&body.created_at, &body.updated_at] {
         chrono::DateTime::parse_from_rfc3339(value)
-            .map_err(|_| better_auth::AuthError::bad_request("valid stored timestamps required"))?;
+            .map_err(|_| alibi::AuthError::bad_request("valid stored timestamps required"))?;
     }
     let result = crate::backend::database_of(&store)
         .execute_raw(Statement::from_sql_and_values(
@@ -215,12 +215,12 @@ async fn set_timestamps(
         ))
         .await
         .map_err(|error| {
-            better_auth::AuthError::Database(better_auth_core::DatabaseError::Query(
+            alibi::AuthError::Database(alibi_core::DatabaseError::Query(
                 error.to_string(),
             ))
         })?;
     if result.rows_affected() != 1 {
-        return Err(better_auth::AuthError::NotFound("user required".into()));
+        return Err(alibi::AuthError::NotFound("user required".into()));
     }
     let row = crate::backend::database_of(&store)
         .query_one_raw(Statement::from_sql_and_values(
@@ -230,15 +230,15 @@ async fn set_timestamps(
         ))
         .await
         .map_err(|error| {
-            better_auth::AuthError::Database(better_auth_core::DatabaseError::Query(
+            alibi::AuthError::Database(alibi_core::DatabaseError::Query(
                 error.to_string(),
             ))
         })?
-        .ok_or(better_auth::AuthError::UserNotFound)?;
+        .ok_or(alibi::AuthError::UserNotFound)?;
     Ok(Json(json!({
-        "userId": row.try_get::<String>("", "id").map_err(|error| better_auth::AuthError::Database(better_auth_core::DatabaseError::Query(error.to_string())))?,
-        "createdAt": row.try_get::<String>("", "created_at").map_err(|error| better_auth::AuthError::Database(better_auth_core::DatabaseError::Query(error.to_string())))?,
-        "updatedAt": row.try_get::<String>("", "updated_at").map_err(|error| better_auth::AuthError::Database(better_auth_core::DatabaseError::Query(error.to_string())))?,
+        "userId": row.try_get::<String>("", "id").map_err(|error| alibi::AuthError::Database(alibi_core::DatabaseError::Query(error.to_string())))?,
+        "createdAt": row.try_get::<String>("", "created_at").map_err(|error| alibi::AuthError::Database(alibi_core::DatabaseError::Query(error.to_string())))?,
+        "updatedAt": row.try_get::<String>("", "updated_at").map_err(|error| alibi::AuthError::Database(alibi_core::DatabaseError::Query(error.to_string())))?,
     })))
 }
 
@@ -249,7 +249,7 @@ struct StateQuery {
 async fn state(
     State(store): State<Arc<crate::backend::Store<TestSchema>>>,
     Query(query): Query<StateQuery>,
-) -> Result<Json<Value>, better_auth::AuthError> {
+) -> Result<Json<Value>, alibi::AuthError> {
     let Some(user) = store.get_user_by_email(&query.email).await? else {
         return Ok(Json(json!({"user":null,"accounts":[],"sessions":[]})));
     };

@@ -4,8 +4,8 @@ mod redemption;
 pub(super) mod types;
 
 use crate::plugins::helpers::{SessionIssueError, create_user_session_record};
-use better_auth_core::entity::{AuthSession, AuthUser};
-use better_auth_core::{
+use alibi_core::entity::{AuthSession, AuthUser};
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateDeviceCode, RequestMeta,
     UpdateDeviceCode,
 };
@@ -319,7 +319,7 @@ enum DeviceRequestKind {
     Decision,
 }
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     DeviceAuthorizationPlugin, "device-authorization";
     routes {
         post "/device/code" => handle_device_code, "device_code";
@@ -329,18 +329,18 @@ better_auth_core::impl_auth_plugin! {
         post "/device/deny" => handle_device_deny, "device_deny";
     }
     extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
     }
 
-        fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
-            vec![better_auth_core::PluginRateLimit { matches: |path| path == "/device", limit: better_auth_core::EndpointRateLimit { window_seconds: self.config.expires_in.to_std().map_or(0.0, |duration| duration.as_secs_f64()), max_requests: 5.0 } }]
+        fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
+            vec![alibi_core::PluginRateLimit { matches: |path| path == "/device", limit: alibi_core::EndpointRateLimit { window_seconds: self.config.expires_in.to_std().map_or(0.0, |duration| duration.as_secs_f64()), max_requests: 5.0 } }]
         }
-        fn allowed_media_types(&self, route: &better_auth_core::AuthRoute) -> Vec<&'static str> {
+        fn allowed_media_types(&self, route: &alibi_core::AuthRoute) -> Vec<&'static str> {
             if route.path == "/device/code" {
                 vec!["application/json", "application/x-www-form-urlencoded"]
             } else {
@@ -362,7 +362,7 @@ fn device_callback_error(error: AuthError) -> AuthError {
 fn set_device_no_store_headers(req: &AuthRequest) {
     req.queue_response_header("Cache-Control", "no-store");
     req.queue_response_header("Pragma", "no-cache");
-    if let Some(call) = better_auth_core::endpoint::current_endpoint_call_context() {
+    if let Some(call) = alibi_core::endpoint::current_endpoint_call_context() {
         call.set_response_header("Cache-Control", "no-store");
         call.set_response_header("Pragma", "no-cache");
     }
@@ -375,7 +375,7 @@ fn duration_seconds_floor(duration: Duration) -> i64 {
 }
 
 fn is_unique_constraint_error(error: &AuthError) -> bool {
-    let AuthError::Database(better_auth_core::DatabaseError::Constraint(message)) = error else {
+    let AuthError::Database(alibi_core::DatabaseError::Constraint(message)) = error else {
         return false;
     };
     let message = message.to_ascii_lowercase();
@@ -594,9 +594,9 @@ fn build_verification_uris(
 }
 
 async fn find_device_code_by_user_code(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     user_code: &str,
-) -> AuthResult<Option<better_auth_core::DeviceCode>> {
+) -> AuthResult<Option<alibi_core::DeviceCode>> {
     // Custom generators may include punctuation or mixed case. Upstream tries
     // their exact spelling first and only normalizes the default alphabet.
     if let Some(record) = ctx.database.get_device_code_by_user_code(user_code).await?
@@ -661,7 +661,7 @@ fn device_error_response(
 mod tests {
     use super::*;
     use crate::plugins::test_helpers;
-    use better_auth_core::{AuthResponse, CreateDeviceCode, CreateUser, HttpMethod};
+    use alibi_core::{AuthResponse, CreateDeviceCode, CreateUser, HttpMethod};
     use chrono::{Duration, Utc};
     use serde_json::Value;
     use std::collections::HashMap;
@@ -670,8 +670,7 @@ mod tests {
         atomic::{AtomicUsize, Ordering},
     };
 
-    type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     #[tokio::test]
     async fn issuance_retries_collisions_three_times_and_runs_request_hook_once() {
@@ -869,8 +868,8 @@ mod tests {
         email: &str,
     ) -> (
         AuthContext<TestSchema>,
-        better_auth_core::wire::UserView,
-        better_auth_core::wire::SessionView,
+        alibi_core::wire::UserView,
+        alibi_core::wire::SessionView,
     ) {
         test_helpers::create_test_context_with_user(
             CreateUser::new()

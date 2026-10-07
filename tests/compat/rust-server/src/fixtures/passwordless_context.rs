@@ -1,6 +1,6 @@
 //! Capture actual native callback input and live proof state at the delivery boundary.
 use crate::TestSchema;
-use better_auth_core::{AuthResult, CallbackContext};
+use alibi_core::{AuthResult, CallbackContext};
 use serde_json::{Value, json};
 
 pub(crate) async fn snapshot(
@@ -17,7 +17,7 @@ pub(crate) async fn snapshot(
     };
     let auth = context
         .context::<TestSchema>()
-        .ok_or_else(|| better_auth_core::AuthError::internal("wrong callback schema"))?;
+        .ok_or_else(|| alibi_core::AuthError::internal("wrong callback schema"))?;
     let body = request.body_as_json::<Value>()?;
     Ok(Some(json!({
         "method": format!("{:?}", request.method()).to_uppercase(),

@@ -1,19 +1,19 @@
 //! Public partial-policy overrides preserve fixed limits and persisted session selection.
 
+use alibi::plugins::organization::{OrganizationConfig, OrganizationCreationPolicy};
+use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin};
+use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi_core::utils::cookie_utils::create_session_cookie;
+use alibi_core::wire::UserView;
+use alibi_core::{AuthRequest, AuthResponse, AuthResult, HttpMethod};
+use alibi_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use alibi_seaorm::store::entities::{member, organization, session};
+use alibi_seaorm::{Database, SeaOrmStore};
 use async_trait::async_trait;
-use better_auth::plugins::organization::{OrganizationConfig, OrganizationCreationPolicy};
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin};
-use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-use better_auth_core::utils::cookie_utils::create_session_cookie;
-use better_auth_core::wire::UserView;
-use better_auth_core::{AuthRequest, AuthResponse, AuthResult, HttpMethod};
-use better_auth_seaorm::sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
-use better_auth_seaorm::store::entities::{member, organization, session};
-use better_auth_seaorm::{Database, SeaOrmStore};
 use serde_json::{Value, json};
 use std::sync::Arc;
 
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 const ORIGIN: &str = "http://creation-policy.fixture.test";
 
@@ -59,7 +59,7 @@ mod tests {
         let config = AuthConfig::new("organization-creation-native-secret-at-least-32-chars")
             .base_url(ORIGIN);
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let auth = AuthBuilder::new(config.clone())

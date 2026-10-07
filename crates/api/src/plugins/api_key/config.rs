@@ -33,7 +33,7 @@ pub struct ApiKeyConfig {
     /// Use database rows for durable writes and admission in secondary mode.
     pub fallback_to_database: bool,
     /// Shared secondary cache for this plugin, independent of session persistence.
-    pub secondary_storage: Option<Arc<dyn better_auth_core::store::CacheAdapter>>,
+    pub secondary_storage: Option<Arc<dyn alibi_core::store::CacheAdapter>>,
     /// Application storage overriding the plugin's secondary cache.
     pub custom_storage: Option<Arc<dyn ApiKeyStorage>>,
 

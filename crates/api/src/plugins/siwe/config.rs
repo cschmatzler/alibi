@@ -1,5 +1,5 @@
+use alibi_core::AuthResponse;
 use async_trait::async_trait;
-use better_auth_core::AuthResponse;
 use rand::RngExt;
 use rand::distr::Alphanumeric;
 use serde::{Deserialize, Serialize};

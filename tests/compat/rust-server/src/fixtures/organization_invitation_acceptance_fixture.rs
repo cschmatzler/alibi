@@ -7,17 +7,17 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use better_auth::plugins::organization::{
+use alibi::plugins::organization::{
     MembershipLimit, OrganizationConfig, OrganizationInvitationAcceptanceContext,
     OrganizationInvitationAcceptanceHooks, OrganizationInvitationAcceptedContext, TeamsConfig,
     extensions::{OrganizationLimitResolver, TeamLimitContext},
 };
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
-use better_auth::{
+use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };

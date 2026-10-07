@@ -25,19 +25,19 @@ use super::types::{
 use crate::plugins::helpers::{
     SessionIssueError, apply_default_role, issue_selected_user_session_record,
 };
+use alibi_core::entity::{AuthAccount, AuthSession, AuthUser};
+use alibi_core::user_validation::{
+    UserValidationAction, UserValidationData, UserValidationSource, validate_user_info,
+};
+use alibi_core::wire::{SessionView, UserView};
+use alibi_core::{
+    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateAccount, CreateUser,
+    CreateVerification, UpdateAccount, UpdateUser,
+};
 use authorization::link_social_core;
 use authorization::social_sign_in_core;
 use authorization::validate_authorization_params;
 use base64::Engine;
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser};
-use better_auth_core::user_validation::{
-    UserValidationAction, UserValidationData, UserValidationSource, validate_user_info,
-};
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{
-    AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, CreateAccount, CreateUser,
-    CreateVerification, UpdateAccount, UpdateUser,
-};
 use chrono::{Duration, Utc};
 use cookies::account_cookie_max_age;
 use cookies::attach_cookie_state_payload;
@@ -96,7 +96,7 @@ impl OAuthSignInError {
     fn from_account_lookup(error: AuthError) -> Self {
         if matches!(
             error,
-            AuthError::Database(better_auth_core::DatabaseError::AmbiguousAccount { .. })
+            AuthError::Database(alibi_core::DatabaseError::AmbiguousAccount { .. })
         ) {
             Self::AccountLookup(error)
         } else {
@@ -108,7 +108,7 @@ impl OAuthSignInError {
         matches!(
             self,
             Self::AccountLookup(AuthError::Database(
-                better_auth_core::DatabaseError::AmbiguousAccount { .. }
+                alibi_core::DatabaseError::AmbiguousAccount { .. }
             ))
         )
     }
@@ -199,10 +199,10 @@ impl OAuthProcessPolicy {
 // ---------------------------------------------------------------------------
 
 /// Authenticate the current request and return the validated session.
-async fn require_session<S: better_auth_core::AuthSchema>(
+async fn require_session<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> Result<better_auth_core::SessionView, AuthError> {
+) -> Result<alibi_core::SessionView, AuthError> {
     ctx.require_cached_session(req)
         .await
         .map(|(_, session)| session)

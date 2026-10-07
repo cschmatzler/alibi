@@ -1,9 +1,9 @@
 use super::{ApiKeyConfig, ApiKeyPlugin};
-use async_trait::async_trait;
-use better_auth_core::store::CacheAdapter;
-use better_auth_core::{
+use alibi_core::store::CacheAdapter;
+use alibi_core::{
     ApiKey, AuthContext, AuthError, AuthResult, AuthSchema, CreateApiKey, UpdateApiKey,
 };
+use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};

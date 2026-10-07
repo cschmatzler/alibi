@@ -7,7 +7,7 @@ use axum::{
     response::IntoResponse,
     routing::{get, post},
 };
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
@@ -26,7 +26,7 @@ use better_auth::{
         siwe::{Eip191Verifier, SiweCallbackResult, SiweConfig, SiweNonceProvider, SiwePlugin},
     },
 };
-use better_auth_core::{
+use alibi_core::{
     AuthRequest, AuthUser, CreateUser, PasswordHasher, ScryptHasher,
     hooks::{RequestHookContext, TransformedRequestBody, ValidatedRequestBody},
     user_validation::{
@@ -34,7 +34,7 @@ use better_auth_core::{
     },
     wire::{AccountView, VerificationView},
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr},
     store::entities::{account, session, user, verification, wallet_address},
@@ -113,7 +113,7 @@ fn candidate(user: &CreateUser) -> Value {
 fn context_path(request: &RequestHookContext) -> String {
     request
         .extensions
-        .get::<better_auth_core::plugin::ResolvedEndpoint>()
+        .get::<alibi_core::plugin::ResolvedEndpoint>()
         .map_or_else(|| request.path.clone(), |endpoint| endpoint.path.clone())
 }
 #[async_trait]
@@ -139,7 +139,7 @@ impl UserInfoValidator for Application {
                     .body
                     .as_deref()
                     .and_then(|bytes| std::str::from_utf8(bytes).ok())
-                    .and_then(|body| better_auth_core::utils::json::parse_value(body).ok())
+                    .and_then(|body| alibi_core::utils::json::parse_value(body).ok())
             });
         self.event(json!({"stage":"validation","user":candidate(&data.user),"source":data.source,"context":{
             "path":context_path(request),"body":body.map(|body|body.to_json_value().unwrap()),
@@ -221,7 +221,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     }
     async fn after_create_user(
         &self,
-        user: &<TestSchema as better_auth_core::AuthSchema>::User,
+        user: &<TestSchema as alibi_core::AuthSchema>::User,
         context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
         self.event(json!({"stage":"user-create-after","userId":user.id(),"path":context.request.as_ref().map(context_path)}));
@@ -229,7 +229,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     }
     async fn before_create_account(
         &self,
-        _: &mut better_auth_core::CreateAccount,
+        _: &mut alibi_core::CreateAccount,
         context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.event(json!({"stage":"account-create-before","path":context.request.as_ref().map(context_path)}));
@@ -237,7 +237,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Application {
     }
     async fn before_create_session(
         &self,
-        _: &mut better_auth_core::CreateSession,
+        _: &mut alibi_core::CreateSession,
         context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.event(json!({"stage":"session-create-before","path":context.request.as_ref().map(context_path)}));
@@ -261,7 +261,7 @@ impl SendMagicLink for Application {
     async fn send(
         &self,
         delivery: &MagicLinkDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("magic:{}", delivery.email),
@@ -275,7 +275,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         delivery: &EmailOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("otp:{}:{}", delivery.otp_type.as_str(), delivery.email),
@@ -289,7 +289,7 @@ impl SendPhoneOtp for Application {
     async fn send(
         &self,
         delivery: &PhoneOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("phone:{}", delivery.phone_number),
@@ -315,7 +315,7 @@ impl SiweNonceProvider for Application {
         ))
     }
 }
-fn db_error(error: better_auth_seaorm::sea_orm::DbErr) -> AuthError {
+fn db_error(error: alibi_seaorm::sea_orm::DbErr) -> AuthError {
     AuthError::internal(error.to_string())
 }
 pub(crate) async fn router(

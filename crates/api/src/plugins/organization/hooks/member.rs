@@ -1,10 +1,10 @@
 use crate::plugins::organization::OrganizationMemberCreatePatch;
 use crate::plugins::organization::types::OrganizationMemberRemovalSnapshot;
 use crate::plugins::organization::types::OrganizationResponse;
+use alibi_core::AuthResult;
+use alibi_core::Member;
+use alibi_core::wire::UserView;
 use async_trait::async_trait;
-use better_auth_core::AuthResult;
-use better_auth_core::Member;
-use better_auth_core::wire::UserView;
 
 /// The source callback draft has no generated ID or creation timestamp.
 #[derive(Debug, Clone)]

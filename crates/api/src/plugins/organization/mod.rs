@@ -19,10 +19,10 @@ pub mod rbac;
 
 pub mod types;
 
+use alibi_core::error::AuthResult;
+use alibi_core::plugin::{AuthContext, AuthPlugin, AuthRoute};
+use alibi_core::types::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
-use better_auth_core::error::AuthResult;
-use better_auth_core::plugin::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth_core::types::{AuthRequest, AuthResponse, HttpMethod};
 pub use extensions::{
     DefaultTeamContext, DefaultTeamFactory, DynamicAccessControlConfig, OrganizationLimitResolver,
     OrganizationTeamHooks, TeamsConfig, default_organization_statements,
@@ -68,16 +68,16 @@ pub struct RolePermissions {
     #[serde(default)]
     pub ac: Vec<String>,
     #[serde(flatten)]
-    pub additional: better_auth_core::types::OrganizationPermissions,
+    pub additional: alibi_core::types::OrganizationPermissions,
 }
 
 /// Configuration for the Organization plugin
-#[derive(Debug, Clone, better_auth_core::PluginConfig)]
+#[derive(Debug, Clone, alibi_core::PluginConfig)]
 #[plugin(name = "OrganizationPlugin")]
 pub struct OrganizationConfig {
     /// Input policies for additional organization model fields.
     #[config(default = Default::default(), skip)]
-    pub organization_fields: better_auth_core::field_policy::SessionFields,
+    pub organization_fields: alibi_core::field_policy::SessionFields,
     /// Allow users to create organizations (default: true)
     #[config(default = true)]
     pub allow_user_to_create_organization: bool,
@@ -148,7 +148,7 @@ pub struct OrganizationConfig {
     #[config(default = DynamicAccessControlConfig::default(), skip)]
     pub dynamic_access_control: DynamicAccessControlConfig,
     #[config(default = None, skip)]
-    pub access_control: Option<better_auth_core::types::OrganizationPermissions>,
+    pub access_control: Option<alibi_core::types::OrganizationPermissions>,
 }
 
 impl OrganizationConfig {
@@ -178,7 +178,7 @@ impl OrganizationPlugin {
     /// # Errors
     ///
     /// Returns an error if membership validation, permission checks, admission hooks, or persistence fail.
-    pub async fn add_member_with_headers<S: better_auth_core::AuthSchema>(
+    pub async fn add_member_with_headers<S: alibi_core::AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
         headers: &HashMap<String, String>,
@@ -194,7 +194,7 @@ impl OrganizationPlugin {
     /// # Errors
     ///
     /// Returns an error if membership authorization, removal hooks, or persistence fail.
-    pub async fn remove_member_with_headers<S: better_auth_core::AuthSchema>(
+    pub async fn remove_member_with_headers<S: alibi_core::AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
         headers: &HashMap<String, String>,
@@ -218,7 +218,7 @@ impl OrganizationPlugin {
     /// # Errors
     ///
     /// Returns an error if organization authorization, deletion hooks, or persistence fail.
-    pub async fn delete_organization_with_headers<S: better_auth_core::AuthSchema>(
+    pub async fn delete_organization_with_headers<S: alibi_core::AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
         headers: &HashMap<String, String>,
@@ -258,7 +258,7 @@ impl OrganizationPlugin {
     /// # Errors
     ///
     /// Returns an error if creation policies, organization hooks, or persistence reject the operation.
-    pub async fn create_organization_for_user<S: better_auth_core::AuthSchema>(
+    pub async fn create_organization_for_user<S: alibi_core::AuthSchema>(
         &self,
         ctx: &AuthContext<S>,
         user_id: &str,
@@ -274,7 +274,7 @@ impl OrganizationPlugin {
             .database
             .get_user_by_id(user_id)
             .await?
-            .ok_or(better_auth_core::AuthError::Unauthenticated)?;
+            .ok_or(alibi_core::AuthError::Unauthenticated)?;
         handlers::org::create_organization_core(body, &user, None, None, &self.config, ctx).await
     }
 }
@@ -290,40 +290,40 @@ pub(in crate::plugins) const METADATA_ROLES: &str = "organization.roles";
 pub(in crate::plugins) const METADATA_CREATOR_ROLE: &str = "organization.creator_role";
 
 #[async_trait]
-impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+impl<S: alibi_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
 
-    fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> {
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         endpoint::definitions()
     }
     fn validate_endpoint(
         &self,
-        call: &better_auth_core::endpoint::EndpointCall,
+        call: &alibi_core::endpoint::EndpointCall,
         _ctx: &AuthContext<S>,
-    ) -> AuthResult<better_auth_core::endpoint::EndpointInput> {
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
         endpoint::validate(call, &self.config.organization_fields)
     }
     async fn on_endpoint(
         &self,
-        call: &better_auth_core::endpoint::EndpointCall,
+        call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<better_auth_core::endpoint::EndpointResponse> {
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
         self.call_endpoint(call, ctx).await
     }
 
@@ -331,22 +331,20 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
         "organization"
     }
 
-    fn session_fields(&self) -> better_auth_core::field_policy::FieldConfigs {
-        let mut fields = better_auth_core::field_policy::FieldConfigs::new();
+    fn session_fields(&self) -> alibi_core::field_policy::FieldConfigs {
+        let mut fields = alibi_core::field_policy::FieldConfigs::new();
         drop(
             fields.insert(
                 "activeOrganizationId".into(),
-                better_auth_core::field_policy::FieldConfig::new(
-                    serde_json::json!({"type":"string"}),
-                )
-                .read_only(),
+                alibi_core::field_policy::FieldConfig::new(serde_json::json!({"type":"string"}))
+                    .read_only(),
             ),
         );
         if self.config.teams.enabled {
             drop(
                 fields.insert(
                     "activeTeamId".into(),
-                    better_auth_core::field_policy::FieldConfig::new(
+                    alibi_core::field_policy::FieldConfig::new(
                         serde_json::json!({"type":"string"}),
                     )
                     .read_only(),
@@ -356,7 +354,7 @@ impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for OrganizationPlugin {
         fields
     }
 
-    async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+    async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
         ctx.set_metadata(METADATA_ENABLED, serde_json::Value::Bool(true));
         ctx.set_metadata(
             "organization.teams.enabled",
@@ -608,10 +606,10 @@ impl std::fmt::Debug for OrganizationPlugin {
 mod extension_tests {
     use super::*;
     use crate::plugins::test_helpers::{create_test_config, create_user_and_session};
-    use better_auth_core::types::{CreateMember, CreateTeam, Team, TeamMember};
-    use better_auth_core::wire::{SessionView, UserView};
-    use better_auth_core::{AuthError, AuthInitContext, AuthSession, CreateUser};
-    use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    use alibi_core::types::{CreateMember, CreateTeam, Team, TeamMember};
+    use alibi_core::wire::{SessionView, UserView};
+    use alibi_core::{AuthError, AuthInitContext, AuthSession, CreateUser};
+    use alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
     use chrono::Duration;
     use serde::de::DeserializeOwned;
     use serde_json::{Value, json};
@@ -693,7 +691,7 @@ mod extension_tests {
         async fn before_update(
             &self,
             _team: &Team,
-            update: &mut better_auth_core::types::UpdateTeam,
+            update: &mut alibi_core::types::UpdateTeam,
             _context: &extensions::TeamHookContext,
         ) -> AuthResult<()> {
             self.record("before-update")?;
@@ -769,9 +767,9 @@ mod extension_tests {
     impl DefaultTeamFactory for CustomDefaultTeam {
         async fn create(
             &self,
-            organization: &better_auth_core::types::Organization,
+            organization: &alibi_core::types::Organization,
             context: &DefaultTeamContext,
-            store: &dyn better_auth_core::store::TeamStore,
+            store: &dyn alibi_core::store::TeamStore,
         ) -> AuthResult<Option<Team>> {
             let request = context.request.as_ref().ok_or_else(|| {
                 AuthError::bad_request(
@@ -849,7 +847,7 @@ mod extension_tests {
             ("Expanded full", true, 400),
         ] {
             let mut request = AuthRequest::new(HttpMethod::Post, "/organization/create-team");
-            let cookie = better_auth_core::utils::cookie_utils::create_session_cookie(
+            let cookie = alibi_core::utils::cookie_utils::create_session_cookie(
                 &owner_session.token,
                 &ctx.config,
             )
@@ -954,7 +952,7 @@ mod extension_tests {
         let (owner, owner_session) = actor(&ctx, "coercion-owner").await;
         let organization = ctx
             .database
-            .create_organization(better_auth_core::types::CreateOrganization::new(
+            .create_organization(alibi_core::types::CreateOrganization::new(
                 "Custom IDs",
                 "native-coercion",
             ))
@@ -978,7 +976,7 @@ mod extension_tests {
             .await?;
         let other_org = ctx
             .database
-            .create_organization(better_auth_core::types::CreateOrganization::new(
+            .create_organization(alibi_core::types::CreateOrganization::new(
                 "Other tenant",
                 "native-coercion-other",
             ))
@@ -1158,7 +1156,7 @@ mod extension_tests {
     /// Returns an error when validation, storage, or an application callback fails.
     pub(super) async fn configured_context(
         plugin: &OrganizationPlugin,
-        config: better_auth_core::AuthConfig,
+        config: alibi_core::AuthConfig,
     ) -> AuthResult<AuthContext<BundledSchema>> {
         configured_context_with_connection(plugin, config)
             .await
@@ -1167,19 +1165,16 @@ mod extension_tests {
 
     async fn configured_context_with_connection(
         plugin: &OrganizationPlugin,
-        config: better_auth_core::AuthConfig,
-    ) -> AuthResult<(
-        AuthContext<BundledSchema>,
-        better_auth_seaorm::DatabaseConnection,
-    )> {
-        let database = better_auth_seaorm::Database::connect("sqlite::memory:")
+        config: alibi_core::AuthConfig,
+    ) -> AuthResult<(AuthContext<BundledSchema>, alibi_seaorm::DatabaseConnection)> {
+        let database = alibi_seaorm::Database::connect("sqlite::memory:")
             .await
             .map_err(|error| AuthError::internal(error.to_string()))?;
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .map_err(|error| AuthError::internal(error.to_string()))?;
         let config = std::sync::Arc::new(config);
-        let store = std::sync::Arc::new(better_auth_seaorm::SeaOrmStore::<BundledSchema>::new(
+        let store = std::sync::Arc::new(alibi_seaorm::SeaOrmStore::<BundledSchema>::new(
             std::sync::Arc::clone(&config),
             database.clone(),
         ));
@@ -1226,8 +1221,7 @@ mod extension_tests {
         let mut req = AuthRequest::new(method, path);
         if let Some(token) = token {
             let cookie =
-                better_auth_core::utils::cookie_utils::create_session_cookie(token, &ctx.config)
-                    .unwrap();
+                alibi_core::utils::cookie_utils::create_session_cookie(token, &ctx.config).unwrap();
             let pair = cookie
                 .split(';')
                 .next()
@@ -1786,7 +1780,7 @@ mod extension_tests {
     )]
     async fn default_team_factory_receives_request_and_its_persisted_team_becomes_active()
     -> TestResult {
-        use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+        use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
 
         let plugin = OrganizationPlugin::with_config(OrganizationConfig {
             teams: TeamsConfig {
@@ -2183,10 +2177,7 @@ mod extension_tests {
             .ok_or_else(|| std::io::Error::other("Owner-role invitation was not persisted"))?;
         assert_eq!(saved.organization_id, founder_org);
         assert_eq!(saved.role.as_deref(), Some("owner"));
-        assert_eq!(
-            saved.status,
-            better_auth_core::types::InvitationStatus::Pending
-        );
+        assert_eq!(saved.status, alibi_core::types::InvitationStatus::Pending);
 
         let (sender, inviter_session) = actor(&founder_ctx, "configured-inviter").await;
         drop(
@@ -2241,7 +2232,7 @@ mod extension_tests {
             ctx.database
                 .update_user(
                     &recipient.id,
-                    better_auth_core::UpdateUser {
+                    alibi_core::UpdateUser {
                         email_verified: Some(false),
                         ..Default::default()
                     },
@@ -2262,7 +2253,7 @@ mod extension_tests {
         let organization_id = id(&created)?;
         let invitation = ctx
             .database
-            .create_invitation(better_auth_core::CreateInvitation {
+            .create_invitation(alibi_core::CreateInvitation {
                 email: recipient
                     .email
                     .clone()
@@ -2313,10 +2304,7 @@ mod extension_tests {
             .get_invitation_by_id(&invitation.id)
             .await?
             .ok_or_else(|| std::io::Error::other("Rejected invitation disappeared"))?;
-        assert_eq!(
-            untouched.status,
-            better_auth_core::InvitationStatus::Pending
-        );
+        assert_eq!(untouched.status, alibi_core::InvitationStatus::Pending);
         assert!(
             ctx.database
                 .get_member(organization_id, &recipient.id)
@@ -2398,7 +2386,7 @@ mod extension_tests {
                 .await?
                 .ok_or_else(|| std::io::Error::other("Processed invitation disappeared"))?
                 .status,
-            better_auth_core::InvitationStatus::Rejected
+            alibi_core::InvitationStatus::Rejected
         );
         let processed = call(
             &explicit_false,
@@ -2418,7 +2406,7 @@ mod extension_tests {
 
         let expired = ctx
             .database
-            .create_invitation(better_auth_core::CreateInvitation {
+            .create_invitation(alibi_core::CreateInvitation {
                 email: invitation.email.clone(),
                 role: "member".to_owned(),
                 organization_id: organization_id.to_owned(),
@@ -2460,7 +2448,7 @@ mod extension_tests {
             ctx.database
                 .update_user(
                     &recipient.id,
-                    better_auth_core::UpdateUser {
+                    alibi_core::UpdateUser {
                         email_verified: Some(true),
                         ..Default::default()
                     },
@@ -2484,7 +2472,7 @@ mod extension_tests {
         );
         let pending = ctx
             .database
-            .create_invitation(better_auth_core::CreateInvitation {
+            .create_invitation(alibi_core::CreateInvitation {
                 email: invitation.email,
                 role: "member".to_owned(),
                 organization_id: organization_id.to_owned(),
@@ -2524,11 +2512,11 @@ mod dynamic_role_tests {
     use super::extension_tests::{actor, assert_error, body, call, configured_context, id};
     use super::*;
     use crate::plugins::test_helpers::create_test_config;
-    use better_auth_core::types::{
+    use alibi_core::types::{
         CreateMember, CreateOrganizationRole, OrganizationPermissions, OrganizationRoleSelector,
     };
-    use better_auth_core::wire::SessionView;
-    use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    use alibi_core::wire::SessionView;
+    use alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
     use serde_json::{Value, json};
 
     type TestResult = Result<(), Box<dyn std::error::Error>>;
@@ -2561,9 +2549,10 @@ mod dynamic_role_tests {
             reason = "Migrate the existing integer application policy to a Source Number"
         )]
         async fn maximum_roles(&self, organization_id: &str) -> AuthResult<Option<f64>> {
-            let policies = self.0.lock().map_err(|_error| {
-                better_auth_core::AuthError::internal("Role policy unavailable")
-            })?;
+            let policies = self
+                .0
+                .lock()
+                .map_err(|_error| alibi_core::AuthError::internal("Role policy unavailable"))?;
             Ok(Some(
                 policies.get(organization_id).copied().unwrap_or(0) as f64
             ))

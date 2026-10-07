@@ -1,4 +1,4 @@
-use better_auth_core::wire::UserView;
+use alibi_core::wire::UserView;
 use serde::{Deserialize, Serialize};
 use validator::Validate;
 
@@ -25,7 +25,7 @@ pub(super) struct SocialSignInRequest {
     #[serde(rename = "additionalData")]
     #[serde(
         default,
-        deserialize_with = "better_auth_core::utils::json::deserialize_optional_map"
+        deserialize_with = "alibi_core::utils::json::deserialize_optional_map"
     )]
     pub additional_data: Option<serde_json::Map<String, serde_json::Value>>,
     pub scopes: Option<Vec<String>>,
@@ -50,7 +50,7 @@ pub(super) struct LinkSocialRequest {
     #[serde(rename = "additionalData")]
     #[serde(
         default,
-        deserialize_with = "better_auth_core::utils::json::deserialize_optional_map"
+        deserialize_with = "alibi_core::utils::json::deserialize_optional_map"
     )]
     pub additional_data: Option<serde_json::Map<String, serde_json::Value>>,
     pub scopes: Option<Vec<String>>,
@@ -128,7 +128,7 @@ pub(super) struct AccountInfoAccount {
 
 #[derive(Debug, Serialize)]
 pub(super) struct AccountInfoResponse {
-    pub user: better_auth_core::field_policy::FieldOutput,
+    pub user: alibi_core::field_policy::FieldOutput,
     pub data: serde_json::Value,
     pub account: AccountInfoAccount,
 }

@@ -8,7 +8,7 @@ pub(in crate::plugins) async fn sign_in_core(
     config: &EmailPasswordConfig,
     email_verification: Option<&EmailVerificationPlugin>,
     meta: &RequestMeta,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SignInCoreResult<UserView>> {
     if !config.enabled {
         return Err(AuthError::Upstream {
@@ -102,7 +102,7 @@ pub(in crate::plugins) async fn sign_in_username_core(
     config: &EmailPasswordConfig,
     email_verification: Option<&EmailVerificationPlugin>,
     meta: &RequestMeta,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<SignInCoreResult<UserView>, SignInUsernameFailure> {
     let Some(user) = ctx
         .database

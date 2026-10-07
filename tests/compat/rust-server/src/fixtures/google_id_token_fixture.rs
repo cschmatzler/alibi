@@ -2,15 +2,15 @@
 use crate::TestSchema;
 use async_trait::async_trait;
 use axum::Router;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::{OAuthIdTokenVerifier, OAuthPlugin, OAuthProvider};
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{OAuthIdTokenVerifier, OAuthPlugin, OAuthProvider};
+use alibi::plugins::{
     AdminPlugin, EmailPasswordPlugin, EmailVerificationPlugin, OrganizationPlugin,
     SessionManagementPlugin, TwoFactorPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use std::sync::Arc;
 struct ApplicationVerifier(bool);
 #[async_trait]
@@ -61,7 +61,7 @@ pub(crate) async fn router(
         if name == "google-id-no-signup" {
             // Factory options are still authoritative for ID-token signup even
             // where the code-grant factory policy does not honor those options.
-            provider.authorization = Some(better_auth::plugins::oauth::OAuthAuthorizationPolicy {
+            provider.authorization = Some(alibi::plugins::oauth::OAuthAuthorizationPolicy {
                 disable_sign_up_option: Some(true),
                 honor_factory_options: false,
                 ..Default::default()

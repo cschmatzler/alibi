@@ -16,7 +16,7 @@ keywords = { workspace = true }
 categories = { workspace = true }
 
 [lib]
-name = "better_auth_core"
+name = "alibi_core"
 
 [lints]
 workspace = true
@@ -68,8 +68,8 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 # Cache (optional)
 redis = { workspace = true, optional = true }
 
-better-auth-macros = { workspace = true }
-better-auth-schema-registry = { workspace = true }
+alibi-macros = { workspace = true }
+alibi-schema-registry = { workspace = true }
 axum = { workspace = true, optional = true }
 url = { workspace = true }
 tracing.workspace = true

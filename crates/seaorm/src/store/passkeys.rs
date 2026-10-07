@@ -1,10 +1,10 @@
 use super::entities::passkey::{ActiveModel, Column, Entity};
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::AuthSchema;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::PasskeyStore;
+use alibi_core::types::{CreatePasskey, Passkey, UpdatePasskeyAuthentication};
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::PasskeyStore;
-use better_auth_core::types::{CreatePasskey, Passkey, UpdatePasskeyAuthentication};
 use chrono::Utc;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter, Set,

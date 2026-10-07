@@ -4,16 +4,16 @@
     reason = "public boundary regressions fail on setup errors"
 )]
 
-use async_trait::async_trait;
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::{
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, BeforeRequestAction,
     CreateUser, HttpMethod,
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     Database, DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
 };
+use async_trait::async_trait;
 use serde_json::{Value, json};
 use std::sync::{
     Arc, Mutex,
@@ -21,7 +21,7 @@ use std::sync::{
 };
 use tokio::sync::Barrier;
 
-type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[derive(Clone)]
 struct ApplicationRequest {
@@ -79,7 +79,7 @@ impl AuthPlugin<Schema> for ApplicationContext {
             "another dispatch overwrote this request's context"
         );
         assert_eq!(current.email, capture.email);
-        let task_context = better_auth_core::hooks::current_request_hook_context().unwrap();
+        let task_context = alibi_core::hooks::current_request_hook_context().unwrap();
         assert_eq!(
             task_context
                 .extensions
@@ -98,7 +98,7 @@ impl AuthPlugin<Schema> for ApplicationContext {
         mut response: AuthResponse,
     ) -> AuthResult<AuthResponse> {
         let capture = request.extensions().get::<ApplicationRequest>().unwrap();
-        let task_context = better_auth_core::hooks::current_request_hook_context().unwrap();
+        let task_context = alibi_core::hooks::current_request_hook_context().unwrap();
         assert_eq!(
             task_context
                 .extensions
@@ -136,14 +136,11 @@ impl DatabaseHooks<Schema, SeaOrmBackend> for StorageContext {
     }
 }
 
-async fn configured() -> (
-    better_auth::BetterAuth<Schema>,
-    Arc<Mutex<Vec<(usize, String)>>>,
-) {
+async fn configured() -> (alibi::BetterAuth<Schema>, Arc<Mutex<Vec<(usize, String)>>>) {
     let config = AuthConfig::new("native-request-extension-regression-secret-32")
         .base_url("http://localhost:42611");
     let database = Database::connect("sqlite::memory:").await.unwrap();
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     let rows = Arc::new(Mutex::new(Vec::new()));
@@ -201,7 +198,7 @@ mod tests {
 
     #[tokio::test]
     async fn reused_public_request_keeps_caller_state_out_of_success_failure_and_later_signin() {
-        use better_auth_core::AuthUser;
+        use alibi_core::AuthUser;
 
         let (auth, rows) = configured().await;
         let request = request("sequential-owner@example.test");
@@ -267,7 +264,7 @@ mod tests {
 
     #[tokio::test]
     async fn concurrent_cloned_public_requests_share_only_their_own_trusted_dispatch_context() {
-        use better_auth_core::AuthUser;
+        use alibi_core::AuthUser;
 
         let (auth, rows) = configured().await;
         let mut request = request("concurrent-owner@example.test");

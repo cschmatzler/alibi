@@ -1,7 +1,7 @@
 //! RP-initiated provider logout after local session revocation.
 use super::OAuthConfig;
 use crate::plugins::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
-use better_auth_core::{AuthContext, AuthSchema, entity::AuthAccount};
+use alibi_core::{AuthContext, AuthSchema, entity::AuthAccount};
 use serde::Deserialize;
 use std::collections::HashSet;
 

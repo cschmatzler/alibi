@@ -5,11 +5,11 @@ pub(crate) fn seaorm_schema(selection: &Selection) -> TokenStream {
     let extra_entities = &selection.extra;
 
     let imports = quote! {
-        use better_auth::AuthSchema;
-        use better_auth::seaorm::sea_orm;
-        use better_auth::seaorm::sea_orm::entity::prelude::*;
-        use better_auth::seaorm::sea_orm::{ConnectionTrait, Schema};
-        use better_auth::seaorm::{AuthEntity, DatabaseConnection};
+        use alibi::AuthSchema;
+        use alibi::seaorm::sea_orm;
+        use alibi::seaorm::sea_orm::entity::prelude::*;
+        use alibi::seaorm::sea_orm::{ConnectionTrait, Schema};
+        use alibi::seaorm::{AuthEntity, DatabaseConnection};
     };
 
     let user_entity = gen_entity("user", "users", EntityRole::User, extra_user);

@@ -11,10 +11,10 @@ One Tap needs your Google OAuth client id. Register the Google provider and the 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::plugins::{OAuthPlugin, OneTapPlugin};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::oauth::OAuthProvider;
+use alibi::plugins::{OAuthPlugin, OneTapPlugin};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -61,8 +61,8 @@ The server verifies signature, issuer, expiry and audience, requires an email cl
 | `jwks_source` | Google's `https://www.googleapis.com/oauth2/v3/certs` | `OAuthJwksSource` — supply your own key source or cache |
 
 ```rust
-use better_auth::plugins::{OneTapConfig, OneTapPlugin};
-use better_auth::plugins::one_tap::OneTapClientId;
+use alibi::plugins::{OneTapConfig, OneTapPlugin};
+use alibi::plugins::one_tap::OneTapClientId;
 
 fn one_tap() -> OneTapPlugin {
     OneTapPlugin::with_config(OneTapConfig {

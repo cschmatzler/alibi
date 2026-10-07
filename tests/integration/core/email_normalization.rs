@@ -6,7 +6,7 @@
 )]
 
 use crate::contract::helpers::*;
-use better_auth::prelude::{CreateUser, UpdateUser};
+use alibi::prelude::{CreateUser, UpdateUser};
 use serde_json::json;
 
 #[cfg(test)]

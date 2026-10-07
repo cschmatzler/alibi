@@ -6,7 +6,7 @@ use axum::{
     extract::Query,
     routing::{get, post},
 };
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
@@ -25,8 +25,8 @@ use better_auth::{
         },
     },
 };
-use better_auth_core::{AuthRequest, AuthSession, CreateSession, CreateUser};
-use better_auth_seaorm::{
+use alibi_core::{AuthRequest, AuthSession, CreateSession, CreateUser};
+use alibi_seaorm::{
     DatabaseConnection, DatabaseHooks, HookControl,
     sea_orm::{EntityTrait, QueryOrder},
     store::entities::{account, session},
@@ -75,7 +75,7 @@ impl SendMagicLink for Application {
     async fn send(
         &self,
         value: &MagicLinkDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(format!("magic:{}", value.email), json!({"email":value.email,"url":value.url,"token":value.token,"metadata":value.metadata}));
         Ok(())
@@ -86,7 +86,7 @@ impl SendEmailOtp for Application {
     async fn send(
         &self,
         value: &EmailOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("{}:{}", value.otp_type.as_str(), value.email),
@@ -100,7 +100,7 @@ impl SendPhoneOtp for Application {
     async fn send(
         &self,
         value: &PhoneOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.deliver(
             format!("phone:{}", value.phone_number),
@@ -121,7 +121,7 @@ impl PhoneSignupIdentity for Application {
 impl SendVerificationEmail for Application {
     async fn send(
         &self,
-        user: &better_auth_core::wire::UserView,
+        user: &alibi_core::wire::UserView,
         url: &str,
         token: &str,
     ) -> AuthResult<()> {
@@ -188,7 +188,7 @@ impl LinkAnonymousAccount for Application {
             self.mode,
             "custom" | "custom-cache" | "recovery" | "recovery-disabled"
         ) {
-            use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+            use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
             self.database
                 .execute_raw(Statement::from_sql_and_values(
                     DbBackend::Sqlite,
@@ -259,7 +259,7 @@ impl DatabaseHooks<TestSchema, crate::backend::Backend> for Hooks {
     }
     async fn after_create_session(
         &self,
-        session: &<TestSchema as better_auth_core::AuthSchema>::Session,
+        session: &<TestSchema as alibi_core::AuthSchema>::Session,
         context: &crate::backend::HookContext<'_>,
     ) -> AuthResult<()> {
         if (self.mode == "snapshot" || self.mode.starts_with("custom"))
@@ -300,7 +300,7 @@ pub(crate) async fn router(
     config: &AuthConfig,
     database: DatabaseConnection,
 ) -> AuthResult<(Router, Fixture)> {
-    use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+    use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
     for column in ["cargo_label", "cargo_hidden"] {
         database
             .execute_raw(Statement::from_string(
@@ -341,13 +341,13 @@ pub(crate) async fn router(
                 vec!["x-anonymous-ip".into(), "x-forwarded-for".into()];
         }
         if mode.starts_with("custom") || mode.starts_with("recovery") {
-            use better_auth::field_policy::FieldConfig;
+            use alibi::field_policy::FieldConfig;
             settings.user.additional_fields.insert(
                 "cargoLabel".into(),
                 FieldConfig::new(json!({"type":"string"}))
                     .field_name("cargo_label")
                     .default_callback(|| {
-                        better_auth_core::utils::json::JsValue::String(
+                        alibi_core::utils::json::JsValue::String(
                             "Application Original".into(),
                         )
                     }),
@@ -361,7 +361,7 @@ pub(crate) async fn router(
             );
         }
         if mode == "custom-cache" {
-            settings.session.cookie_cache = Some(better_auth_core::CookieCacheConfig {
+            settings.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
                 enabled: true,
                 ..Default::default()
             });
@@ -434,7 +434,7 @@ pub(crate) async fn router(
         post(move |Json(value): Json<Value>| {
             let controls = controls.clone();
             async move {
-                use better_auth_core::store::{AccountStore, SessionStore};
+                use alibi_core::store::{AccountStore, SessionStore};
                 let user_id = value["userId"]
                     .as_str()
                     .ok_or(axum::http::StatusCode::BAD_REQUEST)?;
@@ -479,7 +479,7 @@ pub(crate) async fn router(
                         .map_err(|_| axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
                 }
                 controls
-                    .create_account(better_auth_core::CreateAccount {
+                    .create_account(alibi_core::CreateAccount {
                         additional_fields: Default::default(),
                         user_id: user_id.into(),
                         account_id: "anonymous-application-account".into(),

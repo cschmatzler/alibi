@@ -1,7 +1,7 @@
+use alibi_core::entity::AuthAccount;
+use alibi_core::utils::cookie_utils::{sign_cookie_value, verify_cookie_value};
+use alibi_core::{AuthConfig, AuthError, AuthRequest, AuthResult, OAuthStateStrategy};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth_core::entity::AuthAccount;
-use better_auth_core::utils::cookie_utils::{sign_cookie_value, verify_cookie_value};
-use better_auth_core::{AuthConfig, AuthError, AuthRequest, AuthResult, OAuthStateStrategy};
 use chrono::{Duration, Utc};
 use hmac::{Hmac, KeyInit, Mac};
 use serde::{Deserialize, Serialize};
@@ -57,18 +57,18 @@ pub(in crate::plugins) struct OAuthStatePayload {
         rename = "serverContext",
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "better_auth_core::utils::json::deserialize_optional_value"
+        deserialize_with = "alibi_core::utils::json::deserialize_optional_value"
     )]
     pub server_context: Option<Value>,
     #[serde(
         rename = "_serverContextProof",
         default,
         skip_serializing_if = "Option::is_none",
-        deserialize_with = "better_auth_core::utils::json::deserialize_optional_value"
+        deserialize_with = "alibi_core::utils::json::deserialize_optional_value"
     )]
     pub server_context_proof: Option<Value>,
     #[serde(flatten)]
-    #[serde(deserialize_with = "better_auth_core::utils::json::deserialize_map")]
+    #[serde(deserialize_with = "alibi_core::utils::json::deserialize_map")]
     pub additional_data: Map<String, Value>,
 }
 
@@ -121,24 +121,24 @@ pub(in crate::plugins) struct AccountCookiePayload {
     pub id_token: Option<String>,
     #[serde(
         rename = "accessTokenExpiresAt",
-        serialize_with = "better_auth_core::utils::datetime::serialize_optional"
+        serialize_with = "alibi_core::utils::datetime::serialize_optional"
     )]
     pub access_token_expires_at: Option<chrono::DateTime<Utc>>,
     #[serde(
         rename = "refreshTokenExpiresAt",
-        serialize_with = "better_auth_core::utils::datetime::serialize_optional"
+        serialize_with = "alibi_core::utils::datetime::serialize_optional"
     )]
     pub refresh_token_expires_at: Option<chrono::DateTime<Utc>>,
     pub scope: Option<String>,
     pub password: Option<String>,
     #[serde(
         rename = "createdAt",
-        serialize_with = "better_auth_core::utils::datetime::serialize_optional"
+        serialize_with = "alibi_core::utils::datetime::serialize_optional"
     )]
     pub created_at: Option<chrono::DateTime<Utc>>,
     #[serde(
         rename = "updatedAt",
-        serialize_with = "better_auth_core::utils::datetime::serialize_optional"
+        serialize_with = "alibi_core::utils::datetime::serialize_optional"
     )]
     pub updated_at: Option<chrono::DateTime<Utc>>,
     #[serde(flatten)]
@@ -205,7 +205,7 @@ impl AccountCookiePayload {
 fn server_context_mac(secret: &str, state: &str, context: &Value) -> AuthResult<Hmac<Sha256>> {
     let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
         .map_err(|_error| AuthError::internal("Invalid OAuth context signing key"))?;
-    let bytes = better_auth_core::utils::json::to_vec(context)?;
+    let bytes = alibi_core::utils::json::to_vec(context)?;
     let state_len = u64::try_from(state.len())
         .map_err(|_error| AuthError::internal("OAuth state is too long"))?;
     let context_len = u64::try_from(bytes.len())
@@ -226,12 +226,12 @@ pub(in crate::plugins) fn capture_server_context(
     state: &str,
     secret: &str,
 ) -> AuthResult<()> {
-    let Some(context) = better_auth_core::hooks::current_request_hook_context()
+    let Some(context) = alibi_core::hooks::current_request_hook_context()
         .and_then(|request| request.extensions.get::<CapturedOAuthServerContext>())
     else {
         return Ok(());
     };
-    let value = better_auth_core::utils::json::to_value(&context.0)?;
+    let value = alibi_core::utils::json::to_value(&context.0)?;
     let proof = URL_SAFE_NO_PAD.encode(
         server_context_mac(secret, state, &value)?
             .finalize()
@@ -258,8 +258,7 @@ pub(in crate::plugins) fn verified_server_context(
         .verify_slice(&proof)
         .ok()?;
     // Only an authenticated newly issued value may select a stored user.
-    better_auth_core::utils::json::from_slice(&better_auth_core::utils::json::to_vec(context).ok()?)
-        .ok()
+    alibi_core::utils::json::from_slice(&alibi_core::utils::json::to_vec(context).ok()?).ok()
 }
 
 pub(in crate::plugins) fn state_cookie_name(config: &AuthConfig) -> String {
@@ -272,7 +271,7 @@ pub(in crate::plugins) fn state_cookie_name(config: &AuthConfig) -> String {
 }
 
 pub(super) fn account_cookie_name(config: &AuthConfig) -> String {
-    better_auth_core::utils::cookie_utils::related_cookie_name(config, "account_data")
+    alibi_core::utils::cookie_utils::related_cookie_name(config, "account_data")
 }
 
 /// Sign the database-backed state's correlation cookie using Better Call's wire format.
@@ -297,7 +296,7 @@ pub(super) fn create_cookie_state_value(
     payload: &OAuthStatePayload,
 ) -> AuthResult<String> {
     super::super::token_crypto::encrypt_with_config_for_purpose(
-        &better_auth_core::utils::json::to_string(payload)?,
+        &alibi_core::utils::json::to_string(payload)?,
         config,
         super::super::token_crypto::EncryptionPurpose::StateCookie,
     )
@@ -314,7 +313,7 @@ pub(in crate::plugins) fn decode_cookie_state_value(
         config,
         super::super::token_crypto::EncryptionPurpose::StateCookie,
     )?;
-    better_auth_core::utils::json::from_slice(plain.as_bytes()).map_err(AuthError::from)
+    alibi_core::utils::json::from_slice(plain.as_bytes()).map_err(AuthError::from)
 }
 
 ///

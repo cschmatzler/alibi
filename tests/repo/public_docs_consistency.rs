@@ -26,9 +26,7 @@ mod tests {
         let package = env!("CARGO_PKG_NAME");
         let version = env!("CARGO_PKG_VERSION");
         assert!(
-            readme.contains(&format!(
-                "better-auth = {{ package = \"{package}\", version = \"{version}\""
-            )),
+            readme.contains(&format!("{package} = {{ version = \"{version}\"")),
             "the install example must use the registry package and release version"
         );
         assert!(readme.contains(&format!(

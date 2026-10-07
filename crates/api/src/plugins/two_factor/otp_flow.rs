@@ -9,7 +9,7 @@ use super::*;
 pub(in crate::plugins::two_factor) async fn send_otp_core(
     req: &AuthRequest,
     config: &TwoFactorConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<StatusResponse, SendOtpError> {
     let sender = config
         .send_otp
@@ -62,7 +62,7 @@ pub(in crate::plugins::two_factor) async fn verify_otp_core(
     req: &AuthRequest,
     body: &VerifyOtpRequest,
     config: &TwoFactorConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(SessionTokenResponse<UserView>, Vec<String>), ExistingSessionFactorError> {
     let state = resolve_two_factor_state(req, ctx).await?;
     let factor = if matches!(state, ResolvedTwoFactorState::Pending(_)) {
@@ -138,7 +138,7 @@ pub(in crate::plugins::two_factor) async fn verify_otp_core(
                 "Infinity".into()
             }
         } else {
-            better_auth_core::utils::json::number_to_string(
+            alibi_core::utils::json::number_to_string(
                 &serde_json::Number::from_f64(next_count)
                     .ok_or_else(|| AuthError::internal("Invalid OTP counter"))?,
             )

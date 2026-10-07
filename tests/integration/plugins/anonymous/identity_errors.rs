@@ -1,16 +1,16 @@
 //! Native callback error classification before anonymous persistence starts.
 #![allow(clippy::unwrap_used, reason = "native fixture setup must succeed")]
-use async_trait::async_trait;
-use better_auth::plugins::{
+use alibi::plugins::{
     AnonymousPlugin,
     anonymous::{AnonymousConfig, AnonymousIdentity},
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult};
-use better_auth_core::{AuthRequest, HttpMethod};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult};
+use alibi_core::{AuthRequest, HttpMethod};
 #[cfg(feature = "seaorm")]
-use better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema as Schema;
+use alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema as Schema;
 #[cfg(not(feature = "seaorm"))]
-use better_auth_sqlx::store::__private_test_support::bundled_schema::BundledSchema as Schema;
+use alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema as Schema;
+use async_trait::async_trait;
 use std::sync::Arc;
 struct Identity {
     name: bool,
@@ -50,23 +50,23 @@ async fn identity_callback_errors_keep_api_wires_and_hide_ordinary_causes_before
                 .base_url("http://localhost:42918");
             #[cfg(feature = "seaorm")]
             let store = {
-                let db = better_auth_seaorm::Database::connect("sqlite::memory:")
+                let db = alibi_seaorm::Database::connect("sqlite::memory:")
                     .await
                     .unwrap();
-                better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&db)
+                alibi_seaorm::store::__private_test_support::migrator::run_migrations(&db)
                     .await
                     .unwrap();
-                better_auth_seaorm::SeaOrmStore::<Schema>::new(config.clone(), db)
+                alibi_seaorm::SeaOrmStore::<Schema>::new(config.clone(), db)
             };
             #[cfg(not(feature = "seaorm"))]
             let store = {
-                let db = better_auth_sqlx::SqlxPool::connect("sqlite::memory:")
+                let db = alibi_sqlx::SqlxPool::connect("sqlite::memory:")
                     .await
                     .unwrap();
-                better_auth_sqlx::store::__private_test_support::migrator::run_migrations(&db)
+                alibi_sqlx::store::__private_test_support::migrator::run_migrations(&db)
                     .await
                     .unwrap();
-                better_auth_sqlx::SqlxStore::<Schema>::new(config.clone(), db)
+                alibi_sqlx::SqlxStore::<Schema>::new(config.clone(), db)
             };
             let auth = AuthBuilder::<Schema>::new(config)
                 .store(store)

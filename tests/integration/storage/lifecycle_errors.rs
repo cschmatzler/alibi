@@ -1,10 +1,10 @@
 //! HTTP callback failures must not publish queued headers after a committed write.
 use super::{Backend, Db, TestResult, backend_tests};
-use async_trait::async_trait;
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthRoute, CreateUser, HttpMethod,
 };
+use async_trait::async_trait;
 use std::sync::{Arc, Mutex};
 
 backend_tests!(
@@ -33,7 +33,7 @@ impl<S: AuthSchema> AuthPlugin<S> for Writer {
         ctx: &AuthContext<S>,
     ) -> AuthResult<Option<AuthResponse>> {
         if req.path() == "/sign-up/email" {
-            return better_auth::plugins::EmailPasswordPlugin::new()
+            return alibi::plugins::EmailPasswordPlugin::new()
                 .on_request(req, ctx)
                 .await;
         }
@@ -61,13 +61,13 @@ impl<S: AuthSchema> AuthPlugin<S> for Writer {
         &self,
         req: &AuthRequest,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<Option<better_auth_core::HttpEndpointResponse>> {
+    ) -> AuthResult<Option<alibi_core::HttpEndpointResponse>> {
         let response = self.on_request(req, ctx).await?;
         Ok(response.map(|response| {
             if req.headers.get("x-mode").map(String::as_str) == Some("cache-raw") {
-                better_auth_core::HttpEndpointResponse::Raw(response)
+                alibi_core::HttpEndpointResponse::Raw(response)
             } else {
-                better_auth_core::HttpEndpointResponse::Value(response)
+                alibi_core::HttpEndpointResponse::Value(response)
             }
         }))
     }
@@ -167,42 +167,38 @@ async fn endpoint_callback_errors_drop_headers_without_reversing_writes<B: Backe
 
 struct ConfiguredHook;
 #[async_trait]
-impl<S: AuthSchema> better_auth_core::endpoint::EndpointHook<S> for ConfiguredHook {
+impl<S: AuthSchema> alibi_core::endpoint::EndpointHook<S> for ConfiguredHook {
     async fn before(
         &self,
-        call: &better_auth_core::endpoint::EndpointCall,
+        call: &alibi_core::endpoint::EndpointCall,
         _ctx: &AuthContext<S>,
-    ) -> AuthResult<Option<better_auth_core::endpoint::BeforeEndpointAction>> {
+    ) -> AuthResult<Option<alibi_core::endpoint::BeforeEndpointAction>> {
         if call
             .headers()
             .and_then(|headers| headers.get("x-mode"))
             .map(String::as_str)
             == Some("ordinary")
         {
-            return Ok(Some(
-                better_auth_core::endpoint::BeforeEndpointAction::Respond(
-                    better_auth_core::endpoint::EndpointResponse::json(
-                        &serde_json::json!({"stopped":true}),
-                    )?,
-                ),
-            ));
+            return Ok(Some(alibi_core::endpoint::BeforeEndpointAction::Respond(
+                alibi_core::endpoint::EndpointResponse::json(&serde_json::json!({"stopped":true}))?,
+            )));
         }
         Ok(None)
     }
     async fn after(
         &self,
-        _call: &better_auth_core::endpoint::EndpointCall,
+        _call: &alibi_core::endpoint::EndpointCall,
         _ctx: &AuthContext<S>,
-        response: better_auth_core::endpoint::EndpointResponse,
-    ) -> AuthResult<better_auth_core::endpoint::EndpointResponse> {
+        response: alibi_core::endpoint::EndpointResponse,
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
         Ok(response.with_header("x-global", "observed"))
     }
 }
 
 struct CacheVersion(Arc<Mutex<Vec<String>>>);
 #[async_trait]
-impl better_auth_core::CookieCacheVersionResolver for CacheVersion {
-    async fn resolve(&self, context: &better_auth_core::CacheVersionContext) -> AuthResult<String> {
+impl alibi_core::CookieCacheVersionResolver for CacheVersion {
+    async fn resolve(&self, context: &alibi_core::CacheVersionContext) -> AuthResult<String> {
         let email = context
             .user()
             .email
@@ -212,7 +208,7 @@ impl better_auth_core::CookieCacheVersionResolver for CacheVersion {
             .lock()
             .expect("cache callback receipts")
             .push(email.clone());
-        let call = better_auth_core::endpoint::current_endpoint_call_context()
+        let call = alibi_core::endpoint::current_endpoint_call_context()
             .expect("issuance belongs to the HTTP handler frame");
         call.set_response_header("x-cache-stage", "version");
         if email.starts_with("cache-api@") {
@@ -263,9 +259,9 @@ async fn configured_endpoint_hooks_apply_to_http_before_plugin_hooks<B: Backend>
     let versions = Arc::new(Mutex::new(Vec::new()));
     let config = AuthConfig::new(secret)
         .base_url("http://lifecycle.fixture.test")
-        .session_cookie_cache(better_auth_core::CookieCacheConfig {
+        .session_cookie_cache(alibi_core::CookieCacheConfig {
             enabled: true,
-            version: Some(better_auth_core::CookieCacheVersion::Resolver(Arc::new(
+            version: Some(alibi_core::CookieCacheVersion::Resolver(Arc::new(
                 CacheVersion(Arc::clone(&versions)),
             ))),
             ..Default::default()

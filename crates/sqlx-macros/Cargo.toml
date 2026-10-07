@@ -19,11 +19,11 @@ categories = { workspace = true }
 workspace = true
 
 [lib]
-name = "better_auth_sqlx_macros"
+name = "alibi_sqlx_macros"
 proc-macro = true
 
 [dependencies]
-better-auth-entity-codegen = { workspace = true }
+alibi-entity-codegen = { workspace = true }
 proc-macro-crate = "3"
 proc-macro2 = { workspace = true }
 quote = { workspace = true }

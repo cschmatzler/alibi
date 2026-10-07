@@ -6,14 +6,14 @@
 )]
 use super::super::{SeaOrm, Sqlx};
 use super::*;
-use better_auth_core::config::CookieCacheConfig;
-use better_auth_core::field_policy::FieldConfig;
-use better_auth_core::utils::json::JsValue;
+use alibi_core::config::CookieCacheConfig;
+use alibi_core::field_policy::FieldConfig;
+use alibi_core::utils::json::JsValue;
 use chrono::{DateTime, Utc};
 
 mod sqlx_model {
     use super::*;
-    #[derive(better_auth::sqlx::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
+    #[derive(alibi::sqlx::AuthEntity, Clone, Debug, serde::Serialize, sqlx::FromRow)]
     #[auth(role = "session", table = "sessions", secondary_storage)]
     pub struct Model {
         pub id: String,
@@ -31,7 +31,7 @@ mod sqlx_model {
         pub validated: Option<String>,
         pub async_checked: Option<String>,
         pub adapter_value: Option<String>,
-        pub payload: Option<better_auth::sqlx::JsonMetadata>,
+        pub payload: Option<alibi::sqlx::JsonMetadata>,
         pub fraction: Option<f64>,
         pub narrow: Option<f32>,
         pub flag: Option<bool>,
@@ -46,11 +46,9 @@ mod sqlx_model {
 }
 mod seaorm_model {
     use super::*;
-    use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
+    use alibi::seaorm::sea_orm::{self, entity::prelude::*};
     use chrono::DateTime;
-    #[derive(
-        better_auth::seaorm::AuthEntity, Clone, Debug, serde::Serialize, DeriveEntityModel,
-    )]
+    #[derive(alibi::seaorm::AuthEntity, Clone, Debug, serde::Serialize, DeriveEntityModel)]
     #[auth(role = "session", secondary_storage)]
     #[sea_orm(table_name = "sessions")]
     pub struct Model {
@@ -70,7 +68,7 @@ mod seaorm_model {
         pub validated: Option<String>,
         pub async_checked: Option<String>,
         pub adapter_value: Option<String>,
-        pub payload: Option<better_auth::seaorm::JsonMetadata>,
+        pub payload: Option<alibi::seaorm::JsonMetadata>,
         pub fraction: Option<f64>,
         pub narrow: Option<f32>,
         pub flag: Option<bool>,
@@ -131,9 +129,7 @@ fn config() -> (AuthConfig, AsyncObservation) {
             FieldConfig::new(json!({"type":"string"})).transform(|value| {
                 let Some(value) = value else { return Ok(None) };
                 if value.as_str() == Some("reject") {
-                    return Err(better_auth_core::AuthError::internal(
-                        "private transform failure",
-                    ));
+                    return Err(alibi_core::AuthError::internal("private transform failure"));
                 }
                 if value.as_str() == Some("reject-at-binding") {
                     return Ok(Some(JsValue::String("reject".into())));
@@ -151,9 +147,7 @@ fn config() -> (AuthConfig, AsyncObservation) {
                     let Some(value) = value else { return Ok(None) };
                     let value = value.as_str().unwrap();
                     if value.ends_with("adapter-reject") {
-                        return Err(better_auth_core::AuthError::internal(
-                            "adapter callback veto",
-                        ));
+                        return Err(alibi_core::AuthError::internal("adapter callback veto"));
                     }
                     tokio::task::yield_now().await;
                     Ok(Some(JsValue::String(format!("adapter:{value}"))))
@@ -223,7 +217,7 @@ async fn sqlx_case(db: Db) -> TestResult {
     columns(&db).await?;
     let (config, asynchronous) = config();
     let auth = AuthBuilder::new(config.clone())
-        .store(better_auth::sqlx::SqlxStore::<sqlx_model::Schema>::new(
+        .store(alibi::sqlx::SqlxStore::<sqlx_model::Schema>::new(
             config,
             connection.clone(),
         ))
@@ -239,12 +233,10 @@ async fn seaorm_case(db: Db) -> TestResult {
     columns(&db).await?;
     let (config, asynchronous) = config();
     let auth = AuthBuilder::new(config.clone())
-        .store(
-            better_auth::seaorm::SeaOrmStore::<seaorm_model::Schema>::new(
-                config,
-                connection.clone(),
-            ),
-        )
+        .store(alibi::seaorm::SeaOrmStore::<seaorm_model::Schema>::new(
+            config,
+            connection.clone(),
+        ))
         .plugin(EmailPasswordPlugin::new())
         .plugin(SessionManagementPlugin::new())
         .build()
@@ -428,7 +420,7 @@ async fn exercise<S: AuthSchema>(
             "temporary",
             format!(
                 "; better-auth.dont_remember={}",
-                better_auth_core::utils::cookie_utils::sign_cookie_value("true", SECRET)
+                alibi_core::utils::cookie_utils::sign_cookie_value("true", SECRET)
             ),
             true,
         ),

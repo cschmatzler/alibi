@@ -1,10 +1,10 @@
 //! Two-factor counters, locks and backup compare-and-swap across connections.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use better_auth::AuthConfig;
-use better_auth_core::store::SchemaMigrator;
-use better_auth_core::store::TwoFactorStore;
-use better_auth_core::{CreateTwoFactor, UpdateTwoFactor};
+use alibi::AuthConfig;
+use alibi_core::store::SchemaMigrator;
+use alibi_core::store::TwoFactorStore;
+use alibi_core::{CreateTwoFactor, UpdateTwoFactor};
 use chrono::{Duration, Utc};
 use std::sync::Arc;
 use tokio::{sync::Barrier, task::JoinSet};

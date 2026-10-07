@@ -143,7 +143,7 @@ impl OAuthUserInfoHandler for NaverUserInfo {
             .map(|mapper| mapper(profile.clone()))
             .transpose()?;
         // Keep Source's original JSON publication separate from typed persistence.
-        let mut output = better_auth_core::field_policy::FieldOutput::new();
+        let mut output = alibi_core::field_policy::FieldOutput::new();
         let name = account
             .and_then(|value| value.get("name"))
             .filter(|value| truthy(value))
@@ -203,7 +203,7 @@ fn scalar(value: Option<&Value>) -> Result<Option<String>, String> {
     match value {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
-        Some(Value::Number(value)) => better_auth_core::utils::json::number_to_string(value)
+        Some(Value::Number(value)) => alibi_core::utils::json::number_to_string(value)
             .map(Some)
             .map_err(|error| error.to_string()),
         Some(Value::Bool(value)) => Ok(Some(value.to_string())),

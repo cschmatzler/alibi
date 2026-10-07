@@ -10,13 +10,11 @@ use crate::plugins::organization::{
     OrganizationInvitationCreationContext, OrganizationInvitationDelivery,
     OrganizationInvitationDraft, OrganizationInvitationLimitContext,
 };
-use better_auth_core::entity::{
-    AuthInvitation, AuthMember, AuthOrganization, AuthSession, AuthUser,
-};
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::plugin::AuthContext;
-use better_auth_core::types::{AuthRequest, AuthResponse, CreateInvitation, InvitationStatus};
-use better_auth_core::wire::InvitationView;
+use alibi_core::entity::{AuthInvitation, AuthMember, AuthOrganization, AuthSession, AuthUser};
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::plugin::AuthContext;
+use alibi_core::types::{AuthRequest, AuthResponse, CreateInvitation, InvitationStatus};
+use alibi_core::wire::InvitationView;
 use std::collections::HashMap;
 
 impl crate::plugins::organization::OrganizationPlugin {
@@ -31,7 +29,7 @@ impl crate::plugins::organization::OrganizationPlugin {
     /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
     pub async fn list_user_invitations(
         &self,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
         email: &str,
     ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
         list_user_invitations_for_email_core(email, ctx).await
@@ -49,7 +47,7 @@ fn requested_roles(input: &crate::plugins::organization::types::RoleInput) -> Ve
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(super) fn require_verified_invitation_email<S: better_auth_core::AuthSchema>(
+pub(super) fn require_verified_invitation_email<S: alibi_core::AuthSchema>(
     user: &impl AuthUser,
     config: &OrganizationConfig,
     ctx: &AuthContext<S>,
@@ -85,7 +83,7 @@ pub(in crate::plugins) async fn invite_member_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<InvitationView> {
     let org_id =
         resolve_organization_id(body.organization_id.as_deref(), None, session, ctx).await?;
@@ -206,7 +204,7 @@ pub(in crate::plugins) async fn invite_member_core(
         .ok_or_else(|| super::extension_common::org_error(400, "ORGANIZATION_NOT_FOUND"))?;
     let organization = OrganizationResponse::from_stored_organization(&organization)?;
     let user_view = ctx.user_view(user);
-    let member_view = better_auth_core::Member {
+    let member_view = alibi_core::Member {
         id: member.id().into_owned(),
         organization_id: member.organization_id().into_owned(),
         user_id: member.user_id().into_owned(),
@@ -259,10 +257,7 @@ pub(in crate::plugins) async fn invite_member_core(
         Some(InvitationLimit::Fixed(value)) => *value,
         Some(InvitationLimit::Resolver(resolver)) => {
             resolver
-                .invitation_limit(
-                    &limit_context,
-                    &better_auth_core::CallbackContext::new(ctx, None),
-                )
+                .invitation_limit(&limit_context, &alibi_core::CallbackContext::new(ctx, None))
                 .await?
         }
         None => 100.0,
@@ -313,7 +308,7 @@ pub(in crate::plugins) async fn invite_member_core(
             team_id: Some(team.id.clone()),
             session: Some(ctx.session_view(session)),
             user: Some(ctx.user_view(user)),
-            request: better_auth_core::hooks::current_request_hook_context()
+            request: alibi_core::hooks::current_request_hook_context()
                 .map(|context| context.request),
         };
         let maximum = match &config.teams.limit_resolver {
@@ -402,7 +397,7 @@ pub(in crate::plugins) async fn get_invitation_core(
     query: &GetInvitationQuery,
     user: &impl AuthUser,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<GetInvitationResponse<InvitationView>> {
     let invitation = ctx
         .database
@@ -460,7 +455,7 @@ pub(in crate::plugins) async fn list_invitations_core(
     query: &ListInvitationsQuery,
     user: &impl AuthUser,
     session: &impl AuthSession,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Vec<InvitationView>> {
     let org_id =
         resolve_organization_id(query.organization_id.as_deref(), None, session, ctx).await?;
@@ -484,7 +479,7 @@ pub(in crate::plugins) async fn list_invitations_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_user_invitations_core(
     user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
     // Upstream refuses to list invitations for a session whose email is not
     // verified, so an unverified address cannot enumerate what it was invited to.
@@ -499,7 +494,7 @@ pub(in crate::plugins) async fn list_user_invitations_core(
 
 pub(in crate::plugins::organization) async fn list_user_invitations_for_email_core(
     email: &str,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Vec<UserInvitationResponse<InvitationView>>> {
     if email.is_empty() {
         return Err(AuthError::bad_request(
@@ -541,13 +536,13 @@ pub(in crate::plugins) async fn reject_invitation_core(
     body: &RejectInvitationRequest,
     user: &impl AuthUser,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AcceptInvitationResponse<InvitationView, Option<BasicMemberResponse>>> {
     let invitation = ctx
         .database
         .get_invitation_by_id(&body.invitation_id)
         .await?
-        .filter(better_auth_core::Invitation::is_pending)
+        .filter(alibi_core::Invitation::is_pending)
         .ok_or(AuthError::Upstream {
             status: 400,
             code: "INVITATION_NOT_FOUND",
@@ -605,7 +600,7 @@ pub(in crate::plugins) async fn cancel_invitation_core(
     body: &CancelInvitationRequest,
     user: &impl AuthUser,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<InvitationView> {
     let invitation = ctx
         .database
@@ -671,7 +666,7 @@ pub(in crate::plugins) async fn cancel_invitation_core(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_invite_member(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let body = match super::org_input::invitation_create(req) {
@@ -692,7 +687,7 @@ pub async fn handle_invite_member(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_get_invitation(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let (user, _) = match require_session(req, ctx).await {
@@ -726,7 +721,7 @@ pub async fn handle_get_invitation(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_list_invitations(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let (user, session) = super::extension_common::session(req, ctx).await?;
     let query = parse_query::<ListInvitationsQuery>(&req.query);
@@ -740,7 +735,7 @@ pub async fn handle_list_invitations(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_list_user_invitations(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     // An email selector is available only to trusted server-side callers.
     if req
@@ -776,11 +771,11 @@ pub async fn handle_list_user_invitations(
 /// Returns an error when validation, storage, or an application callback fails.
 pub async fn handle_accept_invitation(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let (user, session) = super::extension_common::session(req, ctx).await?;
-    let body: AcceptInvitationRequest = match better_auth_core::validate_request_body(req) {
+    let body: AcceptInvitationRequest = match alibi_core::validate_request_body(req) {
         Ok(value) => value,
         Err(response) => return Ok(response),
     };
@@ -807,7 +802,7 @@ pub async fn handle_accept_invitation(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_reject_invitation(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let invitation_id = match super::org_input::invitation_id(req) {
@@ -829,7 +824,7 @@ pub async fn handle_reject_invitation(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_cancel_invitation(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let invitation_id = match super::org_input::invitation_id(req) {

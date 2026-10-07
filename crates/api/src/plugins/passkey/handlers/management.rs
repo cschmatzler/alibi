@@ -4,7 +4,7 @@ use super::*;
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins::passkey) async fn list_user_passkeys_core(
     user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Vec<Value>> {
     let passkeys = ctx.database.list_passkeys_by_user(&user.id()).await?;
     passkeys
@@ -28,7 +28,7 @@ pub(in crate::plugins::passkey) async fn list_user_passkeys_core(
 pub(in crate::plugins::passkey) async fn delete_passkey_core(
     body: &DeletePasskeyRequest,
     user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> PasskeyHandlerResult<StatusResponse> {
     let passkey = ctx
         .database
@@ -38,8 +38,7 @@ pub(in crate::plugins::passkey) async fn delete_passkey_core(
 
     if passkey.user_id() != user.id() {
         return Ok(PasskeyHandlerOutcome::Response(
-            better_auth_core::AuthResponse::new(401)
-                .with_header("content-type", "application/json"),
+            alibi_core::AuthResponse::new(401).with_header("content-type", "application/json"),
         ));
     }
 
@@ -55,7 +54,7 @@ pub(in crate::plugins::passkey) async fn delete_passkey_core(
 pub(in crate::plugins::passkey) async fn update_passkey_core(
     body: &UpdatePasskeyRequest,
     user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> PasskeyHandlerResult<PasskeyResponse> {
     let passkey = ctx
         .database
@@ -65,7 +64,7 @@ pub(in crate::plugins::passkey) async fn update_passkey_core(
 
     if passkey.user_id() != user.id() {
         return Ok(PasskeyHandlerOutcome::Response(
-            better_auth_core::AuthResponse::json(
+            alibi_core::AuthResponse::json(
                 401,
                 &json!({ "code": "YOU_ARE_NOT_ALLOWED_TO_REGISTER_THIS_PASSKEY", "message": "You are not allowed to register this passkey" }),
             )?,

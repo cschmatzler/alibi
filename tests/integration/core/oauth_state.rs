@@ -4,11 +4,11 @@
     reason = "public lifecycle regression setup and raw receipt capture must fail fast"
 )]
 
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::entity::AuthVerification;
-use better_auth_core::{AuthRequest, AuthSchema, HttpMethod, OAuthStateStrategy};
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::OAuthProvider;
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::entity::AuthVerification;
+use alibi_core::{AuthRequest, AuthSchema, HttpMethod, OAuthStateStrategy};
 use serde_json::{Value, json};
 
 const SECRET: &str = "oauth-state-fixture-secret-at-least-32-characters";
@@ -92,7 +92,7 @@ async fn rejection_restores_flow<S: AuthSchema>(
         }
         OAuthStateStrategy::Automatic | OAuthStateStrategy::Database => format!(
             "better-auth.state={}",
-            better_auth_core::utils::cookie_utils::sign_cookie_value("foreign-state", SECRET)
+            alibi_core::utils::cookie_utils::sign_cookie_value("foreign-state", SECRET)
         ),
     };
     drop(callback.headers.insert("cookie".into(), rejected_cookie));
@@ -171,7 +171,7 @@ async fn rejection_restores_flow<S: AuthSchema>(
 
 #[tokio::test]
 async fn cookie_nonce_rejection_restores_saved_error_seaorm() {
-    type Schema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type Schema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
     for (strategy, stateless_policy) in [
         (OAuthStateStrategy::Automatic, false),
         (OAuthStateStrategy::Automatic, true),
@@ -187,15 +187,15 @@ async fn cookie_nonce_rejection_restores_saved_error_seaorm() {
         } else {
             strategy
         };
-        let database = better_auth_seaorm::Database::connect("sqlite::memory:")
+        let database = alibi_seaorm::Database::connect("sqlite::memory:")
             .await
             .unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         rejection_restores_flow(
             AuthBuilder::new(config.clone()).store_arc(std::sync::Arc::new(
-                better_auth_seaorm::SeaOrmStore::<Schema>::new(config, database),
+                alibi_seaorm::SeaOrmStore::<Schema>::new(config, database),
             )),
             expected,
             "seaorm",
@@ -207,7 +207,7 @@ async fn cookie_nonce_rejection_restores_saved_error_seaorm() {
 #[cfg(feature = "sqlx-sqlite")]
 #[tokio::test]
 async fn cookie_nonce_rejection_restores_saved_error_sqlx() {
-    type Schema = better_auth_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
+    type Schema = alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
     for (strategy, stateless_policy) in [
         (OAuthStateStrategy::Automatic, false),
         (OAuthStateStrategy::Automatic, true),
@@ -223,18 +223,18 @@ async fn cookie_nonce_rejection_restores_saved_error_sqlx() {
         } else {
             strategy
         };
-        let pool: better_auth_sqlx::SqlxPool = sqlx::sqlite::SqlitePoolOptions::new()
+        let pool: alibi_sqlx::SqlxPool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
             .connect("sqlite::memory:")
             .await
             .unwrap()
             .into();
-        better_auth_sqlx::store::__private_test_support::migrator::run_migrations(&pool)
+        alibi_sqlx::store::__private_test_support::migrator::run_migrations(&pool)
             .await
             .unwrap();
         rejection_restores_flow(
             AuthBuilder::new(config.clone())
-                .store(better_auth_sqlx::SqlxStore::<Schema>::new(config, pool)),
+                .store(alibi_sqlx::SqlxStore::<Schema>::new(config, pool)),
             expected,
             "sqlx",
         )

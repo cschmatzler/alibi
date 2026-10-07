@@ -7,22 +7,22 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::siwe::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::siwe::{
     Eip191Verifier, EnsLookup, EnsProfile, SiweCallbackError, SiweCallbackResult, SiweConfig,
     SiweNonceProvider, SiwePlugin, SiweVerification, SiweVerifier, ethereum_message_hash,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     AdminPlugin, EmailPasswordPlugin, SessionManagementPlugin, TwoFactorPlugin,
 };
-use better_auth::prelude::{CreateUser, UpdateUser};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use better_auth_core::AuthResponse;
-use better_auth_seaorm::sea_orm::{
+use alibi::prelude::{CreateUser, UpdateUser};
+use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi_core::AuthResponse;
+use alibi_seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder, sea_query::Expr,
 };
-use better_auth_seaorm::store::entities::{account, session, user, verification, wallet_address};
+use alibi_seaorm::store::entities::{account, session, user, verification, wallet_address};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -397,7 +397,7 @@ pub(crate) async fn router(
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
     let auth = primary
-        .ok_or_else(|| better_auth::AuthError::internal("SIWE fixture missing primary profile"))?;
+        .ok_or_else(|| alibi::AuthError::internal("SIWE fixture missing primary profile"))?;
     Ok(router.merge(
         Router::new()
             .route("/__test/siwe-state", get(persisted))

@@ -170,7 +170,7 @@ pub(in crate::plugins::oauth::handlers) fn build_authorization_url(
             } else {
                 let number = serde_json::Number::from_f64(permissions)
                     .ok_or_else(|| AuthError::internal("Invalid Discord permissions number"))?;
-                better_auth_core::utils::json::number_to_string(&number)?
+                alibi_core::utils::json::number_to_string(&number)?
             };
             set_authorization_param(&mut url, "permissions", &value);
         }
@@ -296,7 +296,7 @@ pub(in crate::plugins::oauth::handlers) fn validate_authorization_params(
 pub(in crate::plugins::oauth::handlers) async fn social_sign_in_core(
     body: &SocialSignInRequest,
     config: &OAuthConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<InitiatedOAuthFlow> {
     let provider = config
         .providers
@@ -339,7 +339,7 @@ pub(in crate::plugins::oauth::handlers) async fn link_social_core(
     body: &LinkSocialRequest,
     session: &impl AuthSession,
     config: &OAuthConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<InitiatedOAuthFlow> {
     let provider = config
         .providers
@@ -392,7 +392,7 @@ pub(in crate::plugins::oauth::handlers) async fn link_social_core(
 /// authorization URL, and return a redirect response. The only difference
 /// is `link_user_id` (None for sign-in, Some for linking).
 pub(in crate::plugins::oauth::handlers) async fn initiate_oauth_flow_core(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     request: FlowStartRequest<'_>,
 ) -> AuthResult<InitiatedOAuthFlow> {
     let (code_verifier, code_challenge) = generate_pkce();
@@ -409,7 +409,7 @@ pub(in crate::plugins::oauth::handlers) async fn initiate_oauth_flow_core(
             .collect()
     };
 
-    let proxy = better_auth_core::hooks::current_request_hook_context().and_then(|req| {
+    let proxy = alibi_core::hooks::current_request_hook_context().and_then(|req| {
         req.extensions
             .get::<crate::plugins::oauth_proxy::OAuthProxyFlow>()
     });
@@ -431,7 +431,7 @@ pub(in crate::plugins::oauth::handlers) async fn initiate_oauth_flow_core(
         .as_ref()
         .is_some_and(|policy| policy.id_token_nonce_binding)
     {
-        payload.id_token_nonce = Some(better_auth_core::utils::id::generate_id(32));
+        payload.id_token_nonce = Some(alibi_core::utils::id::generate_id(32));
     }
     capture_server_context(&mut payload, &state, ctx.config.current_secret())?;
     drop(payload.additional_data.insert(
@@ -439,7 +439,7 @@ pub(in crate::plugins::oauth::handlers) async fn initiate_oauth_flow_core(
         serde_json::Value::String(state.clone()),
     ));
     if proxy.is_some()
-        && let Some(req) = better_auth_core::hooks::current_request_hook_context()
+        && let Some(req) = alibi_core::hooks::current_request_hook_context()
     {
         req.extensions
             .insert(crate::plugins::oauth_proxy::IssuedProxyState {
@@ -449,8 +449,7 @@ pub(in crate::plugins::oauth::handlers) async fn initiate_oauth_flow_core(
     }
 
     match ctx.config.account.store_state_strategy {
-        better_auth_core::OAuthStateStrategy::Automatic
-        | better_auth_core::OAuthStateStrategy::Database => {
+        alibi_core::OAuthStateStrategy::Automatic | alibi_core::OAuthStateStrategy::Database => {
             let created = ctx
                 .verifications()
                 .create(CreateVerification {
@@ -463,7 +462,7 @@ pub(in crate::plugins::oauth::handlers) async fn initiate_oauth_flow_core(
                 return Err(AuthError::internal("Unable to create verification"));
             }
         }
-        better_auth_core::OAuthStateStrategy::Cookie => {}
+        alibi_core::OAuthStateStrategy::Cookie => {}
     }
 
     let mut url = build_authorization_url(

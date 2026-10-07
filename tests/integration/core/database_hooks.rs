@@ -4,20 +4,18 @@
     reason = "database hook tests intentionally fail fast on fixture setup and use direct JSON indexing for focused assertions"
 )]
 
+use alibi::error::{AuthResult, DatabaseError};
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::prelude::{AuthRequest, AuthUser, CreateUser, HttpMethod};
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_seaorm::sea_orm::sea_query::{Alias, ColumnDef, Expr, ExprTrait, Query, Table};
+use alibi_seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection};
+use alibi_seaorm::{DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore};
 use async_trait::async_trait;
-use better_auth::error::{AuthResult, DatabaseError};
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::prelude::{AuthRequest, AuthUser, CreateUser, HttpMethod};
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_seaorm::sea_orm::sea_query::{Alias, ColumnDef, Expr, ExprTrait, Query, Table};
-use better_auth_seaorm::sea_orm::{ConnectionTrait, Database, DatabaseConnection};
-use better_auth_seaorm::{
-    DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, SeaOrmStore,
-};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 #[derive(Clone)]
 struct OrderingHook {
@@ -121,13 +119,13 @@ struct OnboardingHook {
 impl DatabaseHooks<TestSchema, SeaOrmBackend> for OnboardingHook {
     async fn after_create_user(
         &self,
-        user: &<TestSchema as better_auth_core::AuthSchema>::User,
+        user: &<TestSchema as alibi_core::AuthSchema>::User,
         ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<()> {
         self.service
             .provision(user, ctx)
             .await
-            .map_err(better_auth::AuthError::Database)
+            .map_err(alibi::AuthError::Database)
     }
 }
 
@@ -140,7 +138,7 @@ struct DeleteCaptureHook {
 impl DatabaseHooks<TestSchema, SeaOrmBackend> for DeleteCaptureHook {
     async fn before_delete_user(
         &self,
-        user: &<TestSchema as better_auth_core::AuthSchema>::User,
+        user: &<TestSchema as alibi_core::AuthSchema>::User,
         _ctx: &SeaOrmHookContext<'_>,
     ) -> AuthResult<HookControl> {
         self.emails
@@ -160,7 +158,7 @@ async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:")
         .await
         .expect("sqlite test database should connect");
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .expect("sqlite test migrations should run");
     database

@@ -120,7 +120,7 @@ impl OAuthProvider {
         {
             // Object assignment to __proto__ does not create an own JSON key.
             if claim != "__proto__" && !claims.iter().any(|(key, _)| key == &claim) {
-                claims.push((claim, better_auth_core::utils::json::JsValue::Null));
+                claims.push((claim, alibi_core::utils::json::JsValue::Null));
             }
         }
         // Only string property names and null values enter this object.
@@ -128,17 +128,16 @@ impl OAuthProvider {
             clippy::expect_used,
             reason = "Claim keys and null values cannot fail JSON serialization"
         )]
-        let serialized_claims = better_auth_core::utils::json::to_string(
-            &better_auth_core::utils::json::JsValue::Object(
+        let serialized_claims =
+            alibi_core::utils::json::to_string(&alibi_core::utils::json::JsValue::Object(
                 [(
                     "id_token".into(),
-                    better_auth_core::utils::json::JsValue::Object(claims.into_iter().collect()),
+                    alibi_core::utils::json::JsValue::Object(claims.into_iter().collect()),
                 )]
                 .into_iter()
                 .collect(),
-            ),
-        )
-        .expect("Twitch claim names and null values are JSON serializable");
+            ))
+            .expect("Twitch claim names and null values are JSON serializable");
         provider
             .authorization_params
             .push(("claims".into(), serialized_claims));

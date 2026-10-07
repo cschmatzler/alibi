@@ -1,11 +1,11 @@
 //! Installed application hooks around a real OTP issuance, including failures
 //! before and after persistence. No mock endpoint manufactures the saved proof.
 use super::*;
-use async_trait::async_trait;
-use better_auth_core::endpoint::{
+use alibi_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointHook, EndpointResponse,
 };
-use better_auth_core::{AuthContext, AuthError, AuthResult};
+use alibi_core::{AuthContext, AuthError, AuthResult};
+use async_trait::async_trait;
 
 backend_tests!(
     logical_endpoint_hooks_preserve_order_failure_and_persistence_contracts,
@@ -194,7 +194,7 @@ async fn logical_endpoint_hooks_preserve_order_failure_and_persistence_contracts
             assert!(missing.to_string().contains("not installed"));
             let unknown = auth
                 .dispatch_endpoint(
-                    better_auth_core::endpoint::ServerEndpoint::<String>::new(
+                    alibi_core::endpoint::ServerEndpoint::<String>::new(
                         "email-otp",
                         "unregistered-operation",
                     ),
@@ -388,7 +388,7 @@ impl<S: AuthSchema> EndpointHook<S> for IsolationHook<S> {
     ) -> AuthResult<Option<BeforeEndpointAction>> {
         let tag = call.headers().unwrap()["x-call"].clone();
         tokio::task::yield_now().await;
-        let frame = better_auth_core::endpoint::current_endpoint_call_context().unwrap();
+        let frame = alibi_core::endpoint::current_endpoint_call_context().unwrap();
         assert_eq!(frame.headers().unwrap()["x-call"], tag);
         assert_eq!(
             frame.headers().unwrap()["cookie"],
@@ -429,7 +429,7 @@ impl<S: AuthSchema> EndpointHook<S> for IsolationHook<S> {
             )
             .unwrap();
             assert_eq!(claims["sub"], call.headers().unwrap()["x-nested-owner"]);
-            let restored = better_auth_core::endpoint::current_endpoint_call_context().unwrap();
+            let restored = alibi_core::endpoint::current_endpoint_call_context().unwrap();
             assert_eq!(
                 restored.headers().unwrap()["x-call"],
                 tag,
@@ -454,7 +454,7 @@ impl<S: AuthSchema> EndpointHook<S> for IsolationHook<S> {
         response: EndpointResponse,
     ) -> AuthResult<EndpointResponse> {
         tokio::task::yield_now().await;
-        let frame = better_auth_core::endpoint::current_endpoint_call_context().unwrap();
+        let frame = alibi_core::endpoint::current_endpoint_call_context().unwrap();
         let tag = &call.headers().unwrap()["x-call"];
         assert_eq!(call.headers().unwrap()["x-patched"], "yes");
         assert_eq!(frame.headers().unwrap()["x-patched"], "yes");
@@ -525,7 +525,7 @@ async fn concurrent_nested_typed_calls_isolate_principals_frames_and_headers<B: 
         assert_eq!(claims["sub"], body(owner)["user"]["id"]);
     }
     assert_eq!(db.table("sessions").await?, sessions);
-    assert!(better_auth_core::endpoint::current_endpoint_call_context().is_none());
-    assert!(better_auth_core::hooks::current_request_hook_context().is_none());
+    assert!(alibi_core::endpoint::current_endpoint_call_context().is_none());
+    assert!(alibi_core::hooks::current_request_hook_context().is_none());
     B::close(connection).await
 }

@@ -1,12 +1,12 @@
 //! Genuine physical token/preference production and independent scoped SQLite rows.
 use crate::TestSchema;
 use axum::{Json, Router, extract::Query, routing::get};
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_core::{CookieAttributes, CookieOverride, SameSite};
-use better_auth_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_core::{CookieAttributes, CookieOverride, SameSite};
+use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
 use chrono::Duration;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -67,9 +67,9 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 "https://auth.cookie177.test:*".into(),
             ]);
             if mode == "cross-proxy" {
-                config = config.dynamic_base_url(better_auth_core::config::DynamicBaseUrl {
+                config = config.dynamic_base_url(alibi_core::config::DynamicBaseUrl {
                     allowed_hosts: vec!["cookie177.test:*".into(), "auth.cookie177.test:*".into()],
-                    protocol: Some(better_auth_core::config::BaseUrlProtocol::Https),
+                    protocol: Some(alibi_core::config::BaseUrlProtocol::Https),
                     fallback: None,
                 });
             }
@@ -78,12 +78,12 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             config = config.base_url("https://localhost");
         }
         if mode.starts_with("dynamic-") {
-            config = config.dynamic_base_url(better_auth_core::config::DynamicBaseUrl {
+            config = config.dynamic_base_url(alibi_core::config::DynamicBaseUrl {
                 allowed_hosts: vec!["localhost:*".into(), "127.0.0.1:*".into()],
                 protocol: Some(match mode {
-                    "dynamic-https" => better_auth_core::config::BaseUrlProtocol::Https,
-                    "dynamic-http" => better_auth_core::config::BaseUrlProtocol::Http,
-                    _ => better_auth_core::config::BaseUrlProtocol::Auto,
+                    "dynamic-https" => alibi_core::config::BaseUrlProtocol::Https,
+                    "dynamic-http" => alibi_core::config::BaseUrlProtocol::Http,
+                    _ => alibi_core::config::BaseUrlProtocol::Auto,
                 }),
                 fallback: None,
             });

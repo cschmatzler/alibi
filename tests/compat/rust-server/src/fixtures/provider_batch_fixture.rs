@@ -7,12 +7,12 @@ use axum::{
     routing::{get, post},
 };
 use base64::Engine;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::*;
-use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::*;
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -291,7 +291,7 @@ pub(crate) async fn router(
                     // including factories whose default HTTP exchange ignores PKCE.
                     policy.authorization_code_pkce = Some(true);
                     policy.authorization_code =
-                        Some(better_auth::plugins::oauth::OAuthAuthorizationCodeCallback(
+                        Some(alibi::plugins::oauth::OAuthAuthorizationCodeCallback(
                             Arc::new(CustomCode {
                                 fixture: fixture.clone(),
                                 denied: mode == &"custom-token-error",
@@ -367,7 +367,7 @@ impl OAuthProfileMapper for Mapper {
     async fn map_profile(
         &self,
         profile: Value,
-    ) -> Result<better_auth_core::field_policy::FieldOutput, String> {
+    ) -> Result<alibi_core::field_policy::FieldOutput, String> {
         self.fixture
             .callbacks
             .lock()
@@ -529,8 +529,8 @@ async fn transport(
 // supplies observations; both backend builds inspect the actual committed SQLite.
 async fn raw_sql_state(
     db: &DatabaseConnection,
-) -> Result<Value, better_auth_seaorm::sea_orm::DbErr> {
-    use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+) -> Result<Value, alibi_seaorm::sea_orm::DbErr> {
+    use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
     let mut state = serde_json::Map::new();
     for table in ["users", "accounts", "sessions", "verifications"] {
         let columns = db
@@ -565,7 +565,7 @@ async fn raw_sql_state(
             .map(|row| {
                 let raw = row.try_get::<String>("", "row")?;
                 serde_json::from_str::<Value>(&raw)
-                    .map_err(|error| better_auth_seaorm::sea_orm::DbErr::Custom(error.to_string()))
+                    .map_err(|error| alibi_seaorm::sea_orm::DbErr::Custom(error.to_string()))
             })
             .collect::<Result<Vec<_>, _>>()?;
         state.insert(table.into(), Value::Array(rows));
@@ -579,11 +579,11 @@ struct CustomCode {
     provider: String,
 }
 #[async_trait::async_trait]
-impl better_auth::plugins::oauth::OAuthAuthorizationCodeHandler for CustomCode {
+impl alibi::plugins::oauth::OAuthAuthorizationCodeHandler for CustomCode {
     async fn validate_authorization_code(
         &self,
-        data: better_auth::plugins::oauth::OAuthAuthorizationCodeContext,
-    ) -> Result<better_auth::plugins::oauth::OAuthTokenSet, String> {
+        data: alibi::plugins::oauth::OAuthAuthorizationCodeContext,
+    ) -> Result<alibi::plugins::oauth::OAuthTokenSet, String> {
         tokio::task::yield_now().await;
         let mut receipt = json!({"kind":"custom-token","provider":self.provider,"code":data.code,"redirectURI":data.redirect_uri});
         if let Some(verifier) = data.code_verifier {
@@ -593,7 +593,7 @@ impl better_auth::plugins::oauth::OAuthAuthorizationCodeHandler for CustomCode {
         if self.denied {
             return Err("custom token callback denied".into());
         }
-        Ok(better_auth::plugins::oauth::OAuthTokenSet {
+        Ok(alibi::plugins::oauth::OAuthTokenSet {
             access_token: Some("custom-access".into()),
             refresh_token: Some("custom-refresh".into()),
             scopes: vec!["custom-scope".into()],

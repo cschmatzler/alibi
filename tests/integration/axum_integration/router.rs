@@ -1,16 +1,16 @@
+use alibi::integrations::axum::{AxumIntegration, CurrentSession, OptionalSession};
+use alibi::plugins::{
+    EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin,
+    SessionManagementPlugin, UserManagementPlugin, password_management::SendResetPassword,
+};
+use alibi::prelude::AuthUser;
+use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use axum::{
     body::Body,
     extract::{FromRef, State},
     http::{Method, Request, StatusCode},
 };
-use better_auth::integrations::axum::{AxumIntegration, CurrentSession, OptionalSession};
-use better_auth::plugins::{
-    EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin,
-    SessionManagementPlugin, UserManagementPlugin, password_management::SendResetPassword,
-};
-use better_auth::prelude::AuthUser;
-use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tower::ServiceExt;
@@ -29,12 +29,12 @@ impl FromRef<AppState> for Arc<BetterAuth<TestSchema>> {
     }
 }
 
-type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 fn test_session_cookie(token: &str) -> String {
     format!(
         "better-auth.session_token={}",
-        better_auth_core::utils::cookie_utils::sign_cookie_value(
+        alibi_core::utils::cookie_utils::sign_cookie_value(
             token,
             "test-secret-key-that-is-at-least-32-characters-long"
         )
@@ -44,7 +44,7 @@ fn test_session_cookie(token: &str) -> String {
 /// Helper to create test `BetterAuth` instance with all plugins
 async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:").await.unwrap();
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .unwrap();
     database
@@ -63,12 +63,7 @@ async fn create_test_auth_with_config(config: AuthConfig) -> Arc<BetterAuth<Test
 
     #[async_trait::async_trait]
     impl SendResetPassword for NoopResetSender {
-        async fn send(
-            &self,
-            _user: &Value,
-            _url: &str,
-            _token: &str,
-        ) -> better_auth::AuthResult<()> {
+        async fn send(&self, _user: &Value, _url: &str, _token: &str) -> alibi::AuthResult<()> {
             Ok(())
         }
     }
@@ -1700,7 +1695,7 @@ async fn openapi_embedding_requires_plugin_in_axum() {
         let store = SeaOrmStore::<TestSchema>::new(config.clone(), test_database().await);
         let builder = AuthBuilder::<TestSchema>::new(config).store(store);
         let builder = if enabled {
-            builder.plugin(better_auth::plugins::OpenApiPlugin::new())
+            builder.plugin(alibi::plugins::OpenApiPlugin::new())
         } else {
             builder
         };

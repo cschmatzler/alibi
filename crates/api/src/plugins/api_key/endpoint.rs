@@ -4,14 +4,14 @@ use super::{
     DeleteExpiredApiKeysResponse, UpdateKeyRequest, VerifyApiKey,
 };
 use crate::plugins::endpoint::definition;
-use better_auth_core::endpoint::{
+use alibi_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointDefinition, EndpointHook,
     EndpointInput, EndpointResponse, ServerEndpoint,
 };
-use better_auth_core::session::SessionRequest;
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::wire::ApiKeyView;
-use better_auth_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser, HttpMethod};
+use alibi_core::session::SessionRequest;
+use alibi_core::utils::json::JsValue;
+use alibi_core::wire::ApiKeyView;
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema, AuthUser, HttpMethod};
 use serde::{Deserialize, Serialize};
 
 /// Input to the registered server-only verification operation.
@@ -292,7 +292,7 @@ impl ApiKeyPlugin {
                     Err(ApiKeyVerificationError::ExplicitValidator(error)) => return Err(error),
                     Err(ApiKeyVerificationError::Internal(error)) => {
                         tracing::error!(%error,"Failed to validate API key");
-                        if better_auth_core::endpoint::is_endpoint_api_error(&error) {
+                        if alibi_core::endpoint::is_endpoint_api_error(&error) {
                             let (_, code, message) = error.error_payload();
                             serde_json::json!({"valid":false,"error":{"code":code,"message":message},"key":null})
                         } else {
@@ -309,23 +309,21 @@ impl ApiKeyPlugin {
                 let body: CreateKeyRequest = call.body_as()?;
                 let config = self.resolve_configuration(body.config_id.as_deref())?;
                 let mut resolution = call.clone();
-                better_auth_core::endpoint::EndpointContextPatch {
+                alibi_core::endpoint::EndpointContextPatch {
                     query: Some(JsValue::Object(
                         [("disableCookieCache".into(), JsValue::Bool(true))]
                             .into_iter()
                             .collect(),
                     )),
-                    ..better_auth_core::endpoint::EndpointContextPatch::default()
+                    ..alibi_core::endpoint::EndpointContextPatch::default()
                 }
                 .apply(&mut resolution);
                 let session = ctx.require_cached_session(&resolution).await.ok();
                 if let Some((user, session)) = &session {
                     call.record_authenticated_session(
                         match user {
-                            better_auth_core::AuthenticatedUser::Stored(user) => {
-                                ctx.user_view(user)
-                            }
-                            better_auth_core::AuthenticatedUser::Cached(user) => (**user).clone(),
+                            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                            alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
                         },
                         session.clone(),
                     );
@@ -382,23 +380,21 @@ impl ApiKeyPlugin {
             "updateApiKey" => {
                 let body: UpdateKeyRequest = call.body_as()?;
                 let mut resolution = call.clone();
-                better_auth_core::endpoint::EndpointContextPatch {
+                alibi_core::endpoint::EndpointContextPatch {
                     query: Some(JsValue::Object(
                         [("disableCookieCache".into(), JsValue::Bool(true))]
                             .into_iter()
                             .collect(),
                     )),
-                    ..better_auth_core::endpoint::EndpointContextPatch::default()
+                    ..alibi_core::endpoint::EndpointContextPatch::default()
                 }
                 .apply(&mut resolution);
                 let session = ctx.require_cached_session(&resolution).await.ok();
                 if let Some((user, session)) = &session {
                     call.record_authenticated_session(
                         match user {
-                            better_auth_core::AuthenticatedUser::Stored(user) => {
-                                ctx.user_view(user)
-                            }
-                            better_auth_core::AuthenticatedUser::Cached(user) => (**user).clone(),
+                            alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                            alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
                         },
                         session.clone(),
                     );
@@ -533,9 +529,7 @@ fn rejection(error: ApiKeyValidationError, status: Option<u16>) -> AuthResult<En
             message.clone()
         }
     };
-    let body = better_auth_core::utils::json::parse_value(
-        &better_auth_core::utils::json::to_string(&error)?,
-    )?;
+    let body = alibi_core::utils::json::parse_value(&alibi_core::utils::json::to_string(&error)?)?;
     Ok(EndpointResponse::error(AuthError::Api {
         status,
         code: Some(error.code.as_str().into()),

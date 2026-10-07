@@ -17,7 +17,7 @@ pub(in crate::plugins::two_factor) fn cookie_expiry(
 }
 
 pub(in crate::plugins::two_factor) fn two_factor_cookie_max_age(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> f64 {
     ctx.extensions
         .get::<TwoFactorCookiePolicy>()
@@ -30,7 +30,7 @@ pub(in crate::plugins::two_factor) fn two_factor_cookie_max_age(
 }
 
 pub(in crate::plugins::two_factor) fn trust_device_max_age(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> f64 {
     ctx.extensions
         .get::<TwoFactorCookiePolicy>()
@@ -45,7 +45,7 @@ pub(in crate::plugins::two_factor) fn trust_device_max_age(
 pub(in crate::plugins::two_factor) fn create_session_cookie_for_dont_remember(
     token: &str,
     dont_remember: bool,
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
 ) -> AuthResult<String> {
     if dont_remember {
         create_session_cookie_with_max_age(Some(token), None, config)
@@ -55,7 +55,7 @@ pub(in crate::plugins::two_factor) fn create_session_cookie_for_dont_remember(
 }
 
 pub(in crate::plugins::two_factor) fn clear_cookie_header(
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
     suffix: &str,
 ) -> AuthResult<String> {
     create_clear_cookie(&related_cookie_name(config, suffix), config)
@@ -63,7 +63,7 @@ pub(in crate::plugins::two_factor) fn clear_cookie_header(
 
 pub(in crate::plugins::two_factor) async fn create_trust_device_cookie_header(
     user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<String> {
     let identifier = format!("trust-device-{}", uuid::Uuid::new_v4());
     let token = sign_value(
@@ -92,14 +92,14 @@ pub(in crate::plugins::two_factor) async fn create_trust_device_cookie_header(
 
 pub(in crate::plugins::two_factor) fn create_signed_cookie_header(
     secret: &str,
-    config: &better_auth_core::AuthConfig,
+    config: &alibi_core::AuthConfig,
     suffix: &str,
     value: &str,
     max_age_seconds: Option<f64>,
 ) -> AuthResult<String> {
     let cookie_name = related_cookie_name(config, suffix);
     let signed_value = sign_cookie_value(secret, value);
-    better_auth_core::utils::cookie_utils::create_cookie_with_max_age(
+    alibi_core::utils::cookie_utils::create_cookie_with_max_age(
         &cookie_name,
         &signed_value,
         max_age_seconds,
@@ -120,7 +120,7 @@ pub(in crate::plugins::two_factor) fn get_factor_cookie(
     })
 }
 
-pub(in crate::plugins::two_factor) fn read_signed_cookie<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins::two_factor) fn read_signed_cookie<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     suffix: &str,
     ctx: &AuthContext<S>,
@@ -184,7 +184,7 @@ pub(in crate::plugins::two_factor) fn decode_factor_cookie(
 }
 
 pub(in crate::plugins::two_factor) fn sign_cookie_value(secret: &str, value: &str) -> String {
-    better_auth_core::utils::cookie_utils::sign_cookie_value(value, secret)
+    alibi_core::utils::cookie_utils::sign_cookie_value(value, secret)
 }
 
 pub(in crate::plugins::two_factor) fn sign_value(secret: &str, value: &str) -> AuthResult<String> {

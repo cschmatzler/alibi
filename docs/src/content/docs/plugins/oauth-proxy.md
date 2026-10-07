@@ -25,10 +25,10 @@ Run the **same plugin on both hosts**. This is the preview instance, pointing at
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::oauth::OAuthProvider;
-use better_auth::plugins::{OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::oauth::OAuthProvider;
+use alibi::plugins::{OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,

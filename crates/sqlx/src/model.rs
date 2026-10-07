@@ -9,7 +9,7 @@ use crate::error::record_not_inserted;
 use crate::pool::{Exec, SqlxRow};
 use crate::sql::{Sql, select};
 use crate::value::{ColumnKind, SqlValue};
-use better_auth_core::error::{AuthError, AuthResult};
+use alibi_core::error::{AuthError, AuthResult};
 
 /// One column's write state.
 #[derive(Clone, Debug, PartialEq)]

@@ -6,12 +6,12 @@ use axum::{
     http::HeaderMap,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::{OAuthProvider, RedditOptions};
-use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{OAuthProvider, RedditOptions};
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -119,12 +119,12 @@ pub(crate) async fn router(
     let controls = controls(fixture.clone());
     Ok((router.merge(controls), fixture))
 }
-fn map_profile(profile: Value) -> Result<better_auth::plugins::oauth::OAuthUserInfo, String> {
+fn map_profile(profile: Value) -> Result<alibi::plugins::oauth::OAuthUserInfo, String> {
     MAPPER_RECEIPTS
         .lock()
         .map_err(|error| error.to_string())?
         .push(profile.clone());
-    Ok(better_auth::plugins::oauth::OAuthUserInfo {
+    Ok(alibi::plugins::oauth::OAuthUserInfo {
         additional_fields: Default::default(),
         id: "cannot-replace-account-subject".into(),
         name: Some(format!(
@@ -139,7 +139,7 @@ fn map_profile(profile: Value) -> Result<better_auth::plugins::oauth::OAuthUserI
         image: Some("https://images.example.invalid/mapped-reddit.png".into()),
     })
 }
-fn map_empty_email(profile: Value) -> Result<better_auth::plugins::oauth::OAuthUserInfo, String> {
+fn map_empty_email(profile: Value) -> Result<alibi::plugins::oauth::OAuthUserInfo, String> {
     let mut user = map_profile(profile)?;
     user.email.clear();
     Ok(user)

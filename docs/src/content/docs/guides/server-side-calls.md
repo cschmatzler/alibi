@@ -16,8 +16,8 @@ Build an `AuthRequest`, get an `AuthResponse`. It runs exactly the pipeline an H
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::prelude::{AuthRequest, HttpMethod};
-use better_auth::{AuthResult, BetterAuth};
+use alibi::prelude::{AuthRequest, HttpMethod};
+use alibi::{AuthResult, BetterAuth};
 use serde_json::Value;
 
 /// Resolve the session behind a `Cookie` header.
@@ -35,7 +35,7 @@ async fn session_for(auth: &BetterAuth<AppAuthSchema>, cookie: &str) -> AuthResu
 Plugins that expose server-only operations publish typed constructors that return a `ServerEndpoint<Output>`. You pass it to `dispatch_endpoint` with optional `EndpointOptions`:
 
 ```rust
-use better_auth::endpoint::EndpointOptions;
+use alibi::endpoint::EndpointOptions;
 
 fn options() -> EndpointOptions {
     EndpointOptions {
@@ -52,9 +52,9 @@ The output is an `EndpointOutput<T>`; `decode()` turns it into the typed value `
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::endpoint::EndpointOptions;
-use better_auth::plugins::jwt::JwtPlugin;
+use alibi::BetterAuth;
+use alibi::endpoint::EndpointOptions;
+use alibi::plugins::jwt::JwtPlugin;
 
 async fn roundtrip(auth: &BetterAuth<AppAuthSchema>, token: &str) -> Result<bool, Box<dyn std::error::Error>> {
     let verified = auth
@@ -72,9 +72,9 @@ async fn roundtrip(auth: &BetterAuth<AppAuthSchema>, token: &str) -> Result<bool
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::endpoint::EndpointOptions;
-use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
+use alibi::BetterAuth;
+use alibi::endpoint::EndpointOptions;
+use alibi::plugins::one_time_token::OneTimeTokenPlugin;
 use std::collections::HashMap;
 
 async fn handoff_token(auth: &BetterAuth<AppAuthSchema>, cookie: &str) -> Result<String, Box<dyn std::error::Error>> {
@@ -113,15 +113,15 @@ Instance methods take the initialized context — `auth.context()` — and need 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::plugins::email_otp::EmailOtpType;
-use better_auth::plugins::{EmailOtpConfig, EmailOtpPlugin};
+use alibi::BetterAuth;
+use alibi::plugins::email_otp::EmailOtpType;
+use alibi::plugins::{EmailOtpConfig, EmailOtpPlugin};
 
 async fn code_for_support(
     auth: &BetterAuth<AppAuthSchema>,
     plugin: &EmailOtpPlugin,
     email: &str,
-) -> better_auth::AuthResult<String> {
+) -> alibi::AuthResult<String> {
     plugin.create_verification_otp(auth.context(), email, EmailOtpType::SignIn).await
 }
 
@@ -139,10 +139,10 @@ fn plugin() -> EmailOtpPlugin {
 An instance built with [`AuthBuilder::without_database`](/databases/no-database/) or an in-memory SQLite database makes fast integration tests; call `handle_request` with `Origin` set and, to avoid the built-in strict sign-in limits, build with `.rate_limit(RateLimitConfig::new().enabled(false))`:
 
 ```rust
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::store::StatelessSchema;
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::store::StatelessSchema;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 
 async fn test_instance() -> AuthResult<BetterAuth<StatelessSchema>> {
     let config = AuthConfig::new("test-secret-with-at-least-32-characters").base_url("http://localhost:3000");

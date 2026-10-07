@@ -1,7 +1,7 @@
 //! Generic route annotations and the mandatory entity wire projections.
 use super::{OpenApiEndpoint, OpenApiField, OpenApiModel, PluginOpenApiMetadata};
 use crate::AuthRoute;
-use better_auth_schema_registry::{EntityRole, FieldDef, core_fields};
+use alibi_schema_registry::{EntityRole, FieldDef, core_fields};
 use serde_json::json;
 
 fn wire_name(name: &str) -> String {

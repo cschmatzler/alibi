@@ -1,5 +1,5 @@
 use crate::plugins::authentication_helpers::{JsonField, JsonFieldKind, RequestBody};
-use better_auth_core::{AuthError, wire::UserView};
+use alibi_core::{AuthError, wire::UserView};
 use serde::Deserialize;
 
 #[derive(Clone)]
@@ -56,7 +56,7 @@ pub(super) struct VerifyRequest {
     pub display_username: Option<String>,
     pub image: Option<String>,
     #[serde(rename = "phoneNumberVerified")]
-    pub phone_number_verified: Option<better_auth_core::utils::json::JsValue>,
+    pub phone_number_verified: Option<alibi_core::utils::json::JsValue>,
 }
 
 #[derive(Deserialize)]
@@ -127,9 +127,9 @@ pub(super) const fn phone_error(
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) fn reject_verified_input(
-    input: Option<&better_auth_core::utils::json::JsValue>,
+    input: Option<&alibi_core::utils::json::JsValue>,
 ) -> Result<(), AuthError> {
-    use better_auth_core::utils::json::JsValue as Value;
+    use alibi_core::utils::json::JsValue as Value;
     let truthy = match input {
         None | Some(Value::Null) => false,
         Some(Value::Bool(value)) => *value,
@@ -156,10 +156,10 @@ pub(in crate::plugins) fn reject_verified_input(
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn parse_signup_phone(
-    ctx: &better_auth_core::AuthContext<impl better_auth_core::AuthSchema>,
-    input: Option<&better_auth_core::utils::json::JsValue>,
+    ctx: &alibi_core::AuthContext<impl alibi_core::AuthSchema>,
+    input: Option<&alibi_core::utils::json::JsValue>,
 ) -> Result<Option<String>, AuthError> {
-    use better_auth_core::utils::json::JsValue as Value;
+    use alibi_core::utils::json::JsValue as Value;
     match input {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(value)) => Ok(Some(value.clone())),
@@ -167,7 +167,7 @@ pub(in crate::plugins) async fn parse_signup_phone(
         // column. Arrays and objects fail user insertion, leaving no rows.
         Some(Value::Bool(value)) => Ok(Some(if *value { "1" } else { "0" }.into())),
         Some(Value::Number(value)) => {
-            use better_auth_core::store::NumericTextInput;
+            use alibi_core::store::NumericTextInput;
             // A valid JSON number can overflow the JavaScript f64 range.
             // Preserve its number type through validation, then apply the same
             // rounding/overflow before the adapter chooses INTEGER or REAL.

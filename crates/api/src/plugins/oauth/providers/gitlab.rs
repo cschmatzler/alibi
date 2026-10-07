@@ -81,8 +81,9 @@ pub(in crate::plugins::oauth::providers) fn gitlab_user_info(
     }
     let id = match profile.get("id") {
         Some(Value::String(value)) => value.clone(),
-        Some(Value::Number(value)) => better_auth_core::utils::json::number_to_string(value)
-            .map_err(|error| error.to_string())?,
+        Some(Value::Number(value)) => {
+            alibi_core::utils::json::number_to_string(value).map_err(|error| error.to_string())?
+        }
         _ => return Err("Missing GitLab account ID".into()),
     };
     Ok(OAuthUserInfo {

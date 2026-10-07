@@ -6,15 +6,15 @@
     reason = "contract regressions assert complete endpoint outcomes"
 )]
 use crate::storage::{Backend, Db, TestResult, backend_tests};
-use async_trait::async_trait;
-use better_auth::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver};
-use better_auth::plugins::magic_link::MagicLinkDelivery;
-use better_auth::plugins::{EmailPasswordPlugin, MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::{
+use alibi::config::{BaseUrlProtocol, DynamicBaseUrl, TrustedOriginsResolver};
+use alibi::plugins::magic_link::MagicLinkDelivery;
+use alibi::plugins::{EmailPasswordPlugin, MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::{
     AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
     BeforeRequestAction, CallbackContext, HttpMethod,
 };
+use async_trait::async_trait;
 use serde_json::json;
 use std::sync::{Arc, Mutex};
 
@@ -37,12 +37,12 @@ impl TrustedOriginsResolver for ClientOrigin {
         assert!(request.url().is_some());
         match request.header("x-origin-error").map(String::as_str) {
             Some("ordinary") => {
-                return Err(better_auth_core::AuthError::internal(
+                return Err(alibi_core::AuthError::internal(
                     "private origin resolver failure",
                 ));
             }
             Some("api") => {
-                return Err(better_auth_core::AuthError::forbidden(
+                return Err(alibi_core::AuthError::forbidden(
                     "origin policy unavailable",
                 ));
             }
@@ -141,7 +141,7 @@ async fn dynamic_origin_dispatch<B: Backend>(db: Db) -> TestResult {
     let cfg = config();
     let auth = AuthBuilder::<B::Schema>::new(cfg.clone())
         .store(B::store(Arc::new(cfg), &connection))
-        .rate_limit(better_auth::middleware::RateLimitConfig {
+        .rate_limit(alibi::middleware::RateLimitConfig {
             enabled: false,
             ..Default::default()
         })

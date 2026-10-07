@@ -7,7 +7,7 @@ mod endpoint;
 mod http;
 mod http_hooks;
 mod routing;
-use better_auth_core::{
+use alibi_core::{
     AuthConfig, AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse,
     AuthResult, AuthRoute, AuthSchema, AuthStore, BeforeRequestAction, EmailProvider,
     HttpEndpointResponse, HttpMethod, HttpRequestAction, OkResponse, OpenApiBuilder,
@@ -33,7 +33,7 @@ pub struct BetterAuth<S: AuthSchema> {
     session_manager: SessionManager<S>,
     pub(super) context: AuthContext<S>,
     openapi: Arc<OpenApiRegistry>,
-    pub(super) endpoint_hooks: Vec<Arc<dyn better_auth_core::endpoint::EndpointHook<S>>>,
+    pub(super) endpoint_hooks: Vec<Arc<dyn alibi_core::endpoint::EndpointHook<S>>>,
 }
 
 impl<S: AuthSchema> std::fmt::Debug for BetterAuth<S> {
@@ -56,7 +56,7 @@ pub struct AuthBuilder<S: AuthSchema> {
     cors_config: Option<CorsConfig>,
     body_limit_config: Option<BodyLimitConfig>,
     custom_middlewares: Vec<Box<dyn Middleware>>,
-    endpoint_hooks: Vec<Arc<dyn better_auth_core::endpoint::EndpointHook<S>>>,
+    endpoint_hooks: Vec<Arc<dyn alibi_core::endpoint::EndpointHook<S>>>,
 }
 
 impl<S: AuthSchema> std::fmt::Debug for AuthBuilder<S> {

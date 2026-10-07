@@ -10,7 +10,7 @@ SQLx is the default store backend. `SqlxStore` supports SQLite and PostgreSQL an
 SQLx is enabled by the default `sqlx` feature. To pick one engine, disable default features and select `sqlx-sqlite` or `sqlx-postgres`; keep a TLS feature (`native-tls` or `rustls`) for outbound HTTP:
 
 ```toml title="Cargo.toml"
-better-auth = { package = "alibi", version = "0.1.0", default-features = false, features = ["axum", "sqlx-postgres", "rustls"] }
+alibi = { version = "0.1.1", default-features = false, features = ["axum", "sqlx-postgres", "rustls"] }
 sqlx = { version = "0.9", default-features = false, features = ["postgres", "chrono", "json", "derive"] }
 ```
 
@@ -22,9 +22,9 @@ The generated models derive from `sqlx::FromRow`, so your application depends on
 
 ```rust
 use crate::auth_schema::{AppAuthSchema, run_app_migrations};
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::sqlx::{SqlxPool, SqlxStore};
-use better_auth::{AuthConfig, BetterAuth};
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::sqlx::{SqlxPool, SqlxStore};
+use alibi::{AuthConfig, BetterAuth};
 
 async fn build_auth(
     secret: &str,
@@ -50,7 +50,7 @@ Always pass the same `AuthConfig` to the store and the builder: the store applie
 Better Auth runs on the pool you give it, so you can tune connection limits and share one pool between your application and authentication. Wrap an existing `sqlx` pool with `SqlxPool::from` and read it back with `as_postgres()` / `as_sqlite()`:
 
 ```rust
-use better_auth::sqlx::SqlxPool;
+use alibi::sqlx::SqlxPool;
 use sqlx::postgres::PgPoolOptions;
 
 async fn shared_pool(url: &str) -> Result<(SqlxPool, sqlx::PgPool), sqlx::Error> {
@@ -70,10 +70,10 @@ For organization plugin tables, bind three application models with `Organization
 
 ## Use your own models
 
-Derive `sqlx::FromRow` and `better_auth::sqlx::AuthEntity` on structs that contain the required fields for their role (user, session, account, verification). Extra columns are allowed:
+Derive `sqlx::FromRow` and `alibi::sqlx::AuthEntity` on structs that contain the required fields for their role (user, session, account, verification). Extra columns are allowed:
 
 ```rust nocheck
-#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+#[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
 #[auth(role = "session", table = "app_sessions")]
 pub struct Session {
     pub id: String,
@@ -101,7 +101,7 @@ Select the models in an `AuthSchema` (the generated file does this for you):
 
 ```rust nocheck
 pub struct AppAuthSchema;
-impl better_auth::AuthSchema for AppAuthSchema {
+impl alibi::AuthSchema for AppAuthSchema {
     type User = user::Model;
     type Session = session::Model;
     type Account = account::Model;
@@ -118,10 +118,10 @@ Wrap the store to observe or veto writes. In the hook, `ctx.db` is the pool and 
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::sqlx::{SqlxBackend, SqlxStore};
-use better_auth::store::{DatabaseHookContext, DatabaseHooks, HookControl};
-use better_auth::prelude::{AuthUser, CreateUser};
-use better_auth::AuthResult;
+use alibi::sqlx::{SqlxBackend, SqlxStore};
+use alibi::store::{DatabaseHookContext, DatabaseHooks, HookControl};
+use alibi::prelude::{AuthUser, CreateUser};
+use alibi::AuthResult;
 
 struct RejectReserved;
 

@@ -3,7 +3,7 @@ mod entities;
 mod fields;
 mod roots;
 
-use better_auth_entity_codegen::{self as codegen, EntityRole, Insert};
+use alibi_entity_codegen::{self as codegen, EntityRole, Insert};
 use entities::account_impl;
 use entities::session_impl;
 use entities::user_impl;

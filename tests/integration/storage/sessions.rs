@@ -1,13 +1,13 @@
 //! Session creation hooks, tokens and batch lookup.
 
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use async_trait::async_trait;
-use better_auth::{AuthConfig, AuthSchema};
-use better_auth_core::store::{
+use alibi::{AuthConfig, AuthSchema};
+use alibi_core::store::{
     DatabaseHookContext, DatabaseHooks, HookBackend, HookControl, SessionStore, UserStore,
     transaction,
 };
-use better_auth_core::{AuthError, AuthResult, AuthSession, AuthUser, CreateSession, CreateUser};
+use alibi_core::{AuthError, AuthResult, AuthSession, AuthUser, CreateSession, CreateUser};
+use async_trait::async_trait;
 use chrono::{DateTime, Duration, Utc};
 use std::sync::{Arc, Mutex};
 
@@ -28,7 +28,7 @@ postgres_tests!(
 
 fn input(user_id: &str, token: Option<&str>, expiry: DateTime<Utc>) -> CreateSession {
     CreateSession {
-        additional_fields: better_auth_core::field_policy::FieldValues::default(),
+        additional_fields: alibi_core::field_policy::FieldValues::default(),
         token: token.map(str::to_owned),
         user_id: user_id.to_owned(),
         expires_at: expiry,
@@ -280,10 +280,10 @@ async fn javascript_only_cache_values_fall_back_without_reconstructing_or_mutati
 >(
     db: Db,
 ) -> TestResult {
-    use better_auth::AuthBuilder;
-    use better_auth::plugins::SessionManagementPlugin;
-    use better_auth_core::{AuthRequest, HttpMethod};
-    use better_auth_core::{AuthenticatedUser, CookieCacheConfig};
+    use alibi::AuthBuilder;
+    use alibi::plugins::SessionManagementPlugin;
+    use alibi_core::{AuthRequest, HttpMethod};
+    use alibi_core::{AuthenticatedUser, CookieCacheConfig};
     use serde_json::Value;
     const SECRET: &str = "compat-test-only-key-not-real-minimum-32chars";
     let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -332,7 +332,7 @@ async fn javascript_only_cache_values_fall_back_without_reconstructing_or_mutati
             ))
             .await?,
     );
-    let signed = better_auth_core::utils::cookie_utils::sign_cookie_value(session.token(), SECRET);
+    let signed = alibi_core::utils::cookie_utils::sign_cookie_value(session.token(), SECRET);
     let token_cookie = format!("{}={signed}", auth.config().session.cookie_name);
     let vectors: Value = serde_json::from_str(include_str!(
         "../../fixtures/session/compact-exotic-inputs.json"
@@ -390,9 +390,9 @@ async fn javascript_only_cache_values_fall_back_without_reconstructing_or_mutati
 async fn strict_cached_session_separates_invalid_sessions_from_storage_failures<B: Backend>(
     db: Db,
 ) -> TestResult {
-    use better_auth::plugins::SessionManagementPlugin;
-    use better_auth::{AuthBuilder, AuthenticatedUser};
-    use better_auth_core::{AuthRequest, CookieCacheConfig, HttpMethod};
+    use alibi::plugins::SessionManagementPlugin;
+    use alibi::{AuthBuilder, AuthenticatedUser};
+    use alibi_core::{AuthRequest, CookieCacheConfig, HttpMethod};
     const SECRET: &str = "strict-session-test-key-minimum-32-characters";
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     let config = AuthConfig::new(SECRET)
@@ -419,7 +419,7 @@ async fn strict_cached_session_separates_invalid_sessions_from_storage_failures<
         ))
         .await?;
     let request = |token: &str, cache: &str| {
-        let signed = better_auth_core::utils::cookie_utils::sign_cookie_value(token, SECRET);
+        let signed = alibi_core::utils::cookie_utils::sign_cookie_value(token, SECRET);
         let mut request = AuthRequest::new(HttpMethod::Get, "/api/auth/get-session");
         drop(request.headers.insert(
             "cookie".into(),

@@ -1,16 +1,16 @@
-use async_trait::async_trait;
-use axum::{Json, Router, routing::get};
-use better_auth::integrations::axum::{AxumIntegration, CurrentSession};
-use better_auth::plugins::{
+use alibi::integrations::axum::{AxumIntegration, CurrentSession};
+use alibi::plugins::{
     EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin,
     password_management::SendResetPassword,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_core::{
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_core::{
     AuthSchema, AuthUser,
     store::{AuthStore, SchemaMigrator},
 };
-use better_auth_sqlx::{SqlxStore, sqlx::sqlite::SqlitePoolOptions};
+use alibi_sqlx::{SqlxStore, sqlx::sqlite::SqlitePoolOptions};
+use async_trait::async_trait;
+use axum::{Json, Router, routing::get};
 use reqwest::{
     Client, RequestBuilder, Response, StatusCode,
     cookie::{CookieStore, Jar},
@@ -29,8 +29,8 @@ pub(super) enum Backend {
     SeaOrm,
 }
 enum Connection {
-    Sqlx(better_auth_sqlx::sqlx::SqlitePool),
-    SeaOrm(better_auth_seaorm::DatabaseConnection),
+    Sqlx(alibi_sqlx::sqlx::SqlitePool),
+    SeaOrm(alibi_seaorm::DatabaseConnection),
 }
 
 pub(super) type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -51,7 +51,7 @@ impl SendResetPassword for Mailbox {
                 user: user.clone(),
                 url: url.into(),
             })
-            .map_err(|error| better_auth::AuthError::internal(error.to_string()))
+            .map_err(|error| alibi::AuthError::internal(error.to_string()))
     }
 }
 
@@ -72,7 +72,7 @@ impl Server {
         match backend {
             Backend::Sqlx => {
                 type Schema =
-                    better_auth_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
+                    alibi_sqlx::store::__private_test_support::bundled_schema::BundledSchema;
                 let pool = SqlitePoolOptions::new()
                     .max_connections(1)
                     .connect("sqlite::memory:")
@@ -82,10 +82,10 @@ impl Server {
                 Self::serve(listener, origin, config, store, Connection::Sqlx(pool)).await
             }
             Backend::SeaOrm => {
-                type Schema=better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
-                let pool = better_auth_seaorm::Database::connect("sqlite::memory:").await?;
-                let store =
-                    better_auth_seaorm::SeaOrmStore::<Schema>::new(config.clone(), pool.clone());
+                type Schema =
+                    alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+                let pool = alibi_seaorm::Database::connect("sqlite::memory:").await?;
+                let store = alibi_seaorm::SeaOrmStore::<Schema>::new(config.clone(), pool.clone());
                 store.migrate().await?;
                 Self::serve(listener, origin, config, store, Connection::SeaOrm(pool)).await
             }

@@ -5,14 +5,14 @@ impl JwtPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl AuthSchema>,
     ) -> AuthResult<String> {
-        let read = better_auth_core::session::cookie_cache::runtime::authenticated(ctx, req, false)
+        let read = alibi_core::session::cookie_cache::runtime::authenticated(ctx, req, false)
             .await
             .map_err(|_error| unauthorized())?
             .ok_or_else(unauthorized)?;
         let session = JwtSession {
             user: match read.user {
-                better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
-                better_auth_core::AuthenticatedUser::Cached(user) => *user,
+                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
+                alibi_core::AuthenticatedUser::Cached(user) => *user,
             },
             // A virtual principal already carries its exact runtime snapshot;
             // applying persisted-session output defaults would add fields.

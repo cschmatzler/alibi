@@ -51,22 +51,21 @@ pub(in crate::runtime) async fn parse_dispatch_body(
     });
     let parsed = if json_media {
         Some(
-            better_auth_core::utils::json::from_slice::<better_auth_core::utils::json::JsValue>(
-                body,
-            )
-            .map_err(|_| AuthError::Upstream {
-                status: 400,
-                code: "BAD_REQUEST",
-                message: "Invalid JSON in request body",
-            })?,
+            alibi_core::utils::json::from_slice::<alibi_core::utils::json::JsValue>(body).map_err(
+                |_| AuthError::Upstream {
+                    status: 400,
+                    code: "BAD_REQUEST",
+                    message: "Invalid JSON in request body",
+                },
+            )?,
         )
     } else if lower.contains("application/x-www-form-urlencoded") {
-        Some(better_auth_core::utils::json::JsValue::Object(
+        Some(alibi_core::utils::json::JsValue::Object(
             url::form_urlencoded::parse(body)
                 .map(|(key, value)| {
                     (
                         key.into_owned(),
-                        better_auth_core::utils::json::JsValue::String(value.into_owned()),
+                        alibi_core::utils::json::JsValue::String(value.into_owned()),
                     )
                 })
                 .collect(),
@@ -80,8 +79,8 @@ pub(in crate::runtime) async fn parse_dispatch_body(
                 AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
             })?;
         let mut multipart = multer::Multipart::with_reader(body.as_slice(), boundary);
-        let mut fields = better_auth_core::utils::json::JsValue::Object(Default::default());
-        let mut files = better_auth_core::types::MultipartFiles::default();
+        let mut fields = alibi_core::utils::json::JsValue::Object(Default::default());
+        let mut files = alibi_core::types::MultipartFiles::default();
         while let Some(field) = multipart.next_field().await.map_err(|error| {
             AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
         })? {
@@ -96,20 +95,20 @@ pub(in crate::runtime) async fn parse_dispatch_body(
             let value = if let Some(filename) = filename {
                 drop(files.0.insert(
                     name.clone(),
-                    better_auth_core::types::MultipartFile {
+                    alibi_core::types::MultipartFile {
                         filename,
                         content_type,
                         bytes: bytes.to_vec(),
                     },
                 ));
-                better_auth_core::utils::json::JsValue::Object(Default::default())
+                alibi_core::utils::json::JsValue::Object(Default::default())
             } else {
                 drop(files.0.remove(&name));
-                better_auth_core::utils::json::JsValue::String(
+                alibi_core::utils::json::JsValue::String(
                     String::from_utf8_lossy(&bytes).into_owned(),
                 )
             };
-            if let better_auth_core::utils::json::JsValue::Object(object) = &mut fields {
+            if let alibi_core::utils::json::JsValue::Object(object) = &mut fields {
                 drop(object.insert(name, value));
             }
         }
@@ -119,14 +118,12 @@ pub(in crate::runtime) async fn parse_dispatch_body(
         None
     };
     let decoded = if let Some(parsed) = parsed {
-        better_auth_core::types::ParsedRequestBody::Value(parsed)
+        alibi_core::types::ParsedRequestBody::Value(parsed)
     } else if lower.contains("text/plain") {
         let text = String::from_utf8_lossy(body);
-        better_auth_core::types::ParsedRequestBody::Value(
-            better_auth_core::utils::json::JsValue::String(
-                text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned(),
-            ),
-        )
+        alibi_core::types::ParsedRequestBody::Value(alibi_core::utils::json::JsValue::String(
+            text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned(),
+        ))
     } else {
         let kind = if lower.contains("application/octet-stream") {
             "ArrayBuffer"
@@ -138,7 +135,7 @@ pub(in crate::runtime) async fn parse_dispatch_body(
         } else {
             "ReadableStream"
         };
-        better_auth_core::types::ParsedRequestBody::Opaque(kind)
+        alibi_core::types::ParsedRequestBody::Opaque(kind)
     };
     req.extensions().insert(decoded);
     Ok(())

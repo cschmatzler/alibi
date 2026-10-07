@@ -1,9 +1,7 @@
 //! Identity mutations must preserve ownership and invalidate the intended proofs.
 use super::passwordless::Mailbox;
 use super::*;
-use better_auth::plugins::email_otp::{
-    EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, EmailOtpType,
-};
+use alibi::plugins::email_otp::{EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, EmailOtpType};
 
 backend_tests!(
     username_signup_lookup_and_denials_share_normalized_identity,
@@ -27,7 +25,7 @@ async fn username_signup_lookup_and_denials_share_normalized_identity<B: Backend
     let config = AuthConfig::new(SECRET).base_url(ORIGIN);
     let auth = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
-        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(EmailPasswordPlugin::new().enable_username(true))
         .plugin(SessionManagementPlugin::new())
         .build()
@@ -291,8 +289,8 @@ async fn email_otp_verification_reset_and_email_change_bind_owner_and_scope<B: B
 async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identity<B: Backend>(
     db: Db,
 ) -> TestResult {
-    use better_auth_core::config::CookieCacheConfig;
-    use better_auth_core::utils::username::UsernameConfig;
+    use alibi_core::config::CookieCacheConfig;
+    use alibi_core::utils::username::UsernameConfig;
     let (connection, _) = db.migrated::<B>(SECRET).await?;
     for immutable in [false, true] {
         let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
@@ -302,7 +300,7 @@ async fn profile_update_publishes_accepted_fields_and_preserves_rejected_identit
         });
         drop(config.user.additional_fields.insert(
             "role".into(),
-            better_auth_core::field_policy::FieldConfig::new(json!({"type":"string"})).read_only(),
+            alibi_core::field_policy::FieldConfig::new(json!({"type":"string"})).read_only(),
         ));
         let auth = AuthBuilder::new(config.clone())
             .store(B::store(Arc::new(config), &connection))
@@ -432,7 +430,7 @@ async fn password_change_verification_and_session_revocation_are_owner_scoped<B:
         let db = db.fresh().await?;
         let (connection, _) = db.migrated::<B>(SECRET).await?;
         let auth = builder::<B>(&connection)
-            .plugin(better_auth::plugins::PasswordManagementPlugin::new())
+            .plugin(alibi::plugins::PasswordManagementPlugin::new())
             .build()
             .await?;
         let owner = signup(&auth, "password-owner@example.test").await;
@@ -523,7 +521,7 @@ async fn password_change_verification_and_session_revocation_are_owner_scoped<B:
 }
 
 async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
-    use better_auth_core::utils::username::{
+    use alibi_core::utils::username::{
         UsernameConfig, UsernameNormalization, UsernameValidationOrder,
     };
     for post in [false, true] {
@@ -537,7 +535,7 @@ async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
         let policy = UsernameConfig {
             normalization: UsernameNormalization::Custom(Arc::new(|value: &str| {
                 if value.contains("normalizer-error") {
-                    return Err(better_auth_core::AuthError::internal(
+                    return Err(alibi_core::AuthError::internal(
                         "private normalizer failure",
                     ));
                 }
@@ -545,24 +543,20 @@ async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
             })),
             validator: Some(Arc::new(move |value: String| async move {
                 if value.contains("validator-error") {
-                    return Err(better_auth_core::AuthError::internal(
-                        "private validator failure",
-                    ));
+                    return Err(alibi_core::AuthError::internal("private validator failure"));
                 }
                 Ok(value == if post { "admitted" } else { "raw-ADMITTED" }
                     || value.contains("normalizer-error"))
             })),
             display_normalizer: Some(Arc::new(|value: &str| {
                 if value.contains("display-error") {
-                    return Err(better_auth_core::AuthError::internal(
-                        "private display failure",
-                    ));
+                    return Err(alibi_core::AuthError::internal("private display failure"));
                 }
                 Ok(value.trim_start_matches("raw-").to_ascii_lowercase())
             })),
             display_validator: Some(Arc::new(move |value: String| async move {
                 if value.contains("display-validator-error") {
-                    return Err(better_auth_core::AuthError::internal(
+                    return Err(alibi_core::AuthError::internal(
                         "private display validator failure",
                     ));
                 }
@@ -576,7 +570,7 @@ async fn configured_username_policy<B: Backend>(parent: &Db) -> TestResult {
         let config = AuthConfig::new(SECRET).base_url(ORIGIN);
         let auth = AuthBuilder::new(config.clone())
             .store(B::store(Arc::new(config), &connection))
-            .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().username_config(policy))
             .plugin(SessionManagementPlugin::new())
             .build()
@@ -667,14 +661,14 @@ async fn password_length_limits_apply_to_every_new_password_endpoint<B: Backend>
     let config = AuthConfig::new(SECRET).base_url(ORIGIN);
     let auth = AuthBuilder::new(config.clone())
         .store(B::store(Arc::new(config), &connection))
-        .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
         .plugin(
             EmailPasswordPlugin::new()
                 .password_min_length(10)
                 .password_max_length(24),
         )
         .plugin(SessionManagementPlugin::new())
-        .plugin(better_auth::plugins::AdminPlugin::new())
+        .plugin(alibi::plugins::AdminPlugin::new())
         .build()
         .await?;
     let owner = signup(&auth, "limits@example.test").await;
@@ -683,7 +677,7 @@ async fn password_length_limits_apply_to_every_new_password_endpoint<B: Backend>
         auth.store()
             .update_user(
                 &owner_id,
-                better_auth_core::UpdateUser {
+                alibi_core::UpdateUser {
                     role: Some("admin".into()),
                     ..Default::default()
                 },

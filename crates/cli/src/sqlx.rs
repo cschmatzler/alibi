@@ -28,8 +28,8 @@ pub(crate) fn sqlx_schema(selection: &Selection) -> TokenStream {
         .iter()
         .map(|(table, fields)| create_table(table, fields, SqlDialect::Postgres));
     quote! {
-        use better_auth::AuthSchema;
-        use better_auth::sqlx::{Engine, SqlxPool};
+        use alibi::AuthSchema;
+        use alibi::sqlx::{Engine, SqlxPool};
 
         #(#entities)*
         #(#extra)*
@@ -48,7 +48,7 @@ pub(crate) fn sqlx_schema(selection: &Selection) -> TokenStream {
 
         pub async fn run_app_migrations(
             pool: &SqlxPool,
-        ) -> Result<(), better_auth::sqlx::sqlx::Error> {
+        ) -> Result<(), alibi::sqlx::sqlx::Error> {
             let statements = match pool.engine() {
                 Engine::Sqlite => SQLITE_TABLES,
                 Engine::Postgres => POSTGRES_TABLES,
@@ -81,7 +81,7 @@ pub(crate) fn sqlx_entity(
         |role| {
             let role = role_name(role);
             quote! {
-                #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, better_auth::sqlx::AuthEntity)]
+                #[derive(Clone, Debug, serde::Serialize, sqlx::FromRow, alibi::sqlx::AuthEntity)]
                 #[auth(role = #role, table = #table)]
             }
         },
@@ -99,7 +99,7 @@ pub(crate) fn sqlx_entity(
 /// The `SQLx` model type for a registry type.
 pub(crate) fn sqlx_type(ty: &str) -> String {
     ty.replace("DateTimeUtc", "chrono::DateTime<chrono::Utc>")
-        .replace("Json", "better_auth::sqlx::JsonMetadata")
+        .replace("Json", "alibi::sqlx::JsonMetadata")
 }
 
 #[derive(Clone, Copy)]

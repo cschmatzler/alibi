@@ -9,9 +9,9 @@ description: "Reject passwords that appear in known data breaches, without ever 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::{EmailPasswordPlugin, HaveIBeenPwnedPlugin};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::{EmailPasswordPlugin, HaveIBeenPwnedPlugin};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -54,7 +54,7 @@ Sign-in is never checked (hashing there only verifies). Restrict or extend the l
 | `client` | the public range API | `PwnedPasswordClient` — your HTTP client and/or mirror |
 
 ```rust
-use better_auth::plugins::{HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient};
+use alibi::plugins::{HaveIBeenPwnedConfig, HaveIBeenPwnedPlugin, PwnedPasswordClient};
 
 fn pwned() -> Result<HaveIBeenPwnedPlugin, url::ParseError> {
     // A self-hosted mirror of the range API, with your own timeouts and proxy settings.
@@ -76,7 +76,7 @@ fn pwned() -> Result<HaveIBeenPwnedPlugin, url::ParseError> {
 You can also call the check yourself, for example in a custom registration form:
 
 ```rust
-use better_auth::plugins::haveibeenpwned::is_password_compromised;
+use alibi::plugins::haveibeenpwned::is_password_compromised;
 
 async fn warn_user(password: &str) -> bool {
     is_password_compromised(password).await.unwrap_or(false)

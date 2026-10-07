@@ -5,7 +5,7 @@ use super::*;
 pub(in crate::plugins) async fn inspect_trusted_device(
     req: &AuthRequest,
     user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<TrustedDeviceCheck> {
     let cookie_name = related_cookie_name(&ctx.config, TRUST_DEVICE_COOKIE_SUFFIX);
     let Some(raw_cookie) = get_factor_cookie(req, &cookie_name) else {
@@ -78,7 +78,7 @@ pub(in crate::plugins) async fn inspect_trusted_device(
 pub(in crate::plugins) async fn begin_sign_in_challenge(
     user: &impl AuthUser,
     remember_me: Option<bool>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SignInTwoFactorRedirect> {
     let identifier = format!("2fa-{}", uuid::Uuid::new_v4());
     let expires_at = cookie_expiry(two_factor_cookie_max_age(ctx))?;
@@ -101,10 +101,10 @@ pub(in crate::plugins) async fn begin_sign_in_challenge(
             .await?,
     );
 
-    let incoming = better_auth_core::hooks::current_request_hook_context()
+    let incoming = alibi_core::hooks::current_request_hook_context()
         .map(|request| request.headers.clone())
         .unwrap_or_default();
-    let mut headers = better_auth_core::session::cookie_cache::runtime::session_cleanup_headers(
+    let mut headers = alibi_core::session::cookie_cache::runtime::session_cleanup_headers(
         &ctx.config,
         &incoming,
         true,
@@ -165,9 +165,7 @@ pub(in crate::plugins) async fn begin_sign_in_challenge(
     })
 }
 
-pub(in crate::plugins::two_factor) async fn resolve_two_factor_state<
-    S: better_auth_core::AuthSchema,
->(
+pub(in crate::plugins::two_factor) async fn resolve_two_factor_state<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<ResolvedTwoFactorState<S>> {
@@ -206,9 +204,7 @@ pub(in crate::plugins::two_factor) async fn resolve_two_factor_state<
     }))
 }
 
-pub(in crate::plugins::two_factor) async fn begin_factor_attempt<
-    S: better_auth_core::AuthSchema,
->(
+pub(in crate::plugins::two_factor) async fn begin_factor_attempt<S: alibi_core::AuthSchema>(
     state: &ResolvedTwoFactorState<S>,
     ctx: &AuthContext<S>,
 ) -> AuthResult<Option<FactorAttempt>> {
@@ -290,7 +286,7 @@ pub(in crate::plugins::two_factor) fn attempt_number(value: &str) -> f64 {
 pub(in crate::plugins::two_factor) async fn rearm_factor_attempt(
     attempt: Option<&FactorAttempt>,
     failed: bool,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) {
     if let Some(attempt) = attempt {
         drop(
@@ -307,7 +303,7 @@ pub(in crate::plugins::two_factor) async fn rearm_factor_attempt(
 
 pub(in crate::plugins::two_factor) fn verification_error_response(
     error: AuthError,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     if matches!(
         &error,
@@ -332,7 +328,7 @@ pub(in crate::plugins::two_factor) async fn verify_existing_session_factor(
     session: impl AuthSession,
     enable_two_factor_if_needed: bool,
     return_updated_snapshot: bool,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<(SessionTokenResponse<UserView>, Vec<String>), ExistingSessionFactorError> {
     if enable_two_factor_if_needed && !user.two_factor_enabled() {
         let updated_user = ctx
@@ -418,7 +414,7 @@ pub(in crate::plugins::two_factor) async fn verify_existing_session_factor(
 }
 
 pub(in crate::plugins::two_factor) async fn finalize_pending_two_factor<
-    S: better_auth_core::AuthSchema,
+    S: alibi_core::AuthSchema,
 >(
     pending: PendingTwoFactorState<S>,
     req: &AuthRequest,
@@ -504,7 +500,7 @@ pub(in crate::plugins::two_factor) async fn finalize_pending_two_factor<
 
 pub(in crate::plugins::two_factor) async fn load_two_factor_record(
     user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<TwoFactor> {
     ctx.database
         .get_two_factor_by_user_id(user.id().as_ref())

@@ -7,19 +7,19 @@ use axum::{
     response::IntoResponse,
     routing::post,
 };
-use better_auth::plugins::jwt::{
+use alibi::plugins::jwt::{
     DefineJwtPayload, DefineJwtSubject, JwtAlgorithm, JwtClaimsConfig, JwtExpiration,
     JwtKeyPairConfig, JwtKeyring, JwtKeyringContext, JwtPlugin, JwtPluginConfig, JwtSession,
     JwtSignOptions,
 };
-use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
-use better_auth::{
+use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use better_auth_core::{AuthRequest, CookieCacheConfig, CreateJwk, HttpMethod, Jwk};
-use better_auth_seaorm::DatabaseConnection;
-use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
+use alibi_core::{AuthRequest, CookieCacheConfig, CreateJwk, HttpMethod, Jwk};
+use alibi_seaorm::DatabaseConnection;
+use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, QueryResult, Statement};
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -283,7 +283,7 @@ struct Control {
     id: Option<String>,
     expires_at: Option<DateTime<Utc>>,
     field: Option<String>,
-    payload: Option<better_auth_core::utils::json::JsValue>,
+    payload: Option<alibi_core::utils::json::JsValue>,
     token: Option<String>,
     issuer: Option<String>,
     header: Option<Map<String, Value>>,
@@ -412,7 +412,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         async move {
             let result=async {
                 let request_body=body.to_vec();
-                let body:Control=better_auth_core::utils::json::from_slice(&body)?;
+                let body:Control=alibi_core::utils::json::from_slice(&body)?;
                 let (auth,jwt,app)=profiles.get(body.profile.as_deref().unwrap_or("jwt-keyring-standard")).ok_or_else(||AuthError::bad_request("unknown keyring profile"))?;
                 match body.operation.as_str() {
                     "reset"=>{database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DELETE FROM fixtureJwtKeyring")).await.map_err(database_error)?;database.execute_raw(Statement::from_string(DbBackend::Sqlite,"DELETE FROM sqlite_sequence WHERE name='fixtureJwtKeyring'")).await.map_err(database_error)?;state.events.lock().map_err(database_error)?.clear();*state.failure.lock().map_err(database_error)?=None;*state.race.lock().map_err(database_error)?=None;}

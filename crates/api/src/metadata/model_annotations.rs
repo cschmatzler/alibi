@@ -1,6 +1,6 @@
 //! Configuration-sensitive overlays on pinned plugin schema declarations.
 use super::PluginOpenApiMetadata;
-use better_auth_core::{AuthInitContext, AuthSchema};
+use alibi_core::{AuthInitContext, AuthSchema};
 use serde_json::json;
 pub(super) fn apply<S: AuthSchema>(
     plugin: &str,

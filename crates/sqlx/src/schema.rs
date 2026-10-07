@@ -3,10 +3,10 @@
 use crate::model::{ActiveRow, SqlxModel};
 use crate::pool::Engine;
 use crate::value::SqlValue;
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
-use better_auth_core::error::AuthResult;
-pub use better_auth_core::schema::AuthSchema;
-use better_auth_core::types::{
+use alibi_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
+use alibi_core::error::AuthResult;
+pub use alibi_core::schema::AuthSchema;
+use alibi_core::types::{
     CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
 };
 use chrono::{DateTime, Utc};
@@ -18,13 +18,13 @@ pub trait SqlxUserModel: AuthUser + SqlxModel {
     ///
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
-        fields: &better_auth_core::field_policy::FieldValues,
+        fields: &alibi_core::field_policy::FieldValues,
         _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the user schema has no additional field bindings",
         ))
     }
@@ -39,7 +39,7 @@ pub trait SqlxUserModel: AuthUser + SqlxModel {
         _value: SqlValue,
         _backend: Engine,
     ) -> AuthResult<()> {
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the user schema cannot stage additional fields",
         ))
     }
@@ -107,7 +107,7 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
     ///
     /// Returns `NotImplemented` unless the schema supports secondary sessions.
     fn materialize_secondary(_active: ActiveRow) -> AuthResult<Self> {
-        Err(better_auth_core::AuthError::NotImplemented(
+        Err(alibi_core::AuthError::NotImplemented(
             "Secondary session materialization is unsupported".into(),
         ))
     }
@@ -118,13 +118,13 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
     ///
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
-        fields: &better_auth_core::field_policy::FieldValues,
+        fields: &alibi_core::field_policy::FieldValues,
         _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the session schema has no additional field bindings",
         ))
     }
@@ -139,7 +139,7 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
         _value: SqlValue,
         _backend: Engine,
     ) -> AuthResult<()> {
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the session schema cannot stage additional fields",
         ))
     }
@@ -187,7 +187,7 @@ pub trait SqlxSessionModel: AuthSession + SqlxModel {
     /// Returns an error if the configured model does not support an active-team field.
     fn set_active_team_id(active: &mut ActiveRow, team_id: Option<String>) -> AuthResult<()> {
         drop((active, team_id));
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the session schema has no active-team field",
         ))
     }
@@ -200,13 +200,13 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
     ///
     /// Returns an error if configured additional fields cannot be bound to model columns.
     fn additional_field_bindings(
-        fields: &better_auth_core::field_policy::FieldValues,
+        fields: &alibi_core::field_policy::FieldValues,
         _backend: Engine,
     ) -> AuthResult<Vec<(&'static str, SqlValue)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the account schema has no additional field bindings",
         ))
     }
@@ -221,7 +221,7 @@ pub trait SqlxAccountModel: AuthAccount + SqlxModel {
         _value: SqlValue,
         _backend: Engine,
     ) -> AuthResult<()> {
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the account schema cannot stage additional fields",
         ))
     }
@@ -290,7 +290,7 @@ pub trait SqlxVerificationModel: AuthVerification + SqlxModel {
             *byte = source;
         }
         Self::parse_id(&uuid::Uuid::from_bytes(bytes).to_string()).map_err(|_error| {
-            better_auth_core::AuthError::internal(
+            alibi_core::AuthError::internal(
                 "the verification schema cannot represent deterministic reservation IDs",
             )
         })

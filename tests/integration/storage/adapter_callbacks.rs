@@ -1,16 +1,16 @@
 //! Record observers receive transformed snapshots only after successful persistence.
 use super::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use async_trait::async_trait;
-use better_auth::AuthConfig;
-use better_auth_core::field_policy::{FieldConfig, FieldValues};
-use better_auth_core::store::{
+use alibi::AuthConfig;
+use alibi_core::field_policy::{FieldConfig, FieldValues};
+use alibi_core::store::{
     AccountStore, AdapterAfterHook, AdapterEvent, AuthStore, SessionStore, UserStore, transaction,
 };
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::{
+use alibi_core::utils::json::JsValue;
+use alibi_core::{
     AuthAccount, AuthError, AuthInitContext, AuthResult, AuthSession, AuthUser, CreateAccount,
     CreateSession, CreateUser, UpdateAccount, UpdateUser,
 };
+use async_trait::async_trait;
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::{

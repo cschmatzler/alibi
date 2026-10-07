@@ -9,9 +9,9 @@ Returning visitors appreciate a hint like "Continue with Google — last used". 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::LastLoginMethodPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::LastLoginMethodPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -51,13 +51,13 @@ const last = authClient.getLastUsedLoginMethod();      // official client plugin
 ## Persist it on the user
 
 ```bash
-better-auth-rs generate --plugins last-login-method -o src/auth_schema.rs
+alibi generate --plugins last-login-method -o src/auth_schema.rs
 ```
 
 adds `users.last_login_method`. Enable storage with `store_in_database`:
 
 ```rust
-use better_auth::plugins::{LastLoginMethodConfig, LastLoginMethodPlugin};
+use alibi::plugins::{LastLoginMethodConfig, LastLoginMethodPlugin};
 
 fn last_login() -> LastLoginMethodPlugin {
     LastLoginMethodPlugin::with_config(LastLoginMethodConfig {
@@ -81,11 +81,11 @@ The database value is updated for the signed-in user after each sign-in and is r
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::{
+use alibi::plugins::{
     BeforeStoreLastLoginMethodCookie, LastLoginMethodConfig, LastLoginMethodContext,
     LastLoginMethodPlugin, ResolveLastLoginMethod,
 };
-use better_auth::AuthResult;
+use alibi::AuthResult;
 use std::sync::Arc;
 
 struct Names;

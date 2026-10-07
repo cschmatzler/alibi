@@ -5,10 +5,10 @@ use crate::model::{self, ActiveRow, SqlxModel};
 use crate::schema::AuthSchema;
 use crate::sql::Sql;
 use crate::value::SqlValue;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::DeviceCodeStore;
+use alibi_core::types::{CreateDeviceCode, DeviceCode, UpdateDeviceCode};
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::DeviceCodeStore;
-use better_auth_core::types::{CreateDeviceCode, DeviceCode, UpdateDeviceCode};
 use uuid::Uuid;
 
 impl<S: AuthSchema + Send + Sync> SqlxStore<S> {

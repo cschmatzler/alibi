@@ -1,13 +1,13 @@
 //! Public authentication requests with the genuine enabled limiter.
 use crate::{TestSchema, otp_profiles};
 use axum::Router;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::{
     EndpointRateLimit, RateLimitConfig, RateLimitResolver, RateLimitRule,
 };
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi_seaorm::DatabaseConnection;
 use std::{sync::Arc, time::Duration};
 
 #[derive(Debug)]
@@ -16,7 +16,7 @@ struct HeaderQuota;
 impl RateLimitResolver for HeaderQuota {
     async fn resolve(
         &self,
-        request: &better_auth_core::AuthRequest,
+        request: &alibi_core::AuthRequest,
         inherited: &EndpointRateLimit,
     ) -> AuthResult<Option<EndpointRateLimit>> {
         Ok(

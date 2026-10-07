@@ -4,19 +4,19 @@
     reason = "surface tests intentionally use panic-on-failure assertions and direct JSON indexing for API shape checks"
 )]
 
+use alibi::plugin::{AuthContext, AuthPlugin, AuthRoute};
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::prelude::{AuthRequest, AuthResponse, HttpMethod};
+use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
+use alibi_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 use async_trait::async_trait;
-use better_auth::plugin::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::prelude::{AuthRequest, AuthResponse, HttpMethod};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
-use better_auth_seaorm::{Database, DatabaseConnection, SeaOrmStore};
 
-type TestSchema = better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
 struct RouteTestPlugin;
 
 #[async_trait]
-impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for RouteTestPlugin {
+impl<S: alibi_core::AuthSchema> AuthPlugin<S> for RouteTestPlugin {
     fn name(&self) -> &'static str {
         "route-test"
     }
@@ -46,7 +46,7 @@ async fn test_database() -> DatabaseConnection {
     let database = Database::connect("sqlite::memory:")
         .await
         .expect("sqlite test database should connect");
-    better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+    alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
         .await
         .expect("sqlite test migrations should run");
     database

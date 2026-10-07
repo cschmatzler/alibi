@@ -8,14 +8,14 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
-use better_auth::plugins::organization::{
+use alibi::plugins::organization::{
     MembershipLimit, OrganizationConfig, OrganizationLimitResolver,
     OrganizationMembershipLimitResolver, TeamsConfig,
     extensions::TeamLimitContext,
     types::{AddOrganizationMemberRequest, OrganizationResponse},
 };
-use better_auth::wire::UserView;
-use better_auth::{
+use alibi::wire::UserView;
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
@@ -23,7 +23,7 @@ use better_auth::{
         EmailPasswordPlugin, EmailVerificationPlugin, OrganizationPlugin, SessionManagementPlugin,
     },
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
@@ -216,11 +216,11 @@ pub(crate) async fn router(
         let organization = OrganizationConfig {
             membership_limit: limit,
             invitation_limit: if name == "org-membership-pending-one" {
-                Some(better_auth::plugins::organization::InvitationLimit::Fixed(
+                Some(alibi::plugins::organization::InvitationLimit::Fixed(
                     1.0,
                 ))
             } else {
-                Some(better_auth::plugins::organization::InvitationLimit::Fixed(
+                Some(alibi::plugins::organization::InvitationLimit::Fixed(
                     100.0,
                 ))
             },

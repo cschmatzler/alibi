@@ -1,9 +1,9 @@
 //! Persisted expiry, deferred writes and authoritative session boundaries.
 
 use crate::storage::{Backend, Db, Raw, TestResult, backend_tests, on_raw, postgres_tests};
-use better_auth::plugins::SessionManagementPlugin;
-use better_auth::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
-use better_auth_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, CreateUser, HttpMethod};
+use alibi::plugins::SessionManagementPlugin;
+use alibi::{AuthBuilder, AuthConfig, AuthSchema, BetterAuth};
+use alibi_core::{AuthRequest, AuthResponse, AuthSession, AuthUser, CreateUser, HttpMethod};
 use chrono::{Duration, Utc};
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -28,15 +28,15 @@ async fn fixture_with_config<B: Backend>(
 ) -> (BetterAuth<B::Schema>, Db) {
     let connection = B::connect(&db.url, None).await.unwrap();
     let store = B::store(Arc::new(config.clone()), &connection);
-    better_auth_core::store::SchemaMigrator::migrate(&store)
+    alibi_core::store::SchemaMigrator::migrate(&store)
         .await
         .unwrap();
     let auth = AuthBuilder::new(config.clone())
         .store(store)
         .plugin(SessionManagementPlugin::new())
-        .plugin(better_auth::plugins::EmailPasswordPlugin::new())
-        .plugin(better_auth::plugins::OrganizationPlugin::new())
-        .plugin(better_auth::plugins::one_time_token::OneTimeTokenPlugin::new())
+        .plugin(alibi::plugins::EmailPasswordPlugin::new())
+        .plugin(alibi::plugins::OrganizationPlugin::new())
+        .plugin(alibi::plugins::one_time_token::OneTimeTokenPlugin::new())
         .build()
         .await
         .unwrap();
@@ -54,11 +54,9 @@ async fn issued<S: AuthSchema>(auth: &BetterAuth<S>, email: &str) -> (String, St
         .create_session(&user, None, None)
         .await
         .unwrap();
-    let cookie = better_auth_core::utils::cookie_utils::create_session_cookie(
-        session.token(),
-        auth.config(),
-    )
-    .unwrap();
+    let cookie =
+        alibi_core::utils::cookie_utils::create_session_cookie(session.token(), auth.config())
+            .unwrap();
     (
         user.id().into_owned(),
         session.token().to_owned(),
@@ -393,7 +391,7 @@ mod secondary {
         secondary_expiry_and_malformed_credentials_never_fall_back_to_a_preserved_audit_row,
         transactional_secondary_issuance_and_scope_keep_actual_cache_partial_effects_on_rollback
     );
-    use better_auth_core::store::{CacheAdapter, MemoryCacheAdapter};
+    use alibi_core::store::{CacheAdapter, MemoryCacheAdapter};
     use std::sync::Arc;
 
     async fn mode<B: Backend>(
@@ -542,7 +540,7 @@ mod secondary {
                 auth.store()
                     .update_user(
                         &owner,
-                        better_auth_core::UpdateUser {
+                        alibi_core::UpdateUser {
                             name: Some("Renamed cached owner".into()),
                             ..Default::default()
                         },
@@ -635,11 +633,8 @@ mod secondary {
     async fn real_redis_session_modes_keep_cache_authority_and_physical_database_effects() {
         let url =
             std::env::var("BETTER_AUTH_TEST_REDIS_URL").expect("isolated Redis URL is required");
-        let cache: Arc<dyn CacheAdapter> = Arc::new(
-            better_auth_core::store::RedisAdapter::new(&url)
-                .await
-                .unwrap(),
-        );
+        let cache: Arc<dyn CacheAdapter> =
+            Arc::new(alibi_core::store::RedisAdapter::new(&url).await.unwrap());
         exercise_modes::<crate::storage::SeaOrm>(Db::sqlite().await.unwrap(), Arc::clone(&cache))
             .await;
         exercise_modes::<crate::storage::Sqlx>(Db::sqlite().await.unwrap(), cache).await;
@@ -740,7 +735,7 @@ mod secondary {
             let (owner, token, cookie) = issued(&auth, "rollback@secondary.fixture.test").await;
             let user_id = owner.clone();
             let new_token = "transaction-issued-secondary-token".to_owned();
-            let input = better_auth_core::CreateSession {
+            let input = alibi_core::CreateSession {
                 additional_fields: Default::default(),
                 token: Some(new_token.clone()),
                 user_id,
@@ -751,14 +746,12 @@ mod secondary {
                 active_organization_id: None,
                 active_team_id: None,
             };
-            let result = better_auth_core::store::transaction::<B::Schema, (), _>(
+            let result = alibi_core::store::transaction::<B::Schema, (), _>(
                 auth.store().as_ref(),
                 move |tx| {
                     Box::pin(async move {
                         drop(tx.create_session(input).await?);
-                        Err(better_auth::AuthError::internal(
-                            "Actual transaction rollback",
-                        ))
+                        Err(alibi::AuthError::internal("Actual transaction rollback"))
                     })
                 },
             )
@@ -766,11 +759,9 @@ mod secondary {
             assert!(result.is_err());
             assert!(physical(&db, &new_token).await.is_none());
             assert!(cache.get(&new_token).await.unwrap().is_some());
-            let signed = better_auth_core::utils::cookie_utils::create_session_cookie(
-                &new_token,
-                auth.config(),
-            )
-            .unwrap();
+            let signed =
+                alibi_core::utils::cookie_utils::create_session_cookie(&new_token, auth.config())
+                    .unwrap();
             let (_, surviving) = request(
                 &auth,
                 HttpMethod::Get,
@@ -786,7 +777,7 @@ mod secondary {
             );
             assert!(physical(&db, &new_token).await.is_none());
             let token_for_update = token.clone();
-            let result = better_auth_core::store::transaction::<B::Schema, (), _>(
+            let result = alibi_core::store::transaction::<B::Schema, (), _>(
                 auth.store().as_ref(),
                 move |tx| {
                     Box::pin(async move {
@@ -804,7 +795,7 @@ mod secondary {
                             )
                             .await?,
                         );
-                        Err(better_auth::AuthError::internal("Actual scope rollback"))
+                        Err(alibi::AuthError::internal("Actual scope rollback"))
                     })
                 },
             )
@@ -836,27 +827,27 @@ mod secondary {
     }
     #[async_trait::async_trait]
     impl CacheAdapter for RejectCredentialWrites {
-        async fn set(&self, key: &str, value: &str, ttl: Duration) -> better_auth::AuthResult<()> {
+        async fn set(&self, key: &str, value: &str, ttl: Duration) -> alibi::AuthResult<()> {
             if !key.starts_with("active-sessions-") {
-                return Err(better_auth::AuthError::internal(
+                return Err(alibi::AuthError::internal(
                     "Actual secondary credential write rejected",
                 ));
             }
             self.inner.set(key, value, ttl).await
         }
-        async fn get(&self, key: &str) -> better_auth::AuthResult<Option<String>> {
+        async fn get(&self, key: &str) -> alibi::AuthResult<Option<String>> {
             self.inner.get(key).await
         }
-        async fn delete(&self, key: &str) -> better_auth::AuthResult<()> {
+        async fn delete(&self, key: &str) -> alibi::AuthResult<()> {
             self.inner.delete(key).await
         }
-        async fn exists(&self, key: &str) -> better_auth::AuthResult<bool> {
+        async fn exists(&self, key: &str) -> alibi::AuthResult<bool> {
             self.inner.exists(key).await
         }
-        async fn expire(&self, key: &str, ttl: Duration) -> better_auth::AuthResult<()> {
+        async fn expire(&self, key: &str, ttl: Duration) -> alibi::AuthResult<()> {
             self.inner.expire(key, ttl).await
         }
-        async fn clear(&self) -> better_auth::AuthResult<()> {
+        async fn clear(&self) -> alibi::AuthResult<()> {
             self.inner.clear().await
         }
     }

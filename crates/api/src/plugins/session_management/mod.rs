@@ -1,13 +1,13 @@
 use super::StatusResponse;
 use super::authentication_helpers::{JsonField, RequestBody, parse_body};
 use super::helpers::{admin_plugin_enabled, delete_session_cookie_headers};
+use alibi_core::SuccessResponse;
+use alibi_core::entity::{AuthSession, AuthUser};
+use alibi_core::wire::SessionView;
+use alibi_core::{AuthContext, AuthPlugin, AuthRoute};
+use alibi_core::{AuthError, AuthResult};
+use alibi_core::{AuthRequest, AuthResponse, HttpMethod};
 use async_trait::async_trait;
-use better_auth_core::SuccessResponse;
-use better_auth_core::entity::{AuthSession, AuthUser};
-use better_auth_core::wire::SessionView;
-use better_auth_core::{AuthContext, AuthPlugin, AuthRoute};
-use better_auth_core::{AuthError, AuthResult};
-use better_auth_core::{AuthRequest, AuthResponse, HttpMethod};
 use serde::{Deserialize, Serialize};
 
 /// Session management plugin for handling session operations
@@ -15,7 +15,7 @@ pub struct SessionManagementPlugin {
     config: SessionManagementConfig,
 }
 
-#[derive(Debug, Clone, better_auth_core::PluginConfig)]
+#[derive(Debug, Clone, alibi_core::PluginConfig)]
 #[plugin(name = "SessionManagementPlugin")]
 pub struct SessionManagementConfig {
     #[config(default = true)]
@@ -45,21 +45,21 @@ struct GetSessionResponse<S, U> {
 }
 
 #[async_trait]
-impl<S: better_auth_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+impl<S: alibi_core::AuthSchema> AuthPlugin<S> for SessionManagementPlugin {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -127,15 +127,15 @@ impl SessionManagementPlugin {
     async fn handle_update_session(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         use super::authentication_helpers::{json_type, validation_response};
-        use better_auth_core::field_policy::{FieldInputError, SessionFields};
-        use better_auth_core::utils::cookie_utils::{
+        use alibi_core::field_policy::{FieldInputError, SessionFields};
+        use alibi_core::utils::cookie_utils::{
             create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
             sign_cookie_value, verify_cookie_value,
         };
-        use better_auth_core::utils::json::JsValue;
+        use alibi_core::utils::json::JsValue;
 
         if req.body.is_some() {
             let content_type = req
@@ -164,7 +164,7 @@ impl SessionManagementPlugin {
             }
         }
         let value: Option<JsValue> = match req.body.as_ref() {
-            Some(body) => match better_auth_core::utils::json::from_slice(body) {
+            Some(body) => match alibi_core::utils::json::from_slice(body) {
                 Ok(value) => Some(value),
                 Err(_) => {
                     return Ok(AuthResponse::json(
@@ -236,8 +236,7 @@ impl SessionManagementPlugin {
             return Ok(response);
         };
 
-        better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, &user, &updated)
-            .await?;
+        alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, &user, &updated).await?;
 
         let preference = related_cookie_name(&ctx.config, "dont_remember");
         let dont_remember = req.header("cookie").is_some_and(|header| {
@@ -280,7 +279,7 @@ impl SessionManagementPlugin {
     pub(in crate::plugins) async fn handle_get_session(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let response =
             if req.method() == &HttpMethod::Post && !ctx.config.session.defer_session_refresh {
@@ -311,10 +310,10 @@ impl SessionManagementPlugin {
     async fn get_session_response(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let Some(read) =
-            better_auth_core::session::cookie_cache::runtime::authenticated(ctx, req, true).await?
+            alibi_core::session::cookie_cache::runtime::authenticated(ctx, req, true).await?
         else {
             return Ok(AuthResponse::json(200, &serde_json::Value::Null)?);
         };
@@ -323,8 +322,8 @@ impl SessionManagementPlugin {
             &GetSessionResponse {
                 session: read.session,
                 user: match read.user {
-                    better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
-                    better_auth_core::AuthenticatedUser::Cached(user) => *user,
+                    alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(&user),
+                    alibi_core::AuthenticatedUser::Cached(user) => *user,
                 },
                 needs_refresh: read.needs_refresh,
             },
@@ -334,7 +333,7 @@ impl SessionManagementPlugin {
     async fn handle_sign_out(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let body = if req.body.is_some() {
             match parse_body::<super::oauth::logout::SignOutRequest>(req) {
@@ -373,9 +372,8 @@ impl SessionManagementPlugin {
             if account && !ctx.config.account.store_account_cookie {
                 continue;
             }
-            let base =
-                better_auth_core::utils::cookie_utils::related_cookie_name(&ctx.config, logical);
-            for header in better_auth_core::session::cookie_cache::runtime::chunked_cookie_headers(
+            let base = alibi_core::utils::cookie_utils::related_cookie_name(&ctx.config, logical);
+            for header in alibi_core::session::cookie_cache::runtime::chunked_cookie_headers(
                 &base,
                 "",
                 Some(0.0),
@@ -409,7 +407,7 @@ impl SessionManagementPlugin {
     async fn handle_list_sessions(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, session) = super::helpers::ordinary_session(req, ctx).await?;
         if !ctx.session_manager().is_session_fresh(&session) {
@@ -435,7 +433,7 @@ impl SessionManagementPlugin {
     async fn handle_revoke_session(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let revoke_req: RevokeSessionRequest = match parse_body(req) {
             Ok(v) => v,
@@ -453,7 +451,7 @@ impl SessionManagementPlugin {
     async fn handle_revoke_sessions(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, _) = ctx
             .require_authoritative_cached_session(req)
@@ -466,7 +464,7 @@ impl SessionManagementPlugin {
     async fn handle_revoke_other_sessions(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let (user, current_session) = ctx
             .require_authoritative_cached_session(req)
@@ -493,7 +491,7 @@ impl std::fmt::Debug for SessionManagementPlugin {
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn sign_out_core(
     session: &impl AuthSession,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<SuccessResponse> {
     ctx.database.delete_session(session.token()).await?;
     Ok(SuccessResponse { success: true })
@@ -504,7 +502,7 @@ pub(in crate::plugins) async fn sign_out_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_sessions_core(
     user_id: impl AsRef<str>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Vec<SessionView>> {
     let sessions = ctx
         .database
@@ -524,7 +522,7 @@ pub(in crate::plugins) async fn list_sessions_core(
 pub(in crate::plugins) async fn revoke_session_core(
     user: &impl AuthUser,
     token: &str,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
     if let Some(session_to_revoke) = ctx.database.get_session(token).await?
         && session_to_revoke.user_id() == user.id()
@@ -539,7 +537,7 @@ pub(in crate::plugins) async fn revoke_session_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn revoke_sessions_core(
     user_id: impl AsRef<str>,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
     ctx.database.delete_user_sessions(user_id.as_ref()).await?;
     Ok(StatusResponse { status: true })
@@ -551,7 +549,7 @@ pub(in crate::plugins) async fn revoke_sessions_core(
 pub(in crate::plugins) async fn revoke_other_sessions_core(
     user_id: impl AsRef<str>,
     current_session: &impl AuthSession,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
     let all_sessions = ctx.session_manager().list_user_sessions(user_id).await?;
     for session in all_sessions {
@@ -579,10 +577,10 @@ fn session_authorization_error(error: AuthError) -> AuthError {
 mod tests {
     use super::*;
     use crate::plugins::test_helpers;
-    use better_auth_core::config::AccountConfig;
-    use better_auth_core::utils::cookie_utils::related_cookie_name;
-    use better_auth_core::wire::SessionView;
-    use better_auth_core::{CreateSession, CreateUser};
+    use alibi_core::config::AccountConfig;
+    use alibi_core::utils::cookie_utils::related_cookie_name;
+    use alibi_core::wire::SessionView;
+    use alibi_core::{CreateSession, CreateUser};
     use chrono::{Duration, Utc};
 
     // Upstream reference: packages/better-auth/src/api/routes/session-api.test.ts :: describe("session") and packages/better-auth/src/api/routes/sign-out.test.ts :: describe("sign-out"); adapted to the Rust session-management plugin.
@@ -759,7 +757,7 @@ mod tests {
         .await;
 
         let create_session2 = CreateSession {
-            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -799,7 +797,7 @@ mod tests {
         ctx.set_metadata("admin.enabled", serde_json::Value::Bool(true));
 
         let direct_session = CreateSession {
-            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -812,7 +810,7 @@ mod tests {
         ctx.database.create_session(direct_session).await.unwrap();
 
         let impersonated_session = CreateSession {
-            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -862,7 +860,7 @@ mod tests {
         .await;
 
         let create_session2 = CreateSession {
-            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -910,7 +908,7 @@ mod tests {
         let user2 = ctx.database.create_user(create_user2).await.unwrap();
 
         let create_session2 = CreateSession {
-            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
             token: None,
             user_id: user2.id,
             expires_at: Utc::now() + Duration::hours(24),
@@ -959,7 +957,7 @@ mod tests {
         .await;
 
         let create_session2 = CreateSession {
-            additional_fields: better_auth_core::field_policy::FieldValues::default(),
+            additional_fields: alibi_core::field_policy::FieldValues::default(),
             token: None,
             user_id: user.id.clone(),
             expires_at: Utc::now() + Duration::hours(24),
@@ -990,7 +988,7 @@ mod tests {
     async fn test_plugin_routes() {
         let plugin = SessionManagementPlugin::new();
         let routes = AuthPlugin::<
-            better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
+            alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema,
         >::routes(&plugin);
 
         assert_eq!(routes.len(), 8);

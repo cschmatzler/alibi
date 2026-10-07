@@ -9,9 +9,9 @@ description: "Generate an OpenAPI document and an interactive API reference for 
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::OpenApiPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::OpenApiPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -45,7 +45,7 @@ Export the spec directly from the built instance — for a CI check or to commit
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
+use alibi::BetterAuth;
 
 fn export_openapi(auth: &BetterAuth<AppAuthSchema>) -> Result<String, serde_json::Error> {
     serde_json::to_string_pretty(&auth.openapi_spec())
@@ -72,7 +72,7 @@ Builder methods on `OpenApiConfig` (use `OpenApiPlugin::with_config`):
 | `include_native_extensions(true)` | `false` | Include Rust-only operations in the served document |
 
 ```rust
-use better_auth::plugins::{OpenApiConfig, OpenApiPlugin};
+use alibi::plugins::{OpenApiConfig, OpenApiPlugin};
 
 fn open_api() -> OpenApiPlugin {
     OpenApiPlugin::with_config(

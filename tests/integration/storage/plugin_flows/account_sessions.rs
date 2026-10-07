@@ -1,7 +1,7 @@
 //! Public account/session operations must scope both reads and writes to the caller.
 use super::*;
-use better_auth::plugins::AccountManagementPlugin;
-use better_auth_core::{CreateAccount, entity::AuthAccount};
+use alibi::plugins::AccountManagementPlugin;
+use alibi_core::{CreateAccount, entity::AuthAccount};
 use std::collections::BTreeSet;
 
 backend_tests!(

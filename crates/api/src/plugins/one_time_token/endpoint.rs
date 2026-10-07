@@ -1,16 +1,16 @@
 use super::{OneTimeTokenPlugin, OneTimeTokenSession};
 use crate::plugins::authentication_helpers::JsonField;
 use crate::plugins::endpoint::{definition, validate_fields};
-use better_auth_core::HttpMethod;
-use better_auth_core::endpoint::{
+use alibi_core::HttpMethod;
+use alibi_core::endpoint::{
     EndpointCall, EndpointDefinition, EndpointInput, EndpointResponse, ServerEndpoint,
 };
-use better_auth_core::session::SessionRequest;
-use better_auth_core::utils::cookie_utils::{
+use alibi_core::session::SessionRequest;
+use alibi_core::utils::cookie_utils::{
     related_cookie_name, sign_cookie_value, verify_cookie_value,
 };
-use better_auth_core::utils::json::JsValue;
-use better_auth_core::{AuthContext, AuthError, AuthResult, AuthSchema};
+use alibi_core::utils::json::JsValue;
+use alibi_core::{AuthContext, AuthError, AuthResult, AuthSchema};
 use chrono::Utc;
 use serde::Deserialize;
 
@@ -84,8 +84,8 @@ impl OneTimeTokenPlugin {
                 }
             })?;
             let user = match &user {
-                better_auth_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
-                better_auth_core::AuthenticatedUser::Cached(user) => (**user).clone(),
+                alibi_core::AuthenticatedUser::Stored(user) => ctx.user_view(user),
+                alibi_core::AuthenticatedUser::Cached(user) => (**user).clone(),
             };
             let session = OneTimeTokenSession {
                 user,
@@ -150,7 +150,7 @@ impl OneTimeTokenPlugin {
                         .then(|| ctx.config.session.expires_in.num_seconds() as f64);
                     call.queue_response_header(
                         "set-cookie",
-                        better_auth_core::session::cookie_cache::cookie_header(
+                        alibi_core::session::cookie_cache::cookie_header(
                             &ctx.config.session.cookie_name,
                             &urlencoding::decode(&sign_cookie_value(
                                 &session.session.token,
@@ -164,7 +164,7 @@ impl OneTimeTokenPlugin {
                     if dont_remember {
                         call.queue_response_header(
                             "set-cookie",
-                            better_auth_core::session::cookie_cache::cookie_header(
+                            alibi_core::session::cookie_cache::cookie_header(
                                 &related_cookie_name(&ctx.config, "dont_remember"),
                                 &urlencoding::decode(&sign_cookie_value(
                                     "true",
@@ -177,7 +177,7 @@ impl OneTimeTokenPlugin {
                         );
                     }
                 }
-                better_auth_core::session::cookie_cache::runtime::emit_issuance(
+                alibi_core::session::cookie_cache::runtime::emit_issuance(
                     ctx,
                     &user,
                     &stored_session,

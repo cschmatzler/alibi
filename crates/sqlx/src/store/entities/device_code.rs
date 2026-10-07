@@ -15,7 +15,7 @@ pub struct Model {
     pub scope: Option<String>,
 }
 
-impl From<&Model> for better_auth_core::DeviceCode {
+impl From<&Model> for alibi_core::DeviceCode {
     fn from(model: &Model) -> Self {
         Self {
             id: model.id.clone(),

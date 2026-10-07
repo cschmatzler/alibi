@@ -9,9 +9,9 @@ description: "Password sign-up and sign-in, password policy, reset and change fl
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::EmailPasswordPlugin;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::EmailPasswordPlugin;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 async fn build_auth(
     config: AuthConfig,
@@ -74,7 +74,7 @@ These limits apply to every endpoint that accepts a new password: sign-up, reset
 Length comes from the plugin; composition rules come from `AuthConfig::password` and apply to sign-up, reset and change in every plugin:
 
 ```rust
-use better_auth::AuthConfig;
+use alibi::AuthConfig;
 
 fn auth_config(secret: &str) -> AuthConfig {
     let mut config = AuthConfig::new(secret);
@@ -93,7 +93,7 @@ Violations return `400` with a message such as `Password must contain at least o
 If `require_email_verification` is on (or `auto_sign_in` is off), signing up with an **existing** address does not fail with `422`. The server answers with a decoy `200` response — a user object with a fresh random `id` and no `token` — so an attacker cannot learn which addresses are registered. The real owner learns about the attempt through a callback you provide:
 
 ```rust
-use better_auth::plugins::EmailPasswordPlugin;
+use alibi::plugins::EmailPasswordPlugin;
 use std::sync::Arc;
 
 fn email_password() -> EmailPasswordPlugin {
@@ -119,10 +119,10 @@ The reset flow is provided by the always-installed `PasswordManagementPlugin`. `
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::email::EmailProvider;
-use better_auth::plugins::{PasswordManagementPlugin, SendResetPassword};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::email::EmailProvider;
+use alibi::plugins::{PasswordManagementPlugin, SendResetPassword};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 use chrono::Duration;
 use std::sync::Arc;
 
@@ -197,8 +197,8 @@ Passwords are hashed with scrypt in the same format as the TypeScript `better-au
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::{EmailPasswordPlugin, PasswordManagementPlugin};
-use better_auth::{AuthResult, PasswordHasher, ScryptHasher};
+use alibi::plugins::{EmailPasswordPlugin, PasswordManagementPlugin};
+use alibi::{AuthResult, PasswordHasher, ScryptHasher};
 use std::sync::Arc;
 
 /// Verifies legacy `$legacy$…` hashes and the current scrypt format;

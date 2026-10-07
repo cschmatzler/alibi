@@ -1,7 +1,7 @@
 use super::super::OrganizationConfig;
-use better_auth_core::types::OrganizationPermissions;
-use better_auth_core::wire::SessionView;
-use better_auth_core::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema};
+use alibi_core::types::OrganizationPermissions;
+use alibi_core::wire::SessionView;
+use alibi_core::{AuthContext, AuthError, AuthRequest, AuthResult, AuthSchema};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 
@@ -112,7 +112,7 @@ pub fn org_error(status: u16, code: &'static str) -> AuthError {
 pub async fn session<S: AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
-) -> AuthResult<(better_auth_core::AuthenticatedUser<S>, SessionView)> {
+) -> AuthResult<(alibi_core::AuthenticatedUser<S>, SessionView)> {
     ctx.require_cached_session(req)
         .await
         .map_err(|error| match error {

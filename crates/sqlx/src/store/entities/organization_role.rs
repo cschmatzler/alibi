@@ -11,8 +11,8 @@ pub struct Model {
     pub updated_at: Option<DateTime<Utc>>,
 }
 
-impl TryFrom<Model> for better_auth_core::types::OrganizationRole {
-    type Error = better_auth_core::AuthError;
+impl TryFrom<Model> for alibi_core::types::OrganizationRole {
+    type Error = alibi_core::AuthError;
     fn try_from(model: Model) -> Result<Self, Self::Error> {
         Ok(Self {
             id: model.id,

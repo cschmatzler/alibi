@@ -14,10 +14,10 @@ pub(in crate::plugins) async fn run_notification(
 pub(in crate::plugins) async fn run_owned_notification(
     context: &AuthContext<impl AuthSchema>,
     notification: impl Future<Output = AuthResult<()>> + Send + 'static,
-    error_policy: better_auth_core::AwaitedNotificationErrorPolicy,
+    error_policy: alibi_core::AwaitedNotificationErrorPolicy,
 ) -> AuthResult<()> {
     if let Some(handler) = &context.config.background_tasks {
-        let completion = better_auth_core::start_background_task(async move {
+        let completion = alibi_core::start_background_task(async move {
             run_notification(notification).await;
             Ok(())
         })
@@ -27,8 +27,8 @@ pub(in crate::plugins) async fn run_owned_notification(
         }
     } else {
         match error_policy {
-            better_auth_core::AwaitedNotificationErrorPolicy::Propagate => notification.await?,
-            better_auth_core::AwaitedNotificationErrorPolicy::LogAndContinue => {
+            alibi_core::AwaitedNotificationErrorPolicy::Propagate => notification.await?,
+            alibi_core::AwaitedNotificationErrorPolicy::LogAndContinue => {
                 run_notification(notification).await
             }
         }

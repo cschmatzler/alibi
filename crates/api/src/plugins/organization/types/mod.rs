@@ -1,6 +1,6 @@
-use better_auth_core::entity::MemberUserView;
-use better_auth_core::entity::{AuthMember, AuthOrganization};
-use better_auth_core::utils::json::JsValue;
+use alibi_core::entity::MemberUserView;
+use alibi_core::entity::{AuthMember, AuthOrganization};
+use alibi_core::utils::json::JsValue;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use validator::Validate;
@@ -68,7 +68,7 @@ pub struct AddOrganizationMemberRequest {
 #[derive(Debug, Deserialize, Serialize, Validate)]
 pub struct CreateOrganizationRequest {
     #[serde(default, flatten)]
-    pub additional_fields: indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>,
+    pub additional_fields: indexmap::IndexMap<String, alibi_core::utils::json::JsValue>,
     #[validate(length(min = 1, message = "Name is required"))]
     pub name: String,
     #[validate(length(min = 1, message = "Slug is required"))]
@@ -76,7 +76,7 @@ pub struct CreateOrganizationRequest {
     pub logo: Option<String>,
     #[serde(
         default,
-        deserialize_with = "better_auth_core::utils::json::deserialize_optional_value"
+        deserialize_with = "alibi_core::utils::json::deserialize_optional_value"
     )]
     pub metadata: Option<serde_json::Value>,
     #[serde(rename = "keepCurrentActiveOrganization")]
@@ -87,7 +87,7 @@ pub struct CreateOrganizationRequest {
 #[derive(Debug, Deserialize, Validate, Serialize)]
 pub struct UpdateOrganizationData {
     #[serde(default, flatten)]
-    pub additional_fields: indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>,
+    pub additional_fields: indexmap::IndexMap<String, alibi_core::utils::json::JsValue>,
     pub name: Option<String>,
     pub slug: Option<String>,
     #[serde(
@@ -98,7 +98,7 @@ pub struct UpdateOrganizationData {
     pub logo: Option<Option<String>>,
     #[serde(
         default,
-        deserialize_with = "better_auth_core::utils::json::deserialize_optional_value"
+        deserialize_with = "alibi_core::utils::json::deserialize_optional_value"
     )]
     pub metadata: Option<serde_json::Value>,
 }
@@ -324,13 +324,13 @@ pub struct FullOrganizationResponse<O, I> {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct FullOrganizationTeamResponse {
     #[serde(flatten)]
-    pub team: better_auth_core::types::Team,
+    pub team: alibi_core::types::Team,
     #[serde(rename = "memberCount")]
     pub member_count: i64,
 }
 
-impl From<better_auth_core::types::Team> for FullOrganizationTeamResponse {
-    fn from(team: better_auth_core::types::Team) -> Self {
+impl From<alibi_core::types::Team> for FullOrganizationTeamResponse {
+    fn from(team: alibi_core::types::Team) -> Self {
         Self {
             member_count: team.member_count,
             team,
@@ -353,7 +353,7 @@ pub struct RemovedMemberResponse<M = MemberResponse> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrganizationMemberRemovalSnapshot {
     #[serde(flatten)]
-    pub member: better_auth_core::Member,
+    pub member: alibi_core::Member,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<MemberUserView>,
 }
@@ -367,7 +367,7 @@ pub struct BasicMemberResponse {
     pub organization_id: String,
     pub role: String,
     #[serde(rename = "createdAt")]
-    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
+    #[serde(serialize_with = "alibi_core::utils::datetime::serialize")]
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
@@ -417,7 +417,7 @@ pub struct CreatedOrganizationResponse {
     pub slug: String,
     pub logo: Option<String>,
     #[serde(rename = "createdAt")]
-    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
+    #[serde(serialize_with = "alibi_core::utils::datetime::serialize")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
@@ -432,7 +432,7 @@ pub struct OrganizationResponse {
     pub slug: String,
     pub logo: Option<String>,
     #[serde(rename = "createdAt")]
-    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
+    #[serde(serialize_with = "alibi_core::utils::datetime::serialize")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub metadata: Option<serde_json::Value>,
 }
@@ -469,7 +469,7 @@ impl OrganizationResponse {
                 | serde_json::Value::Number(_)
                 | serde_json::Value::Array(_)
                 | serde_json::Value::Object(_)) => {
-                    better_auth_core::utils::json::to_string(&value).map(serde_json::Value::String)
+                    alibi_core::utils::json::to_string(&value).map(serde_json::Value::String)
                 }
             })
             .transpose()?;
@@ -492,7 +492,7 @@ impl OrganizationResponse {
 
 /// Member with user details (for API responses).
 ///
-/// Uses [`MemberUserView`] from `better_auth_core::entity` for user info,
+/// Uses [`MemberUserView`] from `alibi_core::entity` for user info,
 /// keeping it compatible with the built-in auth store.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemberResponse {
@@ -503,17 +503,17 @@ pub struct MemberResponse {
     pub user_id: String,
     pub role: String,
     #[serde(rename = "createdAt")]
-    #[serde(serialize_with = "better_auth_core::utils::datetime::serialize")]
+    #[serde(serialize_with = "alibi_core::utils::datetime::serialize")]
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub user: MemberUserView,
 }
 
 impl MemberResponse {
-    /// Construct from any type implementing [`AuthMember`] and [`AuthUser`](better_auth_core::entity::AuthUser).
+    /// Construct from any type implementing [`AuthMember`] and [`AuthUser`](alibi_core::entity::AuthUser).
     #[must_use]
     pub fn from_member_and_user(
         member: &impl AuthMember,
-        user: &impl better_auth_core::entity::AuthUser,
+        user: &impl alibi_core::entity::AuthUser,
     ) -> Self {
         Self {
             id: member.id().to_string(),
@@ -821,7 +821,7 @@ pub struct TeamQuery {
 pub struct CreateRoleRequest {
     pub organization_id: Option<String>,
     pub role: String,
-    pub permission: better_auth_core::types::OrganizationPermissions,
+    pub permission: alibi_core::types::OrganizationPermissions,
 }
 
 #[serde_with::skip_serializing_none]
@@ -838,7 +838,7 @@ pub struct RoleQuery {
 #[serde(rename_all = "camelCase")]
 pub struct UpdateRoleData {
     pub role_name: Option<String>,
-    pub permission: Option<better_auth_core::types::OrganizationPermissions>,
+    pub permission: Option<alibi_core::types::OrganizationPermissions>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -856,7 +856,7 @@ pub struct RoleResponse {
     pub id: String,
     pub organization_id: String,
     pub role: String,
-    pub permission: Option<better_auth_core::types::OrganizationPermissions>,
+    pub permission: Option<alibi_core::types::OrganizationPermissions>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -866,7 +866,7 @@ pub struct RoleResponse {
 pub struct CreateRoleResponse {
     pub success: bool,
     pub role_data: RoleResponse,
-    pub statements: better_auth_core::types::OrganizationPermissions,
+    pub statements: alibi_core::types::OrganizationPermissions,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

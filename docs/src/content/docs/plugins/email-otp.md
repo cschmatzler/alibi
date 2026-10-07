@@ -12,12 +12,12 @@ Provide a `SendEmailOtp` callback. Add `async-trait = "0.1"`.
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::CallbackContext;
-use better_auth::email::EmailProvider;
-use better_auth::plugins::email_otp::EmailOtpDelivery;
-use better_auth::plugins::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::CallbackContext;
+use alibi::email::EmailProvider;
+use alibi::plugins::email_otp::EmailOtpDelivery;
+use alibi::plugins::{EmailOtpConfig, EmailOtpPlugin, SendEmailOtp};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 use std::sync::Arc;
 
 struct Mailer(Arc<dyn EmailProvider>);
@@ -108,8 +108,8 @@ Requesting a code always answers `{"success":true}` — whether or not the mailb
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::email_otp::{EmailOtpCodec, EmailOtpStorage};
-use better_auth::AuthResult;
+use alibi::plugins::email_otp::{EmailOtpCodec, EmailOtpStorage};
+use alibi::AuthResult;
 use std::sync::Arc;
 
 struct PepperedHash;
@@ -138,9 +138,9 @@ Two operations exist only on the server — handy for tests, support tools or cu
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::email_otp::EmailOtpType;
-use better_auth::plugins::{EmailOtpConfig, EmailOtpPlugin};
-use better_auth::{AuthResult, BetterAuth};
+use alibi::plugins::email_otp::EmailOtpType;
+use alibi::plugins::{EmailOtpConfig, EmailOtpPlugin};
+use alibi::{AuthResult, BetterAuth};
 
 async fn issue_support_code(
     auth: &BetterAuth<AppAuthSchema>,

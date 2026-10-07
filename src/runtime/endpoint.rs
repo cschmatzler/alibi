@@ -1,10 +1,10 @@
 use super::BetterAuth;
-use better_auth_core::endpoint::{
+use alibi_core::endpoint::{
     BeforeEndpointAction, EndpointCall, EndpointContextPatch, EndpointError, EndpointHook,
     EndpointOptions, EndpointOutput, EndpointResponse, ServerEndpoint, is_endpoint_api_error,
     with_endpoint_call_context,
 };
-use better_auth_core::{AuthError, AuthSchema, Headers};
+use alibi_core::{AuthError, AuthSchema, Headers};
 
 impl<S: AuthSchema> BetterAuth<S> {
     /// Dispatch a trusted operation through configured hooks and its installed plugin.
@@ -46,7 +46,7 @@ impl<S: AuthSchema> BetterAuth<S> {
     async fn dispatch_endpoint_inner<T>(
         &self,
         mut call: EndpointCall,
-        plugin: &dyn better_auth_core::AuthPlugin<S>,
+        plugin: &dyn alibi_core::AuthPlugin<S>,
     ) -> Result<EndpointOutput<T>, EndpointError> {
         let hooks: Vec<&dyn EndpointHook<S>> = self
             .endpoint_hooks
@@ -134,7 +134,7 @@ impl<S: AuthSchema> BetterAuth<S> {
         };
         response.merge_headers(call.take_response_headers());
         let (cache_headers, ordinary_error) =
-            better_auth_core::session::cookie_cache::runtime::take_issuance(call.extensions());
+            alibi_core::session::cookie_cache::runtime::take_issuance(call.extensions());
         if ordinary_error {
             return Err(AuthError::internal("Session cookie publication failed").into());
         }

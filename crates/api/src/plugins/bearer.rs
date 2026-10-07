@@ -1,14 +1,14 @@
 //! Bearer authentication through the ordinary signed session-cookie lifecycle.
 
+use alibi_core::utils::cookie_utils::sign_cookie_value;
+use alibi_core::{
+    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
+    BeforeRequestAction,
+};
 use async_trait::async_trait;
 use base64::{
     Engine, alphabet,
     engine::{GeneralPurpose, GeneralPurposeConfig},
-};
-use better_auth_core::utils::cookie_utils::sign_cookie_value;
-use better_auth_core::{
-    AuthContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult, AuthRoute, AuthSchema,
-    BeforeRequestAction,
 };
 use hmac::{Hmac, KeyInit, Mac};
 use indexmap::IndexMap;
@@ -140,20 +140,20 @@ fn replace_cookie(header: &str, name: &str, value: &str) -> String {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for BearerPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }

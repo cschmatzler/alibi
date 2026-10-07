@@ -1,6 +1,6 @@
 use crate::TestSchema;
 use axum::{Json, Router, body::Bytes, http::StatusCode, response::IntoResponse, routing::post};
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig, AuthResult, BetterAuth,
     integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
@@ -13,11 +13,11 @@ use better_auth::{
     },
     wire::UserView,
 };
-use better_auth_core::{
+use alibi_core::{
     store::TwoFactorStore,
     utils::json::{self, JsValue},
 };
-use better_auth_seaorm::{
+use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DatabaseBackend, Statement},
 };
@@ -29,21 +29,21 @@ type Auth = Arc<BetterAuth<TestSchema>>;
 
 struct RejectUserUpdate;
 #[async_trait::async_trait]
-impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for RejectUserUpdate {
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for RejectUserUpdate {
     async fn before_update_user(
         &self,
         _id: &str,
-        update: &mut better_auth_core::UpdateUser,
+        update: &mut alibi_core::UpdateUser,
         _context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         if update.two_factor_enabled == Some(true) {
-            return Err(better_auth_core::AuthError::Upstream {
+            return Err(alibi_core::AuthError::Upstream {
                 status: 400,
                 code: "USER_UPDATE_DENIED",
                 message: "Configured user update denied",
             });
         }
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
 }
 
@@ -53,14 +53,14 @@ struct RejectSessionCreate {
     ordinary: bool,
 }
 #[async_trait::async_trait]
-impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
     for RejectSessionCreate
 {
     async fn before_create_session(
         &self,
-        _session: &mut better_auth_core::CreateSession,
+        _session: &mut alibi_core::CreateSession,
         context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         if context.request.as_ref().is_some_and(|request| {
             if self.pending {
                 request.path.contains("/two-factor/verify-")
@@ -69,20 +69,20 @@ impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend>
             }
         }) {
             if self.cancel {
-                return Ok(better_auth_seaorm::HookControl::Cancel);
+                return Ok(alibi_seaorm::HookControl::Cancel);
             }
             if self.ordinary {
-                return Err(better_auth_core::AuthError::CallbackFailure(Box::new(
-                    better_auth_core::AuthError::internal(
+                return Err(alibi_core::AuthError::CallbackFailure(Box::new(
+                    alibi_core::AuthError::internal(
                         "session creation cancelled by database hook",
                     ),
                 )));
             }
-            return Err(better_auth_core::AuthError::forbidden(
+            return Err(alibi_core::AuthError::forbidden(
                 "session creation cancelled by database hook",
             ));
         }
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
 }
 
@@ -133,15 +133,15 @@ impl BackupCipher {
                 })
         };
         match mode {
-            Some("ordinary") => Err(better_auth_core::AuthError::internal(
+            Some("ordinary") => Err(alibi_core::AuthError::internal(
                 "session creation cancelled by database hook",
             )),
-            Some("explicit") => Err(better_auth_core::AuthError::Upstream {
+            Some("explicit") => Err(alibi_core::AuthError::Upstream {
                 status: 403,
                 code: "BACKUP_CALLBACK_DENIED",
                 message: "session creation cancelled by database hook",
             }),
-            Some("explicit500") => Err(better_auth_core::AuthError::Api {
+            Some("explicit500") => Err(alibi_core::AuthError::Api {
                 status: 500,
                 code: Some("BACKUP_CALLBACK_DENIED".into()),
                 message: "session creation cancelled by database hook".into(),
@@ -284,7 +284,7 @@ pub(crate) async fn router(
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
         if name == "two-factor-skip-cookie-attributes" {
-            use better_auth_core::{CookieAttributes, CookieOverride, SameSite};
+            use alibi_core::{CookieAttributes, CookieOverride, SameSite};
             config.advanced.use_secure_cookies = Some(false);
             config.advanced.default_cookie_attributes = CookieAttributes {
                 max_age: Some(99.0),
@@ -459,7 +459,7 @@ async fn control(
         let Some(options) = backup_configs.get(profile) else {
             return StatusCode::BAD_REQUEST.into_response();
         };
-        let ctx = better_auth_core::AuthContext::new(config, store);
+        let ctx = alibi_core::AuthContext::new(config, store);
         return match TwoFactorPlugin::with_config(options.clone())
             .view_backup_codes(user_id, &ctx)
             .await
@@ -533,7 +533,7 @@ async fn control(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
     if value.get("credentialState").and_then(JsValue::as_bool) == Some(true) {
-        use better_auth_core::store::AccountStore;
+        use alibi_core::store::AccountStore;
         return match store.get_user_accounts(user_id).await {
             Ok(mut accounts) => {
                 accounts.sort_by(|left, right| left.provider_id.cmp(&right.provider_id));
@@ -557,18 +557,18 @@ async fn control(
             let row = store
                 .get_two_factor_by_user_id(user_id)
                 .await?
-                .ok_or(better_auth::AuthError::SessionNotFound)?;
+                .ok_or(alibi::AuthError::SessionNotFound)?;
             store
                 .update_two_factor(
                     &row.id,
-                    better_auth_core::UpdateTwoFactor {
+                    alibi_core::UpdateTwoFactor {
                         secret: Some(secret.into()),
                         backup_codes: Some(backup_codes.into()),
                         ..Default::default()
                     },
                 )
                 .await?;
-            Ok::<_, better_auth::AuthError>(())
+            Ok::<_, alibi::AuthError>(())
         }
         .await;
         if let Err(error) = imported {
@@ -603,7 +603,7 @@ async fn control(
                 ))
                 .await?;
         }
-        Ok::<_, better_auth_seaorm::sea_orm::DbErr>(())
+        Ok::<_, alibi_seaorm::sea_orm::DbErr>(())
     }
     .await;
     if mutation.is_err() {

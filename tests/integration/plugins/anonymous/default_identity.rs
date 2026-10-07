@@ -2,10 +2,10 @@
 #![allow(clippy::unwrap_used, reason = "native lifecycle setup must succeed")]
 
 use crate::storage::{Backend, Db, TestResult, backend_tests, postgres_tests};
-use better_auth::plugins::AnonymousPlugin;
-use better_auth::plugins::anonymous::AnonymousConfig;
-use better_auth::{AuthBuilder, AuthConfig};
-use better_auth_core::{AuthRequest, AuthSession, AuthUser, HttpMethod};
+use alibi::plugins::AnonymousPlugin;
+use alibi::plugins::anonymous::AnonymousConfig;
+use alibi::{AuthBuilder, AuthConfig};
+use alibi_core::{AuthRequest, AuthSession, AuthUser, HttpMethod};
 use serde_json::{Value, json};
 use std::sync::Arc;
 

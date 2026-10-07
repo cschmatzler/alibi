@@ -22,10 +22,10 @@ pub(in crate::plugins) mod invitation_acceptance;
 
 use super::OrganizationConfig;
 use super::types::{HasPermissionRequest, HasPermissionResponse};
-use better_auth_core::entity::{AuthMember, AuthSession, AuthUser};
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::plugin::AuthContext;
-use better_auth_core::types::{AuthRequest, AuthResponse};
+use alibi_core::entity::{AuthMember, AuthSession, AuthUser};
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::plugin::AuthContext;
+use alibi_core::types::{AuthRequest, AuthResponse};
 pub use invitation::*;
 pub use member::*;
 pub use org::*;
@@ -34,12 +34,12 @@ pub use org::*;
 ///
 /// # Errors
 /// Returns an error when validation, storage, or an application callback fails.
-pub(in crate::plugins) async fn require_session<S: better_auth_core::AuthSchema>(
+pub(in crate::plugins) async fn require_session<S: alibi_core::AuthSchema>(
     req: &AuthRequest,
     ctx: &AuthContext<S>,
 ) -> AuthResult<(
-    better_auth_core::AuthenticatedUser<S>,
-    better_auth_core::wire::SessionView,
+    alibi_core::AuthenticatedUser<S>,
+    alibi_core::wire::SessionView,
 )> {
     ctx.require_cached_session(req).await
 }
@@ -52,7 +52,7 @@ pub(in crate::plugins) async fn resolve_organization_id(
     org_id: Option<&str>,
     org_slug: Option<&str>,
     session: &impl AuthSession,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<String> {
     if let Some(id) = org_id {
         return Ok(id.to_owned());
@@ -60,7 +60,7 @@ pub(in crate::plugins) async fn resolve_organization_id(
 
     if let Some(slug) = org_slug {
         if let Some(org) = ctx.database.get_organization_by_slug(slug).await? {
-            use better_auth_core::entity::AuthOrganization;
+            use alibi_core::entity::AuthOrganization;
             return Ok(org.id().to_string());
         }
         return Err(AuthError::not_found("Organization not found"));
@@ -84,7 +84,7 @@ pub(in crate::plugins) async fn has_permission_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<HasPermissionResponse> {
     let org_id = body
         .organization_id
@@ -127,7 +127,7 @@ pub(in crate::plugins) async fn has_permission_core(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_has_permission(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let input = match validation::body_object(req) {

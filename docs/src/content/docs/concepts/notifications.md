@@ -17,9 +17,9 @@ Alibi does not send email itself. Features that need to reach a user — email v
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::email::EmailProvider;
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi::email::EmailProvider;
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthError, AuthResult, BetterAuth};
 
 struct HttpMailer {
     client: reqwest::Client,
@@ -58,7 +58,7 @@ async fn build_auth(
 }
 ```
 
-For local development use `better_auth::email::ConsoleEmailProvider`, which prints `[EMAIL] To: … | Subject: … | Body: …` to stderr. Never log message bodies in production — they contain live credentials.
+For local development use `alibi::email::ConsoleEmailProvider`, which prints `[EMAIL] To: … | Subject: … | Body: …` to stderr. Never log message bodies in production — they contain live credentials.
 
 Dedicated callbacks usually forward to the same provider. Keep an `Arc<dyn EmailProvider>` in your callback struct, as the [email verification](/authentication/email-verification/) and [OTP](/plugins/email-otp/) pages do.
 
@@ -73,7 +73,7 @@ Callbacks for email OTP, magic links and phone codes receive a `&CallbackContext
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::CallbackContext;
+use alibi::CallbackContext;
 
 fn preferred_language(context: &CallbackContext) -> &'static str {
     let accept = context
@@ -95,7 +95,7 @@ fn instance_ready(context: &CallbackContext) -> bool {
 By default, delivery is **awaited** and a failure fails the request: the user sees an error, so they know to retry. Choose the policy on `AuthConfig`:
 
 ```rust
-use better_auth::{AuthConfig, AwaitedNotificationErrorPolicy};
+use alibi::{AuthConfig, AwaitedNotificationErrorPolicy};
 
 fn auth_config(secret: &str) -> AuthConfig {
     AuthConfig::new(secret)
@@ -115,7 +115,7 @@ An explicit "send verification email" request always propagates delivery errors.
 Waiting for an SMTP server inside a request is slow. Supply a `BackgroundTaskHandler` and delivery starts immediately but is no longer awaited by the request; its failures are logged instead of surfaced. The handler receives a *completion* future for work that is **already running** — dropping it does not cancel the task, and you can keep it to await during shutdown:
 
 ```rust
-use better_auth::{AuthConfig, AuthResult, BackgroundTaskCompletion, BackgroundTaskHandler};
+use alibi::{AuthConfig, AuthResult, BackgroundTaskCompletion, BackgroundTaskHandler};
 use std::sync::{Arc, Mutex};
 use tokio::task::JoinHandle;
 

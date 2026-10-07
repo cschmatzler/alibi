@@ -2,7 +2,7 @@
 //! ERC-4361 parser would also reject messages whose URI, version or issued-at
 //! fields Better Auth passes unchanged to the application verifier.
 
-use better_auth_core::utils::javascript::{
+use alibi_core::utils::javascript::{
     is_whitespace as js_whitespace, string_to_number as js_number, trim as js_trim,
 };
 #[derive(Debug, Default)]

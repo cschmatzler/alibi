@@ -15,7 +15,7 @@ pub struct Model {
 pub enum Relation {}
 impl ActiveModelBehavior for ActiveModel {}
 
-impl From<Model> for better_auth_core::types::Team {
+impl From<Model> for alibi_core::types::Team {
     fn from(model: Model) -> Self {
         Self {
             id: model.id,

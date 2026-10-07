@@ -12,12 +12,12 @@ You provide delivery: a `SendMagicLink` callback receives the address and the li
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::CallbackContext;
-use better_auth::email::EmailProvider;
-use better_auth::plugins::magic_link::MagicLinkDelivery;
-use better_auth::plugins::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::CallbackContext;
+use alibi::email::EmailProvider;
+use alibi::plugins::magic_link::MagicLinkDelivery;
+use alibi::plugins::{MagicLinkConfig, MagicLinkPlugin, SendMagicLink};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 use std::sync::Arc;
 
 struct Mailer(Arc<dyn EmailProvider>);

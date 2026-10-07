@@ -1,7 +1,7 @@
 //! Configuration types beyond the root `AuthConfig` entrypoint.
 
-pub use better_auth_core::background_tasks::{BackgroundTaskCompletion, BackgroundTaskHandler};
-pub use better_auth_core::config::{
+pub use alibi_core::background_tasks::{BackgroundTaskCompletion, BackgroundTaskHandler};
+pub use alibi_core::config::{
     AccountConfig, AccountLinkingConfig, AdvancedConfig, AdvancedDatabaseConfig, BaseUrlProtocol,
     CookieAttributes, CookieCacheConfig, CookieCacheStrategy, CookieOverride, CookieRefreshCache,
     CrossSubDomainConfig, DynamicBaseUrl, IpAddressConfig, JwtConfig, OAuthStateStrategy,

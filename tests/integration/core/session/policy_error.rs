@@ -3,13 +3,13 @@
 #[path = "../../../support/session_policy_store.rs"]
 mod policy_store;
 
-use better_auth::plugins::SessionManagementPlugin;
-use better_auth::{AuthBuilder, AuthConfig, BetterAuth};
-use better_auth_core::store::{SessionStore, UserStore};
-use better_auth_core::{
+use alibi::plugins::SessionManagementPlugin;
+use alibi::{AuthBuilder, AuthConfig, BetterAuth};
+use alibi_core::store::{SessionStore, UserStore};
+use alibi_core::{
     AuthRequest, AuthResponse, AuthSession, AuthUser, CreateSession, CreateUser, HttpMethod,
 };
-use better_auth_seaorm::{Database, SeaOrmStore};
+use alibi_seaorm::{Database, SeaOrmStore};
 use chrono::{Duration, Utc};
 use policy_store::{PolicyStore, Schema};
 use serde_json::{Value, json};
@@ -38,7 +38,7 @@ mod tests {
         let config =
             AuthConfig::new("session-policy-fixture-secret-minimum-32-characters").base_url(ORIGIN);
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let raw = Arc::new(SeaOrmStore::<Schema>::new(config.clone(), database));
@@ -63,11 +63,9 @@ mod tests {
             .create_session(&user, None, None)
             .await
             .unwrap();
-        let cookie = better_auth_core::utils::cookie_utils::create_session_cookie(
-            issued.token(),
-            auth.config(),
-        )
-        .unwrap();
+        let cookie =
+            alibi_core::utils::cookie_utils::create_session_cookie(issued.token(), auth.config())
+                .unwrap();
         let cookie = cookie.split(';').next().unwrap();
         let (accepted, session) = get(&auth, "/get-session", cookie).await;
         assert_eq!(accepted.status, 200, "{session}");
@@ -119,7 +117,7 @@ mod tests {
         let config =
             AuthConfig::new("session-policy-fixture-secret-minimum-32-characters").base_url(ORIGIN);
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let auth = AuthBuilder::new(config.clone())
@@ -136,7 +134,7 @@ mod tests {
         let empty = auth
             .store()
             .create_session(CreateSession {
-                additional_fields: better_auth_core::field_policy::FieldValues::default(),
+                additional_fields: alibi_core::field_policy::FieldValues::default(),
                 token: Some(String::new()),
                 user_id: user.id().into_owned(),
                 expires_at: Utc::now() + Duration::hours(1),
@@ -155,9 +153,9 @@ mod tests {
             .await
             .unwrap();
         let signed_empty =
-            better_auth_core::utils::cookie_utils::sign_cookie_value("", &auth.config().secret);
+            alibi_core::utils::cookie_utils::sign_cookie_value("", &auth.config().secret);
         assert_eq!(
-            better_auth_core::utils::cookie_utils::verify_cookie_value(
+            alibi_core::utils::cookie_utils::verify_cookie_value(
                 &signed_empty,
                 &auth.config().secret
             ),
@@ -165,11 +163,9 @@ mod tests {
         );
         let empty_cookie_value = format!("{}={signed_empty}", auth.config().session.cookie_name);
         let empty_cookie = empty_cookie_value.as_str();
-        let valid_cookie = better_auth_core::utils::cookie_utils::create_session_cookie(
-            valid.token(),
-            auth.config(),
-        )
-        .unwrap();
+        let valid_cookie =
+            alibi_core::utils::cookie_utils::create_session_cookie(valid.token(), auth.config())
+                .unwrap();
         let valid_cookie = valid_cookie.split(';').next().unwrap();
         for cookie in [
             empty_cookie.to_owned(),

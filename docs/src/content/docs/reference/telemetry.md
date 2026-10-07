@@ -12,9 +12,9 @@ Provide a `TelemetrySink` and register it on the builder:
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use async_trait::async_trait;
-use better_auth::sqlx::SqlxStore;
-use better_auth::telemetry::{TelemetryConfig, TelemetryEvent, TelemetrySink};
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::sqlx::SqlxStore;
+use alibi::telemetry::{TelemetryConfig, TelemetryEvent, TelemetrySink};
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 
 struct EventLog;
 
@@ -45,15 +45,15 @@ async fn build_auth(
 Initialization publishes one event:
 
 ```json
-{"type":"init","payload":{"libraryVersion":"0.1.0","runtime":"rust","platform":"linux","architecture":"x86_64","plugins":["email-password","session-management","oauth"]}}
+{"type":"init","payload":{"libraryVersion":"0.1.1","runtime":"rust","platform":"linux","architecture":"x86_64","plugins":["email-password","session-management","oauth"]}}
 ```
 
 It contains the library version, platform and the installed plugin names — no hostnames, URLs, secrets or user data. Publish your own application events through the same sink:
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::telemetry::TelemetryEvent;
+use alibi::BetterAuth;
+use alibi::telemetry::TelemetryEvent;
 use serde_json::json;
 
 async fn record(auth: &BetterAuth<AppAuthSchema>) {

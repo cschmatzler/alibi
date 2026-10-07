@@ -1,6 +1,6 @@
 use crate::pool::Engine;
 use crate::value::{ColumnKind, SqlValue, SqlxValue, ValueTypeError};
-use better_auth_core::{ApiKeyStartText, ApiKeyStartingCharacters, AuthError, AuthResult};
+use alibi_core::{ApiKeyStartText, ApiKeyStartingCharacters, AuthError, AuthResult};
 use sqlx::error::BoxDynError;
 #[cfg(feature = "postgres")]
 use sqlx::postgres::{PgTypeInfo, PgValueRef, Postgres};

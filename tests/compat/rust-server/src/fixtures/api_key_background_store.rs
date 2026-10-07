@@ -1,9 +1,9 @@
 //! Application-owned adapter that gates only the real bulk deletion.
 //! Every other operation delegates unchanged to the bundled SeaORM store.
 use super::Application;
-use better_auth::__private_core::store::*;
-use better_auth::__private_core::types::*;
-use better_auth::__private_core::{AuthResult, AuthSchema};
+use alibi::__private_core::store::*;
+use alibi::__private_core::types::*;
+use alibi::__private_core::{AuthResult, AuthSchema};
 
 pub(crate) struct ControlledStore<S: AuthSchema> {
     pub(crate) inner: crate::backend::Store<S>,
@@ -37,7 +37,7 @@ delegate_store!(SessionStore<S>, {
     async fn update_session_fields(
         &self,
         _token: &str,
-        _fields: better_auth::__private_core::field_policy::FieldValues,
+        _fields: alibi::__private_core::field_policy::FieldValues,
     ) -> AuthResult<Option<S::Session>>;
     async fn create_session(&self, create_session: CreateSession) -> AuthResult<S::Session>;
     async fn get_session(&self, token: &str) -> AuthResult<Option<S::Session>>;
@@ -81,9 +81,9 @@ delegate_store!(AccountStore<S>, {
 delegate_store!(VerificationStore<S>, {
     async fn create_verification_record(
         &self,
-        data: better_auth::__private_core::verification::VerificationCreation,
-        publication: better_auth::__private_core::verification::VerificationPublication,
-    ) -> AuthResult<Option<better_auth::__private_core::verification::VerificationSnapshot>>;
+        data: alibi::__private_core::verification::VerificationCreation,
+        publication: alibi::__private_core::verification::VerificationPublication,
+    ) -> AuthResult<Option<alibi::__private_core::verification::VerificationSnapshot>>;
     async fn consume_verification_snapshot(
         &self,
         identifier: &str,
@@ -92,7 +92,7 @@ delegate_store!(VerificationStore<S>, {
         &self,
         identifier: &str,
         data: UpdateVerification,
-    ) -> AuthResult<Option<better_auth::__private_core::verification::VerificationSnapshot>>;
+    ) -> AuthResult<Option<alibi::__private_core::verification::VerificationSnapshot>>;
     async fn reserve_verification_record(
         &self,
         logical_identifier: &str,

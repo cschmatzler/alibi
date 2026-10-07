@@ -8,21 +8,21 @@
 )]
 pub mod application_session {
     #[cfg(feature = "seaorm")]
-    use better_auth::seaorm::JsonMetadata;
+    use alibi::seaorm::JsonMetadata;
     #[cfg(feature = "seaorm")]
-    use better_auth::seaorm::sea_orm::{self, entity::prelude::*};
+    use alibi::seaorm::sea_orm::{self, entity::prelude::*};
     #[cfg(not(feature = "seaorm"))]
-    use better_auth::sqlx::JsonMetadata;
+    use alibi::sqlx::JsonMetadata;
     use chrono::{DateTime, Utc};
     use serde::Serialize;
     #[cfg_attr(
         feature = "seaorm",
-        derive(better_auth::seaorm::AuthEntity, DeriveEntityModel),
+        derive(alibi::seaorm::AuthEntity, DeriveEntityModel),
         sea_orm(table_name = "sessions")
     )]
     #[cfg_attr(
         not(feature = "seaorm"),
-        derive(better_auth::sqlx::AuthEntity, sqlx::FromRow),
+        derive(alibi::sqlx::AuthEntity, sqlx::FromRow),
         auth(table = "sessions")
     )]
     #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -60,7 +60,7 @@ pub mod application_session {
 }
 // The including module supplies the bundled `entities` of its store backend.
 use super::entities::{account, user, verification};
-use better_auth::AuthSchema;
+use alibi::AuthSchema;
 
 #[expect(
     unreachable_pub,

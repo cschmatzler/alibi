@@ -1,9 +1,9 @@
 //! Configured codecs must process actual issued, delivered and consumed proofs.
 use super::*;
+use alibi::plugins::email_otp::*;
+use alibi_core::{AuthError, AuthResult, CallbackContext};
 use async_trait::async_trait;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth::plugins::email_otp::*;
-use better_auth_core::{AuthError, AuthResult, CallbackContext};
 use sha2::{Digest as _, Sha256};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -210,8 +210,8 @@ impl SendEmailOtp for VerificationDelivery {
     }
 }
 #[async_trait]
-impl better_auth::plugins::SendVerificationEmail for VerificationDelivery {
-    async fn send(&self, _: &better_auth_core::UserView, _: &str, token: &str) -> AuthResult<()> {
+impl alibi::plugins::SendVerificationEmail for VerificationDelivery {
+    async fn send(&self, _: &alibi_core::UserView, _: &str, token: &str) -> AuthResult<()> {
         self.tokens.lock().unwrap().push(token.to_owned());
         Ok(())
     }
@@ -220,7 +220,7 @@ impl better_auth::plugins::SendVerificationEmail for VerificationDelivery {
 async fn email_otp_verification_override_owns_signup_transaction_and_direct_delivery<B: Backend>(
     parent: Db,
 ) -> TestResult {
-    use better_auth::plugins::{EmailVerificationConfig, EmailVerificationPlugin};
+    use alibi::plugins::{EmailVerificationConfig, EmailVerificationPlugin};
     for explicit_sender in [false, true] {
         let db = parent.fresh().await?;
         let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -228,15 +228,14 @@ async fn email_otp_verification_override_owns_signup_transaction_and_direct_deli
         let config = AuthConfig::new(SECRET).base_url(ORIGIN);
         let auth = AuthBuilder::new(config.clone())
             .store(B::store(Arc::new(config), &connection))
-            .rate_limit(better_auth::middleware::RateLimitConfig::new().enabled(false))
+            .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new().require_email_verification(true))
             .plugin(SessionManagementPlugin::new())
             .plugin(EmailVerificationPlugin::with_config(
                 EmailVerificationConfig {
                     send_on_sign_up: Some(true),
-                    send_verification_email: explicit_sender.then(|| {
-                        sender.clone() as Arc<dyn better_auth::plugins::SendVerificationEmail>
-                    }),
+                    send_verification_email: explicit_sender
+                        .then(|| sender.clone() as Arc<dyn alibi::plugins::SendVerificationEmail>),
                     ..Default::default()
                 },
             ))

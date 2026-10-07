@@ -1,10 +1,10 @@
 //! Trusted fixture writes for exercising actual persisted timestamp precision.
 
 use axum::{Json, Router, http::StatusCode, routing::post};
-use better_auth_seaorm::sea_orm::{
+use alibi_seaorm::sea_orm::{
     ActiveModelTrait, DatabaseConnection, EntityTrait, IntoActiveModel, Set,
 };
-use better_auth_seaorm::store::entities::{member, organization};
+use alibi_seaorm::store::entities::{member, organization};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -21,7 +21,7 @@ struct TimestampRequest {
 async fn write_timestamp(
     database: &DatabaseConnection,
     body: TimestampRequest,
-) -> Result<Value, better_auth_seaorm::sea_orm::DbErr> {
+) -> Result<Value, alibi_seaorm::sea_orm::DbErr> {
     let org = organization::Entity::find_by_id(&body.organization_id)
         .one(database)
         .await?;
@@ -56,7 +56,7 @@ async fn write_timestamp(
 
 pub(crate) fn router(
     database: DatabaseConnection,
-) -> Router<Arc<better_auth::BetterAuth<crate::TestSchema>>> {
+) -> Router<Arc<alibi::BetterAuth<crate::TestSchema>>> {
     Router::new().route(
         "/__test/organization-timestamps",
         post(move |Json(body): Json<TimestampRequest>| {

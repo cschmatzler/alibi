@@ -5,11 +5,11 @@ use super::authentication_helpers::{
     session_response,
 };
 use super::token_crypto::hash_token;
-use async_trait::async_trait;
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, AuthUser,
     CreateUser, CreateVerification,
 };
+use async_trait::async_trait;
 use rand::RngExt;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -22,8 +22,8 @@ pub struct MagicLinkDelivery {
     pub email: String,
     pub url: String,
     pub token: String,
-    #[serde(serialize_with = "better_auth_core::utils::json::serialize")]
-    pub metadata: Option<better_auth_core::utils::json::JsValue>,
+    #[serde(serialize_with = "alibi_core::utils::json::serialize")]
+    pub metadata: Option<alibi_core::utils::json::JsValue>,
 }
 
 impl std::fmt::Debug for MagicLinkDelivery {
@@ -37,7 +37,7 @@ pub trait SendMagicLink: Send + Sync {
     async fn send(
         &self,
         delivery: &MagicLinkDelivery,
-        context: &better_auth_core::CallbackContext,
+        context: &alibi_core::CallbackContext,
     ) -> AuthResult<()>;
 }
 
@@ -76,7 +76,7 @@ pub struct MagicLinkConfig {
     /// Lifetime in seconds. Zero and NaN use 300 seconds. Fractions retain
     /// JavaScript millisecond rounding; invalid dates fail before persistence.
     pub expires_in: f64,
-    pub rate_limit: better_auth_core::EndpointRateLimit,
+    pub rate_limit: alibi_core::EndpointRateLimit,
     pub disable_sign_up: bool,
 }
 
@@ -93,7 +93,7 @@ impl Default for MagicLinkConfig {
             generate_token: None,
             storage: MagicLinkTokenStorage::Plain,
             expires_in: 300.0,
-            rate_limit: better_auth_core::EndpointRateLimit {
+            rate_limit: alibi_core::EndpointRateLimit {
                 window_seconds: 60.0,
                 max_requests: 5.0,
             },
@@ -209,7 +209,7 @@ impl MagicLinkPlugin {
                     token,
                     metadata: body.metadata,
                 },
-                &better_auth_core::CallbackContext::new(ctx, Some(req)),
+                &alibi_core::CallbackContext::new(ctx, Some(req)),
             )
             .await?;
         AuthResponse::json(200, &json!({"status":true})).map_err(AuthError::from)
@@ -298,9 +298,7 @@ impl MagicLinkPlugin {
                     .database
                     .create_user_with_source_record(
                         user,
-                        better_auth_core::user_validation::UserValidationSource::creation(
-                            "magic-link",
-                        ),
+                        alibi_core::user_validation::UserValidationSource::creation("magic-link"),
                     )
                     .await
                 {
@@ -332,28 +330,28 @@ impl MagicLinkPlugin {
     }
 }
 
-better_auth_core::impl_auth_plugin! {
+alibi_core::impl_auth_plugin! {
     MagicLinkPlugin, "magic-link";
     routes {
         post "/sign-in/magic-link" => sign_in, "signInWithMagicLink";
         get "/magic-link/verify" => verify, "verifyMagicLink";
     }
     extra {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self))
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self))
     }
 
-    fn openapi_metadata(&self, ctx: &better_auth_core::AuthInitContext<S>) -> better_auth_core::PluginOpenApiMetadata {
-        crate::metadata::instance_plugin_metadata(<Self as better_auth_core::AuthPlugin<S>>::name(self), &<Self as better_auth_core::AuthPlugin<S>>::routes(self), ctx)
+    fn openapi_metadata(&self, ctx: &alibi_core::AuthInitContext<S>) -> alibi_core::PluginOpenApiMetadata {
+        crate::metadata::instance_plugin_metadata(<Self as alibi_core::AuthPlugin<S>>::name(self), &<Self as alibi_core::AuthPlugin<S>>::routes(self), ctx)
     }
 
-        fn rate_limits(&self) -> Vec<better_auth_core::PluginRateLimit> {
-            vec![better_auth_core::PluginRateLimit { matches: |path| path.starts_with("/sign-in/magic-link") || path.starts_with("/magic-link/verify"), limit: better_auth_core::EndpointRateLimit {
+        fn rate_limits(&self) -> Vec<alibi_core::PluginRateLimit> {
+            vec![alibi_core::PluginRateLimit { matches: |path| path.starts_with("/sign-in/magic-link") || path.starts_with("/magic-link/verify"), limit: alibi_core::EndpointRateLimit {
                 window_seconds: if self.config.rate_limit.window_seconds == 0.0 || self.config.rate_limit.window_seconds.is_nan() { 60.0 } else { self.config.rate_limit.window_seconds },
                 max_requests: if self.config.rate_limit.max_requests == 0.0 || self.config.rate_limit.max_requests.is_nan() { 5.0 } else { self.config.rate_limit.max_requests },
             } }]
         }
-        async fn on_init(&self, ctx: &mut better_auth_core::AuthInitContext<S>) -> AuthResult<()> {
+        async fn on_init(&self, ctx: &mut alibi_core::AuthInitContext<S>) -> AuthResult<()> {
             ctx.set_metadata("magic-link.enabled", json!(true));
             Ok(())
         }
@@ -370,7 +368,7 @@ struct SignInRequest {
     new_user_callback_url: Option<String>,
     #[serde(rename = "errorCallbackURL")]
     error_callback_url: Option<String>,
-    metadata: Option<better_auth_core::utils::json::JsValue>,
+    metadata: Option<alibi_core::utils::json::JsValue>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -452,9 +450,7 @@ fn error_redirect(mut url: Url, error: &str, description: Option<&str>) -> AuthR
 mod tests {
     use super::*;
     use crate::plugins::test_helpers;
-    use better_auth_core::{
-        AuthPlugin, AuthSession, AuthUser, AuthVerification, CreateUser, HttpMethod,
-    };
+    use alibi_core::{AuthPlugin, AuthSession, AuthUser, AuthVerification, CreateUser, HttpMethod};
     use chrono::{Duration, Utc};
     use serde_json::Value;
     use std::sync::Mutex;
@@ -467,7 +463,7 @@ mod tests {
         async fn send(
             &self,
             delivery: &MagicLinkDelivery,
-            _context: &better_auth_core::CallbackContext,
+            _context: &alibi_core::CallbackContext,
         ) -> AuthResult<()> {
             self.0.lock().unwrap().push(delivery.clone());
             Ok(())
@@ -499,7 +495,7 @@ mod tests {
         async fn send(
             &self,
             _: &MagicLinkDelivery,
-            _context: &better_auth_core::CallbackContext,
+            _context: &alibi_core::CallbackContext,
         ) -> AuthResult<()> {
             Err(AuthError::internal("deterministic sender outage"))
         }

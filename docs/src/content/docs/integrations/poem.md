@@ -6,7 +6,7 @@ description: "Mount the auth endpoint in a Poem application and extract sessions
 The Poem adapter nests the auth API as a single `Endpoint` and provides `CurrentSession` and `OptionalSession` extractors. Enable the `poem` feature and add `poem` to your application:
 
 ```toml title="Cargo.toml"
-better-auth = { package = "alibi", version = "0.1.0", features = ["poem"] }
+alibi = { version = "0.1.1", features = ["poem"] }
 poem = "3.1"
 ```
 
@@ -16,9 +16,9 @@ Build the auth instance with your SQLx or SeaORM store as usual, then nest `poem
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::integrations::poem::{CurrentSession, PoemIntegration};
-use better_auth::prelude::AuthUser;
+use alibi::BetterAuth;
+use alibi::integrations::poem::{CurrentSession, PoemIntegration};
+use alibi::prelude::AuthUser;
 use poem::{Endpoint, EndpointExt, Route, get, handler};
 use std::sync::Arc;
 
@@ -39,8 +39,8 @@ Serve it with Poem's server:
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::integrations::poem::PoemIntegration;
+use alibi::BetterAuth;
+use alibi::integrations::poem::PoemIntegration;
 use poem::{EndpointExt, Route, Server, listener::TcpListener};
 use std::sync::Arc;
 
@@ -63,7 +63,7 @@ Both expose `user` and `session` in your own model types. The extractors need th
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::integrations::poem::OptionalSession;
+use alibi::integrations::poem::OptionalSession;
 use poem::handler;
 
 #[handler]

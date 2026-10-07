@@ -1,6 +1,6 @@
 //! `SeaORM` integration for Alibi.
 
-extern crate self as better_auth_seaorm;
+extern crate self as alibi_seaorm;
 
 mod conversions;
 
@@ -18,8 +18,8 @@ pub mod store;
 pub mod additional_fields;
 
 #[doc(hidden)]
-pub use better_auth_core as __private_core;
-pub use better_auth_seaorm_macros::AuthEntity;
+pub use alibi_core as __private_core;
+pub use alibi_seaorm_macros::AuthEntity;
 pub use hooks::{
     DatabaseHooks, HookControl, SeaOrmBackend, SeaOrmHookContext, current_request_hook_context,
 };

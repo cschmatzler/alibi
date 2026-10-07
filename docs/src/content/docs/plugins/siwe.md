@@ -8,7 +8,7 @@ description: "Authenticate wallets with Sign-In with Ethereum (ERC-4361), with n
 ## Schema
 
 ```bash
-better-auth-rs generate --plugins siwe -o src/auth_schema.rs
+alibi generate --plugins siwe -o src/auth_schema.rs
 ```
 
 Adds the `wallet_address` table (`user_id`, `address`, `chain_id`, `is_primary`, `created_at`).
@@ -17,10 +17,10 @@ Adds the `wallet_address` table (`user_id`, `address`, `chain_id`, `is_primary`,
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::plugins::siwe::{Eip191Verifier, RandomSiweNonce};
-use better_auth::plugins::{SiweConfig, SiwePlugin};
-use better_auth::sqlx::SqlxStore;
-use better_auth::{AuthConfig, AuthResult, BetterAuth};
+use alibi::plugins::siwe::{Eip191Verifier, RandomSiweNonce};
+use alibi::plugins::{SiweConfig, SiwePlugin};
+use alibi::sqlx::SqlxStore;
+use alibi::{AuthConfig, AuthResult, BetterAuth};
 use std::sync::Arc;
 
 async fn build_auth(
@@ -76,7 +76,7 @@ When `anonymous` is `false`, an email is required — and an existing user with 
 
 ```rust
 use async_trait::async_trait;
-use better_auth::plugins::siwe::{
+use alibi::plugins::siwe::{
     Eip191Verifier, SiweCallbackResult, SiweConfig, SiweVerification, SiweVerifier, RandomSiweNonce,
 };
 use std::sync::Arc;

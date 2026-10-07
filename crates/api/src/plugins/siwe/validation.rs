@@ -1,5 +1,5 @@
 use crate::plugins::authentication_helpers::is_valid_email;
-use better_auth_core::{AuthRequest, AuthResponse, types::ParsedRequestBody};
+use alibi_core::{AuthRequest, AuthResponse, types::ParsedRequestBody};
 use serde_json::{Map, Value, json};
 
 #[derive(Debug)]

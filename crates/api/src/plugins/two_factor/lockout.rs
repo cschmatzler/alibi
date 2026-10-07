@@ -2,7 +2,7 @@ use super::*;
 pub(in crate::plugins::two_factor) async fn assert_account_not_locked(
     config: &TwoFactorConfig,
     factor: &TwoFactor,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
     if !config.account_lockout.enabled {
         return Ok(());
@@ -34,7 +34,7 @@ pub(in crate::plugins::two_factor) async fn assert_account_not_locked(
 pub(in crate::plugins::two_factor) async fn record_account_failure(
     config: &TwoFactorConfig,
     factor: &TwoFactor,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
     if !config.account_lockout.enabled {
         return Ok(());
@@ -74,7 +74,7 @@ pub(in crate::plugins::two_factor) async fn record_account_failure(
 pub(in crate::plugins::two_factor) async fn reset_account_failures(
     config: &TwoFactorConfig,
     factor: &TwoFactor,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
     if config.account_lockout.enabled {
         ctx.database

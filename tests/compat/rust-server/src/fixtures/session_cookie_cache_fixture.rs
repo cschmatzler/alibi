@@ -3,33 +3,33 @@ use crate::backend::entities::{account, user, verification};
 use crate::session_field_model::{ApplicationSchema, application_session};
 use async_trait::async_trait;
 use axum::{Json, Router, routing::post};
-use better_auth::field_policy::FieldConfig;
-use better_auth::plugins::anonymous::{
+use alibi::field_policy::FieldConfig;
+use alibi::plugins::anonymous::{
     AnonymousConfig, AnonymousIdentity, AnonymousLink, LinkAnonymousAccount,
 };
-use better_auth::plugins::email_verification::{EmailVerificationPlugin, SendVerificationEmail};
-use better_auth::plugins::jwt::{JwtPlugin, JwtPluginConfig};
-use better_auth::plugins::multi_session::MultiSessionPlugin;
-use better_auth::plugins::one_time_token::OneTimeTokenPlugin;
-use better_auth::plugins::phone_number::{
+use alibi::plugins::email_verification::{EmailVerificationPlugin, SendVerificationEmail};
+use alibi::plugins::jwt::{JwtPlugin, JwtPluginConfig};
+use alibi::plugins::multi_session::MultiSessionPlugin;
+use alibi::plugins::one_time_token::OneTimeTokenPlugin;
+use alibi::plugins::phone_number::{
     PhoneNumberConfig, PhoneNumberPlugin, PhoneNumberVerification, PhoneOtpDelivery,
     PhoneVerificationHook, SendPhoneOtp,
 };
-use better_auth::plugins::{
+use alibi::plugins::{
     AccountManagementPlugin, AdminConfig, AdminPlugin, AnonymousPlugin, ApiKeyConfig, ApiKeyPlugin,
     DeviceAuthorizationPlugin, EmailPasswordPlugin, OrganizationPlugin, PasskeyPlugin,
     PasswordManagementPlugin, SendTwoFactorOtp, SessionManagementPlugin, TwoFactorPlugin,
     UserManagementPlugin,
 };
-use better_auth::{
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use better_auth_core::{
+use alibi_core::{
     AuthRequest, CacheVersionContext, CookieCacheConfig, CookieCacheVersion,
     CookieCacheVersionResolver, UpdateUser,
 };
-use better_auth_seaorm::DatabaseConnection;
+use alibi_seaorm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{
@@ -50,18 +50,18 @@ struct Application {
 }
 struct SessionTokens(Arc<Mutex<State>>);
 #[async_trait]
-impl better_auth_seaorm::DatabaseHooks<ApplicationSchema, crate::backend::Backend>
+impl alibi_seaorm::DatabaseHooks<ApplicationSchema, crate::backend::Backend>
     for SessionTokens
 {
     async fn before_create_session(
         &self,
-        session: &mut better_auth_core::CreateSession,
+        session: &mut alibi_core::CreateSession,
         _context: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         let mut state = self.0.lock().expect("configured session token policy");
         state.session_sequence += 1;
         session.token = Some(format!("0001{:028}", state.session_sequence));
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
 }
 #[async_trait]
@@ -117,7 +117,7 @@ impl LinkAnonymousAccount for Application {
 }
 #[async_trait]
 impl SendTwoFactorOtp for Application {
-    async fn send(&self, user: &better_auth_core::UserView, otp: &str) -> AuthResult<()> {
+    async fn send(&self, user: &alibi_core::UserView, otp: &str) -> AuthResult<()> {
         self.state
             .lock()
             .expect("cache OTP receipt lock")
@@ -131,7 +131,7 @@ impl SendPhoneOtp for Application {
     async fn send(
         &self,
         delivery: &PhoneOtpDelivery,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.state.lock().expect("cache phone delivery").events.push(json!({"mode":self.mode,"stage":"phone-delivery","phoneNumber":delivery.phone_number,"code":delivery.code}));
         Ok(())
@@ -142,7 +142,7 @@ impl PhoneVerificationHook for Application {
     async fn verified(
         &self,
         receipt: &PhoneNumberVerification,
-        _context: &better_auth_core::CallbackContext,
+        _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         self.state.lock().expect("cache phone verification").events.push(json!({"mode":self.mode,"stage":"phone-verified","phoneNumber":receipt.phone_number,"user":receipt.user}));
         Ok(())
@@ -150,7 +150,7 @@ impl PhoneVerificationHook for Application {
 }
 impl Application {
     fn verification_event(&self, stage: &str, user: Value, extra: Value) -> AuthResult<()> {
-        let request=better_auth_core::hooks::current_request_hook_context().map(|context|json!({"method":format!("{:?}",context.method).to_uppercase(),"url":context.url,"marker":context.headers.get("x-lifecycle-marker")}));
+        let request=alibi_core::hooks::current_request_hook_context().map(|context|json!({"method":format!("{:?}",context.method).to_uppercase(),"url":context.url,"marker":context.headers.get("x-lifecycle-marker")}));
         let mut event = json!({"mode":self.mode,"stage":stage,"user":user,"request":request});
         if let Some(extra) = extra.as_object() {
             for (name, value) in extra {
@@ -169,7 +169,7 @@ impl Application {
 impl SendVerificationEmail for Application {
     async fn send(
         &self,
-        user: &better_auth_core::UserView,
+        user: &alibi_core::UserView,
         url: &str,
         token: &str,
     ) -> AuthResult<()> {
@@ -275,21 +275,21 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                 enabled: mode != "disabled",
                 strategy: match mode {
                     "jwe" | "jwe-interactions" | "jwe-old" | "jwe-retained" | "jwe-retired" => {
-                        better_auth_core::CookieCacheStrategy::Jwe
+                        alibi_core::CookieCacheStrategy::Jwe
                     }
                     "jwt" | "jwt-interactions" | "managed" => {
-                        better_auth_core::CookieCacheStrategy::Jwt
+                        alibi_core::CookieCacheStrategy::Jwt
                     }
-                    _ => better_auth_core::CookieCacheStrategy::Compact,
+                    _ => alibi_core::CookieCacheStrategy::Compact,
                 },
                 max_age,
                 version: Some(version),
             });
         if matches!(mode, "jwe-old" | "jwe-retained" | "jwe-retired") {
             let keys = if mode == "jwe-old" {
-                better_auth_core::ManagedSecrets::new(1, base.current_secret())
+                alibi_core::ManagedSecrets::new(1, base.current_secret())
             } else {
-                better_auth_core::ManagedSecrets::new(
+                alibi_core::ManagedSecrets::new(
                     2,
                     "cache-managed-new-secret-at-least-32-characters",
                 )
@@ -318,7 +318,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             FieldConfig::new(json!({"type":"string"})).default_value(json!("cache-public-label")),
         );
         if mode.starts_with("override-") {
-            use better_auth_core::{CookieAttributes, CookieOverride};
+            use alibi_core::{CookieAttributes, CookieOverride};
             config.advanced.default_cookie_attributes.max_age = Some(99.0);
             config.advanced.cookies.insert(
                 "session_data".into(),
@@ -338,7 +338,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             );
         }
         if mode == "defaults" {
-            use better_auth_core::{CookieAttributes, SameSite};
+            use alibi_core::{CookieAttributes, SameSite};
             config.advanced.use_secure_cookies = Some(false);
             config.advanced.default_cookie_attributes = CookieAttributes {
                 path: Some(path.clone()),
@@ -349,7 +349,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             };
         }
         if mode == "attributes" {
-            use better_auth_core::{CookieAttributes, CookieOverride, SameSite};
+            use alibi_core::{CookieAttributes, CookieOverride, SameSite};
             config.advanced.use_secure_cookies = Some(false);
             config.advanced.default_cookie_attributes = CookieAttributes {
                 path: Some("/discarded".into()),
@@ -485,12 +485,12 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                         if control.action=="import-cache-key" {
                             let key=control.key.ok_or(axum::http::StatusCode::BAD_REQUEST)?;
                             if auth.store().get_jwk_by_id(&key.id).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?.is_none() {
-                                auth.store().create_jwk(better_auth_core::CreateJwk{id:Some(key.id),public_key:key.public_key,private_key:key.private_key,created_at:key.created_at,expires_at:key.expires_at,alg:key.alg,crv:key.crv}).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
+                                auth.store().create_jwk(alibi_core::CreateJwk{id:Some(key.id),public_key:key.public_key,private_key:key.private_key,created_at:key.created_at,expires_at:key.expires_at,alg:key.alg,crv:key.crv}).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
                             }
                         } else if control.action=="rotate-cache-key" {
                             JwtPlugin::new().create_jwk(None,None,auth.context()).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
                         } else if control.action=="retire-cache-key" {
-                            { use better_auth_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement}; db.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite, "DELETE FROM jwks WHERE id = ?", [control.token.ok_or(axum::http::StatusCode::BAD_REQUEST)?.into()])).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?; }
+                            { use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement}; db.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite, "DELETE FROM jwks WHERE id = ?", [control.token.ok_or(axum::http::StatusCode::BAD_REQUEST)?.into()])).await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?; }
                         }
                         let keys=auth.store().list_jwks().await.map_err(|_|axum::http::StatusCode::INTERNAL_SERVER_ERROR)?;
                         return Ok(Json(json!({"keys":keys.into_iter().map(|key|json!({"id":key.id,"publicKey":key.public_key,"privateKey":key.private_key,"createdAt":key.created_at,"expiresAt":key.expires_at,"alg":key.alg,"crv":key.crv})).collect::<Vec<_>>()})));
@@ -563,9 +563,9 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                         let accounts = crate::backend::rows::<account::Model>(&db, "SELECT * FROM accounts WHERE user_id = ?", vec![user_id.to_owned()]).await.map_err(failed)?;
                         let sessions = crate::backend::rows::<application_session::Model>(&db, "SELECT * FROM sessions WHERE user_id = ? ORDER BY created_at", vec![user_id.to_owned()]).await.map_err(failed)?;
                         let proofs = crate::backend::rows::<verification::Model>(&db, "SELECT * FROM verifications ORDER BY created_at", vec![]).await.map_err(failed)?;
-                        let accounts = accounts.iter().map(|account| { let mut value=serde_json::to_value(better_auth_core::wire::AccountView::from(account)).expect("actual account row"); value["password"]=json!(account.password);value }).collect::<Vec<_>>();
+                        let accounts = accounts.iter().map(|account| { let mut value=serde_json::to_value(alibi_core::wire::AccountView::from(account)).expect("actual account row"); value["password"]=json!(account.password);value }).collect::<Vec<_>>();
                         let sessions = sessions.iter().map(|session| { let mut value=serde_json::to_value(auth.context().session_view(session)).expect("actual session row");value["hidden"]=json!(session.hidden);value }).collect::<Vec<_>>();
-                        return Ok(Json(json!({"users":users.iter().map(|user|auth.context().user_view(user)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions,"verifications":proofs.iter().map(better_auth_core::wire::VerificationView::from).collect::<Vec<_>>()})));
+                        return Ok(Json(json!({"users":users.iter().map(|user|auth.context().user_view(user)).collect::<Vec<_>>(),"accounts":accounts,"sessions":sessions,"verifications":proofs.iter().map(alibi_core::wire::VerificationView::from).collect::<Vec<_>>()})));
                     }
                     "api-key-rows" => {
                         let user_id=control.user_id.as_deref().ok_or(axum::http::StatusCode::BAD_REQUEST)?;

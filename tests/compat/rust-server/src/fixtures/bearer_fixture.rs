@@ -1,14 +1,14 @@
 //! Real session issuance with deterministic application-owned token hooks.
 use crate::TestSchema;
 use axum::Router;
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::{
     ApiKeyConfig, ApiKeyPlugin, BearerConfig, BearerPlugin, EmailPasswordPlugin,
     MultiSessionPlugin, SessionManagementPlugin,
 };
-use better_auth::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
-use better_auth_seaorm::sea_orm::DatabaseConnection;
+use alibi::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
+use alibi_seaorm::sea_orm::DatabaseConnection;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -17,26 +17,26 @@ use std::sync::{
 struct TokenHook(Arc<AtomicUsize>);
 struct ApplicationExposure;
 #[async_trait::async_trait]
-impl better_auth_core::AuthPlugin<TestSchema> for ApplicationExposure {
+impl alibi_core::AuthPlugin<TestSchema> for ApplicationExposure {
     fn name(&self) -> &'static str {
         "application-exposure"
     }
-    fn routes(&self) -> Vec<better_auth_core::AuthRoute> {
+    fn routes(&self) -> Vec<alibi_core::AuthRoute> {
         Vec::new()
     }
     async fn on_request(
         &self,
-        _: &better_auth_core::AuthRequest,
-        _: &better_auth_core::AuthContext<TestSchema>,
-    ) -> AuthResult<Option<better_auth_core::AuthResponse>> {
+        _: &alibi_core::AuthRequest,
+        _: &alibi_core::AuthContext<TestSchema>,
+    ) -> AuthResult<Option<alibi_core::AuthResponse>> {
         Ok(None)
     }
     async fn after_request(
         &self,
-        _: &better_auth_core::AuthRequest,
-        _: &better_auth_core::AuthContext<TestSchema>,
-        mut response: better_auth_core::AuthResponse,
-    ) -> AuthResult<better_auth_core::AuthResponse> {
+        _: &alibi_core::AuthRequest,
+        _: &alibi_core::AuthContext<TestSchema>,
+        mut response: alibi_core::AuthResponse,
+    ) -> AuthResult<alibi_core::AuthResponse> {
         drop(response.headers.insert(
             "access-control-expose-headers",
             "X-First, X-First, X-Second",
@@ -45,17 +45,17 @@ impl better_auth_core::AuthPlugin<TestSchema> for ApplicationExposure {
     }
 }
 #[async_trait::async_trait]
-impl better_auth_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
+impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenHook {
     async fn before_create_session(
         &self,
         session: &mut CreateSession,
         _: &crate::backend::HookContext<'_>,
-    ) -> AuthResult<better_auth_seaorm::HookControl> {
+    ) -> AuthResult<alibi_seaorm::HookControl> {
         session.token = Some(format!(
             "bearer{:026}",
             self.0.fetch_add(1, Ordering::SeqCst) + 1
         ));
-        Ok(better_auth_seaorm::HookControl::Continue)
+        Ok(alibi_seaorm::HookControl::Continue)
     }
 }
 pub(crate) async fn router(

@@ -5,17 +5,17 @@ use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
-use better_auth::plugins::jwt::{
+use alibi::plugins::jwt::{
     DefineJwtPayload, JwtAlgorithm, JwtAudience, JwtClaimsConfig, JwtExpiration, JwtPlugin,
     JwtPluginConfig, JwtSession, JwtSignOptions, RemoteJwtClaim, RemoteJwtPayload, SignRemoteJwt,
 };
-use better_auth::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
-use better_auth::{
+use alibi::plugins::{EmailPasswordPlugin, SessionManagementPlugin};
+use alibi::{
     AuthBuilder, AuthConfig, AuthError, AuthResult, integrations::axum::AxumIntegration,
     middleware::RateLimitConfig,
 };
-use better_auth_core::utils::json::JsValue;
-use better_auth_seaorm::DatabaseConnection;
+use alibi_core::utils::json::JsValue;
+use alibi_seaorm::DatabaseConnection;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use std::{
@@ -95,10 +95,10 @@ impl SignRemoteJwt for Application {
         drop(header.insert("kid".into(), json!("application-remote-key")));
         let input = format!(
             "{}.{}",
-            URL_SAFE_NO_PAD.encode(better_auth_core::utils::json::to_vec(&header)?),
-            URL_SAFE_NO_PAD.encode(better_auth_core::utils::json::to_vec(&payload_json)?)
+            URL_SAFE_NO_PAD.encode(alibi_core::utils::json::to_vec(&header)?),
+            URL_SAFE_NO_PAD.encode(alibi_core::utils::json::to_vec(&payload_json)?)
         );
-        let cookie = better_auth_core::utils::cookie_utils::sign_cookie_value(&input, SECRET);
+        let cookie = alibi_core::utils::cookie_utils::sign_cookie_value(&input, SECRET);
         let encoded = cookie
             .rsplit('.')
             .next()
@@ -225,7 +225,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let observed = state.clone();
     router=router.route("/__test/jwt-remote",get(move||{let state=observed.clone();async move{let events=state.events.lock().map_err(|_|AuthError::internal("signer lock"))?.clone();Ok::<_,AuthError>(Json(json!({"events":events})))}}).post(move|body:Bytes|{let state=state.clone();let profiles=profiles.clone();async move{
   let operation=async{
-   let body:Operation=better_auth_core::utils::json::from_slice(&body)?;
+   let body:Operation=alibi_core::utils::json::from_slice(&body)?;
    if body.operation=="clear"{state.events.lock().map_err(|_|AuthError::internal("signer lock"))?.clear();*state.failure.lock().map_err(|_|AuthError::internal("signer lock"))?=None;return Ok(json!({"changed":true}));}
    if body.operation=="failure"{*state.failure.lock().map_err(|_|AuthError::internal("signer lock"))?=body.failure;return Ok(json!({"changed":true}));}
    let (auth,jwt)=profiles.get(body.profile.as_deref().unwrap_or("jwt-remote-raw")).ok_or_else(||AuthError::bad_request("unknown signer profile"))?;

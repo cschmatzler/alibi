@@ -1,9 +1,9 @@
 //! `SeaORM` model bindings for Alibi schemas.
 
-use better_auth_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
-use better_auth_core::error::AuthResult;
-pub use better_auth_core::schema::AuthSchema;
-use better_auth_core::types::{
+use alibi_core::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
+use alibi_core::error::AuthResult;
+pub use alibi_core::schema::AuthSchema;
+use alibi_core::types::{
     CreateAccount, CreateSession, CreateUser, CreateVerification, UpdateAccount, UpdateUser,
 };
 use chrono::{DateTime, Utc};
@@ -21,13 +21,13 @@ pub trait SeaOrmUserModel:
     ///
     /// Returns an error if configured additional fields cannot be bound to entity columns.
     fn additional_field_bindings(
-        fields: &better_auth_core::field_policy::FieldValues,
+        fields: &alibi_core::field_policy::FieldValues,
         _backend: sea_orm::DbBackend,
     ) -> AuthResult<Vec<(Self::Column, Value)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the user schema has no additional field bindings",
         ))
     }
@@ -42,7 +42,7 @@ pub trait SeaOrmUserModel:
         _value: Value,
         _backend: sea_orm::DbBackend,
     ) -> AuthResult<()> {
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the user schema cannot stage additional fields",
         ))
     }
@@ -123,7 +123,7 @@ pub trait SeaOrmSessionModel:
     /// Materialize the application model without a database insert.
     /// Custom schemas opt in to secondary-only sessions by implementing this binding.
     fn materialize_secondary(_active: Self::ActiveModel) -> AuthResult<Self> {
-        Err(better_auth_core::AuthError::NotImplemented(
+        Err(alibi_core::AuthError::NotImplemented(
             "Secondary session materialization is unsupported".into(),
         ))
     }
@@ -134,13 +134,13 @@ pub trait SeaOrmSessionModel:
     ///
     /// Returns an error if configured additional fields cannot be bound to entity columns.
     fn additional_field_bindings(
-        fields: &better_auth_core::field_policy::FieldValues,
+        fields: &alibi_core::field_policy::FieldValues,
         _backend: sea_orm::DbBackend,
     ) -> AuthResult<Vec<(Self::Column, Value)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the session schema has no additional field bindings",
         ))
     }
@@ -155,7 +155,7 @@ pub trait SeaOrmSessionModel:
         _value: Value,
         _backend: sea_orm::DbBackend,
     ) -> AuthResult<()> {
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the session schema cannot stage additional fields",
         ))
     }
@@ -216,7 +216,7 @@ pub trait SeaOrmSessionModel:
         team_id: Option<String>,
     ) -> AuthResult<()> {
         drop((active, team_id));
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the session schema has no active-team field",
         ))
     }
@@ -231,13 +231,13 @@ pub trait SeaOrmAccountModel:
     ///
     /// Returns an error if configured additional fields cannot be bound to entity columns.
     fn additional_field_bindings(
-        fields: &better_auth_core::field_policy::FieldValues,
+        fields: &alibi_core::field_policy::FieldValues,
         _backend: sea_orm::DbBackend,
     ) -> AuthResult<Vec<(Self::Column, Value)>> {
         if fields.is_empty() {
             return Ok(Vec::new());
         }
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the account schema has no additional field bindings",
         ))
     }
@@ -252,7 +252,7 @@ pub trait SeaOrmAccountModel:
         _value: Value,
         _backend: sea_orm::DbBackend,
     ) -> AuthResult<()> {
-        Err(better_auth_core::AuthError::internal(
+        Err(alibi_core::AuthError::internal(
             "the account schema cannot stage additional fields",
         ))
     }
@@ -340,7 +340,7 @@ pub trait SeaOrmVerificationModel:
             *byte = source;
         }
         Self::parse_id(&uuid::Uuid::from_bytes(bytes).to_string()).map_err(|_error| {
-            better_auth_core::AuthError::internal(
+            alibi_core::AuthError::internal(
                 "the verification schema cannot represent deterministic reservation IDs",
             )
         })

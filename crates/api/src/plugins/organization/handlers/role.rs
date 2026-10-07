@@ -3,12 +3,12 @@ use super::extension_common::{
     cached_has_permissions, org_error, organization_roles, role_has_permissions,
 };
 use super::validation;
-use better_auth_core::entity::AuthUser;
-use better_auth_core::types::{
+use alibi_core::entity::AuthUser;
+use alibi_core::types::{
     CreateOrganizationRole, OrganizationPermissions, OrganizationRole, OrganizationRoleSelector,
     UpdateOrganizationRole,
 };
-use better_auth_core::{
+use alibi_core::{
     AuthContext, AuthError, AuthRequest, AuthResponse, AuthResult, AuthSchema, HttpMethod,
 };
 struct RoleUpdates {
@@ -165,7 +165,7 @@ pub async fn handle_role_request<S: AuthSchema>(
 )]
 pub(in crate::plugins::organization) async fn role_core<
     S: AuthSchema,
-    R: better_auth_core::session::SessionRequest + Sync,
+    R: alibi_core::session::SessionRequest + Sync,
 >(
     method: &HttpMethod,
     path: &str,

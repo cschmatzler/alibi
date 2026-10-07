@@ -5,12 +5,12 @@ use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxUserModel};
 use crate::sql::Sql;
 use crate::value::{ColumnKind, SqlValue};
+use alibi_core::AuthUser;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::adapter::cancelled_by_hook;
+use alibi_core::store::{NumericTextInput, UserStore};
+use alibi_core::types::{CreateUser, ListUsersParams, UpdateUser};
 use async_trait::async_trait;
-use better_auth_core::AuthUser;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::adapter::cancelled_by_hook;
-use better_auth_core::store::{NumericTextInput, UserStore};
-use better_auth_core::types::{CreateUser, ListUsersParams, UpdateUser};
 use chrono::Utc;
 
 /// Row lock applied to a user lookup inside a transaction.
@@ -64,7 +64,7 @@ pub(super) async fn provider_verification_output<M: SqlxUserModel>(
     exec.fetch_scalar::<String>(sql)
         .await?
         .map(|value| {
-            better_auth_core::utils::json::from_slice(value.as_bytes())
+            alibi_core::utils::json::from_slice(value.as_bytes())
                 .map_err(|error| AuthError::internal(error.to_string()))
         })
         .transpose()
@@ -91,7 +91,7 @@ fn stage_provider_verification<M: SqlxUserModel>(
         serde_json::Value::Number(value) => {
             if engine == crate::pool::Engine::Postgres {
                 SqlValue::Text(Some(
-                    better_auth_core::utils::json::number_to_string(&value)
+                    alibi_core::utils::json::number_to_string(&value)
                         .map_err(|error| AuthError::internal(error.to_string()))?,
                 ))
             } else if let Some(value) = value.as_i64() {
@@ -133,9 +133,8 @@ async fn stage_provider_text<M: SqlxUserModel>(
         .ok_or_else(|| {
             AuthError::internal("The user model does not expose its provider text column")
         })?;
-        let value = crate::additional_fields::raw_value(
-            &better_auth_core::utils::json::JsValue::from(raw),
-        )?;
+        let value =
+            crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(raw))?;
         let value =
             crate::additional_fields::prepare_value(exec, M::column_kind(column), value).await?;
         active.set(column, value);
@@ -153,7 +152,7 @@ where
         exec: Exec<'_>,
         tx: Option<&SqlxTransaction>,
         mut create_user: CreateUser,
-        defaults: better_auth_core::store::UserCreationDefaults,
+        defaults: alibi_core::store::UserCreationDefaults,
     ) -> AuthResult<S::User> {
         let hook_context = self.hook_context(tx);
         for hook in self.hooks() {
@@ -214,7 +213,7 @@ where
             Exec::Tx(tx),
             Some(tx),
             create_user,
-            better_auth_core::store::UserCreationDefaults::default(),
+            alibi_core::store::UserCreationDefaults::default(),
         )
         .await
     }
@@ -222,7 +221,7 @@ where
     pub(crate) async fn create_user_prepared_in_tx(
         &self,
         tx: &SqlxTransaction,
-        prepared: better_auth_core::user_validation::PreparedUserCreation,
+        prepared: alibi_core::user_validation::PreparedUserCreation,
     ) -> AuthResult<S::User> {
         let (data, defaults) = prepared.into_parts();
         self.create_user_with_connection(Exec::Tx(tx), Some(tx), data, defaults)
@@ -257,14 +256,14 @@ where
             self.exec(),
             None,
             create_user,
-            better_auth_core::store::UserCreationDefaults::default(),
+            alibi_core::store::UserCreationDefaults::default(),
         )
         .await
     }
 
     async fn create_user_prepared(
         &self,
-        prepared: better_auth_core::user_validation::PreparedUserCreation,
+        prepared: alibi_core::user_validation::PreparedUserCreation,
     ) -> AuthResult<S::User> {
         let (data, defaults) = prepared.into_parts();
         self.create_user_with_connection(self.exec(), None, data, defaults)
@@ -357,7 +356,7 @@ where
             if hook
                 .before_update_user(id, &mut update, &hook_context)
                 .await
-                .map_err(better_auth_core::store::adapter::callback_error)?
+                .map_err(alibi_core::store::adapter::callback_error)?
                 .is_cancelled()
             {
                 return Err(cancelled_by_hook("user update"));
@@ -402,7 +401,7 @@ where
         for hook in self.hooks() {
             hook.after_update_user(&user, &hook_context)
                 .await
-                .map_err(better_auth_core::store::adapter::callback_error)?;
+                .map_err(alibi_core::store::adapter::callback_error)?;
         }
         Ok(user)
     }
@@ -462,7 +461,7 @@ where
     }
 
     async fn list_users(&self, mut params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
-        use better_auth_core::UserFilterValue;
+        use alibi_core::UserFilterValue;
         let table = <S::User as SqlxModel>::TABLE;
         let mut sql = model::select_model::<S::User>(self.exec());
         if let Some(value) = &params.filter_value {
@@ -627,9 +626,9 @@ where
         let models = self.exec().fetch_all(sql).await?;
 
         Ok(if presorted {
-            better_auth_core::user_query::apply_list_users_presorted(models, &params)
+            alibi_core::user_query::apply_list_users_presorted(models, &params)
         } else {
-            better_auth_core::user_query::apply_list_users(models, &params)
+            alibi_core::user_query::apply_list_users(models, &params)
         })
     }
 }
@@ -645,8 +644,8 @@ fn numeric_filter_text(values: &[String]) -> Vec<String> {
     let numbers = values
         .iter()
         .map(|value| {
-            (!better_auth_core::utils::javascript::trim(value).is_empty())
-                .then(|| better_auth_core::utils::javascript::string_to_number(value))
+            (!alibi_core::utils::javascript::trim(value).is_empty())
+                .then(|| alibi_core::utils::javascript::string_to_number(value))
                 .flatten()
                 .filter(|number| !number.is_nan())
         })

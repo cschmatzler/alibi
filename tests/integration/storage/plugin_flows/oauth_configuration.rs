@@ -1,11 +1,11 @@
 //! Operator configuration is checked at resolution; account authority at callback.
 use super::*;
-use async_trait::async_trait;
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::{
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::{
     GenericOAuthConfig, GenericOAuthError, OAuthAccountKey, OAuthAccountKeyContext,
     OAuthAccountKeyResolver, OAuthProfileMapper, OAuthTokenEndpointAuth,
 };
+use async_trait::async_trait;
 
 backend_tests!(generic_oauth_fallback_mapping_and_account_authority);
 postgres_tests!(generic_oauth_fallback_mapping_and_account_authority);
@@ -13,13 +13,13 @@ postgres_tests!(generic_oauth_fallback_mapping_and_account_authority);
 struct Mapper;
 struct RawProfile(Arc<std::sync::atomic::AtomicU8>);
 #[async_trait]
-impl better_auth::plugins::oauth::OAuthUserInfoHandler for RawProfile {
+impl alibi::plugins::oauth::OAuthUserInfoHandler for RawProfile {
     async fn get_user_info(
         &self,
-        _: better_auth::plugins::oauth::OAuthUserInfoRequest,
-    ) -> Result<better_auth::plugins::oauth::OAuthUserInfoResponse, String> {
-        Ok(better_auth::plugins::oauth::OAuthUserInfoResponse {
-            user: better_auth::plugins::oauth::OAuthUserInfo {
+        _: alibi::plugins::oauth::OAuthUserInfoRequest,
+    ) -> Result<alibi::plugins::oauth::OAuthUserInfoResponse, String> {
+        Ok(alibi::plugins::oauth::OAuthUserInfoResponse {
+            user: alibi::plugins::oauth::OAuthUserInfo {
                 id: "raw-oauth-id".into(),
                 email: "mapping@example.test".into(),
                 name: Some("Initial".into()),
@@ -63,7 +63,7 @@ impl OAuthProfileMapper for Mapper {
     async fn map_profile(
         &self,
         profile: Value,
-    ) -> Result<better_auth_core::field_policy::FieldOutput, String> {
+    ) -> Result<alibi_core::field_policy::FieldOutput, String> {
         assert_eq!(profile["id"], "raw-oauth-id");
         Ok([
             ("id".into(), json!("foreign-presentation-id")),

@@ -1,10 +1,10 @@
 use super::entities::device_code::{ActiveModel, Column, Entity};
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::AuthSchema;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::DeviceCodeStore;
+use alibi_core::types::{CreateDeviceCode, DeviceCode, UpdateDeviceCode};
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::DeviceCodeStore;
-use better_auth_core::types::{CreateDeviceCode, DeviceCode, UpdateDeviceCode};
 use sea_orm::sea_query::Expr;
 use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, QueryFilter, Set};
 use uuid::Uuid;

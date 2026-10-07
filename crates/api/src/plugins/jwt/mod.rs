@@ -34,13 +34,13 @@ mod verification;
 mod crypto;
 mod endpoint;
 use super::token_crypto::{decrypt_with_config, encrypt_with_config};
-use async_trait::async_trait;
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth_core::wire::{SessionView, UserView};
-use better_auth_core::{
+use alibi_core::wire::{SessionView, UserView};
+use alibi_core::{
     AuthContext, AuthError, AuthInitContext, AuthPlugin, AuthRequest, AuthResponse, AuthResult,
     AuthRoute, AuthSchema, CreateJwk, HttpMethod, Jwk,
 };
+use async_trait::async_trait;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
 pub use endpoint::{JwtTokenOutput, JwtVerifyOutput};
 use serde::{Deserialize, Serialize};
@@ -96,20 +96,20 @@ impl JwtPlugin {
 
 #[async_trait]
 impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
-    fn static_openapi_metadata(&self) -> better_auth_core::PluginOpenApiMetadata {
+    fn static_openapi_metadata(&self) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
         )
     }
 
     fn openapi_metadata(
         &self,
-        ctx: &better_auth_core::AuthInitContext<S>,
-    ) -> better_auth_core::PluginOpenApiMetadata {
+        ctx: &alibi_core::AuthInitContext<S>,
+    ) -> alibi_core::PluginOpenApiMetadata {
         crate::metadata::instance_plugin_metadata(
-            <Self as better_auth_core::AuthPlugin<S>>::name(self),
-            &<Self as better_auth_core::AuthPlugin<S>>::routes(self),
+            <Self as alibi_core::AuthPlugin<S>>::name(self),
+            &<Self as alibi_core::AuthPlugin<S>>::routes(self),
             ctx,
         )
     }
@@ -123,23 +123,23 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
             AuthRoute::get("/token", "get_token"),
         ]
     }
-    fn server_endpoints(&self) -> Vec<better_auth_core::endpoint::EndpointDefinition> {
+    fn server_endpoints(&self) -> Vec<alibi_core::endpoint::EndpointDefinition> {
         endpoint::definitions(&self.config.jwks_path)
     }
 
     fn validate_endpoint(
         &self,
-        call: &better_auth_core::endpoint::EndpointCall,
+        call: &alibi_core::endpoint::EndpointCall,
         _ctx: &AuthContext<S>,
-    ) -> AuthResult<better_auth_core::endpoint::EndpointInput> {
+    ) -> AuthResult<alibi_core::endpoint::EndpointInput> {
         endpoint::validate(call)
     }
 
     async fn on_endpoint(
         &self,
-        call: &better_auth_core::endpoint::EndpointCall,
+        call: &alibi_core::endpoint::EndpointCall,
         ctx: &AuthContext<S>,
-    ) -> AuthResult<better_auth_core::endpoint::EndpointResponse> {
+    ) -> AuthResult<alibi_core::endpoint::EndpointResponse> {
         self.call_endpoint(call, ctx).await
     }
 
@@ -163,7 +163,7 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
                 .session
                 .cookie_cache
                 .as_ref()
-                .is_none_or(|cache| cache.strategy != better_auth_core::CookieCacheStrategy::Jwt)
+                .is_none_or(|cache| cache.strategy != alibi_core::CookieCacheStrategy::Jwt)
             {
                 return Err(AuthError::config(
                     "Managed JWT session caching requires the JWT cookie-cache strategy",
@@ -175,9 +175,9 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
                 ));
             }
             ctx.extensions.insert(
-                better_auth_core::session::cookie_cache::jwt::CookieCacheSignerHandle::<S>(
-                    Arc::new(self.clone()),
-                ),
+                alibi_core::session::cookie_cache::jwt::CookieCacheSignerHandle::<S>(Arc::new(
+                    self.clone(),
+                )),
             );
         }
         Ok(())
@@ -210,8 +210,7 @@ impl<S: AuthSchema> AuthPlugin<S> for JwtPlugin {
         let Some((user, session)) = req.session_hook_snapshot() else {
             return Ok(response);
         };
-        let cache =
-            better_auth_core::session::cookie_cache::runtime::session_hook_cache_metadata(req);
+        let cache = alibi_core::session::cookie_cache::runtime::session_hook_cache_metadata(req);
         let token = self
             .sign_session_token(
                 Some(req),
@@ -274,15 +273,13 @@ const fn unauthorized() -> AuthError {
 }
 
 #[async_trait]
-impl<S: AuthSchema> better_auth_core::session::cookie_cache::jwt::CookieCacheSigner<S>
-    for JwtPlugin
-{
+impl<S: AuthSchema> alibi_core::session::cookie_cache::jwt::CookieCacheSigner<S> for JwtPlugin {
     async fn sign(
         &self,
         payload: Value,
         max_age: f64,
         ctx: &AuthContext<S>,
-        transaction: Option<&dyn better_auth_core::store::AuthTransaction<S>>,
+        transaction: Option<&dyn alibi_core::store::AuthTransaction<S>>,
     ) -> AuthResult<String> {
         let key = self
             .resolve_signing_key_in_transaction(&JwtSignOptions::default(), None, ctx, transaction)
@@ -292,8 +289,7 @@ impl<S: AuthSchema> better_auth_core::session::cookie_cache::jwt::CookieCacheSig
                     "Managed JWT session caching requires locally managed signing keys",
                 )
             })?;
-        let mut payload =
-            better_auth_core::session::cookie_cache::jwt::time_claims(payload, max_age)?;
+        let mut payload = alibi_core::session::cookie_cache::jwt::time_claims(payload, max_age)?;
         let claims = payload
             .as_object_mut()
             .ok_or_else(|| AuthError::internal("Invalid session cache payload"))?;
@@ -378,10 +374,9 @@ mod tests {
     use super::*;
     use crate::plugins::test_helpers;
     use crate::plugins::token_crypto::{decrypt, encrypt};
-    use better_auth_core::CreateUser;
+    use alibi_core::CreateUser;
 
-    type TestSchema =
-        better_auth_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
+    type TestSchema = alibi_seaorm::store::__private_test_support::bundled_schema::BundledSchema;
 
     struct ApplicationClaims;
 
@@ -407,7 +402,7 @@ mod tests {
     }
 
     struct ApplicationKeyring {
-        database: Arc<dyn better_auth_core::AuthStore<TestSchema>>,
+        database: Arc<dyn alibi_core::AuthStore<TestSchema>>,
     }
 
     #[async_trait]
@@ -513,11 +508,11 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_key_pinning_is_independent_of_the_public_keyring_limit() {
-        use better_auth_seaorm::{Database, SeaOrmStore};
+        use alibi_seaorm::{Database, SeaOrmStore};
         let mut config = test_helpers::create_test_config();
         config.advanced.database.default_find_many_limit = 1;
         let database = Database::connect("sqlite::memory:").await.unwrap();
-        better_auth_seaorm::store::__private_test_support::migrator::run_migrations(&database)
+        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&database)
             .await
             .unwrap();
         let ctx = AuthContext::<TestSchema>::new(
@@ -1200,15 +1195,12 @@ mod tests {
         ));
         request.headers.insert(
             "cookie".to_owned(),
-            better_auth_core::utils::cookie_utils::create_session_cookie(
-                &session.token,
-                &ctx.config,
-            )
-            .unwrap()
-            .split(';')
-            .next()
-            .unwrap()
-            .to_owned(),
+            alibi_core::utils::cookie_utils::create_session_cookie(&session.token, &ctx.config)
+                .unwrap()
+                .split(';')
+                .next()
+                .unwrap()
+                .to_owned(),
         );
         let token = plugin.session_token(&request, &ctx).await.unwrap();
         let claims = plugin
@@ -1414,7 +1406,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(fixture["referenceVersion"], "better-auth@1.7.7");
-        let config = better_auth_core::AuthConfig::new(fixture["secret"].as_str().unwrap())
+        let config = alibi_core::AuthConfig::new(fixture["secret"].as_str().unwrap())
             .base_url(fixture["origin"].as_str().unwrap());
         let ctx = test_helpers::create_test_context_with_config(config.clone()).await;
         let key = &fixture["key"];
@@ -2149,7 +2141,7 @@ mod tests {
     async fn raw_json_signing_normalizes_application_numbers_and_preserves_literal_keys() {
         let ctx = test_helpers::create_test_context().await;
         let plugin = JwtPlugin::new();
-        let payload = better_auth_core::utils::json::parse_value(
+        let payload = alibi_core::utils::json::parse_value(
         r#"{"sub":"9007199254740993","exp":4102444800,"rounded":9007199254740993,"overflow":1e400,"nested":[-0.0,-1e400],"literal":{"$serde_json::private::Number":"1e400","$serde_json::private::RawValue":"hello"}}"#,
     ).unwrap();
         let token = plugin
@@ -2176,7 +2168,7 @@ mod tests {
 
         // A literal private serde marker as the first and only key must survive
         // managed verification even when SQLx enables serde_json raw_value.
-        let literal = better_auth_core::utils::json::parse_value(
+        let literal = alibi_core::utils::json::parse_value(
         r#"{"sub":"literal-key-owner","exp":4102444800,"singleton":{"$serde_json::private::RawValue":"hello"}}"#,
     )
     .unwrap();
@@ -2247,7 +2239,7 @@ mod tests {
             ("iss", "1e400"),
         ] {
             let input = format!("{{\"exp\":4102444800,\"{field}\":{literal}}}");
-            let payload = better_auth_core::utils::json::parse_value(&input).unwrap();
+            let payload = alibi_core::utils::json::parse_value(&input).unwrap();
             assert!(
                 plugin
                     .sign_jwt_json(&payload, &JwtSignOptions::default(), None, &ctx)
@@ -2257,7 +2249,7 @@ mod tests {
             );
             assert_eq!(ctx.database.list_jwks().await.unwrap().len(), 1);
         }
-        let payload = better_auth_core::utils::json::parse_value(
+        let payload = alibi_core::utils::json::parse_value(
             r#"{"exp":4102444800,"sub":0,"jti":false,"iat":null,"nbf":false}"#,
         )
         .unwrap();

@@ -6,11 +6,11 @@ use crate::model::{self, ActiveRow, SqlxModel};
 use crate::pool::Exec;
 use crate::schema::{AuthSchema, SqlxSessionModel, SqlxUserModel};
 use crate::sql::Sql;
+use alibi_core::entity::AuthUser;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::InvitationStore;
+use alibi_core::{CreateInvitation, Invitation, InvitationStatus};
 use async_trait::async_trait;
-use better_auth_core::entity::AuthUser;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::InvitationStore;
-use better_auth_core::{CreateInvitation, Invitation, InvitationStatus};
 use chrono::Utc;
 
 impl<S: AuthSchema> SqlxStore<S> {
@@ -45,14 +45,14 @@ where
     async fn create_invitation(&self, invitation: CreateInvitation) -> AuthResult<Invitation> {
         self.create_invitation_with_options(
             invitation,
-            better_auth_core::store::InvitationCreateOptions::default(),
+            alibi_core::store::InvitationCreateOptions::default(),
         )
         .await
     }
     async fn create_invitation_with_options(
         &self,
         invitation: CreateInvitation,
-        options: better_auth_core::store::InvitationCreateOptions,
+        options: alibi_core::store::InvitationCreateOptions,
     ) -> AuthResult<Invitation> {
         let mut active = ActiveRow::new();
         active.set(
@@ -113,7 +113,7 @@ where
         session_token: &str,
         team_limits: &[(String, Option<f64>)],
         membership_limit: Option<usize>,
-    ) -> AuthResult<Option<(Invitation, better_auth_core::types::Member)>> {
+    ) -> AuthResult<Option<(Invitation, alibi_core::types::Member)>> {
         let transaction = self.pool().begin(true).await?;
         let outcome = async {
             let tx = &transaction;
@@ -169,7 +169,7 @@ where
                 .fetch_optional::<S::Session>(session)
                 .await?
                 .ok_or(AuthError::SessionNotFound)?;
-            if better_auth_core::AuthSession::expires_at(&session) < Utc::now() {
+            if alibi_core::AuthSession::expires_at(&session) < Utc::now() {
                 return Err(AuthError::SessionNotFound);
             }
             let mut owner = self
@@ -231,7 +231,7 @@ where
                 if matches!(
                     self.add_team_member_in_tx(tx, team_id, user_id, maximum)
                         .await?,
-                    better_auth_core::types::AddTeamMemberResult::LimitReached
+                    alibi_core::types::AddTeamMemberResult::LimitReached
                 ) {
                     return Err(AuthError::Upstream {
                         status: 403,
@@ -295,7 +295,7 @@ where
             invitation.status = InvitationStatus::Accepted;
             Ok(Some((
                 invitation,
-                better_auth_core::types::Member::from(&created),
+                alibi_core::types::Member::from(&created),
             )))
         }
         .await;

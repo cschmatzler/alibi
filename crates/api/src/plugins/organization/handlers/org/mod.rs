@@ -9,14 +9,14 @@ use crate::plugins::organization::types::{
     NullableStringField, OrganizationResponse, SetActiveOrganizationRequest,
     UpdateOrganizationRequest,
 };
-use better_auth_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::plugin::AuthContext;
-use better_auth_core::store::MemberPageQuery;
-use better_auth_core::types::{
+use alibi_core::entity::{AuthMember, AuthOrganization, AuthSession, AuthUser};
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::plugin::AuthContext;
+use alibi_core::store::MemberPageQuery;
+use alibi_core::types::{
     AuthRequest, AuthResponse, CreateMember, CreateOrganization, UpdateOrganization,
 };
-use better_auth_core::wire::{InvitationView, SessionView};
+use alibi_core::wire::{InvitationView, SessionView};
 use std::collections::HashMap;
 
 fn has_role(member: &impl AuthMember, role: &str) -> bool {
@@ -44,7 +44,7 @@ pub(in crate::plugins) async fn create_organization_core(
     request: Option<&AuthRequest>,
     session: Option<&SessionView>,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<CreateOrganizationResponse<CreatedOrganizationResponse, BasicMemberResponse>> {
     let callback_user = ctx.user_view(user);
     let allowed = match &config.creation_policy {
@@ -146,7 +146,7 @@ pub(in crate::plugins) async fn create_organization_core(
     }
     let member_response = BasicMemberResponse::from_member(&member);
     let default_team_id = if config.teams.enabled && config.teams.create_default_team {
-        let mut data = better_auth_core::types::CreateTeam {
+        let mut data = alibi_core::types::CreateTeam {
             name: organization.name().to_owned(),
             organization_id: organization.id().into_owned(),
             updated_at: None,
@@ -213,7 +213,7 @@ pub(in crate::plugins) async fn activate_created_organization(
     response: &CreateOrganizationResponse<CreatedOrganizationResponse, BasicMemberResponse>,
     user: &impl AuthUser,
     token: &str,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<()> {
     let mut updated = ctx
         .database
@@ -225,7 +225,7 @@ pub(in crate::plugins) async fn activate_created_organization(
             .update_session_active_team_record(token, Some(team_id))
             .await?;
     }
-    better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated).await?;
+    alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated).await?;
     Ok(())
 }
 
@@ -234,11 +234,11 @@ pub(in crate::plugins) async fn activate_created_organization(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn update_organization_core(
     body: &UpdateOrganizationRequest,
-    raw_metadata: Option<indexmap::IndexMap<String, better_auth_core::utils::json::JsValue>>,
+    raw_metadata: Option<indexmap::IndexMap<String, alibi_core::utils::json::JsValue>>,
     user: &impl AuthUser,
     session: &impl AuthSession,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Option<CreatedOrganizationResponse>> {
     let org_id = body
         .organization_id
@@ -341,7 +341,7 @@ pub(in crate::plugins) async fn delete_organization_core(
     session: &impl AuthSession,
     invocation: crate::plugins::organization::hooks::organization::DeleteInvocation<'_>,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Option<OrganizationResponse>> {
     if config.disable_organization_deletion {
         return Err(super::extension_common::org_error(
@@ -429,7 +429,7 @@ pub(in crate::plugins) async fn delete_organization_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn list_organizations_core(
     user: &impl AuthUser,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Vec<OrganizationResponse>> {
     let organizations = ctx.database.list_user_organizations(&user.id()).await?;
     let responses = organizations
@@ -452,7 +452,7 @@ pub(in crate::plugins) async fn get_full_organization_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> Result<
     Option<FullOrganizationResponse<OrganizationResponse, InvitationView>>,
     OrganizationPageError,
@@ -560,7 +560,7 @@ pub(in crate::plugins) async fn get_full_organization_core(
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins) async fn check_slug_core(
     body: &CheckSlugRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<CheckSlugResponse> {
     if ctx
         .database
@@ -581,7 +581,7 @@ pub(in crate::plugins) async fn set_active_organization_core(
     body: &SetActiveOrganizationRequest,
     user: &impl AuthUser,
     session: &impl AuthSession,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<Option<OrganizationResponse>> {
     if matches!(body.organization_id, NullableStringField::Null) {
         if session
@@ -596,8 +596,7 @@ pub(in crate::plugins) async fn set_active_organization_core(
             .database
             .update_session_active_organization_record(session.token(), None)
             .await?;
-        better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated)
-            .await?;
+        alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated).await?;
         return Ok(None);
     }
 
@@ -657,7 +656,7 @@ pub(in crate::plugins) async fn set_active_organization_core(
             Some(organization.id().as_ref()),
         )
         .await?;
-    better_auth_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated).await?;
+    alibi_core::session::cookie_cache::runtime::emit_issuance(ctx, user, &updated).await?;
 
     Ok(Some(OrganizationResponse::from_stored_organization(
         &organization,
@@ -672,7 +671,7 @@ pub(in crate::plugins) async fn leave_organization_core(
     user: &impl AuthUser,
     session: &impl AuthSession,
     config: &OrganizationConfig,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<MemberResponse> {
     let member = ctx
         .database
@@ -722,7 +721,7 @@ pub(in crate::plugins) async fn leave_organization_core(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_create_organization(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let body = match super::org_input::create(req) {
@@ -751,7 +750,7 @@ pub async fn handle_create_organization(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_update_organization(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let (body, raw_metadata) = match super::org_input::update(req) {
@@ -786,7 +785,7 @@ pub async fn handle_update_organization(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_delete_organization(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let body = match super::org_input::delete(req) {
@@ -830,7 +829,7 @@ pub async fn handle_delete_organization(
 /// Returns an error when validation, storage, or an application callback fails.
 pub async fn handle_list_organizations(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let (user, _session) = super::extension_common::session(req, ctx).await?;
     let organizations = list_organizations_core(&user, ctx).await?;
@@ -844,14 +843,14 @@ pub async fn handle_list_organizations(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_get_organization(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let (user, session) = match require_session(req, ctx).await {
         Ok(session) => session,
         Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => {
             return Ok(AuthResponse::json(
                 401,
-                &better_auth_core::ErrorCodeMessageResponse {
+                &alibi_core::ErrorCodeMessageResponse {
                     code: Some("UNAUTHORIZED".into()),
                     message: "Unauthorized".into(),
                 },
@@ -906,7 +905,7 @@ pub async fn handle_get_organization(
 /// Returns an error when validation, storage, or an application callback fails.
 pub async fn handle_get_full_organization(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let (user, session) = super::extension_common::session(req, ctx).await?;
@@ -925,10 +924,10 @@ pub async fn handle_get_full_organization(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_check_slug(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     drop(super::extension_common::session(req, ctx).await?);
-    let body: CheckSlugRequest = match better_auth_core::validate_request_body(req) {
+    let body: CheckSlugRequest = match alibi_core::validate_request_body(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
@@ -943,7 +942,7 @@ pub async fn handle_check_slug(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_set_active_organization(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<AuthResponse> {
     let body = match super::org_input::set_active(req) {
         Ok(v) => v,
@@ -965,7 +964,7 @@ pub async fn handle_set_active_organization(
             .active_organization_id()
             .is_some_and(|id| !id.is_empty())
     {
-        use better_auth_core::utils::cookie_utils::{
+        use alibi_core::utils::cookie_utils::{
             create_session_cookie_with_max_age, create_session_like_cookie, related_cookie_name,
             sign_cookie_value, verify_cookie_value,
         };
@@ -1011,11 +1010,11 @@ pub async fn handle_set_active_organization(
 /// Returns errors from input validation, permission checks, storage, or configured organization hooks.
 pub async fn handle_leave_organization(
     req: &AuthRequest,
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &OrganizationConfig,
 ) -> AuthResult<AuthResponse> {
     let (user, session) = super::extension_common::session(req, ctx).await?;
-    let body: LeaveOrganizationRequest = match better_auth_core::validate_request_body(req) {
+    let body: LeaveOrganizationRequest = match alibi_core::validate_request_body(req) {
         Ok(v) => v,
         Err(resp) => return Ok(resp),
     };
@@ -1031,17 +1030,17 @@ fn parse_query<T: Default + serde::de::DeserializeOwned>(query: &HashMap<String,
 }
 
 fn organization_field_error(
-    error: better_auth_core::field_policy::FieldInputError,
-) -> better_auth_core::AuthError {
+    error: alibi_core::field_policy::FieldInputError,
+) -> alibi_core::AuthError {
     match error {
-        better_auth_core::field_policy::FieldInputError::Validation { code, message } => {
-            better_auth_core::AuthError::Api {
+        alibi_core::field_policy::FieldInputError::Validation { code, message } => {
+            alibi_core::AuthError::Api {
                 status: 400,
                 code: Some(code.to_owned()),
                 message,
             }
         }
-        better_auth_core::field_policy::FieldInputError::Transform(error) => error,
+        alibi_core::field_policy::FieldInputError::Transform(error) => error,
     }
 }
 
@@ -1057,7 +1056,7 @@ mod tests {
         create_auth_json_request_no_query, create_test_context, create_user,
         create_user_and_session,
     };
-    use better_auth_core::types::{CreateOrganization, CreateUser, HttpMethod};
+    use alibi_core::types::{CreateOrganization, CreateUser, HttpMethod};
     use chrono::Duration;
 
     fn test_config() -> OrganizationConfig {
@@ -1214,7 +1213,7 @@ mod tests {
             .await
             .expect("organization should be created");
         ctx.database
-            .create_member(better_auth_core::types::CreateMember {
+            .create_member(alibi_core::types::CreateMember {
                 organization_id: organization.id.clone(),
                 user_id: user.id.clone(),
                 role: config.creator_role.clone(),
@@ -1224,7 +1223,7 @@ mod tests {
 
         let extra_user = create_user(&ctx, test_user("member@example.com", "Member")).await;
         ctx.database
-            .create_member(better_auth_core::types::CreateMember {
+            .create_member(alibi_core::types::CreateMember {
                 organization_id: organization.id.clone(),
                 user_id: extra_user.id.clone(),
                 role: "member".to_owned(),

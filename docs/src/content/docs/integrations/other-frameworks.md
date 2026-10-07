@@ -18,8 +18,8 @@ The `http` types are what Hyper, Axum, Actix (via `actix-http`), Lambda and most
 ```rust
 use crate::auth_schema::AppAuthSchema;
 use axum::http::{HeaderName, HeaderValue, Method, Request, Response, StatusCode};
-use better_auth::BetterAuth;
-use better_auth::prelude::{AuthRequest, HttpMethod};
+use alibi::BetterAuth;
+use alibi::prelude::{AuthRequest, HttpMethod};
 use std::collections::HashMap;
 
 fn convert_method(method: &Method) -> Option<HttpMethod> {
@@ -116,8 +116,8 @@ Your host owns the dispatch future. If the client disconnects and your framework
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::prelude::{AuthRequest, AuthResponse};
+use alibi::BetterAuth;
+use alibi::prelude::{AuthRequest, AuthResponse};
 use std::sync::Arc;
 
 async fn dispatch_detached(
@@ -146,8 +146,8 @@ Without an adapter there are no extractors. Two options:
 
 ```rust
 use crate::auth_schema::AppAuthSchema;
-use better_auth::BetterAuth;
-use better_auth::prelude::{AuthRequest, HttpMethod};
+use alibi::BetterAuth;
+use alibi::prelude::{AuthRequest, HttpMethod};
 
 /// Returns the user id of the session identified by the request's headers, if any.
 async fn current_user_id(

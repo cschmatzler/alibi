@@ -1,10 +1,10 @@
 //! Imported application tables exercised through the native plugin and store.
 use super::*;
-use better_auth::prelude::{
+use alibi::prelude::{
     CreateInvitation, CreateMember, CreateOrganization, InvitationStatus, UpdateOrganization,
 };
-use better_auth::sqlx::{OrganizationModels, SqlxModel};
-use better_auth::store::{InvitationStore, MemberStore, OrganizationStore, SessionStore};
+use alibi::sqlx::{OrganizationModels, SqlxModel};
+use alibi::store::{InvitationStore, MemberStore, OrganizationStore, SessionStore};
 use serde_json::{Value, json};
 
 #[derive(Clone, Debug, sqlx::FromRow, SqlxModel)]
@@ -115,13 +115,13 @@ async fn exercise(db: Db) -> TestResult {
     let config = AuthConfig::new("application-organization-secret-at-least-32")
         .base_url("http://mapped.fixture.test");
     let connection = super::super::Sqlx::connect(&db.url, Some(1)).await?;
-    let bundled = better_auth::sqlx::SqlxStore::<Schema>::new(config.clone(), connection.clone());
+    let bundled = alibi::sqlx::SqlxStore::<Schema>::new(config.clone(), connection.clone());
     let unsupported = bundled
         .get_organization_by_id("evt_00000000000000000000000001")
         .await
         .unwrap_err();
     assert!(unsupported.to_string().contains("organization"));
-    let store = better_auth::sqlx::SqlxStore::<Schema>::new(config.clone(), connection)
+    let store = alibi::sqlx::SqlxStore::<Schema>::new(config.clone(), connection)
         .with_organization_models(OrganizationModels::new::<Event, Membership, Invite>(
             event_id,
             member_id,
@@ -288,7 +288,7 @@ async fn exercise(db: Db) -> TestResult {
     let nullable = store.get_invitation_by_id(&invitation.id).await?.unwrap();
     assert_eq!(nullable.role, None);
     assert_eq!(
-        serde_json::to_value(better_auth::wire::InvitationView::from(&nullable))?["role"],
+        serde_json::to_value(alibi::wire::InvitationView::from(&nullable))?["role"],
         Value::Null
     );
     assert_eq!(
@@ -304,15 +304,15 @@ async fn exercise(db: Db) -> TestResult {
         None
     );
 
-    let mut fields = better_auth::field_policy::SessionFields::default();
-    let mut language_field = better_auth::field_policy::FieldConfig::new(json!({"type":"string"}));
+    let mut fields = alibi::field_policy::SessionFields::default();
+    let mut language_field = alibi::field_policy::FieldConfig::new(json!({"type":"string"}));
     language_field.required = true;
     _ = fields.0.insert("language".into(), language_field);
     let callbacks = std::sync::Arc::new(AppCallbacks::default());
-    let auth = better_auth::AuthBuilder::new(config.clone())
+    let auth = alibi::AuthBuilder::new(config.clone())
         .store(store.clone())
-        .plugin(better_auth::plugins::OrganizationPlugin::with_config(
-            better_auth::plugins::organization::OrganizationConfig {
+        .plugin(alibi::plugins::OrganizationPlugin::with_config(
+            alibi::plugins::organization::OrganizationConfig {
                 organization_fields: fields,
                 creation_policy: Some(callbacks.clone()),
                 creation_hooks: Some(callbacks.clone()),
@@ -323,10 +323,9 @@ async fn exercise(db: Db) -> TestResult {
         ))
         .build()
         .await?;
-    let cookie =
-        better_auth::utils::cookie_utils::create_session_cookie(owner_session.token(), &config)?;
+    let cookie = alibi::utils::cookie_utils::create_session_cookie(owner_session.token(), &config)?;
     let guest_cookie =
-        better_auth::utils::cookie_utils::create_session_cookie(guest_session.token(), &config)?;
+        alibi::utils::cookie_utils::create_session_cookie(guest_session.token(), &config)?;
     let (denied, _) = post(
         &auth,
         "/organization/create",
@@ -467,18 +466,18 @@ async fn exercise(db: Db) -> TestResult {
 
 /// Typed native create and update keep configured fields and drop unknown ones.
 async fn typed_organization_calls(
-    auth: &better_auth::BetterAuth<Schema>,
+    auth: &alibi::BetterAuth<Schema>,
     cookie: &str,
 ) -> TestResult<String> {
-    use better_auth::plugins::organization::types::{
+    use alibi::plugins::organization::types::{
         CreateOrganizationRequest, UpdateOrganizationData, UpdateOrganizationRequest,
     };
-    let credentials = || better_auth_core::endpoint::EndpointOptions {
+    let credentials = || alibi_core::endpoint::EndpointOptions {
         headers: Some([("cookie".into(), cookie.into())].into()),
         ..Default::default()
     };
     let created = Box::pin(auth.dispatch_endpoint(
-        better_auth::plugins::OrganizationPlugin::create_endpoint(
+        alibi::plugins::OrganizationPlugin::create_endpoint(
             &CreateOrganizationRequest {
                 additional_fields: serde_json::from_value(
                     json!({"language":"nl", "billing_key":"forged"}),
@@ -498,7 +497,7 @@ async fn typed_organization_calls(
     assert_eq!(created.organization.additional_fields["language"], "nl");
     let id = created.organization.id;
     let updated = Box::pin(auth.dispatch_endpoint(
-        better_auth::plugins::OrganizationPlugin::update_endpoint(&UpdateOrganizationRequest {
+        alibi::plugins::OrganizationPlugin::update_endpoint(&UpdateOrganizationRequest {
             organization_id: Some(id.clone()),
             data: UpdateOrganizationData {
                 additional_fields: serde_json::from_value(json!({"language":"it"}))?,
@@ -518,13 +517,12 @@ async fn typed_organization_calls(
 }
 
 async fn post(
-    auth: &better_auth::BetterAuth<Schema>,
+    auth: &alibi::BetterAuth<Schema>,
     path: &str,
     body: Value,
     cookie: &str,
 ) -> TestResult<(u16, Value)> {
-    let mut request =
-        better_auth::prelude::AuthRequest::new(better_auth::prelude::HttpMethod::Post, path);
+    let mut request = alibi::prelude::AuthRequest::new(alibi::prelude::HttpMethod::Post, path);
     _ = request
         .headers
         .insert("content-type".into(), "application/json".into());
@@ -551,7 +549,7 @@ fn session_input(user_id: String) -> CreateSession {
     }
 }
 
-use better_auth::plugins::organization::{
+use alibi::plugins::organization::{
     OrganizationCreatedContext, OrganizationCreationHooks, OrganizationCreationPolicy,
     OrganizationDeleteContext, OrganizationDeletionHooks, OrganizationInvitationDelivery,
     OrganizationInvitationEmailSender,
@@ -564,8 +562,8 @@ struct AppCallbacks {
 impl OrganizationCreationPolicy for AppCallbacks {
     async fn allow_creation(
         &self,
-        user: &better_auth::wire::UserView,
-    ) -> better_auth::AuthResult<Option<bool>> {
+        user: &alibi::wire::UserView,
+    ) -> alibi::AuthResult<Option<bool>> {
         Ok(Some(
             user.email.as_deref() != Some("guest@mapped.fixture.test"),
         ))
@@ -573,10 +571,7 @@ impl OrganizationCreationPolicy for AppCallbacks {
 }
 #[async_trait::async_trait]
 impl OrganizationCreationHooks for AppCallbacks {
-    async fn after_create(
-        &self,
-        context: &OrganizationCreatedContext,
-    ) -> better_auth::AuthResult<()> {
+    async fn after_create(&self, context: &OrganizationCreatedContext) -> alibi::AuthResult<()> {
         self.receipts.lock().unwrap().push(format!(
             "billing:{}",
             context.organization.additional_fields["language"]
@@ -588,10 +583,7 @@ impl OrganizationCreationHooks for AppCallbacks {
 }
 #[async_trait::async_trait]
 impl OrganizationDeletionHooks for AppCallbacks {
-    async fn after_delete(
-        &self,
-        context: &OrganizationDeleteContext,
-    ) -> better_auth::AuthResult<()> {
+    async fn after_delete(&self, context: &OrganizationDeleteContext) -> alibi::AuthResult<()> {
         self.receipts.lock().unwrap().push(format!(
             "cleanup:{}",
             context.organization.additional_fields["language"]
@@ -606,8 +598,8 @@ impl OrganizationInvitationEmailSender for AppCallbacks {
     async fn send_invitation_email(
         &self,
         delivery: &OrganizationInvitationDelivery,
-        _callback: &better_auth::CallbackContext,
-    ) -> better_auth::AuthResult<()> {
+        _callback: &alibi::CallbackContext,
+    ) -> alibi::AuthResult<()> {
         self.receipts.lock().unwrap().push(format!(
             "email:{}",
             delivery.organization.additional_fields["language"]

@@ -3,7 +3,7 @@ impl EmailPasswordPlugin {
     pub(in crate::plugins::email_password) async fn handle_sign_up(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let ignored = if self.config.enable_username {
             &[][..]
@@ -17,8 +17,8 @@ impl EmailPasswordPlugin {
                 Err(response) => return Ok(response),
             };
 
-        better_auth_core::middleware::CsrfMiddleware::new(
-            better_auth_core::middleware::CsrfConfig::new(),
+        alibi_core::middleware::CsrfMiddleware::new(
+            alibi_core::middleware::CsrfConfig::new(),
             Arc::clone(&ctx.config),
         )
         .check_form_origin(req)?;
@@ -60,28 +60,26 @@ impl EmailPasswordPlugin {
             if !policy.include_display_username {
                 signup_req.display_username = None;
             }
-            let mut callback_body = req.body_as_json::<better_auth_core::utils::json::JsValue>()?;
-            if let better_auth_core::utils::json::JsValue::Object(body) = &mut callback_body {
+            let mut callback_body = req.body_as_json::<alibi_core::utils::json::JsValue>()?;
+            if let alibi_core::utils::json::JsValue::Object(body) = &mut callback_body {
                 if let Some(value) = &signup_req.username {
                     drop(body.insert(
                         "username".into(),
-                        better_auth_core::utils::json::JsValue::String(value.clone()),
+                        alibi_core::utils::json::JsValue::String(value.clone()),
                     ));
                 }
                 if let Some(value) = &signup_req.display_username {
                     drop(body.insert(
                         "displayUsername".into(),
-                        better_auth_core::utils::json::JsValue::String(value.clone()),
+                        alibi_core::utils::json::JsValue::String(value.clone()),
                     ));
                 }
             }
             req.extensions()
-                .insert(better_auth_core::hooks::TransformedRequestBody(
-                    callback_body,
-                ));
+                .insert(alibi_core::hooks::TransformedRequestBody(callback_body));
         }
 
-        better_auth_core::session::cookie_cache::runtime::set_issuance_preference(
+        alibi_core::session::cookie_cache::runtime::set_issuance_preference(
             req,
             signup_req.remember_me == Some(false),
         );
@@ -97,28 +95,28 @@ impl EmailPasswordPlugin {
     pub(in crate::plugins::email_password) async fn handle_sign_in(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let signin_req: SignInRequest = match parse_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
 
-        let mut callback_body: better_auth_core::utils::json::JsValue = req.body_as_json()?;
-        if let better_auth_core::utils::json::JsValue::Object(body) = &mut callback_body {
+        let mut callback_body: alibi_core::utils::json::JsValue = req.body_as_json()?;
+        if let alibi_core::utils::json::JsValue::Object(body) = &mut callback_body {
             let _remember = body
                 .entry("rememberMe".into())
-                .or_insert(better_auth_core::utils::json::JsValue::Bool(true));
+                .or_insert(alibi_core::utils::json::JsValue::Bool(true));
         }
         req.extensions()
-            .insert(better_auth_core::hooks::ValidatedRequestBody(callback_body));
-        better_auth_core::middleware::CsrfMiddleware::new(
-            better_auth_core::middleware::CsrfConfig::new(),
+            .insert(alibi_core::hooks::ValidatedRequestBody(callback_body));
+        alibi_core::middleware::CsrfMiddleware::new(
+            alibi_core::middleware::CsrfConfig::new(),
             Arc::clone(&ctx.config),
         )
         .check_form_origin(req)?;
 
-        better_auth_core::session::cookie_cache::runtime::set_issuance_preference(
+        alibi_core::session::cookie_cache::runtime::set_issuance_preference(
             req,
             signin_req.remember_me == Some(false),
         );
@@ -178,9 +176,9 @@ impl EmailPasswordPlugin {
     pub(in crate::plugins::email_password) async fn handle_sign_in_username(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let signin_req: SignInUsernameRequest = match better_auth_core::validate_request_body(req) {
+        let signin_req: SignInUsernameRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };
@@ -278,9 +276,9 @@ impl EmailPasswordPlugin {
     pub(in crate::plugins::email_password) async fn handle_is_username_available(
         &self,
         req: &AuthRequest,
-        ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+        ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: IsUsernameAvailableRequest = match better_auth_core::validate_request_body(req) {
+        let body: IsUsernameAvailableRequest = match alibi_core::validate_request_body(req) {
             Ok(v) => v,
             Err(resp) => return Ok(resp),
         };

@@ -9,12 +9,12 @@ use super::*;
 ///
 /// Returns an error if the key is missing, belongs to another owner, or its lookup fails.
 pub async fn get_owned_api_key(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     config: &crate::plugins::api_key::ApiKeyConfig,
     key_id: &str,
     user_id: &str,
     action: &str,
-) -> AuthResult<better_auth_core::ApiKey> {
+) -> AuthResult<alibi_core::ApiKey> {
     use crate::plugins::api_key::{ApiKeyReferences, config_id_matches};
 
     let api_key = config
@@ -48,7 +48,7 @@ pub async fn get_owned_api_key(
 ///
 /// Returns an error if organization permissions cannot be loaded or do not authorize the operation.
 pub async fn require_org_api_key_permission(
-    ctx: &AuthContext<impl better_auth_core::AuthSchema>,
+    ctx: &AuthContext<impl alibi_core::AuthSchema>,
     user_id: &str,
     organization_id: &str,
     action: &str,

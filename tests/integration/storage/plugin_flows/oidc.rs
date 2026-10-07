@@ -1,8 +1,8 @@
 //! Discovery, signed grants, client authentication, trusted account operations
 //! and RP logout, through the public native boundaries and a recording peer.
 use super::*;
-use better_auth::plugins::OAuthPlugin;
-use better_auth::plugins::oauth::{
+use alibi::plugins::OAuthPlugin;
+use alibi::plugins::oauth::{
     GenericOAuthConfig, OAuthAccountApi, OAuthAccountSelection, OAuthPrivateKeyJwtOptions,
     OAuthTokenEndpointAuth,
 };

@@ -6,21 +6,21 @@ use axum::{
     http::StatusCode,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::organization::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::organization::{
     OrganizationConfig, OrganizationCreationPolicy, RolePermissions,
 };
-use better_auth::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
-use better_auth_core::wire::UserView;
-use better_auth_core::{UpdateOrganization, store::OrganizationStore};
-use better_auth_seaorm::DatabaseConnection;
-use better_auth_seaorm::sea_orm::{
+use alibi::plugins::{EmailPasswordPlugin, OrganizationPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
+use alibi_core::wire::UserView;
+use alibi_core::{UpdateOrganization, store::OrganizationStore};
+use alibi_seaorm::DatabaseConnection;
+use alibi_seaorm::sea_orm::{
     ColumnTrait, ConnectionTrait, DbBackend, EntityTrait, PaginatorTrait, QueryFilter, QueryOrder,
     Statement,
 };
-use better_auth_seaorm::store::entities::{member, organization, session, user};
+use alibi_seaorm::store::entities::{member, organization, session, user};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
@@ -322,7 +322,7 @@ pub(crate) async fn router(
                 else {
                     return failure(AuthError::bad_request("Unknown fixture profile"));
                 };
-                let data = better_auth::plugins::organization::types::CreateOrganizationRequest {
+                let data = alibi::plugins::organization::types::CreateOrganizationRequest {
                     additional_fields: Default::default(),
                     name: request.name,
                     slug: request.slug,

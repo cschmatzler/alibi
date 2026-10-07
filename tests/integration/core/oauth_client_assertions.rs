@@ -7,10 +7,10 @@
 )]
 
 use crate::storage::TestResult;
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use better_auth::plugins::oauth::{
+use alibi::plugins::oauth::{
     OAuthClientAssertionContext, OAuthPrivateKeyJwtOptions, OAuthTokenGrant,
 };
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use std::collections::HashSet;
 

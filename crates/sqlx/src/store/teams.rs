@@ -5,10 +5,10 @@ use crate::model::{self, ActiveRow, SqlxModel};
 use crate::pool::{Exec, SqlxTransaction};
 use crate::schema::{AuthSchema, SqlxUserModel};
 use crate::sql::Sql;
+use alibi_core::error::{AuthError, AuthResult};
+use alibi_core::store::{TeamStore, team_membership_key};
+use alibi_core::types::{AddTeamMemberResult, CreateTeam, Team, TeamMember, UpdateTeam};
 use async_trait::async_trait;
-use better_auth_core::error::{AuthError, AuthResult};
-use better_auth_core::store::{TeamStore, team_membership_key};
-use better_auth_core::types::{AddTeamMemberResult, CreateTeam, Team, TeamMember, UpdateTeam};
 use chrono::Utc;
 use uuid::Uuid;
 

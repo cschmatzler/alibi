@@ -6,16 +6,16 @@ use axum::{
     http::HeaderMap,
     routing::{get, post},
 };
-use better_auth::integrations::axum::AxumIntegration;
-use better_auth::middleware::RateLimitConfig;
-use better_auth::plugins::oauth::{
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::{
     GenericOAuthConfig, OAuthAuthorizationPolicy, OAuthPrivateKeyJwtOptions, OAuthProvider,
     OAuthRefreshContext, OAuthRefreshTokenHandler, OAuthRefreshTokenParams,
     OAuthRefreshTokenParamsResolver, OAuthTokenEndpointAuth, OAuthTokenSet, OAuthUserInfo,
 };
-use better_auth::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use better_auth::{AuthBuilder, AuthConfig, AuthResult};
-use better_auth_seaorm::DatabaseConnection;
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -130,10 +130,10 @@ struct SubjectKey {
     mode: String,
 }
 #[async_trait::async_trait]
-impl better_auth::plugins::oauth::OAuthAccountKeyResolver for SubjectKey {
+impl alibi::plugins::oauth::OAuthAccountKeyResolver for SubjectKey {
     async fn resolve(
         &self,
-        context: better_auth::plugins::oauth::OAuthAccountKeyContext,
+        context: alibi::plugins::oauth::OAuthAccountKeyContext,
     ) -> Result<Value, String> {
         tokio::task::yield_now().await;
         let tokens = json!({"accessToken":context.tokens.access_token,"refreshToken":context.tokens.refresh_token,"accessTokenExpiresAt":context.tokens.access_token_expires_at.map(|v| v.to_rfc3339_opts(chrono::SecondsFormat::Millis,true)),"scopes":context.tokens.scopes});
@@ -158,7 +158,7 @@ impl better_auth::plugins::oauth::OAuthAccountKeyResolver for SubjectKey {
 }
 struct SubjectMapper;
 #[async_trait::async_trait]
-impl better_auth::plugins::oauth::OAuthProfileMapper for SubjectMapper {
+impl alibi::plugins::oauth::OAuthProfileMapper for SubjectMapper {
     async fn map_profile(&self, _: Value) -> Result<serde_json::Map<String, Value>, String> {
         Ok(json!({"name":"Mapped Subject"})
             .as_object()
@@ -171,10 +171,10 @@ struct CustomCode {
     denied: bool,
 }
 #[async_trait::async_trait]
-impl better_auth::plugins::oauth::OAuthAuthorizationCodeHandler for CustomCode {
+impl alibi::plugins::oauth::OAuthAuthorizationCodeHandler for CustomCode {
     async fn validate_authorization_code(
         &self,
-        data: better_auth::plugins::oauth::OAuthAuthorizationCodeContext,
+        data: alibi::plugins::oauth::OAuthAuthorizationCodeContext,
     ) -> Result<OAuthTokenSet, String> {
         tokio::task::yield_now().await;
         self.fixture.receipts.lock().await.push(json!({"kind":"custom-token","code":data.code,"redirectURI":data.redirect_uri,"codeVerifier":data.code_verifier}));
@@ -191,10 +191,10 @@ impl better_auth::plugins::oauth::OAuthAuthorizationCodeHandler for CustomCode {
 }
 struct DeniedAssertion;
 #[async_trait::async_trait]
-impl better_auth::plugins::oauth::OAuthClientAssertionGetter for DeniedAssertion {
+impl alibi::plugins::oauth::OAuthClientAssertionGetter for DeniedAssertion {
     async fn get_client_assertion(
         &self,
-        _: better_auth::plugins::oauth::OAuthClientAssertionContext,
+        _: alibi::plugins::oauth::OAuthClientAssertionContext,
     ) -> Result<String, String> {
         Err("assertion getter denied".into())
     }
@@ -372,13 +372,13 @@ pub(crate) async fn router(
         });
         let policy = OAuthAuthorizationPolicy {
             authorization_code: mode.starts_with("custom-token").then(|| {
-                better_auth::plugins::oauth::OAuthAuthorizationCodeCallback(Arc::new(CustomCode {
+                alibi::plugins::oauth::OAuthAuthorizationCodeCallback(Arc::new(CustomCode {
                     fixture: fixture.clone(),
                     denied: mode == "custom-token-error",
                 }))
             }),
             client_assertion: if mode == "jwt-getter-error" {
-                Some(better_auth::plugins::oauth::OAuthClientAssertion(Arc::new(
+                Some(alibi::plugins::oauth::OAuthClientAssertion(Arc::new(
                     DeniedAssertion,
                 )))
             } else {
@@ -470,7 +470,7 @@ pub(crate) async fn router(
             generic.user_info_url = provider.user_info_url.clone();
             generic.provider = provider;
             if mode.starts_with("subject-") && mode != "subject-default" {
-                generic.account_key = Some(better_auth::plugins::oauth::OAuthAccountKey(Arc::new(
+                generic.account_key = Some(alibi::plugins::oauth::OAuthAccountKey(Arc::new(
                     SubjectKey {
                         fixture: fixture.clone(),
                         mode: mode.into(),
@@ -491,8 +491,8 @@ pub(crate) async fn router(
             generic
                 .resolve()
                 .await
-                .map_err(|e| better_auth::AuthError::config(e.to_string()))?
-                .ok_or_else(|| better_auth::AuthError::config("Generic fixture unavailable"))?
+                .map_err(|e| alibi::AuthError::config(e.to_string()))?
+                .ok_or_else(|| alibi::AuthError::config("Generic fixture unavailable"))?
                 .provider
         } else {
             provider
@@ -545,7 +545,7 @@ pub(crate) async fn router(
             let auth = profiles["none"].clone();
             async move {
                 use axum::response::IntoResponse;
-                use better_auth::plugins::oauth::{OAuthAccountApi, OAuthAccountSelection};
+                use alibi::plugins::oauth::{OAuthAccountApi, OAuthAccountSelection};
                 let user = body["userId"].as_str().unwrap_or_default();
                 let selection = OAuthAccountSelection::Id(
                     body["accountId"].as_str().unwrap_or_default().to_owned(),
