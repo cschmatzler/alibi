@@ -69,6 +69,7 @@ export function createApiKeyOptionsFixture(
       apiKey(
         configurations.map((entry: Data) => ({
           configId: entry.id,
+          requireName: entry.requireName ?? false,
           defaultKeyLength: number(entry.keyLength, 16),
           defaultPrefix: entry.prefix ?? "optKEY_",
           apiKeyHeaders: `x-options-${entry.id}`,
