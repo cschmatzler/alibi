@@ -9,7 +9,12 @@ import { authProfilePath } from "../../../support/profiles";
 import { compatScenario } from "../../../support/scenario";
 
 export type ScenarioContext = Parameters<Parameters<typeof compatScenario>[1]>[0];
-export type PhoneProfile = "phone-default" | "phone-signup" | "phone-proof" | "phone-custom";
+export type PhoneProfile =
+  | "phone-default"
+  | "phone-signup"
+  | "phone-proof"
+  | "phone-custom"
+  | "phone-callback-reject";
 
 export function phoneClient(ctx: ScenarioContext, profile: PhoneProfile, actor = "primary") {
   return createAuthClient({

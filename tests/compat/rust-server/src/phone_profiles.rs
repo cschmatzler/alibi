@@ -144,6 +144,7 @@ impl PhoneVerificationHook for Callback {
             );
         }
         self.0.callbacks.lock().await.push(event);
+        if _context.context::<TestSchema>().unwrap().config.base_path.contains("phone-callback-reject") { return Err(alibi::AuthError::Api { status: 403, code: Some("PHONE_CALLBACK_REJECTED".into()), message: "Application verification callback rejected".into() }); }
         Ok(())
     }
 }
@@ -182,6 +183,7 @@ pub(super) async fn build(
         "phone-signup",
         "phone-proof",
         "phone-custom",
+        "phone-callback-reject",
         "phone-numeric-length-zero",
         "phone-numeric-length-fraction",
         "phone-numeric-length-negative",
