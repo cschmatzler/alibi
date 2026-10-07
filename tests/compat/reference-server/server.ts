@@ -967,7 +967,35 @@ for (const name of [
   );
 }
 
-for (const name of ["passkey-fresh", "passkey-no-freshness", "passkey-acceptance"]) {
+function passkeyExtensions(mode: string, registration: boolean) {
+  const inputs = (marker: string, path: string) =>
+    registration
+      ? { credProps: marker !== "registration-marker" }
+      : { appid: `https://extensions.fixture.test/${marker}/${path.split("/").at(-1)}` };
+  if (mode === "static")
+    return registration ? { credProps: true } : { appid: "https://extensions.fixture.test/static" };
+  return async ({ ctx }: any) => {
+    await Promise.resolve();
+    if (mode === "coded")
+      throw new APIError("FORBIDDEN", {
+        code: "EXTENSIONS_DENIED",
+        message: "Application extensions rejected",
+      });
+    if (mode === "ordinary") throw new Error("Application extensions failed");
+    if (registration && !ctx.context.session?.user)
+      throw new Error("actual registration session required");
+    return inputs(ctx.headers.get("x-extension-marker"), ctx.path);
+  };
+}
+for (const name of [
+  "passkey-fresh",
+  "passkey-no-freshness",
+  "passkey-acceptance",
+  "passkey-extensions-static",
+  "passkey-extensions-resolver",
+  "passkey-extensions-coded",
+  "passkey-extensions-ordinary",
+]) {
   const path = `/__test/profiles/${name}/api/auth`;
   verificationProfiles.set(
     path,
@@ -977,11 +1005,20 @@ for (const name of ["passkey-fresh", "passkey-no-freshness", "passkey-acceptance
       session: { ...authOptions.session, freshAge: name === "passkey-fresh" ? 1 : 0 },
       plugins: [
         passkey(
-          name === "passkey-acceptance"
+          name.startsWith("passkey-extensions-")
             ? {
-                advanced: { webAuthnChallengeCookie: "ceremony-proof" },
+                registration: {
+                  extensions: passkeyExtensions(name.slice("passkey-extensions-".length), true),
+                },
+                authentication: {
+                  extensions: passkeyExtensions(name.slice("passkey-extensions-".length), false),
+                },
               }
-            : undefined,
+            : name === "passkey-acceptance"
+              ? {
+                  advanced: { webAuthnChallengeCookie: "ceremony-proof" },
+                }
+              : undefined,
         ),
         username(),
       ],

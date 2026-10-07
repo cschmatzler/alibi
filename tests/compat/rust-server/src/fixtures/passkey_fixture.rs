@@ -48,6 +48,10 @@ pub(crate) async fn router(
         ("passkey-fresh", 1),
         ("passkey-no-freshness", 0),
         ("passkey-acceptance", 0),
+        ("passkey-extensions-static", 0),
+        ("passkey-extensions-resolver", 0),
+        ("passkey-extensions-coded", 0),
+        ("passkey-extensions-ordinary", 0),
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut configured = config.clone().base_path(&path);
@@ -73,6 +77,7 @@ pub(crate) async fn router(
                 .web_authn_challenge_cookie("ceremony-proof")
                 .attestation_root_certificates(roots)
         } else {
+            // Native options have no static or resolver-based WebAuthn extension inputs.
             PasskeyPlugin::new()
         };
         let auth = Arc::new(
