@@ -6,7 +6,7 @@ use axum::{Json, Router, extract::Query, routing::get};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::magic_link::{
-    MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenStorage, MagicLinkTokenGenerator, SendMagicLink,
+    MagicLinkTokenHasher, MagicLinkConfig, MagicLinkDelivery, MagicLinkPlugin, MagicLinkTokenStorage, MagicLinkTokenGenerator, SendMagicLink,
 };
 use alibi::plugins::{
     EmailPasswordPlugin, EmailVerificationPlugin, PasswordManagementPlugin, SessionManagementPlugin,
@@ -16,6 +16,15 @@ use alibi_seaorm::sea_orm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
+
+struct ApplicationHasher;
+#[async_trait]
+impl MagicLinkTokenHasher for ApplicationHasher {
+    async fn hash(&self, token: &str) -> AuthResult<String> {
+        tokio::task::yield_now().await;
+        Ok(format!("application:{token}"))
+    }
+}
 
 struct CustomToken;
 #[async_trait]
@@ -36,7 +45,9 @@ impl SendMagicLink for Sender {
         _context: &alibi_core::CallbackContext,
     ) -> AuthResult<()> {
         let auth = _context.context::<TestSchema>().unwrap();
-        let identifier = if auth.config.base_path.contains("magic-link-hashed") {
+        let identifier = if auth.config.base_path.contains("magic-link-custom-hasher") {
+            format!("application:{}", delivery.token)
+        } else if auth.config.base_path.contains("magic-link-hashed") {
             use base64::Engine as _;
             use sha2::Digest as _;
             base64::engine::general_purpose::URL_SAFE_NO_PAD
@@ -76,6 +87,7 @@ pub(super) async fn router(
         "magic-link-rate-policy",
         "magic-link-hashed",
         "magic-link-hashed-custom-token",
+        "magic-link-custom-hasher",
         "magic-link-disabled",
         "magic-link-numeric-lifetime-zero",
         "magic-link-numeric-lifetime-fraction",
@@ -102,7 +114,9 @@ pub(super) async fn router(
                     rate_limit: if name == "magic-link-rate-policy" { alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 2.0} } else { MagicLinkConfig::default().rate_limit },
                     send_magic_link: Some(Arc::new(Sender(outbox.clone()))),
                     generate_token: (name == "magic-link-hashed-custom-token").then(|| Arc::new(CustomToken) as Arc<dyn MagicLinkTokenGenerator>),
-                    storage: if name.starts_with("magic-link-hashed") {
+                    storage: if name == "magic-link-custom-hasher" {
+                        MagicLinkTokenStorage::Custom(Arc::new(ApplicationHasher))
+                    } else if name.starts_with("magic-link-hashed") {
                         MagicLinkTokenStorage::Hashed
                     } else {
                         MagicLinkTokenStorage::Plain

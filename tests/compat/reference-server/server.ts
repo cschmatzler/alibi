@@ -1062,6 +1062,7 @@ for (const name of [
   "magic-link-rate-policy",
   "magic-link-hashed",
   "magic-link-hashed-custom-token",
+  "magic-link-custom-hasher",
   "magic-link-disabled",
   ...numericModes
     .filter((mode) => mode.startsWith("lifetime-"))
@@ -1080,15 +1081,29 @@ for (const name of [
         magicLink({
           ...(name === "magic-link-rate-policy" ? { rateLimit: { window: 1, max: 2 } } : {}),
           ...numericOptions(name),
-          storeToken: name.startsWith("magic-link-hashed") ? "hashed" : "plain",
+          storeToken:
+            name === "magic-link-custom-hasher"
+              ? {
+                  type: "custom-hasher",
+                  hash: async (token: string) => {
+                    await Promise.resolve();
+                    return `application:${token}`;
+                  },
+                }
+              : name.startsWith("magic-link-hashed")
+                ? "hashed"
+                : "plain",
           ...(name === "magic-link-hashed-custom-token"
             ? { generateToken: async (email: string) => `custom-link-${email}` }
             : {}),
           disableSignUp: name === "magic-link-disabled",
           async sendMagicLink({ email, url, token, metadata }, ctx) {
-            const identifier = ctx.context.options.basePath?.includes("magic-link-hashed")
-              ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
-              : token;
+            const identifier =
+              name === "magic-link-custom-hasher"
+                ? `application:${token}`
+                : ctx.context.options.basePath?.includes("magic-link-hashed")
+                  ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
+                  : token;
             const context = await callbackSnapshot(ctx, `magic-link:${identifier}`);
             magicLinkOutbox.set(email, {
               url,
