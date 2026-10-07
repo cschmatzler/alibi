@@ -33,25 +33,35 @@ compatScenario(
     const [header, payload, signature] = original.split(".");
     const claims = JSON.parse(Buffer.from(payload!, "base64url").toString());
     expect(claims.email).toBe(email);
-    const now = Math.floor(Date.now() / 1000);
-    const secret = new TextEncoder().encode("compat-test-only-key-not-real-minimum-32chars");
-    const token = (nbf: number) =>
-      new SignJWT({ email, iat: now, nbf, exp: now + 3600 })
-        .setProtectedHeader({ alg: "HS256" })
-        .sign(secret);
+    const mutatedPayload = Buffer.from(
+      JSON.stringify({ ...claims, email: ctx.uniqueEmail("tampered-address") }),
+    ).toString("base64url");
+    const mutatedSignature = (signature![0] === "A" ? "B" : "A") + signature!.slice(1);
+    const wrongSecret = await new SignJWT(claims)
+      .setProtectedHeader({ alg: "HS256" })
+      .sign(new TextEncoder().encode("wrong-test-secret-also-at-least-32-characters"));
     const guest = ctx.actor("guest", profile);
     let cookies: string[] = [];
-    const denied = await guest.client.verifyEmail({
-      query: { token: await token(now + 1800) },
-      fetchOptions: {
-        onResponse({ response }) {
-          cookies = response.headers.getSetCookie();
+    const denied = [];
+    for (const [kind, token] of [
+      ["payload", `${header}.${mutatedPayload}.${signature}`],
+      ["signature", `${header}.${payload}.${mutatedSignature}`],
+      ["wrong-secret", wrongSecret],
+    ] as const) {
+      expect(token).not.toBe(original);
+      const response = await guest.client.verifyEmail({
+        query: { token },
+        fetchOptions: {
+          onResponse({ response }) {
+            cookies = response.headers.getSetCookie();
+          },
         },
-      },
-    });
-    expect(denied.error).toMatchObject({ status: 401, code: "INVALID_TOKEN" });
-    expect(cookies.filter((cookie) => cookie.startsWith("better-auth.session"))).toEqual([]);
-    expect(await control()).toEqual(before);
+      });
+      expect(response.error).toMatchObject({ status: 401, code: "INVALID_TOKEN" });
+      expect(cookies.filter((cookie) => cookie.startsWith("better-auth.session"))).toEqual([]);
+      expect(await control()).toEqual(before);
+      denied.push({ kind, response });
+    }
     expect((await guest.client.getSession()).data).toBeNull();
     const accepted = await guest.client.verifyEmail({ query: { token: original } });
     expect(accepted.error).toBeNull();
