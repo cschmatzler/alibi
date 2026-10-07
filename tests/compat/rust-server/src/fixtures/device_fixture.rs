@@ -58,6 +58,8 @@ pub(crate) async fn profiles(
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let mut router = Router::new();
     for name in [
+        "device-length-507",
+        "device-length-506",
         "device-custom",
         "device-configured",
         "device-unicode",
@@ -77,6 +79,8 @@ pub(crate) async fn profiles(
     ] {
         let mut plugin = DeviceAuthorizationPlugin::new();
         match name {
+            "device-length-507" => { plugin = plugin.user_code_length(4); }
+            "device-length-506" => { plugin = plugin.device_code_length(16); }
             "device-custom" => {
                 plugin = plugin
                     .generate_device_code_async_with(|| async {

@@ -2472,9 +2472,7 @@
           "configured deletion after-delete retains exact delivery, consumption and callback-error ordering",
           "configured deletion consumes its real proof before the application hook so concurrent replay cannot delete twice"
         ],
-        "authorization": {
-          "knownGap": "No scenario uses a deletion token from another user's session."
-        },
+        "authorization": "configured deletion wrong-owner retains exact delivery, consumption and callback-error ordering",
         "state": [
           "configured delete-zero issues and delivers a real deletion proof, retains sessions and owns expiry and replay",
           "configured deletion wrong-owner retains exact delivery, consumption and callback-error ordering",
@@ -4550,9 +4548,7 @@
         "success": "api-key SDK uses the standalone 1.7 client plugin",
         "rejection": "api-key CRUD isolates configurations and preserves all-config listing",
         "authorization": "organization delegated roles enforce grant subsets and revoke organization API-key authority",
-        "state": {
-          "knownGap": "No scenario asserts the deleted key row is gone from storage."
-        }
+        "state": "api-key explicit deletion removes only the selected stored key and cannot be replayed"
       }
     },
     {
@@ -5676,9 +5672,7 @@
         "success": "organization invitation validation, reject, and cancel flows match TS",
         "rejection": "session-gated routes reject requests without a session",
         "authorization": "session-gated routes reject requests without a session",
-        "state": {
-          "knownGap": "No scenario asserts the stored invitation status after rejection."
-        }
+        "state": "invitation lifecycle expired pending row can be rejected with callbacks"
       }
     },
     {
