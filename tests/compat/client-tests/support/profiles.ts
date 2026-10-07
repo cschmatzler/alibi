@@ -1060,6 +1060,7 @@ export const FIXTURE_PROFILES = [
     "lifetime-infinity",
     "lifetime-negative-infinity",
   ]),
+  "magic-link-rate-policy",
   "magic-link-hashed",
   "magic-link-hashed-custom-token",
   "magic-link-disabled",

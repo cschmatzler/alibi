@@ -1002,6 +1002,7 @@ for (const name of [
 
 const magicProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const name of [
+  "magic-link-rate-policy",
   "magic-link-hashed",
   "magic-link-hashed-custom-token",
   "magic-link-disabled",
@@ -1014,9 +1015,13 @@ for (const name of [
     betterAuth({
       ...authOptions,
       basePath: `/__test/profiles/${name}/api/auth`,
+      ...(name === "magic-link-rate-policy"
+        ? { rateLimit: { enabled: true, window: 60, max: 10000 } }
+        : {}),
       emailVerification: { ...authOptions.emailVerification, sendOnSignUp: false },
       plugins: [
         magicLink({
+          ...(name === "magic-link-rate-policy" ? { rateLimit: { window: 1, max: 2 } } : {}),
           ...numericOptions(name),
           storeToken: name.startsWith("magic-link-hashed") ? "hashed" : "plain",
           ...(name === "magic-link-hashed-custom-token"
