@@ -2472,9 +2472,7 @@
           "configured deletion after-delete retains exact delivery, consumption and callback-error ordering",
           "configured deletion consumes its real proof before the application hook so concurrent replay cannot delete twice"
         ],
-        "authorization": {
-          "knownGap": "No scenario uses a deletion token from another user's session."
-        },
+        "authorization": "configured deletion wrong-owner retains exact delivery, consumption and callback-error ordering",
         "state": [
           "configured delete-zero issues and delivers a real deletion proof, retains sessions and owns expiry and replay",
           "configured deletion wrong-owner retains exact delivery, consumption and callback-error ordering",

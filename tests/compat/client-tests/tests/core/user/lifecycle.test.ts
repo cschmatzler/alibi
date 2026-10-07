@@ -644,6 +644,38 @@ for (const mode of ["wrong-owner", "before-delete", "after-delete", "deletion-ma
       expect(final.sessions).toEqual(after.sessions);
       expect(final.verifications).toEqual([]);
 
+      let reverse: unknown = null;
+      if (mode === "wrong-owner") {
+        const reverseRequested = await foreign.client.deleteUser();
+        expect(reverseRequested.error).toBeNull();
+        const reverseIssued = await control(ctx, name);
+        const reverseMail = delivery(reverseIssued, "deletion-mail");
+        const reverseResponse = await owner.fetch(
+          path(name, `delete-user/callback?token=${encodeURIComponent(reverseMail.token)}`),
+          { redirect: "manual" },
+        );
+        const reverseCallback = {
+          status: reverseResponse.status,
+          body: await reverseResponse.json(),
+          cookies: reverseResponse.headers.getSetCookie(),
+          location: reverseResponse.headers.get("location"),
+        };
+        expect(reverseCallback.status).toBe(404);
+        expect(reverseCallback.location).toBeNull();
+        expect(reverseCallback.cookies).toEqual([]);
+        const reverseAfter = await control(ctx, name);
+        expect(reverseAfter.users).toEqual(final.users);
+        expect(reverseAfter.accounts).toEqual(final.accounts);
+        expect(reverseAfter.sessions).toEqual(final.sessions);
+        expect(reverseAfter.verifications).toEqual([]);
+        expect(
+          reverseAfter.events.filter((event) =>
+            ["before-delete", "after-delete"].includes(String(event.stage)),
+          ),
+        ).toEqual([]);
+        reverse = { reverseRequested, reverseIssued, reverseCallback, reverseAfter };
+      }
+
       return evidence({
         signup,
         foreignSignup,
@@ -655,6 +687,7 @@ for (const mode of ["wrong-owner", "before-delete", "after-delete", "deletion-ma
         replay,
         session,
         final,
+        reverse,
       });
     },
     ["GET /delete-user/callback"],
