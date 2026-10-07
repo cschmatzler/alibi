@@ -43,6 +43,11 @@ pub(super) async fn router(
         "session-secondary-preserve-only",
         "session-secondary-combined",
         "session-secondary-preserved",
+        "stateless-refresh-compact",
+        "stateless-refresh-jwt",
+        "stateless-refresh-deferred",
+        "stateless-refresh-v2",
+        "stateless-refresh-jwt-v2",
         "session-update-age",
         "session-update-age-cache",
         "session-update-age-long",
@@ -64,6 +69,11 @@ pub(super) async fn router(
             config.session.preserve_in_database = name.contains("preserve");
             drop(caches.insert(name.to_owned(), cache));
         }
+        if name.starts_with("stateless-refresh-") {
+            config.session = config.session.stateless();
+            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {enabled: true, max_age: 5.0, strategy: if name.contains("jwt") {alibi_core::CookieCacheStrategy::Jwt} else {alibi_core::CookieCacheStrategy::Compact}, version: Some(alibi_core::CookieCacheVersion::Literal(if name.ends_with("v2") {"2"} else {"1"}.into()))});
+            config.session.cookie_refresh_cache = alibi_core::CookieRefreshCache::UpdateAge(4.0);
+        }
         if name.contains("update-age") {
             config.session.expires_in = chrono::Duration::seconds(3600);
             config.session.update_age = Some(chrono::Duration::seconds(if name.ends_with("-long") {7200} else {120}));
@@ -71,8 +81,8 @@ pub(super) async fn router(
         if name == "session-update-age-cache" {
             config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {enabled: true, max_age: 300.0, ..Default::default()});
         }
-        config.session.defer_session_refresh = name.starts_with("session-deferred");
-        config.session.disable_session_refresh = name.ends_with("no-refresh");
+        config.session.defer_session_refresh = name.starts_with("session-deferred") || name.ends_with("refresh-deferred");
+        config.session.disable_session_refresh = name.ends_with("no-refresh") || name.starts_with("stateless-refresh-");
         if name == "session-no-freshness" {
             config.session.fresh_age = Some(chrono::Duration::zero());
         }
