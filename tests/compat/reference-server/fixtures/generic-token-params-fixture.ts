@@ -92,6 +92,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "override",
     "local-verified",
     "implicit-disabled",
+    "skip-state-cookie",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
@@ -142,6 +143,9 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
         ...base,
         basePath: path,
         socialProviders: {},
+        ...(mode === "skip-state-cookie"
+          ? { account: { ...base.account, skipStateCookieCheck: true } }
+          : {}),
         ...(mode === "implicit-disabled"
           ? {
               account: {
