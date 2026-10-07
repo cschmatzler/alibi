@@ -109,6 +109,7 @@ pub(crate) async fn router(
     let mut router = Router::new();
     for mode in [
         "success",
+        "response-type",
         "expiry-positive",
         "expiry-zero",
         "expiry-negative",
@@ -153,6 +154,9 @@ pub(crate) async fn router(
         generic.disable_id_token_nonce_binding = mode == "nonce-unbound";
         generic.provider.scopes = vec!["profile".into()];
         let policy = generic.provider.authorization.as_mut().unwrap();
+        if mode == "response-type" {
+            policy.response_type = "token".into();
+        }
         policy
             .authorization_code_params
             .insert("resource".into(), "discovery-resource".into());
