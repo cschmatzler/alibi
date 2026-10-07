@@ -1,6 +1,7 @@
 [
   {"id":"default","keyLength":16},
   {"id":"rate-max","rateEnabled":true,"rateMax":2},
+  {"id":"metadata-disabled","metadata":false},
   {"id":"expiration-disabled","disableCustomExpiresTime":true,"expiration":120},
   {"id":"name-optional","requireName":false},
   {"id":"name-required","requireName":true},

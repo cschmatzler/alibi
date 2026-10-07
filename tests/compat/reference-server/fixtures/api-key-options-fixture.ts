@@ -94,7 +94,7 @@ export function createApiKeyOptionsFixture(
             maxRequests: entry.rateMax,
             timeWindow: entry.rateWindow,
           },
-          enableMetadata: true,
+          enableMetadata: entry.metadata ?? true,
           ...(entry.custom
             ? {
                 async customKeyGenerator(input: { length: number; prefix: string | undefined }) {
