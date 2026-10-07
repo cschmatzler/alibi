@@ -35,6 +35,7 @@ const PROFILES: &[&str] = &[
     "ott-composed",
     "ott-custom-callback",
     "ott-default",
+    "ott-short-lived",
     "ott-hashed",
     "ott-no-cookie",
     "ott-server-header",
@@ -203,6 +204,11 @@ pub(crate) async fn router(
     let callbacks = CustomCallbacks::default();
     for name in PROFILES {
         let ott = OneTimeTokenPlugin::with_config(OneTimeTokenConfig {
+            expires_in: if *name == "ott-short-lived" {
+                chrono::Duration::seconds(3)
+            } else {
+                chrono::Duration::minutes(3)
+            },
             generator: (*name == "ott-custom-callback")
                 .then(|| Arc::new(callbacks.clone()) as Arc<dyn GenerateOneTimeToken>),
             storage: if *name == "ott-custom-callback" {

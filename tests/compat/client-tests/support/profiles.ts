@@ -1068,6 +1068,7 @@ export const FIXTURE_PROFILES = [
   "ott-composed",
   "ott-custom-callback",
   "ott-default",
+  "ott-short-lived",
   "ott-hashed",
   "ott-no-cookie",
   "ott-server-header",

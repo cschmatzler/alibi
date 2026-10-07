@@ -1085,6 +1085,7 @@ const OTT_PROFILE_NAMES = [
   "ott-composed",
   "ott-custom-callback",
   "ott-default",
+  "ott-short-lived",
   "ott-hashed",
   "ott-no-cookie",
   "ott-server-header",
@@ -1161,6 +1162,7 @@ const ottProfiles = new Map(
         ...(name === "ott-composed" ? [twoFactor()] : []),
         ...(name === "ott-server-header" ? [ottExposedHeaderFixture] : []),
         oneTimeToken({
+          ...(name === "ott-short-lived" ? { expiresIn: 0.05 } : {}),
           ...(name === "ott-custom-callback"
             ? {
                 generateToken: async (session, ctx) => {
