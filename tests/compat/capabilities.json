@@ -4550,9 +4550,7 @@
         "success": "api-key SDK uses the standalone 1.7 client plugin",
         "rejection": "api-key CRUD isolates configurations and preserves all-config listing",
         "authorization": "organization delegated roles enforce grant subsets and revoke organization API-key authority",
-        "state": {
-          "knownGap": "No scenario asserts the deleted key row is gone from storage."
-        }
+        "state": "api-key explicit deletion removes only the selected stored key and cannot be replayed"
       }
     },
     {
