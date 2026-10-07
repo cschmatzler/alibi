@@ -1234,6 +1234,7 @@ const ottProfiles = new Map(
 );
 const deviceProfiles = new Map(
   [
+    "device-length-507",
     "device-length-506",
     "device-custom",
     "device-configured",
@@ -1264,6 +1265,7 @@ const deviceProfiles = new Map(
       basePath: `/__test/profiles/${name}/api/auth`,
       plugins: [
         deviceAuthorization({
+          ...(name === "device-length-507" ? { userCodeLength: 4 } : {}),
           ...(name === "device-length-506" ? { deviceCodeLength: 16 } : {}),
           ...(name === "device-custom"
             ? {

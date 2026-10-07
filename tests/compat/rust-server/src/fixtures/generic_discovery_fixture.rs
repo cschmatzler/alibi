@@ -122,6 +122,7 @@ pub(crate) async fn router(
         "invalid-jwks",
         "required",
         "oidc",
+        "nonce-unbound",
         "mapped",
         "logout",
         "logout-configured",
@@ -150,6 +151,7 @@ pub(crate) async fn router(
             generic.end_session_endpoint = Some("http://[bad".into());
         }
         generic.require_id_token_verification = mode == "required";
+        generic.disable_id_token_nonce_binding = mode == "nonce-unbound";
         generic.provider.scopes = vec!["profile".into()];
         let policy = generic.provider.authorization.as_mut().unwrap();
         if mode == "response-type" {
@@ -162,7 +164,7 @@ pub(crate) async fn router(
             .refresh_token_params
             .insert("resource".into(), "refresh-resource".into());
         policy.authorization_code_headers = vec![("x-grant".into(), "configured-grant".into())];
-        if mode == "oidc" {
+        if mode == "oidc" || mode == "nonce-unbound" {
             generic.provider.get_user_info = Some(Arc::new(Custom(fixture.clone())));
         }
         if mode == "mapped" {
@@ -268,7 +270,7 @@ async fn metadata(
         document["issuer"] = json!("https://issuer.example.invalid");
         document["jwks_uri"] = json!("http://[bad");
     }
-    if mode == "oidc" {
+    if mode == "oidc" || mode == "nonce-unbound" {
         document["issuer"] = json!("https://issuer.example.invalid");
         document["jwks_uri"] = json!("keys");
         document["id_token_signing_alg_values_supported"] = json!(["RS256"]);

@@ -30,7 +30,7 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
           ...(mode === "invalid-jwks"
             ? { issuer: "https://issuer.example.invalid", jwks_uri: "http://[bad" }
             : {}),
-          ...(mode === "oidc"
+          ...(["oidc", "nonce-unbound"].includes(mode)
             ? {
                 issuer: "https://issuer.example.invalid",
                 jwks_uri: "keys",
@@ -88,6 +88,7 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
     "invalid-jwks",
     "required",
     "oidc",
+    "nonce-unbound",
     "mapped",
     "logout",
     "logout-configured",
@@ -107,6 +108,7 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
             config: [
               {
                 providerId: "discovery",
+                disableIdTokenNonceBinding: mode === "nonce-unbound",
                 ...(mode === "response-type" ? { responseType: "token" } : {}),
                 clientId: "discovery-client",
                 clientSecret: "discovery-secret",
@@ -161,7 +163,7 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
                 tokenUrlParams: { resource: "discovery-resource" },
                 refreshTokenParams: { resource: "refresh-resource" },
                 authorizationHeaders: { "x-grant": "configured-grant" },
-                ...(mode === "oidc"
+                ...(["oidc", "nonce-unbound"].includes(mode)
                   ? {
                       getUserInfo: async () => {
                         receipts.push({ path: "/custom" });
