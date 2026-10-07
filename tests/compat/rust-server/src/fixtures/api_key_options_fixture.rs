@@ -368,6 +368,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             min_name_length: number(entry.get("minName"), 1.0),
             max_name_length: number(entry.get("maxName"), 32.0),
             key_expiration: KeyExpirationConfig {
+                disable_custom_expires_time: entry["disableCustomExpiresTime"].as_bool().unwrap_or(false),
                 default_expires_in: entry
                     .get("expiration")
                     .map(|value| number(Some(value), 0.0)),
@@ -376,10 +377,12 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 ..Default::default()
             },
             rate_limit: RateLimitDefaults {
-                enabled: false,
+                enabled: entry["rateEnabled"].as_bool().unwrap_or(false),
+                max_requests: number(entry.get("rateMax"), 10.0),
+                time_window: number(entry.get("rateWindow"), 86_400_000.0),
                 ..Default::default()
             },
-            enable_metadata: true,
+            enable_metadata: entry["metadata"].as_bool().unwrap_or(true),
             custom_key_generator: (entry["custom"] == true)
                 .then(|| Arc::new(callbacks.clone()) as Arc<dyn ApiKeyGenerator>),
             custom_api_key_validator: (entry["validator"] == true)

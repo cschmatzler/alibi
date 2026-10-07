@@ -1236,6 +1236,7 @@ const deviceCallbackEvents: Record<string, unknown>[] = [];
 const deviceProfiles = new Map(
   [
     "device-callback-success",
+    "device-length-507",
     "device-length-506",
     "device-custom",
     "device-configured",
@@ -1281,6 +1282,7 @@ const deviceProfiles = new Map(
                 },
               }
             : {}),
+          ...(name === "device-length-507" ? { userCodeLength: 4 } : {}),
           ...(name === "device-length-506" ? { deviceCodeLength: 16 } : {}),
           ...(name === "device-custom"
             ? {

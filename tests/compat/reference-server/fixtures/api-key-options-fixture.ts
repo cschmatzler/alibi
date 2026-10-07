@@ -84,12 +84,17 @@ export function createApiKeyOptionsFixture(
           minimumNameLength: number(entry.minName, 1),
           maximumNameLength: number(entry.maxName, 32),
           keyExpiration: {
+            disableCustomExpiresTime: entry.disableCustomExpiresTime ?? false,
             defaultExpiresIn: entry.expiration === undefined ? null : number(entry.expiration, 0),
             minExpiresIn: number(entry.minExpiration, 0),
             maxExpiresIn: number(entry.maxExpiration, 365),
           },
-          rateLimit: { enabled: false },
-          enableMetadata: true,
+          rateLimit: {
+            enabled: entry.rateEnabled ?? false,
+            maxRequests: entry.rateMax,
+            timeWindow: entry.rateWindow,
+          },
+          enableMetadata: entry.metadata ?? true,
           ...(entry.custom
             ? {
                 async customKeyGenerator(input: { length: number; prefix: string | undefined }) {

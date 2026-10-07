@@ -15,6 +15,7 @@ function variants<P extends string, S extends string>(
 export const FIXTURE_PROFILES = [
   ...variants("generic-discovery-", [
     "success",
+    "nonce-unbound",
     "response-type",
     "override",
     "expiry-positive",
@@ -895,6 +896,7 @@ export const FIXTURE_PROFILES = [
   "passkey-first",
   "passkey-first-missing",
   "device-callback-success",
+  "device-length-507",
   "device-length-506",
   "device-custom",
   "device-configured",
