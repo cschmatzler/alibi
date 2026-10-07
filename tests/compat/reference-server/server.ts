@@ -888,6 +888,10 @@ for (const name of [
 }
 
 for (const name of [
+  "session-update-age",
+  "session-update-age-cache",
+  "session-update-age-long",
+  "session-deferred-update-age",
   "session-deferred",
   "session-no-refresh",
   "session-deferred-no-refresh",
@@ -902,6 +906,12 @@ for (const name of [
       basePath: path,
       session: {
         ...authOptions.session,
+        ...(name.includes("update-age")
+          ? { expiresIn: 3600, updateAge: name.endsWith("-long") ? 7200 : 120 }
+          : {}),
+        ...(name === "session-update-age-cache"
+          ? { cookieCache: { enabled: true, maxAge: 300 } }
+          : {}),
         deferSessionRefresh: name.startsWith("session-deferred"),
         disableSessionRefresh: name.endsWith("no-refresh"),
         ...(name === "session-no-freshness" ? { freshAge: 0 } : {}),
