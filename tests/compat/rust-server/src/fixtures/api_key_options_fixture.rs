@@ -9,7 +9,7 @@ use alibi::__private_core::{AuthRequest, HttpMethod};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::api_key::{
-    ApiKeyCallbackContext, ApiKeyConfig, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyGetter,
+    ApiKeyReferences, ApiKeyCallbackContext, ApiKeyConfig, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyGetter,
     ApiKeyValidator, ApiKeyVerificationError, CreateKeyRequest, KeyExpirationConfig,
     RateLimitDefaults, UpdateKeyRequest, VerifyApiKey,
 };
@@ -355,6 +355,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         callbacks.config_id = id.into();
         configurations.push(ApiKeyConfig {
             config_id: id.into(),
+            references: if entry["references"] == "organization" { ApiKeyReferences::Organization } else { ApiKeyReferences::User },
             require_name: entry["requireName"].as_bool().unwrap_or(false),
             key_length: number(entry.get("keyLength"), 16.0),
             prefix: Some(entry["prefix"].as_str().unwrap_or("optKEY_").into()),

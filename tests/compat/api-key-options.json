@@ -1,4 +1,5 @@
 [
+  {"id":"organization","references":"organization"},
   {"id":"default","keyLength":16},
   {"id":"rate-window","rateEnabled":true,"rateWindow":600},
   {"id":"rate-max","rateEnabled":true,"rateMax":2},
