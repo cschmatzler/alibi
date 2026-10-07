@@ -6,7 +6,7 @@ description: "Mount the auth routes in an Axum application and protect handlers 
 The Axum adapter mounts every auth route as a nested router and provides two extractors, `CurrentSession` and `OptionalSession`. It needs Axum 0.8 and the `axum` feature:
 
 ```toml title="Cargo.toml"
-better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", features = ["axum"] }
+better-auth = { package = "alibi", git = "https://github.com/cschmatzler/better-auth-rs", features = ["axum"] }
 axum = "0.8"
 ```
 

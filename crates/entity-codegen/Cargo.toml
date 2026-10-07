@@ -1,14 +1,22 @@
 [package]
-name = "better-auth-entity-codegen"
+name = "alibi-entity-codegen"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
 license = { workspace = true }
-description = "Shared code generation for the better-auth entity derives"
+description = "Shared code generation for the Alibi entity derives"
 repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi-entity-codegen"
+publish = ["crates-io"]
+include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
 
 readme = { workspace = true }
 keywords = { workspace = true }
 categories = { workspace = true }
+
+[lib]
+name = "better_auth_entity_codegen"
 
 [lints]
 workspace = true
@@ -18,3 +26,6 @@ better-auth-schema-registry = { workspace = true }
 proc-macro2 = { workspace = true }
 quote = { workspace = true }
 syn = { workspace = true, features = ["extra-traits"] }
+
+[package.metadata.docs.rs]
+all-features = true

@@ -3,7 +3,7 @@ title: "Telemetry"
 description: "Opt-in, application-owned authentication telemetry: events, sinks and privacy."
 ---
 
-Better Auth RS collects **nothing** by default and never contacts a telemetry service. Telemetry is a hook for *your* code: you install a sink, the library hands it events, and you decide where they go.
+Alibi collects **nothing** by default and never contacts a telemetry service. Telemetry is a hook for *your* code: you install a sink, the library hands it events, and you decide where they go.
 
 ## Enable it
 
@@ -45,7 +45,7 @@ async fn build_auth(
 Initialization publishes one event:
 
 ```json
-{"type":"init","payload":{"libraryVersion":"1.0.0-alpha.3","runtime":"rust","platform":"linux","architecture":"x86_64","plugins":["email-password","session-management","oauth"]}}
+{"type":"init","payload":{"libraryVersion":"0.1.0","runtime":"rust","platform":"linux","architecture":"x86_64","plugins":["email-password","session-management","oauth"]}}
 ```
 
 It contains the library version, platform and the installed plugin names — no hostnames, URLs, secrets or user data. Publish your own application events through the same sink:

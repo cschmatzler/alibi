@@ -546,16 +546,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "better-auth"
-version = "1.0.0-alpha.3"
+name = "alibi"
+version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
  "base64 0.23.1",
- "better-auth-api",
- "better-auth-core",
- "better-auth-seaorm",
- "better-auth-sqlx",
+ "alibi-api",
+ "alibi-core",
+ "alibi-seaorm",
+ "alibi-sqlx",
  "chrono",
  "clap",
  "http-body-util",
@@ -574,15 +574,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "better-auth-api"
-version = "1.0.0-alpha.3"
+name = "alibi-api"
+version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "async-trait",
  "base64 0.23.1",
  "base64urlsafedata",
- "better-auth-core",
- "better-auth-schema-registry",
+ "alibi-core",
+ "alibi-schema-registry",
  "bon",
  "chacha20poly1305",
  "chrono",
@@ -628,15 +628,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "better-auth-core"
-version = "1.0.0-alpha.3"
+name = "alibi-core"
+version = "0.1.0"
 dependencies = [
  "aes-gcm",
  "async-trait",
  "axum",
  "base64 0.23.1",
- "better-auth-macros",
- "better-auth-schema-registry",
+ "alibi-macros",
+ "alibi-schema-registry",
  "chrono",
  "cookie",
  "flate2",
@@ -665,18 +665,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "better-auth-entity-codegen"
-version = "1.0.0-alpha.3"
+name = "alibi-entity-codegen"
+version = "0.1.0"
 dependencies = [
- "better-auth-schema-registry",
+ "alibi-schema-registry",
  "proc-macro2",
  "quote",
  "syn 3.0.6",
 ]
 
 [[package]]
-name = "better-auth-macros"
-version = "1.0.0-alpha.3"
+name = "alibi-macros"
+version = "0.1.0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -684,16 +684,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "better-auth-schema-registry"
-version = "1.0.0-alpha.3"
+name = "alibi-schema-registry"
+version = "0.1.0"
 
 [[package]]
-name = "better-auth-seaorm"
-version = "1.0.0-alpha.3"
+name = "alibi-seaorm"
+version = "0.1.0"
 dependencies = [
  "async-trait",
- "better-auth-core",
- "better-auth-seaorm-macros",
+ "alibi-core",
+ "alibi-seaorm-macros",
  "chrono",
  "ryu-js",
  "sea-orm",
@@ -706,10 +706,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "better-auth-seaorm-macros"
-version = "1.0.0-alpha.3"
+name = "alibi-seaorm-macros"
+version = "0.1.0"
 dependencies = [
- "better-auth-entity-codegen",
+ "alibi-entity-codegen",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -717,12 +717,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "better-auth-sqlx"
-version = "1.0.0-alpha.3"
+name = "alibi-sqlx"
+version = "0.1.0"
 dependencies = [
  "async-trait",
- "better-auth-core",
- "better-auth-sqlx-macros",
+ "alibi-core",
+ "alibi-sqlx-macros",
  "chrono",
  "ryu-js",
  "serde",
@@ -734,10 +734,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "better-auth-sqlx-macros"
-version = "1.0.0-alpha.3"
+name = "alibi-sqlx-macros"
+version = "0.1.0"
 dependencies = [
- "better-auth-entity-codegen",
+ "alibi-entity-codegen",
  "proc-macro-crate",
  "proc-macro2",
  "quote",
@@ -1016,10 +1016,10 @@ dependencies = [
  "async-trait",
  "axum",
  "base64 0.23.1",
- "better-auth",
- "better-auth-core",
- "better-auth-seaorm",
- "better-auth-sqlx",
+ "alibi",
+ "alibi-core",
+ "alibi-seaorm",
+ "alibi-sqlx",
  "chrono",
  "futures-util",
  "hmac 0.13.0",

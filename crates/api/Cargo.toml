@@ -1,14 +1,22 @@
 [package]
-name = "better-auth-api"
+name = "alibi-api"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
 license = "MIT AND MPL-2.0"
-description = "Built-in authentication plugins and API metadata for better-auth"
+description = "Built-in authentication plugins and API metadata for Alibi"
 repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi-api"
+publish = ["crates-io"]
+include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
 
 readme = { workspace = true }
 keywords = { workspace = true }
 categories = { workspace = true }
+
+[lib]
+name = "better_auth_api"
 
 [lints]
 workspace = true
@@ -87,10 +95,13 @@ serde_path_to_error = "0.1.20"
 # Path-only on purpose: better-auth-seaorm depends on better-auth-core, so a
 # versioned dev-dependency here would constrain publish order. Cargo drops
 # dev-dependencies without a version from the published manifest.
-better-auth-seaorm = { path = "../seaorm" }
+better-auth-seaorm = { package = "alibi-seaorm", path = "../seaorm" }
 
 [features]
 default = ["native-tls"]
 native-tls = ["reqwest/default-tls"]
 rustls = ["reqwest/__rustls-aws-lc-rs", "reqwest/system-proxy"]
 axum = ["better-auth-core/axum"]
+
+[package.metadata.docs.rs]
+features = ["axum"]

@@ -3,7 +3,7 @@ title: "Database"
 description: "Application-owned auth models, the generated schema, plugin tables and migrations."
 ---
 
-Better Auth RS does not impose a database layer. You own four model structs — user, session, account and verification — and tell the library about them through an `AuthSchema`. The store (SQLx or SeaORM) maps those models to tables; plugins that need extra tables bring their own.
+Alibi does not impose a database layer. You own four model structs — user, session, account and verification — and tell the library about them through an `AuthSchema`. The store (SQLx or SeaORM) maps those models to tables; plugins that need extra tables bring their own.
 
 | Role | Table (default) | Holds |
 | --- | --- | --- |

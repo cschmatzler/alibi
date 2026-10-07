@@ -11,7 +11,7 @@
 compat-servers = { max-threads = 1 }
 
 [[profile.default.overrides]]
-filter = 'binary_id(better-auth::compat) & test(/^sdk::tests::\w+_client_compat$/)'
+filter = 'binary_id(alibi::compat) & test(/^sdk::tests::\w+_client_compat$/)'
 test-group = 'compat-servers'
 slow-timeout = { period = "300s" }
 

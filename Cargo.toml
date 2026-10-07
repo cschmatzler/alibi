@@ -1,13 +1,21 @@
 [package]
-name = "better-auth"
-description = "The most comprehensive authentication framework for Rust"
+name = "alibi"
+description = "Authentication for Rust, compatible with Better Auth’s TypeScript client"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
 license = { workspace = true }
 repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi"
+publish = ["crates-io"]
+include = ["/src/**", "/scripts/*.rs", "/scripts/generate-openapi-matrix.mjs", "/README.md", "/LICENSE"]
 readme = { workspace = true }
 keywords = { workspace = true }
 categories = { workspace = true }
+[lib]
+name = "better_auth"
+
 [lints]
 workspace = true
 [workspace]
@@ -30,19 +38,21 @@ exclude = ["tests/compat/rust-server"]
 readme = "README.md"
 keywords = ["auth", "authentication", "session", "oauth", "security"]
 categories = ["authentication", "web-programming"]
-version = "1.0.0-alpha.3"
+version = "0.1.0"
 edition = "2024"
+rust-version = "1.99"
 license = "MIT"
 repository = "https://github.com/cschmatzler/better-auth-rs"
+homepage = "https://alibi.schmatzler.com"
 [workspace.dependencies]
 regex = "1"
-better-auth-core = { version = "1.0.0-alpha.3", path = "crates/core" }
-better-auth-api = { version = "1.0.0-alpha.3", path = "crates/api", default-features = false }
-better-auth-macros = { version = "1.0.0-alpha.3", path = "crates/derive", package = "better-auth-macros" }
-better-auth-seaorm = { version = "1.0.0-alpha.3", path = "crates/seaorm" }
-better-auth-schema-registry = { version = "1.0.0-alpha.3", path = "crates/schema-registry" }
-better-auth-entity-codegen = { version = "1.0.0-alpha.3", path = "crates/entity-codegen" }
-better-auth-sqlx = { version = "1.0.0-alpha.3", path = "crates/sqlx", default-features = false }
+better-auth-core = { package = "alibi-core", version = "0.1.0", path = "crates/core" }
+better-auth-api = { package = "alibi-api", version = "0.1.0", path = "crates/api", default-features = false }
+better-auth-macros = { package = "alibi-macros", version = "0.1.0", path = "crates/derive" }
+better-auth-seaorm = { package = "alibi-seaorm", version = "0.1.0", path = "crates/seaorm" }
+better-auth-schema-registry = { package = "alibi-schema-registry", version = "0.1.0", path = "crates/schema-registry" }
+better-auth-entity-codegen = { package = "alibi-entity-codegen", version = "0.1.0", path = "crates/entity-codegen" }
+better-auth-sqlx = { package = "alibi-sqlx", version = "0.1.0", path = "crates/sqlx", default-features = false }
 prettyplease = "0.3"
 tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1.92"
@@ -136,7 +146,7 @@ http-body-util = { version = "0.1", optional = true }
 [dev-dependencies]
 rsa = { workspace = true }
 # Enable adapters for repository tests without changing downstream defaults.
-better-auth = { path = ".", features = ["axum", "poem", "seaorm"] }
+better-auth = { package = "alibi", path = ".", features = ["axum", "poem", "seaorm"] }
 jsonwebtoken = { workspace = true, features = ["use_pem"] }
 ed25519-dalek = { workspace = true }
 k256 = { workspace = true }
@@ -213,3 +223,6 @@ codegen-units = 16
 opt-level = 3
 [profile.dev.package.num-bigint-dig]
 opt-level = 3
+
+[package.metadata.docs.rs]
+features = ["axum", "poem", "seaorm", "redis-cache"]

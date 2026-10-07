@@ -1,6 +1,6 @@
 ---
 title: "Existing databases"
-description: "Adopt Better Auth RS on a database you already have: table names, timestamp types, fixed-width ids and custom id generators."
+description: "Adopt Alibi on a database you already have: table names, timestamp types, fixed-width ids and custom id generators."
 ---
 
 You do not have to let the library own your schema. If you already have `users`, `sessions` and friends, keep your migrations and describe the existing tables with your own models. This page covers the mappings that most often need attention. The core idea is in [Database](/concepts/database/): models are plain structs deriving `AuthEntity`, and `AuthSchema` names them.

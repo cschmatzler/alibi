@@ -1,21 +1,29 @@
 [package]
-name = "better-auth-sqlx"
+name = "alibi-sqlx"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
 license = { workspace = true }
-description = "SQLx integration for better-auth"
+description = "SQLx integration for Alibi"
 repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi-sqlx"
+publish = ["crates-io"]
+include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
 
 readme = { workspace = true }
 keywords = { workspace = true }
 categories = { workspace = true }
+
+[lib]
+name = "better_auth_sqlx"
 
 [lints]
 workspace = true
 
 [dependencies]
 better-auth-core = { workspace = true }
-better-auth-sqlx-macros = { version = "1.0.0-alpha.3", path = "../sqlx-macros" }
+better-auth-sqlx-macros = { package = "alibi-sqlx-macros", version = "0.1.0", path = "../sqlx-macros" }
 
 async-trait = { workspace = true }
 chrono = { workspace = true }
@@ -34,3 +42,6 @@ sqlite = ["sqlx/sqlite"]
 postgres = ["sqlx/postgres"]
 tls-rustls = ["sqlx/tls-rustls"]
 tls-native-tls = ["sqlx/tls-native-tls"]
+
+[package.metadata.docs.rs]
+all-features = true

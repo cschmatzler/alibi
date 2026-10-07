@@ -1,13 +1,19 @@
 use super::*;
-pub(crate) fn found_crate_tokens(name: &str) -> Option<TokenStream> {
-    match crate_name(name).ok()? {
+pub(crate) fn found_crate_tokens(package_name: &str) -> Option<TokenStream> {
+    match crate_name(package_name).ok()? {
         FoundCrate::Itself => {
             // Examples and integration tests link the crate externally.
-            let ident = Ident::new(&name.replace('-', "_"), Span::call_site());
+            let ident = Ident::new("better_auth", Span::call_site());
             Some(quote!(::#ident))
         }
         FoundCrate::Name(name) => {
-            let ident = Ident::new(&name, Span::call_site());
+            // Cargo uses the explicit library name unless the dependency is aliased.
+            let library_name = if name == package_name.replace('-', "_") {
+                "better_auth"
+            } else {
+                &name
+            };
+            let ident = Ident::new(library_name, Span::call_site());
             Some(quote!(::#ident))
         }
     }
@@ -21,21 +27,26 @@ pub(crate) struct Roots {
 }
 
 pub(crate) fn resolve_roots() -> Roots {
-    if let Some(better_auth_root) = found_crate_tokens("better-auth") {
+    if let Some(better_auth_root) = found_crate_tokens("alibi") {
         return Roots {
             id_generator: quote! {},
             sqlx: quote!(#better_auth_root::sqlx),
             core: quote!(#better_auth_root::__private_core),
         };
     }
-    match crate_name("better-auth-sqlx") {
+    match crate_name("alibi-sqlx") {
         Ok(FoundCrate::Itself) => Roots {
             id_generator: quote! {},
             sqlx: quote!(crate),
             core: quote!(crate::__private_core),
         },
         Ok(FoundCrate::Name(name)) => {
-            let ident = Ident::new(&name, Span::call_site());
+            let library_name = if name == "alibi_sqlx" {
+                "better_auth_sqlx"
+            } else {
+                &name
+            };
+            let ident = Ident::new(library_name, Span::call_site());
             Roots {
                 id_generator: quote! {},
                 sqlx: quote!(::#ident),

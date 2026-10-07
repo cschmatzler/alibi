@@ -1,14 +1,22 @@
 [package]
-name = "better-auth-core"
+name = "alibi-core"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
 license = { workspace = true }
-description = "Shared authentication contracts and backend-independent services for better-auth"
+description = "Shared authentication contracts and backend-independent services for Alibi"
 repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi-core"
+publish = ["crates-io"]
+include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
 
 readme = { workspace = true }
 keywords = { workspace = true }
 categories = { workspace = true }
+
+[lib]
+name = "better_auth_core"
 
 [lints]
 workspace = true
@@ -70,3 +78,6 @@ tracing.workspace = true
 default = []
 redis-cache = ["dep:redis"]
 axum = ["dep:axum"]
+
+[package.metadata.docs.rs]
+all-features = true

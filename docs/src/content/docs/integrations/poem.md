@@ -6,7 +6,7 @@ description: "Mount the auth endpoint in a Poem application and extract sessions
 The Poem adapter nests the auth API as a single `Endpoint` and provides `CurrentSession` and `OptionalSession` extractors. Enable the `poem` feature and add `poem` to your application:
 
 ```toml title="Cargo.toml"
-better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", features = ["poem"] }
+better-auth = { package = "alibi", git = "https://github.com/cschmatzler/better-auth-rs", features = ["poem"] }
 poem = "3.1"
 ```
 

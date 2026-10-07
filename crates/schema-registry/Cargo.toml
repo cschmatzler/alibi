@@ -1,14 +1,25 @@
 [package]
-name = "better-auth-schema-registry"
+name = "alibi-schema-registry"
 version = { workspace = true }
 edition = { workspace = true }
+rust-version = { workspace = true }
 license = { workspace = true }
-description = "Authoritative field registry for better-auth entity schemas"
+description = "Authoritative field registry for Alibi entity schemas"
 repository = { workspace = true }
+homepage = { workspace = true }
+documentation = "https://docs.rs/alibi-schema-registry"
+publish = ["crates-io"]
+include = ["/src/**", "/migrations/**", "/README.md", "/LICENSE"]
 
 readme = { workspace = true }
 keywords = { workspace = true }
 categories = { workspace = true }
 
+[lib]
+name = "better_auth_schema_registry"
+
 [lints]
 workspace = true
+
+[package.metadata.docs.rs]
+all-features = true

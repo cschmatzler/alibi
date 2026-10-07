@@ -10,7 +10,7 @@ SQLx is the default store backend. `SqlxStore` supports SQLite and PostgreSQL an
 SQLx is enabled by the default `sqlx` feature. To pick one engine, disable default features and select `sqlx-sqlite` or `sqlx-postgres`; keep a TLS feature (`native-tls` or `rustls`) for outbound HTTP:
 
 ```toml title="Cargo.toml"
-better-auth = { git = "https://github.com/cschmatzler/better-auth-rs", default-features = false, features = ["axum", "sqlx-postgres", "rustls"] }
+better-auth = { package = "alibi", git = "https://github.com/cschmatzler/better-auth-rs", default-features = false, features = ["axum", "sqlx-postgres", "rustls"] }
 sqlx = { version = "0.9", default-features = false, features = ["postgres", "chrono", "json", "derive"] }
 ```
 

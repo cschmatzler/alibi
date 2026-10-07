@@ -1,6 +1,6 @@
 ---
 title: "Plugins"
-description: "Every Better Auth RS plugin by category, with its schema needs and endpoints."
+description: "Every Alibi plugin by category, with its schema needs and endpoints."
 sidebar:
   label: Overview
   order: 0

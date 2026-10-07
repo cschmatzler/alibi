@@ -24,12 +24,15 @@ mod tests {
     fn readme_installation_matches_the_unreleased_package() {
         let readme = read_repo_file("README.md");
         let repository = env!("CARGO_PKG_REPOSITORY");
+        let package = env!("CARGO_PKG_NAME");
         assert!(
-            readme.contains(&format!("better-auth = {{ git = \"{repository}\"")),
+            readme.contains(&format!(
+                "better-auth = {{ package = \"{package}\", git = \"{repository}\""
+            )),
             "the install example must use the canonical Git repository"
         );
         assert!(readme.contains(&format!(
-            "cargo install --git {repository} --locked better-auth-cli"
+            "cargo install --git {repository} --locked {package}-cli"
         )));
         assert!(readme.contains(&format!("`{}`", env!("CARGO_PKG_VERSION"))));
     }
