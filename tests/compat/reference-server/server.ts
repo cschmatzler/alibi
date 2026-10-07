@@ -1065,6 +1065,8 @@ for (const name of [
   "magic-link-hashed-custom-token",
   "magic-link-custom-hasher",
   "magic-link-generator-reject",
+  "magic-link-sender-coded",
+  "magic-link-sender-ordinary",
   "magic-link-disabled",
   ...numericModes
     .filter((mode) => mode.startsWith("lifetime-"))
@@ -1127,6 +1129,13 @@ for (const name of [
               metadata: metadata ?? null,
               ...(context ? { context } : {}),
             });
+            if (name === "magic-link-sender-coded")
+              throw new APIError("FORBIDDEN", {
+                code: "MAGIC_DELIVERY_REJECTED",
+                message: "Application delivery rejected",
+              });
+            if (name === "magic-link-sender-ordinary")
+              throw new Error("Application delivery failed");
           },
         }),
       ],
