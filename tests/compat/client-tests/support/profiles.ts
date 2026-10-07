@@ -56,6 +56,7 @@ export const FIXTURE_PROFILES = [
     "dynamic-custom",
     "override",
     "local-verified",
+    "implicit-disabled",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
