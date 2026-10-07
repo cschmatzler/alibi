@@ -23,7 +23,7 @@ compatScenario(
         disableRedirect: true,
       });
       expect(started.error).toBeNull();
-      const url = new URL(started.data!.url);
+      const url = new URL(started.data!.url!);
       expect(url.searchParams.getAll("response_type")).toEqual([
         profile.endsWith("response-type") ? "token" : "code",
       ]);
