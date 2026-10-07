@@ -83,6 +83,7 @@ export function createApiKeyOptionsFixture(
           minimumNameLength: number(entry.minName, 1),
           maximumNameLength: number(entry.maxName, 32),
           keyExpiration: {
+            disableCustomExpiresTime: entry.disableCustomExpiresTime ?? false,
             defaultExpiresIn: entry.expiration === undefined ? null : number(entry.expiration, 0),
             minExpiresIn: number(entry.minExpiration, 0),
             maxExpiresIn: number(entry.maxExpiration, 365),
