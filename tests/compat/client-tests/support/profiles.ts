@@ -933,6 +933,8 @@ export const FIXTURE_PROFILES = [
   "one-tap-encrypted",
   "one-tap-retain-account",
   "google-id-default",
+  "google-granted-scopes-enabled",
+  "google-granted-scopes-disabled",
   "google-id-array",
   "google-id-empty-array",
   "google-id-domain",
