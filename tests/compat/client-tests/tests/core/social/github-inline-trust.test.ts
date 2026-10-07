@@ -29,7 +29,14 @@ for (const matchingRecord of [true, false]) {
               visibility: "private" as const,
             },
             ...(matchingRecord
-              ? [{ email: address, primary: false, verified: false, visibility: "private" }]
+              ? [
+                  {
+                    email: address,
+                    primary: false,
+                    verified: false,
+                    visibility: "private" as const,
+                  },
+                ]
               : []),
           ],
         });
