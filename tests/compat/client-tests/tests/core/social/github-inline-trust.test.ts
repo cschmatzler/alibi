@@ -26,7 +26,7 @@ for (const matchingRecord of [true, false]) {
               email: ctx.uniqueEmail("primary-other"),
               primary: true,
               verified: true,
-              visibility: "private",
+              visibility: "private" as const,
             },
             ...(matchingRecord
               ? [{ email: address, primary: false, verified: false, visibility: "private" }]
