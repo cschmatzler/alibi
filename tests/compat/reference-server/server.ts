@@ -998,6 +998,7 @@ for (const name of [
 const magicProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const name of [
   "magic-link-hashed",
+  "magic-link-hashed-custom-token",
   "magic-link-disabled",
   ...numericModes
     .filter((mode) => mode.startsWith("lifetime-"))
@@ -1012,7 +1013,10 @@ for (const name of [
       plugins: [
         magicLink({
           ...numericOptions(name),
-          storeToken: name === "magic-link-hashed" ? "hashed" : "plain",
+          storeToken: name.startsWith("magic-link-hashed") ? "hashed" : "plain",
+          ...(name === "magic-link-hashed-custom-token"
+            ? { generateToken: async (email: string) => `custom-link-${email}` }
+            : {}),
           disableSignUp: name === "magic-link-disabled",
           async sendMagicLink({ email, url, token, metadata }, ctx) {
             const identifier = ctx.context.options.basePath?.includes("magic-link-hashed")
