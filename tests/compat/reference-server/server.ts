@@ -951,6 +951,9 @@ function createOtpProfile(name: string) {
   return betterAuth({
     ...authOptions,
     basePath: `/__test/profiles/${name}/api/auth`,
+    ...(name === "passwordless-rate-policy"
+      ? { rateLimit: { enabled: true, window: 60, max: 10000 } }
+      : {}),
     verification: { disableCleanup: name === "verification-no-cleanup" },
     emailVerification:
       name === "passwordless-proof"
@@ -962,6 +965,7 @@ function createOtpProfile(name: string) {
           },
     plugins: [
       emailOTP({
+        ...(name === "passwordless-rate-policy" ? { rateLimit: { window: 1, max: 2 } } : {}),
         ...numericOptions(name),
         storeOTP:
           name === "passwordless-hashed"
@@ -982,6 +986,7 @@ function createOtpProfile(name: string) {
 }
 const otpProfiles = new Map<string, ReturnType<typeof createOtpProfile>>();
 for (const name of [
+  "passwordless-rate-policy",
   "otp-signup-verification",
   "passwordless-hashed",
   "passwordless-encrypted-reuse",

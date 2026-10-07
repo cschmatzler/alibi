@@ -1062,6 +1062,7 @@ export const FIXTURE_PROFILES = [
   "magic-link-hashed",
   "magic-link-hashed-custom-token",
   "magic-link-disabled",
+  "passwordless-rate-policy",
   "otp-signup-verification",
   "passwordless-hashed",
   "passwordless-encrypted-reuse",
