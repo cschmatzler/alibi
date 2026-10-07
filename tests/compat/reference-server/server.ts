@@ -775,6 +775,14 @@ const apiKeyGenerationFixture = createApiKeyGenerationFixture(database, authOpti
 verificationProfiles.set(apiKeyGenerationFixture.path, apiKeyGenerationFixture.auth);
 const apiKeyOptionsFixture = createApiKeyOptionsFixture(database, authOptions);
 verificationProfiles.set(apiKeyOptionsFixture.path, apiKeyOptionsFixture.auth);
+verificationProfiles.set(
+  "/__test/profiles/api-key-no-default/api/auth",
+  betterAuth({
+    ...authOptions,
+    basePath: "/__test/profiles/api-key-no-default/api/auth",
+    plugins: [username(), apiKey({ configId: "other", enableMetadata: true })],
+  }),
+);
 const apiKeyHookFixture = createApiKeyHookFixture(database, authOptions);
 verificationProfiles.set(apiKeyHookFixture.path, apiKeyHookFixture.auth);
 for (const [path, instance] of managedSecretsFixture.profiles) {

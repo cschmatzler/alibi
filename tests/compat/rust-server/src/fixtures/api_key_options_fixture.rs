@@ -431,3 +431,17 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         .nest(path, auth.clone().axum_router().with_state(auth))
         .merge(controls))
 }
+
+/// A named-only API-key instance deliberately has no implicit default.
+pub async fn no_default_router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
+    let path = "/__test/profiles/api-key-no-default/api/auth";
+    let config = base.clone().base_path(path);
+    let auth = Arc::new(AuthBuilder::<TestSchema>::new(config.clone())
+        .store(crate::backend::store::<TestSchema>(config.clone(), database))
+        .rate_limit(RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(ApiKeyPlugin::with_config(ApiKeyConfig {config_id:"other".into(),enable_metadata:true,..Default::default()}))
+        .build().await?);
+    Ok(Router::new().nest(path, auth.clone().axum_router().with_state(auth)))
+}
