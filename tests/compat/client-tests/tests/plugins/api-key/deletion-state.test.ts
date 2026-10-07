@@ -17,7 +17,6 @@ async function state(ctx: ScenarioContext) {
           referenceId: z.string(),
           name: z.string().nullable(),
           enabled: z.boolean(),
-          key: z.string(),
           metadata: z.string().nullable(),
           createdAt: z.string(),
           updatedAt: z.string(),
