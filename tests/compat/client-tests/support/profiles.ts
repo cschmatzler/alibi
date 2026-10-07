@@ -38,6 +38,12 @@ export const FIXTURE_PROFILES = [
     "logout-no-return",
   ] as const),
   ...variants("generic-token-", [
+    "base-http",
+    "base-https",
+    "base-auto",
+    "base-no-fallback",
+    "base-untrusted",
+
     "post",
     "basic",
     "none",
