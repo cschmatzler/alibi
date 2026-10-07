@@ -894,6 +894,7 @@ export const FIXTURE_PROFILES = [
   "passkey-no-freshness",
   "passkey-first",
   "passkey-first-missing",
+  "device-callback-success",
   "device-length-506",
   "device-custom",
   "device-configured",
