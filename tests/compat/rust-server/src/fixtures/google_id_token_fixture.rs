@@ -26,6 +26,8 @@ pub(crate) async fn router(
     let mut router = Router::new();
     for name in [
         "google-id-default",
+        "google-granted-scopes-enabled",
+        "google-granted-scopes-disabled",
         "google-id-array",
         "google-id-empty-array",
         "google-id-domain",
@@ -39,6 +41,9 @@ pub(crate) async fn router(
         let configured = config.clone().base_path(&path);
         let mut provider =
             OAuthProvider::google("google-default-client", "local-google-default-secret");
+        if name == "google-granted-scopes-disabled" {
+            provider.authorization_params.retain(|(key, _)| key != "include_granted_scopes");
+        }
         if name == "google-id-array" {
             provider = provider.with_client_ids(vec![
                 "google-default-client".into(),
