@@ -73,6 +73,7 @@ pub(super) async fn router(
 ) -> AuthResult<Router> {
     let mut router = Router::new();
     for name in [
+        "magic-link-rate-policy",
         "magic-link-hashed",
         "magic-link-hashed-custom-token",
         "magic-link-disabled",
@@ -92,12 +93,13 @@ pub(super) async fn router(
                     config.clone(),
                     database.clone(),
                 ))
-                .rate_limit(RateLimitConfig::new().enabled(false))
+                .rate_limit(RateLimitConfig::new().enabled(name == "magic-link-rate-policy").default_limit(std::time::Duration::from_secs(60), 10000))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
                 .plugin(EmailVerificationPlugin::new().send_on_sign_up(false))
                 .plugin(PasswordManagementPlugin::new())
                 .plugin(SessionManagementPlugin::new())
                 .plugin(MagicLinkPlugin::new(MagicLinkConfig {
+                    rate_limit: if name == "magic-link-rate-policy" { alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 2.0} } else { MagicLinkConfig::default().rate_limit },
                     send_magic_link: Some(Arc::new(Sender(outbox.clone()))),
                     generate_token: (name == "magic-link-hashed-custom-token").then(|| Arc::new(CustomToken) as Arc<dyn MagicLinkTokenGenerator>),
                     storage: if name.starts_with("magic-link-hashed") {
