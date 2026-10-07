@@ -1,6 +1,9 @@
 //! Public authentication requests with the genuine enabled limiter.
 use crate::{TestSchema, otp_profiles};
-use axum::Router;
+use axum::{Router, Json, routing::get};
+use alibi_core::store::SchemaMigrator;
+use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
+use serde_json::json;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::{
     EndpointRateLimit, RateLimitConfig, RateLimitResolver, RateLimitRule,
@@ -49,8 +52,20 @@ pub(crate) async fn router(
     database: DatabaseConnection,
     outbox: otp_profiles::Outbox,
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
-    let mut router = Router::new();
-    for name in ["ordered", "default"] {
+    #[cfg(feature = "seaorm")]
+    let storage = Arc::new(alibi_seaorm::SeaOrmRateLimitStorage::new(database.clone()));
+    #[cfg(not(feature = "seaorm"))]
+    let storage = Arc::new(alibi_sqlx::SqlxRateLimitStorage::new(alibi_sqlx::SqlxPool::from(database.get_sqlite_connection_pool().clone())));
+    storage.migrate().await?;
+    let read_database = database.clone();
+    let mut router = Router::new().route("/__test/rate-database-state", get(move || {
+        let database = read_database.clone();
+        async move {
+            let rows = database.query_all_raw(Statement::from_string(DbBackend::Sqlite, "SELECT key,count,last_request FROM rate_limit ORDER BY key")).await.unwrap();
+            Json(rows.into_iter().map(|row| json!({"key": row.try_get::<String>("", "key").unwrap(), "count": row.try_get::<f64>("", "count").unwrap(), "lastRequest": row.try_get::<i64>("", "last_request").unwrap()})).collect::<Vec<_>>())
+        }
+    }));
+    for name in ["ordered", "default", "database-first", "database-second"] {
         let mut config = base.clone();
         config.base_path = format!("/__test/profiles/rate-limit-{name}/api/auth");
         let path = config.base_path.clone();
@@ -58,6 +73,9 @@ pub(crate) async fn router(
             Duration::from_secs(60),
             if name == "ordered" { 1 } else { 10000 },
         );
+        if name.starts_with("database-") {
+            limits = limits.storage(storage.clone()).endpoint("/get-session", Duration::from_secs(1), 2);
+        }
         if name == "ordered" {
             limits = limits
                 .endpoint("/sign-up/*", Duration::from_secs(60), 2)

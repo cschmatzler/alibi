@@ -1,9 +1,10 @@
-/** Installed Source policies exercised through actual authentication mutations. */
 import { type BetterAuthOptions, betterAuth } from "better-auth";
+/** Installed Source policies exercised through actual authentication mutations. */
+import { getMigrations } from "better-auth/db/migration";
 
-export function createRateLimitFixture(base: BetterAuthOptions) {
+export async function createRateLimitFixture(base: BetterAuthOptions) {
   const profiles = new Map(
-    ["ordered", "default"].map((name) => {
+    ["ordered", "default", "database-first", "database-second"].map((name) => {
       const profile = `rate-limit-${name}`;
       return [
         profile,
@@ -13,9 +14,12 @@ export function createRateLimitFixture(base: BetterAuthOptions) {
           basePath: `/__test/profiles/${profile}/api/auth`,
           rateLimit: {
             enabled: true,
-            storage: "memory",
+            storage: name.startsWith("database-") ? "database" : "memory",
             window: 60,
             max: name === "ordered" ? 1 : 10000,
+            ...(name.startsWith("database-")
+              ? { customRules: { "/get-session": { window: 1, max: 2 } } }
+              : {}),
             ...(name === "ordered"
               ? {
                   customRules: {
@@ -39,9 +43,27 @@ export function createRateLimitFixture(base: BetterAuthOptions) {
       ] as const;
     }),
   );
+  const databaseAuth = profiles.get("rate-limit-database-first")!;
+  const context = await databaseAuth.$context;
+  await (await getMigrations(context.options)).runMigrations();
   return {
     async handle(request: Request) {
       const url = new URL(request.url);
+      if (url.pathname === "/__test/rate-database-state") {
+        // Quota records use different native primary-key layouts. Observe the
+        // actual shared quota contract, independently of adapter bookkeeping.
+        const rows = await context.adapter.findMany({
+          model: "rateLimit",
+          sortBy: { field: "key", direction: "asc" },
+        });
+        return Response.json(
+          rows.map((row: any) => ({
+            key: row.key,
+            count: row.count,
+            lastRequest: Number(row.lastRequest),
+          })),
+        );
+      }
       for (const [profile, auth] of profiles) {
         if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`)) {
           return auth.handler(request);

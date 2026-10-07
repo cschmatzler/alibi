@@ -561,7 +561,7 @@ const sessionFieldsFixture = await createSessionFieldsFixture(
   authOptions,
   `http://localhost:${PORT}`,
 );
-const rateLimitFixture = createRateLimitFixture(authOptions);
+const rateLimitFixture = await createRateLimitFixture(authOptions);
 const clientIpFixture = await createClientIpFixture(authOptions, database);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
 const adminBannedMessageFixture = createAdminBannedMessageFixture(authOptions, database);
