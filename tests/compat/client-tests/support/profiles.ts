@@ -15,6 +15,7 @@ function variants<P extends string, S extends string>(
 export const FIXTURE_PROFILES = [
   ...variants("generic-discovery-", [
     "success",
+    "nonce-unbound",
     "override",
     "expiry-positive",
     "expiry-zero",
