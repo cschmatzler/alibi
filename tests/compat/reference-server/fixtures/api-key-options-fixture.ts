@@ -87,7 +87,11 @@ export function createApiKeyOptionsFixture(
             minExpiresIn: number(entry.minExpiration, 0),
             maxExpiresIn: number(entry.maxExpiration, 365),
           },
-          rateLimit: { enabled: false },
+          rateLimit: {
+            enabled: entry.rateEnabled ?? false,
+            maxRequests: entry.rateMax,
+            timeWindow: entry.rateWindow,
+          },
           enableMetadata: true,
           ...(entry.custom
             ? {

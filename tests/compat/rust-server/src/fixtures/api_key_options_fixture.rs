@@ -375,7 +375,9 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                 ..Default::default()
             },
             rate_limit: RateLimitDefaults {
-                enabled: false,
+                enabled: entry["rateEnabled"].as_bool().unwrap_or(false),
+                max_requests: number(entry.get("rateMax"), 10.0),
+                time_window: number(entry.get("rateWindow"), 86_400_000.0),
                 ..Default::default()
             },
             enable_metadata: true,
