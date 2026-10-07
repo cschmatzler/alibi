@@ -58,6 +58,7 @@ export const FIXTURE_PROFILES = [
     "local-verified",
     "implicit-disabled",
     "skip-state-cookie",
+    "linking-disabled",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",

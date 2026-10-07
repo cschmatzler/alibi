@@ -256,6 +256,7 @@ pub(crate) async fn router(
         "local-verified",
         "implicit-disabled",
         "skip-state-cookie",
+        "linking-disabled",
         "expiry-positive",
         "expiry-zero",
         "expiry-negative",
@@ -306,6 +307,9 @@ pub(crate) async fn router(
         }
         if mode == "skip-state-cookie" {
             settings.account.skip_state_cookie_check = true;
+        }
+        if mode == "linking-disabled" {
+            settings.account.account_linking.enabled = false;
         }
         let configured_mode = if mode.starts_with("dynamic") {
             "post"
