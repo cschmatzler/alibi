@@ -928,6 +928,7 @@ export const FIXTURE_PROFILES = [
   "phone-signup",
   "phone-proof",
   "phone-custom",
+  "phone-custom-errors",
   "phone-callback-reject",
   "openapi-minimal",
   "openapi-last-login",

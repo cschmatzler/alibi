@@ -14,7 +14,8 @@ export type PhoneProfile =
   | "phone-signup"
   | "phone-proof"
   | "phone-custom"
-  | "phone-callback-reject";
+  | "phone-callback-reject"
+  | "phone-custom-errors";
 
 export function phoneClient(ctx: ScenarioContext, profile: PhoneProfile, actor = "primary") {
   return createAuthClient({
