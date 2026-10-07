@@ -1,4 +1,4 @@
-//! Schema traits for binding Better Auth to application-owned auth models.
+//! Schema traits for binding Alibi to application-owned auth models.
 
 use crate::entity::{AuthAccount, AuthSession, AuthUser, AuthVerification};
 

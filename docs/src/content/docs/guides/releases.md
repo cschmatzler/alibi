@@ -17,7 +17,7 @@ For example, hypothetical Rust releases `1.0.0` and `1.0.1` could both target Be
 
 Stable releases have no suffix. Reserve `-alpha.N`, `-beta.N`, and `-rc.N` for actual prereleases. Never reuse a published version or move its Git tag. Release tags use `v` followed by the Rust version, for example `v1.0.1`.
 
-The repository currently targets **Better Auth `1.7.7`** and uses the development workspace version `0.1.0`. These examples do not change either version or imply a published release.
+The current release is **Alibi `0.1.0`**, targeting **Better Auth `1.7.7`**. The version examples above illustrate the policy for future releases.
 
 ## Compatibility rules
 
@@ -48,11 +48,13 @@ The upstream compatibility target is separate release information. Do not encode
 
 ## First crates.io release: 0.1.0
 
-The initial release is being prepared under the `alibi` package name, with all ten supporting crates named `alibi-*` and versioned `0.1.0`. The upstream compatibility target remains Better Auth `1.7.7`.
+The initial crates.io release is `alibi` `0.1.0`, with all ten supporting crates named `alibi-*` and versioned `0.1.0`. The upstream compatibility target remains Better Auth `1.7.7`.
 
-This release includes the Rust authentication facade, built-in plugins, SQLx and SeaORM stores, schema derives, and the application-owned schema generator. The Rust library import remains `better_auth`; `alibi-cli` installs the `better-auth-rs` generator binary. Rust 1.99 is the supported release toolchain. APIs and generated schemas may change during the `0.x` series, and the existing development warning still applies.
+This release includes the Rust authentication facade, built-in plugins, SQLx and SeaORM stores, schema derives, and the application-owned schema generator. The Rust library import remains `better_auth`; `alibi-cli` installs the `better-auth-rs` generator binary. Rust 1.99 is the supported release toolchain.
 
-Preview the release from an uncommitted checkout:
+## Publishing a release
+
+Preview a release from an uncommitted checkout:
 
 ```bash
 devenv shell -- ./scripts/publish.sh --allow-dirty
@@ -66,4 +68,4 @@ Before uploading, run the release checklist on the final commit and authenticate
 devenv shell -- ./scripts/publish.sh --publish
 ```
 
-The publish command requires a clean checkout. Do not pass `--allow-dirty` for the actual release. After upload, update the Git installation examples to the registry release, replace the unreleased notice, and create the `v0.1.0` tag on the release commit.
+The publish command requires a clean checkout. Do not pass `--allow-dirty` for the actual release. After upload, create the immutable `v{rust-version}` tag on the release commit. Installation examples and release notes must already describe that release in the reviewed commit.

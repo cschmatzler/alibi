@@ -1,4 +1,4 @@
-//! Proc macros for the Better Auth `SQLx` integration.
+//! Proc macros for the Alibi `SQLx` integration.
 mod columns;
 mod entities;
 mod model;

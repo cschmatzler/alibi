@@ -6,7 +6,7 @@ description: "Select database engines, framework integrations, the TLS stack and
 Choose features on the Git dependency. For SQLite with Rustls and Axum:
 
 ```toml
-better-auth = { package = "alibi", git = "https://github.com/cschmatzler/better-auth-rs", default-features = false, features = ["axum", "sqlx-sqlite", "rustls"] }
+better-auth = { package = "alibi", version = "0.1.0", default-features = false, features = ["axum", "sqlx-sqlite", "rustls"] }
 ```
 
 | Feature | Default | Enables |
@@ -32,13 +32,13 @@ better-auth = { package = "alibi", git = "https://github.com/cschmatzler/better-
 
 ```toml
 # PostgreSQL + Axum + Rustls (typical production)
-better-auth = { package = "alibi", git = "…", default-features = false, features = ["axum", "sqlx-postgres", "rustls"] }
+better-auth = { package = "alibi", version = "0.1.0", default-features = false, features = ["axum", "sqlx-postgres", "rustls"] }
 
 # SeaORM + Poem + Rustls
-better-auth = { package = "alibi", git = "…", default-features = false, features = ["poem", "seaorm", "rustls"] }
+better-auth = { package = "alibi", version = "0.1.0", default-features = false, features = ["poem", "seaorm", "rustls"] }
 
 # Axum + SQLx + Redis-backed sessions and rate limits
-better-auth = { package = "alibi", git = "…", features = ["axum", "redis-cache"] }
+better-auth = { package = "alibi", version = "0.1.0", features = ["axum", "redis-cache"] }
 ```
 
 Your own `sqlx` dependency must enable the same engine (`"sqlite"` and/or `"postgres"`) plus `chrono`, `json` and `derive`, because the generated models derive `sqlx::FromRow`.

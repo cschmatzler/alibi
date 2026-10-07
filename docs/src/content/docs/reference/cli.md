@@ -8,9 +8,7 @@ The `better-auth-rs` binary generates the Rust source for your auth models. It h
 ## Install
 
 ```bash
-cargo install --git https://github.com/cschmatzler/better-auth-rs --locked alibi-cli
-# pin to the revision you depend on:
-cargo install --git https://github.com/cschmatzler/better-auth-rs --rev <commit> --locked alibi-cli
+cargo install alibi-cli --version 0.1.0 --locked
 ```
 
 ## `generate`

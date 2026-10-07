@@ -1,6 +1,6 @@
-//! # Better Auth Core
+//! # Alibi Core
 //!
-//! Core abstractions for the Better Auth authentication framework.
+//! Core abstractions for the Alibi authentication framework.
 //! Contains traits, types, configuration, and error handling.
 
 #![cfg_attr(

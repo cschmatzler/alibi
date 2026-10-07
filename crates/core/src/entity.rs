@@ -1,4 +1,4 @@
-//! Entity traits for the Better Auth framework.
+//! Entity traits for the Alibi framework.
 //!
 //! These traits define the interface that entity types must implement.
 //! The framework accesses entity fields through these trait methods,

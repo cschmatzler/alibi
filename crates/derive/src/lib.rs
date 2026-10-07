@@ -1,4 +1,4 @@
-//! Proc macros used by the Better Auth root crates.
+//! Proc macros used by the Alibi root crate.
 
 use proc_macro::TokenStream as ProcMacroTokenStream;
 use proc_macro2::TokenStream;

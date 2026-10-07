@@ -1,6 +1,6 @@
-//! # Better Auth - Rust
+//! # Alibi
 //!
-//! A comprehensive authentication framework for Rust, inspired by Better-Auth.
+//! Authentication for Rust, compatible with Better Auth's TypeScript client.
 //!
 //! ## Quick Start
 //!

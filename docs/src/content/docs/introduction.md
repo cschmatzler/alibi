@@ -27,9 +27,7 @@ async fn build<S: AuthSchema>(builder: AuthBuilder<S>) -> AuthResult<BetterAuth<
 }
 ```
 
-:::caution[Unreleased]
-Alibi is used directly from Git. APIs, wire formats and generated schemas may change before a release. Pin a reviewed commit with `rev = "<commit>"` for reproducible builds.
-:::
+Install Alibi `0.1.0` from [crates.io](https://crates.io/crates/alibi). See [Installation](/installation/) for the library dependency and matching schema generator.
 
 ## How a request flows
 

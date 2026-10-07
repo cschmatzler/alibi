@@ -17,6 +17,6 @@ Depend on **one** library crate, `alibi`. Its public modules re-export the APIs 
 | `alibi-sqlx-macros`, `alibi-seaorm-macros` | Derive implementations behind the SQLx and SeaORM stores | Never — use `better_auth::sqlx` or `better_auth::seaorm` |
 | `alibi-schema-registry`, `alibi-entity-codegen` | Plugin schema definitions and shared derive code used by the CLI and macros | Never |
 
-Install the CLI as a separate tool using the same Git revision as your application; see the [CLI reference](/reference/cli/).
+Install the CLI as a separate tool using the same release version as your application; see the [CLI reference](/reference/cli/).
 
-The workspace version is `0.1.0`; the library is used from Git and has no crates.io release yet.
+The workspace release is `0.1.0`. The library and supporting crates are published on crates.io.

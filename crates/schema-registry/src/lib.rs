@@ -1,4 +1,4 @@
-//! Authoritative field registry for better-auth entity schemas.
+//! Authoritative field registry for Alibi entity schemas.
 //!
 //! Shared by the `AuthEntity` proc macro (for compile-time validation)
 //! and the CLI (for code generation). This is the single source of truth

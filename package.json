@@ -1,7 +1,7 @@
 {
   "name": "alibi",
-  "version": "1.0.0",
-  "description": "",
+  "version": "0.1.0",
+  "description": "Documentation and deployment tooling for Alibi",
   "main": "index.js",
   "scripts": {
     "test": "devenv shell -- ./scripts/check.sh",
@@ -12,8 +12,7 @@
     "docs:infra:check": "tsc --project alchemy/tsconfig.json",
     "docs:plan": "APP_ENV=production bun --bun varlock run -- alchemy plan alchemy/alchemy.run.ts --stage prod --profile better-auth-rs",
     "docs:deploy": "APP_ENV=production bun --bun varlock run -- alchemy deploy alchemy/alchemy.run.ts --stage prod --profile better-auth-rs",
-    "docs:destroy": "APP_ENV=production bun --bun varlock run -- alchemy destroy alchemy/alchemy.run.ts --stage prod --profile better-auth-rs",
-    "docs:secrets:edit": "sops secrets.production.sops.json"
+    "docs:destroy": "APP_ENV=production bun --bun varlock run -- alchemy destroy alchemy/alchemy.run.ts --stage prod --profile better-auth-rs"
   },
   "keywords": [],
   "author": "",

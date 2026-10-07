@@ -1,6 +1,6 @@
-//! # Better Auth API
+//! # Alibi API
 //!
-//! Plugin implementations for the Better Auth authentication framework.
+//! Plugin implementations for the Alibi authentication framework.
 
 #![cfg_attr(
     test,
