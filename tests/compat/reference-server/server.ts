@@ -1057,12 +1057,14 @@ for (const name of [
   otpProfiles.set(name, createOtpProfile(name));
 }
 
+let magicHasherMode = "success";
 const magicProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const name of [
   "magic-link-rate-policy",
   "magic-link-hashed",
   "magic-link-hashed-custom-token",
   "magic-link-custom-hasher",
+  "magic-link-custom-hasher-errors",
   "magic-link-disabled",
   ...numericModes
     .filter((mode) => mode.startsWith("lifetime-"))
@@ -1081,29 +1083,34 @@ for (const name of [
         magicLink({
           ...(name === "magic-link-rate-policy" ? { rateLimit: { window: 1, max: 2 } } : {}),
           ...numericOptions(name),
-          storeToken:
-            name === "magic-link-custom-hasher"
-              ? {
-                  type: "custom-hasher",
-                  hash: async (token: string) => {
-                    await Promise.resolve();
-                    return `application:${token}`;
-                  },
-                }
-              : name.startsWith("magic-link-hashed")
-                ? "hashed"
-                : "plain",
+          storeToken: name.startsWith("magic-link-custom-hasher")
+            ? {
+                type: "custom-hasher",
+                hash: async (token: string) => {
+                  await Promise.resolve();
+                  if (name.endsWith("-errors") && magicHasherMode === "coded")
+                    throw new APIError("FORBIDDEN", {
+                      code: "MAGIC_HASH_REJECTED",
+                      message: "Application hasher rejected",
+                    });
+                  if (name.endsWith("-errors") && magicHasherMode === "ordinary")
+                    throw new Error("Application hasher failed");
+                  return `application:${token}`;
+                },
+              }
+            : name.startsWith("magic-link-hashed")
+              ? "hashed"
+              : "plain",
           ...(name === "magic-link-hashed-custom-token"
             ? { generateToken: async (email: string) => `custom-link-${email}` }
             : {}),
           disableSignUp: name === "magic-link-disabled",
           async sendMagicLink({ email, url, token, metadata }, ctx) {
-            const identifier =
-              name === "magic-link-custom-hasher"
-                ? `application:${token}`
-                : ctx.context.options.basePath?.includes("magic-link-hashed")
-                  ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
-                  : token;
+            const identifier = name.startsWith("magic-link-custom-hasher")
+              ? `application:${token}`
+              : ctx.context.options.basePath?.includes("magic-link-hashed")
+                ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
+                : token;
             const context = await callbackSnapshot(ctx, `magic-link:${identifier}`);
             magicLinkOutbox.set(email, {
               url,
@@ -2975,6 +2982,10 @@ const server = Bun.serve({
         return jsonResponse(await auth.api.verifyApiKey({ body: await readJson(request) }));
       }
 
+      if (url.pathname === "/__test/magic-link/hasher-control" && request.method === "POST") {
+        magicHasherMode = (await request.json()).mode;
+        return Response.json({ status: true });
+      }
       if (url.pathname === "/__test/magic-link" && request.method === "GET") {
         return jsonResponse(magicLinkOutbox.get(url.searchParams.get("email") ?? "") ?? null);
       }
