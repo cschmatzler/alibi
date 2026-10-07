@@ -405,6 +405,7 @@ export const FIXTURE_PROFILES = [
     "wildcard",
   ] as const),
   ...variants("user-lifecycle-", [
+    "request-body",
     "default",
     "required",
     "delivery",
