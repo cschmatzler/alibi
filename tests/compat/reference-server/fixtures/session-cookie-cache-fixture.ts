@@ -325,7 +325,10 @@ export async function sessionCookieCacheFixture(base: BetterAuthOptions, databas
               : "compact",
           maxAge,
           version:
-            mode.startsWith("version") || mode.endsWith("interactions") || mode === "exotic"
+            mode.startsWith("version") ||
+            mode.endsWith("interactions") ||
+            mode === "exotic" ||
+            mode === "managed"
               ? callback
               : mode === "date-version"
                 ? "2026-10-01T00:00:00.000Z"
