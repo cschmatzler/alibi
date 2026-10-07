@@ -967,7 +967,14 @@ for (const name of [
   );
 }
 
-for (const name of ["passkey-fresh", "passkey-no-freshness", "passkey-acceptance"]) {
+for (const name of [
+  "passkey-fresh",
+  "passkey-no-freshness",
+  "passkey-acceptance",
+  "passkey-rp-options",
+  "passkey-origin-list",
+  "passkey-origin-null",
+]) {
   const path = `/__test/profiles/${name}/api/auth`;
   verificationProfiles.set(
     path,
@@ -977,11 +984,24 @@ for (const name of ["passkey-fresh", "passkey-no-freshness", "passkey-acceptance
       session: { ...authOptions.session, freshAge: name === "passkey-fresh" ? 1 : 0 },
       plugins: [
         passkey(
-          name === "passkey-acceptance"
+          name === "passkey-rp-options"
             ? {
-                advanced: { webAuthnChallengeCookie: "ceremony-proof" },
+                rpName: "Configured ceremony RP",
+                authenticatorSelection: {
+                  residentKey: "required",
+                  userVerification: "required",
+                  authenticatorAttachment: "platform",
+                },
               }
-            : undefined,
+            : name === "passkey-origin-list"
+              ? { origin: [authOptions.baseURL as string, "http://localhost:4444"] }
+              : name === "passkey-origin-null"
+                ? { origin: null }
+                : name === "passkey-acceptance"
+                  ? {
+                      advanced: { webAuthnChallengeCookie: "ceremony-proof" },
+                    }
+                  : undefined,
         ),
         username(),
       ],
