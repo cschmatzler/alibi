@@ -201,6 +201,8 @@ const defaultGitHubProfile = (): GitHubProfile => ({
   ],
 });
 let githubProfile = defaultGitHubProfile();
+let githubEmailStatus = 200;
+const githubRequests: string[] = [];
 const oauthServer = Bun.serve({
   port: 0,
   async fetch(request) {
@@ -307,6 +309,7 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   }
 
   if (url.origin === "https://api.github.com" && url.pathname === "/user") {
+    githubRequests.push("/user");
     return jsonResponse({
       id: githubProfile.id,
       login: githubProfile.login,
@@ -317,7 +320,13 @@ globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   }
 
   if (url.origin === "https://api.github.com" && url.pathname === "/user/emails") {
-    return jsonResponse(githubProfile.emails);
+    githubRequests.push("/user/emails");
+    return jsonResponse(
+      githubEmailStatus === 200
+        ? githubProfile.emails
+        : { message: "Configured ancillary request failure" },
+      { status: githubEmailStatus },
+    );
   }
 
   return originalFetch(request);
@@ -3093,6 +3102,8 @@ const server = Bun.serve({
         socialProfile = defaultSocialProfile();
         socialIdTokenValid = true;
         githubProfile = defaultGitHubProfile();
+        githubEmailStatus = 200;
+        githubRequests.length = 0;
         return jsonResponse({ status: true });
       }
 
@@ -3434,6 +3445,14 @@ const server = Bun.serve({
         });
       }
 
+      if (url.pathname === "/__test/github-email-transport") {
+        if (request.method === "POST") {
+          githubEmailStatus = (await request.json()).status;
+          githubRequests.length = 0;
+          return jsonResponse({ status: githubEmailStatus });
+        }
+        return jsonResponse(githubRequests);
+      }
       if (url.pathname === "/__test/set-github-profile" && request.method === "POST") {
         const body = (await readJson(request)) as Partial<GitHubProfile> | null;
         githubProfile = {
