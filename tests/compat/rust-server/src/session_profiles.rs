@@ -43,6 +43,10 @@ pub(super) async fn router(
         "session-secondary-preserve-only",
         "session-secondary-combined",
         "session-secondary-preserved",
+        "session-update-age",
+        "session-update-age-cache",
+        "session-update-age-long",
+        "session-deferred-update-age",
         "session-deferred",
         "session-no-refresh",
         "session-deferred-no-refresh",
@@ -59,6 +63,13 @@ pub(super) async fn router(
                 name.ends_with("combined") || name.ends_with("preserved");
             config.session.preserve_in_database = name.contains("preserve");
             drop(caches.insert(name.to_owned(), cache));
+        }
+        if name.contains("update-age") {
+            config.session.expires_in = chrono::Duration::seconds(3600);
+            config.session.update_age = Some(chrono::Duration::seconds(if name.ends_with("-long") {7200} else {120}));
+        }
+        if name == "session-update-age-cache" {
+            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {enabled: true, max_age: 300.0, ..Default::default()});
         }
         config.session.defer_session_refresh = name.starts_with("session-deferred");
         config.session.disable_session_refresh = name.ends_with("no-refresh");
