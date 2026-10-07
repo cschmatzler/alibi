@@ -24,6 +24,7 @@ import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { organization } from "better-auth/plugins/organization";
 import { defaultStatements } from "better-auth/plugins/organization/access";
 
+import { accountLinkingFixture } from "./fixtures/account-linking-fixture";
 import { additionalFieldsFixture } from "./fixtures/additional-fields-fixture";
 import { createAdminBannedMessageFixture } from "./fixtures/admin-banned-message-fixture";
 import { createAdminPermissionFixture } from "./fixtures/admin-permission-fixture";
@@ -674,6 +675,10 @@ const providerBatch = providerBatchFixture(authOptions, database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+const accountLinkingProfiles = accountLinkingFixture(authOptions);
+for (const [path, instance] of accountLinkingProfiles.profiles) {
+  verificationProfiles.set(path, instance);
+}
 for (const [path, instance] of additionalFields.profiles) {
   verificationProfiles.set(path, instance);
 }

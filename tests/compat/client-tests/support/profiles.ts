@@ -1157,6 +1157,8 @@ export const FIXTURE_PROFILES = [
   "two-factor-otp-infinite-digits",
   "two-factor-otp-infinite-expiry",
   "two-factor-otp-negative-expiry",
+
+  "account-linking-different-emails",
 ] as const;
 
 export type FixtureProfile = (typeof FIXTURE_PROFILES)[number];
