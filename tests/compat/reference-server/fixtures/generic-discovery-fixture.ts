@@ -75,6 +75,7 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const mode of [
     "success",
+    "response-type",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
@@ -106,6 +107,7 @@ export function genericDiscoveryFixture(base: BetterAuthOptions) {
             config: [
               {
                 providerId: "discovery",
+                ...(mode === "response-type" ? { responseType: "token" } : {}),
                 clientId: "discovery-client",
                 clientSecret: "discovery-secret",
                 discoveryUrl: `${transport.url}metadata/${mode}`,
