@@ -53,6 +53,41 @@ compatScenario(
     const renewed = after.find((row) => row.key === bucket.key);
     expect(renewed.count).toBe(1);
     expect(renewed.lastRequest).toBeGreaterThan(bucket.lastRequest);
+    const outage = await ctx.rawRequest({
+      path: "/__test/rate-database-control",
+      method: "POST",
+      json: { action: "disable" },
+    });
+    expect(outage.body).toEqual({ status: true });
+    let failure;
+    try {
+      const response = await ctx
+        .actor("outage", "rate-limit-database-first")
+        .fetch(ctx.baseURL + authProfilePath("rate-limit-database-first") + "/get-session", {
+          headers: { "x-forwarded-for": "198.51.100.234" },
+        });
+      expect(response.status).toBe(500);
+      expect(response.headers.getSetCookie()).toEqual([]);
+      failure = {
+        status: response.status,
+        body: await response.text(),
+        contentType: response.headers.get("content-type"),
+        cookies: response.headers.getSetCookie(),
+      };
+    } finally {
+      expect(
+        (
+          await ctx.rawRequest({
+            path: "/__test/rate-database-control",
+            method: "POST",
+            json: { action: "restore" },
+          })
+        ).body,
+      ).toEqual({ status: true });
+    }
+    expect(await read()).toEqual(after);
+    const recovered = await request("rate-limit-database-first", "198.51.100.234");
+    expect(recovered).toEqual(first);
     const project = (rows: any[]) =>
       rows.map(({ key, count, lastRequest }) => ({
         key,
@@ -65,6 +100,8 @@ compatScenario(
       denied,
       independent,
       resumed,
+      failure,
+      recovered,
       before: project(before),
       after: project(after),
     };

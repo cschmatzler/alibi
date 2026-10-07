@@ -1,9 +1,9 @@
 //! Public authentication requests with the genuine enabled limiter.
 use crate::{TestSchema, otp_profiles};
-use axum::{Router, Json, routing::get};
+use axum::{Router, Json, routing::{get, post}};
 use alibi_core::store::SchemaMigrator;
 use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
-use serde_json::json;
+use serde_json::{Value, json};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::{
     EndpointRateLimit, RateLimitConfig, RateLimitResolver, RateLimitRule,
@@ -57,12 +57,21 @@ pub(crate) async fn router(
     #[cfg(not(feature = "seaorm"))]
     let storage = Arc::new(alibi_sqlx::SqlxRateLimitStorage::new(alibi_sqlx::SqlxPool::from(database.get_sqlite_connection_pool().clone())));
     storage.migrate().await?;
+    let control_database = database.clone();
     let read_database = database.clone();
     let mut router = Router::new().route("/__test/rate-database-state", get(move || {
         let database = read_database.clone();
         async move {
             let rows = database.query_all_raw(Statement::from_string(DbBackend::Sqlite, "SELECT key,count,last_request FROM rate_limit ORDER BY key")).await.unwrap();
             Json(rows.into_iter().map(|row| json!({"key": row.try_get::<String>("", "key").unwrap(), "count": row.try_get::<f64>("", "count").unwrap(), "lastRequest": row.try_get::<i64>("", "last_request").unwrap()})).collect::<Vec<_>>())
+        }
+    }));
+    router = router.route("/__test/rate-database-control", post(move |Json(body): Json<Value>| {
+        let database = control_database.clone();
+        async move {
+            let sql = if body["action"] == "disable" { "ALTER TABLE rate_limit RENAME TO fixtureRateLimitHeld" } else { "ALTER TABLE fixtureRateLimitHeld RENAME TO rate_limit" };
+            database.execute_raw(Statement::from_string(DbBackend::Sqlite, sql)).await.unwrap();
+            Json(json!({"status": true}))
         }
     }));
     for name in ["ordered", "default", "database-first", "database-second"] {

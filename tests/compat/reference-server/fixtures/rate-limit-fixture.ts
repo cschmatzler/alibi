@@ -1,5 +1,7 @@
-import { type BetterAuthOptions, betterAuth } from "better-auth";
 /** Installed Source policies exercised through actual authentication mutations. */
+import { Database } from "bun:sqlite";
+
+import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
 
 export async function createRateLimitFixture(base: BetterAuthOptions) {
@@ -49,6 +51,17 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
   return {
     async handle(request: Request) {
       const url = new URL(request.url);
+      if (url.pathname === "/__test/rate-database-control" && request.method === "POST") {
+        const { action } = await request.json();
+        if (!(base.database instanceof Database))
+          throw new Error("Fixture requires SQLite database");
+        base.database.run(
+          action === "disable"
+            ? 'ALTER TABLE "rateLimit" RENAME TO "fixtureRateLimitHeld"'
+            : 'ALTER TABLE "fixtureRateLimitHeld" RENAME TO "rateLimit"',
+        );
+        return Response.json({ status: true });
+      }
       if (url.pathname === "/__test/rate-database-state") {
         // Quota records use different native primary-key layouts. Observe the
         // actual shared quota contract, independently of adapter bookkeeping.
