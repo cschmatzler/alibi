@@ -42,6 +42,7 @@ struct State {
 }
 #[derive(Default)]
 struct Application {
+    capture_body: bool,
     state: Mutex<State>,
     release: tokio::sync::Notify,
 }
@@ -88,10 +89,16 @@ impl SendDeleteAccountVerification for Application {
 #[async_trait]
 impl SendVerificationEmail for Application {
     async fn send(&self, user: &UserView, url: &str, token: &str) -> AuthResult<()> {
+        let mut extra = json!({"url":url,"token":token});
+        if self.capture_body {
+            let request = current_request_hook_context().ok_or_else(|| AuthError::internal("Missing genuine request"))?;
+            let body = request.body.as_deref().ok_or_else(|| AuthError::internal("Missing genuine request body"))?;
+            extra["requestBody"] = serde_json::from_slice(body)?;
+        }
         self.event(
             "verification-mail",
             serde_json::to_value(user)?,
-            json!({"url":url,"token":token}),
+            extra,
         )
     }
 }
@@ -192,6 +199,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         "default",
         "required",
         "delivery",
+        "request-body",
         "auto",
         "change",
         "promotion",
@@ -205,7 +213,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         "delete-policy",
         "delete-no-freshness",
     ] {
-        let app = Arc::new(Application::default());
+        let app = Arc::new(Application {capture_body:name == "request-body",..Default::default()});
         let path = format!("/__test/profiles/user-lifecycle-{name}/api/auth");
         let mut config = base.clone().base_path(&path);
         config.session.fresh_age = Some(Duration::seconds(if name == "delete-no-freshness" {
@@ -230,7 +238,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             } else {
                 90
             }))
-            .send_on_sign_in(name == "delivery")
+            .send_on_sign_in(name == "delivery" || name == "request-body")
             .auto_sign_in_after_verification(name == "auto")
             .before_email_verification(Arc::new(move |user| {
                 let app = before_app.clone();
@@ -251,7 +259,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
                 })
             }));
         if !["default", "required"].contains(&name) {
-            verification_plugin = verification_plugin.send_on_sign_up(name == "delivery");
+            verification_plugin = verification_plugin.send_on_sign_up(name == "delivery" || name == "request-body");
         }
         if !["no-mail", "promotion-no-mail"].contains(&name) {
             verification_plugin = verification_plugin.custom_send_verification_email(app.clone());
@@ -278,7 +286,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
         }
         let policy = EmailPasswordConfig {
             enable_username: false,
-            require_email_verification: ["required", "delivery"].contains(&name),
+            require_email_verification: ["required", "delivery", "request-body"].contains(&name),
             password_max_length: if name == "delete-policy" { 12 } else { 128 },
             password_hasher: (name == "delete-policy")
                 .then(|| app.clone() as Arc<dyn PasswordHasher>),
