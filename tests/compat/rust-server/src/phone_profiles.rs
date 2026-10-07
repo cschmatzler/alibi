@@ -28,12 +28,16 @@ pub(super) struct Controls {
     outbox: Arc<Mutex<HashMap<String, Value>>>,
     challenges: Arc<Mutex<HashMap<String, String>>>,
     callbacks: Arc<Mutex<Vec<Value>>>,
+    reset_mode: Arc<Mutex<String>>,
+    reset_events: Arc<Mutex<Vec<Value>>>,
 }
 impl Controls {
     pub(super) async fn reset(&self) {
         self.outbox.lock().await.clear();
         self.challenges.lock().await.clear();
         self.callbacks.lock().await.clear();
+        *self.reset_mode.lock().await = "success".to_owned();
+        self.reset_events.lock().await.clear();
     }
 }
 struct Sender {
@@ -184,6 +188,7 @@ pub(super) async fn build(
         "phone-proof",
         "phone-custom",
         "phone-callback-reject",
+        "phone-reset-callback",
         "phone-numeric-length-zero",
         "phone-numeric-length-fraction",
         "phone-numeric-length-negative",
@@ -229,6 +234,19 @@ pub(super) async fn build(
             allowed_attempts: numeric_setting(name, "attempts", 3.0),
             expires_in: numeric_setting(name, "lifetime", 300.0),
         });
+        let mut passwords = PasswordManagementPlugin::new().revoke_sessions_on_password_reset(name == "phone-proof" || name == "phone-reset-callback");
+        if name == "phone-reset-callback" {
+            let controls = controls.clone();
+            passwords = passwords.on_password_reset(Arc::new(move |user| {
+                let controls = controls.clone();
+                Box::pin(async move {
+                    let request = alibi_core::hooks::current_request_hook_context().map(|context| json!({"method":format!("{:?}",context.method).to_uppercase(),"url":context.url,"marker":context.headers.get("x-reset-marker")}));
+                    controls.reset_events.lock().await.push(json!({"userId":user["id"],"request":request}));
+                    if controls.reset_mode.lock().await.as_str() == "reject" { return Err(alibi::AuthError::Api { status: 403, code: Some("PHONE_RESET_REJECTED".into()), message: "Application reset callback rejected".into() }); }
+                    Ok(())
+                })
+            }));
+        }
         let auth = Arc::new(
             AuthBuilder::new(config.clone())
                 .store(crate::backend::store::<TestSchema>(
@@ -237,10 +255,7 @@ pub(super) async fn build(
                 ))
                 .rate_limit(RateLimitConfig::new().enabled(false))
                 .plugin(EmailPasswordPlugin::new().enable_username(false))
-                .plugin(
-                    PasswordManagementPlugin::new()
-                        .revoke_sessions_on_password_reset(name == "phone-proof"),
-                )
+                .plugin(passwords)
                 .plugin(SessionManagementPlugin::new())
                 .plugin(TwoFactorPlugin::new().custom_send_otp(Arc::new(
                     CompatTwoFactorOtpSender {
@@ -258,9 +273,17 @@ pub(super) async fn build(
         _ = runtimes.insert(name.into(), Runtime { auth, plugin });
     }
     let callbacks = controls.clone();
+    let reset_controls = controls.clone();
     let consume_runtimes = Arc::new(runtimes);
     let selected_runtimes = consume_runtimes.clone();
     router = router
+        .route("/__test/phone-reset-control", post(move |Json(body): Json<Value>| {
+            let controls = reset_controls.clone();
+            async move {
+                if let Some(mode) = body["mode"].as_str() { *controls.reset_mode.lock().await = mode.to_owned(); }
+                Json(json!({"mode":controls.reset_mode.lock().await.clone(),"events":controls.reset_events.lock().await.clone()}))
+            }
+        }))
         .route(
             "/__test/phone-callbacks",
             get(move || {

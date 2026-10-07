@@ -12,6 +12,8 @@ export async function createPhoneFixture(
   twoFactorOutbox: Map<string, { otp: string }>,
 ) {
   const outbox = new Map<string, { code?: string; context?: unknown }>();
+  let resetMode = "success";
+  const resetEvents: unknown[] = [];
   const challenges = new Map<string, string>();
   const callbacks: {
     phoneNumber: string;
@@ -27,7 +29,28 @@ export async function createPhoneFixture(
       emailAndPassword: {
         ...base.emailAndPassword,
         enabled: true,
-        revokeSessionsOnPasswordReset: name === "phone-proof",
+        revokeSessionsOnPasswordReset: name === "phone-proof" || name === "phone-reset-callback",
+        ...(name === "phone-reset-callback"
+          ? {
+              onPasswordReset: async ({ user }: { user: { id: string } }, request?: Request) => {
+                resetEvents.push({
+                  userId: user.id,
+                  request: request
+                    ? {
+                        method: request.method,
+                        url: request.url,
+                        marker: request.headers.get("x-reset-marker"),
+                      }
+                    : null,
+                });
+                if (resetMode === "reject")
+                  throw new APIError("FORBIDDEN", {
+                    code: "PHONE_RESET_REJECTED",
+                    message: "Application reset callback rejected",
+                  });
+              },
+            }
+          : {}),
       },
       emailVerification: { ...base.emailVerification, sendOnSignUp: false },
       plugins: [
@@ -111,6 +134,7 @@ export async function createPhoneFixture(
     "phone-proof",
     "phone-custom",
     "phone-callback-reject",
+    "phone-reset-callback",
     ...numericModes.map((mode) => `phone-numeric-${mode}`),
   ]) {
     const config = options(name);
@@ -122,7 +146,13 @@ export async function createPhoneFixture(
     profiles,
     outbox,
     callbacks,
+    resetControl(mode?: string) {
+      if (mode) resetMode = mode;
+      return { mode: resetMode, events: resetEvents };
+    },
     reset() {
+      resetMode = "success";
+      resetEvents.length = 0;
       outbox.clear();
       challenges.clear();
       callbacks.length = 0;
