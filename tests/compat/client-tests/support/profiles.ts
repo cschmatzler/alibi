@@ -973,6 +973,7 @@ export const FIXTURE_PROFILES = [
   "session-deferred-no-refresh",
   "session-no-freshness",
   "session-cookie-cleanup",
+  "account-unlink-all",
   ...variants("passwordless-numeric-", [
     "length-zero",
     "length-fraction",
