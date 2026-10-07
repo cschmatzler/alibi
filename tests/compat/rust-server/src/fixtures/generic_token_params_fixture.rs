@@ -253,6 +253,7 @@ pub(crate) async fn router(
         "dynamic-error",
         "dynamic-custom",
         "override",
+        "local-verified",
         "expiry-positive",
         "expiry-zero",
         "expiry-negative",
@@ -294,7 +295,10 @@ pub(crate) async fn router(
         "jwt-getter-error",
     ] {
         let path = format!("/__test/profiles/generic-token-{mode}/api/auth");
-        let settings = config.clone().base_path(&path);
+        let mut settings = config.clone().base_path(&path);
+        if mode == "local-verified" {
+            settings.account.account_linking.require_local_email_verified = true;
+        }
         let configured_mode = if mode.starts_with("dynamic") {
             "post"
         } else {
