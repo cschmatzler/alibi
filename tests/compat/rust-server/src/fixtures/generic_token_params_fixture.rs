@@ -254,6 +254,7 @@ pub(crate) async fn router(
         "dynamic-custom",
         "override",
         "local-verified",
+        "implicit-disabled",
         "expiry-positive",
         "expiry-zero",
         "expiry-negative",
@@ -298,6 +299,9 @@ pub(crate) async fn router(
         let mut settings = config.clone().base_path(&path);
         if mode == "local-verified" {
             settings.account.account_linking.require_local_email_verified = true;
+        }
+        if mode == "implicit-disabled" {
+            settings.account.account_linking.disable_implicit_linking = true;
         }
         let configured_mode = if mode.starts_with("dynamic") {
             "post"

@@ -91,6 +91,7 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "dynamic-custom",
     "override",
     "local-verified",
+    "implicit-disabled",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
@@ -141,6 +142,14 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
         ...base,
         basePath: path,
         socialProviders: {},
+        ...(mode === "implicit-disabled"
+          ? {
+              account: {
+                ...base.account,
+                accountLinking: { ...base.account?.accountLinking, disableImplicitLinking: true },
+              },
+            }
+          : {}),
         ...(mode === "local-verified"
           ? {
               account: {
