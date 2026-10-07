@@ -1,5 +1,6 @@
 [
   {"id":"default","keyLength":16},
+  {"id":"expiration-disabled","disableCustomExpiresTime":true,"expiration":120},
   {"id":"name-optional","requireName":false},
   {"id":"name-required","requireName":true},
   {"id":"length-half","keyLength":0.5},
