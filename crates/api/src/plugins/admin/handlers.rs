@@ -418,6 +418,9 @@ pub(in crate::plugins) async fn update_user_core(
         .database
         .update_user_record(&body.user_id, update)
         .await?;
+    if body.data.get("banned") == Some(&serde_json::Value::Bool(true)) {
+        ctx.database.delete_user_sessions(&body.user_id).await?;
+    }
     AdminUserView::from_output(ctx, &updated_user)
 }
 
