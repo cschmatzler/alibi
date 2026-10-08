@@ -224,7 +224,16 @@ impl EmailOtpPlugin {
             return Ok(None);
         }
         let (stored, _) = types::split_value(value.value()?);
-        self.config.storage.retrieve(stored, &ctx.config).await
+        self.config
+            .storage
+            .retrieve(stored, &ctx.config)
+            .await
+            .map_err(|error| match error {
+                AuthError::Api { .. }
+                | AuthError::Upstream { .. }
+                | AuthError::CallbackFailure(_) => error,
+                error => AuthError::CallbackFailure(Box::new(error)),
+            })
     }
 }
 
