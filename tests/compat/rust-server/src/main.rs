@@ -959,6 +959,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_generation_router =
         api_key_generation_fixture::router(&config, database.clone()).await?;
     let api_key_options_router = api_key_options_fixture::router(&config, database.clone()).await?;
+    let api_key_org_static_router = api_key_options_fixture::organization_static_router(&config, database.clone()).await?;
+    let api_key_no_default_router = api_key_options_fixture::no_default_router(&config, database.clone()).await?;
     let passkey_auth_events: passkey_authentication_fixture::Events = Arc::default();
     let passkey_auth_router = passkey_authentication_fixture::router(
         &config,
@@ -2183,6 +2185,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(admin_banned_message_router)
         .merge(api_key_generation_router)
         .merge(api_key_options_router)
+        .merge(api_key_org_static_router)
+        .merge(api_key_no_default_router)
         .merge(api_key_storage_router)
         .merge(api_key_background_router)
         .merge(api_key_hook_router)

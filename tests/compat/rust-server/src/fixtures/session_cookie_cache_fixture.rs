@@ -259,7 +259,7 @@ pub(crate) async fn router(base: &AuthConfig, db: DatabaseConnection) -> AuthRes
             _ => 300.0,
         };
         let version =
-            if mode.starts_with("version") || mode.ends_with("interactions") || mode == "exotic" {
+            if mode.starts_with("version") || mode.ends_with("interactions") || mode == "exotic" || mode == "managed" {
                 CookieCacheVersion::Resolver(application.clone())
             } else {
                 CookieCacheVersion::Literal(if mode == "date-version" {

@@ -302,7 +302,39 @@ compatScenario(
       name: "Foreign",
     });
     const initial = await owner.getSession();
-    const request = await owner.emailOtp.requestEmailChange({ newEmail: target });
+    const currentIdentifier = `email-verification-otp-${email}`;
+    expect(
+      (await owner.emailOtp.sendVerificationOtp({ email, type: "email-verification" })).error,
+    ).toBeNull();
+    const currentOtp = await readOtp(ctx, email, "email-verification");
+    const currentProof = await ctx.readVerificationState({ identifier: currentIdentifier });
+    expect(currentProof).toHaveLength(1);
+    const optionalRequests = [];
+    for (const [label, optionalOtp] of [
+      ["genuine", currentOtp],
+      ["omitted", undefined],
+      ["wrong", currentOtp === "000000" ? "111111" : "000000"],
+    ] as const) {
+      const optionalTarget = label === "genuine" ? target : ctx.uniqueEmail(`optional-${label}`);
+      const requested = await owner.emailOtp.requestEmailChange({
+        newEmail: optionalTarget,
+        otp: optionalOtp,
+      });
+      expect(requested.error).toBeNull();
+      expect(await ctx.readVerificationState({ identifier: currentIdentifier })).toEqual(
+        currentProof,
+      );
+      const delivered = await readOtp(ctx, optionalTarget, "change-email");
+      const identifier = `change-email-otp-${email}-${optionalTarget}`;
+      const proof = z
+        .array(z.object({ identifier: z.string(), value: z.string() }))
+        .parse(await ctx.readVerificationState({ identifier }));
+      expect(proof).toHaveLength(1);
+      expect(proof[0]).toMatchObject({ identifier, value: `${delivered}:0` });
+      expect(await owner.getSession()).toEqual(initial);
+      optionalRequests.push(requested);
+    }
+    const request = optionalRequests[0]!;
     expect(request.error).toBeNull();
 
     const otp = await readOtp(ctx, target, "change-email");
@@ -326,6 +358,9 @@ compatScenario(
     const state = await readUserState(ctx, user.id);
     expect(state.user?.email).toBe(target);
     expect(state.user?.emailVerified).toBe(true);
+    expect(await ctx.readVerificationState({ identifier: currentIdentifier })).toEqual(
+      currentProof,
+    );
 
     const replay = await owner.emailOtp.changeEmail({ newEmail: target, otp });
     expect(replay.error?.message).toBe("Email is the same");
@@ -337,6 +372,7 @@ compatScenario(
     expect(unauthorized.error?.status).toBe(401);
 
     return {
+      optionalRequests: ctx.snapshot(optionalRequests),
       initial: ctx.snapshot(initial),
       request: ctx.snapshot(request),
       foreignChange: ctx.snapshot(foreignChange),
@@ -850,3 +886,86 @@ async function configuredPasswordlessUsernames(
   }
   return observations;
 }
+
+compatScenario(
+  "email OTP target occupancy protects both owners before issuance and after proof delivery",
+  async (ctx) => {
+    const owner = passwordlessClient(ctx, "occupancy-owner");
+    const occupant = passwordlessClient(ctx, "occupancy-other");
+    const email = ctx.uniqueEmail("occupancy-owner");
+    const occupied = ctx.uniqueEmail("occupied-mailbox");
+    const ownerSignup = await owner.signUp.email({ email, password: "password123", name: "Owner" });
+    const otherSignup = await occupant.signUp.email({
+      email: occupied,
+      password: "password123",
+      name: "Occupant",
+    });
+    expect(ownerSignup.error).toBeNull();
+    expect(otherSignup.error).toBeNull();
+    const ownerId = requireUser(ownerSignup.data?.user).id;
+    const otherId = requireUser(otherSignup.data?.user).id;
+    const ownerBefore = await readUserState(ctx, ownerId);
+    const otherBefore = await readUserState(ctx, otherId);
+    const preflight = await owner.emailOtp.requestEmailChange({ newEmail: occupied });
+    expect(preflight.error).toBeNull();
+    expect(await verificationCount(ctx, `change-email-otp-${email}-${occupied}`)).toBe(0);
+    const noDelivery = await ctx.rawRequest({
+      path: `/__test/email-otp?email=${encodeURIComponent(occupied)}&type=change-email`,
+    });
+    expect(noDelivery.body).toBeNull();
+    expect(await readUserState(ctx, ownerId)).toEqual(ownerBefore);
+    expect(await readUserState(ctx, otherId)).toEqual(otherBefore);
+
+    const lateEmail = ctx.uniqueEmail("late-occupant");
+    const issued = await owner.emailOtp.requestEmailChange({ newEmail: lateEmail });
+    expect(issued.error).toBeNull();
+    const otp = await readOtp(ctx, lateEmail, "change-email");
+    const identifier = `change-email-otp-${email}-${lateEmail}`;
+    expect(await verificationCount(ctx, identifier)).toBe(1);
+    const late = passwordlessClient(ctx, "late-occupant");
+    const lateSignup = await late.signUp.email({
+      email: lateEmail,
+      password: "password123",
+      name: "Late occupant",
+    });
+    expect(lateSignup.error).toBeNull();
+    const lateId = requireUser(lateSignup.data?.user).id;
+    const lateBefore = await readUserState(ctx, lateId);
+    const denied = await owner.emailOtp.changeEmail({ newEmail: lateEmail, otp });
+    expect(denied.error?.message).toBe("Email already in use");
+    expect(await verificationCount(ctx, identifier)).toBe(0);
+    const replay = await owner.emailOtp.changeEmail({ newEmail: lateEmail, otp });
+    expect(replay.error?.code).toBe("INVALID_OTP");
+    expect(await readUserState(ctx, ownerId)).toEqual(ownerBefore);
+    expect(await readUserState(ctx, otherId)).toEqual(otherBefore);
+    expect(await readUserState(ctx, lateId)).toEqual(lateBefore);
+    expect((await owner.getSession()).data?.user.id).toBe(ownerId);
+    expect((await occupant.getSession()).data?.user.id).toBe(otherId);
+    expect((await late.getSession()).data?.user.id).toBe(lateId);
+
+    const recoveryEmail = ctx.uniqueEmail("occupancy-recovery");
+    expect((await owner.emailOtp.requestEmailChange({ newEmail: recoveryEmail })).error).toBeNull();
+    const recovered = await owner.emailOtp.changeEmail({
+      newEmail: recoveryEmail,
+      otp: await readOtp(ctx, recoveryEmail, "change-email"),
+    });
+    expect(recovered.error).toBeNull();
+    const ownerAfter = await readUserState(ctx, ownerId);
+    expect(ownerAfter.user?.email).toBe(recoveryEmail);
+    expect(ownerAfter.accounts).toEqual(ownerBefore.accounts);
+    expect(ownerAfter.sessions).toEqual(ownerBefore.sessions);
+    expect(await readUserState(ctx, lateId)).toEqual(lateBefore);
+    return {
+      preflight: ctx.snapshot(preflight),
+      issued: ctx.snapshot(issued),
+      denied: ctx.snapshot(denied),
+      replay: ctx.snapshot(replay),
+      recovered: ctx.snapshot(recovered),
+      before: ctx.snapshot(ownerBefore),
+      after: ctx.snapshot(ownerAfter),
+      other: ctx.snapshot(otherBefore),
+      late: ctx.snapshot(lateBefore),
+    };
+  },
+  ["POST /email-otp/request-email-change", "POST /email-otp/change-email"],
+);

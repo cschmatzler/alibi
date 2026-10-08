@@ -1,12 +1,48 @@
 /** Installed Source policies exercised through actual authentication mutations. */
 import { Database } from "bun:sqlite";
-
-import { type BetterAuthOptions, betterAuth } from "better-auth";
 import { getMigrations } from "better-auth/db/migration";
+import { createKyselyAdapter, kyselyAdapter } from "@better-auth/kysely-adapter";
+import { type BetterAuthOptions, betterAuth } from "better-auth";
 
 export async function createRateLimitFixture(base: BetterAuthOptions) {
+  // Share the actual SQL connection provider across concurrent auth instances.
+  const actual = await createKyselyAdapter(base);
+  if (!actual.kysely) throw new Error("real SQLite Kysely connection required");
+  const concurrentDatabase = kyselyAdapter(actual.kysely, { type: "sqlite" });
+  const shared = new Map<string, { value: string; expiresAt: number }>();
+  const secondary = {
+    async get(key: string) {
+      const row = shared.get(key);
+      return row && row.expiresAt > Date.now() ? row.value : null;
+    },
+    async set(key: string, value: string, ttl: number) {
+      shared.set(key, { value, expiresAt: Date.now() + ttl * 1000 });
+    },
+    async delete(key: string) {
+      shared.delete(key);
+    },
+    async increment(key: string, ttl: number) {
+      const row = shared.get(key);
+      const count = row && row.expiresAt > Date.now() ? Number(row.value) + 1 : 1;
+      shared.set(key, {
+        value: String(count),
+        expiresAt: count === 1 ? Date.now() + ttl * 1000 : row!.expiresAt,
+      });
+      return count;
+    },
+  };
   const profiles = new Map(
-    ["ordered", "default", "database-first", "database-second"].map((name) => {
+    [
+      "ordered",
+      "default",
+      "database-first",
+      "database-second",
+      "secondary-a",
+      "secondary-b",
+      "concurrent-memory",
+      "concurrent-secondary-a",
+      "concurrent-secondary-b",
+    ].map((name) => {
       const profile = `rate-limit-${name}`;
       return [
         profile,
@@ -14,13 +50,26 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
           ...base,
           plugins: (base.plugins ?? []).filter((plugin) => plugin.id === "email-otp"),
           basePath: `/__test/profiles/${profile}/api/auth`,
+          ...(name.includes("secondary") ? { secondaryStorage: secondary } : {}),
+          ...(name.startsWith("concurrent-")
+            ? {
+                database: concurrentDatabase,
+                session: { ...base.session, storeSessionInDatabase: true },
+                emailVerification: { ...base.emailVerification, sendOnSignUp: false },
+                plugins: [],
+              }
+            : {}),
           rateLimit: {
             enabled: true,
-            storage: name.startsWith("database-") ? "database" : "memory",
+            storage: name.startsWith("database-") ? "database" : name.includes("secondary") ? "secondary-storage" : "memory",
             window: 60,
             max: name === "ordered" ? 1 : 10000,
-            ...(name.startsWith("database-")
-              ? { customRules: { "/get-session": { window: 1, max: 2 } } }
+            ...(name.startsWith("database-") ? { customRules: { "/get-session": { window: 1, max: 2 } } } : {}),
+            ...(name.includes("secondary")
+              ? { customRules: { "/get-session": { window: 1, max: 2 }, "/list-sessions": false } }
+              : {}),
+            ...(name.startsWith("concurrent-")
+              ? { customRules: { "/sign-up/email": { window: 60, max: 3 } } }
               : {}),
             ...(name === "ordered"
               ? {
@@ -77,6 +126,8 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
           })),
         );
       }
+      if (url.pathname === "/__test/rate-limit-secondary/control")
+        return Response.json({ value: await secondary.get(url.searchParams.get("key")!) });
       for (const [profile, auth] of profiles) {
         if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`)) {
           return auth.handler(request);

@@ -9,7 +9,7 @@ use alibi::__private_core::{AuthRequest, HttpMethod};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::api_key::{
-    ApiKeyCallbackContext, ApiKeyConfig, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyGetter,
+    ApiKeyReferences, ApiKeyCallbackContext, ApiKeyConfig, ApiKeyGenerationOptions, ApiKeyGenerator, ApiKeyGetter,
     ApiKeyValidator, ApiKeyVerificationError, CreateKeyRequest, KeyExpirationConfig,
     RateLimitDefaults, UpdateKeyRequest, VerifyApiKey,
 };
@@ -355,6 +355,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         callbacks.config_id = id.into();
         configurations.push(ApiKeyConfig {
             config_id: id.into(),
+            references: if entry["references"] == "organization" { ApiKeyReferences::Organization } else { ApiKeyReferences::User },
             require_name: entry["requireName"].as_bool().unwrap_or(false),
             key_length: number(entry.get("keyLength"), 16.0),
             prefix: Some(entry["prefix"].as_str().unwrap_or("optKEY_").into()),
@@ -429,4 +430,40 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     Ok(Router::new()
         .nest(path, auth.clone().axum_router().with_state(auth))
         .merge(controls))
+}
+
+/// A named-only API-key instance deliberately has no implicit default.
+pub async fn no_default_router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
+    let path = "/__test/profiles/api-key-no-default/api/auth";
+    let config = base.clone().base_path(path);
+    let auth = Arc::new(AuthBuilder::<TestSchema>::new(config.clone())
+        .store(crate::backend::store::<TestSchema>(config.clone(), database))
+        .rate_limit(RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(ApiKeyPlugin::with_config(ApiKeyConfig {config_id:"other".into(),enable_metadata:true,..Default::default()}))
+        .build().await?);
+    Ok(Router::new().nest(path, auth.clone().axum_router().with_state(auth)))
+}
+
+pub async fn organization_static_router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
+    use alibi::plugins::organization::{OrganizationConfig, RolePermissions};
+    use alibi::plugins::{OrganizationPlugin};
+    let roles = std::collections::HashMap::from([
+        ("owner".into(), RolePermissions { invitation: vec!["create".into()], member: vec!["update".into()], api_key: vec!["create".into(), "read".into(), "update".into(), "delete".into()], ..Default::default() }),
+        ("admin".into(), RolePermissions { api_key: vec!["create".into()], ..Default::default() }),
+        ("member".into(), RolePermissions { api_key: vec!["read".into()], ..Default::default() }),
+        ("updater".into(), RolePermissions { api_key: vec!["read".into(), "update".into()], ..Default::default() }),
+        ("deleter".into(), RolePermissions { api_key: vec!["read".into(), "delete".into()], ..Default::default() }),
+    ]);
+    let path = "/__test/profiles/api-key-org-static/api/auth";
+    let config = base.clone().base_path(path);
+    let auth = Arc::new(AuthBuilder::<TestSchema>::new(config.clone())
+        .store(crate::backend::store::<TestSchema>(config.clone(), database))
+        .rate_limit(RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new()).plugin(SessionManagementPlugin::new())
+        .plugin(OrganizationPlugin::with_config(OrganizationConfig {roles:Some(roles),..Default::default()}))
+        .plugin(ApiKeyPlugin::with_config(ApiKeyConfig::default()).configuration(ApiKeyConfig {config_id:"organization".into(),references:ApiKeyReferences::Organization,..Default::default()}))
+        .build().await?);
+    Ok(Router::new().nest(path, auth.clone().axum_router().with_state(auth)))
 }
