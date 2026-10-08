@@ -508,6 +508,7 @@ struct OrganizationQuery {
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum TeamOperation {
     SetTeamStorage { #[serde(rename = "teamId")] team_id: String, #[serde(rename = "organizationId")] organization_id: Option<String>, #[serde(default)] restore: bool },
+    SeedStrayTeamMember { #[serde(rename = "teamId")] team_id: String, #[serde(rename = "userId")] user_id: String },
     TeamConfigEvidence {
         #[serde(rename = "organizationId")]
         organization_id: String,
@@ -698,6 +699,7 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                         }
                         Ok(json!({"changed": true}))
                     }.await,
+                    TeamOperation::SeedStrayTeamMember {team_id, user_id} => profile.auth.store().add_team_member(&team_id, &user_id, None).await.map(|_| json!({"inserted": true})),
                     TeamOperation::TeamConfigEvidence {organization_id} => super::team_config_fixture::evidence(&database, &organization_id).await,
                     TeamOperation::NumericEvents {organization_id} => numeric_events().lock().map_err(|_| AuthError::internal("Numeric observations unavailable")).map(|events| json!(events.get(&organization_id).cloned().unwrap_or_default())),
                     TeamOperation::OrphanOrganization { organization_id } => {
