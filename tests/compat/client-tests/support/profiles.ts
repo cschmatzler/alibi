@@ -1066,6 +1066,7 @@ export const FIXTURE_PROFILES = [
   "session-no-refresh",
   "session-deferred-no-refresh",
   "session-no-freshness",
+  "postgres-schema",
   "snake-casing",
   "session-cookie-cleanup",
   "account-unlink-all",
