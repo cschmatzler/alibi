@@ -884,8 +884,42 @@ compatScenario(
     const absentRequest = await client.phoneNumber.requestPasswordReset({ phoneNumber: absent });
     expect(absentRequest.error).toBeNull();
     expect(await verificationCount(ctx, `${absent}-request-password-reset`)).toBe(1);
+    const absentProof = z
+      .array(z.object({ identifier: z.string(), value: z.string() }))
+      .parse(await ctx.readVerificationState({ identifier: `${absent}-request-password-reset` }));
+    expect(absentProof).toHaveLength(1);
+    const absentOtp = absentProof[0]!.value.split(":")[0]!;
+    expect(absentOtp).toMatch(/^\d{6}$/);
+    const ownerBefore = await readPhoneState(ctx, profile, user.id);
+    const readSql = async () =>
+      (await (await fetch(`${ctx.baseURL}/__test/provider-batch/sql-state`)).json()) as Record<
+        string,
+        any[]
+      >;
+    const physicalBefore = await readSql();
+    const absentReset = await client.phoneNumber.resetPassword({
+      phoneNumber: absent,
+      otp: absentOtp,
+      newPassword: "must-not-create123",
+    });
+    expect(absentReset.error?.code).toBe("UNEXPECTED_ERROR");
+    expect(await verificationCount(ctx, `${absent}-request-password-reset`)).toBe(0);
+    const absentReplay = await client.phoneNumber.resetPassword({
+      phoneNumber: absent,
+      otp: absentOtp,
+      newPassword: "must-not-create123",
+    });
+    expect(absentReplay.error?.code).toBe("OTP_NOT_FOUND");
+    const physicalAfter = await readSql();
+    const source = "user" in physicalBefore;
+    for (const table of source ? ["user", "account", "session"] : ["users", "accounts", "sessions"])
+      expect(physicalAfter[table]).toEqual(physicalBefore[table]);
+    expect(await readPhoneState(ctx, profile, user.id)).toEqual(ownerBefore);
+    expect((await client.getSession()).data?.user.id).toBe(user.id);
 
     return {
+      absentReset,
+      absentReplay,
       verified,
       issued,
       foreign,
