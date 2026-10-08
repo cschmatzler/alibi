@@ -196,7 +196,7 @@ where
                 .await?
                 .is_cancelled()
             {
-                return Err(cancelled_by_hook("account deletion"));
+                return Ok(());
             }
         }
         let table = <S::Account as SqlxModel>::TABLE;

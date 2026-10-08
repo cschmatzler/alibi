@@ -418,7 +418,7 @@ where
                 .await?
                 .is_cancelled()
             {
-                return Err(cancelled_by_hook("user deletion"));
+                return Ok(());
             }
         }
         // API keys retain their polymorphic reference. Redemption resolves the

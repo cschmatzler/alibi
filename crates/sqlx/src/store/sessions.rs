@@ -415,7 +415,7 @@ where
                 .await?
                 .is_cancelled()
             {
-                return Err(cancelled_by_hook("session deletion"));
+                return Ok(());
             }
         }
         let table = <S::Session as SqlxModel>::TABLE;
@@ -471,7 +471,7 @@ where
                     .await?
                     .is_cancelled()
                 {
-                    return Err(cancelled_by_hook("session deletion"));
+                    return Ok(());
                 }
             }
         }
@@ -595,7 +595,7 @@ where
                     .await?
                     .is_cancelled()
                 {
-                    return Err(cancelled_by_hook("session deletion"));
+                    return Ok(());
                 }
             }
         }
