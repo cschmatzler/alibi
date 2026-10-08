@@ -233,6 +233,8 @@ export const FIXTURE_PROFILES = [
   "custom-session-jwt",
   "custom-session-deferred",
   "custom-session-core-error",
+  "rate-limit-database-first",
+  "rate-limit-database-second",
   "rate-limit-ordered",
   "rate-limit-concurrent-memory",
   "rate-limit-concurrent-secondary-a",

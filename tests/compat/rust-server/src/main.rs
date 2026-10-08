@@ -289,6 +289,7 @@ fn default_github_profile() -> GitHubProfile {
 }
 
 async fn reset_database_state(database: &DatabaseConnection) -> Result<(), DbErr> {
+    alibi_seaorm::rate_limit::entity::Entity::delete_many().exec(database).await?;
     alibi_seaorm::store::entities::jwk::Entity::delete_many()
         .exec(database)
         .await?;
@@ -341,7 +342,7 @@ async fn database_residue(
         .query_all_raw(Statement::from_string(
             DbBackend::Sqlite,
             // Migration bookkeeping is schema, not scenario state.
-            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> 'better_auth_migrations' ORDER BY name",
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('better_auth_migrations', 'better_auth_rate_limit_migrations') ORDER BY name",
         ))
         .await?;
     let mut residue = serde_json::Map::new();

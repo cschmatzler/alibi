@@ -1,4 +1,6 @@
 /** Installed Source policies exercised through actual authentication mutations. */
+import { Database } from "bun:sqlite";
+import { getMigrations } from "better-auth/db/migration";
 import { createKyselyAdapter, kyselyAdapter } from "@better-auth/kysely-adapter";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
@@ -33,6 +35,8 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
     [
       "ordered",
       "default",
+      "database-first",
+      "database-second",
       "secondary-a",
       "secondary-b",
       "concurrent-memory",
@@ -57,9 +61,10 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
             : {}),
           rateLimit: {
             enabled: true,
-            storage: name.includes("secondary") ? "secondary-storage" : "memory",
+            storage: name.startsWith("database-") ? "database" : name.includes("secondary") ? "secondary-storage" : "memory",
             window: 60,
             max: name === "ordered" ? 1 : 10000,
+            ...(name.startsWith("database-") ? { customRules: { "/get-session": { window: 1, max: 2 } } } : {}),
             ...(name.includes("secondary")
               ? { customRules: { "/get-session": { window: 1, max: 2 }, "/list-sessions": false } }
               : {}),
@@ -89,9 +94,38 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
       ] as const;
     }),
   );
+  const databaseAuth = profiles.get("rate-limit-database-first")!;
+  const context = await databaseAuth.$context;
+  await (await getMigrations(context.options)).runMigrations();
   return {
     async handle(request: Request) {
       const url = new URL(request.url);
+      if (url.pathname === "/__test/rate-database-control" && request.method === "POST") {
+        const { action } = await request.json();
+        if (!(base.database instanceof Database))
+          throw new Error("Fixture requires SQLite database");
+        base.database.run(
+          action === "disable"
+            ? 'ALTER TABLE "rateLimit" RENAME TO "fixtureRateLimitHeld"'
+            : 'ALTER TABLE "fixtureRateLimitHeld" RENAME TO "rateLimit"',
+        );
+        return Response.json({ status: true });
+      }
+      if (url.pathname === "/__test/rate-database-state") {
+        // Quota records use different native primary-key layouts. Observe the
+        // actual shared quota contract, independently of adapter bookkeeping.
+        const rows = await context.adapter.findMany({
+          model: "rateLimit",
+          sortBy: { field: "key", direction: "asc" },
+        });
+        return Response.json(
+          rows.map((row: any) => ({
+            key: row.key,
+            count: row.count,
+            lastRequest: Number(row.lastRequest),
+          })),
+        );
+      }
       if (url.pathname === "/__test/rate-limit-secondary/control")
         return Response.json({ value: await secondary.get(url.searchParams.get("key")!) });
       for (const [profile, auth] of profiles) {
