@@ -32,7 +32,7 @@ impl alibi_seaorm::DatabaseHooks<TestSchema, crate::backend::Backend> for TokenH
     }
 }
 
-struct ApplicationTransform;
+struct ApplicationTransform { calls: Arc<AtomicUsize>, record: bool }
 #[async_trait]
 impl SessionTransform<TestSchema> for ApplicationTransform {
     async fn transform(
@@ -41,6 +41,7 @@ impl SessionTransform<TestSchema> for ApplicationTransform {
         request: &AuthRequest,
         context: &AuthContext<TestSchema>,
     ) -> AuthResult<Value> {
+        let count = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
         match request.header("x-custom-session").map(String::as_str) {
             Some("error") => {
                 return Err(AuthError::Api {
@@ -76,6 +77,7 @@ impl SessionTransform<TestSchema> for ApplicationTransform {
             "application".into(),
             json!({"userId":user.id(),"label":user.name(),"path":request.path()}),
         ));
+        if self.record { object.get_mut("application").unwrap()["calls"] = json!(count); }
         Ok(session)
     }
 }
@@ -87,6 +89,8 @@ pub(crate) async fn router(
 ) -> AuthResult<Router> {
     let mut router = Router::new();
     for name in [
+        "custom-session-list-default",
+        "custom-session-list-false",
         "custom-session",
         "custom-session-jwt",
         "custom-session-deferred",
@@ -127,7 +131,14 @@ pub(crate) async fn router(
                     .hook(TokenHook(counter.clone())),
             )
             .rate_limit(RateLimitConfig::new().enabled(false))
-            .plugin(CustomSessionPlugin::new(ApplicationTransform).mutate_device_sessions(true))
+            .plugin({
+                let plugin = CustomSessionPlugin::new(ApplicationTransform { calls: Arc::new(AtomicUsize::new(0)), record: name.starts_with("custom-session-list-") });
+                match name {
+                    "custom-session-list-default" => plugin,
+                    "custom-session-list-false" => plugin.mutate_device_sessions(false),
+                    _ => plugin.mutate_device_sessions(true),
+                }
+            })
             .plugin(EmailPasswordPlugin::new().enable_username(false))
             .plugin(MultiSessionPlugin::new());
         let builder = if !name.ends_with("-jwt") && !name.ends_with("-deferred") {
