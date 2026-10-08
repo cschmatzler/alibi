@@ -527,7 +527,10 @@ pub(in crate::plugins) async fn revoke_session_core(
     if let Some(session_to_revoke) = ctx.database.get_session(token).await?
         && session_to_revoke.user_id() == user.id()
     {
-        ctx.database.delete_session(token).await?;
+        ctx.database
+            .delete_session(token)
+            .await
+            .map_err(revocation_storage_error)?;
     }
     Ok(StatusResponse { status: true })
 }
@@ -539,7 +542,10 @@ pub(in crate::plugins) async fn revoke_sessions_core(
     user_id: impl AsRef<str>,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
-    ctx.database.delete_user_sessions(user_id.as_ref()).await?;
+    ctx.database
+        .delete_user_sessions(user_id.as_ref())
+        .await
+        .map_err(revocation_storage_error)?;
     Ok(StatusResponse { status: true })
 }
 
@@ -552,12 +558,63 @@ pub(in crate::plugins) async fn revoke_other_sessions_core(
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
     let all_sessions = ctx.session_manager().list_user_sessions(user_id).await?;
-    for session in all_sessions {
-        if session.token() != current_session.token() {
-            ctx.database.delete_session(session.token()).await?;
+    let tokens: Vec<String> = all_sessions
+        .into_iter()
+        .filter(|session| session.token() != current_session.token())
+        .map(|session| session.token().to_owned())
+        .collect();
+    let count = tokens.len();
+    let database = ctx.database.clone();
+    let endpoint = alibi_core::endpoint::current_endpoint_call_context();
+    let hook = alibi_core::hooks::current_request_hook_context();
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    // Each launched deletion keeps its ownership after the aggregate rejects.
+    drop(tokio::spawn(async move {
+        let revoke = async {
+            drop(
+                futures_util::future::join_all(tokens.into_iter().map(|token| {
+                    let database = &database;
+                    let sender = &sender;
+                    async move {
+                        let result = database.delete_session(&token).await;
+                        let _closed = sender.send(result);
+                    }
+                }))
+                .await,
+            );
+        };
+        if let Some(endpoint) = endpoint {
+            alibi_core::endpoint::with_endpoint_call_context(
+                endpoint,
+                alibi_core::hooks::with_optional_request_hook_context(hook, revoke),
+            )
+            .await;
+        } else {
+            alibi_core::hooks::with_optional_request_hook_context(hook, revoke).await;
         }
+    }));
+    for _ in 0..count {
+        receiver
+            .recv()
+            .await
+            .ok_or_else(|| AuthError::internal("Session revocation task stopped"))?
+            .map_err(|error| match error {
+                AuthError::Api { .. }
+                | AuthError::Upstream { .. }
+                | AuthError::CallbackFailure(_) => error,
+                error => AuthError::CallbackFailure(Box::new(error)),
+            })?;
     }
     Ok(StatusResponse { status: true })
+}
+
+fn revocation_storage_error(error: AuthError) -> AuthError {
+    tracing::error!(error = %error, "Session revocation failed");
+    AuthError::Upstream {
+        status: 500,
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Internal Server Error",
+    }
 }
 
 fn session_authorization_error(error: AuthError) -> AuthError {
