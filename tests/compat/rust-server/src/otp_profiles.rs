@@ -183,6 +183,8 @@ pub(super) async fn router(
         },
     );
     for name in [
+        "otp-change-disabled-omitted",
+        "otp-change-disabled-false",
         "passwordless-rate-policy",
         "otp-signup-verification",
         "passwordless-hashed",
@@ -219,7 +221,7 @@ pub(super) async fn router(
             rate_limit: if name == "passwordless-rate-policy" { alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 2.0} } else { EmailOtpConfig::default().rate_limit },
             generate_otp: Some(Arc::new(Sender(outbox.clone()))),
             send_verification_otp: Some(Arc::new(Sender(outbox.clone()))),
-            change_email_enabled: true,
+            change_email_enabled: !name.starts_with("otp-change-disabled-"),
             storage: match name {
                 "passwordless-hashed" => EmailOtpStorage::Hashed,
                 "passwordless-encrypted-reuse" => EmailOtpStorage::Encrypted,
