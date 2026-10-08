@@ -125,7 +125,13 @@ impl PhoneNumberPlugin {
                     },
                     &alibi_core::CallbackContext::new(ctx, request),
                 )
-                .await?
+                .await
+                .map_err(|error| match error {
+                    AuthError::Api { .. }
+                    | AuthError::Upstream { .. }
+                    | AuthError::CallbackFailure(_) => error,
+                    error => AuthError::CallbackFailure(Box::new(error)),
+                })?
             {
                 return Err(invalid_otp());
             }
