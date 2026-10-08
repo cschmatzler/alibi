@@ -378,12 +378,28 @@ fn build_redirect_url(
             .map_err(|error| AuthError::internal(format!("Invalid error URL: {error}")))?
     };
 
-    {
-        let mut pairs = url.query_pairs_mut();
-        for (key, value) in params {
-            let _ignored_append_pair = pairs.append_pair(key, value);
+    let mut pairs: Vec<(String, String)> = url
+        .query_pairs()
+        .map(|(key, value)| (key.into_owned(), value.into_owned()))
+        .collect();
+    for (key, value) in params {
+        let mut replaced = false;
+        pairs.retain_mut(|(name, previous)| {
+            if name != key {
+                return true;
+            }
+            if replaced {
+                return false;
+            }
+            *previous = (*value).to_owned();
+            replaced = true;
+            true
+        });
+        if !replaced {
+            pairs.push(((*key).to_owned(), (*value).to_owned()));
         }
     }
+    url.query_pairs_mut().clear().extend_pairs(pairs);
 
     Ok(url.to_string())
 }
