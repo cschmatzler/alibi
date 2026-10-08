@@ -13,6 +13,7 @@ mod storage;
 
 mod types;
 
+use alibi_core::AuthError;
 use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
 use async_trait::async_trait;
 pub use endpoint::EmailOtpRead;
