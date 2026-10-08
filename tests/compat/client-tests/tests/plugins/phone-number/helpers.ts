@@ -10,6 +10,8 @@ import { compatScenario } from "../../../support/scenario";
 
 export type ScenarioContext = Parameters<Parameters<typeof compatScenario>[1]>[0];
 export type PhoneProfile =
+  | "phone-no-otp-sender"
+  | "phone-no-reset-sender"
   | "phone-default"
   | "phone-signup"
   | "phone-proof"
