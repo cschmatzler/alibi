@@ -67,6 +67,7 @@ pub(crate) async fn router(
 ) -> AuthResult<Router> {
     let mut router = Router::new();
     for name in [
+        "openapi-collisions",
         "openapi-minimal",
         "openapi-last-login",
         "openapi-last-login-database",
@@ -141,6 +142,9 @@ where
                     .change_email_enabled(true)
                     .delete_user_enabled(true),
             );
+    }
+    if name == "openapi-collisions" {
+        builder = builder.plugin(CollisionsPlugin);
     }
     if name == "openapi-custom-schema" {
         builder = builder.plugin(DocumentationPlugin);
@@ -369,6 +373,60 @@ impl<S: AuthSchema> alibi::plugin::AuthPlugin<S> for DocumentationPlugin {
             if req.path() == path {
                 return Ok(Some(AuthResponse::json(200, &json!({"kind":kind}))?));
             }
+        }
+        Ok(None)
+    }
+}
+
+struct CollisionsPlugin;
+#[async_trait::async_trait]
+impl<S: AuthSchema> alibi::plugin::AuthPlugin<S> for CollisionsPlugin {
+    fn name(&self) -> &'static str {
+        "documentation-collisions"
+    }
+    fn routes(&self) -> Vec<alibi::plugin::AuthRoute> {
+        ["reserved", "first", "second", "third"]
+            .iter()
+            .map(|route| {
+                alibi::plugin::AuthRoute::get(
+                    format!("/collisions/{route}"),
+                    format!("fixture{route}"),
+                )
+            })
+            .collect()
+    }
+    fn openapi_metadata(
+        &self,
+        _ctx: &alibi::plugin::AuthInitContext<S>,
+    ) -> alibi::plugin::PluginOpenApiMetadata {
+        let mut metadata = alibi::plugin::PluginOpenApiMetadata::default();
+        for (route, operation_id) in [
+            ("reserved", "collisionGet"),
+            ("first", "collision"),
+            ("second", "collision"),
+            ("third", "collision"),
+        ] {
+            metadata = metadata.endpoint(
+                alibi::__private_core::HttpMethod::Get,
+                format!("/collisions/{route}"),
+                alibi::plugin::OpenApiEndpoint {
+                    operation_id: Some(operation_id.into()),
+                    ..Default::default()
+                },
+            );
+        }
+        metadata
+    }
+    async fn on_request(
+        &self,
+        req: &alibi::__private_core::AuthRequest,
+        _ctx: &alibi::plugin::AuthContext<S>,
+    ) -> AuthResult<Option<alibi::__private_core::AuthResponse>> {
+        if let Some(route) = req.path().strip_prefix("/collisions/") {
+            return Ok(Some(alibi::__private_core::AuthResponse::json(
+                200,
+                &serde_json::json!({"route":route}),
+            )?));
         }
         Ok(None)
     }
