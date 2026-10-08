@@ -432,9 +432,26 @@ fn decode_callback(req: &AuthRequest, name: &str) -> AuthResult<Option<String>> 
         .get(name)
         .filter(|value| !value.is_empty())
         .map(|value| {
+            let bytes = value.as_bytes();
+            for (index, byte) in bytes.iter().enumerate() {
+                if *byte == b'%'
+                    && (bytes
+                        .get(index + 1)
+                        .is_none_or(|byte| !byte.is_ascii_hexdigit())
+                        || bytes
+                            .get(index + 2)
+                            .is_none_or(|byte| !byte.is_ascii_hexdigit()))
+                {
+                    return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                        "Malformed callback encoding",
+                    ))));
+                }
+            }
             urlencoding::decode(value)
                 .map(std::borrow::Cow::into_owned)
-                .map_err(|_error| AuthError::bad_request("Invalid callbackURL"))
+                .map_err(|error| {
+                    AuthError::CallbackFailure(Box::new(AuthError::internal(error.to_string())))
+                })
         })
         .transpose()
 }
