@@ -35,7 +35,11 @@ fn factor_columns(sql: &mut Sql, qualified: bool) {
             }
         } else if qualified {
             sql.column(Model::TABLE, column);
+            sql.push(" AS ");
+            sql.ident(column);
         } else {
+            sql.ident(column);
+            sql.push(" AS ");
             sql.ident(column);
         }
     }

@@ -1,3 +1,4 @@
+use super::ScopedTransaction;
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmVerificationModel};
 use alibi_core::entity::AuthVerification;
@@ -11,9 +12,9 @@ use alibi_core::verification::{
 use async_trait::async_trait;
 use chrono::{DateTime, SubsecRound, Utc};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait, IdenStatic,
-    Iterable, QueryFilter, QueryOrder, QuerySelect, QueryTrait, SqliteTransactionMode,
-    TransactionOptions, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IdenStatic, Iterable, QueryFilter,
+    QueryOrder, QuerySelect, QueryTrait, SqliteTransactionMode, TransactionOptions,
+    TransactionTrait,
 };
 
 impl<S> SeaOrmStore<S>
@@ -24,7 +25,7 @@ where
     pub(crate) async fn create_verification_record_with_connection<C: ConnectionTrait>(
         &self,
         connection: &C,
-        tx: Option<&DatabaseTransaction>,
+        tx: Option<&ScopedTransaction>,
         mut data: VerificationCreation,
         publication: VerificationPublication,
     ) -> AuthResult<Option<VerificationSnapshot>> {
@@ -76,7 +77,7 @@ where
     async fn create_verification_with_connection<C: ConnectionTrait>(
         &self,
         connection: &C,
-        tx: Option<&DatabaseTransaction>,
+        tx: Option<&ScopedTransaction>,
         mut verification: CreateVerification,
     ) -> AuthResult<S::Verification> {
         let hook_context = self.hook_context(tx);
@@ -104,7 +105,7 @@ where
 
     pub(crate) async fn create_verification_in_tx(
         &self,
-        tx: &DatabaseTransaction,
+        tx: &ScopedTransaction,
         verification: CreateVerification,
     ) -> AuthResult<S::Verification> {
         self.create_verification_with_connection(tx, Some(tx), verification)
@@ -120,7 +121,7 @@ where
         // PostgreSQL locks the selected row; the affected-row gate still
         // protects against another consumer using a separate store/process.
         let transaction = self
-            .connection()
+            .scoped_connection()
             .begin_with_options(TransactionOptions {
                 sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
                 ..Default::default()
@@ -204,15 +205,20 @@ where
         data: VerificationCreation,
         publication: VerificationPublication,
     ) -> AuthResult<Option<VerificationSnapshot>> {
-        self.create_verification_record_with_connection(self.connection(), None, data, publication)
-            .await
+        self.create_verification_record_with_connection(
+            self.scoped_connection(),
+            None,
+            data,
+            publication,
+        )
+        .await
     }
 
     async fn create_verification(
         &self,
         verification: CreateVerification,
     ) -> AuthResult<S::Verification> {
-        self.create_verification_with_connection(self.connection(), None, verification)
+        self.create_verification_with_connection(self.scoped_connection(), None, verification)
             .await
     }
 
@@ -235,7 +241,7 @@ where
                 ),
             )
             .order_by_desc(S::Verification::created_at_column())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -252,7 +258,7 @@ where
                 ),
             )
             .order_by_desc(S::Verification::created_at_column())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -274,7 +280,7 @@ where
                 ),
             )
             .order_by_desc(S::Verification::created_at_column())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -297,7 +303,7 @@ where
         <S::Verification as SeaOrmVerificationModel>::Entity::find()
             .filter(S::Verification::identifier_column().eq(identifier))
             .order_by_desc(S::Verification::created_at_column())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -322,7 +328,7 @@ where
     async fn delete_verifications_by_identifier(&self, identifier: &str) -> AuthResult<()> {
         let Some(model) = <S::Verification as SeaOrmVerificationModel>::Entity::find()
             .filter(S::Verification::identifier_column().eq(identifier))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -344,7 +350,7 @@ where
         let _ignored_map_err_2 =
             <S::Verification as SeaOrmVerificationModel>::Entity::delete_many()
                 .filter(S::Verification::identifier_column().eq(identifier))
-                .exec(self.connection())
+                .exec(self.scoped_connection())
                 .await
                 .map_err(map_db_err)?;
         for hook in self.hooks() {
@@ -404,7 +410,7 @@ where
                 )),
             );
         }
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         if !matches!(
             backend,
             sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
@@ -423,7 +429,7 @@ where
         let _ignored_returning = QueryTrait::query(&mut query).returning(returning);
         let Some(model) = <S::Verification as SeaOrmVerificationModel>::Entity::find()
             .from_raw_sql(query.build(backend))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -452,14 +458,14 @@ where
         let (encoded, digest) = verification_reservation_key(logical_identifier);
         let id = S::Verification::parse_reservation_id(&encoded, digest)?;
         let insert = S::Verification::new_active(Some(id.clone()), verification, Utc::now())
-            .insert(self.connection())
+            .insert(self.scoped_connection())
             .await;
         match insert {
             Ok(model) => Ok(Some(model)),
             Err(error) => {
                 if <S::Verification as SeaOrmVerificationModel>::Entity::find()
                     .filter(S::Verification::id_column().eq(id))
-                    .one(self.connection())
+                    .one(self.scoped_connection())
                     .await
                     .map_err(map_db_err)?
                     .is_some()
@@ -523,7 +529,7 @@ where
                 )),
             );
         }
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         if !matches!(
             backend,
             sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
@@ -539,7 +545,7 @@ where
         let _returning = QueryTrait::query(&mut query).returning(returning);
         let model = <S::Verification as SeaOrmVerificationModel>::Entity::find()
             .from_raw_sql(query.build(backend))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         let snapshot = model.as_ref().map(VerificationSnapshot::from_model);
@@ -557,7 +563,7 @@ where
                 <S::Verification as SeaOrmVerificationModel>::id_column()
                     .eq(verification_id.clone()),
             )
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         let hook_context = self.hook_context(None);
@@ -577,7 +583,7 @@ where
                 .filter(
                     <S::Verification as SeaOrmVerificationModel>::id_column().eq(verification_id),
                 )
-                .exec(self.connection())
+                .exec(self.scoped_connection())
                 .await
                 .map_err(map_db_err)?;
         if let Some(verification) = &verification {
@@ -601,7 +607,7 @@ where
                 )),
             )
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         let hook_context = self.hook_context(None);
@@ -626,7 +632,7 @@ where
                     deadline,
                 )),
             )
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         for model in &snapshots {

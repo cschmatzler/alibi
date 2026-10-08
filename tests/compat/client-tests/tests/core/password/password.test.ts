@@ -346,11 +346,18 @@ compatScenario(
       .actor("fresh-login")
       .client.signIn.email({ email, password: "replacementPassword123" });
     expect(login.data?.user.id).toBe(signup.data!.user.id);
+    const proofSnapshot = (proof: unknown) => ctx.snapshot(
+      z.array(z.object({ identifier: z.string(), value: z.string() }).passthrough()).parse(proof).map((row) => ({
+        ...row,
+        identifier: { namespace: "reset-password:", token: row.identifier.slice("reset-password:".length) },
+        value: { userId: row.value },
+      })),
+    );
     return {
       delivery,
       rejected,
-      proofBefore: ctx.snapshot(proofBefore),
-      proofAfter: ctx.snapshot(proofAfter),
+      proofBefore: proofSnapshot(proofBefore),
+      proofAfter: proofSnapshot(proofAfter),
       freshDelivery,
       accepted,
       reset: ctx.snapshot(reset),

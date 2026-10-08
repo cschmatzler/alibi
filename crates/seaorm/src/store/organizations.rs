@@ -26,7 +26,7 @@ where
             .map(|metadata| {
                 JsonMetadata::for_backend(
                     alibi_core::utils::json::to_value(&metadata)?,
-                    self.connection().get_database_backend(),
+                    self.scoped_connection().get_database_backend(),
                 )
             })
             .transpose()?;
@@ -39,7 +39,7 @@ where
             created_at: Set(now),
             updated_at: Set(now),
         }
-        .insert(self.connection())
+        .insert(self.scoped_connection())
         .await
         .map(|model| Organization::from(&model))
         .map_err(map_db_err)
@@ -47,7 +47,7 @@ where
 
     async fn get_organization_by_id(&self, id: &str) -> AuthResult<Option<Organization>> {
         Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| Organization::from(&model)))
             .map_err(map_db_err)
@@ -56,7 +56,7 @@ where
     async fn get_organization_by_slug(&self, slug: &str) -> AuthResult<Option<Organization>> {
         Entity::find()
             .filter(Column::Slug.eq(slug))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| Organization::from(&model)))
             .map_err(map_db_err)
@@ -69,7 +69,7 @@ where
 
         Entity::find()
             .filter(Column::Id.is_in(ids.iter().cloned()))
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|models| models.iter().map(Organization::from).collect())
             .map_err(map_db_err)
@@ -81,7 +81,7 @@ where
         update: UpdateOrganization,
     ) -> AuthResult<Organization> {
         let Some(model) = Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -90,11 +90,14 @@ where
             ));
         };
 
-        let active =
-            apply_organization_update(model, update, self.connection().get_database_backend())?;
+        let active = apply_organization_update(
+            model,
+            update,
+            self.scoped_connection().get_database_backend(),
+        )?;
 
         active
-            .update(self.connection())
+            .update(self.scoped_connection())
             .await
             .map(|model_2| Organization::from(&model_2))
             .map_err(map_db_err)
@@ -106,7 +109,7 @@ where
         update: UpdateOrganization,
     ) -> AuthResult<Option<Organization>> {
         use sea_orm::sea_query::{Expr, ExprTrait, Query};
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         let mut query = Query::update();
         let _ = query.table(Entity).and_where(Expr::col(Column::Id).eq(id));
         if let Some(name) = update.name {
@@ -123,16 +126,16 @@ where
                 JsonMetadata::for_backend(alibi_core::utils::json::to_value(&metadata)?, backend)?;
             let _ = query.value(Column::Metadata, metadata);
         }
-        if self.connection().support_returning() {
+        if self.scoped_connection().support_returning() {
             let _ = query.returning(Query::returning().columns(Column::iter()));
             return Model::find_by_statement(StatementBuilder::build(&query, &backend))
-                .one(self.connection())
+                .one(self.scoped_connection())
                 .await
                 .map(|row| row.as_ref().map(Organization::from))
                 .map_err(map_db_err);
         }
         let _ = self
-            .connection()
+            .scoped_connection()
             .execute_raw(StatementBuilder::build(&query, &backend))
             .await
             .map_err(map_db_err)?;
@@ -148,15 +151,18 @@ where
         update: UpdateOrganization,
     ) -> AuthResult<Option<Organization>> {
         let Some(model) = Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
             return Ok(None);
         };
-        let active =
-            apply_organization_update(model, update, self.connection().get_database_backend())?;
-        match active.update(self.connection()).await {
+        let active = apply_organization_update(
+            model,
+            update,
+            self.scoped_connection().get_database_backend(),
+        )?;
+        match active.update(self.scoped_connection()).await {
             Ok(model_2) => Ok(Some(Organization::from(&model_2))),
             Err(DbErr::RecordNotUpdated) => Ok(None),
             Err(error) => Err(map_db_err(error)),
@@ -164,7 +170,7 @@ where
     }
 
     async fn delete_organization(&self, id: &str) -> AuthResult<()> {
-        let transaction = self.connection().begin().await.map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin().await.map_err(map_db_err)?;
         let _ignored_map_err = entities::member::Entity::delete_many()
             .filter(entities::member::Column::OrganizationId.eq(id))
             .exec(&transaction)
@@ -186,7 +192,7 @@ where
         let member_models = entities::member::Entity::find()
             .filter(entities::member::Column::UserId.eq(user_id))
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
 
@@ -201,7 +207,7 @@ where
 
         let organizations: HashMap<String, Organization> = Entity::find()
             .filter(Column::Id.is_in(organization_ids))
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?
             .into_iter()

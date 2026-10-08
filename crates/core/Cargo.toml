@@ -73,6 +73,7 @@ alibi-schema-registry = { workspace = true }
 axum = { workspace = true, optional = true }
 url = { workspace = true }
 tracing.workspace = true
+sqlparser = { version = "0.63.0", features = ["visitor"] }
 
 [features]
 default = []
