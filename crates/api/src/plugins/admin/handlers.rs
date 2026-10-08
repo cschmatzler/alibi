@@ -354,7 +354,15 @@ pub(in crate::plugins) async fn update_user_core(
     }
 
     if let Some(value) = body.data.get("email").and_then(|value| value.as_str()) {
-        update.email = Some(value.to_owned());
+        let email = value.to_lowercase();
+        if !super::validation::valid_email(&email) {
+            return Err(AuthError::Api {
+                status: 400,
+                code: Some("INVALID_EMAIL".into()),
+                message: "Invalid email".into(),
+            });
+        }
+        update.email = Some(email);
     }
     if let Some(value) = body.data.get("name").and_then(|value| value.as_str()) {
         update.name = Some(value.to_owned());
