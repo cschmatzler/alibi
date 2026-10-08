@@ -76,8 +76,10 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
         raw_body.get("lastLoginMethod"),
     )?;
 
+    let mut writable_body = body.clone();
+    let _ = writable_body.remove("email");
     let update_req: UpdateUserRequest =
-        serde_json::from_value(serde_json::Value::Object(body.clone()))
+        serde_json::from_value(serde_json::Value::Object(writable_body))
             .map_err(|e| AuthError::bad_request(format!("Invalid JSON: {e}")))?;
     let policy = context.extensions.get::<UsernameConfig>();
     if let Some(policy) = &policy {
