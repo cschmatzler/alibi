@@ -1,15 +1,15 @@
 //! Equivalent passkey configurations and actual SQLite observations.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::Query,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{EmailPasswordPlugin, PasskeyPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi_seaorm::sea_orm::{ConnectionTrait, DatabaseConnection, DbBackend, Statement};
+use axum::{
+    Json, Router,
+    extract::Query,
+    routing::{get, post},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
@@ -37,6 +37,46 @@ struct CurrentCounter {
 struct CurrentPublicKey {
     credential_id: String,
     public_key: String,
+}
+
+struct ExtensionInputs {
+    mode: String,
+    registration: bool,
+}
+#[async_trait::async_trait]
+impl alibi::plugins::passkey::PasskeyExtensionsResolver for ExtensionInputs {
+    async fn resolve(
+        &self,
+        context: &alibi::plugins::passkey::PasskeyOptionsContext<'_>,
+    ) -> AuthResult<Value> {
+        if self.mode == "coded" {
+            return Err(alibi::AuthError::Api {
+                status: 403,
+                code: Some("EXTENSIONS_DENIED".into()),
+                message: "Application extensions rejected".into(),
+            });
+        }
+        if self.mode == "ordinary" {
+            return Err(alibi::AuthError::internal("Application extensions failed"));
+        }
+        let marker = context
+            .request
+            .headers
+            .get("x-extension-marker")
+            .map(String::as_str)
+            .unwrap_or("null");
+        if self.registration {
+            if context.user.is_none() {
+                return Err(alibi::AuthError::internal(
+                    "actual registration session required",
+                ));
+            }
+            Ok(json!({"credProps": false, "minPinLength": marker == "registration-marker"}))
+        } else {
+            let path = context.request.path().rsplit('/').next().unwrap();
+            Ok(json!({"appid":format!("https://extensions.fixture.test/{marker}/{path}")}))
+        }
+    }
 }
 
 pub(crate) async fn router(
@@ -80,11 +120,46 @@ pub(crate) async fn router(
                 .web_authn_challenge_cookie("ceremony-proof")
                 .attestation_root_certificates(roots)
         } else if name == "passkey-rp-options" {
-            // Native configuration exposes rpName, but no authenticatorSelection policy.
-            PasskeyPlugin::new().rp_name("Configured ceremony RP")
+            PasskeyPlugin::new()
+                .rp_name("Configured ceremony RP")
+                .authenticator_selection(alibi::plugins::passkey::PasskeyAuthenticatorSelection {
+                    resident_key: Some("required".into()),
+                    user_verification: Some("required".into()),
+                    authenticator_attachment: Some("platform".into()),
+                })
+        } else if let Some(mode) = name.strip_prefix("passkey-extensions-") {
+            use alibi::plugins::passkey::{
+                PasskeyAuthenticationConfig, PasskeyExtensions, PasskeyRegistrationConfig,
+            };
+            let input = |registration| {
+                if mode == "static" {
+                    PasskeyExtensions::Static(if registration {
+                        json!({"credProps":true})
+                    } else {
+                        json!({"appid":"https://extensions.fixture.test/static"})
+                    })
+                } else {
+                    PasskeyExtensions::Resolver(Arc::new(ExtensionInputs {
+                        mode: mode.into(),
+                        registration,
+                    }))
+                }
+            };
+            PasskeyPlugin::new()
+                .registration(PasskeyRegistrationConfig {
+                    extensions: Some(input(true)),
+                    ..Default::default()
+                })
+                .authentication(PasskeyAuthenticationConfig {
+                    extensions: Some(input(false)),
+                    ..Default::default()
+                })
+        } else if name == "passkey-origin-list" {
+            PasskeyPlugin::new().origins(vec![
+                config.base_url.clone(),
+                "http://localhost:4444".into(),
+            ])
         } else {
-            // Native options have no static or resolver-based WebAuthn extension inputs.
-            // Native configuration exposes one origin, not upstream list/null policies.
             PasskeyPlugin::new()
         };
         let auth = Arc::new(

@@ -71,6 +71,7 @@ pub trait PasskeyRegistrationAfterVerification: Send + Sync {
 
 #[derive(Clone)]
 pub struct PasskeyRegistrationConfig {
+    pub extensions: Option<super::PasskeyExtensions>,
     pub require_session: bool,
     pub resolve_user: Option<Arc<dyn PasskeyUserResolver>>,
     pub after_verification: Option<Arc<dyn PasskeyRegistrationAfterVerification>>,
@@ -78,6 +79,7 @@ pub struct PasskeyRegistrationConfig {
 impl Default for PasskeyRegistrationConfig {
     fn default() -> Self {
         Self {
+            extensions: None,
             require_session: true,
             resolve_user: None,
             after_verification: None,
@@ -87,6 +89,7 @@ impl Default for PasskeyRegistrationConfig {
 impl std::fmt::Debug for PasskeyRegistrationConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PasskeyRegistrationConfig")
+            .field("extensions", &self.extensions)
             .field("require_session", &self.require_session)
             .field("resolve_user", &self.resolve_user.is_some())
             .field("after_verification", &self.after_verification.is_some())

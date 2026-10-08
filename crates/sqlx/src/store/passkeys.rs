@@ -24,7 +24,12 @@ where
             .map_err(|_error| AuthError::bad_request("Passkey counter exceeds i64 range"))?;
 
         let mut active = ActiveRow::new();
-        active.set("id", Uuid::new_v4().to_string());
+        active.set(
+            "id",
+            self.generated_id(self.exec(), "passkey", "passkeys", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        );
         active.set("name", input.name);
         active.set("public_key", input.public_key);
         active.set("user_id", input.user_id);

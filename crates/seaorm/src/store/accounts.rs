@@ -39,7 +39,21 @@ where
         let now = Utc::now();
         let mut fields = std::mem::take(&mut create_account.additional_fields);
         fields.apply_adapter_transforms_async().await?;
-        let mut active = S::Account::new_active(None, create_account, now);
+        let generated_id = self
+            .generated_id(
+                db,
+                "account",
+                <<S::Account as SeaOrmAccountModel>::Entity as sea_orm::EntityName>::table_name(
+                    &Default::default(),
+                ),
+                &sea_orm::Iden::to_string(&S::Account::id_column()),
+            )
+            .await?;
+        let id = generated_id
+            .as_deref()
+            .map(S::Account::parse_id)
+            .transpose()?;
+        let mut active = S::Account::new_active(id, create_account, now);
         let backend = db.get_database_backend();
         for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
             let value = crate::additional_fields::prepare_value(db, &column, value).await?;

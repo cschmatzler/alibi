@@ -1,4 +1,9 @@
 mod authentication;
+mod options;
+pub use options::{
+    PasskeyAuthenticatorSelection, PasskeyExtensions, PasskeyExtensionsResolver,
+    PasskeyOptionsContext,
+};
 
 pub(super) mod handlers;
 
@@ -50,6 +55,11 @@ pub struct PasskeyConfig {
     pub rp_name: String,
     #[config(default = String::new())]
     pub origin: String,
+    /// Additional explicit origins accepted by signed ceremonies.
+    #[config(default = Vec::new())]
+    pub origins: Vec<String>,
+    #[config(default = PasskeyAuthenticatorSelection::default())]
+    pub authenticator_selection: PasskeyAuthenticatorSelection,
     #[config(default = 300)]
     pub challenge_ttl_secs: i64,
     #[config(default = "better-auth-passkey".to_owned())]
@@ -77,6 +87,7 @@ impl PasskeyPlugin {
     ) -> AuthResult<AuthResponse> {
         use alibi_core::AuthUser;
         let session = self.registration_session(req, ctx).await?;
+        let projected_user = session.as_ref().map(|(user, _)| ctx.user_view(user));
         let user = if let Some((user, _)) = session {
             let id = user.id().into_owned();
             let name = user
@@ -116,6 +127,20 @@ impl PasskeyPlugin {
                 Err(_) => return Ok(AuthResponse::new(500)),
             }
         };
+        let extensions = if let Some(input) = &self.config.registration.extensions {
+            Some(
+                input
+                    .resolve(&PasskeyOptionsContext {
+                        request: req,
+                        auth_config: &ctx.config,
+                        extensions: &ctx.extensions,
+                        user: projected_user.as_ref(),
+                    })
+                    .await?,
+            )
+        } else {
+            None
+        };
         let passkey_name = req.query.get("name").map(String::as_str);
         let authenticator_attachment = req.query.get("authenticatorAttachment").map(String::as_str);
         let (result, cookie_header) = generate_register_options_core(
@@ -123,6 +148,7 @@ impl PasskeyPlugin {
             req.query.get("context").map(String::as_str),
             passkey_name,
             authenticator_attachment,
+            extensions,
             &self.config,
             ctx,
         )
@@ -235,8 +261,24 @@ impl PasskeyPlugin {
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
         let maybe_user = ctx.require_cached_session(req).await.ok().map(|(u, _)| u);
+        let projected_user = maybe_user.as_ref().map(|user| ctx.user_view(user));
+        let extensions = if let Some(input) = &self.config.authentication.extensions {
+            Some(
+                input
+                    .resolve(&PasskeyOptionsContext {
+                        request: req,
+                        auth_config: &ctx.config,
+                        extensions: &ctx.extensions,
+                        user: projected_user.as_ref(),
+                    })
+                    .await?,
+            )
+        } else {
+            None
+        };
         let (result, cookie_header) =
-            generate_authenticate_options_core(maybe_user.as_ref(), &self.config, ctx).await?;
+            generate_authenticate_options_core(maybe_user.as_ref(), extensions, &self.config, ctx)
+                .await?;
         Ok(AuthResponse::json(200, &result)?.with_header("Set-Cookie", cookie_header))
     }
 

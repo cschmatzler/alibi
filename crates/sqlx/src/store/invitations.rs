@@ -57,9 +57,23 @@ where
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            options
-                .id
-                .unwrap_or_else(|| self.organization_models.invitation.new_id()),
+            match options.id {
+                Some(id) => id,
+                None => self
+                    .generated_id(
+                        self.exec(),
+                        "invitation",
+                        self.organization_models.invitation.table(),
+                        self.organization_models
+                            .invitation
+                            .physical("id")
+                            .ok_or_else(|| {
+                                alibi_core::AuthError::config("Organization model has no ID column")
+                            })?,
+                    )
+                    .await?
+                    .unwrap_or_else(|| self.organization_models.invitation.new_id()),
+            },
         );
         active.set("organization_id", invitation.organization_id);
         active.set("email", invitation.email);

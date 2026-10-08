@@ -155,6 +155,21 @@ pub(in crate::plugins::oauth) async fn handle_callback(
 
     let error = merged_2.get("error").cloned();
     let Some(state_param) = merged_2.get("state").cloned() else {
+        if merged_2.get("code").is_some_and(|code| !code.is_empty())
+            && config
+                .providers
+                .get(provider_name)
+                .is_some_and(|provider| provider.allow_idp_initiated)
+        {
+            let mut authorization = req.clone();
+            authorization.body = Some(serde_json::to_vec(&serde_json::json!({
+                "provider": provider_name, "callbackURL": ctx.config.base_url
+            }))?);
+            let mut response = handle_social_sign_in(config, &authorization, ctx).await?;
+            response.status = 302;
+            response.body.clear();
+            return Ok(response);
+        }
         return Ok(callback_failure_redirect(ctx, "state_not_found"));
     };
     let payload = match ctx.config.account.store_state_strategy {

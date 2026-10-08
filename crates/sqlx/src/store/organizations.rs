@@ -32,8 +32,23 @@ where
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            org.id
-                .unwrap_or_else(|| self.organization_models.organization.new_id()),
+            match org.id {
+                Some(id) => id,
+                None => self
+                    .generated_id(
+                        self.exec(),
+                        "organization",
+                        self.organization_models.organization.table(),
+                        self.organization_models
+                            .organization
+                            .physical("id")
+                            .ok_or_else(|| {
+                                alibi_core::AuthError::config("Organization model has no ID column")
+                            })?,
+                    )
+                    .await?
+                    .unwrap_or_else(|| self.organization_models.organization.new_id()),
+            },
         );
         active.set("name", org.name);
         active.set("slug", org.slug);

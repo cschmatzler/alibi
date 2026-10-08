@@ -129,14 +129,15 @@ pub async fn redeem_device_code<S: AuthSchema>(
     let authorization = policy.authorize(&record).await?;
     let row = &record.device_code;
     let now = Utc::now();
-    if let (Some(last), Some(interval)) = (row.last_polled_at, row.polling_interval) {
-        if interval != 0 && now.signed_duration_since(last).num_milliseconds() < interval {
-            return Err(DeviceGrantFailure::oauth(
-                400,
-                "slow_down",
-                POLLING_TOO_FREQUENTLY,
-            ));
-        }
+    if let (Some(last), Some(interval)) = (row.last_polled_at, row.polling_interval)
+        && interval != 0
+        && now.signed_duration_since(last).num_milliseconds() < interval
+    {
+        return Err(DeviceGrantFailure::oauth(
+            400,
+            "slow_down",
+            POLLING_TOO_FREQUENTLY,
+        ));
     }
     _ = ctx
         .database
@@ -184,7 +185,11 @@ pub async fn redeem_device_code<S: AuthSchema>(
     let redemption_context = policy.prepare(&record, &authorization.context).await?;
     let user = ctx
         .database
-        .get_user_by_id(row.user_id.as_deref().unwrap())
+        .get_user_by_id(
+            row.user_id
+                .as_deref()
+                .ok_or_else(|| DeviceGrantFailure::oauth(500, "server_error", USER_NOT_FOUND))?,
+        )
         .await?
         .ok_or_else(|| DeviceGrantFailure::oauth(500, "server_error", USER_NOT_FOUND))?;
     let claimed = ctx

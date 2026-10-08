@@ -19,7 +19,10 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         member: CreateMember,
     ) -> AuthResult<Member> {
         ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
+            id: Set(self
+                .generated_id(connection, "member", "member", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string())),
             organization_id: Set(member.organization_id),
             user_id: Set(member.user_id),
             role: Set(member.role),

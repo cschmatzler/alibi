@@ -113,7 +113,12 @@ where
         }
         let key = team_membership_key(team_id, user_id)?;
         let mut member = ActiveRow::new();
-        member.set("id", Uuid::new_v4().to_string());
+        member.set(
+            "id",
+            self.generated_id(exec, "teamMember", "team_member", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        );
         member.set("team_id", team_id);
         member.set("user_id", user_id);
         member.set("membership_key", Some(key));
@@ -143,7 +148,12 @@ where
     async fn create_team(&self, data: CreateTeam) -> AuthResult<Team> {
         let now = data.updated_at.unwrap_or_else(Utc::now);
         let mut active = ActiveRow::new();
-        active.set("id", Uuid::new_v4().to_string());
+        active.set(
+            "id",
+            self.generated_id(self.exec(), "team", "team", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        );
         active.set("name", data.name);
         active.set("organization_id", data.organization_id);
         active.set("member_count", 0_i64);

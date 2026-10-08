@@ -688,6 +688,7 @@ fn mock_oauth_plugin_at(
                 disable_id_token_sign_in: false,
                 disable_implicit_sign_up: false,
                 disable_sign_up: false,
+                allow_idp_initiated: false,
                 override_user_info_on_sign_in: false,
             },
         )
@@ -739,6 +740,7 @@ fn mock_oauth_plugin_at(
                 })),
                 disable_implicit_sign_up: false,
                 disable_sign_up: false,
+                allow_idp_initiated: false,
                 override_user_info_on_sign_in: false,
             },
         )

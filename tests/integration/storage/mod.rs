@@ -28,6 +28,7 @@ mod api_keys;
 mod character_ids;
 mod database_callbacks;
 mod http_composition;
+mod id_strategies;
 mod invitations;
 mod jwks;
 mod lifecycle_errors;

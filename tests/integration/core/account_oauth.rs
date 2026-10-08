@@ -396,6 +396,7 @@ fn make_test_provider(mock_url: &str) -> OAuthProvider {
         disable_id_token_sign_in: false,
         disable_implicit_sign_up: false,
         disable_sign_up: false,
+        allow_idp_initiated: false,
         override_user_info_on_sign_in: false,
     }
 }
@@ -500,6 +501,7 @@ mod tests {
                 disable_id_token_sign_in: provider.disable_id_token_sign_in,
                 disable_implicit_sign_up: provider.disable_implicit_sign_up,
                 disable_sign_up: provider.disable_sign_up,
+                allow_idp_initiated: false,
                 override_user_info_on_sign_in: provider.override_user_info_on_sign_in,
             },
         );
@@ -1475,6 +1477,7 @@ mod tests {
                 disable_id_token_sign_in: false,
                 disable_implicit_sign_up: false,
                 disable_sign_up: false,
+                allow_idp_initiated: false,
                 override_user_info_on_sign_in: false,
             },
         );

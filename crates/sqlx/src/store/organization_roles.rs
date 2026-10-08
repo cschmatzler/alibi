@@ -34,7 +34,12 @@ impl<S: AuthSchema> OrganizationRoleStore for SqlxStore<S> {
         data: CreateOrganizationRole,
     ) -> AuthResult<OrganizationRole> {
         let mut active = ActiveRow::new();
-        active.set("id", Uuid::new_v4().to_string());
+        active.set(
+            "id",
+            self.generated_id(self.exec(), "organizationRole", "organization_role", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        );
         active.set("organization_id", data.organization_id);
         active.set("role", data.role);
         active.set("permission", serde_json::to_string(&data.permission)?);

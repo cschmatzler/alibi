@@ -412,7 +412,7 @@ fn build_redirect_url(
             pairs.push(((*key).to_owned(), (*value).to_owned()));
         }
     }
-    url.query_pairs_mut().clear().extend_pairs(pairs);
+    let _ = url.query_pairs_mut().clear().extend_pairs(pairs);
 
     Ok(url.to_string())
 }

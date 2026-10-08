@@ -1,8 +1,5 @@
 //! Application-owned authentication callbacks and callback-time persisted state.
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::{Json, Router, routing::get};
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{
@@ -16,6 +13,9 @@ use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ConnectionTrait, DbBackend, Statement},
 };
+use async_trait::async_trait;
+use axum::{Json, Router, routing::get};
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::{Value, json};
 use std::sync::{Arc, Mutex};
 
@@ -166,6 +166,7 @@ pub(crate) async fn router(
                 .plugin(SessionManagementPlugin::new())
                 .plugin(
                     PasskeyPlugin::new().authentication(PasskeyAuthenticationConfig {
+                        extensions: None,
                         after_verification: Some(application),
                     }),
                 )

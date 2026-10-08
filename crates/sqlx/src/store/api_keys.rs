@@ -39,7 +39,12 @@ where
             .as_ref()
             .is_some_and(ApiKeyStart::requires_sqlite_cast);
         let mut active = ActiveRow::new();
-        active.set("id", Uuid::new_v4().to_string());
+        active.set(
+            "id",
+            self.generated_id(self.exec(), "apikey", "api_keys", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        );
         active.set("name", input.name);
         active.set("start", start.into_sql_value());
         active.set("prefix", input.prefix);

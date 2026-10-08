@@ -57,7 +57,10 @@ for (const mode of ["static", "resolver", "coded", "ordinary"] as const) {
       }
       expect(options.error).toBeNull();
       expect(auth.error).toBeNull();
-      expect(options.data!.extensions).toEqual({ credProps: mode === "static" });
+      // SimpleWebAuthn always forces credProps; another field observes resolver input.
+      expect(options.data!.extensions).toEqual(
+        mode === "static" ? { credProps: true } : { credProps: true, minPinLength: true },
+      );
       expect(auth.data!.extensions).toEqual({
         appid:
           mode === "static"

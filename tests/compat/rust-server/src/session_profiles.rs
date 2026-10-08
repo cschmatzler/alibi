@@ -1,6 +1,5 @@
 //! Explicit session configurations and trusted persisted-clock controls.
 use crate::TestSchema;
-use axum::{Json, Router, http::StatusCode, routing::post};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::api_key::{ApiKeyConfig, ApiKeyPlugin};
@@ -17,6 +16,7 @@ use alibi_seaorm::sea_orm::{
     ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, sea_query::Expr,
 };
 use alibi_seaorm::store::entities::session;
+use axum::{Json, Router, http::StatusCode, routing::post};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -38,6 +38,8 @@ pub(super) async fn router(
 ) -> AuthResult<Router> {
     let mut router = Router::new();
     let mut caches = HashMap::<String, Arc<dyn CacheAdapter>>::new();
+    let mut id_databases = HashMap::new();
+    let mut id_events = HashMap::new();
     for name in [
         "session-secondary-only",
         "session-secondary-preserve-only",
@@ -67,7 +69,48 @@ pub(super) async fn router(
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = config.clone().base_path(&path);
-        if name == "id-strategy-serial" { config.advanced.database.use_number_id = true; }
+        let profile_database = if let Some(mode) = name.strip_prefix("id-strategy-") {
+            let database = alibi_seaorm::sea_orm::Database::connect("sqlite::memory:")
+                .await
+                .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
+            crate::backend::migrate(&database)
+                .await
+                .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
+            id_databases.insert(mode.to_owned(), database.clone());
+            let events = Arc::new(std::sync::Mutex::new(Vec::<Value>::new()));
+            id_events.insert(mode.to_owned(), events.clone());
+            let sequence = std::sync::atomic::AtomicUsize::new(0);
+            let mode = mode.to_owned();
+            config.advanced.database.generate_id = Some(match mode.as_str() {
+                "uuid" => alibi_core::config::DatabaseIdStrategy::Uuid,
+                "serial" => alibi_core::config::DatabaseIdStrategy::Serial,
+                _ => alibi_core::config::DatabaseIdStrategy::Custom(Arc::new(
+                    move |model: &str, size: Option<usize>| {
+                        let mut event = json!({"model":model});
+                        if let Some(size) = size {
+                            event["size"] = json!(size);
+                        }
+                        events.lock().unwrap().push(event);
+                        if mode == "throw" {
+                            return Err(alibi::AuthError::internal(
+                                "Application ID generation failed",
+                            ));
+                        }
+                        Ok(if mode == "false" {
+                            None
+                        } else {
+                            Some(format!(
+                                "{model}_application_{}",
+                                sequence.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1
+                            ))
+                        })
+                    },
+                )),
+            });
+            database
+        } else {
+            database.clone()
+        };
         if name.starts_with("session-secondary-") {
             let cache: Arc<dyn CacheAdapter> = Arc::new(MemoryCacheAdapter::new());
             config.session.secondary_storage = Some(cache.clone());
@@ -79,18 +122,42 @@ pub(super) async fn router(
         }
         if name.starts_with("stateless-refresh-") {
             config.session = config.session.stateless();
-            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {enabled: true, max_age: 5.0, strategy: if name.contains("jwt") {alibi_core::CookieCacheStrategy::Jwt} else {alibi_core::CookieCacheStrategy::Compact}, version: Some(alibi_core::CookieCacheVersion::Literal(if name.ends_with("v2") {"2"} else {"1"}.into()))});
+            config.account.store_account_cookie = true;
+            config.account.store_state_strategy = alibi_core::OAuthStateStrategy::Cookie;
+            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
+                enabled: true,
+                max_age: 5.0,
+                strategy: if name.contains("jwt") {
+                    alibi_core::CookieCacheStrategy::Jwt
+                } else {
+                    alibi_core::CookieCacheStrategy::Compact
+                },
+                version: Some(alibi_core::CookieCacheVersion::Literal(
+                    if name.ends_with("v2") { "2" } else { "1" }.into(),
+                )),
+            });
             config.session.cookie_refresh_cache = alibi_core::CookieRefreshCache::UpdateAge(4.0);
         }
         if name.contains("update-age") {
             config.session.expires_in = chrono::Duration::seconds(3600);
-            config.session.update_age = Some(chrono::Duration::seconds(if name.ends_with("-long") {7200} else {120}));
+            config.session.update_age =
+                Some(chrono::Duration::seconds(if name.ends_with("-long") {
+                    7200
+                } else {
+                    120
+                }));
         }
         if name == "session-update-age-cache" {
-            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {enabled: true, max_age: 300.0, ..Default::default()});
+            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {
+                enabled: true,
+                max_age: 300.0,
+                ..Default::default()
+            });
         }
-        config.session.defer_session_refresh = name.starts_with("session-deferred") || name.ends_with("refresh-deferred");
-        config.session.disable_session_refresh = name.ends_with("no-refresh") || name.starts_with("stateless-refresh-");
+        config.session.defer_session_refresh =
+            name.starts_with("session-deferred") || name.ends_with("refresh-deferred");
+        config.session.disable_session_refresh =
+            name.ends_with("no-refresh") || name.starts_with("stateless-refresh-");
         if name == "session-no-freshness" {
             config.session.fresh_age = Some(chrono::Duration::zero());
         }
@@ -104,7 +171,7 @@ pub(super) async fn router(
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(crate::backend::store::<TestSchema>(
                 config,
-                database.clone(),
+                profile_database,
             ))
             .rate_limit(RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new())
@@ -135,16 +202,14 @@ pub(super) async fn router(
         let routes = auth.clone().axum_router().with_state(auth);
         router = router.nest(&path, routes);
     }
-    // Native currently has no configured ID generator or serial-ID policy.
-    let ids_database = database.clone();
-    router = router.route("/__test/id-strategy/{mode}/state", axum::routing::get(move || {let database = ids_database.clone(); async move {
+    router = router.route("/__test/id-strategy/{mode}/state", axum::routing::get(move |axum::extract::Path(mode): axum::extract::Path<String>| {let database = id_databases[&mode].clone(); let events = id_events[&mode].clone(); async move {
         use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
         let read = async |table: &str, owner: bool| {
             let columns = if owner {"id, user_id"} else {"id"};
             let rows = database.query_all_raw(Statement::from_string(database.get_database_backend(), format!("SELECT {columns} FROM {table}"))).await.unwrap();
             rows.iter().map(|row| {let mut value = json!({"id": row.try_get::<String>("", "id").unwrap()}); if owner {value["userId"] = json!(row.try_get::<String>("", "user_id").unwrap());} value}).collect::<Vec<_>>()
         };
-        Json(json!({"users": read("users",false).await, "accounts": read("accounts",true).await, "sessions": read("sessions",true).await, "verification": read("verifications",false).await, "events": []}))
+        Json(json!({"users": read("users",false).await, "accounts": read("accounts",true).await, "sessions": read("sessions",true).await, "verification": read("verifications",false).await, "events": *events.lock().unwrap()}))
     }}));
     let casing_database = database.clone();
     router = router.route("/__test/casing/state", axum::routing::get(move |axum::extract::Query(query): axum::extract::Query<HashMap<String,String>>| {let database = casing_database.clone(); async move {

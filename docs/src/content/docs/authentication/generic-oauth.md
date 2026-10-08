@@ -72,6 +72,10 @@ Behavior you get automatically with discovery metadata:
 - The account identifier is the `sub` claim for OIDC providers and the profile `id` for plain OAuth 2.0.
 - PKCE is used by default.
 
+### IdP-initiated authorization
+
+Set `provider.allow_idp_initiated = true` to accept a callback containing a code without state. The server redirects to a fresh authorization flow with new state and PKCE. It exchanges no grant and creates no identity until the browser returns through the normal state-bound callback. The default is `false`.
+
 ### Plain OAuth 2.0 (no discovery)
 
 ```rust

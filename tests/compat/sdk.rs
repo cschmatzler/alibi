@@ -500,8 +500,9 @@ async fn run_client_compat_in_environment(
         .await
         .expect("Salesforce transport JSON");
         Some(
-            response["proxyURL"]
-                .as_str()
+            response
+                .get("proxyURL")
+                .and_then(serde_json::Value::as_str)
                 .expect("Salesforce proxy URL")
                 .to_owned(),
         )

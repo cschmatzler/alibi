@@ -1,11 +1,5 @@
 //! Generic provider token configuration exercised through real HTTP grants.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::State,
-    http::HeaderMap,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::{
@@ -16,6 +10,12 @@ use alibi::plugins::oauth::{
 use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthResult};
 use alibi_seaorm::DatabaseConnection;
+use axum::{
+    Json, Router,
+    extract::State,
+    http::HeaderMap,
+    routing::{get, post},
+};
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -244,7 +244,6 @@ pub(crate) async fn router(
         "base-auto",
         "base-no-fallback",
         "base-untrusted",
-
         "manual",
         "default-none",
         "default-post",
@@ -310,12 +309,24 @@ pub(crate) async fn router(
         let path = format!("/__test/profiles/generic-token-{mode}/api/auth");
         let mut settings = config.clone().base_path(&path);
         if mode.starts_with("base-") {
-            settings.dynamic_base_url = Some(alibi_core::config::DynamicBaseUrl {allowed_hosts: vec!["exact.fixture.test".into(), "*.preview.fixture.test".into()], protocol: Some(match mode {"base-http" => alibi_core::config::BaseUrlProtocol::Http, "base-https" => alibi_core::config::BaseUrlProtocol::Https, _ => alibi_core::config::BaseUrlProtocol::Auto}), fallback: (mode != "base-no-fallback").then(|| "http://fallback.fixture.test".into())});
+            settings.dynamic_base_url = Some(alibi_core::config::DynamicBaseUrl {
+                allowed_hosts: vec!["exact.fixture.test".into(), "*.preview.fixture.test".into()],
+                protocol: Some(match mode {
+                    "base-http" => alibi_core::config::BaseUrlProtocol::Http,
+                    "base-https" => alibi_core::config::BaseUrlProtocol::Https,
+                    _ => alibi_core::config::BaseUrlProtocol::Auto,
+                }),
+                fallback: (mode != "base-no-fallback")
+                    .then(|| "http://fallback.fixture.test".into()),
+            });
             settings.advanced.trust_forwarded_host = mode != "base-untrusted";
             settings.trusted_origins.push(config.base_url.clone());
         }
         if mode == "local-verified" {
-            settings.account.account_linking.require_local_email_verified = true;
+            settings
+                .account
+                .account_linking
+                .require_local_email_verified = true;
         }
         if mode == "implicit-disabled" {
             settings.account.account_linking.disable_implicit_linking = true;
@@ -487,6 +498,7 @@ pub(crate) async fn router(
             disable_id_token_sign_in: false,
             disable_implicit_sign_up: false,
             disable_sign_up: false,
+            allow_idp_initiated: mode == "idp-initiated",
             override_user_info_on_sign_in: mode == "override",
         };
         let provider = if mode.starts_with("dynamic")
@@ -576,8 +588,8 @@ pub(crate) async fn router(
         post(move |Json(body): Json<Value>| {
             let auth = profiles["none"].clone();
             async move {
-                use axum::response::IntoResponse;
                 use alibi::plugins::oauth::{OAuthAccountApi, OAuthAccountSelection};
+                use axum::response::IntoResponse;
                 let user = body["userId"].as_str().unwrap_or_default();
                 let selection = OAuthAccountSelection::Id(
                     body["accountId"].as_str().unwrap_or_default().to_owned(),

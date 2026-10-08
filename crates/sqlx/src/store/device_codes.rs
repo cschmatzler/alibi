@@ -18,7 +18,12 @@ impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
         input: CreateDeviceCode,
     ) -> AuthResult<DeviceCode> {
         let mut active = ActiveRow::new();
-        active.set("id", Uuid::new_v4().to_string());
+        active.set(
+            "id",
+            self.generated_id(self.exec(), "deviceCode", "device_code", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        );
         active.set("device_code", input.device_code);
         active.set("user_code", input.user_code);
         active.set("user_id", input.user_id);

@@ -32,6 +32,7 @@ Instance-level middleware and features are registered on `AuthBuilder` ([below](
 | `trusted_origin(…)`, `trusted_origins(vec)` | none | Origins allowed for CSRF checks, CORS and redirects (glob patterns allowed) | [Security](/concepts/security/) |
 | `trusted_origins_resolver(…)` | none | Async policy adding trusted origins per request | [Security](/concepts/security/) |
 | `disabled_path(…)`, `disabled_paths(vec)` | none | Paths that answer `404` | [Security](/concepts/security/#request-size-and-disabled-paths) |
+| `throw_api_errors(bool)` | `false` | Return ordinary endpoint failures as `Err` from `handle_request`; explicit API errors keep their HTTP response | — |
 | `api_error_url(…)` | none | Default OAuth error destination | [Security](/concepts/security/#error-pages) |
 | `render_error_page` | `true` unless `NODE_ENV=production` | Render the built-in `GET /error` page | [Security](/concepts/security/#error-pages) |
 | `email_provider` | none (set via `AuthBuilder::email_provider`) | Default mail transport | [Email](/concepts/notifications/) |
@@ -96,8 +97,11 @@ Instance-level middleware and features are registered on `AuthBuilder` ([below](
 | `default_cookie_attributes` | none | `CookieAttributes` for every cookie |
 | `cookie_prefix` | none | Name prefix |
 | `database.default_find_many_limit` | `100` | Default page size |
-| `database.use_number_id` | `false` | Declares numeric ids (makes invitation email verification default on) |
+| `database.use_number_id` | `false` | Select serial IDs when `generate_id` is unset; require verified email for numeric invitations by default |
+| `database.generate_id` | none | `DatabaseIdStrategy::Uuid`, `Serial`, or `Custom(Arc<dyn DatabaseIdGenerator>)` |
 | `trusted_proxy_headers` | none | Headers trusted for the client IP behind a proxy |
+
+The default ID strategy uses each application model's generator. Explicit strategies apply to all records created by SQLx and SeaORM, while caller-supplied IDs remain authoritative. Serial IDs use the persistent `alibi_id_sequences` table, initialized by `SchemaMigrator::migrate`; the sequence starts after existing numeric IDs and survives deletion and process restarts. IDs retain the type declared by the application schema and appear as strings in public auth responses. A custom generator receives the logical model name and optional size; returning `None` or an error rejects creation without a fallback ID.
 
 ## `AuthBuilder`
 

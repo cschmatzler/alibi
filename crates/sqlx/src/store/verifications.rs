@@ -41,6 +41,16 @@ where
             }
         }
         let snapshot = if publication.store_in_database {
+            if data.id.is_none() {
+                data.id = self
+                    .generated_id(
+                        exec,
+                        "verification",
+                        <S::Verification as SqlxModel>::TABLE,
+                        S::Verification::id_column(),
+                    )
+                    .await?;
+            }
             let id = data
                 .id
                 .as_deref()
@@ -96,7 +106,19 @@ where
                 return Err(cancelled_by_hook("verification creation"));
             }
         }
-        let active = S::Verification::new_active(None, verification, Utc::now());
+        let generated_id = self
+            .generated_id(
+                exec,
+                "verification",
+                <S::Verification as SqlxModel>::TABLE,
+                S::Verification::id_column(),
+            )
+            .await?;
+        let id = generated_id
+            .as_deref()
+            .map(S::Verification::parse_id)
+            .transpose()?;
+        let active = S::Verification::new_active(id, verification, Utc::now());
         let verification = model::insert::<S::Verification>(exec, &active).await?;
         if tx.is_none() {
             for hook in self.hooks() {

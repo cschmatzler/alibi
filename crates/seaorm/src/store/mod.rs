@@ -35,32 +35,32 @@ pub mod __private_test_support {
 
 impl<S: AuthSchema> SeaOrmStore<S> {
     async fn migrate_bundled_schema(&self) -> AuthResult<()> {
-        if self.db.get_database_backend() == sea_orm::DbBackend::Postgres {
-            if let Some(schema) = &self.db.schema {
-                use sea_orm::{ConnectionTrait, Statement};
-                use sea_orm_migration::MigratorTrait;
-                let quoted = format!("\"{}\"", schema.replace('"', "\"\""));
-                let _ = self
-                    .db
-                    .inner
-                    .execute_unprepared(&format!("CREATE SCHEMA IF NOT EXISTS {quoted}"))
-                    .await
-                    .map_err(map_db_err)?;
-                // Only the migration transaction has a local DDL namespace.
-                // Runtime connections and statements retain statement qualification.
-                let transaction = self.db.inner.begin().await.map_err(map_db_err)?;
-                let _ = transaction
-                    .execute_raw(Statement::from_string(
-                        sea_orm::DbBackend::Postgres,
-                        format!("SET LOCAL search_path TO {quoted}"),
-                    ))
-                    .await
-                    .map_err(map_db_err)?;
-                migrator::AuthMigrator::up(&transaction, None)
-                    .await
-                    .map_err(map_db_err)?;
-                return transaction.commit().await.map_err(map_db_err);
-            }
+        if self.db.get_database_backend() == sea_orm::DbBackend::Postgres
+            && let Some(schema) = &self.db.schema
+        {
+            use sea_orm::{ConnectionTrait, Statement};
+            use sea_orm_migration::MigratorTrait;
+            let quoted = format!("\"{}\"", schema.replace('"', "\"\""));
+            let _ = self
+                .db
+                .inner
+                .execute_unprepared(&format!("CREATE SCHEMA IF NOT EXISTS {quoted}"))
+                .await
+                .map_err(map_db_err)?;
+            // Only the migration transaction has a local DDL namespace.
+            // Runtime connections and statements retain statement qualification.
+            let transaction = self.db.inner.begin().await.map_err(map_db_err)?;
+            let _ = transaction
+                .execute_raw(Statement::from_string(
+                    sea_orm::DbBackend::Postgres,
+                    format!("SET LOCAL search_path TO {quoted}"),
+                ))
+                .await
+                .map_err(map_db_err)?;
+            migrator::AuthMigrator::up(&transaction, None)
+                .await
+                .map_err(map_db_err)?;
+            return transaction.commit().await.map_err(map_db_err);
         }
         migrator::run_migrations(&self.db.inner)
             .await
@@ -72,6 +72,11 @@ impl<S: AuthSchema> SeaOrmStore<S> {
 impl<S: AuthSchema> alibi_core::store::SchemaMigrator for SeaOrmStore<S> {
     async fn migrate(&self) -> AuthResult<()> {
         self.migrate_bundled_schema().await?;
+        if self.config.advanced.database.serial_ids() {
+            use sea_orm::ConnectionTrait;
+            let [ddl, _] = alibi_core::config::serial_id_statements("", "", false);
+            let _ = self.db.execute_unprepared(&ddl).await.map_err(map_db_err)?;
+        }
         if let Some(mapping) = &self.config.advanced.database.two_factor {
             use sea_orm::ConnectionTrait;
             let commands = mapping.migration_statements()?;
@@ -125,6 +130,33 @@ impl<S: AuthSchema> std::fmt::Debug for SeaOrmStore<S> {
 }
 
 impl<S: AuthSchema> SeaOrmStore<S> {
+    pub(crate) async fn generated_id<C: sea_orm::ConnectionTrait>(
+        &self,
+        db: &C,
+        model: &str,
+        table: &str,
+        column: &str,
+    ) -> AuthResult<Option<String>> {
+        let policy = &self.config.advanced.database;
+        if !policy.serial_ids() {
+            return policy.generated_id(model);
+        }
+        let backend = db.get_database_backend();
+        let [ddl, allocate] = alibi_core::config::serial_id_statements(
+            table,
+            column,
+            backend == sea_orm::DbBackend::Postgres,
+        );
+        let _ = db.execute_unprepared(&ddl).await.map_err(map_db_err)?;
+        let row = db
+            .query_one_raw(sea_orm::Statement::from_string(backend, allocate))
+            .await
+            .map_err(map_db_err)?
+            .ok_or_else(|| AuthError::internal("ID allocation returned no value"))?;
+        let value: i64 = row.try_get("", "value").map_err(map_db_err)?;
+        Ok(Some(value.to_string()))
+    }
+
     #[must_use]
     pub fn new(config: impl Into<Arc<AuthConfig>>, db: DatabaseConnection) -> Self {
         let config = config.into();

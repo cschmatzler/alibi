@@ -355,6 +355,8 @@ pub struct OAuthProvider {
     pub disable_id_token_sign_in: bool,
     pub disable_implicit_sign_up: bool,
     pub disable_sign_up: bool,
+    /// Start a new state-bound authorization flow for a callback without state.
+    pub allow_idp_initiated: bool,
     pub override_user_info_on_sign_in: bool,
 }
 

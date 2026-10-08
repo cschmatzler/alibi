@@ -31,7 +31,13 @@ where
             })
             .transpose()?;
         ActiveModel {
-            id: Set(org.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
+            id: Set(match org.id {
+                Some(id) => id,
+                None => self
+                    .generated_id(&self.db, "organization", "organization", "id")
+                    .await?
+                    .unwrap_or_else(|| Uuid::new_v4().to_string()),
+            }),
             name: Set(org.name),
             slug: Set(org.slug),
             logo: Set(org.logo),

@@ -273,14 +273,20 @@ pub(crate) struct Exec<'a> {
     config: Option<&'a alibi_core::config::AuthConfig>,
 }
 impl<'a> Exec<'a> {
-    #[allow(non_snake_case)]
+    #[expect(
+        non_snake_case,
+        reason = "Retain the connection constructor names used by adapter call sites"
+    )]
     pub(crate) const fn Pool(pool: &'a SqlxPool) -> Self {
         Self {
             connection: ExecConnection::Pool(pool),
             config: None,
         }
     }
-    #[allow(non_snake_case)]
+    #[expect(
+        non_snake_case,
+        reason = "Retain the connection constructor names used by adapter call sites"
+    )]
     pub(crate) fn Tx(tx: &'a SqlxTransaction) -> Self {
         Self {
             connection: ExecConnection::Tx(tx),
@@ -296,16 +302,18 @@ impl<'a> Exec<'a> {
             .and_then(|config| config.advanced.database.schema_name.as_deref())
     }
     fn qualify(self, mut sql: String) -> AuthResult<String> {
-        if let Some(mapping) = self.config.and_then(|config| config.advanced.database.two_factor.as_ref()) {
+        if let Some(mapping) = self
+            .config
+            .and_then(|config| config.advanced.database.two_factor.as_ref())
+        {
             sql = alibi_core::database_sql::map_two_factor(&sql, mapping)?;
         }
-        if self.engine() == Engine::Postgres {
-            if let Some(schema) = self
+        if self.engine() == Engine::Postgres
+            && let Some(schema) = self
                 .config
                 .and_then(|config| config.advanced.database.schema_name.as_deref())
-            {
-                return alibi_core::database_sql::qualify_schema(&sql, schema);
-            }
+        {
+            return alibi_core::database_sql::qualify_schema(&sql, schema);
         }
         Ok(sql)
     }

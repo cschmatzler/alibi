@@ -169,6 +169,16 @@ where
             *username = username.to_lowercase();
         }
         let now = Utc::now();
+        if create_user.id.is_none() {
+            create_user.id = self
+                .generated_id(
+                    exec,
+                    "user",
+                    <S::User as SqlxModel>::TABLE,
+                    S::User::id_column(),
+                )
+                .await?;
+        }
         let user_id = create_user
             .id
             .as_deref()

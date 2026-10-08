@@ -108,6 +108,34 @@ impl<S: AuthSchema> SqlxStore<S> {
         &self.hooks
     }
 
+    pub(crate) async fn generated_id(
+        &self,
+        exec: Exec<'_>,
+        model: &str,
+        table: &str,
+        column: &str,
+    ) -> AuthResult<Option<String>> {
+        let policy = &self.config.advanced.database;
+        if !policy.serial_ids() {
+            return policy.generated_id(model);
+        }
+        let [ddl, allocate] = alibi_core::config::serial_id_statements(
+            table,
+            column,
+            exec.engine() == crate::pool::Engine::Postgres,
+        );
+        let mut sql = crate::sql::Sql::new(exec.engine());
+        sql.push(&ddl);
+        let _ = exec.execute(sql).await?;
+        let mut sql = crate::sql::Sql::new(exec.engine());
+        sql.push(&allocate);
+        let value = exec
+            .fetch_scalar::<i64>(sql)
+            .await?
+            .ok_or_else(|| alibi_core::AuthError::internal("ID allocation returned no value"))?;
+        Ok(Some(value.to_string()))
+    }
+
     async fn begin(&self, immediate: bool) -> AuthResult<SqlxTransaction> {
         let mut transaction = self.pool.begin(immediate).await?;
         transaction.config = Some(self.config.clone());
@@ -155,6 +183,13 @@ impl<S: AuthSchema> SqlxStore<S> {
 impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
     async fn migrate(&self) -> AuthResult<()> {
         migrator::run_migrations_scoped(&self.pool, &self.config).await?;
+        if self.config.advanced.database.serial_ids() {
+            let [ddl, _] = alibi_core::config::serial_id_statements("", "", false);
+            let exec = self.exec();
+            let _ = exec
+                .execute(crate::sql::Sql::with(exec.engine(), &ddl))
+                .await?;
+        }
         if let Some(mapping) = &self.config.advanced.database.two_factor {
             let commands = mapping.migration_statements()?;
             self.in_transaction(false, async move |tx| {

@@ -41,10 +41,10 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let events = Arc::new(Mutex::new(Vec::new()));
     let mut profiles = HashMap::new();
     for mode in ["masked", "throw"] {
-        // Native has no onAPIError.throw setting; observe the supported handler as-is.
-        let config = base
+        let mut config = base
             .clone()
             .base_path(format!("/__test/profiles/api-error-{mode}/api/auth"));
+        config.throw_api_errors = mode == "throw";
         let auth = AuthBuilder::<TestSchema>::new(config.clone())
             .store(crate::backend::store::<TestSchema>(
                 config,
@@ -63,7 +63,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         request.headers.insert("content-type".into(),"application/json".into()); request.headers.insert("origin".into(),origin); request.headers.insert("x-error-marker".into(),input["marker"].as_str().unwrap().into()); request.body=Some(serde_json::to_vec(&json!({"kind":input["kind"]})).unwrap());
         match profiles[mode].handle_request(request).await {
             Ok(response) => {let text=String::from_utf8_lossy(&response.body);let body=serde_json::from_str::<Value>(&text).unwrap_or_else(|_| json!(text));Json(json!({"outcome":"returned","status":response.status,"body":body,"headers":{"content-type":response.headers.get("Content-Type").or_else(||response.headers.get("content-type")),"set-cookie":response.headers.get_all("Set-Cookie").collect::<Vec<_>>()},"events":*events.lock().unwrap()}))},
-            Err(error) => Json(json!({"outcome":"thrown","message":error.to_string(),"events":*events.lock().unwrap()})),
+            Err(error) => Json(json!({"outcome":"thrown","name":"Error","message":match &error {AuthError::Internal(message) => message.clone(), _ => error.to_string()},"events":*events.lock().unwrap()})),
         }
     }})))
 }

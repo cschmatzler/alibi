@@ -13,7 +13,7 @@ use super::webauthn::{
     credential_id_from_authentication, decode_challenge_cookie, decode_credential_id,
     extract_registration_metadata, finish_core_authentication, finish_core_registration,
     generate_ts_user_handle, get_cookie_value, parse_transports_csv, registration_options_json,
-    resolve_origin, snapshot_passkey, transports_to_csv,
+    snapshot_passkey, transports_to_csv,
 };
 use super::{PasskeyConfig, PasskeyRegistrationUser};
 use crate::plugins::StatusResponse;

@@ -39,7 +39,13 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         data: CreateJwk,
     ) -> AuthResult<Jwk> {
         ActiveModel {
-            id: Set(data.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string())),
+            id: Set(match data.id {
+                Some(id) => id,
+                None => self
+                    .generated_id(connection, "jwks", "jwks", "id")
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            }),
             public_key: Set(data.public_key),
             private_key: Set(data.private_key),
             created_at: Set(data.created_at),

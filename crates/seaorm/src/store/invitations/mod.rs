@@ -33,7 +33,13 @@ where
         options: alibi_core::store::InvitationCreateOptions,
     ) -> AuthResult<Invitation> {
         ActiveModel {
-            id: Set(options.id.unwrap_or_else(|| Uuid::new_v4().to_string())),
+            id: Set(match options.id {
+                Some(id) => id,
+                None => self
+                    .generated_id(&self.db, "invitation", "invitation", "id")
+                    .await?
+                    .unwrap_or_else(|| Uuid::new_v4().to_string()),
+            }),
             organization_id: Set(invitation.organization_id),
             email: Set(invitation.email),
             role: Set(invitation.role),
@@ -194,7 +200,10 @@ where
                 }
             }
             let created = member::ActiveModel {
-                id: Set(Uuid::new_v4().to_string()),
+                id: Set(self
+                    .generated_id(&transaction, "member", "member", "id")
+                    .await?
+                    .unwrap_or_else(|| Uuid::new_v4().to_string())),
                 organization_id: Set(invitation.organization_id.clone()),
                 user_id: Set(user_id.to_owned()),
                 role: Set(invitation.role.clone()),

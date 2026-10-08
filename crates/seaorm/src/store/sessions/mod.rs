@@ -3,7 +3,6 @@ use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmSessionModel};
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::SessionStore;
-use alibi_core::store::adapter::cancelled_by_hook;
 use alibi_core::types::CreateSession;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -89,7 +88,21 @@ where
                 .await?;
             }
         }
-        let mut active = S::Session::new_active(None, token, create_session, now);
+        let generated_id = self
+            .generated_id(
+                db,
+                "session",
+                <<S::Session as SeaOrmSessionModel>::Entity as sea_orm::EntityName>::table_name(
+                    &Default::default(),
+                ),
+                &sea_orm::Iden::to_string(&S::Session::id_column()),
+            )
+            .await?;
+        let id = generated_id
+            .as_deref()
+            .map(S::Session::parse_id)
+            .transpose()?;
+        let mut active = S::Session::new_active(id, token, create_session, now);
         if !fields.is_empty() {
             for (column, value) in
                 S::Session::additional_field_bindings(&fields, db.get_database_backend())?

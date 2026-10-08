@@ -283,6 +283,24 @@ impl<S: AuthSchema> AuthContext<S> {
                 }
             }
         }
+        if self.config.session.stateless {
+            for (name, absent) in [
+                ("image", view.image.is_none()),
+                ("username", view.username.is_none()),
+                ("displayUsername", view.display_username.is_none()),
+                ("banReason", view.ban_reason.is_none()),
+                ("banExpires", view.ban_expires.is_none()),
+            ] {
+                if absent
+                    && view
+                        .extension_fields
+                        .get(name)
+                        .is_none_or(serde_json::Value::is_null)
+                {
+                    let _ = view.omitted_fields.insert(name.into());
+                }
+            }
+        }
         view
     }
 
@@ -462,6 +480,24 @@ impl<S: AuthSchema> AuthContext<S> {
             }
         } else {
             view.active_team_id = None;
+        }
+        if self.config.session.stateless {
+            for (name, absent) in [
+                (
+                    "activeOrganizationId",
+                    view.active_organization_id.is_none(),
+                ),
+                ("impersonatedBy", view.impersonated_by.is_none()),
+            ] {
+                if absent
+                    && view
+                        .extension_fields
+                        .get(name)
+                        .is_none_or(serde_json::Value::is_null)
+                {
+                    let _ = view.omitted_fields.insert(name.into());
+                }
+            }
         }
         view
     }

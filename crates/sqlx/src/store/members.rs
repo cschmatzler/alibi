@@ -19,7 +19,22 @@ impl<S: AuthSchema> SqlxStore<S> {
         member: CreateMember,
     ) -> AuthResult<Member> {
         let mut active = ActiveRow::new();
-        active.set("id", self.organization_models.member.new_id());
+        active.set(
+            "id",
+            self.generated_id(
+                exec,
+                "member",
+                self.organization_models.member.table(),
+                self.organization_models
+                    .member
+                    .physical("id")
+                    .ok_or_else(|| {
+                        alibi_core::AuthError::config("Organization model has no ID column")
+                    })?,
+            )
+            .await?
+            .unwrap_or_else(|| self.organization_models.member.new_id()),
+        );
         active.set("organization_id", member.organization_id);
         active.set("user_id", member.user_id);
         active.set("role", member.role);

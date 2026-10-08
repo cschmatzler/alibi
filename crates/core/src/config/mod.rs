@@ -1,3 +1,7 @@
+mod id;
+#[doc(hidden)]
+pub use id::serial_id_statements;
+pub use id::{DatabaseIdGenerator, DatabaseIdStrategy};
 mod account;
 mod advanced;
 mod identity;
@@ -8,12 +12,12 @@ pub use account::AccountLinkingConfig;
 pub use account::OAuthStateStrategy;
 pub use advanced::AdvancedConfig;
 pub use advanced::AdvancedDatabaseConfig;
-pub use advanced::TwoFactorDatabaseConfig;
 pub use advanced::CookieAttributes;
 pub use advanced::CookieOverride;
 pub use advanced::CrossSubDomainConfig;
 pub use advanced::IpAddressConfig;
 pub use advanced::SameSite;
+pub use advanced::TwoFactorDatabaseConfig;
 pub use identity::PasswordConfig;
 pub use identity::UserConfig;
 pub use identity::VerificationConfig;
@@ -121,6 +125,10 @@ pub struct AuthConfig {
     /// Default OAuth error destination, corresponding to `onAPIError.errorURL`.
     pub api_error_url: Option<String>,
 
+    /// Propagate ordinary endpoint failures to the hosting application.
+    /// Explicit public API errors continue to return HTTP responses.
+    pub throw_api_errors: bool,
+
     /// Session configuration
     pub session: SessionConfig,
 
@@ -169,6 +177,7 @@ impl Default for AuthConfig {
             disabled_paths: Vec::new(),
             render_error_page: !std::env::var("NODE_ENV").is_ok_and(|value| value == "production"),
             api_error_url: None,
+            throw_api_errors: false,
             session: SessionConfig::default(),
             user: UserConfig::default(),
             verification: VerificationConfig::default(),
@@ -274,6 +283,13 @@ impl AuthConfig {
     #[must_use]
     pub fn disabled_paths(mut self, paths: Vec<String>) -> Self {
         self.disabled_paths = paths;
+        self
+    }
+
+    /// Propagate ordinary endpoint exceptions through the public request result.
+    #[must_use]
+    pub const fn throw_api_errors(mut self, enabled: bool) -> Self {
+        self.throw_api_errors = enabled;
         self
     }
 

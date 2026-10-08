@@ -32,9 +32,11 @@ pub use alibi_api::plugins::one_tap::{
 pub use alibi_api::plugins::open_api::{self, OpenApiConfig, OpenApiPlugin};
 pub use alibi_api::plugins::passkey::{
     AuthenticationResult, PasskeyAuthenticationAfterVerification, PasskeyAuthenticationConfig,
-    PasskeyAuthenticationContext, PasskeyRegistrationAfterVerification, PasskeyRegistrationConfig,
-    PasskeyRegistrationContext, PasskeyRegistrationOverride, PasskeyRegistrationUser,
-    PasskeyUserResolver, VerifiedPasskeyAuthentication, VerifiedPasskeyRegistration,
+    PasskeyAuthenticationContext, PasskeyAuthenticatorSelection, PasskeyExtensions,
+    PasskeyExtensionsResolver, PasskeyOptionsContext, PasskeyRegistrationAfterVerification,
+    PasskeyRegistrationConfig, PasskeyRegistrationContext, PasskeyRegistrationOverride,
+    PasskeyRegistrationUser, PasskeyUserResolver, VerifiedPasskeyAuthentication,
+    VerifiedPasskeyRegistration,
 };
 pub use alibi_api::plugins::password_management::SendResetPassword;
 pub use alibi_api::plugins::phone_number::{PhoneNumberConfig, PhoneNumberPlugin, SendPhoneOtp};
