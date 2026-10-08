@@ -565,11 +565,19 @@ impl AdminPlugin {
         }
 
         let admin_cookie_name = related_cookie_name(&ctx.config, "admin_session");
-        let admin_cookie_value = get_cookie(req, &admin_cookie_name)
-            .ok_or_else(|| AuthError::internal("Failed to find admin session"))?;
+        let admin_cookie_value =
+            get_cookie(req, &admin_cookie_name).ok_or_else(|| AuthError::Api {
+                status: 500,
+                code: None,
+                message: "Failed to find admin session".into(),
+            })?;
         let admin_cookie =
             decode_admin_session_cookie_value(ctx.config.current_secret(), &admin_cookie_value)
-                .map_err(|_error| AuthError::internal("Failed to find admin session"))?;
+                .map_err(|_error| AuthError::Api {
+                    status: 500,
+                    code: None,
+                    message: "Failed to find admin session".into(),
+                })?;
 
         let (response, new_token) = stop_impersonating_core(&session, &admin_cookie, ctx).await?;
 
