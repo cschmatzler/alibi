@@ -11,7 +11,7 @@ use axum::{
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::email_otp::{
-    EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, EmailOtpStorage, EmailOtpType,
+    EmailOtpCodec, EmailOtpConfig, EmailOtpDelivery, EmailOtpPlugin, EmailOtpStorage, EmailOtpType,
     OtpResendStrategy, SendEmailOtp,
 };
 use alibi::plugins::{
@@ -31,6 +31,25 @@ use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
+struct ApplicationCodec {hash: bool, reject: bool}
+impl ApplicationCodec {
+    fn encode(&self, otp: &str) -> String {
+        if self.hash {use sha2::Digest; format!("application:{}", sha2::Sha256::digest(otp.as_bytes()).iter().map(|byte|format!("{byte:02x}")).collect::<String>())}
+        else {format!("application:{}",otp.bytes().map(|byte|format!("{:02x}",byte ^ 0x5a)).collect::<String>())}
+    }
+    fn decode(&self, stored: &str) -> AuthResult<String> {
+        if self.reject {return Err(AuthError::CallbackFailure(Box::new(AuthError::internal("Application OTP decryption failed"))));}
+        let encoded=stored.strip_prefix("application:").ok_or_else(||AuthError::bad_request("Malformed application cipher"))?;
+        let bytes=(0..encoded.len()).step_by(2).map(|offset|u8::from_str_radix(&encoded[offset..offset+2],16).map(|byte|byte ^ 0x5a)).collect::<Result<Vec<_>,_>>().map_err(|error|AuthError::internal(error.to_string()))?;
+        String::from_utf8(bytes).map_err(|error|AuthError::internal(error.to_string()))
+    }
+}
+#[async_trait]
+impl EmailOtpCodec for ApplicationCodec {
+    async fn store(&self, otp: &str) -> AuthResult<String> {Ok(self.encode(otp))}
+    async fn verify(&self, stored: &str, otp: &str) -> AuthResult<bool> {Ok(if self.hash {stored==self.encode(otp)} else {self.decode(stored)? == otp})}
+    async fn retrieve(&self, stored: &str) -> AuthResult<Option<String>> {if self.hash {Ok(None)} else {self.decode(stored).map(Some)}}
+}
 pub(super) type Outbox = Arc<Mutex<HashMap<String, Value>>>;
 #[derive(Clone)]
 pub(super) struct Sender(pub Outbox);
@@ -188,6 +207,9 @@ pub(super) async fn router(
         "passwordless-rate-policy",
         "otp-signup-verification",
         "passwordless-hashed",
+        "passwordless-custom-hash",
+        "passwordless-custom-cipher",
+        "passwordless-custom-cipher-failure",
         "passwordless-encrypted-reuse",
         "passwordless-proof",
         "passwordless-proof-explicit",
@@ -218,16 +240,17 @@ pub(super) async fn router(
             .base_path(format!("/__test/profiles/{name}/api/auth"));
         config.verification.disable_cleanup = name == "verification-no-cleanup";
         let otp = EmailOtpPlugin::new(EmailOtpConfig {
-            rate_limit: if name == "passwordless-rate-policy" { alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 2.0} } else { EmailOtpConfig::default().rate_limit },
+            rate_limit: if name == "passwordless-rate-policy" { alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 2.0} } else if name.starts_with("passwordless-custom-") {alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 3.0}} else { EmailOtpConfig::default().rate_limit },
             generate_otp: Some(Arc::new(Sender(outbox.clone()))),
             send_verification_otp: Some(Arc::new(Sender(outbox.clone()))),
             change_email_enabled: !name.starts_with("otp-change-disabled-"),
             storage: match name {
                 "passwordless-hashed" => EmailOtpStorage::Hashed,
+                "passwordless-custom-hash" | "passwordless-custom-cipher" | "passwordless-custom-cipher-failure" => EmailOtpStorage::Custom(Arc::new(ApplicationCodec {hash: name.ends_with("hash"), reject: name.ends_with("failure")})),
                 "passwordless-encrypted-reuse" => EmailOtpStorage::Encrypted,
                 _ => EmailOtpStorage::Plain,
             },
-            resend_strategy: if name == "passwordless-encrypted-reuse" {
+            resend_strategy: if name == "passwordless-encrypted-reuse" || name.starts_with("passwordless-custom-") {
                 OtpResendStrategy::Reuse
             } else {
                 OtpResendStrategy::Rotate
@@ -257,7 +280,7 @@ pub(super) async fn router(
                     config.clone(),
                     database.clone(),
                 ))
-                .rate_limit(RateLimitConfig::new().enabled(name == "passwordless-rate-policy").default_limit(std::time::Duration::from_secs(60), 10000))
+                .rate_limit(RateLimitConfig::new().enabled(name == "passwordless-rate-policy" || name.starts_with("passwordless-custom-")).default_limit(std::time::Duration::from_secs(60), 10000))
                 .plugin(
                     EmailPasswordPlugin::new()
                         .enable_username(false)
