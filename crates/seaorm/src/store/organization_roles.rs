@@ -23,7 +23,10 @@ impl<S: AuthSchema> OrganizationRoleStore for SeaOrmStore<S> {
         data: CreateOrganizationRole,
     ) -> AuthResult<OrganizationRole> {
         organization_role::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
+            id: Set(self
+                .generated_id(&self.db, "organizationRole", "organization_role", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string())),
             organization_id: Set(data.organization_id),
             role: Set(data.role),
             permission: Set(serde_json::to_string(&data.permission)?),

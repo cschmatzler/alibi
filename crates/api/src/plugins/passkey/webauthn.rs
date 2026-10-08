@@ -121,6 +121,33 @@ pub(super) fn resolve_origin(config: &PasskeyConfig, req: &AuthRequest) -> Optio
     }
 }
 
+/// Select the original signed origin only when it belongs to the explicit allowlist.
+pub(super) fn ceremony_origin(
+    config: &PasskeyConfig,
+    req: &AuthRequest,
+    response: Option<&alibi_core::utils::json::JsValue>,
+) -> Option<String> {
+    if config.origins.is_empty() {
+        return resolve_origin(config, req);
+    }
+    let encoded = response?.get("response")?.get("clientDataJSON")?.as_str()?;
+    let bytes = URL_SAFE_NO_PAD
+        .decode(encoded)
+        .or_else(|_| URL_SAFE.decode(encoded))
+        .ok()?;
+    let client: Value = serde_json::from_slice(&bytes).ok()?;
+    let origin = client.get("origin")?.as_str()?;
+    if config.origins.iter().any(|allowed| allowed == origin)
+        || (!config.origin.is_empty() && config.origin == origin)
+    {
+        Some(origin.to_owned())
+    } else {
+        // Keep verification bound to configured policy even when the HTTP
+        // Origin header also claims the unlisted signed origin.
+        config.origins.first().cloned()
+    }
+}
+
 pub(super) fn get_cookie_value(req: &AuthRequest, name: &str) -> Option<String> {
     let header = req.headers.get("cookie")?;
     header.split(';').find_map(|cookie| {

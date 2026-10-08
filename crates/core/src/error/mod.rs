@@ -259,6 +259,7 @@ impl AuthError {
             tracing::error!(error = %self, "Authentication operation failed");
             return crate::types::AuthResponse::new(500);
         }
+        let ordinary = self.status_code() == 500 && !crate::endpoint::is_endpoint_api_error(&self);
         let retry_after = self.retry_after_header();
         let (status, code, message) = self.error_payload();
         let response = crate::types::AuthResponse::json(
@@ -269,6 +270,11 @@ impl AuthError {
             },
         )
         .unwrap_or_else(|_| crate::types::AuthResponse::text(status, &message));
+        let response = if ordinary {
+            response.with_header("Content-Type", "application/json;charset=utf-8")
+        } else {
+            response
+        };
         match retry_after {
             Some(seconds) => response.with_header("X-Retry-After", seconds),
             None => response,
@@ -397,6 +403,7 @@ impl axum::response::IntoResponse for AuthError {
             tracing::error!(error = %self, "Authentication operation failed");
             return axum::http::StatusCode::INTERNAL_SERVER_ERROR.into_response();
         }
+        let ordinary = self.status_code() == 500 && !crate::endpoint::is_endpoint_api_error(&self);
         let retry_after = self.retry_after_header();
         let (status_u16, code, message) = self.error_payload();
         let status = axum::http::StatusCode::from_u16(status_u16)
@@ -406,6 +413,12 @@ impl axum::response::IntoResponse for AuthError {
             axum::Json(crate::types::ErrorCodeMessageResponse { code, message }),
         )
             .into_response();
+        if ordinary {
+            let _ = response.headers_mut().insert(
+                "content-type",
+                axum::http::HeaderValue::from_static("application/json;charset=utf-8"),
+            );
+        }
         if let Some(value) = retry_after.and_then(|value| value.parse().ok()) {
             drop(response.headers_mut().insert("x-retry-after", value));
         }

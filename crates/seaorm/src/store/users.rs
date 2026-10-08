@@ -241,6 +241,18 @@ where
             *username = username.to_lowercase();
         }
         let now = Utc::now();
+        if create_user.id.is_none() {
+            create_user.id = self
+                .generated_id(
+                    db,
+                    "user",
+                    <<S::User as SeaOrmUserModel>::Entity as sea_orm::EntityName>::table_name(
+                        &Default::default(),
+                    ),
+                    &sea_orm::Iden::to_string(&S::User::id_column()),
+                )
+                .await?;
+        }
         let user_id = create_user
             .id
             .as_deref()

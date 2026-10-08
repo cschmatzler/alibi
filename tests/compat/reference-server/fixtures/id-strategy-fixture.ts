@@ -42,11 +42,20 @@ export async function idStrategyFixture(base: BetterAuthOptions) {
           return auth.handler(request);
         if (path === `/__test/id-strategy/${mode}/state`) {
           const db = databases.get(mode)!;
+          // Compare identifier values across application-selected integer/text schemas.
           return Response.json({
-            users: db.query("SELECT id FROM user").all(),
-            accounts: db.query('SELECT id, "userId" FROM account').all(),
-            sessions: db.query('SELECT id, "userId" FROM session').all(),
-            verification: db.query("SELECT id FROM verification").all(),
+            users: db.query("SELECT CAST(id AS TEXT) AS id FROM user").all(),
+            accounts: db
+              .query(
+                'SELECT CAST(id AS TEXT) AS id, CAST("userId" AS TEXT) AS "userId" FROM account',
+              )
+              .all(),
+            sessions: db
+              .query(
+                'SELECT CAST(id AS TEXT) AS id, CAST("userId" AS TEXT) AS "userId" FROM session',
+              )
+              .all(),
+            verification: db.query("SELECT CAST(id AS TEXT) AS id FROM verification").all(),
             events: events.get(mode),
           });
         }

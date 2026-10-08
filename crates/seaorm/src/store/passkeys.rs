@@ -24,7 +24,10 @@ where
             .map_err(|_error| AuthError::bad_request("Passkey counter exceeds i64 range"))?;
 
         ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
+            id: Set(self
+                .generated_id(&self.db, "passkey", "passkeys", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string())),
             name: Set(input.name),
             public_key: Set(input.public_key),
             user_id: Set(input.user_id),

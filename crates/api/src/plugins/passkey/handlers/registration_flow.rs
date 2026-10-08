@@ -7,6 +7,7 @@ pub(in crate::plugins::passkey) async fn generate_register_options_core(
     requested_context: Option<&str>,
     passkey_name: Option<&str>,
     authenticator_attachment: Option<&str>,
+    extensions: Option<Value>,
     config: &PasskeyConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(Value, String)> {
@@ -61,8 +62,16 @@ pub(in crate::plugins::passkey) async fn generate_register_options_core(
             COSEAlgorithm::RS512,
             COSEAlgorithm::INSECURE_RS1,
         ])
-        .require_resident_key(false)
-        .user_verification_policy(UserVerificationPolicy::Preferred)
+        .require_resident_key(
+            config.authenticator_selection.resident_key.as_deref() == Some("required"),
+        )
+        .user_verification_policy(
+            match config.authenticator_selection.user_verification.as_deref() {
+                Some("required") => UserVerificationPolicy::Required,
+                Some("discouraged") => UserVerificationPolicy::Discouraged_DO_NOT_USE,
+                _ => UserVerificationPolicy::Preferred,
+            },
+        )
         .reject_synchronised_authenticators(false)
         .exclude_credentials(Some(exclude_credentials))
         .extensions(Some(RequestRegistrationExtensions {
@@ -105,6 +114,43 @@ pub(in crate::plugins::passkey) async fn generate_register_options_core(
         &generate_ts_user_handle(),
         authenticator_attachment,
     )?;
+    if let Some(selection) = response
+        .get_mut("authenticatorSelection")
+        .and_then(Value::as_object_mut)
+    {
+        let policy = &config.authenticator_selection;
+        for (name, value) in [
+            ("residentKey", &policy.resident_key),
+            ("userVerification", &policy.user_verification),
+            ("authenticatorAttachment", &policy.authenticator_attachment),
+        ] {
+            if let Some(value) = value {
+                drop(selection.insert(name.into(), json!(value)));
+            }
+        }
+        if let Some(resident_key) = &policy.resident_key {
+            drop(selection.insert(
+                "requireResidentKey".into(),
+                json!(resident_key == "required"),
+            ));
+        }
+    }
+    if let Some(attachment) = authenticator_attachment
+        && let Some(selection) = response
+            .get_mut("authenticatorSelection")
+            .and_then(Value::as_object_mut)
+    {
+        let _ = selection.insert("authenticatorAttachment".into(), json!(attachment));
+    }
+    if let Some(mut extensions) = extensions {
+        let object = extensions
+            .as_object_mut()
+            .ok_or_else(|| AuthError::bad_request("Passkey extensions must be an object"))?;
+        let _ = object.insert("credProps".into(), json!(true));
+        if let Some(object) = response.as_object_mut() {
+            let _ = object.insert("extensions".into(), extensions);
+        }
+    }
     if let Some(object) = response.as_object_mut() {
         drop(object.insert(
             "excludeCredentials".to_owned(),
@@ -136,7 +182,8 @@ pub(in crate::plugins::passkey) async fn verify_registration_core<S: alibi_core:
         return response_null(400);
     };
 
-    let Some(origin) = resolve_origin(config, req) else {
+    let Some(origin) = super::super::webauthn::ceremony_origin(config, req, body.response.as_ref())
+    else {
         return response_null(400);
     };
 

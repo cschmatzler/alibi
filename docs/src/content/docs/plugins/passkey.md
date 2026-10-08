@@ -76,12 +76,16 @@ Without the client, the same two steps with raw WebAuthn: `GET /passkey/generate
 | --- | --- | --- |
 | `rp_id(…)` | empty | Relying party id |
 | `rp_name(…)` | `Better Auth` | Name shown by the authenticator |
-| `origin(…)` | empty | Expected origin |
+| `origin(…)` | empty | Expected origin (empty falls back to the request origin) |
+| `origins(Vec<String>)` | empty | Explicit allowlist of origins accepted in the signed client data |
+| `authenticator_selection(PasskeyAuthenticatorSelection)` | preferred | Override `resident_key`, `user_verification`, and `authenticator_attachment` |
 | `challenge_ttl_secs(…)` | `300` | Challenge lifetime |
 | `web_authn_challenge_cookie(…)` | `better-auth-passkey` | Challenge cookie name |
 | `attestation_root_certificates(…)` | built-ins | Per-format PEM roots (`BTreeMap<String, Vec<String>>`) for attestation verification; unspecified formats keep the published defaults |
 | `registration(PasskeyRegistrationConfig)` | session required | Passkey-first registration (below) |
 | `authentication(PasskeyAuthenticationConfig)` | none | Post-verification callback |
+
+Both `PasskeyRegistrationConfig` and `PasskeyAuthenticationConfig` accept `extensions: Option<PasskeyExtensions>`. Use `Static(serde_json::Value)` for fixed WebAuthn inputs or `Resolver(Arc<dyn PasskeyExtensionsResolver>)` for an asynchronous application policy. Resolvers receive the request, auth configuration, context extensions, and authenticated user projection. They run before challenge creation; API rejections preserve their code and message, while ordinary failures return an empty 500. Registration always includes `credProps: true`, matching the upstream options generator.
 
 ### Passkey-first registration
 

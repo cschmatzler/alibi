@@ -55,7 +55,7 @@ pub(super) fn require_verified_invitation_email<S: alibi_core::AuthSchema>(
 ) -> AuthResult<()> {
     let required = config
         .require_email_verification_on_invitation
-        .unwrap_or(ctx.config.advanced.database.use_number_id);
+        .unwrap_or(ctx.config.advanced.database.serial_ids());
     if required && !user.email_verified() {
         return Err(AuthError::forbidden(message));
     }

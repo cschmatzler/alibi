@@ -1,17 +1,5 @@
 //! Application-owned, signed enrollment proof and genuine registration policy callbacks.
 use crate::TestSchema;
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    http::{HeaderMap, StatusCode},
-    response::IntoResponse,
-    routing::{get, post},
-};
-use base64::{
-    Engine,
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{
@@ -32,6 +20,18 @@ use alibi_seaorm::{
     DatabaseConnection,
     hooks::{DatabaseHooks, HookControl},
     sea_orm::{ConnectionTrait, DbBackend, Statement},
+};
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    http::{HeaderMap, StatusCode},
+    response::IntoResponse,
+    routing::{get, post},
+};
+use base64::{
+    Engine,
+    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use chrono::Utc;
 use serde::Deserialize;
@@ -259,6 +259,7 @@ pub(crate) async fn router(
             configured
         };
         let registration = PasskeyRegistrationConfig {
+            extensions: None,
             require_session: false,
             resolve_user: (name != "passkey-first-missing")
                 .then(|| Arc::new(enrollment.clone()) as Arc<dyn PasskeyUserResolver>),

@@ -161,11 +161,12 @@ pub struct AdvancedDatabaseConfig {
     /// Optional physical table and column mapping for two-factor credentials.
     pub two_factor: Option<TwoFactorDatabaseConfig>,
 
-    /// Declares that the database uses numeric IDs, as upstream's
-    /// `useNumberId`. IDs are always generated as strings; this only makes
-    /// invitation email verification required by default, because numeric
-    /// invitation IDs are guessable.
+    /// Use persistent serial identifiers when no explicit generation strategy is set.
+    /// Numeric invitation IDs require email verification by default.
     pub use_number_id: bool,
+
+    /// Override the model default for every adapter-created identifier.
+    pub generate_id: Option<DatabaseIdStrategy>,
 }
 
 impl Default for IpAddressConfig {
@@ -191,6 +192,7 @@ impl Default for AdvancedDatabaseConfig {
             schema_name: None,
             two_factor: None,
             use_number_id: false,
+            generate_id: None,
         }
     }
 }

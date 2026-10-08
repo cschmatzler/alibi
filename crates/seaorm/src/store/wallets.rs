@@ -62,7 +62,10 @@ where
         .map_err(map_db_err)?
         .ok_or(AuthError::UserNotFound)?;
         let created = wallet_address::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
+            id: Set(self
+                .generated_id(&self.db, "walletAddress", "wallet_address", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string())),
             user_id: Set(owner.id().into_owned()),
             address: Set(data.address),
             chain_id: Set(data.chain_id.into()),

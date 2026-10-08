@@ -165,7 +165,7 @@ impl<T: SqlxModel> Binding<T> {
     pub(crate) fn table(&self) -> &'static str {
         self.backend.table()
     }
-    fn physical(&self, field: &str) -> Option<&'static str> {
+    pub(crate) fn physical(&self, field: &str) -> Option<&'static str> {
         self.backend
             .fields()
             .iter()

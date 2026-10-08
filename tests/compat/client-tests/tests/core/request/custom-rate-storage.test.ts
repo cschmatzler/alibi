@@ -44,6 +44,9 @@ compatScenario(
     await control(true);
     const rejected = await request();
     expect(rejected.status).toBe(500);
+    expect(rejected.body).toEqual({ message: "Internal server error" });
+    expect(rejected.headers["content-type"]).toBe("application/json;charset=utf-8");
+    expect(rejected.headers["set-cookie"]).toEqual([]);
     expect((await control()).rows).toEqual(saved.rows);
     const memory = await request("rate-limit-custom-memory");
     expect(memory.status).toBe(200);
@@ -75,4 +78,11 @@ compatScenario(
     });
   },
   ["GET /get-session"],
+  30_000,
+  {
+    oracle: {
+      collapsedFixtureErrors:
+        "The scenario deliberately makes the configured atomic consume callback throw, then verifies unchanged stored quota, masked body and headers, unaffected memory storage and successful recovery.",
+    },
+  },
 );

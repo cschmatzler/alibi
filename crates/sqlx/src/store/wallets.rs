@@ -55,7 +55,12 @@ where
             .await?
             .ok_or(AuthError::UserNotFound)?;
             let mut active = ActiveRow::new();
-            active.set("id", Uuid::new_v4().to_string());
+            active.set(
+                "id",
+                self.generated_id(self.exec(), "walletAddress", "wallet_address", "id")
+                    .await?
+                    .unwrap_or_else(|| Uuid::new_v4().to_string()),
+            );
             active.set("user_id", owner.id().into_owned());
             active.set("address", data.address);
             active.set(

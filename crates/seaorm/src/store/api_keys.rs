@@ -40,7 +40,10 @@ where
             .as_ref()
             .is_some_and(ApiKeyStart::requires_sqlite_cast);
         let model = ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
+            id: Set(self
+                .generated_id(&self.db, "apikey", "api_keys", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string())),
             name: Set(input.name),
             start: Set(start),
             prefix: Set(input.prefix),

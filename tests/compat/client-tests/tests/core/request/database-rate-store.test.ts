@@ -107,4 +107,11 @@ compatScenario(
     };
   },
   ["GET /get-session"],
+  30_000,
+  {
+    oracle: {
+      collapsedFixtureErrors:
+        "The scenario deliberately retires the backing rate_limit table, then verifies unchanged quota after restoration, masked body and headers, and successful recovery.",
+    },
+  },
 );

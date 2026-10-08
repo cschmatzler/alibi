@@ -45,8 +45,8 @@ import { cloudflareProviderFixture } from "./fixtures/cloudflare-provider-fixtur
 import { cognitoProviderFixture } from "./fixtures/cognito-provider-fixture";
 import { createCompromisedPasswordFixture } from "./fixtures/compromised-password-fixture";
 import { createCustomSessionFixture } from "./fixtures/custom-session-fixture";
-import { deviceGrantFixture } from "./fixtures/device-grant-fixture";
 import { deleteHooksFixture } from "./fixtures/delete-hooks-fixture";
+import { deviceGrantFixture } from "./fixtures/device-grant-fixture";
 import { createDispatchFixture } from "./fixtures/dispatch-fixture";
 import { dropboxProviderFixture } from "./fixtures/dropbox-provider-fixture";
 import { facebookProviderFixture } from "./fixtures/facebook-provider-fixture";
@@ -1027,7 +1027,7 @@ for (const name of [
 function passkeyExtensions(mode: string, registration: boolean) {
   const inputs = (marker: string, path: string) =>
     registration
-      ? { credProps: marker !== "registration-marker" }
+      ? { credProps: false, minPinLength: marker === "registration-marker" }
       : { appid: `https://extensions.fixture.test/${marker}/${path.split("/").at(-1)}` };
   if (mode === "static")
     return registration ? { credProps: true } : { appid: "https://extensions.fixture.test/static" };
@@ -1075,23 +1075,23 @@ for (const name of [
                 },
               }
             : name === "passkey-rp-options"
-            ? {
-                rpName: "Configured ceremony RP",
-                authenticatorSelection: {
-                  residentKey: "required",
-                  userVerification: "required",
-                  authenticatorAttachment: "platform",
-                },
-              }
-            : name === "passkey-origin-list"
-              ? { origin: [authOptions.baseURL as string, "http://localhost:4444"] }
-              : name === "passkey-origin-null"
-                ? { origin: null }
-                : name === "passkey-acceptance"
-                  ? {
-                      advanced: { webAuthnChallengeCookie: "ceremony-proof" },
-                    }
-                  : undefined,
+              ? {
+                  rpName: "Configured ceremony RP",
+                  authenticatorSelection: {
+                    residentKey: "required",
+                    userVerification: "required",
+                    authenticatorAttachment: "platform",
+                  },
+                }
+              : name === "passkey-origin-list"
+                ? { origin: [authOptions.baseURL as string, "http://localhost:4444"] }
+                : name === "passkey-origin-null"
+                  ? { origin: null }
+                  : name === "passkey-acceptance"
+                    ? {
+                        advanced: { webAuthnChallengeCookie: "ceremony-proof" },
+                      }
+                    : undefined,
         ),
         username(),
       ],

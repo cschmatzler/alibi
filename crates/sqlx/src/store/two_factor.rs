@@ -110,7 +110,12 @@ where
     async fn create_two_factor(&self, two_factor: CreateTwoFactor) -> AuthResult<TwoFactor> {
         let now = Utc::now();
         let mut active = ActiveRow::new();
-        active.set("id", Uuid::new_v4().to_string());
+        active.set(
+            "id",
+            self.generated_id(self.exec(), "twoFactor", "two_factor", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        );
         active.set("secret", two_factor.secret);
         active.set("backup_codes", two_factor.backup_codes);
         active.set("user_id", two_factor.user_id);

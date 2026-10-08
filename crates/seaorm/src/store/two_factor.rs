@@ -21,7 +21,10 @@ where
     async fn create_two_factor(&self, two_factor: CreateTwoFactor) -> AuthResult<TwoFactor> {
         let now = Utc::now();
         let active = ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
+            id: Set(self
+                .generated_id(&self.db, "twoFactor", "two_factor", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string())),
             secret: Set(two_factor.secret),
             backup_codes: Set(two_factor.backup_codes),
             user_id: Set(two_factor.user_id),
@@ -226,7 +229,9 @@ fn factor_select() -> Select<Entity> {
         let expression = Expr::col((Entity, column));
         select = if matches!(column, Column::FailedVerificationCount) {
             select.column_as(expression.cast_as(Alias::new("DOUBLE PRECISION")), column)
-        } else {select.column_as(expression, column)};
+        } else {
+            select.column_as(expression, column)
+        };
     }
     select
 }
@@ -236,7 +241,11 @@ fn factor_returning(_backend: sea_orm::DatabaseBackend) -> sea_orm::sea_query::R
     Query::returning().exprs(Column::iter().map(|column| {
         let name = column.as_str();
         if matches!(column, Column::FailedVerificationCount) {
-            Expr::cust(format!("CAST(\"{name}\" AS DOUBLE PRECISION) AS \"{name}\""))
-        } else {Expr::cust(format!("\"{name}\" AS \"{name}\""))}
+            Expr::cust(format!(
+                "CAST(\"{name}\" AS DOUBLE PRECISION) AS \"{name}\""
+            ))
+        } else {
+            Expr::cust(format!("\"{name}\" AS \"{name}\""))
+        }
     }))
 }

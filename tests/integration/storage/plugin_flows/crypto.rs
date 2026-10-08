@@ -484,10 +484,12 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
                 .rp_name("Native test")
                 .origin(ORIGIN)
                 .registration(alibi::plugins::passkey::PasskeyRegistrationConfig {
+                    extensions: None,
                     after_verification: Some(policy.clone()),
                     ..Default::default()
                 })
                 .authentication(alibi::plugins::passkey::PasskeyAuthenticationConfig {
+                    extensions: None,
                     after_verification: Some(policy.clone()),
                 }),
         )
@@ -516,6 +518,7 @@ async fn registered_passkey_authenticates_from_stored_credential<B: Backend>(db:
                 .rp_name("Native test")
                 .origin(ORIGIN)
                 .registration(alibi::plugins::passkey::PasskeyRegistrationConfig {
+                    extensions: None,
                     require_session: false,
                     resolve_user: Some(Arc::new(RegistrationResolver(
                         body(&owner)["user"]["id"].as_str().unwrap().into(),

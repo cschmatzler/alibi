@@ -40,6 +40,9 @@ where
             }
         }
         let snapshot = if publication.store_in_database {
+            if data.id.is_none() {
+                data.id = self.generated_id(connection, "verification", <<S::Verification as SeaOrmVerificationModel>::Entity as sea_orm::EntityName>::table_name(&Default::default()), &sea_orm::Iden::to_string(&S::Verification::id_column())).await?;
+            }
             let id = data
                 .id
                 .as_deref()
@@ -90,7 +93,12 @@ where
                 return Err(cancelled_by_hook("verification creation"));
             }
         }
-        let verification = S::Verification::new_active(None, verification, Utc::now())
+        let generated_id = self.generated_id(connection, "verification", <<S::Verification as SeaOrmVerificationModel>::Entity as sea_orm::EntityName>::table_name(&Default::default()), &sea_orm::Iden::to_string(&S::Verification::id_column())).await?;
+        let id = generated_id
+            .as_deref()
+            .map(S::Verification::parse_id)
+            .transpose()?;
+        let verification = S::Verification::new_active(id, verification, Utc::now())
             .insert(connection)
             .await
             .map_err(map_db_err)?;

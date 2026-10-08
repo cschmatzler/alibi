@@ -88,11 +88,13 @@ pub trait PasskeyAuthenticationAfterVerification: Send + Sync {
 
 #[derive(Clone, Default)]
 pub struct PasskeyAuthenticationConfig {
+    pub extensions: Option<super::PasskeyExtensions>,
     pub after_verification: Option<Arc<dyn PasskeyAuthenticationAfterVerification>>,
 }
 impl std::fmt::Debug for PasskeyAuthenticationConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("PasskeyAuthenticationConfig")
+            .field("extensions", &self.extensions)
             .field("after_verification", &self.after_verification.is_some())
             .finish()
     }

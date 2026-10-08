@@ -52,12 +52,12 @@ async fn apply_scoped(
 ) -> AuthResult<()> {
     let mut exec = Exec::Pool(pool);
     if let Some(config) = config {
-        if pool.engine() == Engine::Postgres {
-            if let Some(schema) = &config.advanced.database.schema_name {
-                let mut create = Sql::with(pool.engine(), "CREATE SCHEMA IF NOT EXISTS ");
-                create.ident(schema);
-                _ = exec.execute(create).await?;
-            }
+        if pool.engine() == Engine::Postgres
+            && let Some(schema) = &config.advanced.database.schema_name
+        {
+            let mut create = Sql::with(pool.engine(), "CREATE SCHEMA IF NOT EXISTS ");
+            create.ident(schema);
+            _ = exec.execute(create).await?;
         }
         exec = exec.with_config(config.as_ref());
     }

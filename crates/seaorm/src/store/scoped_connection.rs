@@ -25,11 +25,11 @@ impl<C: ConnectionTrait> Scoped<C> {
             sql = alibi_core::database_sql::map_two_factor(&sql, mapping)
                 .map_err(|error| DbErr::Custom(error.to_string()))?;
         }
-        if self.inner.get_database_backend() == DbBackend::Postgres {
-            if let Some(schema) = &self.schema {
-                return alibi_core::database_sql::qualify_schema(&sql, schema)
-                    .map_err(|error| DbErr::Custom(error.to_string()));
-            }
+        if self.inner.get_database_backend() == DbBackend::Postgres
+            && let Some(schema) = &self.schema
+        {
+            return alibi_core::database_sql::qualify_schema(&sql, schema)
+                .map_err(|error| DbErr::Custom(error.to_string()));
         }
         Ok(sql)
     }

@@ -97,7 +97,7 @@ for (const mode of ["uuid", "serial", "custom", "false", "throw"] as const) {
           });
           expect(accept.error).toMatchObject({
             status: 403,
-            code: "EMAIL_VERIFICATION_REQUIRED_FOR_INVITATION",
+            code: "EMAIL_VERIFICATION_REQUIRED_BEFORE_ACCEPTING_OR_REJECTING_INVITATION",
           });
         } else {
           expect(lookup.error).toBeNull();

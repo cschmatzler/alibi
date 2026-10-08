@@ -82,7 +82,11 @@ async fn request<S: AuthSchema>(
         req.body = Some(serde_json::to_vec(&body).unwrap());
     }
     let response = Box::pin(auth.handle_request(req)).await.unwrap();
-    let body_2 = serde_json::from_slice(&response.body).unwrap();
+    let body_2 = if response.body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&response.body).unwrap()
+    };
     (response, body_2)
 }
 
@@ -862,6 +866,8 @@ mod secondary {
             let (auth, db) = mode::<B>(db.fresh().await?, cache, stored, false).await;
             let (response, _) = request(&auth, HttpMethod::Post, "/sign-up/email", "", Some(json!({"email":"failed@secondary.fixture.test","name":"Failed issuance","password":"password123"}))).await;
             assert_eq!(response.status, 500);
+            assert!(response.body.is_empty());
+            assert!(response.headers.get("content-type").is_none());
             assert!(response.headers.get_all("set-cookie").next().is_none());
             assert!(
                 auth.store()

@@ -57,13 +57,13 @@ pub fn qualify_schema(sql: &str, schema: &str) -> AuthResult<String> {
             ControlFlow::Continue(())
         }
         fn pre_visit_relation(&mut self, relation: &mut ObjectName) -> ControlFlow<()> {
-            if let [ObjectNamePart::Identifier(name)] = relation.0.as_slice() {
-                if !self.ctes.iter().any(|scope| scope.contains(&name.value)) {
-                    relation.0.insert(
-                        0,
-                        ObjectNamePart::Identifier(Ident::with_quote('"', self.schema)),
-                    );
-                }
+            if let [ObjectNamePart::Identifier(name)] = relation.0.as_slice()
+                && !self.ctes.iter().any(|scope| scope.contains(&name.value))
+            {
+                relation.0.insert(
+                    0,
+                    ObjectNamePart::Identifier(Ident::with_quote('"', self.schema)),
+                );
             }
             ControlFlow::Continue(())
         }

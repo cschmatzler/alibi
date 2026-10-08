@@ -4,6 +4,7 @@ use super::*;
 /// Returns an error when validation, storage, or an application callback fails.
 pub(in crate::plugins::passkey) async fn generate_authenticate_options_core<U: AuthUser>(
     maybe_user: Option<&U>,
+    extensions: Option<Value>,
     config: &PasskeyConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<(Value, String)> {
@@ -63,6 +64,16 @@ pub(in crate::plugins::passkey) async fn generate_authenticate_options_core<U: A
 
     let cookie = create_challenge_cookie(&ctx.config, config.challenge_ttl_secs, &token, config)?;
     let mut response = authentication_options_json(options)?;
+    if let Some(extensions) = extensions {
+        if !extensions.is_object() {
+            return Err(AuthError::bad_request(
+                "Passkey extensions must be an object",
+            ));
+        }
+        if let Some(object) = response.as_object_mut() {
+            let _ = object.insert("extensions".into(), extensions);
+        }
+    }
     if let Some(object) = response.as_object_mut() {
         if allow_credentials_json.is_empty() {
             drop(object.remove("allowCredentials"));
@@ -91,7 +102,8 @@ pub(in crate::plugins::passkey) async fn verify_authentication_core<S: alibi_cor
     user_agent: Option<String>,
     ctx: &AuthContext<S>,
 ) -> PasskeyHandlerResult<(Value, String)> {
-    let Some(origin) = resolve_origin(config, req) else {
+    let Some(origin) = super::super::webauthn::ceremony_origin(config, req, body.response.as_ref())
+    else {
         return response_message(400, "origin missing");
     };
 

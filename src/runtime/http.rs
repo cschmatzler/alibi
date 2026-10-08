@@ -15,7 +15,9 @@ impl<S: AuthSchema> BetterAuth<S> {
     ///
     /// # Errors
     ///
-    /// Propagates errors from after-response middleware. Route and plugin errors become error responses.
+    /// Propagates errors from after-response middleware and ordinary endpoint
+    /// failures when `AuthConfig::throw_api_errors` is enabled. Explicit API errors
+    /// retain their HTTP responses.
     pub async fn handle_request(&self, req: AuthRequest) -> AuthResult<AuthResponse> {
         // Incoming callers cannot carry trusted dispatch state into this instance.
         let mut req = fresh_http_request(req);
@@ -58,6 +60,14 @@ impl<S: AuthSchema> BetterAuth<S> {
                 {
                     Ok(response) => response,
                     Err(err) => {
+                        if context.config.throw_api_errors
+                            && !alibi_core::endpoint::is_endpoint_api_error(&err)
+                        {
+                            return Err(match err {
+                                AuthError::CallbackFailure(cause) => *cause,
+                                error => error,
+                            });
+                        }
                         if matches!(err, AuthError::CallbackFailure(_)) {
                             run_after_hooks = false;
                             ordinary_handler_error = true;
@@ -130,6 +140,14 @@ impl<S: AuthSchema> BetterAuth<S> {
                     {
                         Ok(response) => response,
                         Err(error) => {
+                            if context.config.throw_api_errors
+                                && !alibi_core::endpoint::is_endpoint_api_error(&error)
+                            {
+                                return Err(match error {
+                                    AuthError::CallbackFailure(cause) => *cause,
+                                    error => error,
+                                });
+                            }
                             run_after_hooks = false;
                             drop(req.take_response_headers());
                             error.to_auth_response()
@@ -144,6 +162,12 @@ impl<S: AuthSchema> BetterAuth<S> {
                     {
                         Ok(response) => response,
                         Err(error @ AuthError::CallbackFailure(_)) => {
+                            if context.config.throw_api_errors {
+                                return Err(match error {
+                                    AuthError::CallbackFailure(cause) => *cause,
+                                    error => error,
+                                });
+                            }
                             // An ordinary application exception aborts completed hooks.
                             // Source drops accumulated headers, including already-issued
                             // cookies, while preserving the committed authentication writes.
@@ -400,7 +424,21 @@ impl<S: AuthSchema> BetterAuth<S> {
             }
             // Only the resolved installed HTTP endpoint can receive the call.
             if let Some((plugin, _route)) = plugin_route
-                && let Some(response) = plugin.on_http_endpoint(&internal_req, context).await?
+                && let Some(response) = plugin
+                    .on_http_endpoint(&internal_req, context)
+                    .await
+                    .map_err(|error| {
+                        if alibi_core::endpoint::is_endpoint_api_error(&error)
+                            || matches!(
+                                error,
+                                AuthError::CallbackFailure(_) | AuthError::Encryption(_)
+                            )
+                        {
+                            error
+                        } else {
+                            AuthError::CallbackFailure(Box::new(error))
+                        }
+                    })?
             {
                 return match response {
                     HttpEndpointResponse::Value(response) => Ok(response),

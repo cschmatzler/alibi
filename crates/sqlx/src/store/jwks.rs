@@ -31,7 +31,13 @@ impl<S: AuthSchema> SqlxStore<S> {
         let mut active = ActiveRow::new();
         active.set(
             "id",
-            data.id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            match data.id {
+                Some(id) => id,
+                None => self
+                    .generated_id(exec, "jwks", "jwks", "id")
+                    .await?
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
+            },
         );
         active.set("public_key", data.public_key);
         active.set("private_key", data.private_key);

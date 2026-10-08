@@ -107,7 +107,10 @@ where
         }
         let key = team_membership_key(team_id, user_id)?;
         let member = team_member::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
+            id: Set(self
+                .generated_id(tx, "teamMember", "team_member", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string())),
             team_id: Set(team_id.to_owned()),
             user_id: Set(user_id.to_owned()),
             membership_key: Set(Some(key)),
@@ -134,7 +137,10 @@ where
     async fn create_team(&self, data: CreateTeam) -> AuthResult<Team> {
         let now = data.updated_at.unwrap_or_else(Utc::now);
         team::ActiveModel {
-            id: Set(Uuid::new_v4().to_string()),
+            id: Set(self
+                .generated_id(&self.db, "team", "team", "id")
+                .await?
+                .unwrap_or_else(|| Uuid::new_v4().to_string())),
             name: Set(data.name),
             organization_id: Set(data.organization_id),
             member_count: Set(0),

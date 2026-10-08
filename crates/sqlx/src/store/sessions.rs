@@ -6,7 +6,6 @@ use crate::schema::{AuthSchema, SqlxSessionModel};
 use crate::sql::Sql;
 use alibi_core::error::{AuthError, AuthResult};
 use alibi_core::store::SessionStore;
-use alibi_core::store::adapter::cancelled_by_hook;
 use alibi_core::types::CreateSession;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -97,7 +96,19 @@ where
                 .await?;
             }
         }
-        let mut active = S::Session::new_active(None, token, create_session, now);
+        let generated_id = self
+            .generated_id(
+                exec,
+                "session",
+                <S::Session as SqlxModel>::TABLE,
+                S::Session::id_column(),
+            )
+            .await?;
+        let id = generated_id
+            .as_deref()
+            .map(S::Session::parse_id)
+            .transpose()?;
+        let mut active = S::Session::new_active(id, token, create_session, now);
         if !fields.is_empty() {
             for (column, value) in S::Session::additional_field_bindings(&fields, exec.engine())? {
                 let value = crate::additional_fields::prepare_value(
