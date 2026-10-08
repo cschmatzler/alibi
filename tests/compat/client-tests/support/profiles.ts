@@ -15,6 +15,8 @@ function variants<P extends string, S extends string>(
 export const FIXTURE_PROFILES = [
   "bearer-renamed-cookie",
   "bearer-secure-cookie",
+  "otp-change-disabled-omitted",
+  "otp-change-disabled-false",
   ...variants("generic-discovery-", [
     "success",
     "nonce-unbound",
