@@ -173,7 +173,7 @@ where
                 .await?
                 .is_cancelled()
             {
-                return Err(cancelled_by_hook("account deletion"));
+                return Ok(());
             }
         }
         let _ignored_map_err = <S::Account as SeaOrmAccountModel>::Entity::delete_many()

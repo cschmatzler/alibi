@@ -503,7 +503,7 @@ where
                 .await?
                 .is_cancelled()
             {
-                return Err(cancelled_by_hook("user deletion"));
+                return Ok(());
             }
         }
         // API keys reference their owner polymorphically, so they carry no

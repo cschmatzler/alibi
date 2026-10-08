@@ -401,7 +401,7 @@ where
                 .await?
                 .is_cancelled()
             {
-                return Err(cancelled_by_hook("session deletion"));
+                return Ok(());
             }
         }
         let _ended = <S::Session as SeaOrmSessionModel>::Entity::update_many()
@@ -453,7 +453,7 @@ where
                     .await?
                     .is_cancelled()
                 {
-                    return Err(cancelled_by_hook("session deletion"));
+                    return Ok(());
                 }
             }
         }
@@ -568,7 +568,7 @@ where
                     .await?
                     .is_cancelled()
                 {
-                    return Err(cancelled_by_hook("session deletion"));
+                    return Ok(());
                 }
             }
         }
