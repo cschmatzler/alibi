@@ -50,6 +50,7 @@ import { genericDiscoveryFixture } from "./fixtures/generic-discovery-fixture";
 import { genericTokenParamsFixture } from "./fixtures/generic-token-params-fixture";
 import { googleIdTokenProfiles } from "./fixtures/google-id-token-fixture";
 import { huggingfaceProviderFixture } from "./fixtures/huggingface-provider-fixture";
+import { idStrategyFixture } from "./fixtures/id-strategy-fixture";
 import { createJwtKeyringFixture } from "./fixtures/jwt-keyring-fixture";
 import { createRemoteJwtFixture } from "./fixtures/jwt-remote-fixture";
 import { kakaoProviderFixture } from "./fixtures/kakao-provider-fixture";
@@ -570,6 +571,7 @@ const sessionFieldsFixture = await createSessionFieldsFixture(
   authOptions,
   `http://localhost:${PORT}`,
 );
+const idStrategies = await idStrategyFixture(authOptions);
 const rateLimitFixture = createRateLimitFixture(authOptions);
 const clientIpFixture = await createClientIpFixture(authOptions, database);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
@@ -2197,6 +2199,8 @@ const server = Bun.serve({
         return errorPageAuth.handler(request);
       }
       organizationTransport.observe(request);
+      const idStrategyResponse = await idStrategies.handle(request);
+      if (idStrategyResponse) return idStrategyResponse;
       const rateLimitResponse = await rateLimitFixture.handle(request);
       if (rateLimitResponse) {
         return rateLimitResponse;
