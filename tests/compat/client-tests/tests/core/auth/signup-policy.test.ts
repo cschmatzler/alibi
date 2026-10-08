@@ -1703,3 +1703,112 @@ compatScenario(
   },
   ["POST /sign-up/email", "POST /sign-in/email"],
 );
+
+compatScenario(
+  "verify-password uses initialized verifier and UTF-16 maximum before credentials",
+  async (ctx) => {
+    const profile = "signup-policy";
+    const owner = ctx.actor("verify-policy-owner", profile);
+    const password = "😀".repeat(10);
+    expect(password.length).toBe(20);
+    const signup = await owner.client.signUp.email({
+      email: ctx.uniqueEmail("verify-policy"),
+      name: "Verifier Policy",
+      password,
+    });
+    expect(signup.error).toBeNull();
+    const before = await read(ctx, profile);
+    const credential = before.accounts.find((account) => account.userId === signup.data!.user.id)!;
+    const observations = [];
+    const mismatches = [];
+    for (const entry of [
+      {
+        mode: "normal",
+        password,
+        status: 200,
+        code: undefined,
+        stages: ["verify-enter", "verify-result"],
+      },
+      {
+        mode: "normal",
+        password: "incorrect",
+        status: 400,
+        code: "INVALID_PASSWORD",
+        stages: ["verify-enter", "verify-result"],
+      },
+      {
+        mode: "normal",
+        password: password + "a",
+        status: 400,
+        code: "PASSWORD_TOO_LONG",
+        stages: [],
+      },
+      {
+        mode: "verify-api",
+        password,
+        status: 403,
+        code: "VERIFY_REJECTED",
+        stages: ["verify-enter", "verify-result"],
+      },
+      {
+        mode: "verify-error",
+        password,
+        status: 500,
+        code: undefined,
+        stages: ["verify-enter", "verify-result"],
+      },
+    ]) {
+      await control(ctx, { operation: "mode", mode: entry.mode });
+      const response = await owner.fetch(
+        `${ctx.baseURL}/__test/profiles/${profile}/api/auth/verify-password`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ password: entry.password }),
+        },
+      );
+      const text = await response.text();
+      const result = { status: response.status, body: text ? JSON.parse(text) : null };
+      const after = await read(ctx, profile);
+      expect(rows(after)).toEqual(rows(before));
+      if (
+        JSON.stringify(after.events.map((event) => event.stage)) !== JSON.stringify(entry.stages) ||
+        result.status !== entry.status ||
+        (entry.code && result.body?.code !== entry.code)
+      )
+        mismatches.push({ entry, result, events: after.events.map((event) => event.stage) });
+      for (const event of after.events)
+        if (String(event.stage).startsWith("verify-")) {
+          expect(event.password).toBe(entry.password);
+          expect(event.hash).toBe(credential.password);
+        }
+      observations.push({ entry, result, after: observed(after) });
+    }
+    await control(ctx, { operation: "mode", mode: "normal" });
+    const removed = await ctx.removeCredentialAccount({ email: signup.data!.user.email });
+    const noCredential = await read(ctx, profile);
+    for (const attempted of [password + "a", password]) {
+      await control(ctx, { operation: "mode", mode: "normal" });
+      const response = await owner.fetch(
+        `${ctx.baseURL}/__test/profiles/${profile}/api/auth/verify-password`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ password: attempted }),
+        },
+      );
+      const result = { status: response.status, body: (await response.json()) as Row };
+      const after = await read(ctx, profile);
+      expect(rows(after)).toEqual(rows(noCredential));
+      expect(after.events).toEqual([]);
+      const code = attempted.length > 20 ? "PASSWORD_TOO_LONG" : "INVALID_PASSWORD";
+      if (result.status !== 400 || result.body.code !== code)
+        mismatches.push({ attempted, result, expected: code });
+      observations.push({ attempted, result, after: observed(after) });
+    }
+    expect((await owner.client.getSession()).data?.user.id).toBe(signup.data!.user.id);
+    expect(mismatches).toEqual([]);
+    return { signup: ctx.snapshot(signup), removed, observations };
+  },
+  ["POST /verify-password"],
+);

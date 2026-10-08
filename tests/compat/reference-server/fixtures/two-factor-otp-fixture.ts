@@ -24,6 +24,8 @@ export function createTwoFactorOtpFixture(
     "two-factor-otp-negative-expiry": { digits: 6, period: -1 },
   };
   const names = [
+    "two-factor-otp-missing-options",
+    "two-factor-otp-missing-sender",
     "two-factor-otp-plain",
     "two-factor-otp-hashed",
     "two-factor-otp-encrypted",
@@ -85,16 +87,23 @@ export function createTwoFactorOtpFixture(
           plugins: [
             twoFactor({
               totpOptions: { disable: name.endsWith("hashed") },
-              otpOptions: {
-                ...settings,
-                storeOTP: storage,
-                sendOTP: async ({ user, otp }) => {
-                  if (user.email) {
-                    deliveries.set(user.email, { userId: user.id, otp });
-                  }
-                  record(name, "send", otp);
-                },
-              },
+              ...(name === "two-factor-otp-missing-options"
+                ? {}
+                : {
+                    otpOptions:
+                      name === "two-factor-otp-missing-sender"
+                        ? {}
+                        : {
+                            ...settings,
+                            storeOTP: storage,
+                            sendOTP: async ({ user, otp }) => {
+                              if (user.email) {
+                                deliveries.set(user.email, { userId: user.id, otp });
+                              }
+                              record(name, "send", otp);
+                            },
+                          },
+                  }),
             }),
           ],
         }),

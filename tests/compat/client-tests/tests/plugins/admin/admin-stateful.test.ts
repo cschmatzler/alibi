@@ -348,3 +348,47 @@ compatScenario(
     };
   },
 );
+
+for (const role of ["user", "admin"] as const) {
+  compatScenario(
+    `stop impersonation with ordinary live ${role} session preserves identity`,
+    async (ctx) => {
+      const actor = adminActor(ctx);
+      const email = ctx.uniqueEmail("ordinary-stop-impersonation");
+      const signup = await actor.client.signUp.email({
+        email,
+        password: "password123",
+        name: "Ordinary live identity",
+      });
+      expect(signup.error).toBeNull();
+      if (role === "admin") await ctx.promoteAdmin({ email });
+      const before = await actor.client.getSession();
+      expect(before.data?.user.id).toBe(signup.data!.user.id);
+      const stored = await ctx.readUserState({ userId: signup.data!.user.id });
+      let cookies: string[] | undefined;
+      const stop = await actor.adminClient.admin.stopImpersonating(
+        {},
+        {
+          onResponse(context) {
+            cookies = context.response.headers.getSetCookie();
+          },
+        },
+      );
+      expect(stop.error).toMatchObject({
+        status: 400,
+        message: "You are not impersonating anyone",
+      });
+      expect(cookies).toEqual([]);
+      expect(await ctx.readUserState({ userId: signup.data!.user.id })).toEqual(stored);
+      const after = await actor.client.getSession();
+      expect(after).toEqual(before);
+      return {
+        before: ctx.snapshot(before),
+        stop: ctx.snapshot(stop),
+        cookies,
+        after: ctx.snapshot(after),
+      };
+    },
+    ["POST /admin/stop-impersonating", "GET /get-session"],
+  );
+}

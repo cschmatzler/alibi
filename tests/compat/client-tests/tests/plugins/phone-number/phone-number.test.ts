@@ -884,8 +884,42 @@ compatScenario(
     const absentRequest = await client.phoneNumber.requestPasswordReset({ phoneNumber: absent });
     expect(absentRequest.error).toBeNull();
     expect(await verificationCount(ctx, `${absent}-request-password-reset`)).toBe(1);
+    const absentProof = z
+      .array(z.object({ identifier: z.string(), value: z.string() }))
+      .parse(await ctx.readVerificationState({ identifier: `${absent}-request-password-reset` }));
+    expect(absentProof).toHaveLength(1);
+    const absentOtp = absentProof[0]!.value.split(":")[0]!;
+    expect(absentOtp).toMatch(/^\d{6}$/);
+    const ownerBefore = await readPhoneState(ctx, profile, user.id);
+    const readSql = async () =>
+      (await (await fetch(`${ctx.baseURL}/__test/provider-batch/sql-state`)).json()) as Record<
+        string,
+        any[]
+      >;
+    const physicalBefore = await readSql();
+    const absentReset = await client.phoneNumber.resetPassword({
+      phoneNumber: absent,
+      otp: absentOtp,
+      newPassword: "must-not-create123",
+    });
+    expect(absentReset.error?.code).toBe("UNEXPECTED_ERROR");
+    expect(await verificationCount(ctx, `${absent}-request-password-reset`)).toBe(0);
+    const absentReplay = await client.phoneNumber.resetPassword({
+      phoneNumber: absent,
+      otp: absentOtp,
+      newPassword: "must-not-create123",
+    });
+    expect(absentReplay.error?.code).toBe("OTP_NOT_FOUND");
+    const physicalAfter = await readSql();
+    const source = "user" in physicalBefore;
+    for (const table of source ? ["user", "account", "session"] : ["users", "accounts", "sessions"])
+      expect(physicalAfter[table]).toEqual(physicalBefore[table]);
+    expect(await readPhoneState(ctx, profile, user.id)).toEqual(ownerBefore);
+    expect((await client.getSession()).data?.user.id).toBe(user.id);
 
     return {
+      absentReset,
+      absentReplay,
       verified,
       issued,
       foreign,
@@ -1016,3 +1050,89 @@ compatScenario(
 );
 
 passwordlessNumericScenarios("phone");
+
+compatScenario(
+  "external phone verifier leaves password reset bound to actual local OTP",
+  async (ctx) => {
+    const profile = "phone-custom";
+    const owner = phoneClient(ctx, profile, "owner");
+    const phoneNumber = uniquePhone(ctx, "external-reset-owner");
+    const email = ctx.uniqueEmail("external-reset-owner");
+    const signup = await owner.signUp.email({
+      email,
+      password: "originalPassword123",
+      name: "External reset owner",
+      phoneNumber,
+    });
+    expect(signup.error).toBeNull();
+    expect((await owner.phoneNumber.sendOtp({ phoneNumber })).error).toBeNull();
+    const providerCode = await readPhoneOtp(ctx, phoneNumber);
+    const verified = await owner.phoneNumber.verify(
+      { phoneNumber, code: providerCode, disableSession: true },
+      { headers: { "x-callback-probe": "issue207" } },
+    );
+    expect(verified.error).toBeNull();
+    const verifierReceipt = await ctx.rawRequest({
+      path: `/__test/phone-otp?type=verifier&phoneNumber=${encodeURIComponent(phoneNumber)}`,
+    });
+    expect(verifierReceipt.body).toMatchObject({ context: { marker: "issue207" } });
+    const before = await readPhoneState(ctx, profile, signup.data!.user.id);
+    const issued = await owner.phoneNumber.requestPasswordReset({ phoneNumber });
+    expect(issued.error).toBeNull();
+    const local = await readPhoneOtp(ctx, phoneNumber, "password-reset");
+    const identifier = `${phoneNumber}-request-password-reset`;
+    const proof = z
+      .array(z.object({ id: z.string(), value: z.string(), expiresAt: z.string() }))
+      .parse(await ctx.readVerificationState({ identifier }));
+    expect(proof).toHaveLength(1);
+    expect(proof[0]!.value).toBe(`${local}:0`);
+    // Re-arm a genuine provider-approved verification challenge, while retaining the
+    // independently issued local password-reset proof.
+    expect((await owner.phoneNumber.sendOtp({ phoneNumber })).error).toBeNull();
+    const approved = await readPhoneOtp(ctx, phoneNumber);
+    expect(approved).not.toBe(local);
+    const wrong = await owner.phoneNumber.resetPassword(
+      { phoneNumber, otp: approved, newPassword: "replacementPassword123" },
+      { headers: { "x-callback-probe": "issue207" } },
+    );
+    expect(wrong.error).toMatchObject({ code: "INVALID_OTP", status: 400 });
+    const restored = z
+      .array(z.object({ value: z.string(), expiresAt: z.string() }))
+      .parse(await ctx.readVerificationState({ identifier }));
+    expect(restored).toHaveLength(1);
+    expect(restored[0]).toEqual({ value: `${local}:1`, expiresAt: proof[0]!.expiresAt });
+    expect(await readPhoneState(ctx, profile, signup.data!.user.id)).toEqual(before);
+    expect(
+      (
+        await ctx.rawRequest({
+          path: `/__test/phone-otp?type=verifier&phoneNumber=${encodeURIComponent(phoneNumber)}`,
+        })
+      ).body,
+    ).toEqual(verifierReceipt.body);
+    const reset = await owner.phoneNumber.resetPassword(
+      { phoneNumber, otp: local, newPassword: "replacementPassword123" },
+      { headers: { "x-callback-probe": "issue207" } },
+    );
+    expect(reset.error).toBeNull();
+    expect(await ctx.readVerificationState({ identifier })).toEqual([]);
+    expect(
+      (
+        await ctx.rawRequest({
+          path: `/__test/phone-otp?type=verifier&phoneNumber=${encodeURIComponent(phoneNumber)}`,
+        })
+      ).body,
+    ).toEqual(verifierReceipt.body);
+    const replay = await owner.phoneNumber.resetPassword({
+      phoneNumber,
+      otp: local,
+      newPassword: "mustNotCommit123",
+    });
+    expect(replay.error?.code).toBe("OTP_NOT_FOUND");
+    const fresh = phoneClient(ctx, profile, "fresh");
+    const login = await fresh.signIn.email({ email, password: "replacementPassword123" });
+    expect(login.data?.user.id).toBe(signup.data!.user.id);
+    expect((await owner.getSession()).data?.user.id).toBe(signup.data!.user.id);
+    return ctx.snapshot({ verified, issued, wrong, reset, replay, login });
+  },
+  ["POST /phone-number/reset-password", "POST /phone-number/verify"],
+);
