@@ -950,6 +950,8 @@ export const FIXTURE_PROFILES = [
   "siwe",
   "siwe-email",
   "siwe-contract",
+  "phone-no-otp-sender",
+  "phone-no-reset-sender",
   "phone-default",
   "phone-signup",
   "phone-proof",

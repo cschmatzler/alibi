@@ -1,13 +1,6 @@
 //! Local SMS delivery and actual configured phone runtimes.
 use crate::fixtures::passwordless_numeric_fixture::numeric_setting;
 use crate::{CompatTwoFactorOtpSender, TestSchema};
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    response::IntoResponse,
-    routing::{get, post},
-};
 use alibi::plugins::phone_number::{
     PhoneNumberConfig, PhoneNumberPlugin, PhoneNumberValidator, PhoneNumberVerification,
     PhoneOtpDelivery, PhoneOtpVerifier, PhoneSignupIdentity, PhoneVerificationHook, SendPhoneOtp,
@@ -18,6 +11,13 @@ use alibi::plugins::{
 use alibi::{AuthBuilder, AuthConfig, AuthResult, BetterAuth};
 use alibi::{integrations::axum::AxumIntegration, middleware::RateLimitConfig};
 use alibi_seaorm::sea_orm::DatabaseConnection;
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    response::IntoResponse,
+    routing::{get, post},
+};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
@@ -30,6 +30,7 @@ pub(super) struct Controls {
     callbacks: Arc<Mutex<Vec<Value>>>,
     reset_mode: Arc<Mutex<String>>,
     reset_events: Arc<Mutex<Vec<Value>>>,
+    validator_events: Arc<Mutex<Vec<String>>>,
 }
 impl Controls {
     pub(super) async fn reset(&self) {
@@ -89,6 +90,16 @@ impl PhoneSignupIdentity for Identity {
         Some(phone.into())
     }
 }
+struct GuardValidator(Controls);
+#[async_trait]
+impl PhoneNumberValidator for GuardValidator {
+    async fn is_valid(&self, phone: &str) -> AuthResult<bool> {
+        self.0.validator_events.lock().await.push(phone.to_owned());
+        Err(alibi::AuthError::internal(
+            "Validator must not run before required sender guard",
+        ))
+    }
+}
 struct Validator;
 #[async_trait]
 impl PhoneNumberValidator for Validator {
@@ -142,13 +153,24 @@ impl PhoneVerificationHook for Callback {
                     .get_user_by_id_record(&result.user.id)
                     .await?
                     .is_some_and(
-                        |owner| alibi_core::AuthUser::phone_number_verified(&owner)
-                            == Some(true)
+                        |owner| alibi_core::AuthUser::phone_number_verified(&owner) == Some(true)
                     )
             );
         }
         self.0.callbacks.lock().await.push(event);
-        if _context.context::<TestSchema>().unwrap().config.base_path.contains("phone-callback-reject") { return Err(alibi::AuthError::Api { status: 403, code: Some("PHONE_CALLBACK_REJECTED".into()), message: "Application verification callback rejected".into() }); }
+        if _context
+            .context::<TestSchema>()
+            .unwrap()
+            .config
+            .base_path
+            .contains("phone-callback-reject")
+        {
+            return Err(alibi::AuthError::Api {
+                status: 403,
+                code: Some("PHONE_CALLBACK_REJECTED".into()),
+                message: "Application verification callback rejected".into(),
+            });
+        }
         Ok(())
     }
 }
@@ -183,6 +205,8 @@ pub(super) async fn build(
     let mut router = Router::new();
     let mut runtimes = HashMap::new();
     for name in [
+        "phone-no-otp-sender",
+        "phone-no-reset-sender",
         "phone-default",
         "phone-signup",
         "phone-proof",
@@ -212,21 +236,32 @@ pub(super) async fn build(
             .clone()
             .base_path(format!("/__test/profiles/{name}/api/auth"));
         let plugin = PhoneNumberPlugin::new(PhoneNumberConfig {
-            send_otp: Some(Arc::new(Sender {
-                controls: controls.clone(),
-                purpose: "verification",
-                custom,
-            })),
-            send_password_reset_otp: Some(Arc::new(Sender {
-                controls: controls.clone(),
-                purpose: "password-reset",
-                custom: false,
-            })),
+            send_otp: if name == "phone-no-otp-sender" {
+                None
+            } else {
+                Some(Arc::new(Sender {
+                    controls: controls.clone(),
+                    purpose: "verification",
+                    custom,
+                }))
+            },
+            send_password_reset_otp: if name == "phone-no-reset-sender" {
+                None
+            } else {
+                Some(Arc::new(Sender {
+                    controls: controls.clone(),
+                    purpose: "password-reset",
+                    custom: false,
+                }))
+            },
             require_verification: name == "phone-proof",
             sign_up_on_verification: (name != "phone-default")
                 .then(|| Arc::new(Identity) as Arc<dyn PhoneSignupIdentity>),
-            phone_number_validator: custom
-                .then(|| Arc::new(Validator) as Arc<dyn PhoneNumberValidator>),
+            phone_number_validator: if name == "phone-no-otp-sender" {
+                Some(Arc::new(GuardValidator(controls.clone())))
+            } else {
+                custom.then(|| Arc::new(Validator) as Arc<dyn PhoneNumberValidator>)
+            },
             verify_otp: custom
                 .then(|| Arc::new(Verifier(controls.clone())) as Arc<dyn PhoneOtpVerifier>),
             callback_on_verification: Some(Arc::new(Callback(controls.clone()))),
@@ -234,7 +269,9 @@ pub(super) async fn build(
             allowed_attempts: numeric_setting(name, "attempts", 3.0),
             expires_in: numeric_setting(name, "lifetime", 300.0),
         });
-        let mut passwords = PasswordManagementPlugin::new().revoke_sessions_on_password_reset(name == "phone-proof" || name == "phone-reset-callback");
+        let mut passwords = PasswordManagementPlugin::new().revoke_sessions_on_password_reset(
+            name == "phone-proof" || name == "phone-reset-callback",
+        );
         if name == "phone-reset-callback" {
             let controls = controls.clone();
             passwords = passwords.on_password_reset(Arc::new(move |user| {
@@ -276,7 +313,9 @@ pub(super) async fn build(
     let reset_controls = controls.clone();
     let consume_runtimes = Arc::new(runtimes);
     let selected_runtimes = consume_runtimes.clone();
+    let validator_controls = controls.clone();
     router = router
+        .route("/__test/phone-validator-events",get(move || {let controls=validator_controls.clone();async move {Json(controls.validator_events.lock().await.clone())}}))
         .route("/__test/phone-reset-control", post(move |Json(body): Json<Value>| {
             let controls = reset_controls.clone();
             async move {

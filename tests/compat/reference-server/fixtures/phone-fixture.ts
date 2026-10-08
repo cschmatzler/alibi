@@ -13,6 +13,7 @@ export async function createPhoneFixture(
 ) {
   const outbox = new Map<string, { code?: string; context?: unknown }>();
   let resetMode = "success";
+  const validatorEvents: string[] = [];
   const resetEvents: unknown[] = [];
   const challenges = new Map<string, string>();
   const callbacks: {
@@ -74,6 +75,16 @@ export async function createPhoneFixture(
             const context = await callbackSnapshot(ctx, `${phoneNumber}-request-password-reset`);
             outbox.set(`password-reset:${phoneNumber}`, { code, ...(context ? { context } : {}) });
           },
+          ...(name === "phone-no-otp-sender"
+            ? {
+                sendOTP: undefined!,
+                phoneNumberValidator: (phone: string) => {
+                  validatorEvents.push(phone);
+                  throw new Error("Validator must not run before required sender guard");
+                },
+              }
+            : {}),
+          ...(name === "phone-no-reset-sender" ? { sendPasswordResetOTP: undefined } : {}),
           requireVerification: name === "phone-proof",
           ...(name !== "phone-default"
             ? {
@@ -129,6 +140,8 @@ export async function createPhoneFixture(
   const profiles = new Map<string, ReturnType<typeof betterAuth<ReturnType<typeof options>>>>();
 
   for (const name of [
+    "phone-no-otp-sender",
+    "phone-no-reset-sender",
     "phone-default",
     "phone-signup",
     "phone-proof",
@@ -144,6 +157,7 @@ export async function createPhoneFixture(
 
   return {
     profiles,
+    validatorEvents,
     outbox,
     callbacks,
     resetControl(mode?: string) {
