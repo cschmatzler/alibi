@@ -89,7 +89,50 @@ const documentationPlugin = () => ({
   },
 });
 
+// Application metadata overrides the query documentation while the live query remains validated.
+const parametersPlugin = () => ({
+  id: "documentation-parameters",
+  endpoints: Object.fromEntries(
+    ["explicit", "empty"].map((mode) => [
+      `parameters${mode}`,
+      createAuthEndpoint(
+        `/parameters-${mode}/:id`,
+        {
+          method: "GET",
+          query: z.object({ inferred: z.string(), documented: z.string() }),
+          metadata: {
+            openapi: {
+              operationId: `parameters${mode}`,
+              parameters:
+                mode === "empty"
+                  ? []
+                  : [
+                      {
+                        name: "documented",
+                        in: "query",
+                        required: true,
+                        description: "Explicit query",
+                        schema: { type: "string", enum: ["visible"] },
+                      },
+                      {
+                        name: "id",
+                        in: "path",
+                        required: true,
+                        description: "Application identifier",
+                        schema: { type: "string", pattern: "^document-[0-9]+$" },
+                      },
+                    ],
+            },
+          },
+        },
+        async (ctx) => ctx.json({ id: ctx.params.id, ...ctx.query }),
+      ),
+    ]),
+  ),
+});
+
 export const OPEN_API_PROFILES = [
+  "openapi-parameters",
   "openapi-minimal",
   "openapi-last-login",
   "openapi-last-login-database",
@@ -138,44 +181,46 @@ export function openApiProfiles(port: number, database: Database) {
             ? { disableDefaultReference: true }
             : {};
       const extra =
-        name === "openapi-custom-schema"
-          ? [documentationPlugin()]
-          : name.startsWith("openapi-last-login")
-            ? [lastLoginMethod({ storeInDatabase: name === "openapi-last-login-database" })]
-            : name === "openapi-jwt"
-              ? [jwt()]
-              : name === "openapi-username"
-                ? [username()]
-                : name.startsWith("openapi-plugins")
-                  ? [
-                      oneTap({ clientId: "openapi-one-tap-client" }),
-                      admin(),
-                      organization({
-                        teams: { enabled: name === "openapi-plugins-teams" },
-                        dynamicAccessControl: { enabled: name === "openapi-plugins-teams" },
-                      }),
-                      twoFactor(),
-                      apiKey(
-                        name === "openapi-plugins-configured"
-                          ? { rateLimit: { maxRequests: 43, timeWindow: 7654321 } }
-                          : {},
-                      ),
-                      passkey(),
-                      deviceAuthorization(),
-                      jwt(),
-                      multiSession(),
-                      phoneNumber({
-                        sendOTP: async () => {
-                          throw new Error("Documentation profile has no phone delivery provider");
-                        },
-                      }),
-                      siwe({
-                        domain: "localhost",
-                        getNonce: async () => "OpenApiDocumentationNonce",
-                        verifyMessage: async () => false,
-                      }),
-                    ]
-                  : [];
+        name === "openapi-parameters"
+          ? [parametersPlugin()]
+          : name === "openapi-custom-schema"
+            ? [documentationPlugin()]
+            : name.startsWith("openapi-last-login")
+              ? [lastLoginMethod({ storeInDatabase: name === "openapi-last-login-database" })]
+              : name === "openapi-jwt"
+                ? [jwt()]
+                : name === "openapi-username"
+                  ? [username()]
+                  : name.startsWith("openapi-plugins")
+                    ? [
+                        oneTap({ clientId: "openapi-one-tap-client" }),
+                        admin(),
+                        organization({
+                          teams: { enabled: name === "openapi-plugins-teams" },
+                          dynamicAccessControl: { enabled: name === "openapi-plugins-teams" },
+                        }),
+                        twoFactor(),
+                        apiKey(
+                          name === "openapi-plugins-configured"
+                            ? { rateLimit: { maxRequests: 43, timeWindow: 7654321 } }
+                            : {},
+                        ),
+                        passkey(),
+                        deviceAuthorization(),
+                        jwt(),
+                        multiSession(),
+                        phoneNumber({
+                          sendOTP: async () => {
+                            throw new Error("Documentation profile has no phone delivery provider");
+                          },
+                        }),
+                        siwe({
+                          domain: "localhost",
+                          getNonce: async () => "OpenApiDocumentationNonce",
+                          verifyMessage: async () => false,
+                        }),
+                      ]
+                    : [];
       const auth = betterAuth({
         baseURL: `http://localhost:${port}`,
         basePath: `/__test/profiles/${name}/api/auth`,

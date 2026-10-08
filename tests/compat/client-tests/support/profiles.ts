@@ -124,6 +124,9 @@ export const FIXTURE_PROFILES = [
   ).flatMap((provider) =>
     variants(`provider-batch-${provider}-`, [
       "default",
+      "claims-empty",
+      "claims-custom",
+      "language-en",
       "prompt-none",
       "prompt-consent",
       "prompt-empty",
@@ -937,6 +940,7 @@ export const FIXTURE_PROFILES = [
   "phone-custom",
   "phone-callback-reject",
   "phone-reset-callback",
+  "openapi-parameters",
   "openapi-minimal",
   "openapi-last-login",
   "openapi-last-login-database",
