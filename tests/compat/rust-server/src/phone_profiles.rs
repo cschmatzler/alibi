@@ -65,6 +65,7 @@ pub(super) struct Controls {
     outbox: Arc<Mutex<HashMap<String, Value>>>,
     challenges: Arc<Mutex<HashMap<String, String>>>,
     callbacks: Arc<Mutex<Vec<Value>>>,
+    verifier_mode: Arc<Mutex<String>>,
     reset_mode: Arc<Mutex<String>>,
     reset_events: Arc<Mutex<Vec<Value>>>,
     notification: Arc<NotificationApplication>,
@@ -75,6 +76,7 @@ impl Controls {
         self.outbox.lock().await.clear();
         self.challenges.lock().await.clear();
         self.callbacks.lock().await.clear();
+        *self.verifier_mode.lock().await = "success".to_owned();
         *self.reset_mode.lock().await = "success".to_owned();
         self.reset_events.lock().await.clear();
     }
@@ -189,6 +191,13 @@ impl PhoneOtpVerifier for Verifier {
                 json!({"context":snapshot}),
             );
         }
+        if _context.context::<TestSchema>().unwrap().config.base_path.contains("phone-custom-errors") {
+            match self.0.verifier_mode.lock().await.as_str() {
+                "coded" => return Err(alibi::AuthError::Api { status: 403, code: Some("PHONE_VERIFIER_REJECTED".into()), message: "Application verifier rejected".into() }),
+                "ordinary" => return Err(alibi::AuthError::internal("Application verifier failed")),
+                _ => {}
+            }
+        }
         let mut challenges = self.0.challenges.lock().await;
         if challenges.get(&delivery.phone_number) != Some(&delivery.code) {
             return Ok(false);
@@ -277,6 +286,7 @@ pub(super) async fn build(
         "phone-signup",
         "phone-proof",
         "phone-custom",
+        "phone-custom-errors",
         "phone-callback-reject",
         "phone-reset-callback",
         "phone-numeric-length-zero",
@@ -297,7 +307,7 @@ pub(super) async fn build(
         "phone-numeric-lifetime-infinity",
         "phone-numeric-lifetime-negative-infinity",
     ] {
-        let custom = name == "phone-custom";
+        let custom = name.starts_with("phone-custom");
         let mut config = config
             .clone()
             .base_path(format!("/__test/profiles/{name}/api/auth"));
@@ -384,6 +394,7 @@ pub(super) async fn build(
         _ = runtimes.insert(name.into(), Runtime { auth, plugin });
     }
     let callbacks = controls.clone();
+    let verifier_controls = controls.clone();
     let reset_controls = controls.clone();
     let consume_runtimes = Arc::new(runtimes);
     let selected_runtimes = consume_runtimes.clone();
@@ -395,6 +406,10 @@ pub(super) async fn build(
         Json(json!({"events":*app.events.lock().unwrap(),"scheduled":app.scheduled.load(std::sync::atomic::Ordering::SeqCst)}))
     }}))
         .route("/__test/phone-validator-events",get(move || {let controls=validator_controls.clone();async move {Json(controls.validator_events.lock().await.clone())}}))
+        .route("/__test/phone-verifier-control", post(move |Json(body): Json<Value>| {
+            let controls = verifier_controls.clone();
+            async move { *controls.verifier_mode.lock().await = body["mode"].as_str().unwrap_or("success").to_owned(); Json(json!({"status":true})) }
+        }))
         .route("/__test/phone-reset-control", post(move |Json(body): Json<Value>| {
             let controls = reset_controls.clone();
             async move {

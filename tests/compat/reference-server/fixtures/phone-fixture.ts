@@ -12,6 +12,7 @@ export async function createPhoneFixture(
   twoFactorOutbox: Map<string, { otp: string }>,
 ) {
   const outbox = new Map<string, { code?: string; context?: unknown }>();
+  let verifierMode = "success";
   let resetMode = "success";
   const notification = {
     events: [] as unknown[],
@@ -111,7 +112,7 @@ export async function createPhoneFixture(
             outbox.set(`verification:${phoneNumber}`, { code, ...(context ? { context } : {}) });
             if (name.startsWith("phone-notification-"))
               await notify("verification", phoneNumber, code, ctx);
-            if (name === "phone-custom") {
+            if (name.startsWith("phone-custom")) {
               challenges.set(phoneNumber, code);
             }
           },
@@ -140,7 +141,7 @@ export async function createPhoneFixture(
                 },
               }
             : {}),
-          ...(name === "phone-custom"
+          ...(name.startsWith("phone-custom")
             ? {
                 phoneNumberValidator: (phone: string) => /^\+[0-9]{8,15}$/.test(phone),
                 async verifyOTP(
@@ -153,6 +154,13 @@ export async function createPhoneFixture(
                     outbox.set(`verifier:${phoneNumber}`, { context });
                   }
 
+                  if (name === "phone-custom-errors" && verifierMode === "coded")
+                    throw new APIError("FORBIDDEN", {
+                      code: "PHONE_VERIFIER_REJECTED",
+                      message: "Application verifier rejected",
+                    });
+                  if (name === "phone-custom-errors" && verifierMode === "ordinary")
+                    throw new Error("Application verifier failed");
                   if (challenges.get(phoneNumber) !== code) {
                     return false;
                   }
@@ -195,6 +203,7 @@ export async function createPhoneFixture(
     "phone-signup",
     "phone-proof",
     "phone-custom",
+    "phone-custom-errors",
     "phone-callback-reject",
     "phone-reset-callback",
     ...numericModes.map((mode) => `phone-numeric-${mode}`),
@@ -226,6 +235,9 @@ export async function createPhoneFixture(
     validatorEvents,
     outbox,
     callbacks,
+    setVerifierMode(mode: string) {
+      verifierMode = mode;
+    },
     resetControl(mode?: string) {
       if (mode) resetMode = mode;
       return { mode: resetMode, events: resetEvents };
@@ -233,6 +245,7 @@ export async function createPhoneFixture(
     reset() {
       resetMode = "success";
       resetEvents.length = 0;
+      verifierMode = "success";
       outbox.clear();
       challenges.clear();
       callbacks.length = 0;

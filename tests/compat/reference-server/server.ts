@@ -3286,6 +3286,10 @@ const server = Bun.serve({
       }
       const managedSecretsResponse = await managedSecretsFixture.handle(request);
       if (managedSecretsResponse) return managedSecretsResponse;
+      if (url.pathname === "/__test/phone-verifier-control" && request.method === "POST") {
+        phoneFixture.setVerifierMode((await request.json()).mode);
+        return Response.json({ status: true });
+      }
       if (url.pathname === "/__test/phone-reset-control" && request.method === "POST") {
         return Response.json(phoneFixture.resetControl((await request.json()).mode));
       }

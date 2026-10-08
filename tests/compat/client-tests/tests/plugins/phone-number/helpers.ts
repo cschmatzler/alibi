@@ -20,6 +20,7 @@ export type PhoneProfile =
   | "phone-proof"
   | "phone-custom"
   | "phone-callback-reject"
+  | "phone-custom-errors"
   | "phone-reset-callback";
 
 export function phoneClient(ctx: ScenarioContext, profile: PhoneProfile, actor = "primary") {
