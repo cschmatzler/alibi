@@ -1008,7 +1008,7 @@ function createOtpProfile(name: string) {
   return betterAuth({
     ...authOptions,
     basePath: `/__test/profiles/${name}/api/auth`,
-    ...(name === "passwordless-rate-policy"
+    ...(name === "passwordless-rate-policy" || name.startsWith("passwordless-custom-")
       ? { rateLimit: { enabled: true, window: 60, max: 10000 } }
       : {}),
     verification: { disableCleanup: name === "verification-no-cleanup" },
@@ -1022,15 +1022,43 @@ function createOtpProfile(name: string) {
           },
     plugins: [
       emailOTP({
-        ...(name === "passwordless-rate-policy" ? { rateLimit: { window: 1, max: 2 } } : {}),
+        ...(name === "passwordless-rate-policy"
+          ? { rateLimit: { window: 1, max: 2 } }
+          : name.startsWith("passwordless-custom-")
+            ? { rateLimit: { window: 1, max: 3 } }
+            : {}),
         ...numericOptions(name),
         storeOTP:
-          name === "passwordless-hashed"
-            ? "hashed"
-            : name === "passwordless-encrypted-reuse"
-              ? "encrypted"
-              : "plain",
-        resendStrategy: name === "passwordless-encrypted-reuse" ? "reuse" : "rotate",
+          name === "passwordless-custom-hash"
+            ? {
+                async hash(otp: string) {
+                  return `application:${new Bun.CryptoHasher("sha256").update(otp).digest("hex")}`;
+                },
+              }
+            : name.startsWith("passwordless-custom-cipher")
+              ? {
+                  async encrypt(otp: string) {
+                    return `application:${Buffer.from([...Buffer.from(otp)].map((byte) => byte ^ 0x5a)).toString("hex")}`;
+                  },
+                  async decrypt(stored: string) {
+                    if (name.endsWith("failure"))
+                      throw new Error("Application OTP decryption failed");
+                    return Buffer.from(
+                      [...Buffer.from(stored.slice("application:".length), "hex")].map(
+                        (byte) => byte ^ 0x5a,
+                      ),
+                    ).toString();
+                  },
+                }
+              : name === "passwordless-hashed"
+                ? "hashed"
+                : name === "passwordless-encrypted-reuse"
+                  ? "encrypted"
+                  : "plain",
+        resendStrategy:
+          name === "passwordless-encrypted-reuse" || name.startsWith("passwordless-custom-")
+            ? "reuse"
+            : "rotate",
         disableSignUp: name === "passwordless-disabled",
         overrideDefaultEmailVerification: proof,
         sendVerificationOnSignUp: name === "otp-signup-verification",
@@ -1046,6 +1074,9 @@ for (const name of [
   "passwordless-rate-policy",
   "otp-signup-verification",
   "passwordless-hashed",
+  "passwordless-custom-hash",
+  "passwordless-custom-cipher",
+  "passwordless-custom-cipher-failure",
   "passwordless-encrypted-reuse",
   "passwordless-proof",
   "passwordless-proof-explicit",
