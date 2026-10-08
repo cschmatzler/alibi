@@ -211,7 +211,13 @@ impl MagicLinkPlugin {
                 },
                 &alibi_core::CallbackContext::new(ctx, Some(req)),
             )
-            .await?;
+            .await
+            .map_err(|error| match error {
+                AuthError::Api { .. }
+                | AuthError::Upstream { .. }
+                | AuthError::CallbackFailure(_) => error,
+                error => AuthError::CallbackFailure(Box::new(error)),
+            })?;
         AuthResponse::json(200, &json!({"status":true})).map_err(AuthError::from)
     }
 
