@@ -76,9 +76,16 @@ impl<S: AuthSchema> alibi_core::store::SchemaMigrator for SeaOrmStore<S> {
             use sea_orm::ConnectionTrait;
             let commands = mapping.migration_statements()?;
             let transaction = self.db.begin().await.map_err(map_db_err)?;
-            if transaction.has_table("two_factors").await.map_err(map_db_err)? {
+            if transaction
+                .has_table("two_factor")
+                .await
+                .map_err(map_db_err)?
+            {
                 for command in commands {
-                    _ = transaction.execute_unprepared(&command).await.map_err(map_db_err)?;
+                    _ = transaction
+                        .execute_unprepared(&command)
+                        .await
+                        .map_err(map_db_err)?;
                 }
             }
             transaction.commit().await.map_err(map_db_err)?;
@@ -125,7 +132,11 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         let factor = config.advanced.database.two_factor.clone();
         Self {
             config,
-            db: ScopedConnection { inner: db, schema, factor },
+            db: ScopedConnection {
+                inner: db,
+                schema,
+                factor,
+            },
             hooks: Vec::new(),
             _schema: PhantomData,
         }

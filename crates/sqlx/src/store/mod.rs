@@ -159,13 +159,16 @@ impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
             let commands = mapping.migration_statements()?;
             self.in_transaction(false, async move |tx| {
                 let exec = Exec::Tx(tx);
-                if migrator::has_table(exec, "two_factors").await? {
+                if migrator::has_table(exec, "two_factor").await? {
                     for command in commands {
-                        _ = exec.execute(crate::sql::Sql::with(exec.engine(), &command)).await?;
+                        _ = exec
+                            .execute(crate::sql::Sql::with(exec.engine(), &command))
+                            .await?;
                     }
                 }
                 Ok(())
-            }).await?;
+            })
+            .await?;
         }
         Ok(())
     }

@@ -198,17 +198,42 @@ impl Default for AdvancedDatabaseConfig {
 impl TwoFactorDatabaseConfig {
     /// DDL used to migrate the bundled factor model to its configured physical layout.
     pub fn migration_statements(&self) -> crate::AuthResult<Vec<String>> {
-        const COLUMNS: &[&str] = &["id", "secret", "backup_codes", "user_id", "verified", "failed_verification_count", "locked_until", "created_at", "updated_at"];
-        if self.table_name.is_empty() || self.columns.iter().any(|(name, column)| !COLUMNS.contains(&name.as_str()) || column.is_empty()) {
+        const COLUMNS: &[&str] = &[
+            "id",
+            "secret",
+            "backup_codes",
+            "user_id",
+            "verified",
+            "failed_verification_count",
+            "locked_until",
+            "created_at",
+            "updated_at",
+        ];
+        if self.table_name.is_empty()
+            || self
+                .columns
+                .iter()
+                .any(|(name, column)| !COLUMNS.contains(&name.as_str()) || column.is_empty())
+        {
             return Err(AuthError::config("Invalid two-factor storage mapping"));
         }
         let quote = |name: &str| format!("\"{}\"", name.replace('"', "\"\""));
         let table = quote(&self.table_name);
         let mut sql = Vec::new();
-        if self.table_name != "two_factors" {sql.push(format!("ALTER TABLE \"two_factors\" RENAME TO {table}"));}
+        if self.table_name != "two_factor" {
+            sql.push(format!("ALTER TABLE \"two_factor\" RENAME TO {table}"));
+        }
         for name in COLUMNS {
-            if let Some(column) = self.columns.get(*name).filter(|column| column.as_str() != *name) {
-                sql.push(format!("ALTER TABLE {table} RENAME COLUMN {} TO {}", quote(name), quote(column)));
+            if let Some(column) = self
+                .columns
+                .get(*name)
+                .filter(|column| column.as_str() != *name)
+            {
+                sql.push(format!(
+                    "ALTER TABLE {table} RENAME COLUMN {} TO {}",
+                    quote(name),
+                    quote(column)
+                ));
             }
         }
         Ok(sql)

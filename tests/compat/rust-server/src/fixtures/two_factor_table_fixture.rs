@@ -32,13 +32,22 @@ impl SendTwoFactorOtp for Delivery {
 }
 pub(crate) async fn router(base: &AuthConfig, _database: DatabaseConnection) -> AuthResult<Router> {
     let delivery = Delivery::default();
-    let database = alibi_seaorm::sea_orm::Database::connect("sqlite::memory:").await.map_err(|error| alibi::AuthError::internal(error.to_string()))?;
+    let database = alibi_seaorm::sea_orm::Database::connect("sqlite::memory:")
+        .await
+        .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
     let mut config = base
         .clone()
         .base_path("/__test/profiles/two-factor-custom-table/api/auth");
     config.advanced.database.two_factor = Some(alibi_core::config::TwoFactorDatabaseConfig {
         table_name: "application_second_factor".into(),
-        columns: [("secret", "application_secret"), ("backup_codes", "application_backups"), ("user_id", "application_owner")].into_iter().map(|(name, column)| (name.into(), column.into())).collect(),
+        columns: [
+            ("secret", "application_secret"),
+            ("backup_codes", "application_backups"),
+            ("user_id", "application_owner"),
+        ]
+        .into_iter()
+        .map(|(name, column)| (name.into(), column.into()))
+        .collect(),
     });
     let store = crate::backend::store::<TestSchema>(config.clone(), database.clone());
     alibi_core::store::SchemaMigrator::migrate(&store).await?;
@@ -46,7 +55,7 @@ pub(crate) async fn router(base: &AuthConfig, _database: DatabaseConnection) -> 
         AuthBuilder::<TestSchema>::new(config.clone())
             .store(store)
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
-            .plugin(EmailPasswordPlugin::new())
+            .plugin(EmailPasswordPlugin::new().enable_username(false))
             .plugin(SessionManagementPlugin::new())
             .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
                 send_otp: Some(Arc::new(delivery.clone())),
@@ -62,6 +71,6 @@ pub(crate) async fn router(base: &AuthConfig, _database: DatabaseConnection) -> 
  let custom_exists=tables.iter().any(|name|name=="application_second_factor");
  let physical=if custom_exists {database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(),"SELECT id,application_owner,application_secret,application_backups FROM application_second_factor WHERE application_owner = ?",[query.get("userId").unwrap().clone().into()])).await.unwrap()}else{Vec::new()};
  let rows=physical.iter().map(|row|json!({"id":row.try_get::<String>("","id").unwrap(),"userId":row.try_get::<String>("","application_owner").unwrap(),"secretPresent":!row.try_get::<String>("","application_secret").unwrap().is_empty(),"backupPresent":!row.try_get::<String>("","application_backups").unwrap().is_empty()})).collect::<Vec<_>>();
- Json(json!({"customTableExists":custom_exists,"defaultTableExists":tables.iter().any(|name|name=="two_factors"),"rows":rows}))
+ Json(json!({"customTableExists":custom_exists,"defaultTableExists":tables.iter().any(|name|name=="two_factor"),"rows":rows}))
  }})))
 }
