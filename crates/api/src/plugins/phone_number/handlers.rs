@@ -216,7 +216,13 @@ impl PhoneNumberPlugin {
             },
             alibi_core::AwaitedNotificationErrorPolicy::Propagate,
         )
-        .await?;
+        .await
+        .map_err(|error| match error {
+            AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => {
+                error
+            }
+            error => AuthError::CallbackFailure(Box::new(error)),
+        })?;
         AuthResponse::json(200, &json!({"message":"code sent"})).map_err(AuthError::from)
     }
     #[expect(
