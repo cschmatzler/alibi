@@ -1,7 +1,12 @@
 /** Installed Source policies exercised through actual authentication mutations. */
+import { createKyselyAdapter, kyselyAdapter } from "@better-auth/kysely-adapter";
 import { type BetterAuthOptions, betterAuth } from "better-auth";
 
-export function createRateLimitFixture(base: BetterAuthOptions) {
+export async function createRateLimitFixture(base: BetterAuthOptions) {
+  // Share the actual SQL connection provider across concurrent auth instances.
+  const actual = await createKyselyAdapter(base);
+  if (!actual.kysely) throw new Error("real SQLite Kysely connection required");
+  const concurrentDatabase = kyselyAdapter(actual.kysely, { type: "sqlite" });
   const shared = new Map<string, { value: string; expiresAt: number }>();
   const secondary = {
     async get(key: string) {
@@ -25,7 +30,15 @@ export function createRateLimitFixture(base: BetterAuthOptions) {
     },
   };
   const profiles = new Map(
-    ["ordered", "default", "secondary-a", "secondary-b"].map((name) => {
+    [
+      "ordered",
+      "default",
+      "secondary-a",
+      "secondary-b",
+      "concurrent-memory",
+      "concurrent-secondary-a",
+      "concurrent-secondary-b",
+    ].map((name) => {
       const profile = `rate-limit-${name}`;
       return [
         profile,
@@ -33,14 +46,25 @@ export function createRateLimitFixture(base: BetterAuthOptions) {
           ...base,
           plugins: (base.plugins ?? []).filter((plugin) => plugin.id === "email-otp"),
           basePath: `/__test/profiles/${profile}/api/auth`,
-          ...(name.startsWith("secondary-") ? { secondaryStorage: secondary } : {}),
+          ...(name.includes("secondary") ? { secondaryStorage: secondary } : {}),
+          ...(name.startsWith("concurrent-")
+            ? {
+                database: concurrentDatabase,
+                session: { ...base.session, storeSessionInDatabase: true },
+                emailVerification: { ...base.emailVerification, sendOnSignUp: false },
+                plugins: [],
+              }
+            : {}),
           rateLimit: {
             enabled: true,
-            storage: name.startsWith("secondary-") ? "secondary-storage" : "memory",
+            storage: name.includes("secondary") ? "secondary-storage" : "memory",
             window: 60,
             max: name === "ordered" ? 1 : 10000,
-            ...(name.startsWith("secondary-")
+            ...(name.includes("secondary")
               ? { customRules: { "/get-session": { window: 1, max: 2 }, "/list-sessions": false } }
+              : {}),
+            ...(name.startsWith("concurrent-")
+              ? { customRules: { "/sign-up/email": { window: 60, max: 3 } } }
               : {}),
             ...(name === "ordered"
               ? {
