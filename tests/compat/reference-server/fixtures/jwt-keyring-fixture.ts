@@ -155,6 +155,7 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
   }
 
   for (const mode of [
+    "claims",
     "standard",
     "plain",
     "cache",
@@ -278,6 +279,12 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
               },
             },
     };
+    if (mode === "claims")
+      Object.assign(options.jwt, {
+        issuer: "configured-issuer",
+        audience: "configured-audience",
+        expirationTime: "3h",
+      });
     configurations.set(name, options);
     profiles.set(
       name,
@@ -356,15 +363,22 @@ export function createJwtKeyringFixture(base: BetterAuthOptions, database: Datab
           .query("DELETE FROM fixtureJwtKeyring WHERE profile=? AND id=?")
           .run(profile, body.id);
       } else if (
-        ["sign", "resolve-sign", "create", "verify", "api-sign"].includes(body.operation)
+        ["sign", "resolve-sign", "create", "verify", "api-sign", "api-sign-overrides"].includes(
+          body.operation,
+        )
       ) {
         try {
           const transport = body.absentRequest ? {} : { request, headers: request.headers };
 
-          if (body.operation === "api-sign") {
+          if (body.operation === "api-sign" || body.operation === "api-sign-overrides") {
             const signed = await auth.api.signJWT({
               ...transport,
-              body: { payload: body.payload },
+              body: {
+                payload: body.payload,
+                ...(body.overrideOptions === undefined
+                  ? {}
+                  : { overrideOptions: body.overrideOptions }),
+              },
             });
             return Response.json(signed instanceof Response ? await signed.json() : signed);
           }

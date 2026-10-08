@@ -12,6 +12,9 @@ export async function createPhoneFixture(
   twoFactorOutbox: Map<string, { otp: string }>,
 ) {
   const outbox = new Map<string, { code?: string; context?: unknown }>();
+  let resetMode = "success";
+  const validatorEvents: string[] = [];
+  const resetEvents: unknown[] = [];
   const challenges = new Map<string, string>();
   const callbacks: {
     phoneNumber: string;
@@ -27,7 +30,28 @@ export async function createPhoneFixture(
       emailAndPassword: {
         ...base.emailAndPassword,
         enabled: true,
-        revokeSessionsOnPasswordReset: name === "phone-proof",
+        revokeSessionsOnPasswordReset: name === "phone-proof" || name === "phone-reset-callback",
+        ...(name === "phone-reset-callback"
+          ? {
+              onPasswordReset: async ({ user }: { user: { id: string } }, request?: Request) => {
+                resetEvents.push({
+                  userId: user.id,
+                  request: request
+                    ? {
+                        method: request.method,
+                        url: request.url,
+                        marker: request.headers.get("x-reset-marker"),
+                      }
+                    : null,
+                });
+                if (resetMode === "reject")
+                  throw new APIError("FORBIDDEN", {
+                    code: "PHONE_RESET_REJECTED",
+                    message: "Application reset callback rejected",
+                  });
+              },
+            }
+          : {}),
       },
       emailVerification: { ...base.emailVerification, sendOnSignUp: false },
       plugins: [
@@ -51,6 +75,16 @@ export async function createPhoneFixture(
             const context = await callbackSnapshot(ctx, `${phoneNumber}-request-password-reset`);
             outbox.set(`password-reset:${phoneNumber}`, { code, ...(context ? { context } : {}) });
           },
+          ...(name === "phone-no-otp-sender"
+            ? {
+                sendOTP: undefined!,
+                phoneNumberValidator: (phone: string) => {
+                  validatorEvents.push(phone);
+                  throw new Error("Validator must not run before required sender guard");
+                },
+              }
+            : {}),
+          ...(name === "phone-no-reset-sender" ? { sendPasswordResetOTP: undefined } : {}),
           requireVerification: name === "phone-proof",
           ...(name !== "phone-default"
             ? {
@@ -92,6 +126,11 @@ export async function createPhoneFixture(
               userId: user.id,
               ...(context ? { context, verifiedOwner: owner?.phoneNumberVerified === true } : {}),
             });
+            if (name === "phone-callback-reject")
+              throw new APIError("FORBIDDEN", {
+                code: "PHONE_CALLBACK_REJECTED",
+                message: "Application verification callback rejected",
+              });
           },
         }),
       ],
@@ -101,10 +140,14 @@ export async function createPhoneFixture(
   const profiles = new Map<string, ReturnType<typeof betterAuth<ReturnType<typeof options>>>>();
 
   for (const name of [
+    "phone-no-otp-sender",
+    "phone-no-reset-sender",
     "phone-default",
     "phone-signup",
     "phone-proof",
     "phone-custom",
+    "phone-callback-reject",
+    "phone-reset-callback",
     ...numericModes.map((mode) => `phone-numeric-${mode}`),
   ]) {
     const config = options(name);
@@ -114,9 +157,16 @@ export async function createPhoneFixture(
 
   return {
     profiles,
+    validatorEvents,
     outbox,
     callbacks,
+    resetControl(mode?: string) {
+      if (mode) resetMode = mode;
+      return { mode: resetMode, events: resetEvents };
+    },
     reset() {
+      resetMode = "success";
+      resetEvents.length = 0;
       outbox.clear();
       challenges.clear();
       callbacks.length = 0;

@@ -1,3 +1,5 @@
+use serde_json::{Value, json};
+use axum::http::StatusCode;
 mod additional_field_models;
 mod fixtures;
 use fixtures::managed_secrets_fixture;
@@ -255,6 +257,10 @@ struct GitHubEmailRecord {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GitHubProfile {
+    #[serde(skip)]
+    emails_status: u16,
+    #[serde(skip)]
+    requests: Vec<String>,
     id: String,
     login: String,
     name: Option<String>,
@@ -265,6 +271,8 @@ struct GitHubProfile {
 
 fn default_github_profile() -> GitHubProfile {
     GitHubProfile {
+        emails_status: 200,
+        requests: Vec::new(),
         id: "github-account-id".to_string(),
         login: "github-compat-user".to_string(),
         name: None,
@@ -950,6 +958,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_generation_router =
         api_key_generation_fixture::router(&config, database.clone()).await?;
     let api_key_options_router = api_key_options_fixture::router(&config, database.clone()).await?;
+    let api_key_org_static_router = api_key_options_fixture::organization_static_router(&config, database.clone()).await?;
+    let api_key_no_default_router = api_key_options_fixture::no_default_router(&config, database.clone()).await?;
     let passkey_auth_events: passkey_authentication_fixture::Events = Arc::default();
     let passkey_auth_router = passkey_authentication_fixture::router(
         &config,
@@ -1144,6 +1154,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let social_profile_for_set = social_profile.clone();
     let github_profile_for_reset = github_profile.clone();
     let github_profile_for_set = github_profile.clone();
+    let github_profile_for_transport_get = github_profile.clone();
+    let github_profile_for_transport_set = github_profile.clone();
     let github_profile_for_user = github_profile.clone();
     let github_profile_for_emails = github_profile.clone();
     let social_id_token_valid_for_reset = social_id_token_valid.clone();
@@ -1795,6 +1807,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 }
             }),
         )
+        .route("/__test/github-email-transport", get(move || {
+            let profile = github_profile_for_transport_get.clone();
+            async move { Json(profile.lock().await.requests.clone()) }
+        }).post(move |Json(body): Json<Value>| {
+            let profile = github_profile_for_transport_set.clone();
+            async move {
+                let mut profile = profile.lock().await;
+                profile.emails_status = body["status"].as_u64().unwrap() as u16;
+                profile.requests.clear();
+                Json(json!({"status": profile.emails_status}))
+            }
+        }))
         .route(
             "/__test/set-github-profile",
             post(move |Json(body): Json<SetGitHubProfileRequest>| {
@@ -1990,7 +2014,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get(move || {
                 let github_profile = github_profile_for_user.clone();
                 async move {
-                    let profile = github_profile.lock().await.clone();
+                    let mut locked = github_profile.lock().await;
+                    locked.requests.push("/user".into());
+                    let profile = locked.clone();
                     Json(serde_json::json!({
                         "id": profile.id,
                         "login": profile.login,
@@ -2006,8 +2032,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             get(move || {
                 let github_profile = github_profile_for_emails.clone();
                 async move {
-                    let emails = github_profile.lock().await.emails.clone();
-                    Json(serde_json::json!(emails))
+                    let mut profile = github_profile.lock().await;
+                    profile.requests.push("/user/emails".into());
+                    let body = if profile.emails_status == 200 { json!(profile.emails) } else { json!({"message": "Configured ancillary request failure"}) };
+                    (StatusCode::from_u16(profile.emails_status).unwrap(), Json(body))
                 }
             }),
         )
@@ -2156,6 +2184,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(admin_banned_message_router)
         .merge(api_key_generation_router)
         .merge(api_key_options_router)
+        .merge(api_key_org_static_router)
+        .merge(api_key_no_default_router)
         .merge(api_key_storage_router)
         .merge(api_key_background_router)
         .merge(api_key_hook_router)
