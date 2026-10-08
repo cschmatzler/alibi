@@ -1509,3 +1509,216 @@ compatScenario(
   },
   ["GET /jwks", "POST /sign-up/email"],
 );
+
+compatScenario(
+  "server-only JWT claim overrides replace nested defaults without changing configured signing policy",
+  async (ctx) => {
+    const mode = "jwt-keyring-claims";
+    await control(ctx, { operation: "reset" }, mode);
+    const guest = client(ctx, "claims-jwks", mode);
+    const ordinary = { application: "claims-source", sub: "actual-server-owner" };
+    const issue = async (
+      payload: Record<string, unknown>,
+      overrideOptions?: Record<string, unknown>,
+    ) => {
+      const result = await signed(
+        ctx,
+        payload,
+        {
+          operation: "api-sign-overrides",
+          absentRequest: true,
+          ...(overrideOptions === undefined ? {} : { overrideOptions }),
+        },
+        mode,
+      );
+      return { result, token: await token(result) };
+    };
+    const first = await issue(ordinary);
+    const firstState = await state(ctx, mode);
+    expect(firstState.keys).toHaveLength(1);
+    const jwks = await guest.jwks();
+    expect(jwks.error).toBeNull();
+    const keys = jwks.data!.keys as JWK[];
+    const check = async (signedToken: string, issuer: string, audience: string | string[]) => {
+      const protectedHeader = JSON.parse(
+        Buffer.from(signedToken.split(".")[0]!, "base64url").toString(),
+      );
+      const publicKey = keys.find((key) => key.kid === protectedHeader.kid)!;
+      expect(publicKey).toBeDefined();
+      const verified = await jwtVerify(
+        signedToken,
+        await importJWK(publicKey, protectedHeader.alg),
+        { algorithms: [protectedHeader.alg], issuer, audience },
+      );
+      return { header: verified.protectedHeader, payload: verified.payload };
+    };
+    const baseline = await check(first.token, "configured-issuer", "configured-audience");
+    expect(baseline.payload).toMatchObject(ordinary);
+    const expiration = (payload: Record<string, unknown>, duration: number) => {
+      expect(Object.hasOwn(payload, "iat")).toBe(false);
+      const expected = Math.floor(Date.now() / 1000) + duration;
+      expect(payload.exp).toBeNumber();
+      expect(payload.exp as number).toBeGreaterThanOrEqual(expected - 5);
+      expect(payload.exp as number).toBeLessThanOrEqual(expected + 1);
+    };
+    expiration(baseline.payload, 10800);
+    const observations = [];
+    for (const variant of ["full", "partial", "payload"] as const) {
+      const explicit = {
+        ...ordinary,
+        iss: "payload-issuer",
+        aud: "payload-audience",
+        iat: 100,
+        exp: 4102444800,
+      };
+      const jwt =
+        variant === "partial"
+          ? { issuer: "override-issuer" }
+          : {
+              issuer: "override-issuer",
+              audience: ["override-a", "override-b"],
+              expirationTime: "2h",
+            };
+      const issued = await issue(variant === "payload" ? explicit : ordinary, { jwt });
+      const checked = await check(
+        issued.token,
+        variant === "payload" ? "payload-issuer" : "override-issuer",
+        variant === "payload"
+          ? "payload-audience"
+          : variant === "partial"
+            ? ctx.baseURL
+            : ["override-a", "override-b"],
+      );
+      expect(checked.payload).toMatchObject(variant === "payload" ? explicit : ordinary);
+      expect(checked.payload.aud).toEqual(
+        variant === "payload"
+          ? "payload-audience"
+          : variant === "partial"
+            ? ctx.baseURL
+            : ["override-a", "override-b"],
+      );
+      if (variant !== "payload") expiration(checked.payload, variant === "partial" ? 900 : 7200);
+      expect((await state(ctx, mode)).keys).toEqual(firstState.keys);
+      observations.push({ variant, issued: ctx.snapshot(issued.result), checked });
+    }
+    const repeated = await issue(ordinary);
+    const restored = await check(repeated.token, "configured-issuer", "configured-audience");
+    expiration(restored.payload, 10800);
+    expect(restored.payload).toMatchObject(ordinary);
+    const finalState = await state(ctx, mode);
+    expect(finalState.keys).toEqual(firstState.keys);
+    expect(
+      finalState.events.every(
+        (event) => event.operation !== "payload" && event.operation !== "subject",
+      ),
+    ).toBe(true);
+    return {
+      first: ctx.snapshot(first.result),
+      baseline,
+      observations,
+      repeated: ctx.snapshot(repeated.result),
+      restored,
+      jwks: ctx.snapshot(jwks),
+      firstState,
+      finalState,
+    };
+  },
+  ["GET /jwks"],
+);
+
+for (const variant of ["algorithm", "partial", "empty", "plain"] as const) {
+  compatScenario(
+    `server-only JWT key override ${variant} resets nested defaults and preserves original policy`,
+    async (ctx) => {
+      const mode = "jwt-keyring-plain";
+      await control(ctx, { operation: "reset" }, mode);
+      const guest = client(ctx, "key-override-jwks", mode);
+      const payload = {
+        sub: "actual-key-policy-owner",
+        iat: 100,
+        exp: 4102444800,
+        purpose: "per-call-key-policy",
+      };
+      const issue = async (overrideOptions?: Record<string, unknown>) => {
+        const result = await signed(
+          ctx,
+          payload,
+          {
+            operation: "api-sign-overrides",
+            absentRequest: true,
+            ...(overrideOptions === undefined ? {} : { overrideOptions }),
+          },
+          mode,
+        );
+        return { result, token: await token(result) };
+      };
+      const first = await issue();
+      const original = await state(ctx, mode);
+      expect(original.keys).toHaveLength(1);
+      expect(original.keys[0]).toMatchObject({ alg: "RS256", privateKeyEncrypted: false });
+      const originalJwks = await guest.jwks();
+      expect(originalJwks.error).toBeNull();
+      const firstVerified = await verified(first.token, originalJwks.data!.keys as JWK[], ctx);
+      expect(firstVerified.header.alg).toBe("RS256");
+      expect(firstVerified.payload).toMatchObject(payload);
+      expect(Buffer.from((originalJwks.data!.keys[0] as JWK).n!, "base64url")).toHaveLength(384);
+      // Remove the real key through the application adapter so each call reaches
+      // key creation, rather than selecting a previously stored incompatible key.
+      await control(ctx, { operation: "delete", id: original.keys[0]!.id }, mode);
+      expect((await state(ctx, mode)).keys).toEqual([]);
+      const jwksOptions =
+        variant === "algorithm"
+          ? { keyPairConfig: { alg: "ES256" } }
+          : variant === "partial"
+            ? { rotationInterval: 7200 }
+            : variant === "plain"
+              ? { keyPairConfig: { alg: "ES256" }, disablePrivateKeyEncryption: true }
+              : {};
+      const issued = await issue({ jwks: jwksOptions });
+      const observed = await state(ctx, mode);
+      const expectedAlgorithm = variant === "algorithm" || variant === "plain" ? "ES256" : "EdDSA";
+      expect(observed.keys).toHaveLength(1);
+      expect(observed.keys[0]).toMatchObject({
+        alg: expectedAlgorithm,
+        privateKeyEncrypted: variant !== "plain",
+      });
+      const actualJwks = await guest.jwks();
+      expect(actualJwks.error).toBeNull();
+      const checked = await verified(issued.token, actualJwks.data!.keys as JWK[], ctx);
+      expect(checked.header.alg).toBe(expectedAlgorithm);
+      expect(checked.header.kid).toBe(observed.keys[0]!.id);
+      expect(checked.payload).toMatchObject(payload);
+      await control(ctx, { operation: "delete", id: observed.keys[0]!.id }, mode);
+      expect((await state(ctx, mode)).keys).toEqual([]);
+      const repeated = await issue();
+      const restored = await state(ctx, mode);
+      expect(restored.keys).toHaveLength(1);
+      expect(restored.keys[0]).toMatchObject({ alg: "RS256", privateKeyEncrypted: false });
+      const restoredJwks = await guest.jwks();
+      expect(restoredJwks.error).toBeNull();
+      const restoredSignature = await verified(
+        repeated.token,
+        restoredJwks.data!.keys as JWK[],
+        ctx,
+      );
+      expect(restoredSignature.header.alg).toBe("RS256");
+      expect(restoredSignature.payload).toMatchObject(payload);
+      expect(Buffer.from((restoredJwks.data!.keys[0] as JWK).n!, "base64url")).toHaveLength(384);
+      return {
+        first: ctx.snapshot(first.result),
+        original,
+        firstVerified,
+        issued: ctx.snapshot(issued.result),
+        observed,
+        checked,
+        repeated: ctx.snapshot(repeated.result),
+        restored,
+        restoredSignature,
+        originalJwks: ctx.snapshot(originalJwks),
+        actualJwks: ctx.snapshot(actualJwks),
+        restoredJwks: ctx.snapshot(restoredJwks),
+      };
+    },
+    ["GET /jwks"],
+  );
+}

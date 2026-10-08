@@ -41,6 +41,7 @@ export function organizationInvitationAcceptanceFixture(
   origin: string,
 ) {
   let mode = "off";
+  let replacementTeamId: string | undefined;
   const receipts: unknown[] = [];
   const gates: { release: () => void; promise: Promise<void> }[] = [];
 
@@ -120,6 +121,10 @@ export function organizationInvitationAcceptanceFixture(
                   return;
                 }
                 await note("before-accept", context);
+                if (mode === "replace-team")
+                  database
+                    .query("UPDATE invitation SET teamId=? WHERE id=?")
+                    .run(replacementTeamId!, context.invitation.id);
                 if (mode === "pause-before") {
                   let release!: () => void;
                   const promise = new Promise<void>((resolve) => {
@@ -167,6 +172,8 @@ export function organizationInvitationAcceptanceFixture(
       }
 
       mode = typeof body.mode === "string" ? body.mode : "record";
+      replacementTeamId =
+        typeof body.replacementTeamId === "string" ? body.replacementTeamId : undefined;
       receipts.length = 0;
 
       for (const name of triggerNames) {

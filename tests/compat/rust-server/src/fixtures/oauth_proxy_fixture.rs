@@ -12,7 +12,7 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::oauth::{
-    OAuthAccountKey, OAuthAccountKeyContext, OAuthAccountKeyResolver, OAuthProvider,
+    GenericOAuthConfig, OAuthAccountKey, OAuthAccountKeyContext, OAuthAccountKeyResolver, OAuthProvider,
 };
 use alibi::plugins::{
     EmailPasswordPlugin, OAuthPlugin, OAuthProxyConfig, OAuthProxyPlugin, SessionManagementPlugin,
@@ -49,6 +49,7 @@ const OPTION_MODES: &[&str] = &[
     "signup-disabled",
     "custom",
     "bad-key",
+    "form-post",
 ];
 const SECRET: &str = "local-fixture-dedicated-oauth-proxy-secret-32";
 struct CacheFailure;
@@ -344,6 +345,16 @@ async fn build_router(
                 "proxy-fixture-secret",
                 &format!("{}{control}/provider", config.base_url),
             );
+            if mode == "form-post" {
+                let mut generic = GenericOAuthConfig::new("proxy-fixture-client", "proxy-fixture-secret");
+                generic.authorization_url = Some(provider.auth_url.clone());
+                generic.token_url = Some(provider.token_url.clone());
+                generic.user_info_url = provider.user_info_url.clone();
+                generic.provider = provider;
+                provider = generic.resolve().await.map_err(|error| AuthError::config(error.to_string()))?
+                    .ok_or_else(|| AuthError::config("form-post provider unavailable"))?.provider;
+                provider.authorization.as_mut().expect("generic policy").response_mode = Some("form_post".into());
+            }
             provider.disable_sign_up = mode == "signup-disabled";
             let policy = provider.authorization.as_mut().expect("factory policy");
             policy.disable_sign_up_option =
@@ -451,13 +462,19 @@ async fn authorize(
         .append_pair("code", &code)
         .append_pair("state", state);
     let _ = provider.grants.insert(
-        code,
+        code.clone(),
         Grant {
             challenge: challenge.clone(),
             redirect: redirect.clone(),
             used: false,
         },
     );
+    if query.get("response_mode").is_some_and(|mode| mode == "form_post") {
+        let user = json!({"name":{"firstName":"Élodie &","lastName":"Form <Owner>"},"email":provider.profile["email"]}).to_string();
+        let escape = |value: &str| value.replace('&', "&amp;").replace('"', "&quot;").replace('<', "&lt;");
+        let html = format!("<form method=\"post\" action=\"{}\"><input name=\"code\" value=\"{}\"><input name=\"state\" value=\"{}\"><input name=\"user\" value=\"{}\"></form>", escape(redirect), escape(&code), escape(state), escape(&user));
+        return ([("content-type", "text/html")], html).into_response();
+    }
     (StatusCode::FOUND, [("location", url.to_string())]).into_response()
 }
 async fn token(

@@ -239,6 +239,12 @@ pub(crate) async fn router(
         "post",
         "basic",
         "none",
+        "base-http",
+        "base-https",
+        "base-auto",
+        "base-no-fallback",
+        "base-untrusted",
+
         "manual",
         "default-none",
         "default-post",
@@ -260,6 +266,7 @@ pub(crate) async fn router(
         // Keep the real ordinary callback boundary so the differential test
         // reports the missing behavior rather than implementing it in a fixture.
         "idp-initiated",
+        "linking-disabled",
         "expiry-positive",
         "expiry-zero",
         "expiry-negative",
@@ -302,6 +309,11 @@ pub(crate) async fn router(
     ] {
         let path = format!("/__test/profiles/generic-token-{mode}/api/auth");
         let mut settings = config.clone().base_path(&path);
+        if mode.starts_with("base-") {
+            settings.dynamic_base_url = Some(alibi_core::config::DynamicBaseUrl {allowed_hosts: vec!["exact.fixture.test".into(), "*.preview.fixture.test".into()], protocol: Some(match mode {"base-http" => alibi_core::config::BaseUrlProtocol::Http, "base-https" => alibi_core::config::BaseUrlProtocol::Https, _ => alibi_core::config::BaseUrlProtocol::Auto}), fallback: (mode != "base-no-fallback").then(|| "http://fallback.fixture.test".into())});
+            settings.advanced.trust_forwarded_host = mode != "base-untrusted";
+            settings.trusted_origins.push(config.base_url.clone());
+        }
         if mode == "local-verified" {
             settings.account.account_linking.require_local_email_verified = true;
         }
@@ -310,6 +322,9 @@ pub(crate) async fn router(
         }
         if mode == "skip-state-cookie" {
             settings.account.skip_state_cookie_check = true;
+        }
+        if mode == "linking-disabled" {
+            settings.account.account_linking.enabled = false;
         }
         let configured_mode = if mode.starts_with("dynamic") {
             "post"
@@ -475,6 +490,7 @@ pub(crate) async fn router(
             override_user_info_on_sign_in: mode == "override",
         };
         let provider = if mode.starts_with("dynamic")
+            || mode.starts_with("base-")
             || mode == "none"
             || mode.starts_with("subject-")
             || mode.starts_with("expiry-")

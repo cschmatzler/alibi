@@ -129,6 +129,7 @@ struct Application {
     database: DatabaseConnection,
     invitation_status_observer: DatabaseConnection,
     mode: Mutex<String>,
+    replacement_team_id: Mutex<Option<String>>,
     receipts: Mutex<Vec<Value>>,
     gates: Mutex<VecDeque<oneshot::Sender<()>>>,
 }
@@ -191,6 +192,7 @@ impl Application {
     }
     async fn configure(&self, input: Value) -> AuthResult<Value> {
         self.reset().await;
+        *self.replacement_team_id.lock().await = input["replacementTeamId"].as_str().map(str::to_owned);
         *self.mode.lock().await = input["mode"].as_str().unwrap_or("record").into();
         for name in [
             "invitation_stage_member",
@@ -273,6 +275,10 @@ impl OrganizationInvitationAcceptanceHooks for Application {
             return Ok(());
         }
         self.note("before-accept",json!({"invitation":context.invitation,"user":context.user,"organization":context.organization})).await?;
+        if *self.mode.lock().await == "replace-team" {
+            let team_id = self.replacement_team_id.lock().await.clone().ok_or_else(|| AuthError::internal("replacement team required"))?;
+            self.database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite, "UPDATE invitation SET team_id=? WHERE id=?", vec![team_id.into(), context.invitation.id.clone().into()])).await.map_err(|e| AuthError::internal(e.to_string()))?;
+        }
         if *self.mode.lock().await == "pause-before" {
             let (sender, receiver) = oneshot::channel();
             self.gates.lock().await.push_back(sender);
@@ -329,6 +335,7 @@ pub(crate) async fn router(
         database: database.clone(),
         invitation_status_observer,
         mode: Mutex::new("off".into()),
+        replacement_team_id: Mutex::new(None),
         receipts: Mutex::new(Vec::new()),
         gates: Mutex::new(VecDeque::new()),
     });
