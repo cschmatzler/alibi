@@ -1129,6 +1129,7 @@ export const FIXTURE_PROFILES = [
   "last-login-nan",
   "last-login-negative",
   "last-login-excess",
+  "jwt-keyring-claims",
   "jwt-keyring-standard",
   "jwt-keyring-plain",
   "jwt-keyring-cache",
