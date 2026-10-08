@@ -76,6 +76,12 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "post",
     "basic",
     "none",
+    "base-http",
+    "base-https",
+    "base-auto",
+    "base-no-fallback",
+    "base-untrusted",
+
     "manual",
     "default-none",
     "default-post",
@@ -91,6 +97,9 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
     "dynamic-custom",
     "override",
     "local-verified",
+    "implicit-disabled",
+    "skip-state-cookie",
+    "linking-disabled",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
@@ -140,7 +149,39 @@ export function genericTokenParamsFixture(base: BetterAuthOptions) {
       betterAuth<BetterAuthOptions>({
         ...base,
         basePath: path,
+        ...(mode.startsWith("base-")
+          ? {
+              baseURL: {
+                allowedHosts: ["exact.fixture.test", "*.preview.fixture.test"],
+                protocol: mode === "base-https" ? "https" : mode === "base-http" ? "http" : "auto",
+                ...(mode === "base-no-fallback"
+                  ? {}
+                  : { fallback: "http://fallback.fixture.test" }),
+              },
+              advanced: { ...base.advanced, trustedProxyHeaders: mode !== "base-untrusted" },
+              trustedOrigins: [base.baseURL as string],
+            }
+          : {}),
         socialProviders: {},
+        ...(mode === "linking-disabled"
+          ? {
+              account: {
+                ...base.account,
+                accountLinking: { ...base.account?.accountLinking, enabled: false },
+              },
+            }
+          : {}),
+        ...(mode === "skip-state-cookie"
+          ? { account: { ...base.account, skipStateCookieCheck: true } }
+          : {}),
+        ...(mode === "implicit-disabled"
+          ? {
+              account: {
+                ...base.account,
+                accountLinking: { ...base.account?.accountLinking, disableImplicitLinking: true },
+              },
+            }
+          : {}),
         ...(mode === "local-verified"
           ? {
               account: {

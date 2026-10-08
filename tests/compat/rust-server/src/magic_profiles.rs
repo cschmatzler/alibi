@@ -31,6 +31,20 @@ impl MagicLinkTokenHasher for ApplicationHasher {
     }
 }
 
+#[derive(Default)]
+struct GeneratorState { mode: String, receipts: Vec<String> }
+struct ControlledGenerator(Arc<Mutex<GeneratorState>>);
+#[async_trait]
+impl MagicLinkTokenGenerator for ControlledGenerator {
+    async fn generate(&self, email: &str) -> AuthResult<String> {
+        tokio::task::yield_now().await;
+        let mut state = self.0.lock().await;
+        state.receipts.push(email.to_owned());
+        if state.mode == "coded" { return Err(alibi::AuthError::Api { status: 403, code: Some("MAGIC_GENERATOR_REJECTED".into()), message: "Application generator rejected".into() }); }
+        Ok(format!("controlled-link-{email}"))
+    }
+}
+
 struct CustomToken;
 #[async_trait]
 impl MagicLinkTokenGenerator for CustomToken {
@@ -71,6 +85,8 @@ impl SendMagicLink for Sender {
             value["context"] = context;
         }
         _ = self.0.lock().await.insert(delivery.email.clone(), value);
+        if auth.config.base_path.contains("magic-link-sender-coded") { return Err(alibi::AuthError::Api { status: 403, code: Some("MAGIC_DELIVERY_REJECTED".into()), message: "Application delivery rejected".into() }); }
+        if auth.config.base_path.contains("magic-link-sender-ordinary") { return Err(alibi::AuthError::internal("Application delivery failed")); }
         Ok(())
     }
 }
@@ -89,12 +105,16 @@ pub(super) async fn router(
 ) -> AuthResult<Router> {
     let mut router = Router::new();
     let hasher_mode = Arc::new(Mutex::new("success".to_owned()));
+    let generator_state = Arc::new(Mutex::new(GeneratorState::default()));
     for name in [
         "magic-link-rate-policy",
         "magic-link-hashed",
         "magic-link-hashed-custom-token",
         "magic-link-custom-hasher",
         "magic-link-custom-hasher-errors",
+        "magic-link-generator-reject",
+        "magic-link-sender-coded",
+        "magic-link-sender-ordinary",
         "magic-link-disabled",
         "magic-link-numeric-lifetime-zero",
         "magic-link-numeric-lifetime-fraction",
@@ -120,7 +140,7 @@ pub(super) async fn router(
                 .plugin(MagicLinkPlugin::new(MagicLinkConfig {
                     rate_limit: if name == "magic-link-rate-policy" { alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 2.0} } else { MagicLinkConfig::default().rate_limit },
                     send_magic_link: Some(Arc::new(Sender(outbox.clone()))),
-                    generate_token: (name == "magic-link-hashed-custom-token").then(|| Arc::new(CustomToken) as Arc<dyn MagicLinkTokenGenerator>),
+                    generate_token: if name == "magic-link-generator-reject" { Some(Arc::new(ControlledGenerator(generator_state.clone())) as Arc<dyn MagicLinkTokenGenerator>) } else { (name == "magic-link-hashed-custom-token").then(|| Arc::new(CustomToken) as Arc<dyn MagicLinkTokenGenerator>) },
                     storage: if name.starts_with("magic-link-custom-hasher") {
                         MagicLinkTokenStorage::Custom(Arc::new(ApplicationHasher(if name.ends_with("-errors") { hasher_mode.clone() } else { Arc::new(Mutex::new("success".to_owned())) })))
                     } else if name.starts_with("magic-link-hashed") {
@@ -143,6 +163,18 @@ pub(super) async fn router(
     router = router.route("/__test/magic-link/hasher-control", post(move |Json(body): Json<Value>| {
         let mode = hasher_mode.clone();
         async move { *mode.lock().await = body["mode"].as_str().unwrap_or("success").to_owned(); Json(json!({"status":true})) }
+    }));
+    router = router.route("/__test/magic-link/generator-control", post(move |Json(body): Json<Value>| {
+        let state = generator_state.clone();
+        let database = database.clone();
+        async move {
+            let mut state = state.lock().await;
+            if let Some(mode) = body["mode"].as_str() { state.mode = mode.to_owned(); }
+            if body["clear"].as_bool() == Some(true) { state.receipts.clear(); }
+            let counts: (i64, i64, i64) = sqlx::query_as(sqlx::AssertSqlSafe("SELECT (SELECT COUNT(*) FROM verifications), (SELECT COUNT(*) FROM users), (SELECT COUNT(*) FROM sessions)"))
+                .fetch_one(database.get_sqlite_connection_pool()).await.unwrap();
+            Json(json!({"mode":state.mode,"receipts":state.receipts,"proofCount":counts.0,"userCount":counts.1,"sessionCount":counts.2}))
+        }
     }));
     Ok(router.route(
         "/__test/magic-link",

@@ -345,3 +345,80 @@ for (const profile of ["custom-session-jwt", "custom-session-deferred"] as const
     { oracle: { unroutedRequests: "asserts get-session rejects POST" } },
   );
 }
+
+for (const profile of ["custom-session-list-default", "custom-session-list-false"] as const) {
+  compatScenario(
+    `custom session ${profile} leaves device lists untransformed without callback execution`,
+    async (ctx) => {
+      const actor = ctx.actor("list-browser", profile);
+      const auth = createAuthClient({
+        baseURL: ctx.baseURL + authProfilePath(profile),
+        plugins: [customSessionClient(), multiSessionClient()],
+        fetchOptions: { customFetchImpl: actor.fetch },
+      });
+      const alice = await auth.signUp.email({
+        email: ctx.uniqueEmail("list-alice"),
+        password: "password123",
+        name: "Alice",
+      });
+      const bob = await auth.signUp.email({
+        email: ctx.uniqueEmail("list-bob"),
+        password: "password123",
+        name: "Bob",
+      });
+      expect(alice.error).toBeNull();
+      expect(bob.error).toBeNull();
+      const aliceBefore: any = await ctx.readUserState({ userId: alice.data!.user.id });
+      const bobBefore: any = await ctx.readUserState({ userId: bob.data!.user.id });
+      const first = await auth.getSession();
+      expect(first.error).toBeNull();
+      const transformed: any = first.data;
+      expect(transformed.application).toEqual({
+        userId: bob.data!.user.id,
+        label: "Bob",
+        path: "/get-session",
+        calls: 1,
+      });
+      expect(transformed.session.id).toBe(bobBefore.sessions[0].id);
+      const lists = [];
+      for (const headers of [undefined, { "x-custom-session": "error" }]) {
+        const listed = await auth.multiSession.listDeviceSessions({ fetchOptions: { headers } });
+        expect(listed.error).toBeNull();
+        expect(listed.data).toHaveLength(2);
+        const entries: any[] = listed.data!;
+        expect(entries.map((entry) => entry.session.token)).toEqual([
+          alice.data!.token,
+          bob.data!.token,
+        ]);
+        expect(entries.map((entry) => entry.session.id)).toEqual([
+          aliceBefore.sessions[0].id,
+          bobBefore.sessions[0].id,
+        ]);
+        expect(entries.map((entry) => entry.user.id)).toEqual([
+          alice.data!.user.id,
+          bob.data!.user.id,
+        ]);
+        for (const entry of entries) {
+          expect(entry).not.toHaveProperty("application");
+          expect(entry.session).toHaveProperty("label", "custom-public-label");
+          expect(entry.session).not.toHaveProperty("hidden");
+          expect(entry.session.userId).toBe(entry.user.id);
+        }
+        lists.push(ctx.snapshot(listed));
+      }
+      const again = await auth.getSession();
+      expect(again.error).toBeNull();
+      expect((again.data as any).application).toEqual({ ...transformed.application, calls: 2 });
+      expect(await ctx.readUserState({ userId: alice.data!.user.id })).toEqual(aliceBefore);
+      expect(await ctx.readUserState({ userId: bob.data!.user.id })).toEqual(bobBefore);
+      return {
+        first: ctx.snapshot(first),
+        lists,
+        again: ctx.snapshot(again),
+        alice: ctx.snapshot(aliceBefore),
+        bob: ctx.snapshot(bobBefore),
+      };
+    },
+    ["GET /get-session", "GET /multi-session/list-device-sessions"],
+  );
+}

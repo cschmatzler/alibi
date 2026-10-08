@@ -1,6 +1,5 @@
 //! Real session issuance with deterministic application-owned token hooks.
 use crate::TestSchema;
-use axum::Router;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::{
@@ -9,6 +8,7 @@ use alibi::plugins::{
 };
 use alibi::{AuthBuilder, AuthConfig, AuthResult, prelude::CreateSession};
 use alibi_seaorm::sea_orm::DatabaseConnection;
+use axum::Router;
 use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
@@ -64,9 +64,28 @@ pub(crate) async fn router(
     counter: Arc<AtomicUsize>,
 ) -> AuthResult<Router> {
     let mut router = Router::new();
-    for name in ["bearer-default", "bearer-signed", "bearer-composition"] {
+    for name in [
+        "bearer-default",
+        "bearer-signed",
+        "bearer-composition",
+        "bearer-renamed-cookie",
+        "bearer-secure-cookie",
+    ] {
         let path = format!("/__test/profiles/{name}/api/auth");
-        let config = config.clone().base_path(&path);
+        let mut config = config.clone().base_path(&path);
+        if name == "bearer-renamed-cookie" {
+            config.advanced.cookies.insert(
+                "session_token".into(),
+                alibi_core::CookieOverride {
+                    name: Some("configured-bearer-token".into()),
+                    ..Default::default()
+                },
+            );
+        }
+        if name == "bearer-secure-cookie" {
+            config.advanced.use_secure_cookies = Some(true);
+            config.advanced.cookie_prefix = Some("bearer-app".into());
+        }
         let builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(
                 crate::backend::store::<TestSchema>(config, database.clone())
