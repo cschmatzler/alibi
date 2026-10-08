@@ -286,7 +286,7 @@ pub(crate) async fn router(
                     let headers=parts.headers.iter().filter_map(|(name,value)|value.to_str().ok().map(|value|(name.to_string(),value.to_owned()))).collect();
                     let bytes=axum::body::to_bytes(body,1024*1024).await.unwrap();
                     let query=url::form_urlencoded::parse(uri.query().unwrap_or("").as_bytes()).map(|(name,value)|(name.into_owned(),value.into_owned())).collect();
-                    let request=alibi_core::AuthRequest::from_parts(method,uri.path(),headers,(!bytes.is_empty()).then(||bytes.to_vec()),query);
+                    let request=alibi_core::AuthRequest::from_parts(method,uri.path().to_owned(),headers,(!bytes.is_empty()).then(||bytes.to_vec()),query);
                     match auth.handle_request(request).await {
                         Ok(result)=>{let mut response=axum::response::Response::builder().status(result.status);for (name,value) in result.headers {response=response.header(name,value);}response.body(axum::body::Body::from(result.body)).unwrap()},
                         Err(_)=>(axum::http::StatusCode::INTERNAL_SERVER_ERROR,[("content-type","application/json;charset=utf-8")],Json(json!({"message":"Internal server error"}))).into_response(),
