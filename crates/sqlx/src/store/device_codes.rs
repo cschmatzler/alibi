@@ -12,6 +12,27 @@ use async_trait::async_trait;
 use uuid::Uuid;
 
 impl<S: AuthSchema + Send + Sync> SqlxStore<S> {
+    async fn create_device_code_with_connection(
+        &self,
+        exec: crate::pool::Exec<'_>,
+        input: CreateDeviceCode,
+    ) -> AuthResult<DeviceCode> {
+        let mut active = ActiveRow::new();
+        active.set("id", Uuid::new_v4().to_string());
+        active.set("device_code", input.device_code);
+        active.set("user_code", input.user_code);
+        active.set("user_id", input.user_id);
+        active.set("expires_at", input.expires_at);
+        active.set("status", input.status);
+        active.set("last_polled_at", input.last_polled_at);
+        active.set("polling_interval", input.polling_interval);
+        active.set("client_id", input.client_id);
+        active.set("scope", input.scope);
+        model::insert::<Model>(exec, &active)
+            .await
+            .map(|model| DeviceCode::from(&model))
+    }
+
     async fn find_device_code(&self, column: &str, value: &str) -> AuthResult<Option<DeviceCode>> {
         let mut sql = model::select_model::<Model>(self.exec());
         sql.push(" WHERE ");
@@ -62,20 +83,85 @@ where
     S: AuthSchema + Send + Sync,
 {
     async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode> {
-        let mut active = ActiveRow::new();
-        active.set("id", Uuid::new_v4().to_string());
-        active.set("device_code", input.device_code);
-        active.set("user_code", input.user_code);
-        active.set("user_id", input.user_id);
-        active.set("expires_at", input.expires_at);
-        active.set("status", input.status);
-        active.set("last_polled_at", input.last_polled_at);
-        active.set("polling_interval", input.polling_interval);
-        active.set("client_id", input.client_id);
-        active.set("scope", input.scope);
-        model::insert::<Model>(self.exec(), &active)
+        self.create_device_code_with_connection(self.exec(), input)
             .await
-            .map(|model| DeviceCode::from(&model))
+    }
+    async fn create_device_code_with_fields(
+        &self,
+        input: CreateDeviceCode,
+        fields: serde_json::Map<String, serde_json::Value>,
+    ) -> AuthResult<DeviceCode> {
+        if fields.is_empty() {
+            return self.create_device_code(input).await;
+        }
+        self.in_transaction(true, async move |tx| {
+            let exec = crate::pool::Exec::Tx(tx);
+            let create = Sql::with(exec.engine(), "CREATE TABLE IF NOT EXISTS device_code_fields (device_code_id TEXT PRIMARY KEY REFERENCES device_code(id) ON DELETE CASCADE, fields TEXT NOT NULL)");
+            _ = exec.execute(create).await?;
+            let row = self.create_device_code_with_connection(exec, input).await?;
+            let mut insert = Sql::with(exec.engine(), "INSERT INTO device_code_fields (device_code_id, fields) VALUES (");
+            insert.bind(row.id.clone());insert.push(", ");insert.bind(serde_json::to_string(&fields)?);insert.push(")");
+            _ = exec.execute(insert).await?;
+            Ok(row)
+        }).await
+    }
+    async fn device_code_fields(
+        &self,
+        id: &str,
+    ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+        if !super::migrator::has_table(self.exec(), "device_code_fields").await? {
+            return Ok(serde_json::Map::new());
+        }
+        let mut sql = Sql::with(
+            self.exec().engine(),
+            "SELECT fields FROM device_code_fields WHERE device_code_id = ",
+        );
+        sql.bind(id);
+        self.exec()
+            .fetch_scalar::<String>(sql)
+            .await?
+            .map(|fields| serde_json::from_str(&fields).map_err(Into::into))
+            .transpose()
+            .map(Option::unwrap_or_default)
+    }
+    async fn consume_device_code(
+        &self,
+        id: &str,
+        status: &str,
+        ownership: &serde_json::Map<String, serde_json::Value>,
+    ) -> AuthResult<Option<DeviceCode>> {
+        let mut sql = Sql::with(self.exec().engine(), "DELETE FROM device_code WHERE id = ");
+        sql.bind(id);
+        sql.push(" AND status = ");
+        sql.bind(status);
+        for (field, value) in ownership {
+            sql.push(" AND EXISTS (SELECT 1 FROM device_code_fields WHERE device_code_id = device_code.id AND ");
+            if self.exec().engine() == crate::pool::Engine::Postgres {
+                sql.push("CAST(fields AS JSONB) -> ");
+                sql.bind(field);
+                sql.push(" = CAST(");
+                sql.bind(value.to_string());
+                sql.push(" AS JSONB)");
+            } else {
+                sql.push("json_extract(fields, ");
+                sql.bind(format!("$.{}", serde_json::to_string(field)?));
+                sql.push(") IS json_extract(");
+                sql.bind(value.to_string());
+                sql.push(", '$')");
+            }
+            sql.push(")");
+        }
+        sql.push(" RETURNING ");
+        for (index, column) in Model::COLUMN_NAMES.iter().enumerate() {
+            if index > 0 {
+                sql.push(", ");
+            }
+            sql.ident(column);
+        }
+        self.exec()
+            .fetch_optional::<Model>(sql)
+            .await
+            .map(|row| row.as_ref().map(DeviceCode::from))
     }
 
     async fn get_device_code_by_device_code(
