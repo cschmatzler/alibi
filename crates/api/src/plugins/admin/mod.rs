@@ -206,7 +206,7 @@ impl AdminPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<Option<(UserView, SessionView)>> {
-        match ctx.require_authoritative_session(req).await {
+        match ctx.require_authoritative_cached_session(req).await {
             Ok((user, session)) => Ok(Some((UserView::from(&user), SessionView::from(&session)))),
             Err(AuthError::Unauthenticated | AuthError::SessionNotFound) => Ok(None),
             Err(error) => Err(error),
