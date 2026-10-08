@@ -1050,6 +1050,7 @@ export const FIXTURE_PROFILES = [
   "session-no-freshness",
   "snake-casing",
   "session-cookie-cleanup",
+  "account-unlink-all",
   ...variants("passwordless-numeric-", [
     "length-zero",
     "length-fraction",

@@ -58,6 +58,7 @@ pub(super) async fn router(
         "session-no-freshness",
         "snake-casing",
         "session-cookie-cleanup",
+        "account-unlink-all",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = config.clone().base_path(&path);
@@ -91,6 +92,9 @@ pub(super) async fn router(
             config.account.store_account_cookie = true;
             config.account.store_state_strategy = alibi::config::OAuthStateStrategy::Cookie;
         }
+        if name == "account-unlink-all" {
+            config.account.account_linking.allow_unlinking_all = true;
+        }
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(crate::backend::store::<TestSchema>(
                 config,
@@ -109,6 +113,9 @@ pub(super) async fn router(
             .plugin(TwoFactorPlugin::new())
             .plugin(OrganizationPlugin::new())
             .plugin(alibi::plugins::open_api::OpenApiPlugin::new());
+        if name == "account-unlink-all" {
+            builder = builder.plugin(alibi::plugins::AccountManagementPlugin::new());
+        }
         if name.starts_with("session-secondary-") {
             builder = builder
                 .plugin(MultiSessionPlugin::new())

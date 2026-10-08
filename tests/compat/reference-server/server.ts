@@ -962,6 +962,7 @@ for (const name of [
   "session-deferred-no-refresh",
   "session-no-freshness",
   "session-cookie-cleanup",
+  "account-unlink-all",
 ]) {
   const path = `/__test/profiles/${name}/api/auth`;
   verificationProfiles.set(
@@ -994,6 +995,9 @@ for (const name of [
         disableSessionRefresh: name.endsWith("no-refresh") || name.startsWith("stateless-refresh-"),
         ...(name === "session-no-freshness" ? { freshAge: 0 } : {}),
       },
+      ...(name === "account-unlink-all"
+        ? { account: { ...authOptions.account, accountLinking: { allowUnlinkingAll: true } } }
+        : {}),
       ...(name === "session-cookie-cleanup"
         ? {
             account: {
