@@ -1,3 +1,4 @@
+mod account_linking_profiles;
 use serde_json::{Value, json};
 use axum::http::StatusCode;
 mod additional_field_models;
@@ -833,6 +834,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .await?;
 
+    let account_linking_router = account_linking_profiles::router(
+        &config,
+        database.clone(),
+        || {
+            mock_oauth_plugin(
+                port,
+                social_profile.clone(),
+                social_id_token_valid.clone(),
+                oauth_refresh_mode.clone(),
+            )
+        },
+    )
+    .await?;
     let verification_profile_router =
         verification_profiles::router(&config, database.clone(), verification_outbox.clone())
             .await?;
@@ -2169,6 +2183,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(invitation_acceptance_router)
         .merge(invitation_lifecycle_router)
         .merge(verification_profile_router)
+        .merge(account_linking_router)
         .merge(session_profile_router)
         .merge(bearer_router)
         .merge(captcha_router)
