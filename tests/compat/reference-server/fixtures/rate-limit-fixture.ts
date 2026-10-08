@@ -31,6 +31,28 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
       return count;
     },
   };
+  const failureEvents: string[] = [];
+  let failureMode = "normal";
+  const failureStorage: NonNullable<BetterAuthOptions["secondaryStorage"]> = {
+    async get(key) {
+      failureEvents.push("get");
+      return secondary.get(key);
+    },
+    async set(key, value, ttl) {
+      failureEvents.push("set");
+      return secondary.set(key, value, ttl ?? 60);
+    },
+    async delete(key) {
+      failureEvents.push("delete");
+      return secondary.delete(key);
+    },
+  };
+  const failingIncrement = async (key: string, ttl?: number) => {
+    failureEvents.push("increment");
+    if (failureMode === "throws") throw new Error("Application counter unavailable");
+    return secondary.increment(key, ttl ?? 60);
+  };
+  failureStorage.increment = failingIncrement;
   const customRows = new Map<string, { count: number; lastRequest: number }>();
   let customFailure = false;
   const customStorage = {
@@ -60,6 +82,7 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
       "database-second",
       "secondary-a",
       "secondary-b",
+      "secondary-failure",
       "concurrent-memory",
       "concurrent-secondary-a",
       "concurrent-secondary-b",
@@ -71,7 +94,7 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
           ...base,
           plugins: (base.plugins ?? []).filter((plugin) => plugin.id === "email-otp"),
           basePath: `/__test/profiles/${profile}/api/auth`,
-          ...(name.includes("secondary") ? { secondaryStorage: secondary } : {}),
+          ...(name.includes("secondary") ? { secondaryStorage: name === "secondary-failure" ? failureStorage : secondary } : {}),
           ...(name.startsWith("concurrent-")
             ? {
                 database: concurrentDatabase,
@@ -89,6 +112,16 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
             ...(name.startsWith("database-") ? { customRules: { "/get-session": { window: 1, max: 2 } } } : {}),
             ...(name.includes("secondary") || name.startsWith("custom")
               ? { customRules: { "/get-session": { window: 1, max: 2 }, "/list-sessions": false } }
+              : {}),
+            ...(name === "secondary-failure"
+              ? {
+                  customRules: {
+                    "/sign-up/email": (request: Request) =>
+                      request.headers.get("x-rate-bypass") === "yes"
+                        ? false
+                        : { window: 60, max: 2 },
+                  },
+                }
               : {}),
             ...(name.startsWith("concurrent-")
               ? { customRules: { "/sign-up/email": { window: 60, max: 3 } } }
@@ -122,6 +155,15 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
   return {
     async handle(request: Request) {
       const url = new URL(request.url);
+      if (url.pathname === "/__test/rate-limit-secondary/failure") {
+        if (request.method === "POST") {
+          failureMode = (await request.json()).mode;
+          if (failureMode === "missing") delete failureStorage.increment;
+          else failureStorage.increment = failingIncrement;
+          failureEvents.length = 0;
+        }
+        return Response.json({ events: failureEvents.splice(0) });
+      }
       if (url.pathname === "/__test/rate-limit-custom/control") {
         if (request.method === "POST") customFailure = (await request.json()).failure;
         return Response.json({

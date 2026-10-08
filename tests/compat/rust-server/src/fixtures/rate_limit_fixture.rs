@@ -12,6 +12,108 @@ use alibi_seaorm::DatabaseConnection;
 use axum::Router;
 use std::{sync::Arc, time::Duration};
 
+#[derive(Clone)]
+struct CounterApplication {
+    cache: Arc<alibi_core::MemoryCacheAdapter>,
+    mode: Arc<std::sync::Mutex<String>>,
+    events: Arc<std::sync::Mutex<Vec<String>>>,
+}
+impl CounterApplication {
+    fn event(&self, name: &str) {
+        self.events.lock().unwrap().push(name.to_owned());
+    }
+}
+struct GetSetOnly(CounterApplication);
+struct RecoverableCounter(CounterApplication);
+// The first adapter genuinely inherits the public unsupported-increment default.
+#[async_trait::async_trait]
+impl alibi_core::CacheAdapter for GetSetOnly {
+    async fn set(&self, key: &str, value: &str, ttl: chrono::Duration) -> AuthResult<()> {
+        self.0.event("set");
+        self.0.cache.set(key, value, ttl).await
+    }
+    async fn get(&self, key: &str) -> AuthResult<Option<String>> {
+        self.0.event("get");
+        self.0.cache.get(key).await
+    }
+    async fn delete(&self, key: &str) -> AuthResult<()> {
+        self.0.event("delete");
+        self.0.cache.delete(key).await
+    }
+    async fn exists(&self, key: &str) -> AuthResult<bool> {
+        self.0.cache.exists(key).await
+    }
+    async fn expire(&self, key: &str, ttl: chrono::Duration) -> AuthResult<()> {
+        self.0.cache.expire(key, ttl).await
+    }
+    async fn clear(&self) -> AuthResult<()> {
+        self.0.cache.clear().await
+    }
+}
+#[async_trait::async_trait]
+impl alibi_core::CacheAdapter for RecoverableCounter {
+    async fn set(&self, key: &str, value: &str, ttl: chrono::Duration) -> AuthResult<()> {
+        self.0.event("set");
+        self.0.cache.set(key, value, ttl).await
+    }
+    async fn get(&self, key: &str) -> AuthResult<Option<String>> {
+        self.0.event("get");
+        self.0.cache.get(key).await
+    }
+    async fn delete(&self, key: &str) -> AuthResult<()> {
+        self.0.event("delete");
+        self.0.cache.delete(key).await
+    }
+    async fn exists(&self, key: &str) -> AuthResult<bool> {
+        self.0.cache.exists(key).await
+    }
+    async fn expire(&self, key: &str, ttl: chrono::Duration) -> AuthResult<()> {
+        self.0.cache.expire(key, ttl).await
+    }
+    async fn clear(&self) -> AuthResult<()> {
+        self.0.cache.clear().await
+    }
+
+    async fn increment(&self, key: &str, ttl: Duration) -> AuthResult<f64> {
+        let mode = self.0.mode.lock().unwrap().clone();
+        if mode == "missing" {
+            return GetSetOnly(self.0.clone()).increment(key, ttl).await;
+        }
+        self.0.event("increment");
+        if mode == "throws" {
+            return Err(alibi::AuthError::internal(
+                "Application counter unavailable",
+            ));
+        }
+        self.0.cache.increment(key, ttl).await
+    }
+}
+#[derive(Debug)]
+struct SignupQuota;
+#[async_trait::async_trait]
+impl RateLimitResolver for SignupQuota {
+    async fn resolve(
+        &self,
+        request: &alibi_core::AuthRequest,
+        _: &EndpointRateLimit,
+    ) -> AuthResult<Option<EndpointRateLimit>> {
+        Ok(
+            if request
+                .headers
+                .get("x-rate-bypass")
+                .is_some_and(|v| v == "yes")
+            {
+                None
+            } else {
+                Some(EndpointRateLimit {
+                    max_requests: 2.0,
+                    window_seconds: 60.0,
+                })
+            },
+        )
+    }
+}
+
 #[derive(Debug)]
 struct HeaderQuota;
 #[async_trait::async_trait]
@@ -94,6 +196,11 @@ pub(crate) async fn router(
     }));
     let custom = Arc::new(CustomQuota::default());
     let cache = Arc::new(alibi_core::MemoryCacheAdapter::new());
+    let application = CounterApplication {
+        cache: Arc::new(alibi_core::MemoryCacheAdapter::new()),
+        mode: Arc::new(std::sync::Mutex::new("normal".to_owned())),
+        events: Arc::new(std::sync::Mutex::new(Vec::new())),
+    };
     for name in [
         "ordered",
         "default",
@@ -103,6 +210,7 @@ pub(crate) async fn router(
         "database-second",
         "secondary-a",
         "secondary-b",
+        "secondary-failure",
         "concurrent-memory",
         "concurrent-secondary-a",
         "concurrent-secondary-b",
@@ -134,6 +242,16 @@ pub(crate) async fn router(
             limits = limits.endpoint("/get-session", Duration::from_secs(1), 2);
             if name == "custom" {limits = limits.storage(custom.clone());}
         }
+        if name == "secondary-failure" {
+            limits = limits
+                .storage(Arc::new(alibi_core::CacheRateLimitStorage::new(Arc::new(
+                    RecoverableCounter(application.clone()),
+                ))))
+                .rule(
+                    "/sign-up/email",
+                    RateLimitRule::Dynamic(Arc::new(SignupQuota)),
+                );
+        }
         if name == "ordered" {
             limits = limits
                 .endpoint("/sign-up/*", Duration::from_secs(60), 2)
@@ -159,6 +277,26 @@ pub(crate) async fn router(
         let auth = Arc::new(builder.build().await?);
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
+    let read_application = application.clone();
+    router = router.route(
+        "/__test/rate-limit-secondary/failure",
+        axum::routing::get(move || {
+            let app = read_application.clone();
+            async move {
+                axum::Json(
+                    serde_json::json!({"events":std::mem::take(&mut *app.events.lock().unwrap())}),
+                )
+            }
+        })
+        .post(move |axum::Json(body): axum::Json<serde_json::Value>| {
+            let app = application.clone();
+            async move {
+                *app.mode.lock().unwrap() = body["mode"].as_str().unwrap().to_owned();
+                app.events.lock().unwrap().clear();
+                axum::Json(serde_json::json!({"events":[]}))
+            }
+        }),
+    );
     router = router.route("/__test/rate-limit-custom/control", axum::routing::get({let custom=custom.clone();move || {let custom=custom.clone();async move {
         let rows=custom.rows.lock().unwrap().iter().map(|(key,(count,last))| serde_json::json!({"key":key,"count":count,"lastRequest":chrono::DateTime::from_timestamp_millis(*last).unwrap().to_rfc3339_opts(chrono::SecondsFormat::Millis,true)})).collect::<Vec<_>>();
         axum::Json(serde_json::json!({"failure":custom.failure.load(std::sync::atomic::Ordering::SeqCst),"rows":rows}))
