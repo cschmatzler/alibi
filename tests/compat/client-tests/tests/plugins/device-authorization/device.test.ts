@@ -1235,3 +1235,146 @@ compatScenario(
   },
   ["POST /device/token"],
 );
+
+compatScenario(
+  "device generators retry both unique collisions and bound exhaustion without replacing grants",
+  async (ctx) => {
+    const observations = [];
+    for (const mode of ["retry", "exhaustion"] as const) {
+      const profile = `device-collision-${mode}` as const;
+      const client = deviceActor(ctx, profile, profile);
+      const generatorState = async () => {
+        const response = await fetch(
+          `${ctx.baseURL}/__test/device-generator-state?clientId=${profile}`,
+        );
+        expect(response.status).toBe(200);
+        return (await response.json()) as {
+          events: { kind: string; value: string }[];
+          grants: {
+            deviceCode: string;
+            userCode: string;
+            userId: string | null;
+            status: string;
+            clientId: string;
+            scope: string | null;
+          }[];
+        };
+      };
+      await generatorState();
+      const signup = await client.signUp.email({
+        email: ctx.uniqueEmail(profile),
+        password: "password123",
+        name: "Collision Owner",
+      });
+      expect(signup.error).toBeNull();
+      const first = await client.device.code({ client_id: profile, scope: "original-scope" });
+      expect(first.error).toBeNull();
+      expect(first.data).not.toBeNull();
+      const original = deviceState.parse(
+        await ctx.readDeviceState({ deviceCode: first.data!.device_code }),
+      );
+      const second = await client.device.code({ client_id: profile, scope: "later-scope" });
+      const third =
+        mode === "retry"
+          ? await client.device.code({ client_id: profile, scope: "third-scope" })
+          : null;
+      expect(await ctx.readDeviceState({ deviceCode: first.data!.device_code })).toEqual(original);
+      const state = await generatorState();
+      const expectedPairs: [string, string][] =
+        mode === "retry"
+          ? [
+              ["retry-device-original", "retry-user-original"],
+              ["retry-device-later", "retry-user-later"],
+              ["retry-device-third", "retry-user-third"],
+            ]
+          : [["constant-device", "constant-user"]];
+      const attemptedPairs: [string, string][] =
+        mode === "retry"
+          ? [
+              expectedPairs[0]!,
+              ["retry-device-original", "retry-user-device-collision"],
+              ["retry-device-user-collision", "retry-user-original"],
+              expectedPairs[1]!,
+              expectedPairs[2]!,
+            ]
+          : Array.from({ length: 4 }, () => expectedPairs[0]!);
+      expect(state.events).toEqual(
+        attemptedPairs.flatMap(([device, user]) => [
+          { kind: "device", value: device },
+          { kind: "user", value: user },
+        ]),
+      );
+      expect(state.grants).toEqual(
+        expectedPairs
+          .map(([deviceCode, userCode], index) => ({
+            deviceCode,
+            userCode,
+            userId: null,
+            status: "pending",
+            clientId: profile,
+            scope: ["original-scope", "later-scope", "third-scope"][index]!,
+          }))
+          .sort((a, b) => a.deviceCode!.localeCompare(b.deviceCode!)),
+      );
+      if (mode === "retry") {
+        expect(second.error).toBeNull();
+        expect(second.data).toMatchObject({
+          device_code: expectedPairs[1]![0],
+          user_code: expectedPairs[1]![1],
+        });
+        expect(third?.error).toBeNull();
+        expect(third?.data).toMatchObject({
+          device_code: expectedPairs[2]![0],
+          user_code: expectedPairs[2]![1],
+        });
+        expect(await ctx.readDeviceState({ deviceCode: "retry-device-user-collision" })).toBeNull();
+      } else {
+        expect(second.data).toBeNull();
+        expect(second.error).toMatchObject({
+          status: 500,
+          error: "server_error",
+          error_description: "Failed to generate a unique device code",
+        });
+      }
+      const redemptions = [];
+      for (const [deviceCode, userCode] of expectedPairs) {
+        const reviewed = await client.device({ query: { user_code: userCode! } });
+        expect(reviewed.error).toBeNull();
+        const approved = await client.device.approve({ userCode: userCode! });
+        expect(approved.data).toEqual({ success: true });
+        const redeemed = await client.device.token(tokenRequest(deviceCode!, profile));
+        expect(redeemed.error).toBeNull();
+        expect(redeemed.data?.access_token).toBeString();
+        expect(await ctx.readDeviceState({ deviceCode: deviceCode! })).toBeNull();
+        const bearer = await ctx
+          .actor(`${profile}-${deviceCode}`, "bearer-default")
+          .client.getSession({
+            fetchOptions: { headers: { authorization: `Bearer ${redeemed.data!.access_token}` } },
+          });
+        expect(bearer.data?.user.id).toBe(signup.data!.user.id);
+        expect(bearer.data?.session.token).toBe(redeemed.data!.access_token);
+        const replay = await client.device.token(tokenRequest(deviceCode!, profile));
+        expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
+        redemptions.push({ reviewed, approved, redeemed, bearer, replay });
+      }
+      const sessions = await client.listSessions();
+      expect(sessions.data).toHaveLength(expectedPairs.length + 1);
+      expect(sessions.data?.every((session) => session.userId === signup.data!.user.id)).toBe(true);
+      const consumed = await generatorState();
+      expect(consumed).toEqual({ events: [], grants: [] });
+      observations.push({
+        signup,
+        first,
+        original,
+        second,
+        third,
+        state,
+        redemptions,
+        sessions,
+        consumed,
+      });
+    }
+    return ctx.snapshot(observations);
+  },
+  ["POST /device/code", "GET /device", "POST /device/approve", "POST /device/token"],
+);
