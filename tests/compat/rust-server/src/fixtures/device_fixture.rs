@@ -1,21 +1,19 @@
 //! Trusted fixture controls for persisted OAuth device grants.
 use crate::TestSchema;
-use axum::{
-    Json, Router,
-    extract::Query,
-    http::StatusCode,
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
-use alibi::plugins::{
-    DeviceAuthorizationPlugin, EmailPasswordPlugin, SessionManagementPlugin,
-};
+use alibi::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, BetterAuth};
 use alibi_seaorm::{
     DatabaseConnection,
     sea_orm::{ColumnTrait, EntityTrait, QueryFilter, sea_query::Expr},
     store::entities::device_code,
+};
+use axum::{
+    Json, Router,
+    extract::Query,
+    http::StatusCode,
+    routing::{get, post},
 };
 use chrono::Duration;
 use chrono::{DateTime, Utc};
@@ -37,10 +35,15 @@ struct DeviceExpiry {
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct GeneratorSelector { client_id: String }
+struct GeneratorSelector {
+    client_id: String,
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DeviceOwner { device_code: String, user_id: String }
+struct DeviceOwner {
+    device_code: String,
+    user_id: String,
+}
 pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<TestSchema>>> {
     let read_database = database.clone();
 
@@ -104,17 +107,52 @@ pub(crate) async fn profiles(
     ] {
         let mut plugin = DeviceAuthorizationPlugin::new();
         match name {
-            "device-grant" => { plugin = plugin.interval(Duration::zero()).grant(super::application_device_grant_fixture::Grant); }
+            "device-grant" => {
+                plugin = plugin
+                    .interval(Duration::zero())
+                    .grant(super::application_device_grant_fixture::Grant);
+            }
             "device-collision-retry" | "device-collision-exhaustion" => {
                 let device_index = Arc::new(std::sync::atomic::AtomicUsize::new(0));
                 let user_index = Arc::new(std::sync::atomic::AtomicUsize::new(0));
                 let generate = move |kind: &str, index: usize| {
-                    let values = if kind == "device" { ["retry-device-original", "retry-device-original", "retry-device-user-collision", "retry-device-later", "retry-device-third"] } else { ["retry-user-original", "retry-user-device-collision", "retry-user-original", "retry-user-later", "retry-user-third"] };
-                    let value = if name == "device-collision-exhaustion" { format!("constant-{kind}") } else { values[index].to_owned() };
-                    GENERATOR_EVENTS.lock().unwrap().push(json!({"kind":kind,"value":value}));
+                    let values = if kind == "device" {
+                        [
+                            "retry-device-original",
+                            "retry-device-original",
+                            "retry-device-user-collision",
+                            "retry-device-later",
+                            "retry-device-third",
+                        ]
+                    } else {
+                        [
+                            "retry-user-original",
+                            "retry-user-device-collision",
+                            "retry-user-original",
+                            "retry-user-later",
+                            "retry-user-third",
+                        ]
+                    };
+                    let value = if name == "device-collision-exhaustion" {
+                        format!("constant-{kind}")
+                    } else {
+                        values[index].to_owned()
+                    };
+                    GENERATOR_EVENTS
+                        .lock()
+                        .unwrap()
+                        .push(json!({"kind":kind,"value":value}));
                     value
                 };
-                plugin = plugin.generate_device_code_async_with(move || { let index = device_index.fetch_add(1,std::sync::atomic::Ordering::SeqCst); async move { Ok(generate("device",index)) } }).generate_user_code_async_with(move || { let index = user_index.fetch_add(1,std::sync::atomic::Ordering::SeqCst); async move { Ok(generate("user",index)) } });
+                plugin = plugin
+                    .generate_device_code_async_with(move || {
+                        let index = device_index.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        async move { Ok(generate("device", index)) }
+                    })
+                    .generate_user_code_async_with(move || {
+                        let index = user_index.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        async move { Ok(generate("user", index)) }
+                    });
             }
             "device-callback-success" => {
                 let callback_database = database.clone();
@@ -127,8 +165,12 @@ pub(crate) async fn profiles(
                     }
                 });
             }
-            "device-length-507" => { plugin = plugin.user_code_length(4); }
-            "device-length-506" => { plugin = plugin.device_code_length(16); }
+            "device-length-507" => {
+                plugin = plugin.user_code_length(4);
+            }
+            "device-length-506" => {
+                plugin = plugin.device_code_length(16);
+            }
             "device-custom" => {
                 plugin = plugin
                     .generate_device_code_async_with(|| async {
@@ -198,21 +240,25 @@ pub(crate) async fn profiles(
         let path = format!("/__test/profiles/{name}/api/auth");
         let config = base.clone().base_path(&path);
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
-                .store(crate::backend::store::<TestSchema>(
-                    config,
-                    database.clone(),
-                ))
-                .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(
-                    EmailPasswordPlugin::new()
-                        .enable_signup(true)
-                        .enable_username(false),
-                )
-                .plugin(SessionManagementPlugin::new())
+            .store(crate::backend::store::<TestSchema>(
+                config,
+                database.clone(),
+            ))
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(
+                EmailPasswordPlugin::new()
+                    .enable_signup(true)
+                    .enable_username(false),
+            )
+            .plugin(SessionManagementPlugin::new())
             .plugin(alibi::plugins::open_api::OpenApiPlugin::new())
-                .plugin(plugin);
-        if name=="device-grant" {builder=builder.plugin(super::application_device_grant_fixture::ApplicationToken(database.clone()));}
-        let auth=Arc::new(builder.build().await?);
+            .plugin(plugin);
+        if name == "device-grant" {
+            builder = builder.plugin(super::application_device_grant_fixture::ApplicationToken(
+                database.clone(),
+            ));
+        }
+        let auth = Arc::new(builder.build().await?);
         let routes: Router<Arc<BetterAuth<TestSchema>>> =
             auth.clone().axum_router().with_state(auth);
         router = router.nest(&path, routes);

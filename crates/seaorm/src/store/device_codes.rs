@@ -14,44 +14,126 @@ impl<S> DeviceCodeStore for SeaOrmStore<S>
 where
     S: AuthSchema + Send + Sync,
 {
-    async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode> {self.create_device_code_with_connection(&self.scoped_connection(), input).await}
-    async fn create_device_code_with_fields(&self, input: CreateDeviceCode, fields: serde_json::Map<String, serde_json::Value>) -> AuthResult<DeviceCode> {
-        if fields.is_empty() {return self.create_device_code(input).await;}
+    async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode> {
+        self.create_device_code_with_connection(self.scoped_connection(), input)
+            .await
+    }
+    async fn create_device_code_with_fields(
+        &self,
+        input: CreateDeviceCode,
+        fields: serde_json::Map<String, serde_json::Value>,
+    ) -> AuthResult<DeviceCode> {
+        if fields.is_empty() {
+            return self.create_device_code(input).await;
+        }
         use sea_orm::{ConnectionTrait, Statement, TransactionTrait};
-        let transaction = &self.scoped_connection().begin().await.map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin().await.map_err(map_db_err)?;
         _ = transaction.execute_unprepared("CREATE TABLE IF NOT EXISTS device_code_fields (device_code_id TEXT PRIMARY KEY REFERENCES device_code(id) ON DELETE CASCADE, fields TEXT NOT NULL)").await.map_err(map_db_err)?;
-        let row = self.create_device_code_with_connection(&transaction, input).await?;
+        let row = self
+            .create_device_code_with_connection(&transaction, input)
+            .await?;
         let backend = transaction.get_database_backend();
-        let sql = if backend == sea_orm::DbBackend::Postgres {"INSERT INTO device_code_fields (device_code_id, fields) VALUES ($1, $2)"} else {"INSERT INTO device_code_fields (device_code_id, fields) VALUES (?, ?)"};
-        _ = transaction.execute_raw(Statement::from_sql_and_values(backend, sql, [row.id.clone().into(), serde_json::to_string(&fields)?.into()])).await.map_err(map_db_err)?;
+        let sql = if backend == sea_orm::DbBackend::Postgres {
+            "INSERT INTO device_code_fields (device_code_id, fields) VALUES ($1, $2)"
+        } else {
+            "INSERT INTO device_code_fields (device_code_id, fields) VALUES (?, ?)"
+        };
+        _ = transaction
+            .execute_raw(Statement::from_sql_and_values(
+                backend,
+                sql,
+                [
+                    row.id.clone().into(),
+                    serde_json::to_string(&fields)?.into(),
+                ],
+            ))
+            .await
+            .map_err(map_db_err)?;
         transaction.commit().await.map_err(map_db_err)?;
         Ok(row)
     }
-    async fn device_code_fields(&self, id: &str) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
-        if !sea_orm_migration::SchemaManager::new(&self.scoped_connection()).has_table("device_code_fields").await.map_err(map_db_err)? {return Ok(serde_json::Map::new());}
+    async fn device_code_fields(
+        &self,
+        id: &str,
+    ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+        if !self
+            .scoped_connection()
+            .has_table("device_code_fields")
+            .await
+            .map_err(map_db_err)?
+        {
+            return Ok(serde_json::Map::new());
+        }
         use sea_orm::{ConnectionTrait, Statement};
-        let backend=&self.scoped_connection().get_database_backend();
-        let sql=if backend==sea_orm::DbBackend::Postgres {"SELECT fields FROM device_code_fields WHERE device_code_id = $1"} else {"SELECT fields FROM device_code_fields WHERE device_code_id = ?"};
-        let row=&self.scoped_connection().query_one_raw(Statement::from_sql_and_values(backend,sql,[id.to_owned().into()])).await.map_err(map_db_err)?;
-        row.map(|row| row.try_get::<String>("", "fields").map_err(map_db_err).and_then(|fields| serde_json::from_str(&fields).map_err(Into::into))).transpose().map(Option::unwrap_or_default)
+        let backend = self.scoped_connection().get_database_backend();
+        let sql = if backend == sea_orm::DbBackend::Postgres {
+            "SELECT fields FROM device_code_fields WHERE device_code_id = $1"
+        } else {
+            "SELECT fields FROM device_code_fields WHERE device_code_id = ?"
+        };
+        let row = self
+            .scoped_connection()
+            .query_one_raw(Statement::from_sql_and_values(
+                backend,
+                sql,
+                [id.to_owned().into()],
+            ))
+            .await
+            .map_err(map_db_err)?;
+        row.map(|row| {
+            row.try_get::<String>("", "fields")
+                .map_err(map_db_err)
+                .and_then(|fields| serde_json::from_str(&fields).map_err(Into::into))
+        })
+        .transpose()
+        .map(Option::unwrap_or_default)
     }
-    async fn consume_device_code(&self, id: &str, status: &str, ownership: &serde_json::Map<String, serde_json::Value>) -> AuthResult<Option<DeviceCode>> {
-        use sea_orm::{ConnectionTrait, Statement};
-        let backend=&self.scoped_connection().get_database_backend();
+    async fn consume_device_code(
+        &self,
+        id: &str,
+        status: &str,
+        ownership: &serde_json::Map<String, serde_json::Value>,
+    ) -> AuthResult<Option<DeviceCode>> {
+        use sea_orm::Statement;
+        let backend = self.scoped_connection().get_database_backend();
         let mut values: Vec<sea_orm::Value> = Vec::new();
-        let mut bind=|value: String| {values.push(value.into()); if backend==sea_orm::DbBackend::Postgres {format!("${}",values.len())} else {"?".into()}};
-        let mut sql=format!("DELETE FROM device_code WHERE id = {} AND status = {}", bind(id.into()), bind(status.into()));
-        for (field,value) in ownership {
+        let mut bind = |value: String| {
+            values.push(value.into());
+            if backend == sea_orm::DbBackend::Postgres {
+                format!("${}", values.len())
+            } else {
+                "?".into()
+            }
+        };
+        let mut sql = format!(
+            "DELETE FROM device_code WHERE id = {} AND status = {}",
+            bind(id.into()),
+            bind(status.into())
+        );
+        for (field, value) in ownership {
             sql.push_str(" AND EXISTS (SELECT 1 FROM device_code_fields WHERE device_code_id = device_code.id AND ");
             if backend == sea_orm::DbBackend::Postgres {
-                sql.push_str(&format!("CAST(fields AS JSONB) -> {} = CAST({} AS JSONB)",bind(field.clone()),bind(value.to_string())));
+                sql.push_str(&format!(
+                    "CAST(fields AS JSONB) -> {} = CAST({} AS JSONB)",
+                    bind(field.clone()),
+                    bind(value.to_string())
+                ));
             } else {
-                sql.push_str(&format!("json_extract(fields, {}) IS json_extract({}, '$')",bind(format!("$.{}",serde_json::to_string(field)?)),bind(value.to_string())));
+                sql.push_str(&format!(
+                    "json_extract(fields, {}) IS json_extract({}, '$')",
+                    bind(format!("$.{}", serde_json::to_string(field)?)),
+                    bind(value.to_string())
+                ));
             }
             sql.push(')');
         }
         sql.push_str(" RETURNING *");
-        Entity::find().from_raw_sql(Statement::from_sql_and_values(backend,sql,values)).one(&self.scoped_connection()).await.map_err(map_db_err).map(|row|row.as_ref().map(DeviceCode::from))
+        Entity::find()
+            .from_raw_sql(Statement::from_sql_and_values(backend, sql, values))
+            .one(self.scoped_connection())
+            .await
+            .map_err(map_db_err)
+            .map(|row| row.as_ref().map(DeviceCode::from))
     }
 
     async fn get_device_code_by_device_code(
@@ -167,7 +249,11 @@ where
 }
 
 impl<S: AuthSchema> SeaOrmStore<S> {
-    async fn create_device_code_with_connection<C: sea_orm::ConnectionTrait>(&self, connection: &C, input: CreateDeviceCode) -> AuthResult<DeviceCode> {
+    async fn create_device_code_with_connection<C: sea_orm::ConnectionTrait>(
+        &self,
+        connection: &C,
+        input: CreateDeviceCode,
+    ) -> AuthResult<DeviceCode> {
         ActiveModel {
             id: Set(Uuid::new_v4().to_string()),
             device_code: Set(input.device_code),
@@ -185,5 +271,4 @@ impl<S: AuthSchema> SeaOrmStore<S> {
         .map(|model| DeviceCode::from(&model))
         .map_err(map_db_err)
     }
-
 }

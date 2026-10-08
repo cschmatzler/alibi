@@ -151,7 +151,13 @@ compatScenario(
       approve,
       standalone,
       completed,
-      after: { ...after, receipts: after.receipts.map((receipt: any) => ({ ...receipt, rowId: { id: receipt.rowId } })) },
+      after: {
+        ...after,
+        receipts: after.receipts.map((receipt: any) => ({
+          ...receipt,
+          rowId: { id: receipt.rowId },
+        })),
+      },
       replay,
     });
   },

@@ -5,8 +5,10 @@ impl DeviceAuthorizationPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        if let Some(grant)=&self.config.grant {
-            return self.handle_application_issuance(req,ctx,grant.as_ref()).await;
+        if let Some(grant) = &self.config.grant {
+            return self
+                .handle_application_issuance(req, ctx, grant.as_ref())
+                .await;
         }
         let body: DeviceCodeRequest = match parse_device_body(req, DeviceRequestKind::Issuance)
             .and_then(deserialize_device_body)
@@ -93,19 +95,24 @@ impl DeviceAuthorizationPlugin {
         let can_review_request = user_id.is_some() && device_code.user_id == user_id;
 
         let mut response = serde_json::to_value(DeviceVerifyResponse {
-                user_code,
-                status: device_code.status.clone(),
-                client_id: can_review_request.then_some(device_code.client_id.clone()),
-                scope: can_review_request.then_some(device_code.scope.clone()),
-            })?;
+            user_code,
+            status: device_code.status.clone(),
+            client_id: can_review_request.then_some(device_code.client_id.clone()),
+            scope: can_review_request.then_some(device_code.scope.clone()),
+        })?;
         if can_review_request {
-            if let Some(grant)=&self.config.grant {
-                let fields=ctx.database.device_code_fields(&device_code.id).await?;
-                let record=DeviceGrantRecord {device_code, fields};
-                if let Some(object)=response.as_object_mut() {object.extend(grant.verification_context(&record).await?);}
+            if let Some(grant) = &self.config.grant {
+                let fields = ctx.database.device_code_fields(&device_code.id).await?;
+                let record = DeviceGrantRecord {
+                    device_code,
+                    fields,
+                };
+                if let Some(object) = response.as_object_mut() {
+                    object.extend(grant.verification_context(&record).await?);
+                }
             }
         }
-        AuthResponse::json(200,&response).map_err(AuthError::from)
+        AuthResponse::json(200, &response).map_err(AuthError::from)
     }
 
     pub(in crate::plugins::device_authorization) async fn handle_device_approve(
