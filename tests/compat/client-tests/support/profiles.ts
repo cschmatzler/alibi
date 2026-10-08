@@ -127,6 +127,7 @@ export const FIXTURE_PROFILES = [
       "prompt-none",
       "prompt-consent",
       "prompt-empty",
+      "pkce-disabled",
       "configured",
       "disabled-configured",
       "mapped-async",
