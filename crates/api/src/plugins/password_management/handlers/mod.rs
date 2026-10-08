@@ -314,6 +314,7 @@ pub(in crate::plugins) async fn verify_password_core(
     password_utils::verify_password(hasher, &body.password, &stored_hash)
         .await
         .map_err(|error| match error {
+            error if error.status_code() != 500 => error,
             AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => {
                 error
             }
