@@ -83,8 +83,14 @@ impl<B: Backend> Fixture<B> {
         let (production_connection, _) = production_db.migrated::<B>(SECRET).await.unwrap();
         let enabled = std::env::var_os("OAUTH_PROXY_BASELINE").is_none();
         let preview = build::<B>(PREVIEW, &issuer, &preview_connection, enabled, options).await;
-        let production =
-            build::<B>(PRODUCTION, &issuer, &production_connection, enabled, options).await;
+        let production = build::<B>(
+            PRODUCTION,
+            &issuer,
+            &production_connection,
+            enabled,
+            options,
+        )
+        .await;
         Self {
             preview,
             production,
@@ -108,7 +114,10 @@ impl<B: Backend> Fixture<B> {
         extra: Value,
     ) -> (url::Url, Value, String) {
         let mut input = json!({"provider":"gitlab", "callbackURL":format!("{PREVIEW}/complete?application=kept"), "newUserCallbackURL":format!("{PREVIEW}/new-owner"), "errorCallbackURL":format!("{PREVIEW}/failure"), "disableRedirect":true, "additionalData":{"serverContext":{"anonymousUserId":"forged-foreign"},"application":{"kept":true}}});
-        input.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+        input
+            .as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
         let issued = request(&self.preview, endpoint, Some(input), cookie).await;
         assert_eq!(issued.status, 200);
         let body: Value = serde_json::from_slice(&issued.body).unwrap();
@@ -129,7 +138,10 @@ impl<B: Backend> Fixture<B> {
         );
         let raw = self
             .preview_db
-            .text("SELECT value FROM verifications WHERE identifier LIKE 'auth-state:%'", &[])
+            .text(
+                "SELECT value FROM verifications WHERE identifier LIKE 'auth-state:%'",
+                &[],
+            )
             .await
             .unwrap();
         let state: Value = match raw {
@@ -310,7 +322,10 @@ fn cipher(secret: &str, purpose: &str) -> chacha20poly1305::XChaCha20Poly1305 {
     hkdf::Hkdf::<Sha256>::new(Some(b"better-auth:oauth-encryption:v1"), secret.as_bytes())
         .expand(format!("better-auth:{purpose}:v1").as_bytes(), &mut key)
         .unwrap();
-    let hex = key.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    let hex = key
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
     chacha20poly1305::XChaCha20Poly1305::new(&Sha256::digest(hex.as_bytes()))
 }
 
@@ -336,7 +351,10 @@ fn open(sealed: &str, secret: &str, purpose: &str) -> Value {
         .collect::<Vec<_>>();
     let (nonce, ciphertext) = bytes.split_at(24);
     let plain = cipher(secret, purpose)
-        .decrypt(&chacha20poly1305::XNonce::try_from(nonce).unwrap(), ciphertext)
+        .decrypt(
+            &chacha20poly1305::XNonce::try_from(nonce).unwrap(),
+            ciphertext,
+        )
         .unwrap();
     serde_json::from_slice(&plain).unwrap()
 }
@@ -624,18 +642,48 @@ mod tests {
         };
         let cases: Vec<(&str, Option<String>)> = vec![
             ("missing_profile", None),
-            ("invalid_payload", Some(seal("not json", PROXY_SECRET, "oauth-proxy-profile"))),
-            ("invalid_payload", Some(mutate(&|payload| payload["profile"] = json!("text")))),
-            ("invalid_payload", Some(mutate(&|payload| payload["scopes"] = json!([1])))),
-            ("invalid_payload", Some(mutate(&|payload| payload["errorURL"] = json!(5)))),
-            ("invalid_payload", Some(mutate(&|payload| payload["disableSignUp"] = json!("yes")))),
-            ("invalid_payload", Some(mutate(&|payload| payload["state"] = json!("")))),
-            ("invalid_payload", Some(mutate(&|payload| payload["userInfo"] = json!(null)))),
-            ("payload_expired", Some(mutate(&|payload| payload["timestamp"] = json!(1_000)))),
-            ("payload_expired", Some(mutate(&|payload| {
-                payload["timestamp"] = json!(chrono::Utc::now().timestamp_millis() + 60_000);
-            }))),
-            ("state_mismatch", Some(mutate(&|payload| payload["state"] = json!("unknown")))),
+            (
+                "invalid_payload",
+                Some(seal("not json", PROXY_SECRET, "oauth-proxy-profile")),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["profile"] = json!("text"))),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["scopes"] = json!([1]))),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["errorURL"] = json!(5))),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["disableSignUp"] = json!("yes"))),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["state"] = json!(""))),
+            ),
+            (
+                "invalid_payload",
+                Some(mutate(&|payload| payload["userInfo"] = json!(null))),
+            ),
+            (
+                "payload_expired",
+                Some(mutate(&|payload| payload["timestamp"] = json!(1_000))),
+            ),
+            (
+                "payload_expired",
+                Some(mutate(&|payload| {
+                    payload["timestamp"] = json!(chrono::Utc::now().timestamp_millis() + 60_000);
+                })),
+            ),
+            (
+                "state_mismatch",
+                Some(mutate(&|payload| payload["state"] = json!("unknown"))),
+            ),
         ];
         for (error, profile) in cases {
             let response = request(
@@ -647,7 +695,9 @@ mod tests {
             .await;
             assert_eq!(response.status, 302, "{error}");
             assert!(
-                location(&response).as_str().contains(&format!("error={error}")),
+                location(&response)
+                    .as_str()
+                    .contains(&format!("error={error}")),
                 "{error}: {}",
                 location(&response)
             );
@@ -672,7 +722,9 @@ mod tests {
             let response = request(&fixture.production, &callback(&extra), None, None).await;
             assert_eq!(response.status, 302);
             assert!(
-                location(&response).as_str().contains(&format!("error={error}")),
+                location(&response)
+                    .as_str()
+                    .contains(&format!("error={error}")),
                 "{error}: {}",
                 location(&response)
             );
@@ -685,7 +737,9 @@ mod tests {
         let signup = request(
             &fixture.preview,
             "/api/auth/sign-up/email",
-            Some(json!({"email":"proxy-owner@fixture.test","name":"Owner","password":"password123"})),
+            Some(
+                json!({"email":"proxy-owner@fixture.test","name":"Owner","password":"password123"}),
+            ),
             None,
         )
         .await;
@@ -706,7 +760,10 @@ mod tests {
             .iter()
             .map(|account| account["provider_id"].as_str().unwrap().to_owned())
             .collect::<std::collections::BTreeSet<_>>();
-        assert_eq!(providers, ["credential".to_owned(), "gitlab".to_owned()].into());
+        assert_eq!(
+            providers,
+            ["credential".to_owned(), "gitlab".to_owned()].into()
+        );
         Ok(())
     }
 
@@ -744,15 +801,29 @@ mod tests {
             "{browser}; better-auth.dont_remember={}",
             alibi::utils::cookie_utils::sign_cookie_value("true", SECRET)
         );
-        let completed = request(&fixture.preview, &target(&bridge), None, Some(&dont_remember)).await;
+        let completed = request(
+            &fixture.preview,
+            &target(&bridge),
+            None,
+            Some(&dont_remember),
+        )
+        .await;
         assert_eq!(completed.status, 302);
-        assert_eq!(location(&completed).as_str(), &format!("{PREVIEW}/new-owner"));
+        assert_eq!(
+            location(&completed).as_str(),
+            &format!("{PREVIEW}/new-owner")
+        );
         let set_cookies = completed.headers.get_all("set-cookie").collect::<Vec<_>>();
-        assert!(set_cookies.iter().any(|cookie| cookie.starts_with("better-auth.dont_remember=")));
         assert!(
             set_cookies
                 .iter()
-                .any(|cookie| cookie.starts_with("better-auth.session_token=") && !cookie.contains("Max-Age"))
+                .any(|cookie| cookie.starts_with("better-auth.dont_remember="))
+        );
+        assert!(
+            set_cookies
+                .iter()
+                .any(|cookie| cookie.starts_with("better-auth.session_token=")
+                    && !cookie.contains("Max-Age"))
         );
         Ok(())
     }

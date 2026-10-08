@@ -5,8 +5,8 @@ use super::*;
 use crate::snapshot::Trace;
 use alibi::plugins::OAuthPlugin;
 use alibi::plugins::oauth::{
-    OAuthIdTokenVerifier, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler,
-    OAuthUserInfoRequest, OAuthUserInfoResponse,
+    OAuthIdTokenVerifier, OAuthProvider, OAuthUserInfo, OAuthUserInfoHandler, OAuthUserInfoRequest,
+    OAuthUserInfoResponse,
 };
 use alibi::plugins::{AccountManagementPlugin, EmailVerificationPlugin, SendVerificationEmail};
 use alibi::prelude::UserView;
@@ -83,7 +83,10 @@ struct Outbox(Mutex<Vec<String>>);
 #[async_trait::async_trait]
 impl SendVerificationEmail for Outbox {
     async fn send(&self, user: &UserView, _: &str, _: &str) -> alibi::AuthResult<()> {
-        self.0.lock().unwrap().push(user.email.clone().unwrap_or_default());
+        self.0
+            .lock()
+            .unwrap()
+            .push(user.email.clone().unwrap_or_default());
         Ok(())
     }
 }
@@ -239,7 +242,11 @@ async fn redirect_linking_outcomes<B: Backend>(db: Db) -> TestResult {
     *social.profile.fail.lock().unwrap() = false;
 
     let disabled = social
-        .auth::<B>(&connection, linking(|linking| linking.enabled = false), |_| {})
+        .auth::<B>(
+            &connection,
+            linking(|linking| linking.enabled = false),
+            |_| {},
+        )
         .await?;
     let (state, cookies) = authorize(
         &disabled,
@@ -289,11 +296,17 @@ async fn id_token_linking_outcomes<B: Backend>(db: Db) -> TestResult {
     *social.profile.valid_id_token.lock().unwrap() = true;
     social.profile.set("token-sub", "", true);
     trace.response("missing email", &link(&owner).await);
-    social.profile.set("token-sub", "token-owner@example.com", false);
+    social
+        .profile
+        .set("token-sub", "token-owner@example.com", false);
     trace.response("unverified", &link(&owner).await);
-    social.profile.set("token-sub", "elsewhere@example.com", true);
+    social
+        .profile
+        .set("token-sub", "elsewhere@example.com", true);
     trace.response("different email", &link(&owner).await);
-    social.profile.set("token-sub", "token-owner@example.com", true);
+    social
+        .profile
+        .set("token-sub", "token-owner@example.com", true);
     trace.response("linked", &link(&owner).await);
     trace.response("already linked", &link(&owner).await);
     trace.value("accounts", accounts(&auth, &owner).await);
@@ -311,7 +324,9 @@ async fn id_token_linking_outcomes<B: Backend>(db: Db) -> TestResult {
             |_| {},
         )
         .await?;
-    social.profile.set("trusted-sub", "token-other@example.com", false);
+    social
+        .profile
+        .set("trusted-sub", "token-other@example.com", false);
     trace.response(
         "trusted and updated",
         &Box::pin(updating.handle_request(request(
@@ -323,8 +338,7 @@ async fn id_token_linking_outcomes<B: Backend>(db: Db) -> TestResult {
     );
     trace.value(
         "updated user",
-        body(&call(&updating, request("/get-session", None, &other), 200).await)["user"]
-            .clone(),
+        body(&call(&updating, request("/get-session", None, &other), 200).await)["user"].clone(),
     );
 
     let disabled = social
@@ -414,7 +428,10 @@ async fn callback_protocol_outcomes<B: Backend>(db: Db) -> TestResult {
         .await
     };
 
-    trace.response("missing state", &callback(&auth, &[("code", "grant")], "").await);
+    trace.response(
+        "missing state",
+        &callback(&auth, &[("code", "grant")], "").await,
+    );
     trace.response(
         "unknown state",
         &callback(&auth, &[("code", "grant"), ("state", "unknown")], "").await,
@@ -439,10 +456,15 @@ async fn callback_protocol_outcomes<B: Backend>(db: Db) -> TestResult {
         .await,
     );
     let (state, cookies_3) = start(&auth).await;
-    trace.response("no code", &callback(&auth, &[("state", &state)], &cookies_3).await);
-    social
-        .provider
-        .respond(400, "application/json", json!({"error": "invalid_grant"}).to_string());
+    trace.response(
+        "no code",
+        &callback(&auth, &[("state", &state)], &cookies_3).await,
+    );
+    social.provider.respond(
+        400,
+        "application/json",
+        json!({"error": "invalid_grant"}).to_string(),
+    );
     let (state, cookies_4) = start(&auth).await;
     trace.response(
         "token failure",
@@ -453,7 +475,9 @@ async fn callback_protocol_outcomes<B: Backend>(db: Db) -> TestResult {
         "application/json",
         json!({"access_token": "provider-access", "token_type": "Bearer"}).to_string(),
     );
-    social.profile.set("callback-sub", "callback@example.com", true);
+    social
+        .profile
+        .set("callback-sub", "callback@example.com", true);
     let (state, cookies_5) = start(&auth).await;
     trace.response(
         "registered",
@@ -490,7 +514,10 @@ async fn callback_protocol_outcomes<B: Backend>(db: Db) -> TestResult {
     );
     let mut unknown = request("/callback/unknown", None, "");
     unknown.set_query_pairs([("code", "grant"), ("state", "x")]);
-    trace.response("unknown provider", &Box::pin(auth.handle_request(unknown)).await?);
+    trace.response(
+        "unknown provider",
+        &Box::pin(auth.handle_request(unknown)).await?,
+    );
     trace.assert("social/callback-protocol");
     B::close(connection).await
 }
@@ -511,7 +538,9 @@ async fn sign_in_policies<B: Backend>(db: Db) -> TestResult {
             |builder| builder.plugin(verification),
         )
         .await?;
-    social.profile.set("unverified-sub", "unverified@example.com", false);
+    social
+        .profile
+        .set("unverified-sub", "unverified@example.com", false);
     let sign_in = async |auth: &BetterAuth<B::Schema>| {
         let (state, cookies) = authorize(
             auth,
@@ -531,7 +560,9 @@ async fn sign_in_policies<B: Backend>(db: Db) -> TestResult {
             provider.disable_implicit_sign_up = true;
         })
         .await?;
-    social.profile.set("implicit-sub", "implicit@example.com", true);
+    social
+        .profile
+        .set("implicit-sub", "implicit@example.com", true);
     trace.response("implicit sign up disabled", &sign_in(&implicit).await);
     let (state, cookies) = authorize(
         &implicit,

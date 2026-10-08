@@ -74,7 +74,11 @@ async fn api_key_input_matrix<B: Backend>(db: Db) -> TestResult {
         vec![("limit", "-1")],
         vec![("offset", "NaN")],
         vec![("sortBy", "name"), ("sortDirection", "sideways")],
-        vec![("sortBy", "metadata"), ("sortDirection", "desc"), ("limit", "1")],
+        vec![
+            ("sortBy", "metadata"),
+            ("sortDirection", "desc"),
+            ("limit", "1"),
+        ],
         vec![("sortBy", "remaining"), ("sortDirection", "asc")],
     ] {
         let mut request = request("/api-key/list", None, &owner);
@@ -101,11 +105,15 @@ async fn api_key_session_outcomes<B: Backend>(db: Db) -> TestResult {
     let user_id = body(&signup(&auth, "session-keys@example.com").await)["user"]["id"].clone();
     let create = async |mut input: Value| {
         input["userId"] = user_id.clone();
-        Box::pin(auth.dispatch_endpoint(
-            ApiKeyPlugin::create_endpoint(&serde_json::from_value::<CreateKeyRequest>(input).unwrap())
+        Box::pin(
+            auth.dispatch_endpoint(
+                ApiKeyPlugin::create_endpoint(
+                    &serde_json::from_value::<CreateKeyRequest>(input).unwrap(),
+                )
                 .unwrap(),
-            alibi_core::endpoint::EndpointOptions::default(),
-        ))
+                alibi_core::endpoint::EndpointOptions::default(),
+            ),
+        )
         .await
         .unwrap()
         .decode()
@@ -145,7 +153,10 @@ async fn api_key_session_outcomes<B: Backend>(db: Db) -> TestResult {
     *validator.0.lock().unwrap() = "accept";
     let mut protected = request("/list-sessions", None, "");
     _ = protected.headers.insert("x-api-key".into(), plain.clone());
-    trace.response("protected route", &Box::pin(auth.handle_request(protected)).await?);
+    trace.response(
+        "protected route",
+        &Box::pin(auth.handle_request(protected)).await?,
+    );
     _ = db
         .execute(
             "UPDATE api_keys SET expires_at = $1",

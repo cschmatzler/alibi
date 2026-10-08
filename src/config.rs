@@ -6,5 +6,6 @@ pub use alibi_core::config::{
     CookieAttributes, CookieCacheConfig, CookieCacheStrategy, CookieOverride, CookieRefreshCache,
     CrossSubDomainConfig, DatabaseIdGenerator, DatabaseIdStrategy, DynamicBaseUrl, IpAddressConfig,
     JwtConfig, OAuthStateStrategy, PasswordConfig, SameSite, SessionConfig, TrustedOriginsResolver,
-    TrustedProvidersResolver, TwoFactorDatabaseConfig, UserConfig, VerificationConfig, core_paths, extract_origin,
+    TrustedProvidersResolver, TwoFactorDatabaseConfig, UserConfig, VerificationConfig, core_paths,
+    extract_origin,
 };

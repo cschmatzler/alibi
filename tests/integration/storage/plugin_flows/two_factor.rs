@@ -549,10 +549,7 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     B::close(connection).await
 }
 
-
-async fn renamed_factor_table_owns_the_complete_factor_lifecycle<B: Backend>(
-    db: Db,
-) -> TestResult {
+async fn renamed_factor_table_owns_the_complete_factor_lifecycle<B: Backend>(db: Db) -> TestResult {
     let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
     config.advanced.database.two_factor = Some(alibi::config::TwoFactorDatabaseConfig {
         table_name: "application_second_factor".into(),
@@ -594,7 +591,11 @@ async fn renamed_factor_table_owns_the_complete_factor_lifecycle<B: Backend>(
     let enrollment = body(
         &call(
             &auth,
-            request("/two-factor/enable", Some(json!({"password": PASSWORD})), &session),
+            request(
+                "/two-factor/enable",
+                Some(json!({"password": PASSWORD})),
+                &session,
+            ),
             200,
         )
         .await,
@@ -625,11 +626,20 @@ async fn renamed_factor_table_owns_the_complete_factor_lifecycle<B: Backend>(
     let pending = signin(&auth, "").await;
     assert_eq!(body(&pending)["twoFactorRedirect"], true);
     let pending_cookie = cookies(&pending);
-    _ = call(&auth, request("/two-factor/send-otp", Some(json!({})), &pending_cookie), 200).await;
+    _ = call(
+        &auth,
+        request("/two-factor/send-otp", Some(json!({})), &pending_cookie),
+        200,
+    )
+    .await;
     let otp = mailbox.0.lock().unwrap().last().unwrap().1.clone();
     _ = call(
         &auth,
-        request("/two-factor/verify-otp", Some(json!({"code": otp})), &pending_cookie),
+        request(
+            "/two-factor/verify-otp",
+            Some(json!({"code": otp})),
+            &pending_cookie,
+        ),
         200,
     )
     .await;
@@ -649,7 +659,11 @@ async fn renamed_factor_table_owns_the_complete_factor_lifecycle<B: Backend>(
     assert!(body(&trusted).get("twoFactorRedirect").is_none());
     _ = call(
         &auth,
-        request("/two-factor/disable", Some(json!({"password": PASSWORD})), &session),
+        request(
+            "/two-factor/disable",
+            Some(json!({"password": PASSWORD})),
+            &session,
+        ),
         200,
     )
     .await;

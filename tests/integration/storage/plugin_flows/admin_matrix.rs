@@ -7,7 +7,11 @@ use std::collections::HashMap;
 
 backend_tests!(admin_route_matrix, admin_impersonation_and_bans);
 
-async fn promote<S: AuthSchema>(auth: &BetterAuth<S>, response: &AuthResponse, role: &str) -> String {
+async fn promote<S: AuthSchema>(
+    auth: &BetterAuth<S>,
+    response: &AuthResponse,
+    role: &str,
+) -> String {
     let id = body(response)["user"]["id"].as_str().unwrap().to_owned();
     _ = auth
         .store()
@@ -28,10 +32,21 @@ fn roles() -> HashMap<String, RolePermissions> {
         (
             "admin".into(),
             RolePermissions::new()
-                .allow("user", [
-                    "create", "list", "set-role", "ban", "impersonate", "delete", "set-password",
-                    "get", "update", "set-email",
-                ])
+                .allow(
+                    "user",
+                    [
+                        "create",
+                        "list",
+                        "set-role",
+                        "ban",
+                        "impersonate",
+                        "delete",
+                        "set-password",
+                        "get",
+                        "update",
+                        "set-email",
+                    ],
+                )
                 .allow("session", ["list", "revoke", "delete"]),
         ),
         (
@@ -67,42 +82,222 @@ async fn admin_route_matrix<B: Backend>(db: Db) -> TestResult {
     let post = |path: &str, input: Value| request(path, Some(input), "");
     let cases: Vec<(&str, &str, Value, &str)> = vec![
         ("create-user", "/admin/create-user", json!([]), "admin"),
-        ("create-user", "/admin/create-user", json!({"email": 5, "name": null, "password": true}), "admin"),
-        ("create-user", "/admin/create-user", json!({"email": "invalid", "name": "Invalid", "password": PASSWORD}), "admin"),
-        ("create-user", "/admin/create-user", json!({"email": "long@example.com", "name": "Long", "password": "x".repeat(200)}), "admin"),
-        ("create-user", "/admin/create-user", json!({"email": "role@example.com", "name": "Role", "password": PASSWORD, "role": "ghost"}), "admin"),
-        ("create-user", "/admin/create-user", json!({"email": "roles@example.com", "name": "Roles", "password": PASSWORD, "role": ["support", "user"]}), "admin"),
-        ("create-user", "/admin/create-user", json!({"email": "meta@example.com", "name": "Meta", "data": {"image": "https://images.example/meta"}}), "admin"),
-        ("create-user", "/admin/create-user", json!({"email": "denied@example.com", "name": "Denied", "password": PASSWORD}), "support"),
-        ("update-user", "/admin/update-user", json!({"userId": member_id, "data": {}}), "admin"),
-        ("update-user", "/admin/update-user", json!({"userId": member_id, "data": {"password": "replacement"}}), "admin"),
-        ("update-user", "/admin/update-user", json!({"userId": admin_id, "data": {"banned": true}}), "admin"),
-        ("update-user", "/admin/update-user", json!({"userId": member_id, "data": {"banned": true}}), "support"),
-        ("update-user", "/admin/update-user", json!({"userId": member_id, "data": {"email": "new@example.com"}}), "support"),
-        ("update-user", "/admin/update-user", json!({"userId": member_id, "data": {"email": "not an email"}}), "admin"),
-        ("update-user", "/admin/update-user", json!({"userId": member_id, "data": {"email": "MATRIX-SUPPORT@example.com"}}), "admin"),
-        ("update-user", "/admin/update-user", json!({"userId": member_id, "data": {"email": "Renamed@Example.com", "emailVerified": true, "name": "Renamed"}}), "admin"),
-        ("update-user", "/admin/update-user", json!({"userId": member_id, "data": {"banned": true, "banReason": "Manual"}}), "admin"),
-        ("update-user", "/admin/update-user", json!({"userId": "", "data": {"name": 1}}), "admin"),
-        ("update-user", "/admin/update-user", json!({"userId": 7, "data": []}), "admin"),
-        ("set-role", "/admin/set-role", json!({"userId": member_id, "role": 5}), "admin"),
-        ("set-role", "/admin/set-role", json!({"userId": member_id, "role": "ghost"}), "admin"),
-        ("set-role", "/admin/set-role", json!({"userId": member_id, "role": ["support", null]}), "admin"),
-        ("set-user-password", "/admin/set-user-password", json!({"userId": member_id, "newPassword": ""}), "admin"),
-        ("set-user-password", "/admin/set-user-password", json!({"userId": member_id, "newPassword": 5}), "admin"),
-        ("ban-user", "/admin/ban-user", json!({"userId": member_id, "banExpiresIn": "soon"}), "admin"),
-        ("ban-user", "/admin/ban-user", json!({"userId": member_id}), "admin"),
-        ("unban-user", "/admin/unban-user", json!({"userId": member_id}), "admin"),
-        ("has-permission", "/admin/has-permission", json!({"permission": {"user": ["ban"]}, "permissions": {"user": ["ban"]}}), "admin"),
-        ("has-permission", "/admin/has-permission", json!({}), "admin"),
-        ("has-permission", "/admin/has-permission", json!([1]), "admin"),
-        ("has-permission", "/admin/has-permission", json!({"permission": {"user": ["ban"]}}), "admin"),
-        ("has-permission", "/admin/has-permission", json!({"permissions": {"user": ["ban"]}, "role": "support"}), "support"),
-        ("remove-user", "/admin/remove-user", json!({"userId": admin_id}), "admin"),
-        ("revoke-user-sessions", "/admin/revoke-user-sessions", json!({"userId": member_id}), "admin"),
-        ("list-user-sessions", "/admin/list-user-sessions", json!({"userId": member_id}), "admin"),
-        ("impersonate-user", "/admin/impersonate-user", json!({"userId": member_id}), "anonymous"),
-        ("stop-impersonating", "/admin/stop-impersonating", json!({}), "admin"),
+        (
+            "create-user",
+            "/admin/create-user",
+            json!({"email": 5, "name": null, "password": true}),
+            "admin",
+        ),
+        (
+            "create-user",
+            "/admin/create-user",
+            json!({"email": "invalid", "name": "Invalid", "password": PASSWORD}),
+            "admin",
+        ),
+        (
+            "create-user",
+            "/admin/create-user",
+            json!({"email": "long@example.com", "name": "Long", "password": "x".repeat(200)}),
+            "admin",
+        ),
+        (
+            "create-user",
+            "/admin/create-user",
+            json!({"email": "role@example.com", "name": "Role", "password": PASSWORD, "role": "ghost"}),
+            "admin",
+        ),
+        (
+            "create-user",
+            "/admin/create-user",
+            json!({"email": "roles@example.com", "name": "Roles", "password": PASSWORD, "role": ["support", "user"]}),
+            "admin",
+        ),
+        (
+            "create-user",
+            "/admin/create-user",
+            json!({"email": "meta@example.com", "name": "Meta", "data": {"image": "https://images.example/meta"}}),
+            "admin",
+        ),
+        (
+            "create-user",
+            "/admin/create-user",
+            json!({"email": "denied@example.com", "name": "Denied", "password": PASSWORD}),
+            "support",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": member_id, "data": {}}),
+            "admin",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": member_id, "data": {"password": "replacement"}}),
+            "admin",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": admin_id, "data": {"banned": true}}),
+            "admin",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": member_id, "data": {"banned": true}}),
+            "support",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": member_id, "data": {"email": "new@example.com"}}),
+            "support",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": member_id, "data": {"email": "not an email"}}),
+            "admin",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": member_id, "data": {"email": "MATRIX-SUPPORT@example.com"}}),
+            "admin",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": member_id, "data": {"email": "Renamed@Example.com", "emailVerified": true, "name": "Renamed"}}),
+            "admin",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": member_id, "data": {"banned": true, "banReason": "Manual"}}),
+            "admin",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": "", "data": {"name": 1}}),
+            "admin",
+        ),
+        (
+            "update-user",
+            "/admin/update-user",
+            json!({"userId": 7, "data": []}),
+            "admin",
+        ),
+        (
+            "set-role",
+            "/admin/set-role",
+            json!({"userId": member_id, "role": 5}),
+            "admin",
+        ),
+        (
+            "set-role",
+            "/admin/set-role",
+            json!({"userId": member_id, "role": "ghost"}),
+            "admin",
+        ),
+        (
+            "set-role",
+            "/admin/set-role",
+            json!({"userId": member_id, "role": ["support", null]}),
+            "admin",
+        ),
+        (
+            "set-user-password",
+            "/admin/set-user-password",
+            json!({"userId": member_id, "newPassword": ""}),
+            "admin",
+        ),
+        (
+            "set-user-password",
+            "/admin/set-user-password",
+            json!({"userId": member_id, "newPassword": 5}),
+            "admin",
+        ),
+        (
+            "ban-user",
+            "/admin/ban-user",
+            json!({"userId": member_id, "banExpiresIn": "soon"}),
+            "admin",
+        ),
+        (
+            "ban-user",
+            "/admin/ban-user",
+            json!({"userId": member_id}),
+            "admin",
+        ),
+        (
+            "unban-user",
+            "/admin/unban-user",
+            json!({"userId": member_id}),
+            "admin",
+        ),
+        (
+            "has-permission",
+            "/admin/has-permission",
+            json!({"permission": {"user": ["ban"]}, "permissions": {"user": ["ban"]}}),
+            "admin",
+        ),
+        (
+            "has-permission",
+            "/admin/has-permission",
+            json!({}),
+            "admin",
+        ),
+        (
+            "has-permission",
+            "/admin/has-permission",
+            json!([1]),
+            "admin",
+        ),
+        (
+            "has-permission",
+            "/admin/has-permission",
+            json!({"permission": {"user": ["ban"]}}),
+            "admin",
+        ),
+        (
+            "has-permission",
+            "/admin/has-permission",
+            json!({"permissions": {"user": ["ban"]}, "role": "support"}),
+            "support",
+        ),
+        (
+            "remove-user",
+            "/admin/remove-user",
+            json!({"userId": admin_id}),
+            "admin",
+        ),
+        (
+            "revoke-user-sessions",
+            "/admin/revoke-user-sessions",
+            json!({"userId": member_id}),
+            "admin",
+        ),
+        (
+            "list-user-sessions",
+            "/admin/list-user-sessions",
+            json!({"userId": member_id}),
+            "admin",
+        ),
+        (
+            "impersonate-user",
+            "/admin/impersonate-user",
+            json!({"userId": member_id}),
+            "anonymous",
+        ),
+        (
+            "stop-impersonating",
+            "/admin/stop-impersonating",
+            json!({}),
+            "admin",
+        ),
     ];
     for (label, path, input, actor) in cases {
         let mut request = post(path, input);
@@ -122,15 +317,66 @@ async fn admin_route_matrix<B: Backend>(db: Db) -> TestResult {
     };
     let queries: Vec<(&str, &str, Vec<(&str, &str)>)> = vec![
         ("get-user", "/admin/get-user", vec![]),
-        ("get-user", "/admin/get-user", vec![("id", "a"), ("id", "b")]),
-        ("get-user", "/admin/get-user", vec![("id", member_id.as_str())]),
-        ("list-users", "/admin/list-users", vec![("limit", "1"), ("limit", "2"), ("searchField", "phone"), ("sortDirection", "up"), ("filterOperator", "like"), ("searchValue", "a"), ("searchValue", "b")]),
-        ("list-users", "/admin/list-users", vec![("searchValue", "nobody"), ("searchField", "email"), ("searchOperator", "contains")]),
-        ("list-users", "/admin/list-users", vec![("filterField", "role"), ("filterValue", "support"), ("filterOperator", "in"), ("sortBy", "email"), ("sortDirection", "desc"), ("limit", "5"), ("offset", "0")]),
-        ("list-users", "/admin/list-users", vec![("filterField", "banned"), ("filterValue", "true"), ("filterOperator", "eq")]),
+        (
+            "get-user",
+            "/admin/get-user",
+            vec![("id", "a"), ("id", "b")],
+        ),
+        (
+            "get-user",
+            "/admin/get-user",
+            vec![("id", member_id.as_str())],
+        ),
+        (
+            "list-users",
+            "/admin/list-users",
+            vec![
+                ("limit", "1"),
+                ("limit", "2"),
+                ("searchField", "phone"),
+                ("sortDirection", "up"),
+                ("filterOperator", "like"),
+                ("searchValue", "a"),
+                ("searchValue", "b"),
+            ],
+        ),
+        (
+            "list-users",
+            "/admin/list-users",
+            vec![
+                ("searchValue", "nobody"),
+                ("searchField", "email"),
+                ("searchOperator", "contains"),
+            ],
+        ),
+        (
+            "list-users",
+            "/admin/list-users",
+            vec![
+                ("filterField", "role"),
+                ("filterValue", "support"),
+                ("filterOperator", "in"),
+                ("sortBy", "email"),
+                ("sortDirection", "desc"),
+                ("limit", "5"),
+                ("offset", "0"),
+            ],
+        ),
+        (
+            "list-users",
+            "/admin/list-users",
+            vec![
+                ("filterField", "banned"),
+                ("filterValue", "true"),
+                ("filterOperator", "eq"),
+            ],
+        ),
     ];
     for (label, path, query) in queries {
-        trace.response(label, &Box::pin(auth.handle_request(get(path, &query))).await?);
+        trace.response(
+            label,
+            &Box::pin(auth.handle_request(get(path, &query))).await?,
+        );
     }
     trace.assert("admin/route-matrix");
     B::close(connection).await

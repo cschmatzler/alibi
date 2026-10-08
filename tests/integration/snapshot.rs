@@ -100,7 +100,12 @@ impl Trace {
         }
         let expected: Value = std::fs::read_to_string(&path)
             .map(|text| serde_json::from_str(&text).unwrap())
-            .unwrap_or_else(|_| panic!("missing snapshot {}; run with UPDATE_SNAPSHOTS=1", path.display()));
+            .unwrap_or_else(|_| {
+                panic!(
+                    "missing snapshot {}; run with UPDATE_SNAPSHOTS=1",
+                    path.display()
+                )
+            });
         if actual != expected {
             let actual = serde_json::to_string_pretty(&actual).unwrap();
             let expected = serde_json::to_string_pretty(&expected).unwrap();
@@ -143,9 +148,12 @@ impl Trace {
             {
                 Value::String("<time>".into())
             }
-            Value::Array(values) => {
-                Value::Array(values.into_iter().map(|value| self.normalize(value)).collect())
-            }
+            Value::Array(values) => Value::Array(
+                values
+                    .into_iter()
+                    .map(|value| self.normalize(value))
+                    .collect(),
+            ),
             Value::Object(object) => Value::Object(
                 object
                     .into_iter()

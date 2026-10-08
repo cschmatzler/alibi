@@ -1,0 +1,75 @@
+[
+  {
+    "teams disabled": "Teams are not enabled"
+  },
+  {
+    "/organization/delete": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "ORGANIZATION_DELETION_DISABLED",
+        "message": "Organization deletion is disabled"
+      }
+    }
+  },
+  {
+    "/organization/update": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
+        "message": "User is not a member of the organization"
+      }
+    }
+  },
+  {
+    "/organization/set-active": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION",
+        "message": "User is not a member of the organization"
+      }
+    }
+  },
+  {
+    "set active none": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "set-cookie": [
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": null
+    }
+  },
+  {
+    "active member without organization": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "NO_ACTIVE_ORGANIZATION",
+        "message": "No active organization"
+      }
+    }
+  }
+]

@@ -723,3 +723,114 @@ impl RawCredential {
         *backup_state = result.backup_state;
     }
 }
+
+// LCOV_EXCL_START
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn decode(hex: &str) -> Result<(Cbor, usize), WebauthnError> {
+        let bytes = (0..hex.len())
+            .step_by(2)
+            .map(|index| u8::from_str_radix(&hex[index..index + 2], 16).unwrap())
+            .collect::<Vec<_>>();
+        decode_first(&bytes)
+    }
+
+    #[test]
+    fn decoder_follows_the_pinned_value_contract() {
+        let integer_map =
+            std::collections::BTreeMap::from([(Cbor::Integer(1), Cbor::Text("a".into()))]);
+        for (hex, expected, consumed) in [
+            ("f4", Cbor::Bool(false), 1),
+            ("f5", Cbor::Bool(true), 1),
+            ("f6", Cbor::Null, 1),
+            ("f7", Cbor::Null, 1),
+            ("f97c00", Cbor::Float(f64::INFINITY), 3),
+            ("f9fc00", Cbor::Float(f64::NEG_INFINITY), 3),
+            ("fa40000000", Cbor::Integer(2), 5),
+            ("fa3fc00000", Cbor::Float(1.5), 5),
+            ("fb3ff8000000000000", Cbor::Float(1.5), 9),
+            ("1b0000000000000100", Cbor::Integer(256), 9),
+            (
+                "3b001ffffffffffffe",
+                Cbor::Integer(-9_007_199_254_740_991),
+                9,
+            ),
+            (
+                "3b001fffffffffffff",
+                Cbor::Float(-9_007_199_254_740_992.0),
+                9,
+            ),
+            ("c16161", Cbor::Tag(1, Box::new(Cbor::Text("a".into()))), 3),
+            ("64efbbbf61", Cbor::Text("a".into()), 5),
+            ("43ff", Cbor::Bytes(vec![0xff]), 4),
+            ("a1fb3ff00000000000006161", Cbor::Map(integer_map), 12),
+        ] {
+            let (value, length) = decode(hex).unwrap();
+            assert_eq!((value, length), (expected, consumed), "{hex}");
+        }
+        let (nan, _) = decode("f97e00").unwrap();
+        assert!(matches!(nan, Cbor::Float(value) if value.is_nan()));
+        for malformed in [
+            "f93c00",
+            "f8",
+            "1c",
+            "1817",
+            "1b0020000000000000",
+            "a2016161016162",
+            "a2f97e006161f97e006162",
+            "a1f56161",
+            "e0",
+            "9a7fffffff",
+            "",
+        ] {
+            assert!(decode(malformed).is_err(), "{malformed}");
+        }
+        let nested = "81".repeat(128) + "00";
+        assert!(decode(&nested).is_err());
+    }
+
+    #[test]
+    fn extension_conversion_and_reencoded_lengths() {
+        let entry = |value| Cbor::Array(vec![Cbor::Text("k".into()), value]);
+        let nested = Cbor::Map(std::collections::BTreeMap::from([(
+            Cbor::Text("credProps".into()),
+            Cbor::Map(std::collections::BTreeMap::from([(
+                Cbor::Text("rk".into()),
+                Cbor::Bool(true),
+            )])),
+        )]));
+        for (value, possible) in [
+            (nested.clone(), true),
+            (Cbor::Text("text".into()), true),
+            (Cbor::Bytes(Vec::new()), true),
+            (Cbor::Bytes(vec![1]), false),
+            (
+                Cbor::Array(vec![entry(nested.clone()), Cbor::Text("x".into())]),
+                true,
+            ),
+            (
+                Cbor::Array(vec![entry(Cbor::Map(Default::default()))]),
+                true,
+            ),
+            (Cbor::Array(vec![Cbor::Integer(1)]), false),
+            (Cbor::Integer(1), false),
+        ] {
+            assert_eq!(extension_conversion_possible(&value), possible, "{value:?}");
+        }
+        for (value, length) in [
+            (Cbor::Integer(-25), 2),
+            (Cbor::Float(1.5), 5),
+            (Cbor::Float(1.1), 9),
+            (Cbor::Float(f64::INFINITY), 5),
+            (Cbor::Float(4_294_967_296.0), 9),
+            (Cbor::Text("é".into()), 3),
+            (Cbor::Tag(300, Box::new(Cbor::Null)), 4),
+            (nested, 16),
+        ] {
+            assert_eq!(source_encoded_length(&value).unwrap(), length, "{value:?}");
+        }
+    }
+}
+// LCOV_EXCL_STOP

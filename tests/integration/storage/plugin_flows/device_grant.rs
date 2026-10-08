@@ -10,7 +10,10 @@ use alibi::{AuthError, AuthResult};
 use alibi_core::{AuthContext, AuthPlugin, AuthRoute, AuthUser};
 use serde_json::Map;
 
-backend_tests!(application_grant_lifecycle, device_decision_and_issuance_edges);
+backend_tests!(
+    application_grant_lifecycle,
+    device_decision_and_issuance_edges
+);
 
 type Events = Arc<Mutex<Vec<Value>>>;
 
@@ -82,7 +85,10 @@ impl DeviceAuthorizationGrant for Grant {
         &self,
         record: &DeviceGrantRecord,
     ) -> AuthResult<Map<String, Value>> {
-        self.0.lock().unwrap().push(json!({"phase": "verification"}));
+        self.0
+            .lock()
+            .unwrap()
+            .push(json!({"phase": "verification"}));
         Ok(object(json!({
             "audience": record.fields["grantAudience"],
             "nonce": record.fields["grantNonce"],
@@ -149,7 +155,10 @@ impl<S: AuthSchema> AuthPlugin<S> for ApplicationToken {
     }
 
     fn routes(&self) -> Vec<AuthRoute> {
-        vec![AuthRoute::post("/device/application-token", "application_token")]
+        vec![AuthRoute::post(
+            "/device/application-token",
+            "application_token",
+        )]
     }
 
     async fn on_request(
@@ -234,7 +243,10 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
     )
     .await;
     assert_eq!(body(&denied)["error"], "invalid_audience");
-    assert_eq!(denied.headers.get("cache-control").map(String::as_str), Some("no-store"));
+    assert_eq!(
+        denied.headers.get("cache-control").map(String::as_str),
+        Some("no-store")
+    );
     assert_eq!(db.count("device_code").await?, 0);
     assert_eq!(
         *events.lock().unwrap(),
@@ -256,15 +268,14 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
         assert!(properties["properties"].get(field).is_some(), "{field}");
     }
     assert_eq!(properties["required"], json!(["audience", "nonce"]));
-    let review_properties = &schema["paths"]["/device"]["get"]["responses"]["200"]["content"]
-        ["application/json"]["schema"]["properties"];
+    let review_properties = &schema["paths"]["/device"]["get"]["responses"]["200"]["content"]["application/json"]
+        ["schema"]["properties"];
     assert!(review_properties.get("audience").is_some());
     assert!(review_properties.get("nonce").is_some());
 
     let owner = cookies(&signup(&auth, "grant-owner@example.com").await);
-    let user_id = body(&call(&auth, request("/get-session", None, &owner), 200).await)["user"]
-        ["id"]
-        .clone();
+    let user_id =
+        body(&call(&auth, request("/get-session", None, &owner), 200).await)["user"]["id"].clone();
     let issue = async |nonce: &str| {
         let issued = call(
             &auth,
@@ -276,7 +287,10 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
             200,
         )
         .await;
-        assert_eq!(issued.headers.get("pragma").map(String::as_str), Some("no-cache"));
+        assert_eq!(
+            issued.headers.get("pragma").map(String::as_str),
+            Some("no-cache")
+        );
         let issued = body(&issued);
         (
             issued["device_code"].as_str().unwrap().to_owned(),
@@ -284,7 +298,12 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
         )
     };
     let decide = async |decision: &str, user_code: &str| {
-        _ = call(&auth, get("/device", &[("user_code", user_code)], &owner), 200).await;
+        _ = call(
+            &auth,
+            get("/device", &[("user_code", user_code)], &owner),
+            200,
+        )
+        .await;
         call(
             &auth,
             request(
@@ -340,7 +359,14 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
     );
     let guest_view = body(&call(&auth, get("/device", &[("user_code", user_code)], ""), 200).await);
     assert!(guest_view.get("audience").is_none());
-    let review = body(&call(&auth, get("/device", &[("user_code", user_code)], &owner), 200).await);
+    let review = body(
+        &call(
+            &auth,
+            get("/device", &[("user_code", user_code)], &owner),
+            200,
+        )
+        .await,
+    );
     assert_eq!(review["audience"], "application-api");
     assert_eq!(review["nonce"], "owned");
     _ = decide("approve", user_code).await;
@@ -365,7 +391,10 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
         json!({"userId": user_id, "audience": "application-api", "nonce": "owned"})
     );
     assert_eq!(rows(&db, code).await?, 0);
-    assert_eq!(redeem(code, "owned", false, 400).await["error"], "invalid_grant");
+    assert_eq!(
+        redeem(code, "owned", false, 400).await["error"],
+        "invalid_grant"
+    );
     assert_eq!(
         events
             .lock()
@@ -373,7 +402,12 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
             .iter()
             .map(|event| event["phase"].clone())
             .collect::<Vec<_>>(),
-        ["authorize", "verification", "verification", "session-redemption"]
+        [
+            "authorize",
+            "verification",
+            "verification",
+            "session-redemption"
+        ]
     );
 
     let (code, user_code) = issue("denial").await;
@@ -385,7 +419,10 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
     let rejected = redeem(&code, "denial", true, 403).await;
     assert_eq!(rejected["code"], "APPLICATION_PREPARE_REJECTED");
     assert_eq!(rows(&db, &code).await?, 1);
-    assert_eq!(redeem(&code, "foreign-owner", false, 400).await["error"], "invalid_grant");
+    assert_eq!(
+        redeem(&code, "foreign-owner", false, 400).await["error"],
+        "invalid_grant"
+    );
     assert_eq!(rows(&db, &code).await?, 1);
     db.set_timestamp(
         "device_code",
@@ -394,17 +431,25 @@ async fn application_grant_lifecycle<B: Backend>(db: Db) -> TestResult {
         chrono::Utc::now() - chrono::Duration::minutes(1),
     )
     .await?;
-    assert_eq!(redeem(&code, "denial", false, 400).await["error"], "expired_token");
+    assert_eq!(
+        redeem(&code, "denial", false, 400).await["error"],
+        "expired_token"
+    );
     assert_eq!(rows(&db, &code).await?, 0);
-    assert_eq!(redeem("unknown", "denial", false, 400).await["error"], "invalid_grant");
+    assert_eq!(
+        redeem("unknown", "denial", false, 400).await["error"],
+        "invalid_grant"
+    );
 
     let (code, user_code) = issue("declined").await;
     _ = decide("deny", &user_code).await;
-    assert_eq!(redeem(&code, "declined", false, 400).await["error"], "access_denied");
+    assert_eq!(
+        redeem(&code, "declined", false, 400).await["error"],
+        "access_denied"
+    );
     assert_eq!(rows(&db, &code).await?, 0);
     B::close(connection).await
 }
-
 
 async fn device_decision_and_issuance_edges<B: Backend>(db: Db) -> TestResult {
     let (connection, _) = db.migrated::<B>(SECRET).await?;
@@ -447,8 +492,14 @@ async fn device_decision_and_issuance_edges<B: Backend>(db: Db) -> TestResult {
     );
 
     let owner = cookies(&signup(&auth, "device-edges@example.com").await);
-    let mut wrong_media = request("/device/approve", Some(json!({"userCode": user_code})), &owner);
-    _ = wrong_media.headers.insert("content-type".into(), "text/plain".into());
+    let mut wrong_media = request(
+        "/device/approve",
+        Some(json!({"userCode": user_code})),
+        &owner,
+    );
+    _ = wrong_media
+        .headers
+        .insert("content-type".into(), "text/plain".into());
     let wrong_media = call(&auth, wrong_media, 415).await;
     assert_eq!(body(&wrong_media)["code"], "UNSUPPORTED_MEDIA_TYPE");
     let mut review = request("/device", None, &owner);
@@ -456,7 +507,11 @@ async fn device_decision_and_issuance_edges<B: Backend>(db: Db) -> TestResult {
     _ = call(&auth, review, 200).await;
     _ = call(
         &auth,
-        request("/device/approve", Some(json!({"userCode": user_code})), &owner),
+        request(
+            "/device/approve",
+            Some(json!({"userCode": user_code})),
+            &owner,
+        ),
         200,
     )
     .await;
