@@ -42,6 +42,7 @@ import { cloudflareProviderFixture } from "./fixtures/cloudflare-provider-fixtur
 import { cognitoProviderFixture } from "./fixtures/cognito-provider-fixture";
 import { createCompromisedPasswordFixture } from "./fixtures/compromised-password-fixture";
 import { createCustomSessionFixture } from "./fixtures/custom-session-fixture";
+import { deviceGrantFixture } from "./fixtures/device-grant-fixture";
 import { createDispatchFixture } from "./fixtures/dispatch-fixture";
 import { dropboxProviderFixture } from "./fixtures/dropbox-provider-fixture";
 import { facebookProviderFixture } from "./fixtures/facebook-provider-fixture";
@@ -1143,6 +1144,7 @@ const physicalCookies = physicalCookieProfiles(authOptions, database);
 for (const [path, auth] of physicalCookies.profiles) {
   verificationProfiles.set(path, auth);
 }
+const deviceGrant = await deviceGrantFixture(authOptions);
 const auth = betterAuth(authOptions);
 const errorPageAuth = betterAuth({
   ...authOptions,
@@ -2099,6 +2101,7 @@ const RESET_MODELS = [
 ] as const;
 
 async function resetDatabaseState() {
+  await deviceGrant.reset();
   const { adapter } = await teamProfiles.get("org-teams")!.auth.$context;
   for (const model of ["teamMember", "team"]) {
     await adapter.deleteMany({ model, where: [] });
@@ -2191,6 +2194,8 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      const grantResponse = await deviceGrant.handle(request);
+      if (grantResponse) return grantResponse;
       const microsoftControl = await microsoftFixture.handle(request);
       if (microsoftControl) return microsoftControl;
       if (url.pathname.startsWith("/__test/profiles/error-page/api/auth/")) {

@@ -36,7 +36,12 @@ struct DeviceExpiry {
 }
 pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<TestSchema>>> {
     let read_database = database.clone();
-    Router::new().route("/__test/device-callback-events", get(|| async { Json(std::mem::take(&mut *CALLBACK_EVENTS.lock().unwrap())) })).route("/__test/device-state",get(move |Query(body):Query<DeviceSelector>| {
+    let grant_database=database.clone();
+    Router::new().route("/__test/device-grant/control",get(move |Query(query):Query<std::collections::HashMap<String,String>>|{let database=grant_database.clone();async move {
+      let rows=device_code::Entity::find().filter(device_code::Column::DeviceCode.eq(query.get("deviceCode").cloned().unwrap_or_default())).all(&database).await.unwrap();
+      // Native currently has no grant configuration, callbacks, or grant-owned columns.
+      Json(json!({"rows":rows.iter().map(|row|json!({"id":row.id,"deviceCode":row.device_code,"userCode":row.user_code,"userId":row.user_id,"status":row.status,"clientId":row.client_id})).collect::<Vec<_>>(),"events":[],"receipts":[]}))
+    }})).route("/__test/device-callback-events", get(|| async { Json(std::mem::take(&mut *CALLBACK_EVENTS.lock().unwrap())) })).route("/__test/device-state",get(move |Query(body):Query<DeviceSelector>| {
   let database=read_database.clone();async move {
    match device_code::Entity::find().filter(device_code::Column::DeviceCode.eq(body.device_code)).one(&database).await {
     Ok(row)=>(StatusCode::OK,Json(row.map(|row|json!({"id":row.id,"deviceCode":row.device_code,"userCode":row.user_code,"userId":row.user_id,"status":row.status,"clientId":row.client_id,"scope":row.scope,"expiresAt":row.expires_at,"lastPolledAt":row.last_polled_at,"pollingInterval":row.polling_interval})).unwrap_or(Value::Null))),
@@ -60,6 +65,7 @@ pub(crate) async fn profiles(
     let mut router = Router::new();
     for name in [
         "device-callback-success",
+        "device-grant",
         "device-length-507",
         "device-length-506",
         "device-custom",
@@ -81,6 +87,7 @@ pub(crate) async fn profiles(
     ] {
         let mut plugin = DeviceAuthorizationPlugin::new();
         match name {
+            "device-grant" => { plugin = plugin.interval(Duration::zero()); }
             "device-callback-success" => {
                 let callback_database = database.clone();
                 plugin = plugin.on_device_auth_request(move |client_id, scope| {
@@ -175,6 +182,7 @@ pub(crate) async fn profiles(
                         .enable_username(false),
                 )
                 .plugin(SessionManagementPlugin::new())
+            .plugin(alibi::plugins::open_api::OpenApiPlugin::new())
                 .plugin(plugin)
                 .build()
                 .await?,
