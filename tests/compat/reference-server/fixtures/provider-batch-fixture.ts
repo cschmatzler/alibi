@@ -8,6 +8,10 @@ import inputs from "../../fixtures/provider-batch-profiles.json";
 
 export const providerBatchModes = [
   "default",
+  "prompt-none",
+  "prompt-consent",
+  "prompt-empty",
+
   "pkce-disabled",
   "expiry-positive",
   "expiry-zero",
@@ -185,6 +189,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const provider of Object.keys(inputs)) {
     for (const mode of providerBatchModes) {
+      if (mode.startsWith("prompt-") && provider !== "roblox") continue;
       if (mode === "pkce-disabled" && provider !== "zoom") continue;
       const path = `/__test/profiles/provider-batch-${provider}-${mode}/api/auth`;
       const providerOptions: Record<string, unknown> = {
@@ -196,6 +201,9 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
               : "batch-client",
         ...(provider === "tiktok" ? { clientKey: "batch-client" } : {}),
         clientSecret: "batch-secret",
+        ...(mode.startsWith("prompt-")
+          ? { prompt: mode === "prompt-empty" ? "" : mode.slice(7) }
+          : {}),
         ...(mode === "pkce-disabled" ? { pkce: false } : {}),
         ...(["configured", "disabled-configured"].includes(mode)
           ? {

@@ -19,6 +19,10 @@ use tokio::sync::Mutex;
 const INPUTS: &str = include_str!("../../../fixtures/provider-batch-profiles.json");
 const MODES: &[&str] = &[
     "default",
+    "prompt-none",
+    "prompt-consent",
+    "prompt-empty",
+
     "pkce-disabled",
     "expiry-positive",
     "expiry-zero",
@@ -132,6 +136,7 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "roblox" => {
             let mut options = RobloxOptions::new(client, Some(secret.into()));
+            if mode.starts_with("prompt-") { options.prompt = Some(if mode == "prompt-empty" { "" } else { &mode[7..] }.into()); }
             options.scope = configured(mode);
             options.disable_default_scope = mode == "disabled-configured";
             options.user_info_endpoint =
@@ -234,6 +239,7 @@ pub(crate) async fn router(
     let mut router = Router::new();
     for provider_id in PROVIDERS {
         for mode in MODES {
+            if mode.starts_with("prompt-") && *provider_id != "roblox" { continue; }
             if *mode == "pkce-disabled" && *provider_id != "zoom" { continue; }
             let path = format!("/__test/profiles/provider-batch-{provider_id}-{mode}/api/auth");
             let mut settings = config.clone().base_path(&path);
