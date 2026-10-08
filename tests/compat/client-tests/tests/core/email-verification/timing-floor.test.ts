@@ -146,7 +146,7 @@ compatScenario(
       code: "APPLICATION_MAIL_LIMIT",
       message: "Application mail limit reached",
     });
-    return ctx.snapshot({ signup, failed, retry, verified, login, delivered, recovered });
+    return ctx.snapshot({ signup, failed, retry, verified, login, recovered });
   },
   ["POST /send-verification-email"],
 );
