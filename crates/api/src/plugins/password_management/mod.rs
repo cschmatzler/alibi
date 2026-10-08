@@ -637,7 +637,7 @@ mod tests {
         let body = serde_json::json!({
             "currentPassword": "Password123!",
             "newPassword": "NewPassword123!",
-            "revokeOtherSessions": "false"
+            "revokeOtherSessions": false
         });
 
         let req = test_helpers::create_auth_request_no_query(
@@ -689,7 +689,7 @@ mod tests {
         let body = serde_json::json!({
             "currentPassword": "Password123!",
             "newPassword": "NewPassword123!",
-            "revokeOtherSessions": "true"
+            "revokeOtherSessions": true
         });
 
         let req = test_helpers::create_auth_request_no_query(
