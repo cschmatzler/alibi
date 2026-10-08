@@ -140,7 +140,12 @@ compatScenario(
 
     const device = deviceActor(ctx, "device");
     const redemptionStartedAt = Date.now();
-    const token = await device.device.token(tokenRequest(code.device_code));
+    let tokenResponse: Response | undefined;
+    const token = await device.device.token(tokenRequest(code.device_code), {
+      onResponse(context) {
+        tokenResponse = context.response.clone();
+      },
+    });
     const redemptionCompletedAt = Date.now();
     expect(token.error).toBeNull();
 
@@ -148,6 +153,17 @@ compatScenario(
       throw new Error("approved code must issue a session token");
     }
 
+    if (!tokenResponse)
+      throw new Error("Successful token redemption must expose its actual HTTP response");
+    expect(tokenResponse.status).toBe(200);
+    expect(tokenResponse.headers.get("cache-control")).toBe("no-store");
+    expect(tokenResponse.headers.get("pragma")).toBe("no-cache");
+    expect(await tokenResponse.json()).toEqual(token.data);
+    const tokenPolicy = {
+      status: tokenResponse.status,
+      cacheControl: tokenResponse.headers.get("cache-control"),
+      pragma: tokenResponse.headers.get("pragma"),
+    };
     expect(token.data.token_type).toBe("Bearer");
     expect(token.data.scope).toBe("read write");
     expect(token.data.expires_in).toBeGreaterThanOrEqual(604799);
@@ -176,6 +192,14 @@ compatScenario(
 
     const deviceCookieSession = await device.getSession();
     expect(deviceCookieSession.data).toBeNull();
+    const bearer = await ctx.rawRequest({
+      actor: "bearer-device",
+      path: "/__test/profiles/bearer-default/api/auth/get-session",
+      headers: { authorization: `Bearer ${token.data.access_token}` },
+    });
+    expect(bearer.status).toBe(200);
+    expect((bearer.body as any).user.id).toBe(userId);
+    expect((bearer.body as any).session.token).toBe(token.data.access_token);
 
     const replay = await device.device.token(tokenRequest(code.device_code));
     expect(replay.error).toMatchObject({ status: 400, error: "invalid_grant" });
@@ -193,6 +217,8 @@ compatScenario(
       token: ctx.snapshot(token),
       sessions: ctx.snapshot(sessions),
       deviceCookieSession: ctx.snapshot(deviceCookieSession),
+      tokenPolicy,
+      bearer: ctx.snapshot(bearer),
       replay: ctx.snapshot(replay),
       consumed: ctx.snapshot(consumed),
       unclaimedState,
