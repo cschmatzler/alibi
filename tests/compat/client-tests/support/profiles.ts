@@ -994,6 +994,7 @@ export const FIXTURE_PROFILES = [
   "session-no-refresh",
   "session-deferred-no-refresh",
   "session-no-freshness",
+  "two-factor-custom-table",
   "session-cookie-cleanup",
   ...variants("passwordless-numeric-", [
     "length-zero",

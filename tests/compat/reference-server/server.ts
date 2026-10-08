@@ -109,6 +109,7 @@ import { createTwoFactorDeliveryFixture } from "./fixtures/two-factor-delivery-f
 import { createTwoFactorOtpFixture } from "./fixtures/two-factor-otp-fixture";
 import { createTwoFactorPendingLookupFixture } from "./fixtures/two-factor-pending-lookup-fixture";
 import { createTwoFactorPolicyFixture } from "./fixtures/two-factor-policy-fixture";
+import { twoFactorTableFixture } from "./fixtures/two-factor-table-fixture";
 import { createTwoFactorTotpFixture } from "./fixtures/two-factor-totp-fixture";
 import { createUserLifecycleFixture } from "./fixtures/user-lifecycle-fixture";
 import { createUserValidationFixture } from "./fixtures/user-validation-fixture";
@@ -1143,6 +1144,7 @@ const physicalCookies = physicalCookieProfiles(authOptions, database);
 for (const [path, auth] of physicalCookies.profiles) {
   verificationProfiles.set(path, auth);
 }
+const customFactorTable = await twoFactorTableFixture(authOptions);
 const auth = betterAuth(authOptions);
 const errorPageAuth = betterAuth({
   ...authOptions,
@@ -2191,6 +2193,8 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      const factorTableResponse = await customFactorTable.handle(request);
+      if (factorTableResponse) return factorTableResponse;
       const microsoftControl = await microsoftFixture.handle(request);
       if (microsoftControl) return microsoftControl;
       if (url.pathname.startsWith("/__test/profiles/error-page/api/auth/")) {
