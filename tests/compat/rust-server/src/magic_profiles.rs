@@ -80,6 +80,8 @@ impl SendMagicLink for Sender {
             value["context"] = context;
         }
         _ = self.0.lock().await.insert(delivery.email.clone(), value);
+        if auth.config.base_path.contains("magic-link-sender-coded") { return Err(alibi::AuthError::Api { status: 403, code: Some("MAGIC_DELIVERY_REJECTED".into()), message: "Application delivery rejected".into() }); }
+        if auth.config.base_path.contains("magic-link-sender-ordinary") { return Err(alibi::AuthError::internal("Application delivery failed")); }
         Ok(())
     }
 }
@@ -104,6 +106,8 @@ pub(super) async fn router(
         "magic-link-hashed-custom-token",
         "magic-link-custom-hasher",
         "magic-link-generator-reject",
+        "magic-link-sender-coded",
+        "magic-link-sender-ordinary",
         "magic-link-disabled",
         "magic-link-numeric-lifetime-zero",
         "magic-link-numeric-lifetime-fraction",
