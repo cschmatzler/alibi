@@ -536,20 +536,7 @@ where
         );
         super::teams::remove_owned_team_members(&transaction, &user.id(), None).await?;
         super::wallets::remove_owned_wallets(&transaction, &user.id()).await?;
-        // Core-only generated schemas omit this optional table. Check on the
-        // held transaction, preserving cleanup after plugin deregistration and
-        // propagating metadata or credential-deletion errors.
-        if transaction
-            .has_table("api_keys")
-            .await
-            .map_err(map_db_err)?
-        {
-            _ = super::entities::api_key::Entity::delete_many()
-                .filter(super::entities::api_key::Column::ReferenceId.eq(user.id().into_owned()))
-                .exec(&transaction)
-                .await
-                .map_err(map_db_err)?;
-        }
+        // Keep polymorphic API-key references; redemption rejects absent owners.
 
         let _ignored_map_err_2 = <S::User as SeaOrmUserModel>::Entity::delete_many()
             .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))

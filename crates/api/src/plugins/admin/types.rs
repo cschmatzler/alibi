@@ -200,7 +200,11 @@ impl AdminUserView {
                 drop(output.insert(name.clone(), value.clone()));
             }
         }
-        output.extend(ctx.user_view(user).extension_fields);
+        let view = ctx.user_view(user);
+        if let Some(value) = view.is_anonymous {
+            drop(output.insert("isAnonymous".into(), serde_json::Value::Bool(value)));
+        }
+        output.extend(view.extension_fields);
         Ok(Self(output))
     }
 }

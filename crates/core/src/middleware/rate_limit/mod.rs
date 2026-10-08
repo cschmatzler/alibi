@@ -173,7 +173,16 @@ impl RateLimitStorage for CacheRateLimitStorage {
     async fn consume(&self, key: &str, rule: &EndpointRateLimit) -> AuthResult<RateLimitDecision> {
         let ttl = Duration::try_from_secs_f64(rule.window_seconds)
             .map_err(|_| crate::error::AuthError::internal("Invalid shared rate-limit window"))?;
-        let count = self.cache.increment(key, ttl).await?;
+        let count = self
+            .cache
+            .increment(key, ttl)
+            .await
+            .map_err(|error| match error {
+                error @ (crate::AuthError::Api { .. }
+                | crate::AuthError::Upstream { .. }
+                | crate::AuthError::CallbackFailure(_)) => error,
+                error => crate::AuthError::CallbackFailure(Box::new(error)),
+            })?;
         Ok(if count <= rule.max_requests {
             RateLimitDecision::Allowed
         } else {
