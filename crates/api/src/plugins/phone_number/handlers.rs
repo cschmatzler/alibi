@@ -267,6 +267,7 @@ impl PhoneNumberPlugin {
             .ok_or_else(invalid_credentials)?;
         let stored = account
             .password()
+            .filter(|hash| !hash.is_empty())
             .ok_or_else(|| phone_error(401, "UNEXPECTED_ERROR", "Unexpected error"))?;
         alibi_core::utils::password::verify_password(
             settings.hasher.as_ref(),
