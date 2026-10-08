@@ -10,12 +10,18 @@ import { compatScenario } from "../../../support/scenario";
 
 export type ScenarioContext = Parameters<Parameters<typeof compatScenario>[1]>[0];
 export type PhoneProfile =
+  | "phone-notification-awaited"
+  | "phone-notification-background"
+  | "phone-notification-schedule-error"
+  | "phone-no-otp-sender"
+  | "phone-no-reset-sender"
   | "phone-default"
   | "phone-signup"
   | "phone-proof"
   | "phone-custom"
   | "phone-callback-reject"
-  | "phone-custom-errors";
+  | "phone-custom-errors"
+  | "phone-reset-callback";
 
 export function phoneClient(ctx: ScenarioContext, profile: PhoneProfile, actor = "primary") {
   return createAuthClient({
