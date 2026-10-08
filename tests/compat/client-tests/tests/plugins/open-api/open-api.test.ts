@@ -495,3 +495,36 @@ for (const mode of ["explicit", "empty"] as const) {
     ["GET /open-api/generate-schema"],
   );
 }
+
+compatScenario(
+  "OpenAPI repeated operation IDs skip occupied method suffixes and remain stable",
+  async (ctx) => {
+    const actor = ctx.actor("collision-docs", "openapi-collisions");
+    const expected = {
+      reserved: "collisionGet",
+      first: "collision",
+      second: "collisionGet2",
+      third: "collisionGet3",
+    };
+    const live = [];
+    for (const route of Object.keys(expected)) {
+      const result = await actor.client.$fetch(`/collisions/${route}`, { method: "GET" });
+      expect(result.error).toBeNull();
+      expect(result.data).toEqual({ route });
+      live.push(ctx.snapshot(result));
+    }
+    const generated = await actor.client.$fetch("/open-api/generate-schema", { method: "GET" });
+    expect(generated.error).toBeNull();
+    const schema = documentSchema.parse(generated.data);
+    for (const [route, operationId] of Object.entries(expected))
+      expect(schema.paths[`/collisions/${route}`]).toHaveProperty("get.operationId", operationId);
+    const identifiers = Object.keys(expected).map(
+      (route) => (schema.paths[`/collisions/${route}`]!.get as any).operationId,
+    );
+    expect(new Set(identifiers).size).toBe(identifiers.length);
+    const repeated = await actor.client.$fetch("/open-api/generate-schema", { method: "GET" });
+    expect(repeated).toEqual(generated);
+    return { live, generated: ctx.snapshot(generated), repeated: ctx.snapshot(repeated) };
+  },
+  ["GET /open-api/generate-schema"],
+);

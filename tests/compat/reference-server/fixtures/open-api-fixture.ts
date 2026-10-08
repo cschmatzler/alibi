@@ -131,7 +131,30 @@ const parametersPlugin = () => ({
   ),
 });
 
+const collisionsPlugin = () => ({
+  id: "documentation-collisions",
+  endpoints: Object.fromEntries(
+    [
+      ["reserved", "collisionGet"],
+      ["first", "collision"],
+      ["second", "collision"],
+      ["third", "collision"],
+    ].map(([route, operationId]) => [
+      route!,
+      createAuthEndpoint(
+        `/collisions/${route}`,
+        {
+          method: "GET",
+          metadata: { openapi: { operationId } },
+        },
+        async (ctx) => ctx.json({ route }),
+      ),
+    ]),
+  ),
+});
+
 export const OPEN_API_PROFILES = [
+  "openapi-collisions",
   "openapi-parameters",
   "openapi-minimal",
   "openapi-last-login",
@@ -181,46 +204,50 @@ export function openApiProfiles(port: number, database: Database) {
             ? { disableDefaultReference: true }
             : {};
       const extra =
-        name === "openapi-parameters"
-          ? [parametersPlugin()]
-          : name === "openapi-custom-schema"
-            ? [documentationPlugin()]
-            : name.startsWith("openapi-last-login")
-              ? [lastLoginMethod({ storeInDatabase: name === "openapi-last-login-database" })]
-              : name === "openapi-jwt"
-                ? [jwt()]
-                : name === "openapi-username"
-                  ? [username()]
-                  : name.startsWith("openapi-plugins")
-                    ? [
-                        oneTap({ clientId: "openapi-one-tap-client" }),
-                        admin(),
-                        organization({
-                          teams: { enabled: name === "openapi-plugins-teams" },
-                          dynamicAccessControl: { enabled: name === "openapi-plugins-teams" },
-                        }),
-                        twoFactor(),
-                        apiKey(
-                          name === "openapi-plugins-configured"
-                            ? { rateLimit: { maxRequests: 43, timeWindow: 7654321 } }
-                            : {},
-                        ),
-                        passkey(),
-                        deviceAuthorization(),
-                        jwt(),
-                        multiSession(),
-                        phoneNumber({
-                          sendOTP: async () => {
-                            throw new Error("Documentation profile has no phone delivery provider");
-                          },
-                        }),
-                        siwe({
-                          domain: "localhost",
-                          getNonce: async () => "OpenApiDocumentationNonce",
-                          verifyMessage: async () => false,
-                        }),
-                      ]
-                    : [];
+        name === "openapi-collisions"
+          ? [collisionsPlugin()]
+          : name === "openapi-parameters"
+            ? [parametersPlugin()]
+            : name === "openapi-custom-schema"
+              ? [documentationPlugin()]
+              : name.startsWith("openapi-last-login")
+                ? [lastLoginMethod({ storeInDatabase: name === "openapi-last-login-database" })]
+                : name === "openapi-jwt"
+                  ? [jwt()]
+                  : name === "openapi-username"
+                    ? [username()]
+                    : name.startsWith("openapi-plugins")
+                      ? [
+                          oneTap({ clientId: "openapi-one-tap-client" }),
+                          admin(),
+                          organization({
+                            teams: { enabled: name === "openapi-plugins-teams" },
+                            dynamicAccessControl: { enabled: name === "openapi-plugins-teams" },
+                          }),
+                          twoFactor(),
+                          apiKey(
+                            name === "openapi-plugins-configured"
+                              ? { rateLimit: { maxRequests: 43, timeWindow: 7654321 } }
+                              : {},
+                          ),
+                          passkey(),
+                          deviceAuthorization(),
+                          jwt(),
+                          multiSession(),
+                          phoneNumber({
+                            sendOTP: async () => {
+                              throw new Error(
+                                "Documentation profile has no phone delivery provider",
+                              );
+                            },
+                          }),
+                          siwe({
+                            domain: "localhost",
+                            getNonce: async () => "OpenApiDocumentationNonce",
+                            verifyMessage: async () => false,
+                          }),
+                        ]
+                      : [];
       const auth = betterAuth({
         baseURL: `http://localhost:${port}`,
         basePath: `/__test/profiles/${name}/api/auth`,
