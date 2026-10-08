@@ -125,6 +125,9 @@ export const FIXTURE_PROFILES = [
     variants(`provider-batch-${provider}-`, [
       "default",
       "language-en",
+      "prompt-none",
+      "prompt-consent",
+      "prompt-empty",
       "pkce-disabled",
       "configured",
       "disabled-configured",
