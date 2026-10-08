@@ -865,6 +865,8 @@ export const FIXTURE_PROFILES = [
   "two-factor-backup-invalid-length",
   "two-factor-otp-zero",
   "two-factor-otp-negative",
+  "two-factor-otp-missing-options",
+  "two-factor-otp-missing-sender",
   "two-factor-otp-plain",
   "two-factor-otp-hashed",
   "two-factor-otp-encrypted",
