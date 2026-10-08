@@ -55,6 +55,7 @@ struct IdentityState {
     passkeys: indexmap::IndexMap<String, Passkey>,
     api_keys: indexmap::IndexMap<String, ApiKey>,
     device_codes: indexmap::IndexMap<String, DeviceCode>,
+    device_code_fields: indexmap::IndexMap<String, serde_json::Map<String, serde_json::Value>>,
     jwks: indexmap::IndexMap<String, Jwk>,
 }
 
