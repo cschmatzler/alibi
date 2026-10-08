@@ -354,7 +354,17 @@ pub(in crate::plugins) async fn update_user_core(
     }
 
     if let Some(value) = body.data.get("email").and_then(|value| value.as_str()) {
-        update.email = Some(value.to_owned());
+        let email = value.to_lowercase();
+        if let Some(existing) = ctx.database.get_user_by_email_record(&email).await?
+            && existing.id().as_ref() != body.user_id
+        {
+            return Err(AuthError::Api {
+                status: 400,
+                code: Some("USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL".into()),
+                message: "User already exists. Use another email.".into(),
+            });
+        }
+        update.email = Some(email);
     }
     if let Some(value) = body.data.get("name").and_then(|value| value.as_str()) {
         update.name = Some(value.to_owned());
