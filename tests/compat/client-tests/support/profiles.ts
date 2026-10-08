@@ -14,6 +14,7 @@ function variants<P extends string, S extends string>(
  */
 export const FIXTURE_PROFILES = [
   "session-adapter-failure",
+  "password-reset-no-sender",
   ...variants("generic-discovery-", [
     "success",
     "nonce-unbound",
