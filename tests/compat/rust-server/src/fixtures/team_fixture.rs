@@ -507,6 +507,7 @@ struct OrganizationQuery {
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "kebab-case")]
 enum TeamOperation {
+    SetTeamStorage { #[serde(rename = "teamId")] team_id: String, #[serde(rename = "organizationId")] organization_id: Option<String>, #[serde(default)] restore: bool },
     TeamConfigEvidence {
         #[serde(rename = "organizationId")]
         organization_id: String,
@@ -667,10 +668,12 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
     }
     let operation_profiles = profiles.clone();
     let operation_database = database.clone();
+    let team_backups = Arc::new(tokio::sync::Mutex::new(HashMap::<String, team::Model>::new()));
     router
         .route("/__test/organization-api", post(move |headers: axum::http::HeaderMap, Json(body): Json<ServerRequest>| {
             let profiles = operation_profiles.clone();
             let database = operation_database.clone();
+            let team_backups = team_backups.clone();
             async move {
                 let name = body.profile.as_deref().unwrap_or("org-teams");
                 let Some(profile) = profiles.iter().find(|profile| profile.name == name) else {
@@ -680,6 +683,21 @@ pub(crate) fn router(database: DatabaseConnection, profiles: Vec<TeamProfile>) -
                 let headers = headers.iter().filter_map(|(name,value)|value.to_str().ok().map(|value|(name.as_str().to_owned(),value.to_owned()))).collect::<HashMap<_,_>>();
                 let signed = body.authority.as_deref() == Some("headers");
                 let result = match body.operation {
+                    TeamOperation::SetTeamStorage {team_id, organization_id, restore} => async {
+                        let mut backups = team_backups.lock().await;
+                        if restore {
+                            let original = backups.remove(&team_id).ok_or_else(|| AuthError::internal("missing original team"))?;
+                            team::Entity::delete_by_id(&team_id).exec(&database).await.map_err(|e| AuthError::internal(e.to_string()))?;
+                            let model: team::ActiveModel = original.into();
+                            model.reset_all().insert(&database).await.map_err(|e| AuthError::internal(e.to_string()))?;
+                        } else {
+                            let original = team::Entity::find_by_id(&team_id).one(&database).await.map_err(|e| AuthError::internal(e.to_string()))?.ok_or_else(|| AuthError::internal("missing team"))?;
+                            backups.insert(team_id.clone(), original.clone());
+                            if let Some(organization_id) = organization_id {let mut model: team::ActiveModel = original.into();model.organization_id = Set(organization_id);model.update(&database).await.map_err(|e| AuthError::internal(e.to_string()))?;}
+                            else {team::Entity::delete_by_id(&team_id).exec(&database).await.map_err(|e| AuthError::internal(e.to_string()))?;}
+                        }
+                        Ok(json!({"changed": true}))
+                    }.await,
                     TeamOperation::TeamConfigEvidence {organization_id} => super::team_config_fixture::evidence(&database, &organization_id).await,
                     TeamOperation::NumericEvents {organization_id} => numeric_events().lock().map_err(|_| AuthError::internal("Numeric observations unavailable")).map(|events| json!(events.get(&organization_id).cloned().unwrap_or_default())),
                     TeamOperation::OrphanOrganization { organization_id } => {

@@ -888,3 +888,108 @@ compatScenario(
     "POST /organization/set-active-team",
   ],
 );
+
+for (const mode of ["missing", "moved"] as const) {
+  compatScenario(
+    `invitation acceptance restores pending invitation for ${mode} referenced team`,
+    async (ctx) => {
+      const owner = await signUp(ctx, "broken-team-owner");
+      const recipient = await signUp(ctx, "broken-team-recipient");
+      const foreign = await signUp(ctx, "broken-team-foreign");
+      const tenant = data(
+        await owner.client.organization.create({
+          name: "Invitation Tenant",
+          slug: ctx.uniqueToken("invitation-tenant"),
+        }),
+      );
+      const otherTenant = data(
+        await foreign.client.organization.create({
+          name: "Foreign Tenant",
+          slug: ctx.uniqueToken("foreign-invitation-tenant"),
+        }),
+      );
+      const room = data(
+        await owner.client.organization.createTeam({
+          organizationId: tenant.id,
+          name: "Referenced Empty Team",
+        }),
+      );
+      const invitation = data(
+        await owner.client.organization.inviteMember({
+          organizationId: tenant.id,
+          email: recipient.email,
+          role: "member",
+          teamId: room.id,
+        }),
+      );
+      expect(invitation.teamId).toBe(room.id);
+      const altered = await serverOperation(ctx, {
+        operation: "set-team-storage",
+        teamId: room.id,
+        ...(mode === "moved" ? { organizationId: otherTenant.id } : {}),
+      });
+      expect(altered.status).toBe(200);
+      expect(altered.body).toEqual({ changed: true });
+      const before = await state(ctx, tenant.id);
+      const foreignBefore = await state(ctx, otherTenant.id);
+      expect(before.parsed.teams.some((team) => team.id === room.id)).toBe(false);
+      if (mode === "moved")
+        expect(foreignBefore.parsed.teams).toContainEqual(
+          expect.objectContaining({ id: room.id, organizationId: otherTenant.id }),
+        );
+      const sessions = await Promise.all(
+        [owner, recipient, foreign].map((actor) => ctx.readUserState({ userId: actor.user.id })),
+      );
+      const rejected = await recipient.client.organization.acceptInvitation({
+        invitationId: invitation.id,
+      });
+      expect(rejected.data).toBeNull();
+      const after = await state(ctx, tenant.id);
+      expect(after).toEqual(before);
+      expect(after.parsed.invitations.find((row) => row.id === invitation.id)?.status).toBe(
+        "pending",
+      );
+      expect(after.parsed.members.some((row) => row.userId === recipient.user.id)).toBe(false);
+      expect(await state(ctx, otherTenant.id)).toEqual(foreignBefore);
+      expect(
+        await Promise.all(
+          [owner, recipient, foreign].map((actor) => ctx.readUserState({ userId: actor.user.id })),
+        ),
+      ).toEqual(sessions);
+      const repaired = await serverOperation(ctx, {
+        operation: "set-team-storage",
+        teamId: room.id,
+        restore: true,
+      });
+      expect(repaired.status).toBe(200);
+      const restored = await state(ctx, tenant.id);
+      expect(restored.parsed.teams).toContainEqual(
+        expect.objectContaining({ id: room.id, organizationId: tenant.id, name: room.name }),
+      );
+      const accepted = await recipient.client.organization.acceptInvitation({
+        invitationId: invitation.id,
+      });
+      expect(accepted.error).toBeNull();
+      expect(accepted.data?.invitation.status).toBe("accepted");
+      const committed = await state(ctx, tenant.id);
+      expect(committed.parsed.teamMembers).toContainEqual(
+        expect.objectContaining({ teamId: room.id, userId: recipient.user.id }),
+      );
+      expect((await recipient.client.getSession()).data?.session).toMatchObject({
+        activeOrganizationId: tenant.id,
+        activeTeamId: room.id,
+      });
+      expect((await foreign.client.getSession()).data?.user.id).toBe(foreign.user.id);
+      expect(rejected.error).toMatchObject({ status: 400, code: "TEAM_NOT_FOUND" });
+      return {
+        altered,
+        rejected: ctx.snapshot(rejected),
+        repaired,
+        accepted: ctx.snapshot(accepted),
+        before: before.raw,
+        committed: committed.raw,
+      };
+    },
+    ["POST /organization/accept-invitation"],
+  );
+}
