@@ -1,0 +1,190 @@
+[
+  {
+    "missing state": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/error?error=state_not_found"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "unknown state": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/error?error=state_mismatch"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "foreign cookie": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=state_mismatch"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "provider error": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=access_denied&error_description=User%20cancelled"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "no code": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=no_code"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "token failure": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/oops?error=invalid_code"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "registered": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/welcome"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "returning": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/home"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax",
+          "better-auth.session_token=<cookie>; Max-Age=604800; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "replayed state": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/error?error=state_mismatch"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "form post": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/callback/google?code=posted&state=form-state&user=%7B%7D"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "idp initiated": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=google-client&state=<v1>&scope=email+profile+openid&redirect_uri=http%3A%2F%2Flocalhost%3A43219%2Fapi%2Fauth%2Fcallback%2Fgoogle&code_challenge_method=S256&code_challenge=<v2>&include_granted_scopes=true"
+        ],
+        "set-cookie": [
+          "better-auth.state=<cookie>; Max-Age=300; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "unknown provider": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/error?error=state_mismatch"
+        ]
+      },
+      "body": ""
+    }
+  }
+]

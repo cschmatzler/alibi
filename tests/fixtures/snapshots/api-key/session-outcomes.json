@@ -1,0 +1,183 @@
+[
+  {
+    "first use": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "id": "<v1>",
+          "name": "Native owner",
+          "email": "session-keys@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        },
+        "session": {
+          "id": "<v2>",
+          "expiresAt": "<date>",
+          "token": "<g3>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": null,
+          "userAgent": null,
+          "userId": "<v1>"
+        }
+      }
+    }
+  },
+  {
+    "usage exceeded": {
+      "status": 429,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USAGE_EXCEEDED",
+        "message": "API Key has reached its usage limit"
+      }
+    }
+  },
+  {
+    "within window": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "id": "<v1>",
+          "name": "Native owner",
+          "email": "session-keys@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "displayUsername": null,
+          "username": null
+        },
+        "session": {
+          "id": "<v4>",
+          "expiresAt": "<date>",
+          "token": "<g5>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": null,
+          "userAgent": null,
+          "userId": "<v1>"
+        }
+      }
+    }
+  },
+  {
+    "rate limited": {
+      "status": 429,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "RATE_LIMITED",
+        "message": "Rate limit exceeded.",
+        "details": {
+          "tryAgainIn": "<elapsed>"
+        }
+      }
+    }
+  },
+  {
+    "unknown key": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_API_KEY",
+        "message": "Invalid API key."
+      }
+    }
+  },
+  {
+    "reject": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_API_KEY",
+        "message": "Invalid API key."
+      }
+    }
+  },
+  {
+    "fail": {
+      "status": 500,
+      "headers": {},
+      "body": ""
+    }
+  },
+  {
+    "deny": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "validator denied"
+      }
+    }
+  },
+  {
+    "protected route": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": [
+        {
+          "id": "<v6>",
+          "expiresAt": "<date>",
+          "token": "<g7>",
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "ipAddress": "",
+          "userAgent": "",
+          "userId": "<v1>"
+        }
+      ]
+    }
+  },
+  {
+    "expired": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "KEY_EXPIRED",
+        "message": "API Key has expired"
+      }
+    }
+  }
+]

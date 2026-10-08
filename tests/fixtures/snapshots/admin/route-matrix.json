@@ -1,0 +1,701 @@
+[
+  {
+    "create-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array"
+      }
+    }
+  },
+  {
+    "create-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.email] Invalid input: expected string, received number; [body.password] Invalid input: expected string, received boolean; [body.name] Invalid input: expected string, received null"
+      }
+    }
+  },
+  {
+    "create-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "create-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_TOO_LONG",
+        "message": "Password too long"
+      }
+    }
+  },
+  {
+    "create-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE",
+        "message": "You are not allowed to set a non-existent role value"
+      }
+    }
+  },
+  {
+    "create-user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "id": "<v3>",
+          "name": "Roles",
+          "email": "roles@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "support,user",
+          "banned": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "create-user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "id": "<v4>",
+          "name": "Meta",
+          "email": "meta@example.com",
+          "emailVerified": false,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "role": "user",
+          "banned": false,
+          "banExpires": null,
+          "banReason": null,
+          "displayUsername": null,
+          "username": null
+        }
+      }
+    }
+  },
+  {
+    "create-user": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_ALLOWED_TO_CREATE_USERS",
+        "message": "You are not allowed to create users"
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "NO_DATA_TO_UPDATE",
+        "message": "No data to update"
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "PASSWORD_CANNOT_BE_UPDATED_VIA_UPDATE_USER",
+        "message": "Password cannot be updated through update-user. Use the set-user-password endpoint instead"
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_CANNOT_BAN_YOURSELF",
+        "message": "You cannot ban yourself"
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_ALLOWED_TO_BAN_USERS",
+        "message": "You are not allowed to ban users"
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 403,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_ALLOWED_TO_SET_USERS_EMAIL",
+        "message": "You are not allowed to update users email"
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "INVALID_EMAIL",
+        "message": "Invalid email"
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL",
+        "message": "User already exists. Use another email."
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m2>",
+        "name": "Renamed",
+        "email": "renamed@example.com",
+        "emailVerified": true,
+        "image": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "banExpires": null,
+        "username": null,
+        "twoFactorEnabled": false,
+        "role": "user",
+        "banned": false,
+        "banReason": null,
+        "displayUsername": null
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m2>",
+        "name": "Renamed",
+        "email": "renamed@example.com",
+        "emailVerified": true,
+        "image": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "banExpires": null,
+        "username": null,
+        "twoFactorEnabled": false,
+        "role": "user",
+        "banned": true,
+        "banReason": "Manual",
+        "displayUsername": null
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 404,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "USER_NOT_FOUND",
+        "message": "User not found"
+      }
+    }
+  },
+  {
+    "update-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.data] Invalid input: expected record, received array"
+      }
+    }
+  },
+  {
+    "set-role": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.role] Invalid input"
+      }
+    }
+  },
+  {
+    "set-role": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_ARE_NOT_ALLOWED_TO_SET_NON_EXISTENT_VALUE",
+        "message": "You are not allowed to set a non-existent role value"
+      }
+    }
+  },
+  {
+    "set-role": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body.role] Invalid input"
+      }
+    }
+  },
+  {
+    "set-user-password": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v5>] newPassword cannot be empty"
+      }
+    }
+  },
+  {
+    "set-user-password": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v5>] Invalid input: expected string, received number"
+      }
+    }
+  },
+  {
+    "ban-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v6>] Invalid input: expected number, received string"
+      }
+    }
+  },
+  {
+    "ban-user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "id": "<m2>",
+          "name": "Renamed",
+          "email": "renamed@example.com",
+          "emailVerified": true,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "banExpires": null,
+          "username": null,
+          "twoFactorEnabled": false,
+          "role": "user",
+          "banned": true,
+          "banReason": "Policy violation",
+          "displayUsername": null
+        }
+      }
+    }
+  },
+  {
+    "unban-user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "user": {
+          "id": "<m2>",
+          "name": "Renamed",
+          "email": "renamed@example.com",
+          "emailVerified": true,
+          "image": null,
+          "createdAt": "<date>",
+          "updatedAt": "<date>",
+          "banExpires": null,
+          "username": null,
+          "twoFactorEnabled": false,
+          "role": "user",
+          "banned": false,
+          "banReason": null,
+          "displayUsername": null
+        }
+      }
+    }
+  },
+  {
+    "has-permission": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: more than one option matched"
+      }
+    }
+  },
+  {
+    "has-permission": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input"
+      }
+    }
+  },
+  {
+    "has-permission": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[body] Invalid input: expected object, received array; [body] Invalid input"
+      }
+    }
+  },
+  {
+    "has-permission": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "invalid permission check. no permission(s) were passed."
+      }
+    }
+  },
+  {
+    "has-permission": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "error": null,
+        "success": false
+      }
+    }
+  },
+  {
+    "remove-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "YOU_CANNOT_REMOVE_YOURSELF",
+        "message": "You cannot remove yourself"
+      }
+    }
+  },
+  {
+    "revoke-user-sessions": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "success": true
+      }
+    }
+  },
+  {
+    "list-user-sessions": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "sessions": []
+      }
+    }
+  },
+  {
+    "impersonate-user": {
+      "status": 401,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "stop-impersonating": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "message": "You are not impersonating anyone"
+      }
+    }
+  },
+  {
+    "get-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[query.id] Invalid input: expected string, received undefined"
+      }
+    }
+  },
+  {
+    "get-user": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[query.id] Invalid input: expected string, received array"
+      }
+    }
+  },
+  {
+    "get-user": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "id": "<m2>",
+        "name": "Renamed",
+        "email": "renamed@example.com",
+        "emailVerified": true,
+        "image": null,
+        "createdAt": "<date>",
+        "updatedAt": "<date>",
+        "banExpires": null,
+        "username": null,
+        "twoFactorEnabled": false,
+        "role": "user",
+        "banned": false,
+        "banReason": null,
+        "displayUsername": null
+      }
+    }
+  },
+  {
+    "list-users": {
+      "status": 400,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "code": "VALIDATION_ERROR",
+        "message": "[<v7>] Invalid input: expected string, received array; [<v8>] Invalid option: expected one of \"email\"|\"name\"; [query.limit] Invalid input; [<v9>] Invalid option: expected one of \"asc\"|\"desc\"; [<v10>] Invalid option: expected one of \"eq\"|\"ne\"|\"lt\"|\"lte\"|\"gt\"|\"gte\"|\"in\"|\"not_in\"|\"contains\"|\"starts_with\"|\"ends_with\""
+      }
+    }
+  },
+  {
+    "list-users": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "users": [],
+        "total": 0
+      }
+    }
+  },
+  {
+    "list-users": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "users": [],
+        "total": 0
+      }
+    }
+  },
+  {
+    "list-users": {
+      "status": 200,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ]
+      },
+      "body": {
+        "users": [],
+        "total": 0
+      }
+    }
+  }
+]

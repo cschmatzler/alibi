@@ -17,6 +17,7 @@ mod contract;
 mod axum_integration;
 mod core;
 mod plugins;
+mod snapshot;
 mod storage;
 
 #[cfg(feature = "poem")]

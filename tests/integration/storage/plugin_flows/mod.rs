@@ -2,10 +2,13 @@
 //! Validation tables remain owned by plugin units; these exercise composition.
 mod account_sessions;
 mod admin;
+mod admin_matrix;
 mod api_key_callbacks;
+mod api_key_matrix;
 mod credentials;
 mod crypto;
 mod device_callbacks;
+mod device_grant;
 mod factor_policy;
 mod identity_policy;
 mod oauth_configuration;
@@ -24,6 +27,7 @@ mod server_endpoints;
 mod session_fields;
 mod session_plugins;
 mod signup_privacy;
+mod social_flows;
 mod two_factor;
 mod user_lifecycle;
 

@@ -1,0 +1,127 @@
+[
+  {
+    "unverified": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/link-error?error=unable_to_link_account"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "different email": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/link-error?error=email_does_not_match"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "linked": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/settings"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "relinked": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "/settings"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "accounts": [
+      "credential",
+      "google"
+    ]
+  },
+  {
+    "linked elsewhere": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/link-error?error=account_already_linked_to_different_user"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "profile failure": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/link-error?error=unable_to_get_user_info"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  },
+  {
+    "linking disabled": {
+      "status": 302,
+      "headers": {
+        "content-type": [
+          "application/json"
+        ],
+        "location": [
+          "http://localhost:43219/api/auth/error?error=unable_to_link_account"
+        ],
+        "set-cookie": [
+          "better-auth.state=; Max-Age=0; Path=/; HttpOnly; SameSite=Lax"
+        ]
+      },
+      "body": ""
+    }
+  }
+]

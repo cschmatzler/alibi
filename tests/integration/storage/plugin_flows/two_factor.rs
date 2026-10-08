@@ -16,7 +16,10 @@ impl SendTwoFactorOtp for FactorMailbox {
 }
 use alibi_core::endpoint::EndpointOptions;
 
-backend_tests!(totp_enrollment_pending_login_and_trusted_device_rotation);
+backend_tests!(
+    totp_enrollment_pending_login_and_trusted_device_rotation,
+    renamed_factor_table_owns_the_complete_factor_lifecycle
+);
 postgres_tests!(totp_enrollment_pending_login_and_trusted_device_rotation);
 
 async fn signin<S: AuthSchema>(auth: &BetterAuth<S>, cookie: &str) -> AuthResponse {
@@ -543,5 +546,113 @@ async fn totp_enrollment_pending_login_and_trusted_device_rotation<B: Backend>(
     )
     .await;
     authenticated(&auth, &cookies(&completed), "factor@example.test").await;
+    B::close(connection).await
+}
+
+
+async fn renamed_factor_table_owns_the_complete_factor_lifecycle<B: Backend>(
+    db: Db,
+) -> TestResult {
+    let mut config = AuthConfig::new(SECRET).base_url(ORIGIN);
+    config.advanced.database.two_factor = Some(alibi::config::TwoFactorDatabaseConfig {
+        table_name: "application_second_factor".into(),
+        columns: [
+            ("secret", "application_secret"),
+            ("backup_codes", "application_backups"),
+            ("user_id", "application_owner"),
+        ]
+        .into_iter()
+        .map(|(name, column)| (name.into(), column.into()))
+        .collect(),
+    });
+    let connection = B::connect(&db.url, None).await?;
+    let store = B::store(Arc::new(config.clone()), &connection);
+    alibi::store::SchemaMigrator::migrate(&store).await?;
+    let mailbox = Arc::new(FactorMailbox::default());
+    let auth = AuthBuilder::new(config)
+        .store(store)
+        .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
+        .plugin(EmailPasswordPlugin::new())
+        .plugin(SessionManagementPlugin::new())
+        .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
+            send_otp: Some(mailbox.clone()),
+            ..Default::default()
+        }))
+        .build()
+        .await?;
+    let rows = async |user: &str| {
+        db.count_where(
+            "SELECT COUNT(*) FROM application_second_factor WHERE application_owner = $1 AND application_secret <> '' AND application_backups <> ''",
+            &[user],
+        )
+        .await
+        .unwrap()
+    };
+    let owner = signup(&auth, "factor@example.test").await;
+    let user = body(&owner)["user"]["id"].as_str().unwrap().to_owned();
+    let session = cookies(&owner);
+    let enrollment = body(
+        &call(
+            &auth,
+            request("/two-factor/enable", Some(json!({"password": PASSWORD})), &session),
+            200,
+        )
+        .await,
+    );
+    assert_eq!(rows(&user).await, 1);
+    assert_eq!(
+        db.count_where(
+            "SELECT COUNT(*) FROM sqlite_master WHERE name = 'two_factor'",
+            &[]
+        )
+        .await
+        .unwrap_or(0),
+        0
+    );
+    let authenticator = totp_rs::Totp::from_url(enrollment["totpURI"].as_str().unwrap())?;
+    let activated = call(
+        &auth,
+        request(
+            "/two-factor/verify-totp",
+            Some(json!({"code": authenticator.generate_current().to_string()})),
+            &session,
+        ),
+        200,
+    )
+    .await;
+    let session = cookies(&activated);
+
+    let pending = signin(&auth, "").await;
+    assert_eq!(body(&pending)["twoFactorRedirect"], true);
+    let pending_cookie = cookies(&pending);
+    _ = call(&auth, request("/two-factor/send-otp", Some(json!({})), &pending_cookie), 200).await;
+    let otp = mailbox.0.lock().unwrap().last().unwrap().1.clone();
+    _ = call(
+        &auth,
+        request("/two-factor/verify-otp", Some(json!({"code": otp})), &pending_cookie),
+        200,
+    )
+    .await;
+
+    let pending = signin(&auth, "").await;
+    let backup = call(
+        &auth,
+        request(
+            "/two-factor/verify-backup-code",
+            Some(json!({"code": enrollment["backupCodes"][0], "trustDevice": true})),
+            &cookies(&pending),
+        ),
+        200,
+    )
+    .await;
+    let trusted = signin(&auth, &cookies(&backup)).await;
+    assert!(body(&trusted).get("twoFactorRedirect").is_none());
+    _ = call(
+        &auth,
+        request("/two-factor/disable", Some(json!({"password": PASSWORD})), &session),
+        200,
+    )
+    .await;
+    assert_eq!(rows(&user).await, 0);
     B::close(connection).await
 }
