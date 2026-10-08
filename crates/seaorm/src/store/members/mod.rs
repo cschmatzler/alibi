@@ -38,7 +38,7 @@ where
     S: AuthSchema + Send + Sync,
 {
     async fn create_member(&self, member: CreateMember) -> AuthResult<Member> {
-        self.create_member_with_connection(self.connection(), member)
+        self.create_member_with_connection(self.scoped_connection(), member)
             .await
     }
 
@@ -46,7 +46,7 @@ where
         Entity::find()
             .filter(Column::OrganizationId.eq(organization_id))
             .filter(Column::UserId.eq(user_id))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| Member::from(&model)))
             .map_err(map_db_err)
@@ -54,7 +54,7 @@ where
 
     async fn get_member_by_id(&self, id: &str) -> AuthResult<Option<Member>> {
         Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| Member::from(&model)))
             .map_err(map_db_err)
@@ -62,7 +62,7 @@ where
 
     async fn update_member_role(&self, member_id: &str, role: &str) -> AuthResult<Member> {
         let Some(model) = Entity::find_by_id(member_id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -72,7 +72,7 @@ where
         let mut active = model.into_active_model();
         active.role = Set(role.to_owned());
         active
-            .update(self.connection())
+            .update(self.scoped_connection())
             .await
             .map(|model_2| Member::from(&model_2))
             .map_err(map_db_err)
@@ -84,7 +84,7 @@ where
         role: &str,
     ) -> AuthResult<Option<Member>> {
         let Some(model) = Entity::find_by_id(member_id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -92,7 +92,7 @@ where
         };
         let mut active = model.into_active_model();
         active.role = Set(role.to_owned());
-        match active.update(self.connection()).await {
+        match active.update(self.scoped_connection()).await {
             Ok(model_2) => Ok(Some(Member::from(&model_2))),
             Err(DbErr::RecordNotUpdated) => Ok(None),
             Err(error) => Err(map_db_err(error)),
@@ -101,7 +101,7 @@ where
 
     async fn delete_member(&self, member_id: &str) -> AuthResult<()> {
         let transaction = self
-            .connection()
+            .scoped_connection()
             .begin_with_options(sea_orm::TransactionOptions {
                 sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
                 ..Default::default()
@@ -132,7 +132,7 @@ where
         Entity::find()
             .filter(Column::OrganizationId.eq(org_id))
             .order_by_asc(Column::CreatedAt)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|models| models.iter().map(Member::from).collect())
             .map_err(map_db_err)
@@ -146,7 +146,7 @@ where
         remove_team_members: bool,
     ) -> AuthResult<()> {
         let transaction = self
-            .connection()
+            .scoped_connection()
             .begin_with_options(sea_orm::TransactionOptions {
                 sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
                 ..Default::default()
@@ -187,7 +187,7 @@ where
                 u64::try_from(limit)
                     .map_err(|_error| AuthError::internal("Member page parameter exceeds u64"))?,
             )
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|models| models.iter().map(Member::from).collect())
             .map_err(map_db_err)
@@ -202,7 +202,7 @@ where
         let total = usize::try_from(
             filtered_query
                 .clone()
-                .count(self.connection())
+                .count(self.scoped_connection())
                 .await
                 .map_err(map_db_err)?,
         )
@@ -223,7 +223,7 @@ where
         }
 
         query
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|models| (models.iter().map(Member::from).collect(), total))
             .map_err(map_db_err)
@@ -247,7 +247,7 @@ where
         let total = usize::try_from(
             query
                 .clone()
-                .count(self.connection())
+                .count(self.scoped_connection())
                 .await
                 .map_err(map_db_err)?,
         )
@@ -255,11 +255,11 @@ where
         if params.sort_by.as_deref().and_then(member_column).is_some() {
             query = apply_member_sort(query, &legacy_filter);
         }
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         let statement = super::bind_page(query.build(backend), params.limit, params.offset)?;
         Entity::find()
             .from_raw_sql(statement)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|models| (models.iter().map(Member::from).collect(), total))
             .map_err(map_db_err)
@@ -268,7 +268,7 @@ where
     async fn count_organization_members(&self, org_id: &str) -> AuthResult<i64> {
         Entity::find()
             .filter(Column::OrganizationId.eq(org_id))
-            .count(self.connection())
+            .count(self.scoped_connection())
             .await
             .map_err(map_db_err)
             .and_then(|count| {
@@ -281,7 +281,7 @@ where
         Entity::find()
             .filter(Column::OrganizationId.eq(org_id))
             .filter(Column::Role.eq("owner"))
-            .count(self.connection())
+            .count(self.scoped_connection())
             .await
             .map_err(map_db_err)
             .and_then(|count| {

@@ -19,13 +19,13 @@ fn is_preserved_entity(input: &str) -> bool {
         || input.starts_with("quot;")
         || input.starts_with("#39;")
         || input.strip_prefix("#x").is_some_and(|hex| {
-            let Some(hex) = hex.strip_suffix(';') else {
+            let Some(hex) = hex.split_once(';').map(|(entity, _)| entity) else {
                 return false;
             };
             !hex.is_empty() && hex.chars().all(|c| c.is_ascii_hexdigit())
         })
         || input.strip_prefix('#').is_some_and(|digits| {
-            let Some(digits) = digits.strip_suffix(';') else {
+            let Some(digits) = digits.split_once(';').map(|(entity, _)| entity) else {
                 return false;
             };
             !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit())

@@ -108,8 +108,14 @@ impl<S: AuthSchema> SqlxStore<S> {
         &self.hooks
     }
 
-    pub(crate) const fn exec(&self) -> Exec<'_> {
-        Exec::Pool(&self.pool)
+    async fn begin(&self, immediate: bool) -> AuthResult<SqlxTransaction> {
+        let mut transaction = self.pool.begin(immediate).await?;
+        transaction.config = Some(self.config.clone());
+        Ok(transaction)
+    }
+
+    pub(crate) fn exec(&self) -> Exec<'_> {
+        Exec::Pool(&self.pool).with_config(self.config.as_ref())
     }
 
     pub(crate) fn hook_context<'a>(
@@ -136,7 +142,7 @@ impl<S: AuthSchema> SqlxStore<S> {
         immediate: bool,
         work: impl AsyncFnOnce(&SqlxTransaction) -> AuthResult<T>,
     ) -> AuthResult<T> {
-        let transaction = self.pool.begin(immediate).await?;
+        let transaction = self.begin(immediate).await?;
         let value = work(&transaction).await?;
         transaction.commit().await?;
         Ok(value)
@@ -148,7 +154,7 @@ impl<S: AuthSchema> SqlxStore<S> {
 #[async_trait]
 impl<S: AuthSchema> SchemaMigrator for SqlxStore<S> {
     async fn migrate(&self) -> AuthResult<()> {
-        migrator::run_migrations(&self.pool).await
+        migrator::run_migrations_scoped(&self.pool, &self.config).await
     }
 }
 
@@ -406,7 +412,7 @@ where
         &self,
         work: Box<TransactionWork<S>>,
     ) -> AuthResult<BoxedTransactionValue> {
-        let tx = self.pool.begin(false).await?;
+        let tx = self.begin(false).await?;
         let tx_store = SqlxStoreTransaction {
             store: self,
             tx: &tx,

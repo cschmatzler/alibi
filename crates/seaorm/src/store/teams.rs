@@ -8,9 +8,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::ExprTrait;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, PaginatorTrait,
-    QueryFilter, QueryOrder, QuerySelect, Set, SqliteTransactionMode, TransactionOptions,
-    TransactionTrait,
+    ActiveModelTrait, ColumnTrait, EntityTrait, IntoActiveModel, PaginatorTrait, QueryFilter,
+    QueryOrder, QuerySelect, Set, SqliteTransactionMode, TransactionOptions, TransactionTrait,
 };
 use uuid::Uuid;
 
@@ -38,7 +37,7 @@ where
 
     pub(super) async fn add_team_member_in_tx(
         &self,
-        tx: &sea_orm::DatabaseTransaction,
+        tx: &super::ScopedTransaction,
         team_id: &str,
         user_id: &str,
         maximum: Option<f64>,
@@ -142,7 +141,7 @@ where
             created_at: Set(now),
             updated_at: Set(data.updated_at),
         }
-        .insert(self.connection())
+        .insert(self.scoped_connection())
         .await
         .map(Into::into)
         .map_err(map_db_err)
@@ -152,14 +151,14 @@ where
         organization_id: Option<&str>,
         team_id: &str,
     ) -> AuthResult<Option<Team>> {
-        self.get_team_with_connection(self.connection(), organization_id, team_id)
+        self.get_team_with_connection(self.scoped_connection(), organization_id, team_id)
             .await
     }
     async fn list_teams(&self, organization_id: &str) -> AuthResult<Vec<Team>> {
         team::Entity::find()
             .filter(team::Column::OrganizationId.eq(organization_id))
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|rows| rows.into_iter().map(Into::into).collect())
             .map_err(map_db_err)
@@ -172,7 +171,7 @@ where
     ) -> AuthResult<Team> {
         let model = team::Entity::find_by_id(team_id.to_owned())
             .filter(team::Column::OrganizationId.eq(organization_id))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
             .ok_or_else(|| AuthError::bad_request("Team not found"))?;
@@ -182,14 +181,14 @@ where
         }
         active.updated_at = Set(Some(Utc::now()));
         active
-            .update(self.connection())
+            .update(self.scoped_connection())
             .await
             .map(Into::into)
             .map_err(map_db_err)
     }
     async fn delete_team(&self, organization_id: &str, team_id: &str) -> AuthResult<bool> {
         let tx = self
-            .connection()
+            .scoped_connection()
             .begin_with_options(TransactionOptions {
                 sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
                 ..Default::default()
@@ -245,7 +244,7 @@ where
         team_member::Entity::find()
             .filter(team_member::Column::TeamId.eq(team_id))
             .filter(team_member::Column::UserId.eq(user_id))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|row| row.map(Into::into))
             .map_err(map_db_err)
@@ -257,7 +256,7 @@ where
         maximum: Option<f64>,
     ) -> AuthResult<AddTeamMemberResult> {
         let tx = self
-            .connection()
+            .scoped_connection()
             .begin_with_options(TransactionOptions {
                 sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
                 ..Default::default()
@@ -272,7 +271,7 @@ where
     }
     async fn remove_team_member(&self, team_id: &str, user_id: &str) -> AuthResult<usize> {
         let tx = self
-            .connection()
+            .scoped_connection()
             .begin_with_options(TransactionOptions {
                 sqlite_transaction_mode: Some(SqliteTransactionMode::Immediate),
                 ..Default::default()
@@ -315,7 +314,7 @@ where
         team_member::Entity::find()
             .filter(team_member::Column::TeamId.eq(team_id))
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|rows| rows.into_iter().map(Into::into).collect())
             .map_err(map_db_err)
@@ -324,7 +323,7 @@ where
         let memberships = team_member::Entity::find()
             .filter(team_member::Column::UserId.eq(user_id))
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         if memberships.is_empty() {
@@ -332,7 +331,7 @@ where
         }
         let rooms = team::Entity::find()
             .filter(team::Column::Id.is_in(memberships.iter().map(|row| row.team_id.clone())))
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?
             .into_iter()
@@ -349,12 +348,11 @@ where
 
 /// Delete owned memberships and release exactly the seats those rows occupied.
 pub(super) async fn remove_owned_team_members(
-    connection: &sea_orm::DatabaseTransaction,
+    connection: &super::ScopedTransaction,
     user_id: &str,
     organization_id: Option<&str>,
 ) -> AuthResult<()> {
-    use sea_orm_migration::SchemaManager;
-    if !SchemaManager::new(connection)
+    if !connection
         .has_table("team_member")
         .await
         .map_err(map_db_err)?
@@ -376,7 +374,7 @@ pub(super) async fn remove_owned_team_members(
 
 /// Remove memberships from an already selected adapter page and release seats.
 pub(super) async fn release_owned_team_members(
-    connection: &sea_orm::DatabaseTransaction,
+    connection: &super::ScopedTransaction,
     user_id: &str,
     rooms: Vec<team::Model>,
 ) -> AuthResult<()> {

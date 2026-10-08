@@ -133,6 +133,7 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
         let resolved_email = profile
             .get("email")
             .and_then(Value::as_str)
+            .filter(|email| !email.is_empty())
             .map(String::from)
             .or_else(|| {
                 emails
@@ -147,7 +148,7 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
             && profile_object
                 .get("email")
                 .and_then(Value::as_str)
-                .is_none()
+                .is_none_or(str::is_empty)
             && !resolved_email.is_empty()
         {
             drop(profile_object.insert("email".to_owned(), Value::String(resolved_email.clone())));
@@ -175,11 +176,15 @@ impl OAuthUserInfoHandler for GitHubUserInfoHandler {
                 additional_fields: Default::default(),
                 id,
                 email: resolved_email,
-                name: profile
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .map(String::from)
-                    .or(login),
+                name: Some(
+                    profile
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .filter(|name| !name.is_empty())
+                        .map(String::from)
+                        .or(login)
+                        .unwrap_or_default(),
+                ),
                 image: profile
                     .get("avatar_url")
                     .and_then(Value::as_str)

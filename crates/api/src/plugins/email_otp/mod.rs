@@ -13,6 +13,7 @@ mod storage;
 
 mod types;
 
+use alibi_core::AuthError;
 use alibi_core::{AuthContext, AuthRequest, AuthResponse, AuthResult};
 use async_trait::async_trait;
 pub use endpoint::EmailOtpRead;
@@ -224,7 +225,17 @@ impl EmailOtpPlugin {
             return Ok(None);
         }
         let (stored, _) = types::split_value(value.value()?);
-        self.config.storage.retrieve(stored, &ctx.config).await
+        self.config
+            .storage
+            .retrieve(stored, &ctx.config)
+            .await
+            .map_err(|error| match error {
+                error if error.status_code() != 500 => error,
+                AuthError::Api { .. }
+                | AuthError::Upstream { .. }
+                | AuthError::CallbackFailure(_) => error,
+                error => AuthError::CallbackFailure(Box::new(error)),
+            })
     }
 }
 
