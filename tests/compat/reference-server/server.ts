@@ -943,6 +943,11 @@ for (const name of [
 }
 
 for (const name of [
+  "stateless-refresh-compact",
+  "stateless-refresh-jwt",
+  "stateless-refresh-deferred",
+  "stateless-refresh-v2",
+  "stateless-refresh-jwt-v2",
   "session-update-age",
   "session-update-age-cache",
   "session-update-age-long",
@@ -959,16 +964,29 @@ for (const name of [
     betterAuth({
       ...authOptions,
       basePath: path,
+      ...(name.startsWith("stateless-refresh-") ? { database: undefined } : {}),
       session: {
         ...authOptions.session,
+        ...(name.startsWith("stateless-refresh-")
+          ? {
+              cookieCache: {
+                enabled: true,
+                strategy: name.includes("jwt") ? "jwt" : "compact",
+                maxAge: 5,
+                refreshCache: { updateAge: 4 },
+                version: name.endsWith("v2") ? "2" : "1",
+              },
+            }
+          : {}),
         ...(name.includes("update-age")
           ? { expiresIn: 3600, updateAge: name.endsWith("-long") ? 7200 : 120 }
           : {}),
         ...(name === "session-update-age-cache"
           ? { cookieCache: { enabled: true, maxAge: 300 } }
           : {}),
-        deferSessionRefresh: name.startsWith("session-deferred"),
-        disableSessionRefresh: name.endsWith("no-refresh"),
+        deferSessionRefresh:
+          name.startsWith("session-deferred") || name.endsWith("refresh-deferred"),
+        disableSessionRefresh: name.endsWith("no-refresh") || name.startsWith("stateless-refresh-"),
         ...(name === "session-no-freshness" ? { freshAge: 0 } : {}),
       },
       ...(name === "session-cookie-cleanup"
