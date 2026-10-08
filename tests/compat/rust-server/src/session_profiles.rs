@@ -48,6 +48,11 @@ pub(super) async fn router(
         "id-strategy-custom",
         "id-strategy-false",
         "id-strategy-throw",
+        "stateless-refresh-compact",
+        "stateless-refresh-jwt",
+        "stateless-refresh-deferred",
+        "stateless-refresh-v2",
+        "stateless-refresh-jwt-v2",
         "session-update-age",
         "session-update-age-cache",
         "session-update-age-long",
@@ -56,7 +61,9 @@ pub(super) async fn router(
         "session-no-refresh",
         "session-deferred-no-refresh",
         "session-no-freshness",
+        "snake-casing",
         "session-cookie-cleanup",
+        "account-unlink-all",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = config.clone().base_path(&path);
@@ -70,6 +77,11 @@ pub(super) async fn router(
             config.session.preserve_in_database = name.contains("preserve");
             drop(caches.insert(name.to_owned(), cache));
         }
+        if name.starts_with("stateless-refresh-") {
+            config.session = config.session.stateless();
+            config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {enabled: true, max_age: 5.0, strategy: if name.contains("jwt") {alibi_core::CookieCacheStrategy::Jwt} else {alibi_core::CookieCacheStrategy::Compact}, version: Some(alibi_core::CookieCacheVersion::Literal(if name.ends_with("v2") {"2"} else {"1"}.into()))});
+            config.session.cookie_refresh_cache = alibi_core::CookieRefreshCache::UpdateAge(4.0);
+        }
         if name.contains("update-age") {
             config.session.expires_in = chrono::Duration::seconds(3600);
             config.session.update_age = Some(chrono::Duration::seconds(if name.ends_with("-long") {7200} else {120}));
@@ -77,14 +89,17 @@ pub(super) async fn router(
         if name == "session-update-age-cache" {
             config.session.cookie_cache = Some(alibi_core::CookieCacheConfig {enabled: true, max_age: 300.0, ..Default::default()});
         }
-        config.session.defer_session_refresh = name.starts_with("session-deferred");
-        config.session.disable_session_refresh = name.ends_with("no-refresh");
+        config.session.defer_session_refresh = name.starts_with("session-deferred") || name.ends_with("refresh-deferred");
+        config.session.disable_session_refresh = name.ends_with("no-refresh") || name.starts_with("stateless-refresh-");
         if name == "session-no-freshness" {
             config.session.fresh_age = Some(chrono::Duration::zero());
         }
         if name == "session-cookie-cleanup" {
             config.account.store_account_cookie = true;
             config.account.store_state_strategy = alibi::config::OAuthStateStrategy::Cookie;
+        }
+        if name == "account-unlink-all" {
+            config.account.account_linking.allow_unlinking_all = true;
         }
         let mut builder = AuthBuilder::<TestSchema>::new(config.clone())
             .store(crate::backend::store::<TestSchema>(
@@ -102,7 +117,11 @@ pub(super) async fn router(
             )
             .plugin(AdminPlugin::new())
             .plugin(TwoFactorPlugin::new())
-            .plugin(OrganizationPlugin::new());
+            .plugin(OrganizationPlugin::new())
+            .plugin(alibi::plugins::open_api::OpenApiPlugin::new());
+        if name == "account-unlink-all" {
+            builder = builder.plugin(alibi::plugins::AccountManagementPlugin::new());
+        }
         if name.starts_with("session-secondary-") {
             builder = builder
                 .plugin(MultiSessionPlugin::new())
@@ -126,6 +145,14 @@ pub(super) async fn router(
             rows.iter().map(|row| {let mut value = json!({"id": row.try_get::<String>("", "id").unwrap()}); if owner {value["userId"] = json!(row.try_get::<String>("", "user_id").unwrap());} value}).collect::<Vec<_>>()
         };
         Json(json!({"users": read("users",false).await, "accounts": read("accounts",true).await, "sessions": read("sessions",true).await, "verification": read("verifications",false).await, "events": []}))
+    }}));
+    let casing_database = database.clone();
+    router = router.route("/__test/casing/state", axum::routing::get(move |axum::extract::Query(query): axum::extract::Query<HashMap<String,String>>| {let database = casing_database.clone(); async move {
+        use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
+        let id = query.get("userId").unwrap();
+        let users = database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(), "SELECT id, name, email, email_verified FROM users WHERE id = ?", [id.clone().into()])).await.unwrap();
+        let sessions = database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(), "SELECT user_id FROM sessions WHERE user_id = ?", [id.clone().into()])).await.unwrap();
+        Json(serde_json::json!({"users": users.iter().map(|row| serde_json::json!({"id": row.try_get::<String>("","id").unwrap(), "name": row.try_get::<String>("","name").unwrap(), "email": row.try_get::<String>("","email").unwrap(), "verified": i32::from(row.try_get::<bool>("","email_verified").unwrap())})).collect::<Vec<_>>(), "sessions": sessions.iter().map(|row| serde_json::json!({"owner": row.try_get::<String>("","user_id").unwrap()})).collect::<Vec<_>>()}))
     }}));
     let caches = Arc::new(caches);
     router = router.route(

@@ -284,6 +284,7 @@ struct Control {
     expires_at: Option<DateTime<Utc>>,
     field: Option<String>,
     payload: Option<alibi_core::utils::json::JsValue>,
+    override_options: Option<Value>,
     token: Option<String>,
     issuer: Option<String>,
     header: Option<Map<String, Value>>,
@@ -340,6 +341,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
     let mut profiles = HashMap::new();
     let mut router = Router::new();
     for mode in [
+        "claims",
         "standard",
         "plain",
         "cache",
@@ -364,6 +366,9 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             }],
             ..Default::default()
         };
+        if mode == "claims" {
+            options.claims = JwtClaimsConfig { issuer: Some("configured-issuer".into()), audience: Some(alibi::plugins::jwt::JwtAudience::One("configured-audience".into())), expiration: JwtExpiration::AfterSeconds(10800.0) };
+        }
         if mode == "cache" {
             options.define_payload = None;
             options.define_subject = None;
@@ -425,6 +430,16 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     "legacy"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"UPDATE fixtureJwtKeyring SET alg=NULL,crv=NULL WHERE profile=? AND id=?",[app.profile.clone().into(),body.id.into()])).await.map_err(database_error)?;},
                     "delete"=>{database.execute_raw(Statement::from_sql_and_values(DbBackend::Sqlite,"DELETE FROM fixtureJwtKeyring WHERE profile=? AND id=?",[app.profile.clone().into(),body.id.into()])).await.map_err(database_error)?;},
                     "verify"=>{let mut request=AuthRequest::new(HttpMethod::Post,"/__test/jwt-keyring");request.body=Some(request_body.clone());request.headers=headers.iter().filter_map(|(key,value)|value.to_str().ok().map(|value|(key.to_string(),value.to_owned()))).collect();return Ok(json!({"payload":jwt.verify_jwt(body.token.as_deref().ok_or_else(||AuthError::bad_request("token"))?,body.issuer.as_deref(),(!body.absent_request).then_some(&request),auth.context()).await?}));},
+                    "api-sign-overrides" => {
+                        let mut request = AuthRequest::new(HttpMethod::Post, "/__test/jwt-keyring");
+                        request.body = Some(request_body.clone());
+                        request.headers = headers.iter().filter_map(|(key,value)|value.to_str().ok().map(|value|(key.to_string(),value.to_owned()))).collect();
+                        let mut input = json!({"payload":body.payload.ok_or_else(||AuthError::bad_request("payload"))?});
+                        if let Some(overrides) = body.override_options { input["overrideOptions"] = overrides; }
+                        let endpoint = alibi::endpoint::ServerEndpoint::<Value>::new("jwt", "signJWT").with_body(&input)?;
+                        let options = alibi::endpoint::EndpointOptions { headers: (!body.absent_request).then(||request.headers.clone()), request: (!body.absent_request).then_some(request), ..Default::default() };
+                        return auth.dispatch_endpoint(endpoint, options).await.map_err(|error| AuthError::internal(error.to_string()))?.decode();
+                    }
                     "sign"|"resolve-sign"|"create"|"api-sign"=>{
                         let mut request=AuthRequest::new(HttpMethod::Post,"/__test/jwt-keyring");
                         request.body=Some(request_body.clone());request.headers=headers.iter().filter_map(|(key,value)|value.to_str().ok().map(|value|(key.to_string(),value.to_owned()))).collect();
