@@ -42,6 +42,7 @@ import { cloudflareProviderFixture } from "./fixtures/cloudflare-provider-fixtur
 import { cognitoProviderFixture } from "./fixtures/cognito-provider-fixture";
 import { createCompromisedPasswordFixture } from "./fixtures/compromised-password-fixture";
 import { createCustomSessionFixture } from "./fixtures/custom-session-fixture";
+import { deleteHooksFixture } from "./fixtures/delete-hooks-fixture";
 import { createDispatchFixture } from "./fixtures/dispatch-fixture";
 import { dropboxProviderFixture } from "./fixtures/dropbox-provider-fixture";
 import { facebookProviderFixture } from "./fixtures/facebook-provider-fixture";
@@ -1143,6 +1144,7 @@ const physicalCookies = physicalCookieProfiles(authOptions, database);
 for (const [path, auth] of physicalCookies.profiles) {
   verificationProfiles.set(path, auth);
 }
+const deletionHooks = deleteHooksFixture(authOptions);
 const auth = betterAuth(authOptions);
 const errorPageAuth = betterAuth({
   ...authOptions,
@@ -2115,6 +2117,7 @@ async function resetDatabaseState() {
   await context.adapter.deleteMany({ model: "jwks", where: [] });
   // Application-owned keys of the custom-adapter JWT keyring profiles.
   database.query("DELETE FROM fixtureJwtKeyring").run();
+  database.query("DELETE FROM application_delete_receipts").run();
 }
 
 /** Row counts of every non-empty table; the scenario runner requires none after reset. */
@@ -2191,6 +2194,8 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      const deletionResponse = await deletionHooks.handle(request);
+      if (deletionResponse) return deletionResponse;
       const microsoftControl = await microsoftFixture.handle(request);
       if (microsoftControl) return microsoftControl;
       if (url.pathname.startsWith("/__test/profiles/error-page/api/auth/")) {
