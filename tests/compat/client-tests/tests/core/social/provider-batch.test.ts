@@ -1132,3 +1132,145 @@ for (const stage of ["token", "user", "refresh"] as const) {
     );
   }
 }
+
+for (const mode of ["default", "pkce-disabled"] as const) {
+  compatScenario(
+    `Zoom configured PKCE ${mode} retains actual code grant verifier`,
+    async (ctx) => {
+      await control(ctx, "zoom");
+      const completed = await flow(ctx, "zoom", mode);
+      expect(completed.url.searchParams.get("code_challenge_method")).toBe(
+        mode === "default" ? "S256" : null,
+      );
+      expect(completed.url.searchParams.has("code_challenge")).toBe(mode === "default");
+      expect(completed.response.headers.get("location")).toBe("/dashboard");
+      const receipts: any[] = await read(ctx, "receipts");
+      expect(receipts.map((row) => row.stage)).toEqual(["token", "user"]);
+      const grant = receipts[0].body;
+      expect(grant).toMatchObject({
+        grant_type: "authorization_code",
+        code: "batch-code",
+        client_id: "batch-client",
+        client_secret: "batch-secret",
+      });
+      expect(grant.code_verifier).toMatch(/^[A-Za-z0-9_-]{43,128}$/);
+      expect(grant.redirect_uri).toBe(
+        ctx.baseURL + authProfilePath(selected("zoom", mode)) + "/callback/zoom",
+      );
+      if (mode === "default")
+        expect(createHash("sha256").update(grant.code_verifier!).digest("base64url")).toBe(
+          completed.url.searchParams.get("code_challenge")!,
+        );
+      const session = await completed.actor.client.getSession();
+      expect(session.data?.user.email).toBe("batch@example.invalid");
+      return {
+        start: ctx.snapshot(completed.start),
+        callback: status(completed.response, ctx.baseURL),
+        session: ctx.snapshot(session),
+        grant: grantBody(receipts[0]),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+  );
+}
+
+for (const mode of ["default", "prompt-none", "prompt-consent", "prompt-empty"] as const) {
+  compatScenario(
+    `Roblox configured prompt ${mode} preserves actual callback owner`,
+    async (ctx) => {
+      await control(ctx, "roblox");
+      const completed = await flow(ctx, "roblox", mode);
+      expect(completed.url.searchParams.get("prompt")).toBe(
+        mode === "prompt-none"
+          ? "none"
+          : mode === "prompt-consent"
+            ? "consent"
+            : "select_account consent",
+      );
+      expect(completed.url.searchParams.get("state")).toBeString();
+      expect(completed.response.status).toBe(302);
+      expect(completed.response.headers.get("location")).toBe("/dashboard");
+      const session = await completed.actor.client.getSession();
+      expect(session.data?.user.name).toBe("Batch Name");
+      const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
+      const source = "user" in sql;
+      const account = sql[source ? "account" : "accounts"]![0];
+      expect(account[source ? "accountId" : "account_id"]).toBe("batch-subject");
+      expect(account[source ? "userId" : "user_id"]).toBe(session.data!.user.id);
+      expect(sql[source ? "user" : "users"]).toHaveLength(1);
+      expect(sql[source ? "session" : "sessions"]).toHaveLength(1);
+      expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+      const receipts: any[] = await read(ctx, "receipts");
+      expect(receipts.map((row) => row.stage)).toEqual(["token", "user"]);
+      return {
+        start: ctx.snapshot(completed.start),
+        callback: status(completed.response, ctx.baseURL),
+        session: ctx.snapshot(session),
+        wire: receipts.map((row) => ({
+          stage: row.stage,
+          method: row.method,
+          query: row.query,
+          body: row.body,
+        })),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+  );
+}
+
+for (const mode of ["default", "language-en"] as const) {
+  compatScenario(
+    `WeChat authorization language ${mode} keeps separate user-info language`,
+    async (ctx) => {
+      const foreign = ctx.actor("foreign");
+      expect(
+        (
+          await foreign.client.signUp.email({
+            email: ctx.uniqueEmail("wechat-language-foreign"),
+            password: "password123",
+            name: "Foreign owner",
+          })
+        ).error,
+      ).toBeNull();
+      const foreignBefore = await foreign.client.getSession();
+      await control(ctx, "wechat");
+      const completed = await flow(ctx, "wechat", mode);
+      expect(completed.url.searchParams.get("lang")).toBe(mode === "default" ? "cn" : "en");
+      expect(completed.url.searchParams.get("scope")).toBe("snsapi_login");
+      expect(completed.url.searchParams.get("appid")).toBe("batch-client");
+      expect(completed.url.searchParams.get("state")).toBeString();
+      expect(completed.url.hash).toBe("#wechat_redirect");
+      expect(completed.response.headers.get("location")).toBe("/dashboard");
+      const receipts: any[] = await read(ctx, "receipts");
+      expect(receipts.map((row) => row.stage)).toEqual(["token", "user"]);
+      expect(receipts[1].query).toEqual({
+        access_token: "batch-access",
+        openid: "batch-subject",
+        lang: "zh_CN",
+      });
+      const session = await completed.actor.client.getSession();
+      expect(session.data?.user.email).toBe("batch-subject@wechat.placeholder.invalid");
+      const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
+      const source = "user" in sql;
+      const account = sql[source ? "account" : "accounts"]!.find(
+        (row) => row[source ? "providerId" : "provider_id"] === "wechat",
+      );
+      expect(account[source ? "accountId" : "account_id"]).toBe("batch-subject");
+      expect(account[source ? "userId" : "user_id"]).toBe(session.data!.user.id);
+      expect(sql[source ? "session" : "sessions"]).toHaveLength(2);
+      expect(await foreign.client.getSession()).toEqual(foreignBefore);
+      return {
+        start: ctx.snapshot(completed.start),
+        session: ctx.snapshot(session),
+        callback: status(completed.response, ctx.baseURL),
+        wire: receipts.map((row) => ({
+          stage: row.stage,
+          method: row.method,
+          query: row.query,
+          body: row.body,
+        })),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+  );
+}
