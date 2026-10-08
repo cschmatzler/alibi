@@ -230,6 +230,7 @@ impl EmailOtpPlugin {
             .retrieve(stored, &ctx.config)
             .await
             .map_err(|error| match error {
+                error if error.status_code() != 500 => error,
                 AuthError::Api { .. }
                 | AuthError::Upstream { .. }
                 | AuthError::CallbackFailure(_) => error,
