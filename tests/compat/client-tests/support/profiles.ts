@@ -13,6 +13,14 @@ function variants<P extends string, S extends string>(
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  ...variants("provider-batch-salesforce-family-", [
+    "default",
+    "sandbox",
+    "custom",
+    "custom-sandbox",
+    "empty",
+    "empty-sandbox",
+  ] as const),
   "ott-custom-header",
   "email-verification-rate-limited",
   "bearer-renamed-cookie",
