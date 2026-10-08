@@ -445,3 +445,86 @@ for (const profile of ["session-fields", "session-fields-plugins"] as const) {
     },
   );
 }
+
+for (const mode of ["explicit", "empty"] as const) {
+  compatScenario(
+    `OpenAPI explicit parameter metadata ${mode} replaces inference and deduplicates paths`,
+    async (ctx) => {
+      const actor = ctx.actor("parameter-docs", "openapi-parameters");
+      const live = await actor.client.$fetch(`/parameters-${mode}/document-42`, {
+        method: "GET",
+        query: { inferred: "real-input", documented: "visible" },
+      });
+      expect(live.error).toBeNull();
+      expect(live.data).toEqual({
+        id: "document-42",
+        inferred: "real-input",
+        documented: "visible",
+      });
+      const generated = await actor.client.$fetch("/open-api/generate-schema", { method: "GET" });
+      expect(generated.error).toBeNull();
+      const schema = documentSchema.parse(generated.data);
+      const operation: any = schema.paths[`/parameters-${mode}/{id}`]!.get;
+      expect(operation.operationId).toBe(`parameters${mode}`);
+      expect(operation.parameters).toEqual(
+        mode === "empty"
+          ? [{ name: "id", in: "path", required: true, schema: { type: "string" } }]
+          : [
+              {
+                name: "documented",
+                in: "query",
+                required: true,
+                description: "Explicit query",
+                schema: { type: "string", enum: ["visible"] },
+              },
+              {
+                name: "id",
+                in: "path",
+                required: true,
+                description: "Application identifier",
+                schema: { type: "string", pattern: "^document-[0-9]+$" },
+              },
+            ],
+      );
+      expect(
+        operation.parameters.filter((p: any) => p.in === "path" && p.name === "id"),
+      ).toHaveLength(1);
+      expect(operation.parameters.some((p: any) => p.name === "inferred")).toBe(false);
+      return { live: ctx.snapshot(live), generated: ctx.snapshot(generated) };
+    },
+    ["GET /open-api/generate-schema"],
+  );
+}
+
+compatScenario(
+  "OpenAPI repeated operation IDs skip occupied method suffixes and remain stable",
+  async (ctx) => {
+    const actor = ctx.actor("collision-docs", "openapi-collisions");
+    const expected = {
+      reserved: "collisionGet",
+      first: "collision",
+      second: "collisionGet2",
+      third: "collisionGet3",
+    };
+    const live = [];
+    for (const route of Object.keys(expected)) {
+      const result = await actor.client.$fetch(`/collisions/${route}`, { method: "GET" });
+      expect(result.error).toBeNull();
+      expect(result.data).toEqual({ route });
+      live.push(ctx.snapshot(result));
+    }
+    const generated = await actor.client.$fetch("/open-api/generate-schema", { method: "GET" });
+    expect(generated.error).toBeNull();
+    const schema = documentSchema.parse(generated.data);
+    for (const [route, operationId] of Object.entries(expected))
+      expect(schema.paths[`/collisions/${route}`]).toHaveProperty("get.operationId", operationId);
+    const identifiers = Object.keys(expected).map(
+      (route) => (schema.paths[`/collisions/${route}`]!.get as any).operationId,
+    );
+    expect(new Set(identifiers).size).toBe(identifiers.length);
+    const repeated = await actor.client.$fetch("/open-api/generate-schema", { method: "GET" });
+    expect(repeated).toEqual(generated);
+    return { live, generated: ctx.snapshot(generated), repeated: ctx.snapshot(repeated) };
+  },
+  ["GET /open-api/generate-schema"],
+);

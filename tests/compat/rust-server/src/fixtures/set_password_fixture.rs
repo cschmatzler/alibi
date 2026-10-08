@@ -96,6 +96,9 @@ impl PasswordHasher for Application {
         Ok(hash)
     }
     async fn verify(&self, hash: &str, password: &str) -> AuthResult<bool> {
+        if *self.mode.lock().unwrap() == "schema-observe" {
+            self.events.lock().unwrap().push(json!({"stage":"verify-enter","password":password}));
+        }
         ScryptHasher.verify(hash, password).await
     }
 }
@@ -124,6 +127,7 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         "set-password-default",
         "set-password-policy",
         "set-password-cache",
+        "set-password-schema",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = base.clone().base_path(&path);
@@ -150,6 +154,10 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
                     },
                     password_hasher: Some(app.clone()),
                     enable_username: false,
+                    ..Default::default()
+                }))
+                .plugin(alibi::plugins::PasswordManagementPlugin::with_config(alibi::plugins::PasswordManagementConfig {
+                    password_hasher: Some(app.clone()),
                     ..Default::default()
                 }))
                 .plugin(SessionManagementPlugin::new())

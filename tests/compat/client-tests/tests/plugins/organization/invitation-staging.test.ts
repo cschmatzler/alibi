@@ -1041,3 +1041,84 @@ for (const mode of ["record", "after-accept-internal", "after-accept-public500"]
     ["POST /organization/accept-invitation"],
   );
 }
+
+compatScenario(
+  "invitation acceptance follows the replacement team committed by before-accept hook",
+  async (ctx) => {
+    const s = await setup(ctx);
+    const replacementResult = await s.owner.client.organization.createTeam({
+      organizationId: s.org.id,
+      name: "Replacement Invitation Team",
+    });
+    expect(replacementResult.error).toBeNull();
+    const replacement = row.parse(replacementResult.data);
+    const siblingBefore = await s.sibling.client.getSession();
+    const before = await state(ctx);
+    const configured = await ctx.rawRequest({
+      path: "/__test/organization-invitation-stage/configure",
+      method: "POST",
+      json: { mode: "replace-team", replacementTeamId: replacement.id },
+    });
+    expect(configured.status).toBe(200);
+    const accepted = await s.target.client.organization.acceptInvitation({
+      invitationId: s.invitation.id,
+    });
+    expect(accepted.error).toBeNull();
+    const after = await state(ctx);
+    expect(after.receipts.map((receipt) => receipt.phase)).toEqual([
+      "before-accept",
+      "team-limit",
+      "after-accept",
+    ]);
+    const first = after.receipts[0]!;
+    expect(first.context.invitation).toMatchObject({
+      id: s.invitation.id,
+      teamId: s.team!.id,
+      status: "pending",
+    });
+    expect(
+      first.snapshot!.invitations.find((invitation) => invitation.id === s.invitation.id),
+    ).toMatchObject({ teamId: s.team!.id, status: "pending" });
+    const current = await s.target.client.getSession();
+    expect((await s.sibling.client.getSession()).data).toEqual(siblingBefore.data);
+    expect(await ctx.readUserState({ userId: s.foreign.user.id })).toEqual(s.foreignBefore);
+    expect(after.snapshot.members.filter((member) => member.organizationId === s.other.id)).toEqual(
+      before.snapshot.members.filter((member) => member.organizationId === s.other.id),
+    );
+    const stored = after.snapshot.invitations.find(
+      (invitation) => invitation.id === s.invitation.id,
+    )!;
+    expect(stored.teamId).toBe(replacement.id);
+    expect(stored.status).toBe("accepted");
+    const observed = {
+      response: accepted.data!.invitation.teamId,
+      memberships: after.snapshot.teamMembers
+        .filter((member) => member.userId === s.target.user.id)
+        .map((member) => member.teamId),
+      activeTeam: current.data?.session.activeTeamId,
+      activeOrg: current.data?.session.activeOrganizationId,
+      originalCount: after.snapshot.teams.find((team) => team.id === s.team!.id)?.memberCount,
+      replacementCount: after.snapshot.teams.find((team) => team.id === replacement.id)
+        ?.memberCount,
+      afterHook: (after.receipts[2]!.context.invitation as Record<string, unknown>).teamId,
+    };
+    expect(observed).toEqual({
+      response: replacement.id,
+      memberships: [replacement.id],
+      activeTeam: replacement.id,
+      activeOrg: s.org.id,
+      originalCount: 0,
+      replacementCount: 1,
+      afterHook: replacement.id,
+    });
+    return ctx.snapshot({
+      replacementResult,
+      configured,
+      accepted,
+      current,
+      before,
+      after,
+    });
+  },
+  ["POST /organization/accept-invitation"],
+);
