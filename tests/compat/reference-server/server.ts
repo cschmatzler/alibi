@@ -28,6 +28,7 @@ import { additionalFieldsFixture } from "./fixtures/additional-fields-fixture";
 import { createAdminBannedMessageFixture } from "./fixtures/admin-banned-message-fixture";
 import { createAdminPermissionFixture } from "./fixtures/admin-permission-fixture";
 import { anonymousFixture } from "./fixtures/anonymous-fixture";
+import { apiErrorFixture } from "./fixtures/api-error-fixture";
 import { apiKeyBackgroundFixture } from "./fixtures/api-key-background-fixture";
 import { createApiKeyGenerationFixture } from "./fixtures/api-key-generation-fixture";
 import { createApiKeyHookFixture } from "./fixtures/api-key-hook-fixture";
@@ -570,6 +571,7 @@ const sessionFieldsFixture = await createSessionFieldsFixture(
   authOptions,
   `http://localhost:${PORT}`,
 );
+const apiErrors = apiErrorFixture(authOptions);
 const rateLimitFixture = createRateLimitFixture(authOptions);
 const clientIpFixture = await createClientIpFixture(authOptions, database);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
@@ -2197,6 +2199,8 @@ const server = Bun.serve({
         return errorPageAuth.handler(request);
       }
       organizationTransport.observe(request);
+      const apiErrorResponse = await apiErrors.handle(request);
+      if (apiErrorResponse) return apiErrorResponse;
       const rateLimitResponse = await rateLimitFixture.handle(request);
       if (rateLimitResponse) {
         return rateLimitResponse;

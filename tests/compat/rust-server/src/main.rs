@@ -852,6 +852,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let api_key_hook_router = api_key_hook_fixture::router(&config, database.clone()).await?;
     let multiple_session_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let physical_cookie_router = physical_cookie_fixture::router(&config, database.clone()).await?;
+    let api_error_router = fixtures::api_error_fixture::router(&config, database.clone()).await?;
     let dispatch_router = dispatch_fixture::router(&config, database.clone()).await?;
     let server_endpoint_router =
         server_endpoint_fixture::router(&config, database.clone(), "server-dispatch", false)
@@ -2172,6 +2173,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(session_profile_router)
         .merge(bearer_router)
         .merge(captcha_router)
+        .merge(api_error_router)
         .merge(dispatch_router)
         .merge(physical_cookie_router)
         .merge(server_endpoint_router)
