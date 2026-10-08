@@ -4,6 +4,38 @@ use super::*;
 pub trait DeviceCodeStore: Send + Sync {
     /// Persist a newly-issued device code.
     async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode>;
+    /// Atomically persist a grant with application-owned fields.
+    async fn create_device_code_with_fields(
+        &self,
+        input: CreateDeviceCode,
+        fields: serde_json::Map<String, serde_json::Value>,
+    ) -> AuthResult<DeviceCode> {
+        if fields.is_empty() {
+            self.create_device_code(input).await
+        } else {
+            Err(AuthError::not_implemented(
+                "Application device-grant fields are unsupported by this store",
+            ))
+        }
+    }
+    /// Read the durable application fields belonging to a device record.
+    async fn device_code_fields(
+        &self,
+        _id: &str,
+    ) -> AuthResult<serde_json::Map<String, serde_json::Value>> {
+        Ok(serde_json::Map::new())
+    }
+    /// Consume exactly one approved grant matching all application ownership predicates.
+    async fn consume_device_code(
+        &self,
+        _id: &str,
+        _status: &str,
+        _ownership: &serde_json::Map<String, serde_json::Value>,
+    ) -> AuthResult<Option<DeviceCode>> {
+        Err(AuthError::not_implemented(
+            "Atomic application device-grant redemption is unsupported by this store",
+        ))
+    }
     /// Fetch a device code by its opaque device-facing token.
     async fn get_device_code_by_device_code(
         &self,

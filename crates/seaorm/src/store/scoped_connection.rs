@@ -22,7 +22,8 @@ impl<C: ConnectionTrait> Scoped<C> {
     }
     fn sql(&self, mut sql: String) -> Result<String, DbErr> {
         if let Some(mapping) = &self.factor {
-            sql = alibi_core::database_sql::map_two_factor(&sql, mapping).map_err(|error| DbErr::Custom(error.to_string()))?;
+            sql = alibi_core::database_sql::map_two_factor(&sql, mapping)
+                .map_err(|error| DbErr::Custom(error.to_string()))?;
         }
         if self.inner.get_database_backend() == DbBackend::Postgres {
             if let Some(schema) = &self.schema {
@@ -161,6 +162,39 @@ impl ScopedTransaction {
     pub(super) async fn rollback(self) -> Result<(), DbErr> {
         self.inner.rollback().await
     }
+    pub(super) async fn has_table(&self, table: &str) -> Result<bool, DbErr> {
+        if self.get_database_backend() == DbBackend::Postgres {
+            let (sql, values) = if let Some(schema) = &self.schema {
+                (
+                    "SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = $1 AND table_name = $2",
+                    vec![schema.clone().into(), table.to_owned().into()],
+                )
+            } else {
+                (
+                    "SELECT COUNT(*) AS count FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = $1",
+                    vec![table.to_owned().into()],
+                )
+            };
+            let row = self
+                .inner
+                .query_one_raw(Statement::from_sql_and_values(
+                    DbBackend::Postgres,
+                    sql,
+                    values,
+                ))
+                .await?;
+            return row
+                .map(|row| row.try_get::<i64>("", "count").map(|count| count > 0))
+                .transpose()
+                .map(|value| value.unwrap_or(false));
+        }
+        sea_orm_migration::SchemaManager::new(&self.inner)
+            .has_table(table)
+            .await
+    }
+}
+
+impl ScopedConnection {
     pub(super) async fn has_table(&self, table: &str) -> Result<bool, DbErr> {
         if self.get_database_backend() == DbBackend::Postgres {
             let (sql, values) = if let Some(schema) = &self.schema {
