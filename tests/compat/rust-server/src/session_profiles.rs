@@ -43,6 +43,11 @@ pub(super) async fn router(
         "session-secondary-preserve-only",
         "session-secondary-combined",
         "session-secondary-preserved",
+        "id-strategy-uuid",
+        "id-strategy-serial",
+        "id-strategy-custom",
+        "id-strategy-false",
+        "id-strategy-throw",
         "stateless-refresh-compact",
         "stateless-refresh-jwt",
         "stateless-refresh-deferred",
@@ -62,6 +67,7 @@ pub(super) async fn router(
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
         let mut config = config.clone().base_path(&path);
+        if name == "id-strategy-serial" { config.advanced.database.use_number_id = true; }
         if name.starts_with("session-secondary-") {
             let cache: Arc<dyn CacheAdapter> = Arc::new(MemoryCacheAdapter::new());
             config.session.secondary_storage = Some(cache.clone());
@@ -129,6 +135,17 @@ pub(super) async fn router(
         let routes = auth.clone().axum_router().with_state(auth);
         router = router.nest(&path, routes);
     }
+    // Native currently has no configured ID generator or serial-ID policy.
+    let ids_database = database.clone();
+    router = router.route("/__test/id-strategy/{mode}/state", axum::routing::get(move || {let database = ids_database.clone(); async move {
+        use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
+        let read = async |table: &str, owner: bool| {
+            let columns = if owner {"id, user_id"} else {"id"};
+            let rows = database.query_all_raw(Statement::from_string(database.get_database_backend(), format!("SELECT {columns} FROM {table}"))).await.unwrap();
+            rows.iter().map(|row| {let mut value = json!({"id": row.try_get::<String>("", "id").unwrap()}); if owner {value["userId"] = json!(row.try_get::<String>("", "user_id").unwrap());} value}).collect::<Vec<_>>()
+        };
+        Json(json!({"users": read("users",false).await, "accounts": read("accounts",true).await, "sessions": read("sessions",true).await, "verification": read("verifications",false).await, "events": []}))
+    }}));
     let casing_database = database.clone();
     router = router.route("/__test/casing/state", axum::routing::get(move |axum::extract::Query(query): axum::extract::Query<HashMap<String,String>>| {let database = casing_database.clone(); async move {
         use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
