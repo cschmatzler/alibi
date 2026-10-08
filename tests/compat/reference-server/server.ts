@@ -1011,10 +1011,34 @@ for (const name of [
   );
 }
 
+function passkeyExtensions(mode: string, registration: boolean) {
+  const inputs = (marker: string, path: string) =>
+    registration
+      ? { credProps: marker !== "registration-marker" }
+      : { appid: `https://extensions.fixture.test/${marker}/${path.split("/").at(-1)}` };
+  if (mode === "static")
+    return registration ? { credProps: true } : { appid: "https://extensions.fixture.test/static" };
+  return async ({ ctx }: any) => {
+    await Promise.resolve();
+    if (mode === "coded")
+      throw new APIError("FORBIDDEN", {
+        code: "EXTENSIONS_DENIED",
+        message: "Application extensions rejected",
+      });
+    if (mode === "ordinary") throw new Error("Application extensions failed");
+    if (registration && !ctx.context.session?.user)
+      throw new Error("actual registration session required");
+    return inputs(ctx.headers.get("x-extension-marker"), ctx.path);
+  };
+}
 for (const name of [
   "passkey-fresh",
   "passkey-no-freshness",
   "passkey-acceptance",
+  "passkey-extensions-static",
+  "passkey-extensions-resolver",
+  "passkey-extensions-coded",
+  "passkey-extensions-ordinary",
   "passkey-rp-options",
   "passkey-origin-list",
   "passkey-origin-null",
@@ -1028,7 +1052,16 @@ for (const name of [
       session: { ...authOptions.session, freshAge: name === "passkey-fresh" ? 1 : 0 },
       plugins: [
         passkey(
-          name === "passkey-rp-options"
+          name.startsWith("passkey-extensions-")
+            ? {
+                registration: {
+                  extensions: passkeyExtensions(name.slice("passkey-extensions-".length), true),
+                },
+                authentication: {
+                  extensions: passkeyExtensions(name.slice("passkey-extensions-".length), false),
+                },
+              }
+            : name === "passkey-rp-options"
             ? {
                 rpName: "Configured ceremony RP",
                 authenticatorSelection: {

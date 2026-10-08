@@ -48,6 +48,10 @@ pub(crate) async fn router(
         ("passkey-fresh", 1),
         ("passkey-no-freshness", 0),
         ("passkey-acceptance", 0),
+        ("passkey-extensions-static", 0),
+        ("passkey-extensions-resolver", 0),
+        ("passkey-extensions-coded", 0),
+        ("passkey-extensions-ordinary", 0),
         ("passkey-rp-options", 0),
         ("passkey-origin-list", 0),
         ("passkey-origin-null", 0),
@@ -79,6 +83,7 @@ pub(crate) async fn router(
             // Native configuration exposes rpName, but no authenticatorSelection policy.
             PasskeyPlugin::new().rp_name("Configured ceremony RP")
         } else {
+            // Native options have no static or resolver-based WebAuthn extension inputs.
             // Native configuration exposes one origin, not upstream list/null policies.
             PasskeyPlugin::new()
         };
