@@ -24,8 +24,27 @@ export function createRateLimitFixture(base: BetterAuthOptions) {
       return count;
     },
   };
+  const customRows = new Map<string, { count: number; lastRequest: number }>();
+  let customFailure = false;
+  const customStorage = {
+    async consume(key: string, rule: { window: number; max: number }) {
+      if (customFailure) throw new Error("Application quota storage failed");
+      const now = Date.now();
+      const row = customRows.get(key);
+      if (row && now - row.lastRequest < rule.window * 1000 && row.count >= rule.max)
+        return {
+          allowed: false,
+          retryAfter: Math.ceil((row.lastRequest + rule.window * 1000 - now) / 1000),
+        };
+      customRows.set(key, {
+        count: row && now - row.lastRequest < rule.window * 1000 ? row.count + 1 : 1,
+        lastRequest: now,
+      });
+      return { allowed: true, retryAfter: null };
+    },
+  };
   const profiles = new Map(
-    ["ordered", "default", "secondary-a", "secondary-b"].map((name) => {
+    ["ordered", "default", "secondary-a", "secondary-b", "custom", "custom-memory"].map((name) => {
       const profile = `rate-limit-${name}`;
       return [
         profile,
@@ -36,10 +55,12 @@ export function createRateLimitFixture(base: BetterAuthOptions) {
           ...(name.startsWith("secondary-") ? { secondaryStorage: secondary } : {}),
           rateLimit: {
             enabled: true,
-            storage: name.startsWith("secondary-") ? "secondary-storage" : "memory",
+            storage:
+              name.startsWith("secondary-") || name === "custom" ? "secondary-storage" : "memory",
+            ...(name === "custom" ? { customStorage } : {}),
             window: 60,
             max: name === "ordered" ? 1 : 10000,
-            ...(name.startsWith("secondary-")
+            ...(name.startsWith("secondary-") || name.startsWith("custom")
               ? { customRules: { "/get-session": { window: 1, max: 2 }, "/list-sessions": false } }
               : {}),
             ...(name === "ordered"
@@ -68,6 +89,17 @@ export function createRateLimitFixture(base: BetterAuthOptions) {
   return {
     async handle(request: Request) {
       const url = new URL(request.url);
+      if (url.pathname === "/__test/rate-limit-custom/control") {
+        if (request.method === "POST") customFailure = (await request.json()).failure;
+        return Response.json({
+          failure: customFailure,
+          rows: [...customRows].map(([key, row]) => ({
+            key,
+            ...row,
+            lastRequest: new Date(row.lastRequest).toISOString(),
+          })),
+        });
+      }
       if (url.pathname === "/__test/rate-limit-secondary/control")
         return Response.json({ value: await secondary.get(url.searchParams.get("key")!) });
       for (const [profile, auth] of profiles) {
