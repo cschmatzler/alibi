@@ -67,6 +67,7 @@ pub(crate) async fn router(
 ) -> AuthResult<Router> {
     let mut router = Router::new();
     for name in [
+        "openapi-parameters",
         "openapi-minimal",
         "openapi-last-login",
         "openapi-last-login-database",
@@ -141,6 +142,9 @@ where
                     .change_email_enabled(true)
                     .delete_user_enabled(true),
             );
+    }
+    if name == "openapi-parameters" {
+        builder = builder.plugin(ParametersPlugin);
     }
     if name == "openapi-custom-schema" {
         builder = builder.plugin(DocumentationPlugin);
@@ -368,6 +372,62 @@ impl<S: AuthSchema> alibi::plugin::AuthPlugin<S> for DocumentationPlugin {
         ] {
             if req.path() == path {
                 return Ok(Some(AuthResponse::json(200, &json!({"kind":kind}))?));
+            }
+        }
+        Ok(None)
+    }
+}
+
+struct ParametersPlugin;
+#[async_trait::async_trait]
+impl<S: AuthSchema> alibi::plugin::AuthPlugin<S> for ParametersPlugin {
+    fn name(&self) -> &'static str {
+        "documentation-parameters"
+    }
+    fn routes(&self) -> Vec<alibi::plugin::AuthRoute> {
+        ["explicit", "empty"]
+            .iter()
+            .map(|mode| {
+                alibi::plugin::AuthRoute::get(
+                    format!("/parameters-{mode}/{{id}}"),
+                    format!("parameters{mode}"),
+                )
+            })
+            .collect()
+    }
+    fn openapi_metadata(
+        &self,
+        _ctx: &alibi::plugin::AuthInitContext<S>,
+    ) -> alibi::plugin::PluginOpenApiMetadata {
+        use serde_json::json;
+        let mut metadata = alibi::plugin::PluginOpenApiMetadata::default();
+        for mode in ["explicit", "empty"] {
+            metadata = metadata.endpoint(alibi::__private_core::HttpMethod::Get, format!("/parameters-{mode}/{{id}}"), alibi::plugin::OpenApiEndpoint {
+                operation_id: Some(format!("parameters{mode}")),
+                parameters: if mode == "empty" { vec![] } else { vec![
+                    json!({"name":"documented","in":"query","required":true,"description":"Explicit query","schema":{"type":"string","enum":["visible"]}}),
+                    json!({"name":"id","in":"path","required":true,"description":"Application identifier","schema":{"type":"string","pattern":"^document-[0-9]+$"}}),
+                ] }, ..Default::default()
+            });
+        }
+        metadata
+    }
+    async fn on_request(
+        &self,
+        req: &alibi::__private_core::AuthRequest,
+        _ctx: &alibi::plugin::AuthContext<S>,
+    ) -> AuthResult<Option<alibi::__private_core::AuthResponse>> {
+        for mode in ["explicit", "empty"] {
+            if let Some(id) = req.path().strip_prefix(&format!("/parameters-{mode}/")) {
+                let (Some(inferred), Some(documented)) =
+                    (req.query.get("inferred"), req.query.get("documented"))
+                else {
+                    return Err(alibi::AuthError::bad_request("Missing query input"));
+                };
+                return Ok(Some(alibi::__private_core::AuthResponse::json(
+                    200,
+                    &serde_json::json!({"id":id,"inferred":inferred,"documented":documented}),
+                )?));
             }
         }
         Ok(None)
