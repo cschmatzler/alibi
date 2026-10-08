@@ -221,22 +221,22 @@ impl<S: AuthSchema + Send + Sync> SeaOrmStore<S> {
 }
 
 fn factor_select() -> Select<Entity> {
-    Entity::find()
-        .select_only()
-        .columns(Column::iter().filter(|column| !matches!(column, Column::FailedVerificationCount)))
-        .column_as(
-            Expr::col((Entity, Column::FailedVerificationCount))
-                .cast_as(Alias::new("DOUBLE PRECISION")),
-            Column::FailedVerificationCount,
-        )
+    let mut select = Entity::find().select_only();
+    for column in Column::iter() {
+        let expression = Expr::col((Entity, column));
+        select = if matches!(column, Column::FailedVerificationCount) {
+            select.column_as(expression.cast_as(Alias::new("DOUBLE PRECISION")), column)
+        } else {select.column_as(expression, column)};
+    }
+    select
 }
 
-fn factor_returning(backend: sea_orm::DatabaseBackend) -> sea_orm::sea_query::ReturningClause {
+fn factor_returning(_backend: sea_orm::DatabaseBackend) -> sea_orm::sea_query::ReturningClause {
+    use sea_orm::IdenStatic;
     Query::returning().exprs(Column::iter().map(|column| {
+        let name = column.as_str();
         if matches!(column, Column::FailedVerificationCount) {
-            // SQLite INTEGER affinity retains integral storage, while SQLx's
-            // typed f64 decoder needs a REAL projection with its original name.
-            Expr::cust("CAST(\"failed_verification_count\" AS DOUBLE PRECISION) AS \"failed_verification_count\"")
-        } else { column.select_as(column.into_returning_expr(backend)) }
+            Expr::cust(format!("CAST(\"{name}\" AS DOUBLE PRECISION) AS \"{name}\""))
+        } else {Expr::cust(format!("\"{name}\" AS \"{name}\""))}
     }))
 }

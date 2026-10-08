@@ -11,6 +11,7 @@ use std::{future::Future, pin::Pin};
 pub(crate) struct Scoped<C> {
     pub(super) inner: C,
     pub(super) schema: Option<String>,
+    pub(super) factor: Option<alibi_core::config::TwoFactorDatabaseConfig>,
 }
 pub(super) type ScopedConnection = Scoped<DatabaseConnection>;
 pub(super) type ScopedTransaction = Scoped<DatabaseTransaction>;
@@ -19,7 +20,10 @@ impl<C: ConnectionTrait> Scoped<C> {
     pub(super) fn get_database_backend(&self) -> DbBackend {
         self.inner.get_database_backend()
     }
-    fn sql(&self, sql: String) -> Result<String, DbErr> {
+    fn sql(&self, mut sql: String) -> Result<String, DbErr> {
+        if let Some(mapping) = &self.factor {
+            sql = alibi_core::database_sql::map_two_factor(&sql, mapping).map_err(|error| DbErr::Custom(error.to_string()))?;
+        }
         if self.inner.get_database_backend() == DbBackend::Postgres {
             if let Some(schema) = &self.schema {
                 return alibi_core::database_sql::qualify_schema(&sql, schema)
@@ -69,6 +73,7 @@ where
         Ok(Scoped {
             inner: self.inner.begin().await?,
             schema: self.schema.clone(),
+            factor: self.factor.clone(),
         })
     }
     async fn begin_with_config(
@@ -79,6 +84,7 @@ where
         Ok(Scoped {
             inner: self.inner.begin_with_config(isolation, access).await?,
             schema: self.schema.clone(),
+            factor: self.factor.clone(),
         })
     }
     async fn begin_with_options(
@@ -88,6 +94,7 @@ where
         Ok(Scoped {
             inner: self.inner.begin_with_options(options).await?,
             schema: self.schema.clone(),
+            factor: self.factor.clone(),
         })
     }
     async fn transaction<F, T, E>(&self, callback: F) -> Result<T, TransactionError<E>>

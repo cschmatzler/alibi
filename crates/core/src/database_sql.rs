@@ -80,3 +80,51 @@ pub fn qualify_schema(sql: &str, schema: &str) -> AuthResult<String> {
         .collect::<Vec<_>>()
         .join("; "))
 }
+
+/// Apply a factor storage mapping only to statements targeting the factor table.
+/// Result aliases stay canonical so typed model decoding remains unchanged.
+pub fn map_two_factor(sql: &str, mapping: &crate::config::TwoFactorDatabaseConfig) -> AuthResult<String> {
+    use sqlparser::ast::{AssignmentTarget, Expr, Statement};
+    struct Mapper<'a>(&'a crate::config::TwoFactorDatabaseConfig);
+    impl Mapper<'_> {
+        fn identifier(&self, identifier: &mut Ident) {
+            let physical = if identifier.value == "two_factors" {Some(&self.0.table_name)} else {self.0.columns.get(&identifier.value)};
+            if let Some(physical) = physical { *identifier = Ident::with_quote('"', physical); }
+        }
+        fn name(&self, name: &mut ObjectName) {
+            for part in &mut name.0 {if let ObjectNamePart::Identifier(identifier) = part {self.identifier(identifier);}}
+        }
+    }
+    impl VisitorMut for Mapper<'_> {
+        type Break=();
+        fn pre_visit_relation(&mut self, name: &mut ObjectName)->ControlFlow<()> {self.name(name); ControlFlow::Continue(())}
+        fn pre_visit_expr(&mut self, expression: &mut Expr)->ControlFlow<()> {
+            match expression {
+                Expr::Identifier(identifier)=>self.identifier(identifier),
+                Expr::CompoundIdentifier(identifiers)=>{for identifier in identifiers {self.identifier(identifier);}},
+                _=>{}
+            }
+            ControlFlow::Continue(())
+        }
+        fn pre_visit_statement(&mut self, statement: &mut Statement)->ControlFlow<()> {
+            match statement {
+                Statement::Insert(insert)=>{for column in &mut insert.columns {self.name(column);}},
+                Statement::Update(update)=>{for assignment in &mut update.assignments {match &mut assignment.target {
+                    AssignmentTarget::ColumnName(name)=>self.name(name),
+                    AssignmentTarget::Tuple(names)=>for name in names {self.name(name)},
+                }}},
+                _=>{}
+            }
+            ControlFlow::Continue(())
+        }
+    }
+    let mut statements=Parser::parse_sql(&PostgreSqlDialect {}, sql).map_err(|error|AuthError::internal(format!("Cannot map factor SQL: {error}")))?;
+    for statement in &mut statements {
+        // DDL is performed explicitly by the schema migrator; values never trigger mapping.
+        if !matches!(statement,Statement::Query(_) | Statement::Insert(_) | Statement::Update(_) | Statement::Delete(_)) {continue;}
+        let mut target=false;
+        let _=sqlparser::ast::visit_relations(statement, |name| {if name.0.iter().any(|part| matches!(part,ObjectNamePart::Identifier(id) if id.value=="two_factors")) {target=true;} ControlFlow::<()>::Continue(())});
+        if target {let _=statement.visit(&mut Mapper(mapping));}
+    }
+    Ok(statements.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "))
+}

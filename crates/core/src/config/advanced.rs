@@ -141,6 +141,14 @@ pub struct CookieOverride {
     pub attributes: CookieAttributes,
 }
 
+/// Physical storage policy for the bundled two-factor model.
+#[derive(Debug, Clone)]
+pub struct TwoFactorDatabaseConfig {
+    pub table_name: String,
+    /// Canonical snake_case column names mapped to application-owned columns.
+    pub columns: std::collections::HashMap<String, String>,
+}
+
 /// Database-related advanced options.
 #[derive(Debug, Clone)]
 pub struct AdvancedDatabaseConfig {
@@ -149,6 +157,9 @@ pub struct AdvancedDatabaseConfig {
 
     /// PostgreSQL namespace for every auth relation; does not change search_path.
     pub schema_name: Option<String>,
+
+    /// Optional physical table and column mapping for two-factor credentials.
+    pub two_factor: Option<TwoFactorDatabaseConfig>,
 
     /// Declares that the database uses numeric IDs, as upstream's
     /// `useNumberId`. IDs are always generated as strings; this only makes
@@ -178,7 +189,28 @@ impl Default for AdvancedDatabaseConfig {
         Self {
             default_find_many_limit: 100,
             schema_name: None,
+            two_factor: None,
             use_number_id: false,
         }
+    }
+}
+
+impl TwoFactorDatabaseConfig {
+    /// DDL used to migrate the bundled factor model to its configured physical layout.
+    pub fn migration_statements(&self) -> crate::AuthResult<Vec<String>> {
+        const COLUMNS: &[&str] = &["id", "secret", "backup_codes", "user_id", "verified", "failed_verification_count", "locked_until", "created_at", "updated_at"];
+        if self.table_name.is_empty() || self.columns.iter().any(|(name, column)| !COLUMNS.contains(&name.as_str()) || column.is_empty()) {
+            return Err(AuthError::config("Invalid two-factor storage mapping"));
+        }
+        let quote = |name: &str| format!("\"{}\"", name.replace('"', "\"\""));
+        let table = quote(&self.table_name);
+        let mut sql = Vec::new();
+        if self.table_name != "two_factors" {sql.push(format!("ALTER TABLE \"two_factors\" RENAME TO {table}"));}
+        for name in COLUMNS {
+            if let Some(column) = self.columns.get(*name).filter(|column| column.as_str() != *name) {
+                sql.push(format!("ALTER TABLE {table} RENAME COLUMN {} TO {}", quote(name), quote(column)));
+            }
+        }
+        Ok(sql)
     }
 }

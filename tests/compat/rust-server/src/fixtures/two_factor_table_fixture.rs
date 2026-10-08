@@ -1,4 +1,4 @@
-//! Observe native default storage when table/field mapping is unsupported.
+//! An application-owned factor table exercised through configured stores.
 use crate::TestSchema;
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult,
@@ -30,18 +30,21 @@ impl SendTwoFactorOtp for Delivery {
         Ok(())
     }
 }
-pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
+pub(crate) async fn router(base: &AuthConfig, _database: DatabaseConnection) -> AuthResult<Router> {
     let delivery = Delivery::default();
-    let config = base
+    let database = alibi_seaorm::sea_orm::Database::connect("sqlite::memory:").await.map_err(|error| alibi::AuthError::internal(error.to_string()))?;
+    let mut config = base
         .clone()
         .base_path("/__test/profiles/two-factor-custom-table/api/auth");
-    // There is no native table/field override. Do not manufacture renamed rows.
+    config.advanced.database.two_factor = Some(alibi_core::config::TwoFactorDatabaseConfig {
+        table_name: "application_second_factor".into(),
+        columns: [("secret", "application_secret"), ("backup_codes", "application_backups"), ("user_id", "application_owner")].into_iter().map(|(name, column)| (name.into(), column.into())).collect(),
+    });
+    let store = crate::backend::store::<TestSchema>(config.clone(), database.clone());
+    alibi_core::store::SchemaMigrator::migrate(&store).await?;
     let auth = Arc::new(
         AuthBuilder::<TestSchema>::new(config.clone())
-            .store(crate::backend::store::<TestSchema>(
-                config,
-                database.clone(),
-            ))
+            .store(store)
             .rate_limit(alibi::middleware::RateLimitConfig::new().enabled(false))
             .plugin(EmailPasswordPlugin::new())
             .plugin(SessionManagementPlugin::new())

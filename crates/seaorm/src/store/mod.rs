@@ -33,9 +33,8 @@ pub mod __private_test_support {
     }
 }
 
-#[async_trait]
-impl<S: AuthSchema> alibi_core::store::SchemaMigrator for SeaOrmStore<S> {
-    async fn migrate(&self) -> AuthResult<()> {
+impl<S: AuthSchema> SeaOrmStore<S> {
+    async fn migrate_bundled_schema(&self) -> AuthResult<()> {
         if self.db.get_database_backend() == sea_orm::DbBackend::Postgres {
             if let Some(schema) = &self.db.schema {
                 use sea_orm::{ConnectionTrait, Statement};
@@ -66,6 +65,25 @@ impl<S: AuthSchema> alibi_core::store::SchemaMigrator for SeaOrmStore<S> {
         migrator::run_migrations(&self.db.inner)
             .await
             .map_err(map_db_err)
+    }
+}
+
+#[async_trait]
+impl<S: AuthSchema> alibi_core::store::SchemaMigrator for SeaOrmStore<S> {
+    async fn migrate(&self) -> AuthResult<()> {
+        self.migrate_bundled_schema().await?;
+        if let Some(mapping) = &self.config.advanced.database.two_factor {
+            use sea_orm::ConnectionTrait;
+            let commands = mapping.migration_statements()?;
+            let transaction = self.db.begin().await.map_err(map_db_err)?;
+            if transaction.has_table("two_factors").await.map_err(map_db_err)? {
+                for command in commands {
+                    _ = transaction.execute_unprepared(&command).await.map_err(map_db_err)?;
+                }
+            }
+            transaction.commit().await.map_err(map_db_err)?;
+        }
+        Ok(())
     }
 }
 
@@ -104,9 +122,10 @@ impl<S: AuthSchema> SeaOrmStore<S> {
     pub fn new(config: impl Into<Arc<AuthConfig>>, db: DatabaseConnection) -> Self {
         let config = config.into();
         let schema = config.advanced.database.schema_name.clone();
+        let factor = config.advanced.database.two_factor.clone();
         Self {
             config,
-            db: ScopedConnection { inner: db, schema },
+            db: ScopedConnection { inner: db, schema, factor },
             hooks: Vec::new(),
             _schema: PhantomData,
         }

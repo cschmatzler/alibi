@@ -295,7 +295,10 @@ impl<'a> Exec<'a> {
         self.config
             .and_then(|config| config.advanced.database.schema_name.as_deref())
     }
-    fn qualify(self, sql: String) -> AuthResult<String> {
+    fn qualify(self, mut sql: String) -> AuthResult<String> {
+        if let Some(mapping) = self.config.and_then(|config| config.advanced.database.two_factor.as_ref()) {
+            sql = alibi_core::database_sql::map_two_factor(&sql, mapping)?;
+        }
         if self.engine() == Engine::Postgres {
             if let Some(schema) = self
                 .config
