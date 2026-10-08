@@ -239,6 +239,8 @@ export const FIXTURE_PROFILES = [
   "rate-limit-database-first",
   "rate-limit-database-second",
   "rate-limit-ordered",
+  "rate-limit-custom",
+  "rate-limit-custom-memory",
   "rate-limit-concurrent-memory",
   "rate-limit-concurrent-secondary-a",
   "rate-limit-concurrent-secondary-b",

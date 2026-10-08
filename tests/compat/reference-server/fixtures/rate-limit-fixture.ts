@@ -31,10 +31,31 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
       return count;
     },
   };
+  const customRows = new Map<string, { count: number; lastRequest: number }>();
+  let customFailure = false;
+  const customStorage = {
+    async consume(key: string, rule: { window: number; max: number }) {
+      if (customFailure) throw new Error("Application quota storage failed");
+      const now = Date.now();
+      const row = customRows.get(key);
+      if (row && now - row.lastRequest < rule.window * 1000 && row.count >= rule.max)
+        return {
+          allowed: false,
+          retryAfter: Math.ceil((row.lastRequest + rule.window * 1000 - now) / 1000),
+        };
+      customRows.set(key, {
+        count: row && now - row.lastRequest < rule.window * 1000 ? row.count + 1 : 1,
+        lastRequest: now,
+      });
+      return { allowed: true, retryAfter: null };
+    },
+  };
   const profiles = new Map(
     [
       "ordered",
       "default",
+      "custom",
+      "custom-memory",
       "database-first",
       "database-second",
       "secondary-a",
@@ -61,11 +82,12 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
             : {}),
           rateLimit: {
             enabled: true,
-            storage: name.startsWith("database-") ? "database" : name.includes("secondary") ? "secondary-storage" : "memory",
+            storage: name.startsWith("database-") ? "database" : (name.includes("secondary") || name === "custom") ? "secondary-storage" : "memory",
+            ...(name === "custom" ? { customStorage } : {}),
             window: 60,
             max: name === "ordered" ? 1 : 10000,
             ...(name.startsWith("database-") ? { customRules: { "/get-session": { window: 1, max: 2 } } } : {}),
-            ...(name.includes("secondary")
+            ...(name.includes("secondary") || name.startsWith("custom")
               ? { customRules: { "/get-session": { window: 1, max: 2 }, "/list-sessions": false } }
               : {}),
             ...(name.startsWith("concurrent-")
@@ -100,6 +122,17 @@ export async function createRateLimitFixture(base: BetterAuthOptions) {
   return {
     async handle(request: Request) {
       const url = new URL(request.url);
+      if (url.pathname === "/__test/rate-limit-custom/control") {
+        if (request.method === "POST") customFailure = (await request.json()).failure;
+        return Response.json({
+          failure: customFailure,
+          rows: [...customRows].map(([key, row]) => ({
+            key,
+            ...row,
+            lastRequest: new Date(row.lastRequest).toISOString(),
+          })),
+        });
+      }
       if (url.pathname === "/__test/rate-database-control" && request.method === "POST") {
         const { action } = await request.json();
         if (!(base.database instanceof Database))
