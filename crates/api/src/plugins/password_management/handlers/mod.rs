@@ -297,49 +297,61 @@ pub(in crate::plugins) async fn verify_password_core(
     config: &PasswordManagementConfig,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
+    let (_, maximum) = crate::plugins::email_password::password_length_limits(ctx);
+    if body.password.encode_utf16().count() > maximum {
+        return Err(AuthError::bad_request("Password too long"));
+    }
+    let policy = ctx.extensions.get::<crate::plugins::EmailPasswordConfig>();
+    let hasher = policy
+        .as_ref()
+        .and_then(|policy| policy.password_hasher.as_ref())
+        .or(config.password_hasher.as_ref());
     let stored_hash = get_credential_password_hash(ctx, user)
         .await?
+        .filter(|hash| !hash.is_empty())
         .ok_or_else(|| AuthError::bad_request("Invalid password"))?;
 
-    password_utils::verify_password(
-        config.password_hasher.as_ref(),
-        &body.password,
-        &stored_hash,
-    )
-    .await
-    .map_err(|error| match error {
-        AuthError::InvalidCredentials => AuthError::bad_request("Invalid password"),
-        other @ (AuthError::Api { .. }
-        | AuthError::Upstream { .. }
-        | AuthError::BadRequest(_)
-        | AuthError::InvalidRequest(_)
-        | AuthError::Validation(_)
-        | AuthError::Unauthenticated
-        | AuthError::AuthenticationFailed(_)
-        | AuthError::SessionNotFound
-        | AuthError::Forbidden(_)
-        | AuthError::UserCreationCancelled
-        | AuthError::SessionCreationCancelled
-        | AuthError::BannedUser(_)
-        | AuthError::Unauthorized
-        | AuthError::UserNotFound
-        | AuthError::NotFound(_)
-        | AuthError::Conflict(_)
-        | AuthError::MethodNotAllowed(_)
-        | AuthError::PayloadTooLarge(_)
-        | AuthError::UnprocessableEntity(_)
-        | AuthError::RateLimited { .. }
-        | AuthError::NotImplemented(_)
-        | AuthError::Config(_)
-        | AuthError::Database(_)
-        | AuthError::Serialization(_)
-        | AuthError::Plugin { .. }
-        | AuthError::CallbackFailure(_)
-        | AuthError::Internal(_)
-        | AuthError::Encryption(_)
-        | AuthError::PasswordHash(_)
-        | AuthError::Jwt(_)) => other,
-    })?;
+    password_utils::verify_password(hasher, &body.password, &stored_hash)
+        .await
+        .map_err(|error| match error {
+            AuthError::Api { .. } | AuthError::Upstream { .. } | AuthError::CallbackFailure(_) => {
+                error
+            }
+            error => AuthError::CallbackFailure(Box::new(error)),
+        })
+        .map_err(|error| match error {
+            AuthError::InvalidCredentials => AuthError::bad_request("Invalid password"),
+            other @ (AuthError::Api { .. }
+            | AuthError::Upstream { .. }
+            | AuthError::BadRequest(_)
+            | AuthError::InvalidRequest(_)
+            | AuthError::Validation(_)
+            | AuthError::Unauthenticated
+            | AuthError::AuthenticationFailed(_)
+            | AuthError::SessionNotFound
+            | AuthError::Forbidden(_)
+            | AuthError::UserCreationCancelled
+            | AuthError::SessionCreationCancelled
+            | AuthError::BannedUser(_)
+            | AuthError::Unauthorized
+            | AuthError::UserNotFound
+            | AuthError::NotFound(_)
+            | AuthError::Conflict(_)
+            | AuthError::MethodNotAllowed(_)
+            | AuthError::PayloadTooLarge(_)
+            | AuthError::UnprocessableEntity(_)
+            | AuthError::RateLimited { .. }
+            | AuthError::NotImplemented(_)
+            | AuthError::Config(_)
+            | AuthError::Database(_)
+            | AuthError::Serialization(_)
+            | AuthError::Plugin { .. }
+            | AuthError::CallbackFailure(_)
+            | AuthError::Internal(_)
+            | AuthError::Encryption(_)
+            | AuthError::PasswordHash(_)
+            | AuthError::Jwt(_)) => other,
+        })?;
 
     Ok(StatusResponse { status: true })
 }
