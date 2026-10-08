@@ -611,6 +611,86 @@ compatScenario(
   ["POST /get-access-token"],
 );
 
+for (const variant of ["missing", "malformed", "valid"] as const) {
+  compatScenario(
+    `Twitch ID token ${variant} callback and replay`,
+    async (ctx) => {
+      const foreign = ctx.actor("foreign");
+      expect(
+        (
+          await foreign.client.signUp.email({
+            email: ctx.uniqueEmail("twitch-foreign"),
+            password: "password123",
+            name: "Foreign owner",
+          })
+        ).error,
+      ).toBeNull();
+      const foreignSession = await foreign.client.getSession();
+      const grant: Record<string, unknown> = {
+        access_token: "twitch-real-grant",
+        refresh_token: "twitch-real-refresh",
+        token_type: "Bearer",
+        expires_in: 3600,
+        scope: "openid user:read:email",
+      };
+      if (variant === "malformed") grant.id_token = "not-a-jwt";
+      if (variant === "valid")
+        grant.id_token = `e30.${Buffer.from(JSON.stringify(inputs.twitch)).toString("base64url")}.fixture`;
+      await control(ctx, "twitch", { tokenResponse: grant });
+      const completed = await flow(ctx, "twitch", "default");
+      const publicResult = status(completed.response, ctx.baseURL);
+      const body = await completed.response.text();
+      if (variant === "valid") {
+        expect(publicResult.status).toBe(302);
+        expect(publicResult.location).toBe("/dashboard");
+      } else if (variant === "missing") {
+        expect(publicResult.status).toBe(302);
+        expect(publicResult.error).toBe("unable_to_get_user_info");
+      } else expect(publicResult.status).toBe(500);
+      const session = await completed.actor.client.getSession();
+      if (variant === "valid") expect(session.data?.user.name).toBe("Batch Name");
+      else {
+        expect(session.data).toBeNull();
+        expect(
+          completed.response.headers
+            .getSetCookie()
+            .some(
+              (cookie) => /session_token=([^;]+)/.test(cookie) && !cookie.includes("Max-Age=0"),
+            ),
+        ).toBe(false);
+      }
+      const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
+      const source = "user" in sql;
+      expect(sql[source ? "user" : "users"]).toHaveLength(variant === "valid" ? 2 : 1);
+      expect(sql[source ? "account" : "accounts"]).toHaveLength(variant === "valid" ? 2 : 1);
+      expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+      expect(await foreign.client.getSession()).toEqual(foreignSession);
+      const replay = await completed.actor.fetch(
+        ctx.baseURL +
+          authProfilePath(selected("twitch", "default")) +
+          `/callback/twitch?code=batch-code&state=${encodeURIComponent(completed.url.searchParams.get("state")!)}`,
+        { redirect: "manual" },
+      );
+      expect(status(replay, ctx.baseURL).error).toBe("state_mismatch");
+      const receipts: any[] = await read(ctx, "receipts");
+      expect(receipts.map((row) => row.stage)).toEqual(["token"]);
+      return {
+        result: publicResult,
+        body,
+        session: ctx.snapshot(session),
+        replay: status(replay, ctx.baseURL),
+        wire: receipts.map((row) => ({
+          stage: row.stage,
+          method: row.method,
+          body: grantBody(row),
+        })),
+        foreign: ctx.snapshot(foreignSession),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+  );
+}
+
 // Missing/empty optional fields must reach the provider's actual fallback branch.
 for (const variant of ["missing", "empty"] as const) {
   for (const provider of ["roblox", "slack", "salesforce", "spotify"] as const) {
