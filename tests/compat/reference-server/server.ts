@@ -37,6 +37,7 @@ import { appleProviderFixture } from "./fixtures/apple-provider-fixture";
 import { atlassianProviderFixture } from "./fixtures/atlassian-provider-fixture";
 import { createBearerFixture } from "./fixtures/bearer-fixture";
 import { createCaptchaFixture } from "./fixtures/captcha-fixture";
+import { casingFixture } from "./fixtures/casing-fixture";
 import { createClientIpFixture } from "./fixtures/client-ip-fixture";
 import { cloudflareProviderFixture } from "./fixtures/cloudflare-provider-fixture";
 import { cognitoProviderFixture } from "./fixtures/cognito-provider-fixture";
@@ -1143,6 +1144,7 @@ const physicalCookies = physicalCookieProfiles(authOptions, database);
 for (const [path, auth] of physicalCookies.profiles) {
   verificationProfiles.set(path, auth);
 }
+const casing = await casingFixture(authOptions);
 const auth = betterAuth(authOptions);
 const errorPageAuth = betterAuth({
   ...authOptions,
@@ -2191,6 +2193,8 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      const casingResponse = await casing.handle(request);
+      if (casingResponse) return casingResponse;
       const microsoftControl = await microsoftFixture.handle(request);
       if (microsoftControl) return microsoftControl;
       if (url.pathname.startsWith("/__test/profiles/error-page/api/auth/")) {

@@ -51,6 +51,7 @@ pub(super) async fn router(
         "session-no-refresh",
         "session-deferred-no-refresh",
         "session-no-freshness",
+        "snake-casing",
         "session-cookie-cleanup",
     ] {
         let path = format!("/__test/profiles/{name}/api/auth");
@@ -96,7 +97,8 @@ pub(super) async fn router(
             )
             .plugin(AdminPlugin::new())
             .plugin(TwoFactorPlugin::new())
-            .plugin(OrganizationPlugin::new());
+            .plugin(OrganizationPlugin::new())
+            .plugin(alibi::plugins::open_api::OpenApiPlugin::new());
         if name.starts_with("session-secondary-") {
             builder = builder
                 .plugin(MultiSessionPlugin::new())
@@ -110,6 +112,14 @@ pub(super) async fn router(
         let routes = auth.clone().axum_router().with_state(auth);
         router = router.nest(&path, routes);
     }
+    let casing_database = database.clone();
+    router = router.route("/__test/casing/state", axum::routing::get(move |axum::extract::Query(query): axum::extract::Query<HashMap<String,String>>| {let database = casing_database.clone(); async move {
+        use alibi_seaorm::sea_orm::{ConnectionTrait, Statement};
+        let id = query.get("userId").unwrap();
+        let users = database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(), "SELECT id, name, email, email_verified FROM users WHERE id = ?", [id.clone().into()])).await.unwrap();
+        let sessions = database.query_all_raw(Statement::from_sql_and_values(database.get_database_backend(), "SELECT user_id FROM sessions WHERE user_id = ?", [id.clone().into()])).await.unwrap();
+        Json(serde_json::json!({"users": users.iter().map(|row| serde_json::json!({"id": row.try_get::<String>("","id").unwrap(), "name": row.try_get::<String>("","name").unwrap(), "email": row.try_get::<String>("","email").unwrap(), "verified": i32::from(row.try_get::<bool>("","email_verified").unwrap())})).collect::<Vec<_>>(), "sessions": sessions.iter().map(|row| serde_json::json!({"owner": row.try_get::<String>("","user_id").unwrap()})).collect::<Vec<_>>()}))
+    }}));
     let caches = Arc::new(caches);
     router = router.route(
         "/__test/secondary-session/control",
