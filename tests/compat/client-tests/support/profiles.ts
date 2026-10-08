@@ -13,6 +13,8 @@ function variants<P extends string, S extends string>(
  * profile parity scenario proves that both fixture servers serve each entry.
  */
 export const FIXTURE_PROFILES = [
+  "bearer-renamed-cookie",
+  "bearer-secure-cookie",
   ...variants("generic-discovery-", [
     "success",
     "nonce-unbound",
