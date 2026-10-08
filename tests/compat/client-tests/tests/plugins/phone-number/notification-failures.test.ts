@@ -196,8 +196,10 @@ compatScenario(
           mode,
           endpoint,
           signup,
-          started,
-          finished,
+          // Receipts carry random OTPs; preserve their relationships as typed
+          // tokens after asserting the exact delivered proof and replay behavior.
+          started: { ...started, events: started.events.map((event) => ({ ...event, code: { token: event.code } })) },
+          finished: { ...finished, events: finished.events.map((event) => ({ ...event, code: { token: event.code } })) },
           result,
           consumed,
           replay,

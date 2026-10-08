@@ -1,5 +1,7 @@
 //! SeaORM-backed persistence implementation for built-in auth tables.
 
+mod scoped_connection;
+use scoped_connection::{ScopedConnection, ScopedTransaction};
 mod accounts;
 mod api_key_usage_phases;
 mod api_keys;
@@ -31,10 +33,64 @@ pub mod __private_test_support {
     }
 }
 
+impl<S: AuthSchema> SeaOrmStore<S> {
+    async fn migrate_bundled_schema(&self) -> AuthResult<()> {
+        if self.db.get_database_backend() == sea_orm::DbBackend::Postgres {
+            if let Some(schema) = &self.db.schema {
+                use sea_orm::{ConnectionTrait, Statement};
+                use sea_orm_migration::MigratorTrait;
+                let quoted = format!("\"{}\"", schema.replace('"', "\"\""));
+                let _ = self
+                    .db
+                    .inner
+                    .execute_unprepared(&format!("CREATE SCHEMA IF NOT EXISTS {quoted}"))
+                    .await
+                    .map_err(map_db_err)?;
+                // Only the migration transaction has a local DDL namespace.
+                // Runtime connections and statements retain statement qualification.
+                let transaction = self.db.inner.begin().await.map_err(map_db_err)?;
+                let _ = transaction
+                    .execute_raw(Statement::from_string(
+                        sea_orm::DbBackend::Postgres,
+                        format!("SET LOCAL search_path TO {quoted}"),
+                    ))
+                    .await
+                    .map_err(map_db_err)?;
+                migrator::AuthMigrator::up(&transaction, None)
+                    .await
+                    .map_err(map_db_err)?;
+                return transaction.commit().await.map_err(map_db_err);
+            }
+        }
+        migrator::run_migrations(&self.db.inner)
+            .await
+            .map_err(map_db_err)
+    }
+}
+
 #[async_trait]
 impl<S: AuthSchema> alibi_core::store::SchemaMigrator for SeaOrmStore<S> {
     async fn migrate(&self) -> AuthResult<()> {
-        migrator::run_migrations(&self.db).await.map_err(map_db_err)
+        self.migrate_bundled_schema().await?;
+        if let Some(mapping) = &self.config.advanced.database.two_factor {
+            use sea_orm::ConnectionTrait;
+            let commands = mapping.migration_statements()?;
+            let transaction = self.db.begin().await.map_err(map_db_err)?;
+            if transaction
+                .has_table("two_factor")
+                .await
+                .map_err(map_db_err)?
+            {
+                for command in commands {
+                    _ = transaction
+                        .execute_unprepared(&command)
+                        .await
+                        .map_err(map_db_err)?;
+                }
+            }
+            transaction.commit().await.map_err(map_db_err)?;
+        }
+        Ok(())
     }
 }
 
@@ -50,14 +106,14 @@ use alibi_core::store::{
 };
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use sea_orm::{DatabaseConnection, DatabaseTransaction, DbErr, SqlErr, TransactionTrait};
+use sea_orm::{DatabaseConnection, DbErr, SqlErr, TransactionTrait};
 use std::marker::PhantomData;
 use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct SeaOrmStore<S: AuthSchema> {
     config: Arc<AuthConfig>,
-    db: DatabaseConnection,
+    db: ScopedConnection,
     hooks: Vec<Arc<dyn DatabaseHooks<S, SeaOrmBackend>>>,
     _schema: PhantomData<S>,
 }
@@ -71,9 +127,16 @@ impl<S: AuthSchema> std::fmt::Debug for SeaOrmStore<S> {
 impl<S: AuthSchema> SeaOrmStore<S> {
     #[must_use]
     pub fn new(config: impl Into<Arc<AuthConfig>>, db: DatabaseConnection) -> Self {
+        let config = config.into();
+        let schema = config.advanced.database.schema_name.clone();
+        let factor = config.advanced.database.two_factor.clone();
         Self {
-            config: config.into(),
-            db,
+            config,
+            db: ScopedConnection {
+                inner: db,
+                schema,
+                factor,
+            },
             hooks: Vec::new(),
             _schema: PhantomData,
         }
@@ -92,8 +155,12 @@ impl<S: AuthSchema> SeaOrmStore<S> {
     }
 
     #[must_use]
-    pub const fn connection(&self) -> &DatabaseConnection {
+    pub(super) const fn scoped_connection(&self) -> &ScopedConnection {
         &self.db
+    }
+
+    pub const fn connection(&self) -> &DatabaseConnection {
+        &self.db.inner
     }
 
     #[must_use]
@@ -107,12 +174,12 @@ impl<S: AuthSchema> SeaOrmStore<S> {
 
     pub(crate) fn hook_context<'a>(
         &'a self,
-        tx: Option<&'a DatabaseTransaction>,
+        tx: Option<&'a ScopedTransaction>,
     ) -> SeaOrmHookContext<'a> {
         SeaOrmHookContext {
             config: self.config.as_ref(),
-            db: &self.db,
-            tx,
+            db: &self.db.inner,
+            tx: tx.map(|tx| &tx.inner),
             request: current_request_hook_context(),
         }
     }
@@ -120,7 +187,7 @@ impl<S: AuthSchema> SeaOrmStore<S> {
 
 struct SeaOrmStoreTransaction<'a, S: AuthSchema> {
     store: &'a SeaOrmStore<S>,
-    tx: &'a DatabaseTransaction,
+    tx: &'a ScopedTransaction,
     pending_after: AfterHookQueue<S>,
 }
 
@@ -206,7 +273,7 @@ where
         users::provider_verification_output::<S::User, _>(self.tx, id).await
     }
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
-        use sea_orm::{ColumnTrait, ConnectionTrait, QueryFilter};
+        use sea_orm::{ColumnTrait, QueryFilter};
         let id = S::User::parse_id(id)?;
         users::user_query::<S::User>(self.tx.get_database_backend())
             .filter(S::User::id_column().eq(id))

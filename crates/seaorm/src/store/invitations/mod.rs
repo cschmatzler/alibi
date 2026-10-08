@@ -43,7 +43,7 @@ where
             expires_at: Set(invitation.expires_at),
             created_at: Set(options.created_at.unwrap_or_else(Utc::now)),
         }
-        .insert(self.connection())
+        .insert(self.scoped_connection())
         .await
         .map(|model| Invitation::from(&model))
         .map_err(map_db_err)
@@ -51,7 +51,7 @@ where
 
     async fn get_invitation_by_id(&self, id: &str) -> AuthResult<Option<Invitation>> {
         Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| Invitation::from(&model)))
             .map_err(map_db_err)
@@ -63,14 +63,14 @@ where
         team_ids: Option<String>,
     ) -> AuthResult<Invitation> {
         let row = Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
             .ok_or_else(|| AuthError::not_found("Invitation not found"))?;
         let mut active = row.into_active_model();
         active.team_id = Set(team_ids);
         active
-            .update(self.connection())
+            .update(self.scoped_connection())
             .await
             .map(|row_2| Invitation::from(&row_2))
             .map_err(map_db_err)
@@ -91,7 +91,7 @@ where
         use super::entities::{member, organization};
         use alibi_core::error::AuthError;
         let transaction = self
-            .connection()
+            .scoped_connection()
             .begin_with_options(sea_orm::TransactionOptions {
                 sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
                 ..Default::default()
@@ -255,7 +255,7 @@ where
         // Returning the actual changed row is part of this atomic public contract.
         // Fail before mutation on a backend without supported RETURNING semantics.
         if !matches!(
-            self.connection().get_database_backend(),
+            self.scoped_connection().get_database_backend(),
             sea_orm::DbBackend::Sqlite | sea_orm::DbBackend::Postgres
         ) {
             return Err(AuthError::NotImplemented(
@@ -269,7 +269,7 @@ where
                 Column::Status,
                 sea_orm::sea_query::Expr::value(status.to_string()),
             )
-            .exec_with_returning(self.connection())
+            .exec_with_returning(self.scoped_connection())
             .await
             .map(|rows| rows.first().map(Invitation::from))
             .map_err(map_db_err)
@@ -288,7 +288,7 @@ where
         }
         query
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|rows| rows.iter().map(Invitation::from).collect())
             .map_err(map_db_err)
@@ -299,14 +299,14 @@ where
         expires_at: chrono::DateTime<Utc>,
     ) -> AuthResult<Invitation> {
         let model = Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
             .ok_or_else(|| AuthError::not_found("Invitation not found"))?;
         let mut active = model.into_active_model();
         active.expires_at = Set(expires_at);
         active
-            .update(self.connection())
+            .update(self.scoped_connection())
             .await
             .map(|model| Invitation::from(&model))
             .map_err(map_db_err)
@@ -321,7 +321,7 @@ where
             .filter(Column::Email.eq(email.to_lowercase()))
             .filter(Column::Status.eq(InvitationStatus::Pending.to_string()))
             .filter(Column::ExpiresAt.gt(Utc::now()))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| Invitation::from(&model)))
             .map_err(map_db_err)
@@ -333,7 +333,7 @@ where
         status: InvitationStatus,
     ) -> AuthResult<Invitation> {
         let Some(model) = Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -343,7 +343,7 @@ where
         let mut active = model.into_active_model();
         active.status = Set(status.to_string());
         active
-            .update(self.connection())
+            .update(self.scoped_connection())
             .await
             .map(|model_2| Invitation::from(&model_2))
             .map_err(map_db_err)
@@ -353,7 +353,7 @@ where
         Entity::find()
             .filter(Column::OrganizationId.eq(org_id))
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|models| models.iter().map(Invitation::from).collect())
             .map_err(map_db_err)
@@ -364,7 +364,7 @@ where
             .filter(Column::OrganizationId.eq(org_id))
             .filter(Column::Status.eq(InvitationStatus::Pending.to_string()))
             .filter(Column::ExpiresAt.gt(Utc::now()))
-            .count(self.connection())
+            .count(self.scoped_connection())
             .await
             .map_err(map_db_err)
             .and_then(|count| {
@@ -377,7 +377,7 @@ where
         Entity::find()
             .filter(Column::Email.eq(email.to_lowercase()))
             .limit(self.config().advanced.database.default_find_many_limit as u64)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map(|models| models.iter().map(Invitation::from).collect())
             .map_err(map_db_err)

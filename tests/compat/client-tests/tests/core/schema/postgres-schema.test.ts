@@ -40,7 +40,10 @@ else
       await owner.client.signOut();
       const revoked = await ctx.rawRequest({ path: "/__test/postgres-schema/state" });
       expect((revoked.body as any).sessions).toEqual([]);
-      return ctx.snapshot({ before, signup, update, session, after, revoked });
+      return ctx.snapshot({ before, signup, update, session, after: {
+        ...after,
+        body: {...after.body as any, sessions: (after.body as any).sessions.map((row: any) => ({owner: {id: row.owner}}))},
+      }, revoked });
     },
     ["POST /sign-up/email", "POST /update-user", "GET /get-session", "POST /sign-out"],
   );

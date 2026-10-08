@@ -27,7 +27,7 @@ where
             client_id: Set(input.client_id),
             scope: Set(input.scope),
         }
-        .insert(self.connection())
+        .insert(self.scoped_connection())
         .await
         .map(|model| DeviceCode::from(&model))
         .map_err(map_db_err)
@@ -39,7 +39,7 @@ where
     ) -> AuthResult<Option<DeviceCode>> {
         Entity::find()
             .filter(Column::DeviceCode.eq(device_code))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| DeviceCode::from(&model)))
             .map_err(map_db_err)
@@ -51,7 +51,7 @@ where
     ) -> AuthResult<Option<DeviceCode>> {
         Entity::find()
             .filter(Column::UserCode.eq(user_code))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map(|model| model.map(|model| DeviceCode::from(&model)))
             .map_err(map_db_err)
@@ -63,7 +63,7 @@ where
         update: UpdateDeviceCode,
     ) -> AuthResult<DeviceCode> {
         let Some(model) = Entity::find_by_id(id.to_owned())
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -82,7 +82,7 @@ where
         }
 
         active
-            .update(self.connection())
+            .update(self.scoped_connection())
             .await
             .map(|model_2| DeviceCode::from(&model_2))
             .map_err(map_db_err)
@@ -108,7 +108,7 @@ where
         update_many
             .filter(Column::Id.eq(id))
             .filter(Column::Status.eq(current_status))
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map(|result| result.rows_affected == 1)
             .map_err(map_db_err)
@@ -120,7 +120,7 @@ where
             .filter(Column::Id.eq(id))
             .filter(Column::Status.eq("pending"))
             .filter(Column::UserId.is_null())
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map(|result| result.rows_affected == 1)
             .map_err(map_db_err)
@@ -128,7 +128,7 @@ where
 
     async fn delete_device_code(&self, id: &str) -> AuthResult<()> {
         Entity::delete_by_id(id.to_owned())
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map(|_| ())
             .map_err(map_db_err)
@@ -138,7 +138,7 @@ where
         Entity::delete_many()
             .filter(Column::Id.eq(id))
             .filter(Column::Status.eq(status))
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map(|result| result.rows_affected == 1)
             .map_err(map_db_err)

@@ -30,6 +30,10 @@ impl<S: AuthSchema> BetterAuth<S> {
                 metadata: self.context.metadata.clone(),
                 extensions: self.context.extensions.clone(),
             },
+            Err(AuthError::Config(_)) if self.config.dynamic_base_url.is_some() => {
+                // Authority resolution fails outside the API router in the pinned host.
+                return Ok(AuthResponse::text(500, "Something went wrong!"));
+            }
             Err(error) => return Ok(error.to_auth_response()),
         };
         // Source resolves request-local configuration before physical HTTP hooks.
