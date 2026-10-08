@@ -1274,3 +1274,52 @@ for (const mode of ["default", "language-en"] as const) {
     ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
   );
 }
+
+for (const mode of ["default", "claims-empty", "claims-custom"] as const) {
+  compatScenario(
+    `Twitch configured claims ${mode} retain mandatory fields and actual identity`,
+    async (ctx) => {
+      await control(ctx, "twitch");
+      const completed = await flow(ctx, "twitch", mode);
+      const claims = JSON.parse(completed.url.searchParams.get("claims")!);
+      expect(claims).toEqual(
+        mode === "default"
+          ? {
+              id_token: {
+                email: null,
+                email_verified: null,
+                preferred_username: null,
+                picture: null,
+              },
+            }
+          : mode === "claims-empty"
+            ? { id_token: { email: null, email_verified: null } }
+            : { id_token: { email: null, email_verified: null, custom: null } },
+      );
+      expect(Object.hasOwn(claims.id_token, "__proto__")).toBe(false);
+      expect(completed.response.status).toBe(302);
+      expect(completed.response.headers.get("location")).toBe("/dashboard");
+      const session = await completed.actor.client.getSession();
+      expect(session.data?.user).toMatchObject({
+        name: "Batch Name",
+        email: "batch@example.invalid",
+        emailVerified: true,
+        image: "https://images.example.invalid/batch.png",
+      });
+      const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
+      const source = "user" in sql;
+      const account = sql[source ? "account" : "accounts"]![0];
+      expect(account[source ? "accountId" : "account_id"]).toBe("batch-subject");
+      expect(account[source ? "userId" : "user_id"]).toBe(session.data!.user.id);
+      expect(sql[source ? "session" : "sessions"]).toHaveLength(1);
+      expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+      return {
+        claims,
+        start: ctx.snapshot(completed.start),
+        session: ctx.snapshot(session),
+        callback: status(completed.response, ctx.baseURL),
+      };
+    },
+    ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+  );
+}

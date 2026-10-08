@@ -8,6 +8,9 @@ import inputs from "../../fixtures/provider-batch-profiles.json";
 
 export const providerBatchModes = [
   "default",
+  "claims-empty",
+  "claims-custom",
+
   "language-en",
   "prompt-none",
   "prompt-consent",
@@ -190,6 +193,7 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
   const profiles = new Map<string, ReturnType<typeof betterAuth>>();
   for (const provider of Object.keys(inputs)) {
     for (const mode of providerBatchModes) {
+      if (mode.startsWith("claims-") && provider !== "twitch") continue;
       if (mode === "language-en" && provider !== "wechat") continue;
       if (mode.startsWith("prompt-") && provider !== "roblox") continue;
       if (mode === "pkce-disabled" && provider !== "zoom") continue;
@@ -203,6 +207,11 @@ export function providerBatchFixture(base: BetterAuthOptions, database: Database
               : "batch-client",
         ...(provider === "tiktok" ? { clientKey: "batch-client" } : {}),
         clientSecret: "batch-secret",
+        ...(mode === "claims-empty"
+          ? { claims: [] }
+          : mode === "claims-custom"
+            ? { claims: ["custom", "custom", "email", "__proto__"] }
+            : {}),
         ...(mode === "language-en" ? { lang: "en" } : {}),
         ...(mode.startsWith("prompt-")
           ? { prompt: mode === "prompt-empty" ? "" : mode.slice(7) }
