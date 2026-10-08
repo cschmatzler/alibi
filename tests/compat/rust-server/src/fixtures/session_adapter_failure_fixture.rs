@@ -2,7 +2,7 @@
 use crate::TestSchema;
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
-use alibi::plugins::{EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
+use alibi::plugins::{DeviceAuthorizationPlugin, EmailPasswordPlugin, PasswordManagementPlugin, SessionManagementPlugin};
 use alibi::{AuthBuilder, AuthConfig, AuthError, AuthResult, AuthSchema};
 use alibi_core::store::*;
 use alibi_core::types::*;
@@ -14,6 +14,24 @@ use std::sync::{Arc, Mutex};
 struct State {
     mode: String,
     events: Vec<String>,
+}
+struct DeviceApplication {
+    selector: Mutex<(String, String)>,
+    events: Mutex<Vec<Value>>,
+    first: tokio::sync::watch::Sender<bool>,
+    second: tokio::sync::watch::Sender<bool>,
+    count: std::sync::atomic::AtomicUsize,
+}
+impl Default for DeviceApplication {
+    fn default() -> Self {
+        Self {
+            selector: Mutex::new((String::new(), String::new())),
+            events: Mutex::new(Vec::new()),
+            first: tokio::sync::watch::channel(true).0,
+            second: tokio::sync::watch::channel(true).0,
+            count: std::sync::atomic::AtomicUsize::new(0),
+        }
+    }
 }
 struct DeletionApplication {
     tokens: Mutex<(String, String)>,
@@ -45,6 +63,7 @@ struct ApplicationStore {
     inner: Arc<dyn AuthStore<TestSchema>>,
     state: Arc<Mutex<State>>,
     deletion: Arc<DeletionApplication>,
+    device: Arc<DeviceApplication>,
 }
 impl ApplicationStore {
     fn check(&self, operation: &str) -> AuthResult<()> {
@@ -257,16 +276,86 @@ impl SessionStore<TestSchema> for ApplicationStore {
     }
 }
 
-forward!(DeviceCodeStore {
-    async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode>;
-    async fn get_device_code_by_device_code( &self, device_code: &str ) -> AuthResult<Option<DeviceCode>>;
-    async fn get_device_code_by_user_code(&self, user_code: &str) -> AuthResult<Option<DeviceCode>>;
-    async fn update_device_code( &self, id: &str, update: UpdateDeviceCode ) -> AuthResult<DeviceCode>;
-    async fn update_device_code_if_status( &self, id: &str, current_status: &str, update: UpdateDeviceCode ) -> AuthResult<bool>;
-    async fn claim_device_code(&self, id: &str, user_id: &str) -> AuthResult<bool>;
-    async fn delete_device_code(&self, id: &str) -> AuthResult<()>;
-    async fn delete_device_code_if_status(&self, id: &str, status: &str) -> AuthResult<bool>;
-});
+#[async_trait::async_trait]
+impl DeviceCodeStore for ApplicationStore {
+    async fn create_device_code(&self, input: CreateDeviceCode) -> AuthResult<DeviceCode> {
+        self.check("create_device_code")?;
+        self.inner.create_device_code(input).await
+    }
+    async fn get_device_code_by_device_code(
+        &self,
+        device_code: &str,
+    ) -> AuthResult<Option<DeviceCode>> {
+        self.check("get_device_code_by_device_code")?;
+        self.inner.get_device_code_by_device_code(device_code).await
+    }
+    async fn get_device_code_by_user_code(
+        &self,
+        user_code: &str,
+    ) -> AuthResult<Option<DeviceCode>> {
+        let row = self.inner.get_device_code_by_user_code(user_code).await?;
+        let (selected, mode) = self.device.selector.lock().unwrap().clone();
+        if mode == "review" && row.as_ref().is_some_and(|row| row.id == selected) {
+            let ordinal = self
+                .device
+                .count
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1;
+            if ordinal <= 2 {
+                let row = row.as_ref().unwrap();
+                self.device.events.lock().unwrap().push(json!({"operation":"review","ordinal":ordinal,"id":row.id,"userId":row.user_id}));
+                wait_release(if ordinal == 1 {
+                    &self.device.first
+                } else {
+                    &self.device.second
+                })
+                .await?;
+            }
+        }
+        Ok(row)
+    }
+    async fn update_device_code(
+        &self,
+        id: &str,
+        update: UpdateDeviceCode,
+    ) -> AuthResult<DeviceCode> {
+        self.check("update_device_code")?;
+        self.inner.update_device_code(id, update).await
+    }
+    async fn update_device_code_if_status(
+        &self,
+        id: &str,
+        current_status: &str,
+        update: UpdateDeviceCode,
+    ) -> AuthResult<bool> {
+        self.check("update_device_code_if_status")?;
+        self.inner
+            .update_device_code_if_status(id, current_status, update)
+            .await
+    }
+    async fn claim_device_code(&self, id: &str, user_id: &str) -> AuthResult<bool> {
+        self.check("claim_device_code")?;
+        self.inner.claim_device_code(id, user_id).await
+    }
+    async fn delete_device_code(&self, id: &str) -> AuthResult<()> {
+        self.check("delete_device_code")?;
+        self.inner.delete_device_code(id).await
+    }
+    async fn delete_device_code_if_status(&self, id: &str, status: &str) -> AuthResult<bool> {
+        let (selected, mode) = self.device.selector.lock().unwrap().clone();
+        if mode == "consume" && selected == id {
+            self.device
+                .events
+                .lock()
+                .unwrap()
+                .push(json!({"operation":"consume","id":id}));
+            wait_release(&self.device.first).await?;
+        }
+        self.inner.delete_device_code_if_status(id, status).await
+    }
+}
+
+
 
 forward!(TeamStore {});
 
@@ -278,6 +367,7 @@ forward!(JwkStore {});
 
 pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> AuthResult<Router> {
     let state = Arc::new(Mutex::new(State::default()));
+    let device = Arc::new(DeviceApplication::default());
     let deletion = Arc::new(DeletionApplication::default());
     let mut router = Router::new();
     for profile in ["session-adapter-failure", "password-reset-no-sender"] {
@@ -290,17 +380,18 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
             )),
             state: state.clone(),
             deletion: deletion.clone(),
+            device: device.clone(),
         };
-        let auth = Arc::new(
-            AuthBuilder::<TestSchema>::new(config)
-                .store(store)
-                .rate_limit(RateLimitConfig::new().enabled(false))
-                .plugin(EmailPasswordPlugin::new().enable_username(false))
-                .plugin(SessionManagementPlugin::new())
-                .plugin(PasswordManagementPlugin::new())
-                .build()
-                .await?,
-        );
+        let builder = AuthBuilder::<TestSchema>::new(config)
+            .store(store)
+            .rate_limit(RateLimitConfig::new().enabled(false))
+            .plugin(EmailPasswordPlugin::new().enable_username(false))
+            .plugin(SessionManagementPlugin::new())
+            .plugin(PasswordManagementPlugin::new());
+        let builder = if profile == "session-adapter-failure" {
+            builder.plugin(DeviceAuthorizationPlugin::new().interval(chrono::Duration::zero()))
+        } else { builder };
+        let auth = Arc::new(builder.build().await?);
         router = router.nest(&path, auth.clone().axum_router().with_state(auth));
     }
     Ok(router.route(
@@ -308,7 +399,38 @@ pub(crate) async fn router(base: &AuthConfig, database: DatabaseConnection) -> A
         post(move |Json(body): Json<Value>| {
             let state = state.clone();
             let deletion = deletion.clone();
+            let device = device.clone();
             async move {
+                if body["gate"].is_string() || !device.selector.lock().unwrap().1.is_empty() {
+                if let Some(operation) = body["operation"].as_str() {
+                    match operation {
+                        "arm" => {
+                            *device.selector.lock().unwrap() = (
+                                body["id"].as_str().unwrap().to_owned(),
+                                body["gate"].as_str().unwrap().to_owned(),
+                            );
+                            device.events.lock().unwrap().clear();
+                            device.count.store(0, std::sync::atomic::Ordering::SeqCst);
+                            device.second.send_replace(false);
+                            device.first.send_replace(false);
+                        }
+                        "release-first" => {
+                            device.first.send_replace(true);
+                        }
+                        "release-second" => {
+                            device.second.send_replace(true);
+                        }
+                        "restore" => {
+                            device.second.send_replace(true);
+                            device.first.send_replace(true);
+
+                            device.selector.lock().unwrap().1 = String::new();
+                        }
+                        _ => {}
+                    }
+                    return Json(json!({"events":*device.events.lock().unwrap()}));
+                }
+                }
                 if let Some(operation) = body["operation"].as_str() {
                     match operation {
                         "arm" => {

@@ -3,6 +3,7 @@ import type { Database } from "bun:sqlite";
 
 import { createKyselyAdapter, kyselyAdapter } from "@better-auth/kysely-adapter";
 import { betterAuth } from "better-auth";
+import { deviceAuthorization } from "better-auth/plugins";
 
 export async function createSessionAdapterFailureFixture(
   base: Parameters<typeof betterAuth>[0],
@@ -10,6 +11,16 @@ export async function createSessionAdapterFailureFixture(
 ) {
   let mode = "";
   const events: string[] = [];
+  const deviceGate = {
+    id: "",
+    mode: "",
+    count: 0,
+    events: [] as unknown[],
+    first: Promise.resolve(),
+    second: Promise.resolve(),
+    releaseFirst: () => {},
+    releaseSecond: () => {},
+  };
   const deletion = {
     held: "",
     reject: "",
@@ -37,7 +48,7 @@ export async function createSessionAdapterFailureFixture(
             ...(profile === "password-reset-no-sender"
               ? { emailAndPassword: { ...base.emailAndPassword, sendResetPassword: undefined } }
               : {}),
-            plugins: [],
+            plugins: profile === "session-adapter-failure" ? [deviceAuthorization({ interval: "0s" })] : [],
             database: (options) => {
               const adapter = factory(options);
               return {
@@ -49,12 +60,44 @@ export async function createSessionAdapterFailureFixture(
                     args.where.some((condition) => condition.field === "email")
                   )
                     check("get_user_by_email");
-                  return adapter.findOne(args);
+          const row = await adapter.findOne(args);
+          if (
+            deviceGate.mode === "review" &&
+            args.model === "deviceCode" &&
+            args.where.some((condition) => condition.field === "userCode") &&
+            row?.id === deviceGate.id
+          ) {
+            const ordinal = ++deviceGate.count;
+            if (ordinal <= 2) {
+              deviceGate.events.push({
+                operation: "review",
+                ordinal,
+                id: row.id,
+                userId: row.userId ?? null,
+              });
+              await (ordinal === 1 ? deviceGate.first : deviceGate.second);
+            }
+          }
+          return row;
+
                 },
                 async findMany(args) {
                   if (args.model === "session") check("get_user_sessions");
                   return adapter.findMany(args);
                 },
+        async consumeOne(args) {
+          if (
+            deviceGate.mode === "consume" &&
+            args.model === "deviceCode" &&
+            args.where.some(
+              (condition) => condition.field === "id" && condition.value === deviceGate.id,
+            )
+          ) {
+            deviceGate.events.push({ operation: "consume", id: deviceGate.id });
+            await deviceGate.first;
+          }
+          return adapter.consumeOne(args);
+        },
         async delete(args) {
           if (args.model === "session") check("delete_session");
           if (mode === "parallel" && args.model === "session") {
@@ -84,7 +127,29 @@ export async function createSessionAdapterFailureFixture(
   );
   return {
     profiles,
-    control(body: { mode?: string; operation?: string; heldToken?: string; rejectToken?: string }) {
+    control(body: { mode?: string; operation?: string; heldToken?: string; rejectToken?: string; gate?: string; id?: string }) {
+      if (body.operation && (body.gate || deviceGate.mode)) {
+        if (body.operation === "arm") {
+          deviceGate.id = body.id!;
+          deviceGate.mode = body.gate!;
+          deviceGate.events.length = 0;
+          deviceGate.count = 0;
+          deviceGate.first = new Promise<void>((resolve) => {
+            deviceGate.releaseFirst = resolve;
+          });
+          deviceGate.second = new Promise<void>((resolve) => {
+            deviceGate.releaseSecond = resolve;
+          });
+        }
+        if (body.operation === "release-first") deviceGate.releaseFirst();
+        if (body.operation === "release-second") deviceGate.releaseSecond();
+        if (body.operation === "restore") {
+          deviceGate.releaseSecond();
+          deviceGate.releaseFirst();
+          deviceGate.mode = "";
+        }
+        return Response.json({ events: [...deviceGate.events] });
+      }
       if (body.operation) {
         if (body.operation === "arm") {
           mode = "parallel";
