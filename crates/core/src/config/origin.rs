@@ -121,7 +121,7 @@ impl AuthConfig {
                 };
                 format!("{protocol}://{host}")
             } else {
-                let fallback = dynamic.fallback.as_ref().ok_or_else(|| AuthError::CallbackFailure(Box::new(AuthError::config("Could not resolve base URL: host is not allowed and no fallback is configured"))))?;
+                let fallback = dynamic.fallback.as_ref().ok_or_else(|| AuthError::BaseUrlResolution("host is not allowed and no fallback is configured".to_owned()))?;
                 let parsed = url::Url::parse(fallback)
                     .map_err(|_| AuthError::config("Invalid base URL fallback"))?;
                 if !matches!(parsed.scheme(), "http" | "https") {

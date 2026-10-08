@@ -104,6 +104,10 @@ pub enum AuthError {
     #[error("Configuration error: {0}")]
     Config(String),
 
+    /// Dynamic request authority could not be resolved before API dispatch.
+    #[error("Could not resolve request base URL: {0}")]
+    BaseUrlResolution(String),
+
     #[error("Database error: {0}")]
     Database(#[from] DatabaseError),
 
@@ -169,6 +173,7 @@ impl AuthError {
             Self::NotImplemented(_) => 501,
             // 500
             Self::Config(_)
+            | Self::BaseUrlResolution(_)
             | Self::Database(_)
             | Self::Serialization(_)
             | Self::Plugin { .. }
@@ -226,6 +231,7 @@ impl AuthError {
             | Self::RateLimited { .. }
             | Self::NotImplemented(_)
             | Self::Config(_)
+            | Self::BaseUrlResolution(_)
             | Self::Database(_)
             | Self::Serialization(_)
             | Self::Plugin { .. }
@@ -255,6 +261,9 @@ impl AuthError {
     /// `IntoResponse::into_response` when the `axum` feature is enabled.
     #[must_use]
     pub fn to_auth_response(self) -> crate::types::AuthResponse {
+        if matches!(&self, Self::BaseUrlResolution(_)) {
+            return crate::types::AuthResponse::text(500, "Something went wrong!");
+        }
         if matches!(&self, Self::CallbackFailure(_) | Self::Encryption(_)) {
             tracing::error!(error = %self, "Authentication operation failed");
             return crate::types::AuthResponse::new(500);
