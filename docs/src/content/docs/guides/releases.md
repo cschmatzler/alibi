@@ -42,7 +42,7 @@ The upstream compatibility target is separate release information. Do not encode
 1. Confirm the exact upstream target and choose the next unpublished Rust version using the rules above. For an upstream upgrade, complete the compatibility updates before assigning the release version.
 2. Update the workspace package version, first-party dependency requirements, lockfiles, and installation examples together. Keep compatibility badges and documented upstream pins aligned with the verified target.
 3. Record release notes with the upstream target, Rust changes, security fixes, known compatibility exceptions, and any migration steps.
-4. Run `devenv shell -- ./scripts/check.sh`, `bun run docs:check`, and `bun run docs:build`. Require the complete CI gate to pass on the release commit, including differential compatibility checks.
+4. Run `devenv shell -- ./scripts/check.sh`, `devenv shell -- ./scripts/compat.sh`, `bun run docs:check`, and `bun run docs:build`. Require CI to pass on the release commit and the differential compatibility suite to pass locally.
 5. Verify the packaged workspace with `devenv shell -- ./scripts/publish.sh`. Cargo stages the unpublished workspace dependencies together and verifies the archives with the default TLS backend and all framework, store and cache integrations enabled.
 6. Publish from the reviewed release commit with `devenv shell -- ./scripts/publish.sh --publish`, then create its immutable `v{rust-version}` tag and release notes. Cargo uploads the crates in dependency order. If publication is interrupted, resume with the same commit and version for unpublished crates; never overwrite an already published crate.
 

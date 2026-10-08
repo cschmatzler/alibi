@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Compat tier: the official better-auth client against the pinned TypeScript
 # reference server and the Rust fixture server, compared trace for trace.
+# Too slow for CI; run it once before merging.
 # The static compat checks (route inventory, OpenAPI contract, release pin)
 # run with the rest of the `compat` target in `cargo nextest run`.
 set -euo pipefail
@@ -14,6 +15,9 @@ for project in reference-server client-tests; do
   fi
 done
 
+bun run --cwd tests/compat/client-tests format:check
+bun run --cwd tests/compat/client-tests lint
+bun run --cwd tests/compat/client-tests typecheck
 bun tests/compat/client-tests/support/check-coverage.ts --inventory-only
 
 # Build both fixture backends up front so a compiler failure is not reported as a scenario failure.

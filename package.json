@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "devenv shell -- ./scripts/check.sh",
+    "test:compat": "devenv shell -- ./scripts/compat.sh",
     "docs:dev": "bun --cwd docs dev",
     "docs:build": "bun --cwd docs build",
     "docs:check": "bun --cwd docs check",
