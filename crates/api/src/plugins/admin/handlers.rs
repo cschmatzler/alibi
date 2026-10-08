@@ -333,6 +333,11 @@ pub(in crate::plugins) async fn update_user_core(
         return Err(AuthError::bad_request(MESSAGE_NO_DATA_TO_UPDATE));
     }
 
+    if body.data.get("banned") == Some(&serde_json::Value::Bool(true))
+        && body.user_id == acting_user.id
+    {
+        return Err(AuthError::bad_request("You cannot ban yourself"));
+    }
     let mut update = UpdateUser::default();
 
     if let Some(value) = body.data.get("role") {
