@@ -243,7 +243,29 @@ for (const provider of providers) {
     compatScenario(
       `provider batch ${provider} ${mode} application callback contract`,
       async (ctx) => {
-        await control(ctx, provider);
+        const responseProfile: any = structuredClone(inputs[provider]);
+        const witness = `application-profile-${provider}-${mode}`;
+        if (provider === "notion") responseProfile.bot.owner.user.applicationWitness = witness;
+        else responseProfile.applicationWitness = witness;
+        const providedProfile =
+          provider === "notion" && mode.startsWith("custom")
+            ? responseProfile.bot.owner.user
+            : responseProfile;
+        const grant = {
+          access_token: `application-${provider}-access`,
+          refresh_token: `application-${provider}-refresh`,
+          token_type: "Bearer",
+          expires_in: 3600,
+          refresh_token_expires_in: 7200,
+          scope: "identity email",
+          openid: "batch-subject",
+          ...(["paybin", "twitch"].includes(provider)
+            ? {
+                id_token: `e30.${Buffer.from(JSON.stringify(responseProfile)).toString("base64url")}.fixture`,
+              }
+            : {}),
+        };
+        await control(ctx, provider, { profile: providedProfile, tokenResponse: grant });
         const completed = await flow(ctx, provider, mode);
         const ignored = provider === "tiktok" && ["mapped-async", "mapper-error"].includes(mode);
         const caught = ["paypal", "salesforce"].includes(provider) && mode === "mapper-error";
@@ -263,6 +285,44 @@ for (const provider of providers) {
         }
         const callbacks = (await read(ctx, "callbacks")) as Array<Record<string, unknown>>;
         expect(callbacks).toHaveLength(ignored ? 0 : 1);
+        if (!ignored) {
+          expect(callbacks[0]!.provider).toBe(provider);
+          if (mode.startsWith("mapper") || mode.startsWith("mapped")) {
+            const expected =
+              provider === "notion"
+                ? responseProfile.bot.owner.user
+                : provider === "twitter"
+                  ? {
+                      ...responseProfile,
+                      data: { ...responseProfile.data, email: "batch@example.invalid" },
+                    }
+                  : responseProfile;
+            expect(callbacks[0]!.profile).toEqual(expected);
+          } else {
+            const token = callbacks[0]!.token as any;
+            expect(token.accessToken).toBe(`application-${provider}-access`);
+            expect(token.refreshToken).toBe(`application-${provider}-refresh`);
+            expect(token.tokenType).toBe("Bearer");
+            expect(token.scopes).toEqual(
+              provider === "wechat" ? ["identity email"] : ["identity", "email"],
+            );
+            expect(Date.parse(token.accessTokenExpiresAt) - Date.now()).toBeGreaterThan(3590000);
+            expect(Date.parse(token.accessTokenExpiresAt) - Date.now()).toBeLessThanOrEqual(
+              3600000,
+            );
+            if (provider === "wechat")
+              expect(token.openid ?? token.raw?.openid).toBe("batch-subject");
+            else {
+              expect(token.raw).toEqual(grant);
+              expect(Date.parse(token.refreshTokenExpiresAt) - Date.now()).toBeGreaterThan(7190000);
+              expect(Date.parse(token.refreshTokenExpiresAt) - Date.now()).toBeLessThanOrEqual(
+                7200000,
+              );
+              if (provider === "paybin" || provider === "twitch")
+                expect(token.idToken).toBe(grant.id_token);
+            }
+          }
+        }
         const sql = (await read(ctx, "sql-state")) as Record<
           string,
           Array<Record<string, unknown>>
@@ -278,7 +338,29 @@ for (const provider of providers) {
         await archive(ctx, `${provider}-${mode}`, { outcome });
         return {
           outcome,
-          callbackKinds: callbacks.map((row) => row.kind),
+          // Rust Option::None and JS undefined both represent an absent optional token.
+          // WeChat's JS provider exposes semantic extras at the top level; the Rust
+          // callback carries them in raw. The assertions above bind those actual
+          // fields before this platform representation projection.
+          callbacks: ctx.snapshot(
+            callbacks.map((receipt) => {
+              if (!receipt.token) return receipt;
+              const token = { ...(receipt.token as Record<string, unknown>) };
+              if (token.idToken == null) delete token.idToken;
+              if (provider === "wechat") {
+                const raw = token.raw as Record<string, unknown> | undefined;
+                const openid = token.openid ?? raw?.openid;
+                const unionid = token.unionid ?? raw?.unionid;
+                delete token.raw;
+                delete token.refreshTokenExpiresAt;
+                delete token.openid;
+                delete token.unionid;
+                if (openid != null) token.openid = openid;
+                if (unionid != null) token.unionid = unionid;
+              }
+              return { ...receipt, token };
+            }),
+          ),
           accountSubject: failure ? null : "batch-subject",
         };
       },
