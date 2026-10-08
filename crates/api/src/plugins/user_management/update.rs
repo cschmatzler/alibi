@@ -50,7 +50,13 @@ pub async fn handle_update_user<S: alibi_core::AuthSchema>(
         )?);
     };
 
-    if body.contains_key("email") {
+    if body.get("email").is_some_and(|value| match value {
+        serde_json::Value::Null => false,
+        serde_json::Value::Bool(value) => *value,
+        serde_json::Value::Number(value) => value.as_f64().is_some_and(|value| value != 0.0),
+        serde_json::Value::String(value) => !value.is_empty(),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => true,
+    }) {
         return Err(AuthError::bad_request("Email can not be updated"));
     }
 
