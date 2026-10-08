@@ -24,7 +24,7 @@ where
         let columns = S::Account::oauth_token_columns().ok_or_else(|| {
             AuthError::NotImplemented("Account token conversion columns are not configured".into())
         })?;
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         let template = match backend {
             sea_orm::DbBackend::Sqlite => "CAST(? AS TEXT) COLLATE BINARY = ?",
             sea_orm::DbBackend::Postgres => "CAST($1 AS TEXT) COLLATE \"C\" = $2",
@@ -67,7 +67,7 @@ where
             };
             query = query.filter(predicate);
         }
-        let transaction = self.connection().begin().await.map_err(map_db_err)?;
+        let transaction = self.scoped_connection().begin().await.map_err(map_db_err)?;
         match query.exec(&transaction).await {
             Ok(result) => {
                 transaction.commit().await.map_err(map_db_err)?;

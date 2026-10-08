@@ -144,7 +144,7 @@ where
         // cannot all hold read locks and fail when upgrading to a write.
         // PostgreSQL locks the selected row; the affected-row gate still
         // protects against another consumer using a separate store/process.
-        let transaction = self.pool().begin(true).await?;
+        let transaction = self.begin(true).await?;
         let outcome = async {
             let exec = Exec::Tx(&transaction);
             let mut select = Self::newest_generation(

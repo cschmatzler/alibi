@@ -1,13 +1,6 @@
 //! Local delivery, configuration and server-only OTP fixture interfaces.
 use crate::fixtures::passwordless_numeric_fixture::numeric_setting;
 use crate::{CompatVerificationSender, EmailOutboxRecord, TestSchema};
-use async_trait::async_trait;
-use axum::{
-    Json, Router,
-    extract::Query,
-    response::{IntoResponse, Response},
-    routing::{get, post},
-};
 use alibi::integrations::axum::AxumIntegration;
 use alibi::middleware::RateLimitConfig;
 use alibi::plugins::email_otp::{
@@ -25,46 +18,106 @@ use alibi_seaorm::{
     sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter, QueryOrder},
     store::entities::verification,
 };
+use async_trait::async_trait;
+use axum::{
+    Json, Router,
+    extract::Query,
+    response::{IntoResponse, Response},
+    routing::{get, post},
+};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::{collections::HashMap, sync::Arc};
 use tokio::sync::Mutex;
 
-static EMAIL_CHANGE_HOOK_MODE: std::sync::Mutex<(String,String)> = std::sync::Mutex::new((String::new(),String::new()));
+static EMAIL_CHANGE_HOOK_MODE: std::sync::Mutex<(String, String)> =
+    std::sync::Mutex::new((String::new(), String::new()));
 static EMAIL_CHANGE_HOOK_EVENTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
-fn email_change_hook(stage: &'static str) -> alibi::plugins::email_verification::EmailVerificationHook {
+fn email_change_hook(
+    stage: &'static str,
+) -> alibi::plugins::email_verification::EmailVerificationHook {
     Arc::new(move |user| {
         let request=alibi_core::hooks::current_request_hook_context().map(|request| json!({"path":request.url.as_ref().map(|url|url.path().to_owned()).unwrap_or(request.path),"method":format!("{:?}",request.method).to_uppercase(),"marker":request.headers.get("x-email-change-marker")}));
         EMAIL_CHANGE_HOOK_EVENTS.lock().unwrap().push(json!({"stage":stage,"user":{"id":user.id,"email":user.email,"emailVerified":user.email_verified},"request":request}));
-        let (selected,error)=EMAIL_CHANGE_HOOK_MODE.lock().unwrap().clone();
+        let (selected, error) = EMAIL_CHANGE_HOOK_MODE.lock().unwrap().clone();
         Box::pin(async move {
             if selected == stage {
-                if error == "coded" { return Err(AuthError::Api{ status:403, code:Some("EMAIL_CHANGE_HOOK_VETO".to_owned()), message:"Application verification hook rejected".to_owned() }); }
+                if error == "coded" {
+                    return Err(AuthError::Api {
+                        status: 403,
+                        code: Some("EMAIL_CHANGE_HOOK_VETO".to_owned()),
+                        message: "Application verification hook rejected".to_owned(),
+                    });
+                }
                 return Err(AuthError::internal("Private verification hook failure"));
             }
             Ok(())
         })
     })
 }
-struct ApplicationCodec {hash: bool, reject: bool}
+struct ApplicationCodec {
+    hash: bool,
+    reject: bool,
+}
 impl ApplicationCodec {
     fn encode(&self, otp: &str) -> String {
-        if self.hash {use sha2::Digest; format!("application:{}", sha2::Sha256::digest(otp.as_bytes()).iter().map(|byte|format!("{byte:02x}")).collect::<String>())}
-        else {format!("application:{}",otp.bytes().map(|byte|format!("{:02x}",byte ^ 0x5a)).collect::<String>())}
+        if self.hash {
+            use sha2::Digest;
+            format!(
+                "application:{}",
+                sha2::Sha256::digest(otp.as_bytes())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>()
+            )
+        } else {
+            format!(
+                "application:{}",
+                otp.bytes()
+                    .map(|byte| format!("{:02x}", byte ^ 0x5a))
+                    .collect::<String>()
+            )
+        }
     }
     fn decode(&self, stored: &str) -> AuthResult<String> {
-        if self.reject {return Err(AuthError::CallbackFailure(Box::new(AuthError::internal("Application OTP decryption failed"))));}
-        let encoded=stored.strip_prefix("application:").ok_or_else(||AuthError::bad_request("Malformed application cipher"))?;
-        let bytes=(0..encoded.len()).step_by(2).map(|offset|u8::from_str_radix(&encoded[offset..offset+2],16).map(|byte|byte ^ 0x5a)).collect::<Result<Vec<_>,_>>().map_err(|error|AuthError::internal(error.to_string()))?;
-        String::from_utf8(bytes).map_err(|error|AuthError::internal(error.to_string()))
+        if self.reject {
+            return Err(AuthError::CallbackFailure(Box::new(AuthError::internal(
+                "Application OTP decryption failed",
+            ))));
+        }
+        let encoded = stored
+            .strip_prefix("application:")
+            .ok_or_else(|| AuthError::bad_request("Malformed application cipher"))?;
+        let bytes = (0..encoded.len())
+            .step_by(2)
+            .map(|offset| {
+                u8::from_str_radix(&encoded[offset..offset + 2], 16).map(|byte| byte ^ 0x5a)
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| AuthError::internal(error.to_string()))?;
+        String::from_utf8(bytes).map_err(|error| AuthError::internal(error.to_string()))
     }
 }
 #[async_trait]
 impl EmailOtpCodec for ApplicationCodec {
-    async fn store(&self, otp: &str) -> AuthResult<String> {Ok(self.encode(otp))}
-    async fn verify(&self, stored: &str, otp: &str) -> AuthResult<bool> {Ok(if self.hash {stored==self.encode(otp)} else {self.decode(stored)? == otp})}
-    async fn retrieve(&self, stored: &str) -> AuthResult<Option<String>> {if self.hash {Ok(None)} else {self.decode(stored).map(Some)}}
+    async fn store(&self, otp: &str) -> AuthResult<String> {
+        Ok(self.encode(otp))
+    }
+    async fn verify(&self, stored: &str, otp: &str) -> AuthResult<bool> {
+        Ok(if self.hash {
+            stored == self.encode(otp)
+        } else {
+            self.decode(stored)? == otp
+        })
+    }
+    async fn retrieve(&self, stored: &str) -> AuthResult<Option<String>> {
+        if self.hash {
+            Ok(None)
+        } else {
+            self.decode(stored).map(Some)
+        }
+    }
 }
 pub(super) type Outbox = Arc<Mutex<HashMap<String, Value>>>;
 #[derive(Clone)]
@@ -175,6 +228,11 @@ struct Operation {
 fn response(result: AuthResult<Value>) -> Response {
     match result {
         Ok(value) => Json(value).into_response(),
+        Err(AuthError::CallbackFailure(_)) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"message":"Internal server error"})),
+        )
+            .into_response(),
         Err(error) => {
             let auth_response = error.to_auth_response();
             let mut response = auth_response.body.into_response();
@@ -257,17 +315,38 @@ pub(super) async fn router(
             .base_path(format!("/__test/profiles/{name}/api/auth"));
         config.verification.disable_cleanup = name == "verification-no-cleanup";
         let otp = EmailOtpPlugin::new(EmailOtpConfig {
-            rate_limit: if name == "passwordless-rate-policy" { alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 2.0} } else if name.starts_with("passwordless-custom-") {alibi_core::EndpointRateLimit {window_seconds: 1.0, max_requests: 3.0}} else { EmailOtpConfig::default().rate_limit },
+            rate_limit: if name == "passwordless-rate-policy" {
+                alibi_core::EndpointRateLimit {
+                    window_seconds: 1.0,
+                    max_requests: 2.0,
+                }
+            } else if name.starts_with("passwordless-custom-") {
+                alibi_core::EndpointRateLimit {
+                    window_seconds: 1.0,
+                    max_requests: 3.0,
+                }
+            } else {
+                EmailOtpConfig::default().rate_limit
+            },
             generate_otp: Some(Arc::new(Sender(outbox.clone()))),
             send_verification_otp: Some(Arc::new(Sender(outbox.clone()))),
             change_email_enabled: !name.starts_with("otp-change-disabled-"),
             storage: match name {
                 "passwordless-hashed" => EmailOtpStorage::Hashed,
-                "passwordless-custom-hash" | "passwordless-custom-cipher" | "passwordless-custom-cipher-failure" => EmailOtpStorage::Custom(Arc::new(ApplicationCodec {hash: name.ends_with("hash"), reject: name.ends_with("failure")})),
+                "passwordless-custom-hash"
+                | "passwordless-custom-cipher"
+                | "passwordless-custom-cipher-failure" => {
+                    EmailOtpStorage::Custom(Arc::new(ApplicationCodec {
+                        hash: name.ends_with("hash"),
+                        reject: name.ends_with("failure"),
+                    }))
+                }
                 "passwordless-encrypted-reuse" => EmailOtpStorage::Encrypted,
                 _ => EmailOtpStorage::Plain,
             },
-            resend_strategy: if name == "passwordless-encrypted-reuse" || name.starts_with("passwordless-custom-") {
+            resend_strategy: if name == "passwordless-encrypted-reuse"
+                || name.starts_with("passwordless-custom-")
+            {
                 OtpResendStrategy::Reuse
             } else {
                 OtpResendStrategy::Rotate
@@ -291,14 +370,27 @@ pub(super) async fn router(
                 outbox: verification_outbox.clone(),
             }))
         };
-        let verification = if name == "otp-change-hooks" { verification.before_email_verification(email_change_hook("before")).after_email_verification(email_change_hook("after")) } else {verification};
+        let verification = if name == "otp-change-hooks" {
+            verification
+                .before_email_verification(email_change_hook("before"))
+                .after_email_verification(email_change_hook("after"))
+        } else {
+            verification
+        };
         let auth = Arc::new(
             AuthBuilder::new(config.clone())
                 .store(crate::backend::store::<TestSchema>(
                     config.clone(),
                     database.clone(),
                 ))
-                .rate_limit(RateLimitConfig::new().enabled(name == "passwordless-rate-policy" || name.starts_with("passwordless-custom-")).default_limit(std::time::Duration::from_secs(60), 10000))
+                .rate_limit(
+                    RateLimitConfig::new()
+                        .enabled(
+                            name == "passwordless-rate-policy"
+                                || name.starts_with("passwordless-custom-"),
+                        )
+                        .default_limit(std::time::Duration::from_secs(60), 10000),
+                )
                 .plugin(
                     EmailPasswordPlugin::new()
                         .enable_username(false)
@@ -359,6 +451,18 @@ pub(super) async fn router(
             }
         }.await)}
     }));
-    router=router.route("/__test/email-change-hooks",get(|| async {Json(json!({"events":*EMAIL_CHANGE_HOOK_EVENTS.lock().unwrap()}))}).post(|Json(body):Json<Value>| async move {*EMAIL_CHANGE_HOOK_MODE.lock().unwrap()=(body["stage"].as_str().unwrap().to_owned(),body["error"].as_str().unwrap().to_owned());EMAIL_CHANGE_HOOK_EVENTS.lock().unwrap().clear();Json(json!({"events":[]}))}));
+    router = router.route(
+        "/__test/email-change-hooks",
+        get(|| async { Json(json!({"events":*EMAIL_CHANGE_HOOK_EVENTS.lock().unwrap()})) }).post(
+            |Json(body): Json<Value>| async move {
+                *EMAIL_CHANGE_HOOK_MODE.lock().unwrap() = (
+                    body["stage"].as_str().unwrap().to_owned(),
+                    body["error"].as_str().unwrap().to_owned(),
+                );
+                EMAIL_CHANGE_HOOK_EVENTS.lock().unwrap().clear();
+                Json(json!({"events":[]}))
+            },
+        ),
+    );
     Ok(router)
 }
