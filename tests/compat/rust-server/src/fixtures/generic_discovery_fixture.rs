@@ -109,6 +109,7 @@ pub(crate) async fn router(
     let mut router = Router::new();
     for mode in [
         "success",
+        "static-params",
         "response-type",
         "expiry-positive",
         "expiry-zero",
@@ -153,6 +154,13 @@ pub(crate) async fn router(
         generic.require_id_token_verification = mode == "required";
         generic.disable_id_token_nonce_binding = mode == "nonce-unbound";
         generic.provider.scopes = vec!["profile".into()];
+        if mode == "static-params" {
+            generic.provider.authorization_params = vec![
+                ("audience".into(), "static-audience".into()),
+                ("scope".into(), "configured-scope".into()),
+                ("prompt".into(), "consent".into()),
+            ];
+        }
         let policy = generic.provider.authorization.as_mut().unwrap();
         if mode == "response-type" {
             policy.response_type = "token".into();

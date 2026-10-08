@@ -24,10 +24,12 @@ import { genericOAuth } from "better-auth/plugins/generic-oauth";
 import { organization } from "better-auth/plugins/organization";
 import { defaultStatements } from "better-auth/plugins/organization/access";
 
+import { accountLinkingFixture } from "./fixtures/account-linking-fixture";
 import { additionalFieldsFixture } from "./fixtures/additional-fields-fixture";
 import { createAdminBannedMessageFixture } from "./fixtures/admin-banned-message-fixture";
 import { createAdminPermissionFixture } from "./fixtures/admin-permission-fixture";
 import { anonymousFixture } from "./fixtures/anonymous-fixture";
+import { apiErrorFixture } from "./fixtures/api-error-fixture";
 import { apiKeyBackgroundFixture } from "./fixtures/api-key-background-fixture";
 import { createApiKeyGenerationFixture } from "./fixtures/api-key-generation-fixture";
 import { createApiKeyHookFixture } from "./fixtures/api-key-hook-fixture";
@@ -43,6 +45,8 @@ import { cloudflareProviderFixture } from "./fixtures/cloudflare-provider-fixtur
 import { cognitoProviderFixture } from "./fixtures/cognito-provider-fixture";
 import { createCompromisedPasswordFixture } from "./fixtures/compromised-password-fixture";
 import { createCustomSessionFixture } from "./fixtures/custom-session-fixture";
+import { deviceGrantFixture } from "./fixtures/device-grant-fixture";
+import { deleteHooksFixture } from "./fixtures/delete-hooks-fixture";
 import { createDispatchFixture } from "./fixtures/dispatch-fixture";
 import { dropboxProviderFixture } from "./fixtures/dropbox-provider-fixture";
 import { facebookProviderFixture } from "./fixtures/facebook-provider-fixture";
@@ -51,6 +55,7 @@ import { genericDiscoveryFixture } from "./fixtures/generic-discovery-fixture";
 import { genericTokenParamsFixture } from "./fixtures/generic-token-params-fixture";
 import { googleIdTokenProfiles } from "./fixtures/google-id-token-fixture";
 import { huggingfaceProviderFixture } from "./fixtures/huggingface-provider-fixture";
+import { idStrategyFixture } from "./fixtures/id-strategy-fixture";
 import { createJwtKeyringFixture } from "./fixtures/jwt-keyring-fixture";
 import { createRemoteJwtFixture } from "./fixtures/jwt-remote-fixture";
 import { kakaoProviderFixture } from "./fixtures/kakao-provider-fixture";
@@ -90,11 +95,13 @@ import { paypalProviderFixture } from "./fixtures/paypal-provider-fixture";
 import { createPhoneFixture } from "./fixtures/phone-fixture";
 import { physicalCookieProfiles } from "./fixtures/physical-cookie-fixture";
 import { polarProviderFixture } from "./fixtures/polar-provider-fixture";
+import { postgresSchemaFixture } from "./fixtures/postgres-schema-fixture";
 import { providerBatchFixture } from "./fixtures/provider-batch-fixture";
 import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
 import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
+import { createSessionAdapterFailureFixture } from "./fixtures/session-adapter-failure-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
 import { createSessionFieldsFixture } from "./fixtures/session-fields-fixture";
 import { createSetPasswordFixture } from "./fixtures/set-password-fixture";
@@ -110,6 +117,7 @@ import { createTwoFactorDeliveryFixture } from "./fixtures/two-factor-delivery-f
 import { createTwoFactorOtpFixture } from "./fixtures/two-factor-otp-fixture";
 import { createTwoFactorPendingLookupFixture } from "./fixtures/two-factor-pending-lookup-fixture";
 import { createTwoFactorPolicyFixture } from "./fixtures/two-factor-policy-fixture";
+import { twoFactorTableFixture } from "./fixtures/two-factor-table-fixture";
 import { createTwoFactorTotpFixture } from "./fixtures/two-factor-totp-fixture";
 import { createUserLifecycleFixture } from "./fixtures/user-lifecycle-fixture";
 import { createUserValidationFixture } from "./fixtures/user-validation-fixture";
@@ -571,7 +579,9 @@ const sessionFieldsFixture = await createSessionFieldsFixture(
   authOptions,
   `http://localhost:${PORT}`,
 );
-const rateLimitFixture = createRateLimitFixture(authOptions);
+const idStrategies = await idStrategyFixture(authOptions);
+const apiErrors = apiErrorFixture(authOptions);
+const rateLimitFixture = await createRateLimitFixture(authOptions);
 const clientIpFixture = await createClientIpFixture(authOptions, database);
 const siweFixture = await createSiweFixture(database, authOptions, `http://localhost:${PORT}`);
 const adminBannedMessageFixture = createAdminBannedMessageFixture(authOptions, database);
@@ -627,6 +637,10 @@ const organizationMemberRoleFixture = organizationMemberRoleHooksFixture(
 const lastLoginMethodFixture = await createLastLoginMethodFixture(authOptions, database);
 const remoteJwtFixture = createRemoteJwtFixture(authOptions);
 const jwtKeyringFixture = createJwtKeyringFixture(authOptions, database);
+const sessionAdapterFailureFixture = await createSessionAdapterFailureFixture(
+  authOptions,
+  database,
+);
 const twoFactorPendingLookupFixture = await createTwoFactorPendingLookupFixture(
   authOptions,
   database,
@@ -684,6 +698,10 @@ const providerBatch = providerBatchFixture(authOptions, database);
 
 // Explicit configuration fixtures invoke the unchanged pinned runtime.
 const verificationProfiles = new Map<string, ReturnType<typeof betterAuth>>();
+const accountLinkingProfiles = accountLinkingFixture(authOptions);
+for (const [path, instance] of accountLinkingProfiles.profiles) {
+  verificationProfiles.set(path, instance);
+}
 for (const [path, instance] of additionalFields.profiles) {
   verificationProfiles.set(path, instance);
 }
@@ -943,6 +961,11 @@ for (const name of [
 }
 
 for (const name of [
+  "stateless-refresh-compact",
+  "stateless-refresh-jwt",
+  "stateless-refresh-deferred",
+  "stateless-refresh-v2",
+  "stateless-refresh-jwt-v2",
   "session-update-age",
   "session-update-age-cache",
   "session-update-age-long",
@@ -952,6 +975,7 @@ for (const name of [
   "session-deferred-no-refresh",
   "session-no-freshness",
   "session-cookie-cleanup",
+  "account-unlink-all",
 ]) {
   const path = `/__test/profiles/${name}/api/auth`;
   verificationProfiles.set(
@@ -959,18 +983,34 @@ for (const name of [
     betterAuth({
       ...authOptions,
       basePath: path,
+      ...(name.startsWith("stateless-refresh-") ? { database: undefined } : {}),
       session: {
         ...authOptions.session,
+        ...(name.startsWith("stateless-refresh-")
+          ? {
+              cookieCache: {
+                enabled: true,
+                strategy: name.includes("jwt") ? "jwt" : "compact",
+                maxAge: 5,
+                refreshCache: { updateAge: 4 },
+                version: name.endsWith("v2") ? "2" : "1",
+              },
+            }
+          : {}),
         ...(name.includes("update-age")
           ? { expiresIn: 3600, updateAge: name.endsWith("-long") ? 7200 : 120 }
           : {}),
         ...(name === "session-update-age-cache"
           ? { cookieCache: { enabled: true, maxAge: 300 } }
           : {}),
-        deferSessionRefresh: name.startsWith("session-deferred"),
-        disableSessionRefresh: name.endsWith("no-refresh"),
+        deferSessionRefresh:
+          name.startsWith("session-deferred") || name.endsWith("refresh-deferred"),
+        disableSessionRefresh: name.endsWith("no-refresh") || name.startsWith("stateless-refresh-"),
         ...(name === "session-no-freshness" ? { freshAge: 0 } : {}),
       },
+      ...(name === "account-unlink-all"
+        ? { account: { ...authOptions.account, accountLinking: { allowUnlinkingAll: true } } }
+        : {}),
       ...(name === "session-cookie-cleanup"
         ? {
             account: {
@@ -984,7 +1024,38 @@ for (const name of [
   );
 }
 
-for (const name of ["passkey-fresh", "passkey-no-freshness", "passkey-acceptance"]) {
+function passkeyExtensions(mode: string, registration: boolean) {
+  const inputs = (marker: string, path: string) =>
+    registration
+      ? { credProps: marker !== "registration-marker" }
+      : { appid: `https://extensions.fixture.test/${marker}/${path.split("/").at(-1)}` };
+  if (mode === "static")
+    return registration ? { credProps: true } : { appid: "https://extensions.fixture.test/static" };
+  return async ({ ctx }: any) => {
+    await Promise.resolve();
+    if (mode === "coded")
+      throw new APIError("FORBIDDEN", {
+        code: "EXTENSIONS_DENIED",
+        message: "Application extensions rejected",
+      });
+    if (mode === "ordinary") throw new Error("Application extensions failed");
+    if (registration && !ctx.context.session?.user)
+      throw new Error("actual registration session required");
+    return inputs(ctx.headers.get("x-extension-marker"), ctx.path);
+  };
+}
+for (const name of [
+  "passkey-fresh",
+  "passkey-no-freshness",
+  "passkey-acceptance",
+  "passkey-extensions-static",
+  "passkey-extensions-resolver",
+  "passkey-extensions-coded",
+  "passkey-extensions-ordinary",
+  "passkey-rp-options",
+  "passkey-origin-list",
+  "passkey-origin-null",
+]) {
   const path = `/__test/profiles/${name}/api/auth`;
   verificationProfiles.set(
     path,
@@ -994,11 +1065,33 @@ for (const name of ["passkey-fresh", "passkey-no-freshness", "passkey-acceptance
       session: { ...authOptions.session, freshAge: name === "passkey-fresh" ? 1 : 0 },
       plugins: [
         passkey(
-          name === "passkey-acceptance"
+          name.startsWith("passkey-extensions-")
             ? {
-                advanced: { webAuthnChallengeCookie: "ceremony-proof" },
+                registration: {
+                  extensions: passkeyExtensions(name.slice("passkey-extensions-".length), true),
+                },
+                authentication: {
+                  extensions: passkeyExtensions(name.slice("passkey-extensions-".length), false),
+                },
               }
-            : undefined,
+            : name === "passkey-rp-options"
+            ? {
+                rpName: "Configured ceremony RP",
+                authenticatorSelection: {
+                  residentKey: "required",
+                  userVerification: "required",
+                  authenticatorAttachment: "platform",
+                },
+              }
+            : name === "passkey-origin-list"
+              ? { origin: [authOptions.baseURL as string, "http://localhost:4444"] }
+              : name === "passkey-origin-null"
+                ? { origin: null }
+                : name === "passkey-acceptance"
+                  ? {
+                      advanced: { webAuthnChallengeCookie: "ceremony-proof" },
+                    }
+                  : undefined,
         ),
         username(),
       ],
@@ -1025,7 +1118,7 @@ function createOtpProfile(name: string) {
   return betterAuth({
     ...authOptions,
     basePath: `/__test/profiles/${name}/api/auth`,
-    ...(name === "passwordless-rate-policy"
+    ...(name === "passwordless-rate-policy" || name.startsWith("passwordless-custom-")
       ? { rateLimit: { enabled: true, window: 60, max: 10000 } }
       : {}),
     verification: { disableCleanup: name === "verification-no-cleanup" },
@@ -1039,15 +1132,43 @@ function createOtpProfile(name: string) {
           },
     plugins: [
       emailOTP({
-        ...(name === "passwordless-rate-policy" ? { rateLimit: { window: 1, max: 2 } } : {}),
+        ...(name === "passwordless-rate-policy"
+          ? { rateLimit: { window: 1, max: 2 } }
+          : name.startsWith("passwordless-custom-")
+            ? { rateLimit: { window: 1, max: 3 } }
+            : {}),
         ...numericOptions(name),
         storeOTP:
-          name === "passwordless-hashed"
-            ? "hashed"
-            : name === "passwordless-encrypted-reuse"
-              ? "encrypted"
-              : "plain",
-        resendStrategy: name === "passwordless-encrypted-reuse" ? "reuse" : "rotate",
+          name === "passwordless-custom-hash"
+            ? {
+                async hash(otp: string) {
+                  return `application:${new Bun.CryptoHasher("sha256").update(otp).digest("hex")}`;
+                },
+              }
+            : name.startsWith("passwordless-custom-cipher")
+              ? {
+                  async encrypt(otp: string) {
+                    return `application:${Buffer.from([...Buffer.from(otp)].map((byte) => byte ^ 0x5a)).toString("hex")}`;
+                  },
+                  async decrypt(stored: string) {
+                    if (name.endsWith("failure"))
+                      throw new Error("Application OTP decryption failed");
+                    return Buffer.from(
+                      [...Buffer.from(stored.slice("application:".length), "hex")].map(
+                        (byte) => byte ^ 0x5a,
+                      ),
+                    ).toString();
+                  },
+                }
+              : name === "passwordless-hashed"
+                ? "hashed"
+                : name === "passwordless-encrypted-reuse"
+                  ? "encrypted"
+                  : "plain",
+        resendStrategy:
+          name === "passwordless-encrypted-reuse" || name.startsWith("passwordless-custom-")
+            ? "reuse"
+            : "rotate",
         disableSignUp: name === "passwordless-disabled",
         overrideDefaultEmailVerification: proof,
         sendVerificationOnSignUp: name === "otp-signup-verification",
@@ -1072,6 +1193,9 @@ for (const name of [
   "passwordless-rate-policy",
   "otp-signup-verification",
   "passwordless-hashed",
+  "passwordless-custom-hash",
+  "passwordless-custom-cipher",
+  "passwordless-custom-cipher-failure",
   "passwordless-encrypted-reuse",
   "passwordless-proof",
   "passwordless-proof-explicit",
@@ -1083,6 +1207,7 @@ for (const name of [
   otpProfiles.set(name, createOtpProfile(name));
 }
 
+let magicHasherMode = "success";
 const magicGeneratorState = { mode: "success", receipts: [] as string[] };
 const magicProfiles = new Map<string, ReturnType<typeof betterAuth>>();
 for (const name of [
@@ -1090,7 +1215,10 @@ for (const name of [
   "magic-link-hashed",
   "magic-link-hashed-custom-token",
   "magic-link-custom-hasher",
+  "magic-link-custom-hasher-errors",
   "magic-link-generator-reject",
+  "magic-link-sender-coded",
+  "magic-link-sender-ordinary",
   "magic-link-disabled",
   ...numericModes
     .filter((mode) => mode.startsWith("lifetime-"))
@@ -1109,18 +1237,24 @@ for (const name of [
         magicLink({
           ...(name === "magic-link-rate-policy" ? { rateLimit: { window: 1, max: 2 } } : {}),
           ...numericOptions(name),
-          storeToken:
-            name === "magic-link-custom-hasher"
-              ? {
-                  type: "custom-hasher",
-                  hash: async (token: string) => {
-                    await Promise.resolve();
-                    return `application:${token}`;
-                  },
-                }
-              : name.startsWith("magic-link-hashed")
-                ? "hashed"
-                : "plain",
+          storeToken: name.startsWith("magic-link-custom-hasher")
+            ? {
+                type: "custom-hasher",
+                hash: async (token: string) => {
+                  await Promise.resolve();
+                  if (name.endsWith("-errors") && magicHasherMode === "coded")
+                    throw new APIError("FORBIDDEN", {
+                      code: "MAGIC_HASH_REJECTED",
+                      message: "Application hasher rejected",
+                    });
+                  if (name.endsWith("-errors") && magicHasherMode === "ordinary")
+                    throw new Error("Application hasher failed");
+                  return `application:${token}`;
+                },
+              }
+            : name.startsWith("magic-link-hashed")
+              ? "hashed"
+              : "plain",
           ...(name === "magic-link-hashed-custom-token"
             ? { generateToken: async (email: string) => `custom-link-${email}` }
             : {}),
@@ -1140,12 +1274,11 @@ for (const name of [
             : {}),
           disableSignUp: name === "magic-link-disabled",
           async sendMagicLink({ email, url, token, metadata }, ctx) {
-            const identifier =
-              name === "magic-link-custom-hasher"
-                ? `application:${token}`
-                : ctx.context.options.basePath?.includes("magic-link-hashed")
-                  ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
-                  : token;
+            const identifier = name.startsWith("magic-link-custom-hasher")
+              ? `application:${token}`
+              : ctx.context.options.basePath?.includes("magic-link-hashed")
+                ? new Bun.CryptoHasher("sha256").update(token).digest("base64url")
+                : token;
             const context = await callbackSnapshot(ctx, `magic-link:${identifier}`);
             magicLinkOutbox.set(email, {
               url,
@@ -1153,6 +1286,13 @@ for (const name of [
               metadata: metadata ?? null,
               ...(context ? { context } : {}),
             });
+            if (name === "magic-link-sender-coded")
+              throw new APIError("FORBIDDEN", {
+                code: "MAGIC_DELIVERY_REJECTED",
+                message: "Application delivery rejected",
+              });
+            if (name === "magic-link-sender-ordinary")
+              throw new Error("Application delivery failed");
           },
         }),
       ],
@@ -1169,6 +1309,10 @@ const physicalCookies = physicalCookieProfiles(authOptions, database);
 for (const [path, auth] of physicalCookies.profiles) {
   verificationProfiles.set(path, auth);
 }
+const deviceGrant = await deviceGrantFixture(authOptions);
+const deletionHooks = deleteHooksFixture(authOptions);
+const customFactorTable = await twoFactorTableFixture(authOptions);
+const postgresSchema = await postgresSchemaFixture(authOptions);
 const casing = await casingFixture(authOptions);
 const auth = betterAuth(authOptions);
 const errorPageAuth = betterAuth({
@@ -1176,6 +1320,20 @@ const errorPageAuth = betterAuth({
   basePath: "/__test/profiles/error-page/api/auth",
   onAPIError: { customizeDefaultErrorPage: {} },
 });
+for (const mode of ["redirect", "html"]) {
+  const path = `/__test/profiles/error-url-${mode}/api/auth`;
+  verificationProfiles.set(
+    path,
+    betterAuth({
+      ...authOptions,
+      basePath: path,
+      onAPIError: {
+        errorURL: "/problem?keep=a%2Bb#error-panel",
+        ...(mode === "html" ? { customizeDefaultErrorPage: {} } : {}),
+      },
+    }),
+  );
+}
 const authContext = await auth.$context;
 const oneTapProfiles = createOneTapProfiles(authOptions);
 const googleIdProfiles = googleIdTokenProfiles(authOptions);
@@ -2210,6 +2368,7 @@ const RESET_MODELS = [
 ] as const;
 
 async function resetDatabaseState() {
+  await deviceGrant.reset();
   const { adapter } = await teamProfiles.get("org-teams")!.auth.$context;
   for (const model of ["teamMember", "team"]) {
     await adapter.deleteMany({ model, where: [] });
@@ -2226,6 +2385,7 @@ async function resetDatabaseState() {
   await context.adapter.deleteMany({ model: "jwks", where: [] });
   // Application-owned keys of the custom-adapter JWT keyring profiles.
   database.query("DELETE FROM fixtureJwtKeyring").run();
+  database.query("DELETE FROM application_delete_receipts").run();
 }
 
 /** Row counts of every non-empty table; the scenario runner requires none after reset. */
@@ -2302,6 +2462,14 @@ const server = Bun.serve({
     await capturePasswordlessRequest(request);
     try {
       const url = new URL(request.url);
+      const grantResponse = await deviceGrant.handle(request);
+      if (grantResponse) return grantResponse;
+      const deletionResponse = await deletionHooks.handle(request);
+      if (deletionResponse) return deletionResponse;
+      const factorTableResponse = await customFactorTable.handle(request);
+      if (factorTableResponse) return factorTableResponse;
+      const postgresResponse = await postgresSchema.handle(request);
+      if (postgresResponse) return postgresResponse;
       const casingResponse = await casing.handle(request);
       if (casingResponse) return casingResponse;
       const microsoftControl = await microsoftFixture.handle(request);
@@ -2310,6 +2478,10 @@ const server = Bun.serve({
         return errorPageAuth.handler(request);
       }
       organizationTransport.observe(request);
+      const idStrategyResponse = await idStrategies.handle(request);
+      if (idStrategyResponse) return idStrategyResponse;
+      const apiErrorResponse = await apiErrors.handle(request);
+      if (apiErrorResponse) return apiErrorResponse;
       const rateLimitResponse = await rateLimitFixture.handle(request);
       if (rateLimitResponse) {
         return rateLimitResponse;
@@ -2632,6 +2804,12 @@ const server = Bun.serve({
       ) {
         return organizationMemberRoleFixture.state(url.searchParams.get("waitFor"));
       }
+      for (const [profile, auth] of sessionAdapterFailureFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`))
+          return auth.handler(request);
+      }
+      if (url.pathname === "/__test/session-adapter-failure" && request.method === "POST")
+        return sessionAdapterFailureFixture.control(await request.json());
       if (url.pathname === "/__test/verification-sender-calls")
         return Response.json({ calls: verificationSenderCalls });
       for (const [name, auth] of twoFactorPendingLookupFixture.profiles) {
@@ -3134,6 +3312,10 @@ const server = Bun.serve({
         return jsonResponse(await auth.api.verifyApiKey({ body: await readJson(request) }));
       }
 
+      if (url.pathname === "/__test/magic-link/hasher-control" && request.method === "POST") {
+        magicHasherMode = (await request.json()).mode;
+        return Response.json({ status: true });
+      }
       if (url.pathname === "/__test/magic-link/generator-control" && request.method === "POST") {
         const body = await request.json();
         if (body.mode) magicGeneratorState.mode = body.mode;
@@ -3148,6 +3330,20 @@ const server = Bun.serve({
       if (url.pathname === "/__test/magic-link" && request.method === "GET") {
         return jsonResponse(magicLinkOutbox.get(url.searchParams.get("email") ?? "") ?? null);
       }
+      if (url.pathname === "/__test/phone-notifications")
+        return Response.json(
+          phoneFixture.notificationControl(
+            request.method === "POST" ? (await request.json()).operation : undefined,
+          ),
+        );
+      if (url.pathname === "/__test/phone-validator-events")
+        return Response.json(phoneFixture.validatorEvents);
+      if (url.pathname === "/__test/custom-session-work")
+        return Response.json(
+          customSessionFixture.control(
+            request.method === "POST" ? await request.json() : undefined,
+          ),
+        );
       if (url.pathname === "/__test/phone-otp" && request.method === "GET") {
         return jsonResponse(
           phoneFixture.outbox.get(
@@ -3160,6 +3356,10 @@ const server = Bun.serve({
       }
       const managedSecretsResponse = await managedSecretsFixture.handle(request);
       if (managedSecretsResponse) return managedSecretsResponse;
+      if (url.pathname === "/__test/phone-verifier-control" && request.method === "POST") {
+        phoneFixture.setVerifierMode((await request.json()).mode);
+        return Response.json({ status: true });
+      }
       if (url.pathname === "/__test/phone-reset-control" && request.method === "POST") {
         return Response.json(phoneFixture.resetControl((await request.json()).mode));
       }

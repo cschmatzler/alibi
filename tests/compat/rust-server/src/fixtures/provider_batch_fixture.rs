@@ -1,5 +1,11 @@
 //! Shared official-client provider boundary. HTTP responses are inputs, not mapped outcomes.
 use crate::TestSchema;
+use alibi::integrations::axum::AxumIntegration;
+use alibi::middleware::RateLimitConfig;
+use alibi::plugins::oauth::*;
+use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
+use alibi::{AuthBuilder, AuthConfig, AuthResult};
+use alibi_seaorm::DatabaseConnection;
 use axum::{
     Json, Router,
     extract::{Path, Query, State},
@@ -7,12 +13,6 @@ use axum::{
     routing::{get, post},
 };
 use base64::Engine;
-use alibi::integrations::axum::AxumIntegration;
-use alibi::middleware::RateLimitConfig;
-use alibi::plugins::oauth::*;
-use alibi::plugins::{EmailPasswordPlugin, OAuthPlugin, SessionManagementPlugin};
-use alibi::{AuthBuilder, AuthConfig, AuthResult};
-use alibi_seaorm::DatabaseConnection;
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::Arc};
 use tokio::sync::Mutex;
@@ -21,12 +21,10 @@ const MODES: &[&str] = &[
     "default",
     "claims-empty",
     "claims-custom",
-
     "language-en",
     "prompt-none",
     "prompt-consent",
     "prompt-empty",
-
     "pkce-disabled",
     "expiry-positive",
     "expiry-zero",
@@ -47,6 +45,14 @@ const MODES: &[&str] = &[
     "signup-disabled",
     "implicit-disabled",
     "required",
+];
+const SALESFORCE_FAMILY_MODES: &[&str] = &[
+    "family-default",
+    "family-sandbox",
+    "family-custom",
+    "family-custom-sandbox",
+    "family-empty",
+    "family-empty-sandbox",
 ];
 const PROVIDERS: &[&str] = &[
     "notion",
@@ -140,7 +146,16 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "roblox" => {
             let mut options = RobloxOptions::new(client, Some(secret.into()));
-            if mode.starts_with("prompt-") { options.prompt = Some(if mode == "prompt-empty" { "" } else { &mode[7..] }.into()); }
+            if mode.starts_with("prompt-") {
+                options.prompt = Some(
+                    if mode == "prompt-empty" {
+                        ""
+                    } else {
+                        &mode[7..]
+                    }
+                    .into(),
+                );
+            }
             options.scope = configured(mode);
             options.disable_default_scope = mode == "disabled-configured";
             options.user_info_endpoint =
@@ -151,8 +166,20 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
             let mut options = SalesforceOptions::new(client, Some(secret.into()));
             options.scope = configured(mode);
             options.disable_default_scope = mode == "disabled-configured";
-            options.user_info_endpoint =
-                local.map(|base| format!("{base}/__test/provider-batch/salesforce/user"));
+            if mode.starts_with("family-") {
+                if mode.contains("sandbox") {
+                    options.environment = SalesforceEnvironment::Sandbox;
+                }
+                if mode.contains("custom") {
+                    options.login_url = Some("login.fixture.test".into());
+                }
+                if mode.contains("empty") {
+                    options.login_url = Some(String::new());
+                }
+            } else {
+                options.user_info_endpoint =
+                    local.map(|base| format!("{base}/__test/provider-batch/salesforce/user"));
+            }
             OAuthProvider::salesforce_with_options(options)
         }
         "slack" => {
@@ -181,7 +208,16 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "twitch" => {
             let mut options = TwitchOptions::new(client, Some(secret.into()));
-            options.claims = match mode { "claims-empty" => Some(vec![]), "claims-custom" => Some(vec!["custom".into(), "custom".into(), "email".into(), "__proto__".into()]), _ => None };
+            options.claims = match mode {
+                "claims-empty" => Some(vec![]),
+                "claims-custom" => Some(vec![
+                    "custom".into(),
+                    "custom".into(),
+                    "email".into(),
+                    "__proto__".into(),
+                ]),
+                _ => None,
+            };
             options.scope = configured(mode);
             options.disable_default_scope = mode == "disabled-configured";
             OAuthProvider::twitch_with_options(options)
@@ -215,7 +251,9 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "wechat" => {
             let mut options = WeChatOptions::new(client, secret);
-            if mode == "language-en" { options.language = WeChatLanguage::English; }
+            if mode == "language-en" {
+                options.language = WeChatLanguage::English;
+            }
             options.scope = configured(mode);
             options.disable_default_scope = mode == "disabled-configured";
             options.user_info_endpoint =
@@ -244,19 +282,36 @@ pub(crate) async fn router(
     let fixture = Fixture::default();
     let mut router = Router::new();
     for provider_id in PROVIDERS {
-        for mode in MODES {
-            if mode.starts_with("claims-") && *provider_id != "twitch" { continue; }
-            if *mode == "language-en" && *provider_id != "wechat" { continue; }
-            if mode.starts_with("prompt-") && *provider_id != "roblox" { continue; }
-            if *mode == "pkce-disabled" && *provider_id != "zoom" { continue; }
+        for mode in MODES.iter().chain(
+            if *provider_id == "salesforce" {
+                SALESFORCE_FAMILY_MODES
+            } else {
+                &[]
+            }
+            .iter(),
+        ) {
+            if mode.starts_with("claims-") && *provider_id != "twitch" {
+                continue;
+            }
+            if *mode == "language-en" && *provider_id != "wechat" {
+                continue;
+            }
+            if mode.starts_with("prompt-") && *provider_id != "roblox" {
+                continue;
+            }
+            if *mode == "pkce-disabled" && *provider_id != "zoom" {
+                continue;
+            }
             let path = format!("/__test/profiles/provider-batch-{provider_id}-{mode}/api/auth");
             let mut settings = config.clone().base_path(&path);
             settings.account.encrypt_oauth_tokens = *mode == "encrypted";
             let mut provider = factory(provider_id, mode, Some(&config.base_url));
-            provider.token_url = format!(
-                "{}/__test/provider-batch/{provider_id}/token",
-                config.base_url
-            );
+            if !mode.starts_with("family-") {
+                provider.token_url = format!(
+                    "{}/__test/provider-batch/{provider_id}/token",
+                    config.base_url
+                );
+            }
             if *provider_id != "tiktok" && (*mode == "client-array" || *mode == "empty-primary") {
                 provider = provider.with_client_ids(vec![
                     if *mode == "empty-primary" {
@@ -544,9 +599,7 @@ async fn transport(
 
 // Read every physical column and row. No model bool decoder or expected outcome
 // supplies observations; both backend builds inspect the actual committed SQLite.
-async fn raw_sql_state(
-    db: &DatabaseConnection,
-) -> Result<Value, alibi_seaorm::sea_orm::DbErr> {
+async fn raw_sql_state(db: &DatabaseConnection) -> Result<Value, alibi_seaorm::sea_orm::DbErr> {
     use alibi_seaorm::sea_orm::{ConnectionTrait, DbBackend, Statement};
     let mut state = serde_json::Map::new();
     for table in ["users", "accounts", "sessions", "verifications"] {
