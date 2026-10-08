@@ -685,3 +685,99 @@ for (const variant of ["missing", "empty"] as const) {
     );
   }
 }
+
+for (const emailMode of ["http-error", "missing", "empty", "confirmed", "primary-error"] as const) {
+  for (const inline of [true, false]) {
+    if (emailMode === "primary-error" && inline) continue;
+    compatScenario(
+      `Twitter optional email ${emailMode} inline=${inline}`,
+      async (ctx) => {
+        const foreign = ctx.actor("foreign");
+        expect(
+          (
+            await foreign.client.signUp.email({
+              email: ctx.uniqueEmail("twitter-foreign"),
+              password: "password123",
+              name: "Unrelated owner",
+            })
+          ).error,
+        ).toBeNull();
+        const foreignSession = await foreign.client.getSession();
+        const profile = {
+          data: { ...inputs.twitter.data, ...(inline ? { email: "inline@example.invalid" } : {}) },
+        };
+        await control(ctx, "twitter", {
+          profile,
+          profileStatus: emailMode === "primary-error" ? 503 : 200,
+          emailStatus: emailMode === "http-error" ? 503 : 200,
+          emailProfile: {
+            data:
+              emailMode === "missing"
+                ? {}
+                : { confirmed_email: emailMode === "confirmed" ? "confirmed@example.invalid" : "" },
+          },
+        });
+        const completed = await flow(ctx, "twitter", "default");
+        const session = await completed.actor.client.getSession();
+        const denied = emailMode === "primary-error";
+        const expectedEmail =
+          emailMode === "confirmed"
+            ? "confirmed@example.invalid"
+            : inline
+              ? "inline@example.invalid"
+              : "batch-subject@twitter.placeholder.invalid";
+        expect(completed.response.status).toBe(302);
+        if (denied) {
+          expect(status(completed.response, ctx.baseURL).error).toBe("unable_to_get_user_info");
+          expect(session.data).toBeNull();
+        } else {
+          expect(completed.response.headers.get("location")).toBe("/dashboard");
+          expect(session.data?.user).toMatchObject({
+            email: expectedEmail,
+            emailVerified: emailMode === "confirmed",
+            name: "Batch Name",
+          });
+        }
+        const receipts: any[] = await read(ctx, "receipts");
+        expect(receipts.map((row) => row.stage)).toEqual(
+          denied ? ["token", "user"] : ["token", "user", "email"],
+        );
+        expect(receipts[1].query).toEqual({ "user.fields": "profile_image_url" });
+        if (!denied) expect(receipts[2].query).toEqual({ "user.fields": "confirmed_email" });
+        const sql = (await read(ctx, "sql-state")) as Record<string, any[]>;
+        const source = "user" in sql;
+        expect(sql[source ? "user" : "users"]).toHaveLength(denied ? 1 : 2);
+        expect(sql[source ? "account" : "accounts"]).toHaveLength(denied ? 1 : 2);
+        if (!denied) {
+          const owner = sql[source ? "user" : "users"]!.find(
+            (row) => row.id === session.data!.user.id,
+          );
+          expect(owner.email).toBe(expectedEmail);
+          expect(Boolean(owner[source ? "emailVerified" : "email_verified"])).toBe(
+            emailMode === "confirmed",
+          );
+          const account = sql[source ? "account" : "accounts"]!.find(
+            (row) => row[source ? "providerId" : "provider_id"] === "twitter",
+          );
+          expect(account[source ? "accountId" : "account_id"]).toBe("batch-subject");
+          expect(account[source ? "userId" : "user_id"]).toBe(owner.id);
+        }
+        expect(sql[source ? "verification" : "verifications"]).toHaveLength(0);
+        expect(await foreign.client.getSession()).toEqual(foreignSession);
+        return {
+          session: ctx.snapshot(session),
+          callback: status(completed.response, ctx.baseURL),
+          wire: receipts.map((row) => ({
+            stage: row.stage,
+            method: row.method,
+            query: row.query,
+            body: grantBody(row),
+            authorization: (row.declaredHeaders ?? row.headers).authorization,
+          })),
+          foreign: ctx.snapshot(foreignSession),
+        };
+      },
+      ["POST /sign-in/social", "GET /callback/{}", "GET /get-session"],
+    );
+  }
+}
