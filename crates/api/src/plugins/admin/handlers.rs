@@ -383,8 +383,38 @@ pub(in crate::plugins) async fn update_user_core(
         }
     }
 
+    if ["email", "emailVerified"]
+        .iter()
+        .any(|key| body.data.contains_key(*key))
+    {
+        let permissions =
+            std::collections::HashMap::from([("user".to_owned(), vec!["set-email".to_owned()])]);
+        if !has_permission(
+            Some(acting_user.id.as_str()),
+            acting_user.role.as_deref(),
+            config,
+            &permissions,
+        ) {
+            return Err(AuthError::Api {
+                status: 403,
+                code: Some("YOU_ARE_NOT_ALLOWED_TO_SET_USERS_EMAIL".into()),
+                message: "You are not allowed to update users email".into(),
+            });
+        }
+    }
+
     if let Some(value) = body.data.get("email").and_then(|value| value.as_str()) {
-        update.email = Some(value.to_owned());
+        let email = value.to_lowercase();
+        if let Some(existing) = ctx.database.get_user_by_email_record(&email).await?
+            && existing.id().as_ref() != body.user_id
+        {
+            return Err(AuthError::Api {
+                status: 400,
+                code: Some("USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL".into()),
+                message: "User already exists. Use another email.".into(),
+            });
+        }
+        update.email = Some(email);
     }
     if let Some(value) = body.data.get("name").and_then(|value| value.as_str()) {
         update.name = Some(value.to_owned());
@@ -440,9 +470,6 @@ pub(in crate::plugins) async fn update_user_core(
         .database
         .update_user_record(&body.user_id, update)
         .await?;
-    if body.data.get("banned") == Some(&serde_json::Value::Bool(true)) {
-        ctx.database.delete_user_sessions(&body.user_id).await?;
-    }
     AdminUserView::from_output(ctx, &updated_user)
 }
 
