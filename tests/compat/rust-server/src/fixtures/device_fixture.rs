@@ -22,6 +22,7 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::sync::Arc;
+static GENERATOR_EVENTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
 static CALLBACK_EVENTS: std::sync::Mutex<Vec<Value>> = std::sync::Mutex::new(Vec::new());
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,16 +35,33 @@ struct DeviceExpiry {
     device_code: String,
     expires_at: DateTime<Utc>,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GeneratorSelector { client_id: String }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeviceOwner { device_code: String, user_id: String }
 pub(crate) fn router(database: DatabaseConnection) -> Router<Arc<BetterAuth<TestSchema>>> {
     let read_database = database.clone();
-    Router::new().route("/__test/device-callback-events", get(|| async { Json(std::mem::take(&mut *CALLBACK_EVENTS.lock().unwrap())) })).route("/__test/device-state",get(move |Query(body):Query<DeviceSelector>| {
+    let generator_database = database.clone();
+    let owner_database = database.clone();
+    Router::new().route("/__test/device-generator-state", get(move |Query(body): Query<GeneratorSelector>| { let database = generator_database.clone(); async move {
+        match device_code::Entity::find().filter(device_code::Column::ClientId.eq(body.client_id)).all(&database).await {
+            Ok(rows) => { let mut grants: Vec<Value> = rows.into_iter().map(|row| json!({"deviceCode":row.device_code,"userCode":row.user_code,"userId":row.user_id,"status":row.status,"clientId":row.client_id,"scope":row.scope})).collect(); grants.sort_by(|a,b| a["deviceCode"].as_str().cmp(&b["deviceCode"].as_str())); (StatusCode::OK,Json(json!({"events": std::mem::take(&mut *GENERATOR_EVENTS.lock().unwrap()), "grants":grants}))) },
+            Err(error) => (StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"message":error.to_string()})))
+        }
+    }})).route("/__test/device-callback-events", get(|| async { Json(std::mem::take(&mut *CALLBACK_EVENTS.lock().unwrap())) })).route("/__test/device-state",get(move |Query(body):Query<DeviceSelector>| {
   let database=read_database.clone();async move {
    match device_code::Entity::find().filter(device_code::Column::DeviceCode.eq(body.device_code)).one(&database).await {
     Ok(row)=>(StatusCode::OK,Json(row.map(|row|json!({"id":row.id,"deviceCode":row.device_code,"userCode":row.user_code,"userId":row.user_id,"status":row.status,"clientId":row.client_id,"scope":row.scope,"expiresAt":row.expires_at,"lastPolledAt":row.last_polled_at,"pollingInterval":row.polling_interval})).unwrap_or(Value::Null))),
     Err(error)=>(StatusCode::INTERNAL_SERVER_ERROR,Json(json!({"message":error.to_string()})))
    }
   }
- })).route("/__test/expire-device",post(move |Json(body):Json<DeviceExpiry>| {
+ })).route("/__test/device-owner", post(move |Json(body): Json<DeviceOwner>| {let database = owner_database.clone(); async move {
+    match device_code::Entity::update_many().filter(device_code::Column::DeviceCode.eq(body.device_code)).col_expr(device_code::Column::UserId, Expr::value(body.user_id)).exec(&database).await {
+      Ok(_) => (StatusCode::OK, Json(json!({"changed": true}))), Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, Json(json!({"message": error.to_string()})))
+    }
+ }})).route("/__test/expire-device",post(move |Json(body):Json<DeviceExpiry>| {
   let database=database.clone();async move {
    match device_code::Entity::update_many().filter(device_code::Column::DeviceCode.eq(body.device_code)).col_expr(device_code::Column::ExpiresAt,Expr::value(body.expires_at)).exec(&database).await {
     Ok(_)=>(StatusCode::OK,Json(json!({"status":true}))),
@@ -59,6 +77,8 @@ pub(crate) async fn profiles(
 ) -> AuthResult<Router<Arc<BetterAuth<TestSchema>>>> {
     let mut router = Router::new();
     for name in [
+        "device-collision-retry",
+        "device-collision-exhaustion",
         "device-callback-success",
         "device-length-507",
         "device-length-506",
@@ -81,6 +101,17 @@ pub(crate) async fn profiles(
     ] {
         let mut plugin = DeviceAuthorizationPlugin::new();
         match name {
+            "device-collision-retry" | "device-collision-exhaustion" => {
+                let device_index = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                let user_index = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+                let generate = move |kind: &str, index: usize| {
+                    let values = if kind == "device" { ["retry-device-original", "retry-device-original", "retry-device-user-collision", "retry-device-later", "retry-device-third"] } else { ["retry-user-original", "retry-user-device-collision", "retry-user-original", "retry-user-later", "retry-user-third"] };
+                    let value = if name == "device-collision-exhaustion" { format!("constant-{kind}") } else { values[index].to_owned() };
+                    GENERATOR_EVENTS.lock().unwrap().push(json!({"kind":kind,"value":value}));
+                    value
+                };
+                plugin = plugin.generate_device_code_async_with(move || { let index = device_index.fetch_add(1,std::sync::atomic::Ordering::SeqCst); async move { Ok(generate("device",index)) } }).generate_user_code_async_with(move || { let index = user_index.fetch_add(1,std::sync::atomic::Ordering::SeqCst); async move { Ok(generate("user",index)) } });
+            }
             "device-callback-success" => {
                 let callback_database = database.clone();
                 plugin = plugin.on_device_auth_request(move |client_id, scope| {

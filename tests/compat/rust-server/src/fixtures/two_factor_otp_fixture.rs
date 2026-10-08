@@ -96,6 +96,8 @@ pub(crate) async fn router(
     let state = State::default();
     let mut router = Router::new();
     for name in [
+        "two-factor-otp-missing-options",
+        "two-factor-otp-missing-sender",
         "two-factor-otp-plain",
         "two-factor-otp-hashed",
         "two-factor-otp-encrypted",
@@ -129,7 +131,7 @@ pub(crate) async fn router(
             (0.0, 3.0, 5.0)
         } else if name.ends_with("negative") {
             (-1.0, 3.0, 5.0)
-        } else if name.ends_with("plain") {
+        } else if name.ends_with("plain") || name.contains("missing-") {
             (6.0, 3.0, 5.0)
         } else if name.ends_with("encrypted") {
             (8.0, 0.0, 0.0)
@@ -166,7 +168,7 @@ pub(crate) async fn router(
                 )
                 .plugin(SessionManagementPlugin::new())
                 .plugin(TwoFactorPlugin::with_config(TwoFactorConfig {
-                    send_otp: Some(callback),
+                    send_otp: if name.contains("missing-") { None } else { Some(callback) },
                     otp_digits: digits,
                     otp_period_minutes: period,
                     otp_allowed_attempts: attempts,
