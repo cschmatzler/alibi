@@ -114,7 +114,7 @@ where
         team_limits: &[(String, Option<f64>)],
         membership_limit: Option<usize>,
     ) -> AuthResult<Option<(Invitation, alibi_core::types::Member)>> {
-        let transaction = self.pool().begin(true).await?;
+        let transaction = self.begin(true).await?;
         let outcome = async {
             let tx = &transaction;
             let exec = Exec::Tx(tx);

@@ -1,4 +1,4 @@
-//! A real PostgreSQL namespace with an unqualified runtime connection.
+//! A configured PostgreSQL namespace with an unchanged runtime search path.
 use crate::TestSchema;
 use alibi::{
     AuthBuilder, AuthConfig, AuthResult,
@@ -17,54 +17,22 @@ pub(crate) async fn router(base: &AuthConfig) -> AuthResult<Router> {
         .await
         .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
     let namespace = format!("compat_schema_rust_{}", std::env::var("PORT").unwrap());
-    database
-        .execute_raw(Statement::from_string(
-            DbBackend::Postgres,
-            format!("CREATE SCHEMA \"{namespace}\""),
-        ))
-        .await
-        .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
-    let mut scoped_url = url::Url::parse(&connection_url).unwrap();
-    scoped_url
-        .query_pairs_mut()
-        .append_pair("options", &format!("-c search_path={namespace}"));
-    let config = base
+    let mut config = base
         .clone()
         .base_path("/__test/profiles/postgres-schema/api/auth");
+    config.advanced.database.schema_name = Some(namespace.clone());
     #[cfg(feature = "seaorm")]
-    let store = {
-        let migration = Database::connect(scoped_url.as_str())
-            .await
-            .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
-        alibi_seaorm::store::__private_test_support::migrator::run_migrations(&migration)
-            .await
-            .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
-        migration
-            .close()
-            .await
-            .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
-        alibi_seaorm::SeaOrmStore::<TestSchema>::new(config.clone(), database.clone())
-    };
+    let store = alibi_seaorm::SeaOrmStore::<TestSchema>::new(config.clone(), database.clone());
     #[cfg(not(feature = "seaorm"))]
     let store = {
-        let migration = sqlx::postgres::PgPoolOptions::new()
-            .max_connections(2)
-            .connect(scoped_url.as_str())
-            .await
-            .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
-        alibi_sqlx::store::__private_test_support::migrator::run_migrations(
-            &alibi_sqlx::SqlxPool::from(migration.clone()),
-        )
-        .await?;
-        migration.close().await;
         let runtime = sqlx::postgres::PgPoolOptions::new()
             .max_connections(2)
             .connect(&connection_url)
             .await
             .map_err(|error| alibi::AuthError::internal(error.to_string()))?;
-        // Native has no schemaName policy; keep its public connection unmodified.
         alibi_sqlx::SqlxStore::<TestSchema>::new(config.clone(), runtime)
     };
+    alibi_core::store::SchemaMigrator::migrate(&store).await?;
     let auth = Arc::new(
         AuthBuilder::<TestSchema>::new(config)
             .store(store)

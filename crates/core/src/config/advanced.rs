@@ -147,6 +147,9 @@ pub struct AdvancedDatabaseConfig {
     /// Default `LIMIT` for "find many" queries.
     pub default_find_many_limit: usize,
 
+    /// PostgreSQL namespace for every auth relation; does not change search_path.
+    pub schema_name: Option<String>,
+
     /// Declares that the database uses numeric IDs, as upstream's
     /// `useNumberId`. IDs are always generated as strings; this only makes
     /// invitation email verification required by default, because numeric
@@ -174,6 +177,7 @@ impl Default for AdvancedDatabaseConfig {
     fn default() -> Self {
         Self {
             default_find_many_limit: 100,
+            schema_name: None,
             use_number_id: false,
         }
     }
