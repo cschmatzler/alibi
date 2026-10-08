@@ -1,5 +1,7 @@
 import { expect } from "bun:test";
 
+import { Cookie } from "tough-cookie";
+
 import { compatScenario } from "../../../support/scenario";
 import {
   expireVerification,
@@ -316,4 +318,91 @@ compatScenario(
       replay: ctx.snapshot(replay),
     };
   },
+);
+
+compatScenario(
+  "magic-link receiving browser respects genuine signed nonpersistent preference",
+  async (ctx) => {
+    const preferenceOwner = ctx.actor("preference-owner");
+    let signupCookies: string[] = [];
+    const preference = await preferenceOwner.client.signUp.email(
+      {
+        email: ctx.uniqueEmail("preference-owner"),
+        password: "password123",
+        name: "Preference owner",
+        rememberMe: false,
+      },
+      {
+        onResponse({ response }) {
+          signupCookies = response.headers.getSetCookie();
+        },
+      },
+    );
+    expect(preference.error).toBeNull();
+    const receipt = signupCookies
+      .map((cookie) => Cookie.parse(cookie))
+      .find((cookie) => cookie?.key.endsWith("dont_remember"));
+    if (!receipt)
+      throw new Error("rememberMe=false must issue a genuine signed browser preference");
+    expect(receipt.value).toContain(".");
+    const observations = [];
+    for (const persistent of [false, true]) {
+      const name = persistent ? "persistent-receiver" : "nonpersistent-receiver";
+      const receiver = magicLinkClient(ctx, name);
+      expect((await receiver.getSession()).data).toBeNull();
+      const email = ctx.uniqueEmail(name);
+      expect(
+        (await receiver.signIn.magicLink({ email, name: "Magic receiving owner" })).error,
+      ).toBeNull();
+      const delivery = await readMagicLink(ctx, email);
+      let cookies: string[] = [];
+      const started = Date.now();
+      const verified = await receiver.magicLink.verify({
+        query: { token: delivery.token },
+        fetchOptions: {
+          headers: persistent ? {} : { cookie: receipt.cookieString() },
+          onResponse({ response }) {
+            cookies = response.headers.getSetCookie();
+          },
+        },
+      });
+      const finished = Date.now();
+      expect(verified.error).toBeNull();
+      const issued = cookies
+        .map((cookie) => Cookie.parse(cookie))
+        .find((cookie) => cookie?.key.endsWith("session_token"));
+      if (!issued) throw new Error("Magic redemption must issue its authenticated session cookie");
+      expect(issued.maxAge !== null && issued.maxAge !== undefined).toBe(persistent);
+      expect(issued.expires).toBe("Infinity");
+      const user = requireUser(verified.data?.user);
+      const state = await readUserState(ctx, user.id);
+      expect(state.sessions).toHaveLength(1);
+      const session = state.sessions[0]!;
+      expect(session.token).toBe(verified.data!.token);
+      // Magic-link creates the same seven-day database authority for either cookie policy.
+      expect(Date.parse(session.expiresAt) - started).toBeGreaterThanOrEqual(604799000);
+      expect(Date.parse(session.expiresAt) - finished).toBeLessThanOrEqual(604800000);
+      const current = await receiver.getSession();
+      expect(current.data?.user.id).toBe(user.id);
+      expect(await verificationCount(ctx, `magic-link:${delivery.token}`)).toBe(0);
+      observations.push(
+        ctx.snapshot({
+          verified,
+          current,
+          state,
+          policy: {
+            persistent: issued.maxAge != null,
+            expires: issued.expires !== "Infinity",
+            httpOnly: issued.httpOnly,
+            path: issued.path,
+          },
+        }),
+      );
+    }
+    expect((await preferenceOwner.client.getSession()).data?.user.id).toBe(
+      preference.data!.user.id,
+    );
+    return { observations };
+  },
+  ["GET /magic-link/verify", "POST /sign-in/magic-link"],
 );
