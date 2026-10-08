@@ -89,6 +89,48 @@ const documentationPlugin = () => ({
   },
 });
 
+// Application metadata overrides the query documentation while the live query remains validated.
+const parametersPlugin = () => ({
+  id: "documentation-parameters",
+  endpoints: Object.fromEntries(
+    ["explicit", "empty"].map((mode) => [
+      `parameters${mode}`,
+      createAuthEndpoint(
+        `/parameters-${mode}/:id`,
+        {
+          method: "GET",
+          query: z.object({ inferred: z.string(), documented: z.string() }),
+          metadata: {
+            openapi: {
+              operationId: `parameters${mode}`,
+              parameters:
+                mode === "empty"
+                  ? []
+                  : [
+                      {
+                        name: "documented",
+                        in: "query",
+                        required: true,
+                        description: "Explicit query",
+                        schema: { type: "string", enum: ["visible"] },
+                      },
+                      {
+                        name: "id",
+                        in: "path",
+                        required: true,
+                        description: "Application identifier",
+                        schema: { type: "string", pattern: "^document-[0-9]+$" },
+                      },
+                    ],
+            },
+          },
+        },
+        async (ctx) => ctx.json({ id: ctx.params.id, ...ctx.query }),
+      ),
+    ]),
+  ),
+});
+
 const collisionsPlugin = () => ({
   id: "documentation-collisions",
   endpoints: Object.fromEntries(
@@ -113,6 +155,7 @@ const collisionsPlugin = () => ({
 
 export const OPEN_API_PROFILES = [
   "openapi-collisions",
+  "openapi-parameters",
   "openapi-minimal",
   "openapi-last-login",
   "openapi-last-login-database",
@@ -163,6 +206,8 @@ export function openApiProfiles(port: number, database: Database) {
       const extra =
         name === "openapi-collisions"
           ? [collisionsPlugin()]
+          : name === "openapi-parameters"
+          ? [parametersPlugin()]
           : name === "openapi-custom-schema"
             ? [documentationPlugin()]
             : name.startsWith("openapi-last-login")
