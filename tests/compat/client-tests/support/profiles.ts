@@ -14,6 +14,7 @@ function variants<P extends string, S extends string>(
  */
 export const FIXTURE_PROFILES = [
   "ott-custom-header",
+  "email-verification-rate-limited",
   "bearer-renamed-cookie",
   "bearer-secure-cookie",
   "otp-change-disabled-omitted",

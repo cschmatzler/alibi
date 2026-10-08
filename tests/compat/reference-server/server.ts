@@ -846,7 +846,9 @@ for (const [path, instance] of passkeyRegistration.profiles) {
 for (const [path, instance] of passkeyAuthentication.profiles) {
   verificationProfiles.set(path, instance);
 }
+let verificationSenderCalls = 0;
 for (const name of [
+  "email-verification-rate-limited",
   "email-verification-required",
   "email-verification-no-signup-mail",
   "email-verification-failing-notifications",
@@ -858,10 +860,24 @@ for (const name of [
     emailAndPassword: { ...authOptions.emailAndPassword, requireEmailVerification: true },
     emailVerification: {
       expiresIn: 90,
-      sendOnSignUp: name === "email-verification-no-signup-mail" ? false : undefined,
+      sendOnSignUp: [
+        "email-verification-no-signup-mail",
+        "email-verification-rate-limited",
+      ].includes(name)
+        ? false
+        : undefined,
       sendOnSignIn: true,
-      async sendVerificationEmail({ user, url, token }) {
+      async sendVerificationEmail({ user, url, token }, request) {
+        if (name === "email-verification-rate-limited") verificationSenderCalls++;
         verificationEmailOutbox.set(user.email, { url, token });
+        if (
+          name === "email-verification-rate-limited" &&
+          request?.headers.get("x-verification-sender-mode") === "fail"
+        )
+          throw new APIError("TOO_MANY_REQUESTS", {
+            code: "APPLICATION_MAIL_LIMIT",
+            message: "Application mail limit reached",
+          });
         if (name === "email-verification-failing-notifications") {
           throw new APIError("BAD_REQUEST", { message: "fixture delivery failed" });
         }
@@ -2536,6 +2552,8 @@ const server = Bun.serve({
       ) {
         return organizationMemberRoleFixture.state(url.searchParams.get("waitFor"));
       }
+      if (url.pathname === "/__test/verification-sender-calls")
+        return Response.json({ calls: verificationSenderCalls });
       for (const [name, auth] of twoFactorPendingLookupFixture.profiles) {
         if (url.pathname.startsWith(`/__test/profiles/${name}/api/auth/`)) {
           return auth.handler(request);
