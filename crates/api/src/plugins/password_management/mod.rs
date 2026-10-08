@@ -201,10 +201,11 @@ impl PasswordManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let mut body: ResetPasswordRequest = match alibi_core::validate_request_body(req) {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
+        let mut body: ResetPasswordRequest =
+            match crate::plugins::authentication_helpers::parse_body(req) {
+                Ok(v) => v,
+                Err(resp) => return Ok(resp),
+            };
         if body.token.as_ref().is_none_or(String::is_empty) {
             body.token = req.query.get("token").cloned();
         }
@@ -217,10 +218,11 @@ impl PasswordManagementPlugin {
         req: &AuthRequest,
         ctx: &AuthContext<impl alibi_core::AuthSchema>,
     ) -> AuthResult<AuthResponse> {
-        let body: ChangePasswordRequest = match alibi_core::validate_request_body(req) {
-            Ok(v) => v,
-            Err(resp) => return Ok(resp),
-        };
+        let body: ChangePasswordRequest =
+            match crate::plugins::authentication_helpers::parse_body(req) {
+                Ok(v) => v,
+                Err(resp) => return Ok(resp),
+            };
 
         let (user, _session) = ctx
             .require_authoritative_session_record(req)
@@ -635,7 +637,7 @@ mod tests {
         let body = serde_json::json!({
             "currentPassword": "Password123!",
             "newPassword": "NewPassword123!",
-            "revokeOtherSessions": "false"
+            "revokeOtherSessions": false
         });
 
         let req = test_helpers::create_auth_request_no_query(
@@ -687,7 +689,7 @@ mod tests {
         let body = serde_json::json!({
             "currentPassword": "Password123!",
             "newPassword": "NewPassword123!",
-            "revokeOtherSessions": "true"
+            "revokeOtherSessions": true
         });
 
         let req = test_helpers::create_auth_request_no_query(
