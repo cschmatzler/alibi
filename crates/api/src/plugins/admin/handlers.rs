@@ -353,13 +353,54 @@ pub(in crate::plugins) async fn update_user_core(
         update.role = Some(joined_role(&role));
     }
 
+    if ["banned", "banReason", "banExpires"]
+        .iter()
+        .any(|key| body.data.contains_key(*key))
+    {
+        let permissions =
+            std::collections::HashMap::from([("user".to_owned(), vec!["ban".to_owned()])]);
+        if !has_permission(
+            Some(acting_user.id.as_str()),
+            acting_user.role.as_deref(),
+            config,
+            &permissions,
+        ) {
+            return Err(AuthError::forbidden("You are not allowed to ban users"));
+        }
+    }
+
+    if ["email", "emailVerified"]
+        .iter()
+        .any(|key| body.data.contains_key(*key))
+    {
+        let permissions =
+            std::collections::HashMap::from([("user".to_owned(), vec!["set-email".to_owned()])]);
+        if !has_permission(
+            Some(acting_user.id.as_str()),
+            acting_user.role.as_deref(),
+            config,
+            &permissions,
+        ) {
+            return Err(AuthError::Api {
+                status: 403,
+                code: Some("YOU_ARE_NOT_ALLOWED_TO_SET_USERS_EMAIL".into()),
+                message: "You are not allowed to update users email".into(),
+            });
+        }
+    }
+
     if let Some(value) = body.data.get("email").and_then(|value| value.as_str()) {
         let email = value.to_lowercase();
         if !super::validation::valid_email(&email) {
+            return Err(AuthError::Api { status:400,code:Some("INVALID_EMAIL".into()),message:"Invalid email".into() });
+        }
+        if let Some(existing) = ctx.database.get_user_by_email_record(&email).await?
+            && existing.id().as_ref() != body.user_id
+        {
             return Err(AuthError::Api {
                 status: 400,
-                code: Some("INVALID_EMAIL".into()),
-                message: "Invalid email".into(),
+                code: Some("USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL".into()),
+                message: "User already exists. Use another email.".into(),
             });
         }
         update.email = Some(email);
