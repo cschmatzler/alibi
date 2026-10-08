@@ -162,7 +162,7 @@ where
         global_rate_limit_enabled: bool,
     ) -> AuthResult<ConsumeApiKeyResult> {
         // SQLite must acquire its write reservation before reading usage counters.
-        let transaction = self.pool().begin(true).await?;
+        let transaction = self.begin(true).await?;
         let exec = Exec::Tx(&transaction);
         let id = id.to_owned();
         let result = async {

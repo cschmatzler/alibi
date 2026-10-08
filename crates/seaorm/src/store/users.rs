@@ -1,3 +1,4 @@
+use super::ScopedTransaction;
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmUserModel};
 use alibi_core::AuthUser;
@@ -9,8 +10,8 @@ use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::sea_query::{Expr, ExprTrait};
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, QueryFilter, QueryOrder, QuerySelect, QueryTrait, TransactionTrait,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
+    QueryOrder, QuerySelect, QueryTrait, TransactionTrait,
 };
 
 pub(super) fn user_query<M: SeaOrmUserModel>(
@@ -218,7 +219,7 @@ where
     async fn create_user_with_connection<C>(
         &self,
         db: &C,
-        tx: Option<&DatabaseTransaction>,
+        tx: Option<&ScopedTransaction>,
         mut create_user: CreateUser,
         defaults: alibi_core::store::UserCreationDefaults,
     ) -> AuthResult<S::User>
@@ -270,7 +271,7 @@ where
 
     pub(crate) async fn create_user_in_tx(
         &self,
-        tx: &DatabaseTransaction,
+        tx: &ScopedTransaction,
         mut create_user: CreateUser,
     ) -> AuthResult<S::User> {
         create_user.email = create_user.email.map(|email| normalize_user_email(&email));
@@ -285,7 +286,7 @@ where
 
     pub(crate) async fn create_user_prepared_in_tx(
         &self,
-        tx: &DatabaseTransaction,
+        tx: &ScopedTransaction,
         prepared: alibi_core::user_validation::PreparedUserCreation,
     ) -> AuthResult<S::User> {
         let (data, defaults) = prepared.into_parts();
@@ -304,13 +305,13 @@ where
         &self,
         id: &str,
     ) -> AuthResult<Option<serde_json::Value>> {
-        provider_verification_output::<S::User, _>(self.connection(), id).await
+        provider_verification_output::<S::User, _>(self.scoped_connection(), id).await
     }
 
     async fn create_user(&self, mut create_user: CreateUser) -> AuthResult<S::User> {
         create_user.email = create_user.email.map(|email| normalize_user_email(&email));
         self.create_user_with_connection(
-            self.connection(),
+            self.scoped_connection(),
             None,
             create_user,
             alibi_core::store::UserCreationDefaults::default(),
@@ -323,7 +324,7 @@ where
         prepared: alibi_core::user_validation::PreparedUserCreation,
     ) -> AuthResult<S::User> {
         let (data, defaults) = prepared.into_parts();
-        self.create_user_with_connection(self.connection(), None, data, defaults)
+        self.create_user_with_connection(self.scoped_connection(), None, data, defaults)
             .await
     }
 
@@ -336,7 +337,7 @@ where
                 return Err(AuthError::bad_request("Numeric text input must not be NaN"));
             }
         };
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         let sql = match backend {
             DbBackend::Postgres => "SELECT CAST($1 AS TEXT) AS value",
             DbBackend::Sqlite => "SELECT CAST(? AS TEXT) AS value",
@@ -348,7 +349,7 @@ where
             }
         };
         let row = self
-            .connection()
+            .scoped_connection()
             .query_one_raw(Statement::from_sql_and_values(backend, sql, [value]))
             .await
             .map_err(map_db_err)?
@@ -359,9 +360,9 @@ where
 
     async fn get_user_by_id(&self, id: &str) -> AuthResult<Option<S::User>> {
         let user_id = S::User::parse_id(id)?;
-        user_query::<S::User>(self.connection().get_database_backend())
+        user_query::<S::User>(self.scoped_connection().get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -376,9 +377,9 @@ where
             .map(|id| S::User::parse_id(id))
             .collect::<AuthResult<Vec<_>>>()?;
 
-        user_query::<S::User>(self.connection().get_database_backend())
+        user_query::<S::User>(self.scoped_connection().get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::id_column().is_in(user_ids))
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -391,22 +392,22 @@ where
             .iter()
             .map(|id| S::User::parse_id(id))
             .collect::<AuthResult<Vec<_>>>()?;
-        let query = user_query::<S::User>(self.connection().get_database_backend())
+        let query = user_query::<S::User>(self.scoped_connection().get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::id_column().is_in(user_ids));
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         let statement = super::bind_page(query.build(backend), Some(limit), None)?;
-        user_query::<S::User>(self.connection().get_database_backend())
+        user_query::<S::User>(self.scoped_connection().get_database_backend())
             .from_raw_sql(statement)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
 
     async fn get_user_by_email(&self, email: &str) -> AuthResult<Option<S::User>> {
         let email = normalize_user_email(email);
-        user_query::<S::User>(self.connection().get_database_backend())
+        user_query::<S::User>(self.scoped_connection().get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::email_column().eq(email))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -415,9 +416,9 @@ where
         let Some(col) = <S::User as SeaOrmUserModel>::username_column() else {
             return Ok(None);
         };
-        user_query::<S::User>(self.connection().get_database_backend())
+        user_query::<S::User>(self.scoped_connection().get_database_backend())
             .filter(col.eq(username))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -425,9 +426,9 @@ where
     async fn get_user_by_phone_number(&self, phone_number: &str) -> AuthResult<Option<S::User>> {
         let column = S::User::phone_number_column()
             .ok_or_else(|| AuthError::internal("the user schema has no phone-number field"))?;
-        user_query::<S::User>(self.connection().get_database_backend())
+        user_query::<S::User>(self.scoped_connection().get_database_backend())
             .filter(column.eq(phone_number))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -449,9 +450,9 @@ where
         if let Some(username) = update.username.as_mut() {
             *username = username.to_lowercase();
         }
-        let Some(model) = user_query::<S::User>(self.connection().get_database_backend())
+        let Some(model) = user_query::<S::User>(self.scoped_connection().get_database_backend())
             .filter(<S::User as SeaOrmUserModel>::id_column().eq(user_id))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -466,23 +467,31 @@ where
         let verification = update.provider_email_verified.take();
         S::User::apply_update(&mut active, update, Utc::now());
         stage_provider_text::<S::User, _>(
-            self.connection(),
+            self.scoped_connection(),
             &mut active,
             provider_name,
             provider_image,
         )
         .await?;
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         for (column, value) in S::User::additional_field_bindings(&fields, backend)? {
             let value =
-                crate::additional_fields::prepare_value(self.connection(), &column, value).await?;
+                crate::additional_fields::prepare_value(self.scoped_connection(), &column, value)
+                    .await?;
             S::User::set_additional_field(&mut active, column, value, backend)?;
         }
-        S::User::prepare_json_metadata(&mut active, self.connection().get_database_backend())?;
+        S::User::prepare_json_metadata(
+            &mut active,
+            self.scoped_connection().get_database_backend(),
+        )?;
 
-        let user =
-            save_provider_user::<S::User, _>(active, self.connection(), verification, Some(id))
-                .await?;
+        let user = save_provider_user::<S::User, _>(
+            active,
+            self.scoped_connection(),
+            verification,
+            Some(id),
+        )
+        .await?;
         for hook in self.hooks() {
             hook.after_update_user(&user, &hook_context)
                 .await
@@ -510,7 +519,7 @@ where
         // foreign key to cascade from. Without this, a deleted user's keys
         // would outlive them and start working again if the id were reused.
         let transaction = self
-            .connection()
+            .scoped_connection()
             .begin_with_options(sea_orm::TransactionOptions {
                 sqlite_transaction_mode: Some(sea_orm::SqliteTransactionMode::Immediate),
                 ..Default::default()
@@ -518,7 +527,7 @@ where
             .await
             .map_err(map_db_err)?;
         drop(
-            user_query::<S::User>(self.connection().get_database_backend())
+            user_query::<S::User>(self.scoped_connection().get_database_backend())
                 .filter(S::User::id_column().eq(user_id.clone()))
                 .lock_exclusive()
                 .one(&transaction)
@@ -530,7 +539,7 @@ where
         // Core-only generated schemas omit this optional table. Check on the
         // held transaction, preserving cleanup after plugin deregistration and
         // propagating metadata or credential-deletion errors.
-        if sea_orm_migration::SchemaManager::new(&transaction)
+        if transaction
             .has_table("api_keys")
             .await
             .map_err(map_db_err)?
@@ -556,7 +565,7 @@ where
 
     async fn list_users(&self, mut params: ListUsersParams) -> AuthResult<(Vec<S::User>, usize)> {
         use alibi_core::UserFilterValue;
-        let mut query = user_query::<S::User>(self.connection().get_database_backend());
+        let mut query = user_query::<S::User>(self.scoped_connection().get_database_backend());
         if let Some(value) = &params.filter_value {
             let operator = params.filter_operator.as_deref().unwrap_or("eq");
             if matches!(value, UserFilterValue::Multiple(_))
@@ -594,19 +603,20 @@ where
                 // boolean field before the adapter binds it. Array operands
                 // retain their original strings. The actual model column type
                 // also supports custom boolean fields and physical renames.
-                let numeric_cast =
-                    if self.connection().get_database_backend() == sea_orm::DbBackend::Postgres {
-                        use sea_orm::sea_query::ColumnType;
-                        match column.def().get_column_type() {
-                            ColumnType::Integer => Some("int4"),
-                            ColumnType::BigInteger => Some("int8"),
-                            ColumnType::Float => Some("float4"),
-                            ColumnType::Double => Some("float8"),
-                            _ => None,
-                        }
-                    } else {
-                        None
-                    };
+                let numeric_cast = if self.scoped_connection().get_database_backend()
+                    == sea_orm::DbBackend::Postgres
+                {
+                    use sea_orm::sea_query::ColumnType;
+                    match column.def().get_column_type() {
+                        ColumnType::Integer => Some("int4"),
+                        ColumnType::BigInteger => Some("int8"),
+                        ColumnType::Float => Some("float4"),
+                        ColumnType::Double => Some("float8"),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
                 let bindings: Vec<sea_orm::Value> = if numeric_cast.is_some() {
                     numeric_filter_text(operands)
                         .into_iter()
@@ -707,7 +717,10 @@ where
         } else {
             false
         };
-        let models = query.all(self.connection()).await.map_err(map_db_err)?;
+        let models = query
+            .all(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
 
         Ok(if presorted {
             alibi_core::user_query::apply_list_users_presorted(models, &params)

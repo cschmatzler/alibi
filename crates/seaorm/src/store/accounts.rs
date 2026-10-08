@@ -1,3 +1,4 @@
+use super::ScopedTransaction;
 use super::{SeaOrmStore, map_db_err};
 use crate::schema::{AuthSchema, SeaOrmAccountModel};
 use alibi_core::error::AuthResult;
@@ -7,8 +8,8 @@ use alibi_core::types::{CreateAccount, UpdateAccount};
 use async_trait::async_trait;
 use chrono::Utc;
 use sea_orm::{
-    ActiveModelTrait, ColumnTrait, ConnectionTrait, DatabaseTransaction, EntityTrait,
-    IntoActiveModel, QueryFilter, QuerySelect,
+    ActiveModelTrait, ColumnTrait, ConnectionTrait, EntityTrait, IntoActiveModel, QueryFilter,
+    QuerySelect,
 };
 
 impl<S> SeaOrmStore<S>
@@ -19,7 +20,7 @@ where
     async fn create_account_with_connection<C>(
         &self,
         db: &C,
-        tx: Option<&DatabaseTransaction>,
+        tx: Option<&ScopedTransaction>,
         mut create_account: CreateAccount,
     ) -> AuthResult<S::Account>
     where
@@ -55,7 +56,7 @@ where
 
     pub(crate) async fn create_account_in_tx(
         &self,
-        tx: &DatabaseTransaction,
+        tx: &ScopedTransaction,
         create_account: CreateAccount,
     ) -> AuthResult<S::Account> {
         self.create_account_with_connection(tx, Some(tx), create_account)
@@ -78,11 +79,11 @@ where
         let value = crate::additional_fields::raw_value(&alibi_core::utils::json::JsValue::from(
             value.clone(),
         ))?;
-        crate::additional_fields::prepare_string_value(self.connection(), value).await
+        crate::additional_fields::prepare_string_value(self.scoped_connection(), value).await
     }
 
     async fn create_account(&self, create_account: CreateAccount) -> AuthResult<S::Account> {
-        self.create_account_with_connection(self.connection(), None, create_account)
+        self.create_account_with_connection(self.scoped_connection(), None, create_account)
             .await
     }
 
@@ -95,7 +96,7 @@ where
             .filter(<S::Account as SeaOrmAccountModel>::provider_id_column().eq(provider))
             .filter(<S::Account as SeaOrmAccountModel>::account_id_column().eq(provider_account_id))
             .limit(2)
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         if accounts.len() > 1 {
@@ -112,7 +113,7 @@ where
         let user_id = <S::Account as SeaOrmAccountModel>::parse_user_id(user_id)?;
         <S::Account as SeaOrmAccountModel>::Entity::find()
             .filter(<S::Account as SeaOrmAccountModel>::user_id_column().eq(user_id))
-            .all(self.connection())
+            .all(self.scoped_connection())
             .await
             .map_err(map_db_err)
     }
@@ -131,7 +132,7 @@ where
         }
         let Some(model) = <S::Account as SeaOrmAccountModel>::Entity::find()
             .filter(<S::Account as SeaOrmAccountModel>::id_column().eq(account_id))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -142,14 +143,18 @@ where
         let mut fields = std::mem::take(&mut update.additional_fields);
         fields.apply_adapter_transforms_async().await?;
         S::Account::apply_update(&mut active, update, Utc::now());
-        let backend = self.connection().get_database_backend();
+        let backend = self.scoped_connection().get_database_backend();
         for (column, value) in S::Account::additional_field_bindings(&fields, backend)? {
             let value =
-                crate::additional_fields::prepare_value(self.connection(), &column, value).await?;
+                crate::additional_fields::prepare_value(self.scoped_connection(), &column, value)
+                    .await?;
             S::Account::set_additional_field(&mut active, column, value, backend)?;
         }
 
-        let account = active.update(self.connection()).await.map_err(map_db_err)?;
+        let account = active
+            .update(self.scoped_connection())
+            .await
+            .map_err(map_db_err)?;
         for hook in self.hooks() {
             hook.after_update_account(&account, &hook_context).await?;
         }
@@ -160,7 +165,7 @@ where
         let account_id = <S::Account as SeaOrmAccountModel>::parse_id(id)?;
         let Some(account_model) = <S::Account as SeaOrmAccountModel>::Entity::find()
             .filter(<S::Account as SeaOrmAccountModel>::id_column().eq(account_id.clone()))
-            .one(self.connection())
+            .one(self.scoped_connection())
             .await
             .map_err(map_db_err)?
         else {
@@ -178,7 +183,7 @@ where
         }
         let _ignored_map_err = <S::Account as SeaOrmAccountModel>::Entity::delete_many()
             .filter(<S::Account as SeaOrmAccountModel>::id_column().eq(account_id))
-            .exec(self.connection())
+            .exec(self.scoped_connection())
             .await
             .map_err(map_db_err)?;
         for hook in self.hooks() {

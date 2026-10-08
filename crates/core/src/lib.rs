@@ -141,3 +141,6 @@ pub use wire::{
     AccountView, ApiKeyView, InvitationView, OrganizationView, PasskeyView, SessionView, UserView,
     VerificationView,
 };
+
+#[doc(hidden)]
+pub mod database_sql;
