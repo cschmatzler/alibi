@@ -14,9 +14,12 @@ export async function createSessionAdapterFailureFixture(
   const deviceGate = {
     id: "",
     mode: "",
+    count: 0,
     events: [] as unknown[],
     first: Promise.resolve(),
+    second: Promise.resolve(),
     releaseFirst: () => {},
+    releaseSecond: () => {},
   };
   const actual = await createKyselyAdapter({ ...base, database });
   if (!actual.kysely) throw new Error("real Bun Kysely adapter required");
@@ -37,7 +40,25 @@ export async function createSessionAdapterFailureFixture(
           if (args.model === "session") check("get_session");
           if (args.model === "user" && args.where.some((condition) => condition.field === "email"))
             check("get_user_by_email");
-          return adapter.findOne(args);
+          const row = await adapter.findOne(args);
+          if (
+            deviceGate.mode === "review" &&
+            args.model === "deviceCode" &&
+            args.where.some((condition) => condition.field === "userCode") &&
+            row?.id === deviceGate.id
+          ) {
+            const ordinal = ++deviceGate.count;
+            if (ordinal <= 2) {
+              deviceGate.events.push({
+                operation: "review",
+                ordinal,
+                id: row.id,
+                userId: row.userId ?? null,
+              });
+              await (ordinal === 1 ? deviceGate.first : deviceGate.second);
+            }
+          }
+          return row;
         },
         async findMany(args) {
           if (args.model === "session") check("get_user_sessions");
@@ -75,12 +96,18 @@ export async function createSessionAdapterFailureFixture(
           deviceGate.id = body.id!;
           deviceGate.mode = body.gate!;
           deviceGate.events.length = 0;
+          deviceGate.count = 0;
           deviceGate.first = new Promise<void>((resolve) => {
             deviceGate.releaseFirst = resolve;
           });
+          deviceGate.second = new Promise<void>((resolve) => {
+            deviceGate.releaseSecond = resolve;
+          });
         }
         if (body.operation === "release-first") deviceGate.releaseFirst();
+        if (body.operation === "release-second") deviceGate.releaseSecond();
         if (body.operation === "restore") {
+          deviceGate.releaseSecond();
           deviceGate.releaseFirst();
           deviceGate.mode = "";
         }
