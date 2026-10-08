@@ -10,6 +10,15 @@ export async function createSessionAdapterFailureFixture(
 ) {
   let mode = "";
   const events: string[] = [];
+  const deletion = {
+    held: "",
+    reject: "",
+    events: [] as { stage: string; token: string }[],
+    heldGate: Promise.resolve(),
+    rejectGate: Promise.resolve(),
+    releaseHeld: () => {},
+    releaseReject: () => {},
+  };
   const actual = await createKyselyAdapter({ ...base, database });
   if (!actual.kysely) throw new Error("real Bun Kysely adapter required");
   const factory = kyselyAdapter(actual.kysely, { type: "sqlite" });
@@ -46,10 +55,23 @@ export async function createSessionAdapterFailureFixture(
                   if (args.model === "session") check("get_user_sessions");
                   return adapter.findMany(args);
                 },
-                async delete(args) {
-                  if (args.model === "session") check("delete_session");
-                  return adapter.delete(args);
-                },
+        async delete(args) {
+          if (args.model === "session") check("delete_session");
+          if (mode === "parallel" && args.model === "session") {
+            const token = String(args.where.find((row) => row.field === "token")?.value);
+            deletion.events.push({ stage: "started", token });
+            if (token === deletion.held) await deletion.heldGate;
+            if (token === deletion.reject) {
+              await deletion.rejectGate;
+              deletion.events.push({ stage: "rejected", token });
+              throw new Error("Application sibling deletion rejected");
+            }
+            const result = await adapter.delete(args);
+            deletion.events.push({ stage: "completed", token });
+            return result;
+          }
+          return adapter.delete(args);
+        },
                 async deleteMany(args) {
                   if (args.model === "session") check("delete_user_sessions");
                   return adapter.deleteMany(args);
@@ -62,7 +84,29 @@ export async function createSessionAdapterFailureFixture(
   );
   return {
     profiles,
-    control(body: { mode?: string }) {
+    control(body: { mode?: string; operation?: string; heldToken?: string; rejectToken?: string }) {
+      if (body.operation) {
+        if (body.operation === "arm") {
+          mode = "parallel";
+          deletion.held = body.heldToken!;
+          deletion.reject = body.rejectToken!;
+          deletion.events.length = 0;
+          deletion.heldGate = new Promise<void>((resolve) => {
+            deletion.releaseHeld = resolve;
+          });
+          deletion.rejectGate = new Promise<void>((resolve) => {
+            deletion.releaseReject = resolve;
+          });
+        }
+        if (body.operation === "reject") deletion.releaseReject();
+        if (body.operation === "release") deletion.releaseHeld();
+        if (body.operation === "restore") {
+          deletion.releaseHeld();
+          deletion.releaseReject();
+          mode = "";
+        }
+        return Response.json({ events: [...deletion.events] });
+      }
       if (typeof body.mode === "string") {
         mode = body.mode;
         events.length = 0;
