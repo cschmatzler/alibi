@@ -1199,6 +1199,7 @@ function ottCallbackResult(stage: string) {
 const OTT_PROFILE_NAMES = [
   "ott-composed",
   "ott-custom-callback",
+  "ott-custom-header",
   "ott-default",
   "ott-short-lived",
   "ott-hashed",
@@ -1278,7 +1279,7 @@ const ottProfiles = new Map(
         ...(name === "ott-server-header" ? [ottExposedHeaderFixture] : []),
         oneTimeToken({
           ...(name === "ott-short-lived" ? { expiresIn: 0.05 } : {}),
-          ...(name === "ott-custom-callback"
+          ...(["ott-custom-callback", "ott-custom-header"].includes(name)
             ? {
                 generateToken: async (session, ctx) => {
                   ottCallbackState.events.push({
@@ -1299,26 +1300,29 @@ const ottProfiles = new Map(
                       : null,
                   });
                   ottCallbackResult("generate");
-                  return ctx.request ? "ott-custom-token" : "ott-custom-server-token";
+                  return name === "ott-custom-header" ? `ott-header-token-${++ottCallbackState.serial}` : ctx.request ? "ott-custom-token" : "ott-custom-server-token";
                 },
               }
             : {}),
-          storeToken:
-            name === "ott-custom-callback"
-              ? {
-                  type: "custom-hasher",
-                  hash: async (token: string) => {
-                    ottCallbackState.events.push({ stage: "hash", token });
-                    ottCallbackResult("hash");
-                    return `digest-${token}`;
-                  },
-                }
-              : name === "ott-hashed"
-                ? "hashed"
-                : "plain",
+          storeToken: ["ott-custom-callback", "ott-custom-header"].includes(name)
+            ? {
+                type: "custom-hasher",
+                hash: async (token: string) => {
+                  ottCallbackState.events.push({ stage: "hash", token });
+                  ottCallbackResult("hash");
+                  return `digest-${token}`;
+                },
+              }
+            : name === "ott-hashed"
+              ? "hashed"
+              : "plain",
           disableSetSessionCookie: name === "ott-no-cookie",
           disableClientRequest: name === "ott-server-header",
-          setOttHeaderOnNewSession: name === "ott-server-header" || name === "ott-composed",
+          setOttHeaderOnNewSession: [
+            "ott-server-header",
+            "ott-composed",
+            "ott-custom-header",
+          ].includes(name),
         }),
         ...(name === "ott-composed"
           ? [
