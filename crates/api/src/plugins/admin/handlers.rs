@@ -677,10 +677,18 @@ pub(in crate::plugins) async fn stop_impersonating_core(
         .database
         .get_session_record(&admin_cookie.session_token)
         .await?
-        .ok_or_else(|| AuthError::internal(MESSAGE_FAILED_TO_FIND_ADMIN_SESSION))?;
+        .ok_or_else(|| AuthError::Api {
+            status: 500,
+            code: None,
+            message: MESSAGE_FAILED_TO_FIND_ADMIN_SESSION.into(),
+        })?;
 
     if admin_session.user_id() != admin_user.id() {
-        return Err(AuthError::internal(MESSAGE_FAILED_TO_FIND_ADMIN_SESSION));
+        return Err(AuthError::Api {
+            status: 500,
+            code: None,
+            message: MESSAGE_FAILED_TO_FIND_ADMIN_SESSION.into(),
+        });
     }
 
     ctx.session_manager()
