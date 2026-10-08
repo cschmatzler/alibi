@@ -3226,6 +3226,12 @@ const server = Bun.serve({
       if (url.pathname === "/__test/magic-link" && request.method === "GET") {
         return jsonResponse(magicLinkOutbox.get(url.searchParams.get("email") ?? "") ?? null);
       }
+      if (url.pathname === "/__test/phone-notifications")
+        return Response.json(
+          phoneFixture.notificationControl(
+            request.method === "POST" ? (await request.json()).operation : undefined,
+          ),
+        );
       if (url.pathname === "/__test/phone-validator-events")
         return Response.json(phoneFixture.validatorEvents);
       if (url.pathname === "/__test/custom-session-work")
