@@ -527,7 +527,10 @@ pub(in crate::plugins) async fn revoke_session_core(
     if let Some(session_to_revoke) = ctx.database.get_session(token).await?
         && session_to_revoke.user_id() == user.id()
     {
-        ctx.database.delete_session(token).await?;
+        ctx.database
+            .delete_session(token)
+            .await
+            .map_err(revocation_storage_error)?;
     }
     Ok(StatusResponse { status: true })
 }
@@ -539,7 +542,10 @@ pub(in crate::plugins) async fn revoke_sessions_core(
     user_id: impl AsRef<str>,
     ctx: &AuthContext<impl alibi_core::AuthSchema>,
 ) -> AuthResult<StatusResponse> {
-    ctx.database.delete_user_sessions(user_id.as_ref()).await?;
+    ctx.database
+        .delete_user_sessions(user_id.as_ref())
+        .await
+        .map_err(revocation_storage_error)?;
     Ok(StatusResponse { status: true })
 }
 
@@ -558,6 +564,15 @@ pub(in crate::plugins) async fn revoke_other_sessions_core(
         }
     }
     Ok(StatusResponse { status: true })
+}
+
+fn revocation_storage_error(error: AuthError) -> AuthError {
+    tracing::error!(error = %error, "Session revocation failed");
+    AuthError::Upstream {
+        status: 500,
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Internal Server Error",
+    }
 }
 
 fn session_authorization_error(error: AuthError) -> AuthError {
