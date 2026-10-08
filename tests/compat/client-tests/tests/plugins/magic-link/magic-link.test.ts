@@ -325,20 +325,21 @@ compatScenario(
   async (ctx) => {
     const preferenceOwner = ctx.actor("preference-owner");
     let signupCookies: string[] = [];
-    const preference = await preferenceOwner.client.signUp.email(
-      {
-        email: ctx.uniqueEmail("preference-owner"),
-        password: "password123",
-        name: "Preference owner",
-        rememberMe: false,
-      },
+    const preference = await preferenceOwner.client.signUp.email({
+      email: ctx.uniqueEmail("preference-owner"),
+      password: "password123",
+      name: "Preference owner",
+    });
+    expect(preference.error).toBeNull();
+    const preferredSession = await preferenceOwner.client.signIn.email(
+      { email: preference.data!.user.email, password: "password123", rememberMe: false },
       {
         onResponse({ response }) {
           signupCookies = response.headers.getSetCookie();
         },
       },
     );
-    expect(preference.error).toBeNull();
+    expect(preferredSession.error).toBeNull();
     const receipt = signupCookies
       .map((cookie) => Cookie.parse(cookie))
       .find((cookie) => cookie?.key.endsWith("dont_remember"));
