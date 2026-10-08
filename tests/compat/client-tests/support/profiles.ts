@@ -218,6 +218,7 @@ export const FIXTURE_PROFILES = [
   "custom-session-deferred",
   "custom-session-core-error",
   "rate-limit-ordered",
+  "rate-limit-secondary-failure",
   "rate-limit-secondary-a",
   "rate-limit-secondary-b",
   "rate-limit-default",

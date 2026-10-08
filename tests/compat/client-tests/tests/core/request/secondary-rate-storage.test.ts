@@ -64,3 +64,90 @@ compatScenario(
   },
   ["GET /get-session", "GET /list-sessions"],
 );
+
+compatScenario(
+  "secondary rate storage rejects missing and failing atomic increments without signup mutation or fallback",
+  async (ctx) => {
+    const profile = "rate-limit-secondary-failure";
+    const control = async (mode?: string) => {
+      const response = await fetch(
+        `${ctx.baseURL}/__test/rate-limit-secondary/failure`,
+        mode
+          ? {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ mode }),
+            }
+          : undefined,
+      );
+      expect(response.status).toBe(200);
+      return (await response.json()) as { events: string[] };
+    };
+    const physical = async () => {
+      const response = await fetch(`${ctx.baseURL}/__test/provider-batch/sql-state`);
+      expect(response.status).toBe(200);
+      return response.json();
+    };
+    const signUp = (name: string, ip: string, bypass = false) =>
+      ctx.actor(name, profile).client.signUp.email({
+        email: ctx.uniqueEmail(name),
+        password: "password123",
+        name,
+        fetchOptions: {
+          headers: { "x-forwarded-for": ip, ...(bypass ? { "x-rate-bypass": "yes" } : {}) },
+        },
+      });
+    const observations = [];
+    const mismatches = [];
+    for (const [index, mode] of ["missing", "throws"].entries()) {
+      const ip = `198.51.100.${240 + index}`;
+      await control(mode);
+      const before = await physical();
+      const failed = await signUp(`atomic-${mode}-blocked`, ip);
+      expect(failed.data).toBeNull();
+      expect(failed.error?.status).toBe(500);
+      expect(await physical()).toEqual(before);
+      const failedCalls = await control();
+      expect(failedCalls.events).toEqual(mode === "missing" ? [] : ["increment"]);
+      // The reference exposes an empty 500 body through the SDK. Keep failure
+      // comparison last so recovery and physical invariants run on both engines.
+      if (
+        JSON.stringify(failed.error) !==
+        JSON.stringify({ status: 500, statusText: "Internal Server Error" })
+      )
+        mismatches.push({ mode, error: failed.error });
+      const disabled = await signUp(`atomic-${mode}-disabled`, ip, true);
+      expect(disabled.error).toBeNull();
+      expect(disabled.data?.user.email).toBe(ctx.uniqueEmail(`atomic-${mode}-disabled`));
+      expect((await control()).events).not.toContain("increment");
+      await control("normal");
+      const owner = await ctx.actor(`atomic-${mode}-disabled`, profile).client.getSession();
+      expect(owner.data?.user.id).toBe(disabled.data!.user.id);
+      const first = await signUp(`atomic-${mode}-first`, ip);
+      const second = await signUp(`atomic-${mode}-second`, ip);
+      expect(first.error).toBeNull();
+      expect(second.error).toBeNull();
+      const quotaBefore = await physical();
+      const rejected = await signUp(`atomic-${mode}-over-quota`, ip);
+      expect(rejected.error).toMatchObject({
+        status: 429,
+        message: "Too many requests. Please try again later.",
+      });
+      expect(rejected.data).toBeNull();
+      expect(await physical()).toEqual(quotaBefore);
+      observations.push({
+        mode,
+        failed,
+        failedCalls,
+        disabled,
+        owner,
+        first,
+        second,
+        rejected,
+      });
+    }
+    expect(mismatches).toEqual([]);
+    return ctx.snapshot(observations);
+  },
+  ["POST /sign-up/email"],
+);
