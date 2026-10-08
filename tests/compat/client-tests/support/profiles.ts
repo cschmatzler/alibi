@@ -966,6 +966,7 @@ export const FIXTURE_PROFILES = [
   "set-password-default",
   "set-password-policy",
   "set-password-cache",
+  "set-password-schema",
   "one-tap-default",
   "one-tap-fallback",
   "one-tap-plugin-only",
