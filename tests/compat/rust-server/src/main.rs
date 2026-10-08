@@ -794,6 +794,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         organization_member_removal_hooks_fixture::router(&config, database.clone()).await?;
     let member_role_hooks_router =
         organization_member_role_hooks_fixture::router(&config, database.clone()).await?;
+    let session_adapter_failure_router = fixtures::session_adapter_failure_fixture::router(&config, database.clone()).await?;
     let pending_lookup_router =
         two_factor_pending_lookup_fixture::router(&config, database.clone()).await?;
     let update_hooks_router =
@@ -2162,6 +2163,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .merge(deletion_hooks_router)
         .nest("/api/auth", auth_router)
         .with_state(auth)
+        .merge(session_adapter_failure_router)
         .merge(database_delete_hooks_router)
         .merge(factor_table_router)
         .merge(postgres_schema_router)

@@ -101,6 +101,7 @@ import { railwayProviderFixture } from "./fixtures/railway-provider-fixture";
 import { createRateLimitFixture } from "./fixtures/rate-limit-fixture";
 import { redditProviderFixture } from "./fixtures/reddit-provider-fixture";
 import { createServerEndpointFixture } from "./fixtures/server-endpoint-fixture";
+import { createSessionAdapterFailureFixture } from "./fixtures/session-adapter-failure-fixture";
 import { sessionCookieCacheFixture } from "./fixtures/session-cookie-cache-fixture";
 import { createSessionFieldsFixture } from "./fixtures/session-fields-fixture";
 import { createSetPasswordFixture } from "./fixtures/set-password-fixture";
@@ -636,6 +637,10 @@ const organizationMemberRoleFixture = organizationMemberRoleHooksFixture(
 const lastLoginMethodFixture = await createLastLoginMethodFixture(authOptions, database);
 const remoteJwtFixture = createRemoteJwtFixture(authOptions);
 const jwtKeyringFixture = createJwtKeyringFixture(authOptions, database);
+const sessionAdapterFailureFixture = await createSessionAdapterFailureFixture(
+  authOptions,
+  database,
+);
 const twoFactorPendingLookupFixture = await createTwoFactorPendingLookupFixture(
   authOptions,
   database,
@@ -2799,6 +2804,12 @@ const server = Bun.serve({
       ) {
         return organizationMemberRoleFixture.state(url.searchParams.get("waitFor"));
       }
+      for (const [profile, auth] of sessionAdapterFailureFixture.profiles) {
+        if (url.pathname.startsWith(`/__test/profiles/${profile}/api/auth/`))
+          return auth.handler(request);
+      }
+      if (url.pathname === "/__test/session-adapter-failure" && request.method === "POST")
+        return sessionAdapterFailureFixture.control(await request.json());
       if (url.pathname === "/__test/verification-sender-calls")
         return Response.json({ calls: verificationSenderCalls });
       for (const [name, auth] of twoFactorPendingLookupFixture.profiles) {
