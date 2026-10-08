@@ -22,6 +22,11 @@ const MODES: &[&str] = &[
     "claims-empty",
     "claims-custom",
 
+    "prompt-none",
+    "prompt-consent",
+    "prompt-empty",
+
+    "pkce-disabled",
     "expiry-positive",
     "expiry-zero",
     "expiry-negative",
@@ -134,6 +139,7 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "roblox" => {
             let mut options = RobloxOptions::new(client, Some(secret.into()));
+            if mode.starts_with("prompt-") { options.prompt = Some(if mode == "prompt-empty" { "" } else { &mode[7..] }.into()); }
             options.scope = configured(mode);
             options.disable_default_scope = mode == "disabled-configured";
             options.user_info_endpoint =
@@ -220,6 +226,7 @@ fn factory(provider: &str, mode: &str, local: Option<&str>) -> OAuthProvider {
         }
         "zoom" => {
             let mut options = ZoomOptions::new(client, Some(secret.into()));
+            options.pkce = mode != "pkce-disabled";
             options.user_info_endpoint =
                 local.map(|base| format!("{base}/__test/provider-batch/zoom/user"));
             OAuthProvider::zoom_with_options(options)
@@ -237,6 +244,8 @@ pub(crate) async fn router(
     for provider_id in PROVIDERS {
         for mode in MODES {
             if mode.starts_with("claims-") && *provider_id != "twitch" { continue; }
+            if mode.starts_with("prompt-") && *provider_id != "roblox" { continue; }
+            if *mode == "pkce-disabled" && *provider_id != "zoom" { continue; }
             let path = format!("/__test/profiles/provider-batch-{provider_id}-{mode}/api/auth");
             let mut settings = config.clone().base_path(&path);
             settings.account.encrypt_oauth_tokens = *mode == "encrypted";
